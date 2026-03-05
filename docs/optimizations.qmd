@@ -66,6 +66,15 @@ Provides efficient Triton kernels to improve training speed and reduce memory us
 
 - **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
+### Expert Kernels
+
+Optimized kernel implementations for Mixture of Experts (MoE) model training.
+
+- **ScatterMoE**: Triton-based MoE kernels with fused LoRA support.
+- **SonicMoE**: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.
+
+- **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
+
 ## Long Context Models
 
 Techniques to train models on sequences longer than their original context window.
