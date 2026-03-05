@@ -258,6 +258,32 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
         )
 
 
+class Qwen3_5ProcessingStrategy(ProcessingStrategy):
+    """Processing Strategy class for Qwen3.5 (early-fusion VLM)"""
+
+    def __init__(
+        self,
+        processor: ProcessorMixin,
+        chat_template: Optional[str] = None,
+        image_size: int | tuple[int, int] | None = None,
+        image_resize_algorithm: Resampling | None = None,
+    ):
+        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        self.image_token = "<|image_pad|>"  # nosec
+        self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.image_token
+        )
+        self.video_token = "<|video_pad|>"  # nosec
+        self.video_token_id = processor.tokenizer.convert_tokens_to_ids(
+            self.video_token
+        )
+
+    def process_labels(self, input_ids):
+        labels = super().process_labels(input_ids)
+        labels[labels == self.video_token_id] = -100
+        return labels
+
+
 class Gemma3ProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for Gemma3"""
 
@@ -560,6 +586,10 @@ def get_processing_strategy(
 
     if chat_template_type == "qwen2_vl":
         return Qwen2VLProcessingStrategy(
+            **processing_kwargs,
+        )
+    if chat_template_type == "qwen3_5":
+        return Qwen3_5ProcessingStrategy(
             **processing_kwargs,
         )
     if chat_template_type == "gemma3":

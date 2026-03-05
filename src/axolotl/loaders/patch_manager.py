@@ -239,14 +239,14 @@ class PatchManager:
 
             patch_qwen3_next_modeling_packing()
 
-        if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+        if self.cfg.model_config_type == "qwen3_5":
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_modeling_packing,
             )
 
             patch_qwen3_5_modeling_packing()
 
-        if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
+        if self.cfg.model_config_type == "qwen3_5_moe":
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_moe_modeling_packing,
             )
