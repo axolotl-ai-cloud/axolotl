@@ -41,7 +41,7 @@ lora_target_modules:
   - linear_attn.in_proj_z
   - linear_attn.out_proj
 
-wandb_project: qwennn3.5
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
