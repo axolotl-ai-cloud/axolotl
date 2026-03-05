@@ -457,7 +457,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                     - 1
                 )
                 * cfg.num_epochs
-                * cfg.context_parallel_size
                 * cfg.tensor_parallel_size
             )
             LOG.debug(
@@ -498,12 +497,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             # FIXME: is there a bug here somewhere? the total num steps depends
             # on the agreed on value for sample_packing_eff_est
             total_num_steps = int(
-                math.floor(
-                    data_loader_len
-                    * cfg.num_epochs
-                    * cfg.context_parallel_size
-                    * cfg.tensor_parallel_size
-                )
+                math.floor(data_loader_len * cfg.num_epochs * cfg.tensor_parallel_size)
             )
             if cfg.dataloader_drop_last:
                 # drop the last batch for each epoch
@@ -528,7 +522,6 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
             math.ceil(
                 len(train_dataset)
                 * cfg.num_epochs
-                * cfg.context_parallel_size
                 * cfg.tensor_parallel_size
                 / cfg.batch_size
             )
