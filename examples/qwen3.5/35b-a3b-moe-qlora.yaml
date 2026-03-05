@@ -19,7 +19,6 @@ dataset_prepared_path: last_run_prepared
 
 sequence_len: 2048
 sample_packing: true
-eval_sample_packing: true
 
 load_in_4bit: true
 quantize_moe_experts: true

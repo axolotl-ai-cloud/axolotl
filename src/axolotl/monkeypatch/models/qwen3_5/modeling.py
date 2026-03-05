@@ -32,12 +32,14 @@ def get_cu_seqlens(position_ids):
 
     https://github.com/huggingface/transformers/blob/0f1b128d3359a26bd18be99c26d7f04fb3cba914/src/transformers/modeling_flash_attention_utils.py#L316
 
-    Handles 3-D mrope position_ids of shape [axes, batch, seq_len] (Qwen3.5) by
-    using only the first axis (temporal/text positions), which matches the standard
-    [batch, seq_len] layout expected for sequence-boundary detection.
+    Handles 3-D MRoPE position_ids of shape [axes, batch, seq_len] (Qwen3.5).
+    Qwen3.5 uses Multi-dimensional RoPE (MRoPE) where position_ids are expanded
+    to [num_rope_axes, B, T] before being passed to decoder layers.
+    See: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3_5/modeling_qwen3_5.py
+    All axes carry the same temporal positions for text-only finetuning, so we
+    take axis 0 to recover the standard [B, T] layout for boundary detection.
     """
     if position_ids.ndim == 3:
-        # mrope: [axes, B, T] — use axis 0 (text/temporal positions)
         position_ids = position_ids[0]
 
     tensor_kwargs = {"dtype": torch.long, "device": position_ids.device}
@@ -97,21 +99,10 @@ def _patched_decoder_forward(
             position_ids=position_ids,
         )
     elif self.layer_type == "full_attention":
-        # Qwen3.5 uses 3-D mrope position_ids [axes, B, T].  flash_attn's
-        # _is_packed_sequence() checks shape[1] == batch_size, which would
-        # misidentify a [3, 1, T] mrope tensor as a packed sequence and then
-        # compute cu_seqlens from the wrong axis.  Pass the first axis
-        # (temporal/text positions) as a plain [B, T] tensor so varlen
-        # detection and cu_seqlens computation work correctly.
-        fa_position_ids = (
-            position_ids[0]
-            if position_ids is not None and position_ids.ndim == 3
-            else position_ids
-        )
         hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
-            position_ids=fa_position_ids,
+            position_ids=position_ids,
             past_key_values=past_key_values,
             cache_position=cache_position,
             position_embeddings=position_embeddings,
@@ -156,13 +147,9 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             and cache_position is not None
         )
 
-        # Compute cu_seqlens only when FLA is available (torch fallback doesn't use it)
+        # Compute cu_seqlens for use by both causal_conv1d and chunk_gated_delta_rule
         cu_seqlens = None
-        if (
-            fla_causal_conv1d is not None
-            and not use_precomputed_states
-            and position_ids is not None
-        ):
+        if not use_precomputed_states and position_ids is not None:
             cu_seqlens = get_cu_seqlens(position_ids=position_ids)
 
         if cache_params is not None:
@@ -208,10 +195,14 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                     cu_seqlens=cu_seqlens,
                 )  # [B, T, D]
             else:
-                # PyTorch fallback — no cu_seqlens, conv state leaks across packed sequences
+                # PyTorch fallback (no cu_seqlens support)
+                if cu_seqlens is not None and cu_seqlens.shape[0] > batch_size + 1:
+                    raise RuntimeError(
+                        "Packed sequences require fla.modules.convolution.causal_conv1d "
+                        "(cu_seqlens support). Install flash-linear-attention or disable packing."
+                    )
                 LOG.warning_once(
-                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d "
-                    "which does not support cu_seqlens for packed sequences."
+                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d."
                 )
                 mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])  # [B, D, T]
                 mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D]
@@ -233,10 +224,6 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             key = key.repeat_interleave(self.num_v_heads // self.num_k_heads, dim=2)
 
         if not use_precomputed_states:
-            # Only pass cu_seqlens when the FLA kernel is available (torch fallback doesn't support it)
-            extra_kwargs = (
-                {"cu_seqlens": cu_seqlens} if fla_causal_conv1d is not None else {}
-            )
             core_attn_out, last_recurrent_state = self.chunk_gated_delta_rule(
                 query,
                 key,
@@ -246,7 +233,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                 initial_state=None,
                 output_final_state=cache_params is not None,
                 use_qk_l2norm_in_kernel=True,
-                **extra_kwargs,
+                cu_seqlens=cu_seqlens,
             )
         else:
             core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
