@@ -48,6 +48,9 @@ jobs:
 
   prime-cdn-s3-cache:
     name: Prefetch S3 once to prime the CDN cache
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 10
     steps:
       - name: Restore Cache from S3
         id: hf-cache-restore-s3
