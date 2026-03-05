@@ -94,11 +94,11 @@ def setup_model_and_tokenizer(
     # if the num_parameters is less than 2B, let's round to nearest 100M, else round to nearest 1B
     if model_properties["num_parameters"] < 2e9:
         model_properties["num_parameters_est"] = (
-            round(model_properties["num_parameters"] / 1e8) * 100 + "M"
+            f"{round(model_properties['num_parameters'] / 1e8) * 100}M"
         )
     else:
         model_properties["num_parameters_est"] = (
-            round(model_properties["num_parameters"] / 1e9) + "B"
+            f"{round(model_properties['num_parameters'] / 1e9)}B"
         )
     TELEMETRY_MANAGER.send_event(event_type="model-load", properties=model_properties)
     if peft_config:
