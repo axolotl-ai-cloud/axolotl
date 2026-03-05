@@ -26,7 +26,7 @@ from transformers import PreTrainedModel, Trainer
 from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length, seed_worker
 from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
-from trl.trainer.utils import pad_to_length
+from trl.experimental.utils import pad_to_length
 from typing_extensions import override
 
 from axolotl.core.trainers.mixins import (
