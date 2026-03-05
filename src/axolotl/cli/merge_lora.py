@@ -71,6 +71,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         merge_lora=True,
         load_in_8bit=False,
         load_in_4bit=False,
+        quantize_moe_experts=False,
         flash_attention=False,
         context_parallel_size=None,
         deepspeed=None,
