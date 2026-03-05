@@ -47,10 +47,12 @@ jobs:
           SKIP: no-commit-to-branch
 
   prime-cdn-s3-cache:
-    - name: Prefetch S3 once to prime the CDN cache
-      id: hf-cache-restore-s3
-      run: |
-        curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | /dev/null
+    name: Prefetch S3 once to prime the CDN cache
+    steps:
+      - name: Restore Cache from S3
+        id: hf-cache-restore-s3
+        run: |
+          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | /dev/null
 
   pytest:
     name: PyTest
