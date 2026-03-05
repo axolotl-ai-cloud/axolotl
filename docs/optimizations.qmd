@@ -66,6 +66,15 @@ Provides efficient Triton kernels to improve training speed and reduce memory us
 
 - **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
+### Expert Kernels
+
+Optimized kernel implementations for Mixture of Experts (MoE) model training.
+
+- **ScatterMoE**: Triton-based MoE kernels with fused LoRA support.
+- **SonicMoE**: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.
+
+- **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
+
 ## Long Context Models
 
 Techniques to train models on sequences longer than their original context window.
@@ -131,3 +140,10 @@ Simulates quantization effects during training, helping the model adapt and pote
 Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.
 
 - **Example:** [GPTQ LoRA Example](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml)
+
+### MoE Expert Quantization
+
+Quantizes MoE expert weights on load to reduce VRAM when training MoE models with adapters. Required for Transformers v5+ MoE models where experts use fused `nn.Parameter` tensors.
+
+- **Config:** `quantize_moe_experts: true`
+- **Learn more:** [MoE Expert Quantization](expert_quantization.qmd)

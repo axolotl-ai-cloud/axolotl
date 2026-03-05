@@ -16,40 +16,28 @@ This guide shows how to fine-tune it with Axolotl.
 # QLoRA
 # - no target experts (1x48GB @ ~24GiB/GPU)
 # - target experts (1x48GB @ ~34GiB/GPU)
-axolotl train examples/glm4.7-flash/qlora.yaml
+axolotl train examples/glm47-flash/qlora.yaml
 
 # QLoRA FSDP2 no target experts (2x48GB @ ~29GiB/GPU)
-axolotl train examples/glm4.7-flash/qlora_fsdp.yaml
+axolotl train examples/glm47-flash/qlora_fsdp.yaml
 ```
 
 ```bash
 # LoRA
 # - no target experts (1x48GB @ ~35GiB/GPU)
 # - target experts (1x48GB @ OOM. Projected ~45-50GiB/GPU)
-axolotl train examples/glm4.7-flash/lora.yaml
+axolotl train examples/glm47-flash/lora.yaml
 
 # LoRA FSDP2 no target experts (2x48GB @ ~43GiB/GPU)
-axolotl train examples/glm4.7-flash/lora_fsdp.yaml
+axolotl train examples/glm47-flash/lora_fsdp.yaml
 ```
 
-### Expert LoRA
+### MoE Expert Quantization & Expert LoRA
 
-To also apply LoRA adapters to expert weights, add `lora_target_parameters` to your config.
-
-Note: `lora_dropout` must be `0` when using `lora_target_parameters`.
-
-```yaml
-lora_target_parameters:
-  - mlp.experts.gate_up_proj
-  - mlp.experts.down_proj
-  # - mlp.gate.weight  # router, untested but should work, not normally targeted
-```
+This model quantize expert weights on load. To learn about expert quantization, expert LoRA targeting, and related limitations, see the [MoE Expert Quantization](https://docs.axolotl.ai/docs/expert_quantization.html) docs.
 
 ## Limitations
 
-- **FSDP VRAM**: FSDP2 may use more VRAM per GPU than single GPU training. We suspect not all layers are properly sharded across ranks.
-- **FSDP initial spike**: FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps that then drops. FSDP QLoRA (4-bit) does not exhibit this.
-- **cpu_ram_efficient_loading**: Must be set to `false` with FSDP2 — causes hang otherwise.
 - **lora_target_linear**: Incompatible for this model.
 - **LoRA kernels**: Incompatible with this model due to non-standard attention projections (DSA). Must be explicitly disabled (`lora_*_kernel: false`).
 

@@ -331,6 +331,7 @@ website:
             - docs/sequence_parallelism.qmd
             - docs/gradient_checkpointing.qmd
             - docs/nd_parallelism.qmd
+            - docs/expert_quantization.qmd
 
         - section: "Troubleshooting"
           contents:
