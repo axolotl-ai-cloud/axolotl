@@ -673,6 +673,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
  <span class="menu-text">N-D Parallelism (Beta)</span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MoE Expert Quantization</span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -726,6 +732,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#gradient-checkpointing-activation-offloading" id="toc-gradient-checkpointing-activation-offloading" class="nav-link" data-scroll-target="#gradient-checkpointing-activation-offloading">Gradient Checkpointing &amp; Activation Offloading</a></li>
   <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a></li>
   <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a></li>
+  <li><a href="#expert-kernels" id="toc-expert-kernels" class="nav-link" data-scroll-target="#expert-kernels">Expert Kernels</a></li>
   </ul></li>
   <li><a href="#long-context-models" id="toc-long-context-models" class="nav-link" data-scroll-target="#long-context-models">Long Context Models</a>
   <ul class="collapse">
@@ -743,6 +750,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#fp8-training" id="toc-fp8-training" class="nav-link" data-scroll-target="#fp8-training">FP8 Training</a></li>
   <li><a href="#quantization-aware-training-qat" id="toc-quantization-aware-training-qat" class="nav-link" data-scroll-target="#quantization-aware-training-qat">Quantization Aware Training (QAT)</a></li>
   <li><a href="#gptq" id="toc-gptq" class="nav-link" data-scroll-target="#gptq">GPTQ</a></li>
+  <li><a href="#moe-expert-quantization" id="toc-moe-expert-quantization" class="nav-link" data-scroll-target="#moe-expert-quantization">MoE Expert Quantization</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -840,6 +848,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#liger-kernels">Custom Integrations - Liger Kernels</a></li>
 </ul>
 </section>
+<section id="expert-kernels" class="level3">
+<h3 class="anchored" data-anchor-id="expert-kernels">Expert Kernels</h3>
+<p>Optimized kernel implementations for Mixture of Experts (MoE) model training.</p>
+<ul>
+<li><p><strong>ScatterMoE</strong>: Triton-based MoE kernels with fused LoRA support.</p></li>
+<li><p><strong>SonicMoE</strong>: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.</p></li>
+<li><p><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#kernels-integration">Custom Integrations - Kernels Integration</a></p></li>
+</ul>
+</section>
 </section>
 <section id="long-context-models" class="level2">
 <h2 class="anchored" data-anchor-id="long-context-models">Long Context Models</h2>
@@ -910,6 +927,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Allows you to finetune LoRA adapters on top of a model that has already been quantized using the GPTQ method.</p>
 <ul>
 <li><strong>Example:</strong> <a href="https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-2/gptq-lora.yml">GPTQ LoRA Example</a></li>
+</ul>
+</section>
+<section id="moe-expert-quantization" class="level3">
+<h3 class="anchored" data-anchor-id="moe-expert-quantization">MoE Expert Quantization</h3>
+<p>Quantizes MoE expert weights on load to reduce VRAM when training MoE models with adapters. Required for Transformers v5+ MoE models where experts use fused <code>nn.Parameter</code> tensors.</p>
+<ul>
+<li><strong>Config:</strong> <code>quantize_moe_experts: true</code></li>
+<li><strong>Learn more:</strong> <a href="../docs/expert_quantization.html">MoE Expert Quantization</a></li>
 </ul>
 
 
