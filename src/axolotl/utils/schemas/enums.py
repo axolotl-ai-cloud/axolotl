@@ -83,6 +83,11 @@ class CustomSupportedOptimizers(str, Enum):
     came_pytorch = "came_pytorch"
     muon = "muon"
     dion = "dion"
+    flash_adamw = "flash_adamw"
+    flash_adam = "flash_adam"
+    flash_sgd = "flash_sgd"
+    flash_sgdw = "flash_sgdw"
+    flash_lion = "flash_lion"
 
 
 class RingAttnFunc(str, Enum):
