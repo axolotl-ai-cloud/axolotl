@@ -6,7 +6,7 @@
 Unit tests for scattermoe-lora code-review fixes.
 
 Tests cover:
-- KernelsArgs validator: disable_mlp_kernel_scattermoe
+- KernelsArgs validator: disable_mlp_kernel
 - CPU_Offloaded_Gradient_Checkpointer: tuple vs plain tensor backward
 - ParallelExperts: scaling=0.0 not treated as falsy
 - single2scatter: non-aligned K/N dimensions
@@ -20,12 +20,12 @@ import pytest
 import torch
 
 # ============================================================================
-# 1. KernelsArgs: disable_mlp_kernel_scattermoe validator
+# 1. KernelsArgs: disable_mlp_kernel validator
 # ============================================================================
 
 
 class TestKernelsArgsValidator:
-    """Test that disable_mlp_kernel_scattermoe sets both flags correctly.
+    """Test that disable_mlp_kernel sets both flags correctly.
 
     These tests call the validator classmethod directly on raw dicts,
     since lora_mlp_kernel / mlp_kernel are not declared model fields.
@@ -40,7 +40,7 @@ class TestKernelsArgsValidator:
             "use_scattermoe": True,
             "lora_mlp_kernel": True,
         }
-        result = KernelsArgs.disable_mlp_kernel_scattermoe(data)
+        result = KernelsArgs.disable_mlp_kernel(data)
         assert result["lora_mlp_kernel"] is False
         assert result["mlp_kernel"] is False
 
@@ -52,7 +52,7 @@ class TestKernelsArgsValidator:
             "use_kernels": True,
             "use_scattermoe": True,
         }
-        result = KernelsArgs.disable_mlp_kernel_scattermoe(data)
+        result = KernelsArgs.disable_mlp_kernel(data)
         assert result["mlp_kernel"] is False
         # lora_mlp_kernel was not in data, should not be added
         assert "lora_mlp_kernel" not in result
@@ -66,7 +66,7 @@ class TestKernelsArgsValidator:
             "use_scattermoe": True,
             "lora_mlp_kernel": False,
         }
-        result = KernelsArgs.disable_mlp_kernel_scattermoe(data)
+        result = KernelsArgs.disable_mlp_kernel(data)
         assert result["lora_mlp_kernel"] is False
 
     def test_no_change_when_scattermoe_disabled(self):
@@ -78,7 +78,7 @@ class TestKernelsArgsValidator:
             "use_scattermoe": False,
             "lora_mlp_kernel": True,
         }
-        result = KernelsArgs.disable_mlp_kernel_scattermoe(data)
+        result = KernelsArgs.disable_mlp_kernel(data)
         assert result["lora_mlp_kernel"] is True
 
 
