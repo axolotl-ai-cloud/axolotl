@@ -86,9 +86,21 @@ def setup_model_and_tokenizer(
     if model.generation_config is not None:
         model.generation_config.do_sample = True
 
-    TELEMETRY_MANAGER.send_event(
-        event_type="model-load", properties=model.config.to_dict()
-    )
+    model_properties = model.config.to_dict()
+    try:
+        model_properties["num_parameters"] = model.num_parameters()
+    except Exception:  # pylint: disable=broad-exception-caught
+        model_properties["num_parameters"] = sum(p.numel() for p in model.parameters())
+    # if the num_parameters is less than 2B, let's round to nearest 100M, else round to nearest 1B
+    if model_properties["num_parameters"] < 2e9:
+        model_properties["num_parameters_est"] = (
+            f"{round(model_properties['num_parameters'] / 1e8) * 100}M"
+        )
+    else:
+        model_properties["num_parameters_est"] = (
+            f"{round(model_properties['num_parameters'] / 1e9)}B"
+        )
+    TELEMETRY_MANAGER.send_event(event_type="model-load", properties=model_properties)
     if peft_config:
         TELEMETRY_MANAGER.send_event(
             event_type="peft-config-load", properties=peft_config.to_dict()
