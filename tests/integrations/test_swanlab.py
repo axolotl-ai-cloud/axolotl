@@ -31,6 +31,8 @@ from axolotl.integrations.swanlab.args import SwanLabConfig
 from axolotl.integrations.swanlab.plugins import SwanLabPlugin
 
 SWANLAB_INSTALLED = _is_package_available("swanlab")
+if isinstance(SWANLAB_INSTALLED, tuple):
+    SWANLAB_INSTALLED = SWANLAB_INSTALLED[0]
 
 
 @pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")
