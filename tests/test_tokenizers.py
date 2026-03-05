@@ -84,7 +84,8 @@ class TestTokenizers:
             }
         )
         tokenizer = load_tokenizer(cfg)
-        assert tokenizer("<|im_start|>user")["input_ids"] == [1, 32000, 1404]
+        assert "LlamaTokenizer" in tokenizer.__class__.__name__
+        assert tokenizer("<|im_start|>user")["input_ids"] == [1, 32000, 1792]
         assert len(tokenizer) == 32001
 
         # ensure reloading the tokenizer again from cfg results in same vocab length
