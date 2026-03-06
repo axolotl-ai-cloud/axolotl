@@ -52,8 +52,8 @@ def mock_torch():
         mock_torch.cuda.device_count.return_value = 2
 
         # Mock memory allocated per device (1GB for device 0, 2GB for device 1)
-        mock_torch.cuda.memory_allocated.side_effect = (
-            lambda device: (device + 1) * 1024 * 1024 * 1024
+        mock_torch.cuda.memory_allocated.side_effect = lambda device: (
+            (device + 1) * 1024 * 1024 * 1024
         )
 
         yield mock_torch
@@ -292,8 +292,8 @@ class TestRuntimeMetricsTracker:
         mock_memory_info = mock_process.memory_info.return_value
         mock_memory_info.rss = 0.5 * 1024 * 1024 * 1024  # 0.5GB
 
-        mock_torch.cuda.memory_allocated.side_effect = (
-            lambda device: (device + 0.5) * 1024 * 1024 * 1024
+        mock_torch.cuda.memory_allocated.side_effect = lambda device: (
+            (device + 0.5) * 1024 * 1024 * 1024
         )
 
         # Update memory metrics again
@@ -307,8 +307,8 @@ class TestRuntimeMetricsTracker:
         # Change mocked memory values to be higher
         mock_memory_info.rss = 2 * 1024 * 1024 * 1024  # 2GB
 
-        mock_torch.cuda.memory_allocated.side_effect = (
-            lambda device: (device + 2) * 1024 * 1024 * 1024
+        mock_torch.cuda.memory_allocated.side_effect = lambda device: (
+            (device + 2) * 1024 * 1024 * 1024
         )
 
         # Update memory metrics again

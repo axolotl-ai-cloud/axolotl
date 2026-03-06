@@ -120,11 +120,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
-        if self.cfg.max_prompt_len:
-            training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
-        else:
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
-
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl is RLType.SIMPO:

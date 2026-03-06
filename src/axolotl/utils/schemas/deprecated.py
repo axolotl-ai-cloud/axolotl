@@ -19,6 +19,8 @@ class DeprecatedParameters(BaseModel):
     evaluation_strategy: str | None = None
     eval_table_size: int | None = None
     eval_max_new_tokens: int | None = None
+    dpo_use_logits_to_keep: bool | None = None
+    dpo_generate_during_eval: bool | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -77,6 +79,26 @@ class DeprecatedParameters(BaseModel):
                 "Please use generation_max_new_tokens instead."
             )
         return eval_max_new_tokens
+
+    @field_validator("dpo_use_logits_to_keep")
+    @classmethod
+    def validate_dpo_use_logits_to_keep(cls, dpo_use_logits_to_keep):
+        if dpo_use_logits_to_keep is not None:
+            raise DeprecationWarning(
+                "`dpo_use_logits_to_keep` is no longer supported, "
+                "it has been removed in TRL >= 0.29.0"
+            )
+        return dpo_use_logits_to_keep
+
+    @field_validator("dpo_generate_during_eval")
+    @classmethod
+    def validate_dpo_generate_during_eval(cls, dpo_generate_during_eval):
+        if dpo_generate_during_eval is not None:
+            raise DeprecationWarning(
+                "`dpo_generate_during_eval` is no longer supported, "
+                "it has been removed in TRL >= 0.29.0"
+            )
+        return dpo_generate_during_eval
 
 
 class RemappedParameters(BaseModel):

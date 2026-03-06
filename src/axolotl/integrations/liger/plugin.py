@@ -8,9 +8,6 @@ import sys
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
-from .models.base import patch_lce_forward
-from .utils import patch_with_compile_disable
-
 LOG = get_logger(__name__)
 
 
@@ -23,9 +20,17 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        # shim: liger-kernel 0.7.0 imports ORPOTrainer from old trl path
+        import trl.trainer
+        from trl.experimental.orpo import ORPOTrainer
+
+        trl.trainer.ORPOTrainer = ORPOTrainer
+
         if cfg.torch_compile:
             # torch compile will unnecessarily attempt to optimize the triton kernel unless explicitly disabled
             import liger_kernel.ops.fused_linear_cross_entropy
+
+            from .utils import patch_with_compile_disable
 
             patch_with_compile_disable(
                 liger_kernel.ops.fused_linear_cross_entropy,
@@ -35,6 +40,7 @@ class LigerPlugin(BasePlugin):
                 liger_kernel.ops.fused_linear_cross_entropy,
                 "fused_linear_cross_entropy_backward",
             )
+
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
         from liger_kernel.transformers.layer_norm import LigerLayerNorm
@@ -192,6 +198,8 @@ class LigerPlugin(BasePlugin):
             )
         elif cfg.liger_fused_linear_cross_entropy:
             try:
+                from .models.base import patch_lce_forward
+
                 patch_lce_forward(cfg.model_config_type)
                 LOG.warning_once(
                     f"Applied ONLY liger_fused_linear_cross_entropy genericpatches for model type: {cfg.model_config_type}"

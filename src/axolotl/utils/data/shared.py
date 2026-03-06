@@ -189,7 +189,7 @@ def _get_remote_filesystem(
         try:
             import gcsfs
 
-            storage_options = {"token": None}  # type: ignore
+            storage_options = {"token": None}  # type: ignore  # nosec B105
             return gcsfs.GCSFileSystem(**storage_options), storage_options
         except ImportError as exc:
             raise ImportError(

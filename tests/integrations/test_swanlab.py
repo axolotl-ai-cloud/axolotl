@@ -18,6 +18,7 @@ Unit tests for SwanLab Integration Plugin.
 Tests conflict detection, configuration validation, and multi-logger warnings.
 """
 
+import importlib.util
 import logging
 import os
 import time
@@ -25,12 +26,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
-from transformers.utils.import_utils import _is_package_available
 
 from axolotl.integrations.swanlab.args import SwanLabConfig
 from axolotl.integrations.swanlab.plugins import SwanLabPlugin
 
-SWANLAB_INSTALLED = _is_package_available("swanlab")
+SWANLAB_INSTALLED = importlib.util.find_spec("swanlab") is not None
 
 
 @pytest.mark.skipif(not SWANLAB_INSTALLED, reason="swanlab package not installed")

@@ -387,8 +387,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 129
-            cuda_version: 12.9.1
+          - cuda: 128
+            cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.9.1
             num_gpus: 1

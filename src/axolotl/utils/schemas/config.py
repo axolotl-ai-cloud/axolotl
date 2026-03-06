@@ -173,7 +173,6 @@ class AxolotlInputConfig(
             "description": "Whether to perform weighting in DPO trainer"
         },
     )
-    dpo_use_logits_to_keep: bool | None = None
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
 
@@ -183,7 +182,6 @@ class AxolotlInputConfig(
     )
 
     dpo_padding_free: bool | None = None
-    dpo_generate_during_eval: bool | None = None
 
     datasets: (
         Annotated[
