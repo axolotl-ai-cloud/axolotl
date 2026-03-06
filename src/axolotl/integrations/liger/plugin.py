@@ -5,16 +5,10 @@ Liger-Kernel Plugin for Axolotl
 import inspect
 import sys
 
-import trl.trainer
-from trl.experimental.orpo import ORPOTrainer
-
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-# liger-kernel not compat with latest trl
-trl.trainer.ORPOTrainer = ORPOTrainer
 
 
 class LigerPlugin(BasePlugin):
@@ -26,6 +20,12 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
+        # shim: liger-kernel 0.7.0 imports ORPOTrainer from old trl path
+        import trl.trainer
+        from trl.experimental.orpo import ORPOTrainer
+
+        trl.trainer.ORPOTrainer = ORPOTrainer
+
         if cfg.torch_compile:
             # torch compile will unnecessarily attempt to optimize the triton kernel unless explicitly disabled
             import liger_kernel.ops.fused_linear_cross_entropy
