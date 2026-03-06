@@ -31,7 +31,7 @@ jobs:
       - name: Restore Cache from S3
         id: hf-cache-restore-s3
         run: |
-          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
+          curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
   pytest:
     name: PyTest
@@ -39,7 +39,6 @@ jobs:
     needs: [prime-cdn-s3-cache]
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         python_version: ["3.12"]  # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
         pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
