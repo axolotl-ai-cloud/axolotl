@@ -70,6 +70,11 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 axolotl uses [{codestyle}]({URLofCodestyle}) as its code style guide. Please ensure that your code follows these guidelines.
 
+Use the pre-commit linter to ensure that your code is formatted consistently.
+```bash
+pre-commit run --all-files
+```
+
 ### Commit Messages
 
 Write clear and concise commit messages that briefly describe the changes made in each commit. Use the imperative mood and start with a capitalized verb, e.g., "Add new feature" or "Fix bug in function".
