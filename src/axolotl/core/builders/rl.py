@@ -120,11 +120,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
-        if self.cfg.max_prompt_len:
-            training_args_kwargs["max_prompt_length"] = self.cfg.max_prompt_len
-        else:
-            training_args_kwargs["max_prompt_length"] = self.cfg.sequence_len
-
         training_args_cls = None
         blocklist_args_kwargs = []
         if self.cfg.rl is RLType.SIMPO:
@@ -167,6 +162,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs.append("max_prompt_length")
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
