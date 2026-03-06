@@ -166,6 +166,13 @@ class PatchManager:
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
+        if self.cfg.fsdp_config:
+            from axolotl.monkeypatch.accelerate.fsdp2 import (
+                patch_initialize_missing_keys_for_fsdp,
+            )
+
+            patch_initialize_missing_keys_for_fsdp()
+
         if self.cfg.context_parallel_size > 1 or (
             self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
         ):
