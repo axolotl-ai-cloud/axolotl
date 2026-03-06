@@ -674,8 +674,8 @@ class ModelLoader:
                 del self.model_kwargs["device_map"]
 
             transformers.modeling_utils.is_deepspeed_zero3_enabled = lambda: True
-            transformers.integrations.deepspeed.is_deepspeed_zero3_enabled = (
-                lambda: True
+            transformers.integrations.deepspeed.is_deepspeed_zero3_enabled = lambda: (
+                True
             )
 
         return hf_ds_cfg

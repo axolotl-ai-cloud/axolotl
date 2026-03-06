@@ -201,7 +201,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         tokenizer.pad_token = LLAMA_DEFAULT_EOS_TOKEN
 
     if tokenizer.__class__.__name__ == "GPTNeoXTokenizerFast":
-        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})  # nosec B105
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Mistral's official FA implementation requires left padding
