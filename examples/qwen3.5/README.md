@@ -50,9 +50,7 @@ axolotl train examples/qwen3.5/7b-lora-vision.yaml
 
 ## Optimization Guides
 
-- [Multi-GPU Training](https://docs.axolotl.ai/docs/multi-gpu.html)
-- [Multi-Node Training](https://docs.axolotl.ai/docs/multi-node.html)
-- [LoRA Optimizations](https://docs.axolotl.ai/docs/lora_optims.html)
+- [Optimizations Guide](https://docs.axolotl.ai/docs/optimizations.html)
 
 ## Related Resources
 
