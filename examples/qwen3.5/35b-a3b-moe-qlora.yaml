@@ -36,7 +36,7 @@ lora_target_modules:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
 
-wandb_project: qwen3.5-moe
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
