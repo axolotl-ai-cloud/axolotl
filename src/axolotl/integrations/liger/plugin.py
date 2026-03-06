@@ -5,6 +5,9 @@ Liger-Kernel Plugin for Axolotl
 import inspect
 import sys
 
+import trl.trainer
+from trl.experimental.orpo import ORPOTrainer
+
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
@@ -35,6 +38,10 @@ class LigerPlugin(BasePlugin):
                 liger_kernel.ops.fused_linear_cross_entropy,
                 "fused_linear_cross_entropy_backward",
             )
+
+        # liger-kernel not compat with latest trl
+        trl.trainer.ORPOTrainer = ORPOTrainer
+
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
         from liger_kernel.transformers.layer_norm import LigerLayerNorm
