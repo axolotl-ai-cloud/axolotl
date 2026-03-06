@@ -3,6 +3,10 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'  # Runs at 00:00 UTC every day
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/tests-nightly.yml'
 
 jobs:
   pre-commit:
