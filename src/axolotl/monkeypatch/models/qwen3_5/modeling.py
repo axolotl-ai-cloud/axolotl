@@ -1,9 +1,4 @@
-"""Monkeypatch for Qwen3_5 and Qwen3_5Moe models to pass position_ids to linear attention.
-
-Qwen3-Next uses a different GatedDeltaNet interface (in_proj_qkvz / in_proj_ba /
-fix_query_key_value_ordering) than Qwen3.5 / Qwen3.5-MoE (in_proj_qkv / in_proj_z /
-in_proj_b / in_proj_a), so each family gets its own patched forward factory.
-"""
+"""Monkeypatch for Qwen3_5 and Qwen3_5Moe models to pass position_ids to linear attention."""
 
 import importlib
 from typing import Optional, Tuple
@@ -28,33 +23,27 @@ except ImportError:
 
 def get_cu_seqlens(position_ids):
     """
-    Adapted from transformers.modeling_flash_attention_utils.prepare_fa_kwargs_from_position_ids.
+    Compute cumulative sequence lengths from position_ids for FLA varlen kernels.
 
+    Adapted from transformers.modeling_flash_attention_utils.prepare_fa_kwargs_from_position_ids.
     https://github.com/huggingface/transformers/blob/0f1b128d3359a26bd18be99c26d7f04fb3cba914/src/transformers/modeling_flash_attention_utils.py#L316
 
-    Handles 3-D MRoPE position_ids of shape [axes, batch, seq_len] (Qwen3.5).
-    Qwen3.5 uses Multi-dimensional RoPE (MRoPE) where position_ids are expanded
-    to [num_rope_axes, B, T] before being passed to decoder layers.
+    Qwen3.5 uses MRoPE: position_ids arrive as [axes, B, T]. All axes carry the
+    same temporal positions, so axis 0 is used to recover the [B, T] layout.
     See: https://github.com/huggingface/transformers/blob/main/src/transformers/models/qwen3_5/modeling_qwen3_5.py
-    All axes carry the same temporal positions for text-only finetuning, so we
-    take axis 0 to recover the standard [B, T] layout for boundary detection.
     """
     if position_ids.ndim == 3:
         position_ids = position_ids[0]
 
     tensor_kwargs = {"dtype": torch.long, "device": position_ids.device}
-
     position_ids = position_ids.reshape(-1)
     indices_q = (position_ids == 0).nonzero().reshape(-1)
-
-    cu_seq_lens_q = torch.cat(
+    return torch.cat(
         (
             indices_q.to(**tensor_kwargs),
             torch.tensor(position_ids.size(), **tensor_kwargs),
         )
     )
-
-    return cu_seq_lens_q
 
 
 def _inject_fla_kernels(module) -> None:
@@ -86,7 +75,7 @@ def _patched_decoder_forward(
     cache_position: Optional[torch.LongTensor] = None,
     **kwargs,
 ) -> torch.FloatTensor:
-    """Shared decoder layer forward — threads position_ids into linear attention."""
+    """Decoder layer forward that passes position_ids through to linear attention."""
     residual = hidden_states
     hidden_states = self.input_layernorm(hidden_states)
 
@@ -114,8 +103,7 @@ def _patched_decoder_forward(
     residual = hidden_states
     hidden_states = self.post_attention_layernorm(hidden_states)
     hidden_states = self.mlp(hidden_states)
-    # MoE layers return (hidden_states, router_logits) — unpack
-    if isinstance(hidden_states, tuple):
+    if isinstance(hidden_states, tuple):  # MoE returns (hidden_states, router_logits)
         hidden_states, _ = hidden_states
     hidden_states = residual + hidden_states
 
@@ -123,10 +111,7 @@ def _patched_decoder_forward(
 
 
 def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
-    """
-    Factory: returns the patched Qwen3_5 / Qwen3_5Moe GatedDeltaNet forward.
-    Qwen3.5 uses four separate projections: in_proj_qkv, in_proj_z, in_proj_b, in_proj_a.
-    """
+    """Factory for patched Qwen3_5/Qwen3_5Moe GatedDeltaNet forward with packing support."""
 
     def patched_forward(
         self,
@@ -147,7 +132,6 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             and cache_position is not None
         )
 
-        # Compute cu_seqlens for use by both causal_conv1d and chunk_gated_delta_rule
         cu_seqlens = None
         if not use_precomputed_states and position_ids is not None:
             cu_seqlens = get_cu_seqlens(position_ids=position_ids)
@@ -156,9 +140,8 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             conv_state = cache_params.conv_states[self.layer_idx]
             recurrent_state = cache_params.recurrent_states[self.layer_idx]
 
-        # Qwen3.5 uses four separate projections (unlike Qwen3-Next's combined ones)
-        mixed_qkv = self.in_proj_qkv(hidden_states)
-        mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, D, T] for conv1d
+        # mixed_qkv stays [B, T, D]; only transposed inside paths that require [B, D, T]
+        mixed_qkv = self.in_proj_qkv(hidden_states)  # [B, T, D]
 
         z = self.in_proj_z(hidden_states)
         z = z.reshape(batch_size, seq_len, -1, self.head_v_dim)
@@ -167,47 +150,40 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
         a = self.in_proj_a(hidden_states)
 
         if use_precomputed_states:
-            # Inference single-token path: causal_conv1d_update expects [B, D, T]
             mixed_qkv = self.causal_conv1d_update(
-                mixed_qkv,
+                mixed_qkv.transpose(1, 2),
                 conv_state,
                 self.conv1d.weight.squeeze(1),
                 self.conv1d.bias,
                 self.activation,
-            )
-            mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D]
+            ).transpose(1, 2)
         else:
             if cache_params is not None:
-                # Cache stores [B, D, T]
+                mixed_qkv_t = mixed_qkv.transpose(1, 2)
                 cache_params.conv_states[self.layer_idx] = F.pad(
-                    mixed_qkv,
-                    (self.conv_kernel_size - mixed_qkv.shape[-1], 0),
+                    mixed_qkv_t,
+                    (self.conv_kernel_size - mixed_qkv_t.shape[-1], 0),
                 )
 
-            if fla_causal_conv1d is not None:
-                # FLA Triton kernel: expects [B, T, D], outputs [B, T, D]
-                # cu_seqlens resets conv state at packed-sequence boundaries
+            if fla_causal_conv1d is not None and cu_seqlens is not None:
+                # FLA varlen kernel for packed sequences; input must be contiguous [B, T, D]
                 mixed_qkv, _ = fla_causal_conv1d(
-                    x=mixed_qkv.transpose(1, 2),  # [B, T, D]
+                    x=mixed_qkv,
                     weight=self.conv1d.weight.squeeze(1),
                     bias=self.conv1d.bias,
                     activation=self.activation,
                     cu_seqlens=cu_seqlens,
-                )  # [B, T, D]
+                )
             else:
-                # PyTorch fallback (no cu_seqlens support)
-                if cu_seqlens is not None and cu_seqlens.shape[0] > batch_size + 1:
+                if cu_seqlens is not None and fla_causal_conv1d is None:
                     raise RuntimeError(
                         "Packed sequences require fla.modules.convolution.causal_conv1d "
                         "(cu_seqlens support). Install flash-linear-attention or disable packing."
                     )
-                LOG.warning_once(
-                    "FLA causal_conv1d not available. Falling back to PyTorch conv1d."
-                )
-                mixed_qkv = F.silu(self.conv1d(mixed_qkv)[:, :, :seq_len])  # [B, D, T]
-                mixed_qkv = mixed_qkv.transpose(1, 2)  # [B, T, D]
+                mixed_qkv = F.silu(
+                    self.conv1d(mixed_qkv.transpose(1, 2))[:, :, :seq_len]
+                ).transpose(1, 2)
 
-        # mixed_qkv is [B, T, D] in all paths from here
         query, key, value = torch.split(
             mixed_qkv,
             [self.key_dim, self.key_dim, self.value_dim],
@@ -233,7 +209,8 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                 initial_state=None,
                 output_final_state=cache_params is not None,
                 use_qk_l2norm_in_kernel=True,
-                cu_seqlens=cu_seqlens,
+                # torch_chunk_gated_delta_rule fallback does not accept cu_seqlens
+                **({"cu_seqlens": cu_seqlens} if cu_seqlens is not None else {}),
             )
         else:
             core_attn_out, last_recurrent_state = self.recurrent_gated_delta_rule(
@@ -260,24 +237,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
     return patched_forward
 
 
-# ---------------------------------------------------------------------------
-# Unified patch entry point
-# ---------------------------------------------------------------------------
-
-
-def _apply_packing_patches(
-    model_type: str,
-    cls_prefix: str,
-    forward_factory,
-) -> None:
-    """
-    Apply all sample-packing patches for a qwen3_5 family model.
-
-    Args:
-        model_type:      transformers model_type string, e.g. "qwen3_5" or "qwen3_5_moe"
-        cls_prefix:      class name prefix, e.g. "Qwen3_5" or "Qwen3_5Moe"
-        forward_factory: factory that builds the patched GatedDeltaNet forward
-    """
+def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) -> None:
     module_name = f"transformers.models.{model_type}.modeling_{model_type}"
 
     try:
@@ -287,14 +247,13 @@ def _apply_packing_patches(
         return
 
     _inject_fla_kernels(module)
-
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
-
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
 
     LOG.info(
-        f"Applied {cls_prefix} packing patch (fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})"
+        f"Applied {cls_prefix} packing patch "
+        f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})"
     )
 
 
@@ -310,14 +269,11 @@ def patch_qwen3_5_moe_modeling_packing():
 
 def patch_qwen3_5_vlm_flash_attention():
     """
-    Fix for Qwen3.5 VLM + flash attention: transformers 5.x passes 3-D MRoPE
-    position_ids (shape [3, B, S]) to decoder layers, but
-    `_is_packed_sequence` in modeling_flash_attention_utils.py only handles
-    2-D position_ids and mis-classifies the 3-D tensor as a packed-sequence
-    indicator, leading to a CUDA illegal-memory-access in the varlen path.
+    Patch _is_packed_sequence to handle Qwen3.5's 3-D MRoPE position_ids.
 
-    Patch `_is_packed_sequence` to return False for any non-2-D tensor so
-    that standard (non-varlen) flash attention is used for VLM training.
+    transformers passes position_ids as [axes, B, T] to decoder layers, but
+    _is_packed_sequence only handles 2-D tensors and mis-classifies the 3-D
+    shape as a packed-sequence indicator, causing CUDA errors in the varlen path.
     """
     try:
         import transformers.modeling_flash_attention_utils as fa_utils
@@ -330,9 +286,6 @@ def patch_qwen3_5_vlm_flash_attention():
             return _original(position_ids, batch_size)
 
         fa_utils._is_packed_sequence = _patched
-        LOG.info(
-            "Applied Qwen3.5 VLM flash-attention patch "
-            "(3-D MRoPE position_ids bypass for _is_packed_sequence)"
-        )
+        LOG.info("Applied Qwen3.5 VLM flash-attention patch (3-D MRoPE position_ids)")
     except Exception as exc:  # pragma: no cover
         LOG.warning(f"Failed to apply Qwen3.5 VLM flash-attention patch: {exc}")
