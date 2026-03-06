@@ -31,7 +31,7 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
         sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt; \
     fi
 
-RUN uv pip install packaging==26.0 setuptools==75.8.0
+RUN uv pip install packaging==26.0 setuptools==78.1.1
 RUN uv pip install torchvision
 RUN uv pip uninstall causal_conv1d
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \

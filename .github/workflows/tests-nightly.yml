@@ -60,7 +60,7 @@ jobs:
       - name: upgrade pip
         run: |
           pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 wheel
+          pip3 install --upgrade packaging==26.0 setuptools==78.1.1 wheel
 
       - name: Install PyTorch
         run: |
