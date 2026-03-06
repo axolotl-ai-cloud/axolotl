@@ -11,9 +11,6 @@ from trl.experimental.orpo import ORPOTrainer
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
-from .models.base import patch_lce_forward
-from .utils import patch_with_compile_disable
-
 LOG = get_logger(__name__)
 
 # liger-kernel not compat with latest trl
@@ -32,6 +29,8 @@ class LigerPlugin(BasePlugin):
         if cfg.torch_compile:
             # torch compile will unnecessarily attempt to optimize the triton kernel unless explicitly disabled
             import liger_kernel.ops.fused_linear_cross_entropy
+
+            from .utils import patch_with_compile_disable
 
             patch_with_compile_disable(
                 liger_kernel.ops.fused_linear_cross_entropy,
@@ -199,6 +198,8 @@ class LigerPlugin(BasePlugin):
             )
         elif cfg.liger_fused_linear_cross_entropy:
             try:
+                from .models.base import patch_lce_forward
+
                 patch_lce_forward(cfg.model_config_type)
                 LOG.warning_once(
                     f"Applied ONLY liger_fused_linear_cross_entropy genericpatches for model type: {cfg.model_config_type}"
