@@ -79,6 +79,20 @@ class TestQuantizeMoeExpertsValidation:
         result = validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
         assert result["quantize_moe_experts"] is False
 
+    def test_rejects_lora_target_linear(self, min_base_cfg, gpu_caps, env_caps):
+        """quantize_moe_experts with lora_target_linear should fail."""
+        cfg = (
+            DictDefault(
+                quantize_moe_experts=True,
+                adapter="qlora",
+                load_in_4bit=True,
+                lora_target_linear=True,
+            )
+            | min_base_cfg
+        )
+        with pytest.raises(ValueError, match="lora_target_linear is not compatible"):
+            validate_config(cfg, capabilities=gpu_caps, env_capabilities=env_caps)
+
     def test_default_is_false(self, min_base_cfg, gpu_caps, env_caps):
         """quantize_moe_experts should default to false."""
         cfg = DictDefault({}) | min_base_cfg

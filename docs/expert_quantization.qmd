@@ -45,6 +45,7 @@ lora_target_parameters:
 
 ## Limitations
 
+- `lora_target_linear` is not compatible with `quantize_moe_experts`. See [Expert LoRA targeting](#expert-lora-targeting) instead.
 - `cpu_ram_efficient_loading` hangs / takes long time with FSDP2 + QLoRA.
 - Total model parameter count may display incorrectly (trainable param count is correct).
 - FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.

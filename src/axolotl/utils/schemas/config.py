@@ -1302,6 +1302,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @classmethod
     def check_quantize_moe_experts(cls, data):
         if data.get("quantize_moe_experts"):
+            if data.get("lora_target_linear"):
+                raise ValueError(
+                    "lora_target_linear is not compatible with quantize_moe_experts. "
+                    "Use lora_target_parameters to target expert weights instead."
+                )
             if data.get("adapter") not in ("lora", "qlora"):
                 raise ValueError("quantize_moe_experts requires adapter: lora or qlora")
             if not (data.get("load_in_4bit") or data.get("load_in_8bit")):
