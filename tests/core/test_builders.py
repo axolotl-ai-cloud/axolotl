@@ -94,7 +94,6 @@ def fixture_dpo_cfg(base_cfg):
         {
             "rl": RLType.DPO,
             "dpo_use_weighting": True,
-            "dpo_use_logits_to_keep": True,
             "dpo_label_smoothing": 0.1,
             "beta": 0.1,  # DPO beta
         }
