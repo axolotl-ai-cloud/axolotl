@@ -370,7 +370,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
         self._test_common_training_arguments(training_arguments, rl=ipo_cfg.rl)
         # IPO specific
         assert training_arguments.beta == 0.1
-        assert training_arguments.loss_type == "ipo"
+        assert training_arguments.loss_type == ["ipo"]
         assert training_arguments.label_smoothing == 0
 
     def test_simpo_training_arguments(self, simpo_cfg, model, tokenizer):
