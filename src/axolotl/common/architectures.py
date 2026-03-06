@@ -12,6 +12,7 @@ MOE_ARCH_BLOCK = {
     "mixtral": "MixtralSparseMoeBlock",
     "qwen2_moe": "Qwen2MoeSparseMoeBlock",
     "qwen3_moe": "Qwen3MoeSparseMoeBlock",
+    "qwen3_5_moe": "Qwen3_5MoeSparseMoeBlock",
     "qwen3_vl_moe": "Qwen3VLMoeTextSparseMoeBlock",
     "deepseek_v2": "DeepseekV2MoE",
     "deepseek_v3": "DeepseekV3MoE",
