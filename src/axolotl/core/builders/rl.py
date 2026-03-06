@@ -162,9 +162,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
-            blocklist_args_kwargs.append("generate_during_eval")
-            blocklist_args_kwargs.append("max_prompt_length")
-            blocklist_args_kwargs.append("max_completion_length")
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
