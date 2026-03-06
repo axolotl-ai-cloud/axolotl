@@ -837,6 +837,7 @@ Note
 <section id="limitations" class="level2">
 <h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
 <ul>
+<li><code>lora_target_linear</code> is not compatible with <code>quantize_moe_experts</code>. See <a href="#expert-lora-targeting">Expert LoRA targeting</a> instead.</li>
 <li><code>cpu_ram_efficient_loading</code> hangs / takes long time with FSDP2 + QLoRA.</li>
 <li>Total model parameter count may display incorrectly (trainable param count is correct).</li>
 <li>FSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.</li>

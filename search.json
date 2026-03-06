@@ -124,7 +124,7 @@
     "href": "docs/expert_quantization.html#limitations",
     "title": "MoE Expert Quantization",
     "section": "Limitations",
-    "text": "Limitations\n\ncpu_ram_efficient_loading hangs / takes long time with FSDP2 + QLoRA.\nTotal model parameter count may display incorrectly (trainable param count is correct).\nFSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.\nFSDP2 may use more VRAM per GPU than single GPU training due to not all layers being properly sharded across ranks.\nModel loading takes longer due to on-demand quantization, even on consecutive runs.\nDeepSpeed has not been tested.",
+    "text": "Limitations\n\nlora_target_linear is not compatible with quantize_moe_experts. See Expert LoRA targeting instead.\ncpu_ram_efficient_loading hangs / takes long time with FSDP2 + QLoRA.\nTotal model parameter count may display incorrectly (trainable param count is correct).\nFSDP LoRA (8-bit) may have a large initial VRAM spike at the first 1-2 steps, which then drops. QLoRA does not exhibit this.\nFSDP2 may use more VRAM per GPU than single GPU training due to not all layers being properly sharded across ranks.\nModel loading takes longer due to on-demand quantization, even on consecutive runs.\nDeepSpeed has not been tested.",
     "crumbs": [
       "Advanced Features",
       "MoE Expert Quantization"
