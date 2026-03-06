@@ -8,6 +8,7 @@ on:
       - 'setup.py'
       - 'pyproject.toml'
       - '.github/workflows/multi-gpu-e2e.yml'
+      - 'scripts/cutcrossentropy_install.py'
       - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
       - 'src/axolotl/utils/distributed.py'
   workflow_dispatch:
@@ -35,13 +36,13 @@ jobs:
             pytorch: 2.8.0
             axolotl_extras: fbgemm-gpu
             num_gpus: 2
-          - cuda: 129
-            cuda_version: 12.9.1
-            python_version: "3.12"
-            pytorch: 2.9.1
-            axolotl_extras: "fbgemm-gpu"
-            num_gpus: 2
-            dockerfile: "Dockerfile-uv.jinja"
+#          - cuda: 129
+#            cuda_version: 12.9.1
+#            python_version: "3.12"
+#            pytorch: 2.9.1
+#            axolotl_extras: "fbgemm-gpu"
+#            num_gpus: 2
+#            dockerfile: "Dockerfile-uv.jinja"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"

@@ -55,7 +55,7 @@ jobs:
       - name: Restore Cache from S3
         id: hf-cache-restore-s3
         run: |
-          curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
+          curl -v -H "Range: bytes=0-1023" -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst > /dev/null
 
   pytest:
     name: PyTest
