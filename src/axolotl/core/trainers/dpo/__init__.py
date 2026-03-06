@@ -25,9 +25,7 @@ class DPOStrategy:
         # Label smoothing is not compatible with IPO
         if cfg.rl is RLType.DPO and cfg.dpo_label_smoothing:
             training_args_kwargs["label_smoothing"] = cfg.dpo_label_smoothing
-        training_args_kwargs["max_completion_length"] = None
         training_args_kwargs["max_length"] = cfg.sequence_len
-        training_args_kwargs["generate_during_eval"] = cfg.dpo_generate_during_eval
         if cfg.dpo_use_weighting is not None:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
         if cfg.dpo_padding_free is not None:

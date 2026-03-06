@@ -182,7 +182,6 @@ class AxolotlInputConfig(
     )
 
     dpo_padding_free: bool | None = None
-    dpo_generate_during_eval: bool | None = None
 
     datasets: (
         Annotated[
