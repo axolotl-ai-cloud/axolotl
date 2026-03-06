@@ -8,7 +8,13 @@ from axolotl.utils.dict import DictDefault
 
 @pytest.fixture()
 def gpu_caps():
-    return {"compute_capability": "sm_89", "bf16": True, "n_gpu": 1, "n_node": 1}
+    return {
+        "compute_capability": "sm_89",
+        "bf16": True,
+        "tf32": False,
+        "n_gpu": 1,
+        "n_node": 1,
+    }
 
 
 @pytest.fixture()
