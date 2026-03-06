@@ -3,6 +3,8 @@ set -e
 
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
 
+curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/"  --use-compress-program unzstd --strip-components=1
+
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \
   --ignore=tests/e2e/ \
