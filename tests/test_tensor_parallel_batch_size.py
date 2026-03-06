@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import addict
 import pytest
+
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
