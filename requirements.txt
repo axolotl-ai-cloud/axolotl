@@ -20,6 +20,9 @@ trl==0.29.0
 hf_xet==1.3.2
 kernels==0.12.2
 
+fla-core==0.4.1
+flash-linear-attention==0.4.1
+
 trackio>=0.16.1
 typing-extensions>=4.15.0
 

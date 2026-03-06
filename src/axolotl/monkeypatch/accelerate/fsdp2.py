@@ -506,8 +506,11 @@ def patch_initialize_missing_keys_for_fsdp():
     def _patched_initialize_missing_keys(self, is_quantized: bool) -> None:
         if is_fsdp_enabled() and not is_local_dist_rank_0():
             for key in self.state_dict():
-                param_or_buffer = self.get_parameter_or_buffer(key)
-                param_or_buffer._is_hf_initialized = True
+                try:
+                    param_or_buffer = self.get_parameter_or_buffer(key)
+                    param_or_buffer._is_hf_initialized = True
+                except AttributeError:
+                    pass  # may happen when handling pre-quantized weights
             self._is_hf_initialized = True
 
         _original_initialize_missing_keys(self, is_quantized)
