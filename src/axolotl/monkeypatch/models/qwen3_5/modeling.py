@@ -306,3 +306,33 @@ def patch_qwen3_5_moe_modeling_packing():
     _apply_packing_patches(
         "qwen3_5_moe", "Qwen3_5Moe", _make_qwen3_5_gated_delta_forward
     )
+
+
+def patch_qwen3_5_vlm_flash_attention():
+    """
+    Fix for Qwen3.5 VLM + flash attention: transformers 5.x passes 3-D MRoPE
+    position_ids (shape [3, B, S]) to decoder layers, but
+    `_is_packed_sequence` in modeling_flash_attention_utils.py only handles
+    2-D position_ids and mis-classifies the 3-D tensor as a packed-sequence
+    indicator, leading to a CUDA illegal-memory-access in the varlen path.
+
+    Patch `_is_packed_sequence` to return False for any non-2-D tensor so
+    that standard (non-varlen) flash attention is used for VLM training.
+    """
+    try:
+        import transformers.modeling_flash_attention_utils as fa_utils
+
+        _original = fa_utils._is_packed_sequence
+
+        def _patched(position_ids, batch_size):
+            if position_ids is not None and position_ids.ndim != 2:
+                return False
+            return _original(position_ids, batch_size)
+
+        fa_utils._is_packed_sequence = _patched
+        LOG.info(
+            "Applied Qwen3.5 VLM flash-attention patch "
+            "(3-D MRoPE position_ids bypass for _is_packed_sequence)"
+        )
+    except Exception as exc:  # pragma: no cover
+        LOG.warning(f"Failed to apply Qwen3.5 VLM flash-attention patch: {exc}")
