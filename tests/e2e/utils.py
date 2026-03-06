@@ -180,6 +180,7 @@ def check_tensorboard(
     lt_val: float,
     assertion_err: str,
     rtol: float = 0.02,
+    gt_zero: bool = True,
 ) -> None:
     """
     helper function to parse and check tensorboard logs
@@ -194,6 +195,8 @@ def check_tensorboard(
         assert df.value.values[-1] < lt_val, assertion_err % df.value.values[-1]
     else:
         assert df.value.values[-1] < lt_val, assertion_err
+    if gt_zero:
+        assert df.value.values[-1] > 1e-5, "Expected loss to be greater than zero"
 
 
 def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
