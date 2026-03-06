@@ -16,6 +16,9 @@ from .utils import patch_with_compile_disable
 
 LOG = get_logger(__name__)
 
+# liger-kernel not compat with latest trl
+trl.trainer.ORPOTrainer = ORPOTrainer
+
 
 class LigerPlugin(BasePlugin):
     """
@@ -38,9 +41,6 @@ class LigerPlugin(BasePlugin):
                 liger_kernel.ops.fused_linear_cross_entropy,
                 "fused_linear_cross_entropy_backward",
             )
-
-        # liger-kernel not compat with latest trl
-        trl.trainer.ORPOTrainer = ORPOTrainer
 
         from liger_kernel.transformers.cross_entropy import LigerCrossEntropyLoss
         from liger_kernel.transformers.functional import liger_cross_entropy
