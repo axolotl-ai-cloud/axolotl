@@ -7,6 +7,8 @@ do with the data.
 """
 
 import logging
+import sys
+from types import ModuleType
 from typing import Any
 
 LOG = logging.getLogger(__name__)
@@ -39,6 +41,30 @@ def _parse_key_tuple(key_tuple: tuple) -> dict[str, Any]:
     return result
 
 
+def _find_lora_ops_module() -> ModuleType | None:
+    """Locate the *runtime* ``lora_ops`` module in ``sys.modules``.
+
+    The HF ``kernels`` package loads ``scattermoe_lora`` via
+    ``import_from_path`` which registers it in ``sys.modules`` under a
+    hash-suffixed name (e.g. ``scattermoe_lora_a1b2c3d4``).  A normal
+    import (``from axolotl.integrations.kernels...``) would create a
+    *separate* module instance whose kernel objects have empty
+    ``.cache`` dicts because autotuning ran on the runtime copy.
+
+    We search ``sys.modules`` for any module whose name contains
+    ``lora_ops`` and that has the ``_scatter2scatter_lora`` kernel
+    attribute — that is the runtime copy with populated caches.
+    """
+    for name, module in sys.modules.items():
+        if (
+            module is not None
+            and "lora_ops" in name
+            and hasattr(module, "_scatter2scatter_lora")
+        ):
+            return module
+    return None
+
+
 def collect_autotune_configs() -> list[dict[str, Any]]:
     """Read autotune caches from the four scattermoe-lora kernels.
 
@@ -49,17 +75,13 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
     * ``config`` – dict with the selected tile sizes, ``num_warps``,
       and ``num_stages``
 
-    Returns ``[]`` if the kernel module cannot be imported (e.g. Triton
-    is not installed) or if no autotune cache entries exist yet.
+    Returns ``[]`` if the kernel module cannot be found or if no
+    autotune cache entries exist yet.
     """
-    try:
-        from axolotl.integrations.kernels.libs.scattermoe_lora.kernels import (  # noqa: F401
-            lora_ops,
-        )
-    except ImportError:
+    lora_ops = _find_lora_ops_module()
+    if lora_ops is None:
         LOG.debug(
-            "scattermoe_lora.kernels.lora_ops not importable; "
-            "skipping autotune collection"
+            "lora_ops module not found in sys.modules; skipping autotune collection"
         )
         return []
 

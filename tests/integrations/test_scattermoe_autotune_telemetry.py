@@ -4,7 +4,6 @@ These tests use mocking to verify the collection and reporting logic
 without requiring Triton or CUDA.
 """
 
-import importlib
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -12,6 +11,9 @@ from unittest.mock import MagicMock, patch
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+# Simulate the hash-suffixed module name that LocalLayerRepository creates.
+_FAKE_MODULE_NAME = "scattermoe_lora_abc123.kernels.lora_ops"
 
 
 def _make_mock_config(kwargs, num_warps=4, num_stages=3):
@@ -26,12 +28,17 @@ def _make_mock_kernel(cache=None):
     return kernel
 
 
-def _reload_collector():
-    """Force-reimport the collector module so it picks up patched sys.modules."""
-    mod_name = "axolotl.integrations.kernels.autotune_collector"
-    if mod_name in sys.modules:
-        del sys.modules[mod_name]
-    return importlib.import_module(mod_name)
+def _make_mock_lora_ops(
+    fwd_cache=None, dx_cache=None, bwd_cache=None, fused_cache=None
+):
+    """Build a mock ``lora_ops`` module with the four kernel attributes."""
+    mod = SimpleNamespace(
+        _scatter2scatter_lora=_make_mock_kernel(fwd_cache),
+        _scatter2scatter_lora_dX=_make_mock_kernel(dx_cache),
+        _group_bwd_lora=_make_mock_kernel(bwd_cache),
+        _group_bwd_lora_fused=_make_mock_kernel(fused_cache),
+    )
+    return mod
 
 
 # =========================================================================
@@ -44,22 +51,14 @@ class TestAutotuneCollector:
 
     def test_empty_cache_returns_empty_list(self):
         """When no kernel has been autotuned yet, return ``[]``."""
-        mock_lora_ops = MagicMock()
-        mock_lora_ops._scatter2scatter_lora = _make_mock_kernel()
-        mock_lora_ops._scatter2scatter_lora_dX = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora_fused = _make_mock_kernel()
+        mock_lora_ops = _make_mock_lora_ops()
 
-        pkg = "axolotl.integrations.kernels.libs.scattermoe_lora.kernels"
-        with patch.dict(
-            sys.modules,
-            {
-                pkg: MagicMock(lora_ops=mock_lora_ops),
-                f"{pkg}.lora_ops": mock_lora_ops,
-            },
-        ):
-            collector = _reload_collector()
-            result = collector.collect_autotune_configs()
+        with patch.dict(sys.modules, {_FAKE_MODULE_NAME: mock_lora_ops}):
+            from axolotl.integrations.kernels.autotune_collector import (
+                collect_autotune_configs,
+            )
+
+            result = collect_autotune_configs()
             assert result == []
 
     def test_populated_cache_returns_configs(self):
@@ -67,24 +66,14 @@ class TestAutotuneCollector:
         cfg = _make_mock_config(
             {"BLOCK_N": 128, "BLOCK_K": 64}, num_warps=8, num_stages=4
         )
-        mock_lora_ops = MagicMock()
-        mock_lora_ops._scatter2scatter_lora = _make_mock_kernel(
-            {(2048, 4096, 1024): cfg}
-        )
-        mock_lora_ops._scatter2scatter_lora_dX = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora_fused = _make_mock_kernel()
+        mock_lora_ops = _make_mock_lora_ops(fwd_cache={(2048, 4096, 1024): cfg})
 
-        pkg = "axolotl.integrations.kernels.libs.scattermoe_lora.kernels"
-        with patch.dict(
-            sys.modules,
-            {
-                pkg: MagicMock(lora_ops=mock_lora_ops),
-                f"{pkg}.lora_ops": mock_lora_ops,
-            },
-        ):
-            collector = _reload_collector()
-            result = collector.collect_autotune_configs()
+        with patch.dict(sys.modules, {_FAKE_MODULE_NAME: mock_lora_ops}):
+            from axolotl.integrations.kernels.autotune_collector import (
+                collect_autotune_configs,
+            )
+
+            result = collect_autotune_configs()
 
         assert len(result) == 1
         entry = result[0]
@@ -100,26 +89,17 @@ class TestAutotuneCollector:
         cfg_fwd = _make_mock_config({"BLOCK_N": 128, "BLOCK_K": 32})
         cfg_dx = _make_mock_config({"BLOCK_K": 64, "BLOCK_N": 128}, num_warps=8)
 
-        mock_lora_ops = MagicMock()
-        mock_lora_ops._scatter2scatter_lora = _make_mock_kernel(
-            {(16, 256, 128): cfg_fwd}
+        mock_lora_ops = _make_mock_lora_ops(
+            fwd_cache={(16, 256, 128): cfg_fwd},
+            dx_cache={(16, 256, 128): cfg_dx},
         )
-        mock_lora_ops._scatter2scatter_lora_dX = _make_mock_kernel(
-            {(16, 256, 128): cfg_dx}
-        )
-        mock_lora_ops._group_bwd_lora = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora_fused = _make_mock_kernel()
 
-        pkg = "axolotl.integrations.kernels.libs.scattermoe_lora.kernels"
-        with patch.dict(
-            sys.modules,
-            {
-                pkg: MagicMock(lora_ops=mock_lora_ops),
-                f"{pkg}.lora_ops": mock_lora_ops,
-            },
-        ):
-            collector = _reload_collector()
-            result = collector.collect_autotune_configs()
+        with patch.dict(sys.modules, {_FAKE_MODULE_NAME: mock_lora_ops}):
+            from axolotl.integrations.kernels.autotune_collector import (
+                collect_autotune_configs,
+            )
+
+            result = collect_autotune_configs()
 
         assert len(result) == 2
         names = {r["kernel"] for r in result}
@@ -131,22 +111,14 @@ class TestAutotuneCollector:
         cfg = _make_mock_config({"BLOCK_N": 64, "BLOCK_K": 32})
         cache_key = (512, 1024, 256, "float16", "float16")
 
-        mock_lora_ops = MagicMock()
-        mock_lora_ops._scatter2scatter_lora = _make_mock_kernel({cache_key: cfg})
-        mock_lora_ops._scatter2scatter_lora_dX = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora = _make_mock_kernel()
-        mock_lora_ops._group_bwd_lora_fused = _make_mock_kernel()
+        mock_lora_ops = _make_mock_lora_ops(fwd_cache={cache_key: cfg})
 
-        pkg = "axolotl.integrations.kernels.libs.scattermoe_lora.kernels"
-        with patch.dict(
-            sys.modules,
-            {
-                pkg: MagicMock(lora_ops=mock_lora_ops),
-                f"{pkg}.lora_ops": mock_lora_ops,
-            },
-        ):
-            collector = _reload_collector()
-            result = collector.collect_autotune_configs()
+        with patch.dict(sys.modules, {_FAKE_MODULE_NAME: mock_lora_ops}):
+            from axolotl.integrations.kernels.autotune_collector import (
+                collect_autotune_configs,
+            )
+
+            result = collect_autotune_configs()
 
         assert len(result) == 1
         key = result[0]["key"]
@@ -155,20 +127,33 @@ class TestAutotuneCollector:
         assert key["K"] == 256
         assert key["_extra"] == ["float16", "float16"]
 
-    def test_import_error_returns_empty(self):
-        """If lora_ops can't be imported, return ``[]``."""
-        pkg = "axolotl.integrations.kernels.libs.scattermoe_lora.kernels"
-        # Setting a module to None in sys.modules causes ImportError.
-        with patch.dict(
-            sys.modules,
-            {
-                pkg: None,
-                f"{pkg}.lora_ops": None,
-            },
-        ):
-            collector = _reload_collector()
-            result = collector.collect_autotune_configs()
-            assert result == []
+    def test_no_module_in_sys_modules_returns_empty(self):
+        """If no lora_ops module is loaded, return ``[]``."""
+        from axolotl.integrations.kernels.autotune_collector import (
+            collect_autotune_configs,
+        )
+
+        # Don't inject anything — the real lora_ops isn't loaded either
+        # (no triton on this machine), so _find_lora_ops_module returns None.
+        result = collect_autotune_configs()
+        assert result == []
+
+    def test_finds_module_under_hash_suffixed_name(self):
+        """Collector finds lora_ops regardless of the hash suffix."""
+        cfg = _make_mock_config({"BLOCK_N": 256, "BLOCK_K": 128})
+        mock_lora_ops = _make_mock_lora_ops(fwd_cache={(8, 512, 64): cfg})
+
+        # Use a different hash to prove it's not hardcoded.
+        alt_name = "scattermoe_lora_deadbeef.kernels.lora_ops"
+        with patch.dict(sys.modules, {alt_name: mock_lora_ops}):
+            from axolotl.integrations.kernels.autotune_collector import (
+                collect_autotune_configs,
+            )
+
+            result = collect_autotune_configs()
+
+        assert len(result) == 1
+        assert result[0]["config"]["BLOCK_N"] == 256
 
 
 # =========================================================================
