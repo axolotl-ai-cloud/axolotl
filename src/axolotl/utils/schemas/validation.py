@@ -809,15 +809,20 @@ class OptimizationValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_flashoptim_deepspeed_fsdp(cls, data):
-        if data.get("optimizer", "").startswith("flash_"):
+        optimizer = data.get("optimizer") or ""
+        if str(optimizer).startswith("flash_"):
             if data.get("deepspeed"):
                 raise ValueError(
                     "FlashOptim optimizers are currently incompatible with DeepSpeed"
                 )
             if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = data.get("fsdp_version")
-                if fsdp_version is None:
-                    fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+                fsdp_config = data.get("fsdp_config") or {}
+                fsdp_version = (
+                    data.get("fsdp_version")
+                    or fsdp_config.get("version")
+                    or fsdp_config.get("fsdp_version")
+                    or 1
+                )
                 if str(fsdp_version) != "2":
                     raise ValueError(
                         "FlashOptim optimizers are only compatible with FSDP2. "
