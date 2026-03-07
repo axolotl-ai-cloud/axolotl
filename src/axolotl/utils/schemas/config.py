@@ -1228,7 +1228,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 LOG.info(
                     "tf32 support detected, enabling tf32 automatically for this configuration."
                 )
-        elif self.tf32 == "auto":
+        elif self.tf32 is None or self.tf32 == "auto":
             self.tf32 = False
             LOG.info("tf32 support not found, disabling tf32 for this configuration.")
         return self
