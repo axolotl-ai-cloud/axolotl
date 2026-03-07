@@ -275,6 +275,8 @@ class TestAutotuneReportCallback:
             "gpu_memory_bytes": 85899345920,
         }
 
+        fake_smem = {"smem_capacity_bytes": 233472}
+
         with (
             patch(
                 "axolotl.integrations.kernels.autotune_collector.collect_autotune_configs",
@@ -283,6 +285,10 @@ class TestAutotuneReportCallback:
             patch(
                 "axolotl.integrations.kernels.autotune_callback._get_gpu_info",
                 return_value=fake_gpu,
+            ),
+            patch(
+                "axolotl.integrations.kernels.autotune_callback._get_smem_capacity",
+                return_value=fake_smem,
             ),
             patch("axolotl.telemetry.manager.TelemetryManager") as mock_tm_cls,
         ):
@@ -295,6 +301,7 @@ class TestAutotuneReportCallback:
             assert props["gpu_name"] == "NVIDIA H100"
             assert props["gpu_compute_capability"] == "9.0"
             assert props["gpu_memory_bytes"] == 85899345920
+            assert props["smem_capacity_bytes"] == 233472
 
     def test_skips_send_when_telemetry_disabled(self):
         """If telemetry is disabled, no event is sent."""

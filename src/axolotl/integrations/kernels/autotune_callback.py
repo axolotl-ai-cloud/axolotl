@@ -26,8 +26,26 @@ def _get_gpu_info() -> dict:
         return {
             "gpu_name": props.name,
             "gpu_compute_capability": f"{props.major}.{props.minor}",
-            "gpu_memory_bytes": props.total_mem,
+            "gpu_memory_bytes": props.total_memory,
         }
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {}
+
+
+def _get_smem_capacity() -> dict:
+    """Return shared memory capacity from the runtime lora_ops module."""
+    try:
+        from axolotl.integrations.kernels.autotune_collector import (
+            _find_lora_ops_module,
+        )
+
+        lora_ops = _find_lora_ops_module()
+        if lora_ops is None:
+            return {}
+        fn = getattr(lora_ops, "_get_smem_capacity", None)
+        if fn is None:
+            return {}
+        return {"smem_capacity_bytes": fn()}
     except Exception:  # pylint: disable=broad-exception-caught
         return {}
 
@@ -89,6 +107,7 @@ class AutotuneReportCallback(TrainerCallback):
             "kernels": configs,
         }
         properties.update(_get_gpu_info())
+        properties.update(_get_smem_capacity())
 
         telemetry_manager.send_event(
             event_type="scattermoe-autotune",
