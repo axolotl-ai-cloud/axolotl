@@ -84,7 +84,7 @@ def resolve_dtype(cfg):
             cfg.fp16 = True
         cfg.bf16 = False
     else:
-        if cfg.tf32:
+        if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
             if is_torch_greater_or_equal("2.9.0"):
                 torch.backends.fp32_precision = "tf32"
