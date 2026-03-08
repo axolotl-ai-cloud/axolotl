@@ -808,6 +808,30 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_flashoptim_deepspeed_fsdp(cls, data):
+        optimizer = data.get("optimizer") or ""
+        if str(optimizer).startswith("flash_"):
+            if data.get("deepspeed"):
+                raise ValueError(
+                    "FlashOptim optimizers are currently incompatible with DeepSpeed"
+                )
+            if data.get("fsdp") or data.get("fsdp_config"):
+                fsdp_config = data.get("fsdp_config") or {}
+                fsdp_version = (
+                    data.get("fsdp_version")
+                    or fsdp_config.get("version")
+                    or fsdp_config.get("fsdp_version")
+                    or 1
+                )
+                if str(fsdp_version) != "2":
+                    raise ValueError(
+                        "FlashOptim optimizers are only compatible with FSDP2. "
+                        "Set fsdp_version: 2 to use FlashOptim with FSDP."
+                    )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_batch_flattening_fa(cls, data):
         if data.get("batch_flattening"):
             batch_flattening_auto = data.get("batch_flattening") == "auto"
