@@ -517,6 +517,61 @@ class TestSigmoidRoutingInScatterMoE:
 
         assert not torch.equal(weights_no_lora, weights_with_lora)
 
+    def test_no_bias_does_not_crash(self):
+        """Calling _sigmoid_topk_route with no e_score_correction_bias should not crash."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            _sigmoid_topk_route,
+        )
+
+        T, H, E, K = 8, 16, 8, 2
+        gate = SimpleNamespace(weight=torch.randn(E, H))
+        moe_block = SimpleNamespace(
+            gate=gate,
+            top_k=K,
+            n_routed_experts=E,
+            n_group=1,
+            norm_topk_prob=True,
+            routed_scaling_factor=1.0,
+        )
+        hidden = torch.randn(T, H)
+
+        weights, experts, top_k, num_experts = _sigmoid_topk_route(
+            moe_block, gate, hidden, gate.weight, None
+        )
+        assert weights.shape == (T, K)
+        assert experts.shape == (T, K)
+        # Without bias, scores_for_choice == sigmoid(logits) — all positive
+        assert (weights >= 0).all()
+
+    def test_missing_topk_group_defaults_to_n_group(self):
+        """When topk_group is absent but n_group > 1, should default to n_group (no-op masking)."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            _sigmoid_topk_route,
+        )
+
+        T, H, E, K, n_group = 8, 16, 16, 2, 4
+        gate = SimpleNamespace(
+            weight=torch.randn(E, H),
+            e_score_correction_bias=torch.zeros(E),
+        )
+        # Intentionally omit topk_group
+        moe_block = SimpleNamespace(
+            gate=gate,
+            top_k=K,
+            n_routed_experts=E,
+            n_group=n_group,
+            norm_topk_prob=True,
+            routed_scaling_factor=1.0,
+        )
+        hidden = torch.randn(T, H)
+
+        # Should not raise AttributeError; defaults topk_group to n_group
+        weights, experts, top_k_out, num_experts = _sigmoid_topk_route(
+            moe_block, gate, hidden, gate.weight, None
+        )
+        assert weights.shape == (T, K)
+        assert experts.shape == (T, K)
+
 
 class TestRoutingStrategyDetection:
     """Test that _route dispatches to the correct strategy."""

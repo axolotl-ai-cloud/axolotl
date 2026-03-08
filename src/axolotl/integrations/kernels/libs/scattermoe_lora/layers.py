@@ -277,7 +277,10 @@ def _sigmoid_topk_route(
     e_score_correction_bias = getattr(base_gate, "e_score_correction_bias", None)
     if e_score_correction_bias is None:
         e_score_correction_bias = getattr(moe_block, "e_score_correction_bias", None)
-    scores_for_choice = router_probs + e_score_correction_bias
+    if e_score_correction_bias is not None:
+        scores_for_choice = router_probs + e_score_correction_bias
+    else:
+        scores_for_choice = router_probs
 
     # Group-based selection: pick top groups, mask the rest
     n_group = getattr(moe_block, "n_group", 1)
@@ -287,9 +290,8 @@ def _sigmoid_topk_route(
             .topk(2, dim=-1)[0]
             .sum(dim=-1)
         )  # [T, n_group]
-        group_idx = torch.topk(
-            group_scores, k=moe_block.topk_group, dim=-1, sorted=False
-        )[1]
+        topk_group = getattr(moe_block, "topk_group", n_group)
+        group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]
         group_mask = torch.zeros_like(group_scores)
         group_mask.scatter_(1, group_idx, 1)
         score_mask = (
