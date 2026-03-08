@@ -348,7 +348,9 @@ def _load_raw_datasets(
             dataset = handle_long_seq_in_dataset(dataset, cfg.eval_sequence_len, cfg)
         else:
             dataset = handle_long_seq_in_dataset(dataset, cfg.sequence_len, cfg)
-        if cfg.sample_packing:
+        if cfg.sample_packing and not (
+            split == "test" and cfg.eval_sample_packing is False
+        ):
             dataset, _ = process_datasets_for_packing(cfg, dataset, None)
 
         # Deduplicate before saving so the saved dataset is already de-duplicated
