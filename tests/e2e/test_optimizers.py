@@ -346,4 +346,4 @@ def test_flash_optimizers(tmp_path, optimizer_name, expected_class, learning_rat
 
     _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
     check_model_output_exists(temp_dir, cfg)
-    assert expected_class in trainer.optimizer.optimizer.__class__.__name__
+    assert trainer.optimizer.optimizer.__class__.__name__ == expected_class
