@@ -34,6 +34,8 @@ from trl.data_utils import (
     is_conversational,
     maybe_apply_chat_template,
 )
+
+from axolotl.monkeypatch.trainer.async_grpo import AsyncGRPOTrainer
 from trl.extras.profiling import profiling_context
 from trl.models import unwrap_model_for_generation
 from trl.trainer.grpo_config import GRPOConfig
@@ -64,6 +66,19 @@ class AxolotlGRPOTrainer(
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
+
+
+class AxolotlAsyncGRPOTrainer(
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    AsyncGRPOTrainer,
+):
+    """Extend AsyncGRPOTrainer with axolotl helpers (async prefetch, streaming, IS correction)."""
+
+    _tag_names = ["trl", "grpo", "async-grpo", "axolotl"]
 
 
 class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):

@@ -189,3 +189,67 @@ class TRLConfig(BaseModel):
             "'normalize_then_sum' (GDPO): normalizes each reward independently, then sums."
         },
     )
+
+    # Async GRPO fields
+    async_prefetch: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Generate rollouts in a background thread while training on the previous rollout."
+        },
+    )
+    prefetch_depth: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of rollouts to prefetch ahead of training."
+        },
+    )
+    vllm_sync_interval: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Sync model weights to vLLM every N optimizer steps (async mode only)."
+        },
+    )
+    streaming_partial_batch: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Score prompt groups incrementally instead of the full batch at once."
+        },
+    )
+    streaming_min_groups: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Minimum prompt groups to score per streaming chunk."
+        },
+    )
+    vllm_importance_sampling_correction: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply IS correction for distribution mismatch between vLLM and training model."
+        },
+    )
+    vllm_importance_sampling_mode: (
+        Literal["token_truncate", "token_mask", "sequence_truncate", "sequence_mask"] | None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": "IS mode: token_truncate, token_mask, sequence_truncate, or sequence_mask."
+        },
+    )
+    vllm_importance_sampling_cap: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Cap C for IS ratio clipping/masking."
+        },
+    )
+    off_policy_mask_threshold: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "KL threshold for off-policy sequence masking (OPSM). None = disabled."
+        },
+    )
+    use_bias_correction_kl: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply IS correction to KL divergence term."
+        },
+    )
