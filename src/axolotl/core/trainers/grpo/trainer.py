@@ -34,14 +34,13 @@ from trl.data_utils import (
     is_conversational,
     maybe_apply_chat_template,
 )
-
-from axolotl.monkeypatch.trainer.async_grpo import AsyncGRPOTrainer
 from trl.extras.profiling import profiling_context
 from trl.models import unwrap_model_for_generation
 from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
@@ -74,11 +73,11 @@ class AxolotlAsyncGRPOTrainer(
     OptimizerMixin,
     OptimizerInitMixin,
     DistributedParallelMixin,
-    AsyncGRPOTrainer,
+    FastAsyncGRPOTrainer,
 ):
-    """Extend AsyncGRPOTrainer with axolotl helpers (async prefetch, streaming, IS correction)."""
+    """Extend AsyncGRPOTrainer with axolotl helpers"""
 
-    _tag_names = ["trl", "grpo", "async-grpo", "axolotl"]
+    _tag_names = ["trl", "grpo", "async", "axolotl"]
 
 
 class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):

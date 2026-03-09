@@ -28,8 +28,14 @@ class GRPOStrategy:
 
     @classmethod
     def get_trainer_class(
-        cls, sequence_parallel: bool, async_grpo: bool = False,
-    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer] | type[AxolotlAsyncGRPOTrainer]:
+        cls,
+        sequence_parallel: bool,
+        async_grpo: bool = False,
+    ) -> (
+        type[AxolotlGRPOTrainer]
+        | type[AxolotlGRPOSequenceParallelTrainer]
+        | type[AxolotlAsyncGRPOTrainer]
+    ):
         if sequence_parallel:
             return AxolotlGRPOSequenceParallelTrainer
         if async_grpo:
@@ -37,7 +43,9 @@ class GRPOStrategy:
         return AxolotlGRPOTrainer
 
     @classmethod
-    def get_training_args_class(cls, async_grpo: bool = False) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
+    def get_training_args_class(
+        cls, async_grpo: bool = False
+    ) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
         if async_grpo:
             return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
@@ -150,15 +158,39 @@ class GRPOStrategy:
         if getattr(trl, "streaming_min_groups", None) is not None:
             grpo_args_kwargs["streaming_min_groups"] = trl.streaming_min_groups
         if getattr(trl, "vllm_importance_sampling_correction", None) is not None:
-            grpo_args_kwargs["vllm_importance_sampling_correction"] = trl.vllm_importance_sampling_correction
+            grpo_args_kwargs["vllm_importance_sampling_correction"] = (
+                trl.vllm_importance_sampling_correction
+            )
         if getattr(trl, "vllm_importance_sampling_mode", None) is not None:
-            grpo_args_kwargs["vllm_importance_sampling_mode"] = trl.vllm_importance_sampling_mode
+            grpo_args_kwargs["vllm_importance_sampling_mode"] = (
+                trl.vllm_importance_sampling_mode
+            )
         if getattr(trl, "vllm_importance_sampling_cap", None) is not None:
-            grpo_args_kwargs["vllm_importance_sampling_cap"] = trl.vllm_importance_sampling_cap
+            grpo_args_kwargs["vllm_importance_sampling_cap"] = (
+                trl.vllm_importance_sampling_cap
+            )
         if getattr(trl, "off_policy_mask_threshold", None) is not None:
-            grpo_args_kwargs["off_policy_mask_threshold"] = trl.off_policy_mask_threshold
+            grpo_args_kwargs["off_policy_mask_threshold"] = (
+                trl.off_policy_mask_threshold
+            )
         if getattr(trl, "use_bias_correction_kl", None) is not None:
             grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
+
+        # Fast Async GRPO fields
+        if getattr(trl, "reward_num_workers", None) is not None:
+            grpo_args_kwargs["reward_num_workers"] = trl.reward_num_workers
+        if getattr(trl, "replay_buffer_size", None) is not None:
+            grpo_args_kwargs["replay_buffer_size"] = trl.replay_buffer_size
+        if getattr(trl, "replay_recompute_logps", None) is not None:
+            grpo_args_kwargs["replay_recompute_logps"] = trl.replay_recompute_logps
+        if getattr(trl, "reroll_start_fraction", None) is not None:
+            grpo_args_kwargs["reroll_start_fraction"] = trl.reroll_start_fraction
+        if getattr(trl, "reroll_max_groups", None) is not None:
+            grpo_args_kwargs["reroll_max_groups"] = trl.reroll_max_groups
+        if getattr(trl, "skip_zero_advantage_batches", None) is not None:
+            grpo_args_kwargs["skip_zero_advantage_batches"] = (
+                trl.skip_zero_advantage_batches
+            )
 
         return grpo_args_kwargs
 
