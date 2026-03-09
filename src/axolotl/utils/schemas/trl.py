@@ -282,7 +282,7 @@ class TRLConfig(BaseModel):
         },
     )
     reroll_start_fraction: float = Field(
-        default=0.5,
+        default=1.0,
         json_schema_extra={
             "description": "Fraction of total training steps after which deferred re-rolling begins. Zero-signal prompts "
             "(where all rewards in a group are identical) are buffered and re-injected into later batches when the "
