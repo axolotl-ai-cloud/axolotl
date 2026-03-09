@@ -14,14 +14,8 @@ on:
       - .github/workflows/preview-docs.yml
 
 permissions:
-  checks: write
-  contents: write
-  deployments: write
-  issues: write
-  discussions: write
-  pages: write
+  contents: read
   pull-requests: write
-  statuses: write
 
 jobs:
   preview:
