@@ -9,8 +9,9 @@ from huggingface_hub import snapshot_download
 from requests import HTTPError
 from trl.trainer.grpo_trainer import RewardFunc
 
-from axolotl.core.trainers.grpo.args import AxolotlGRPOConfig
+from axolotl.core.trainers.grpo.args import AxolotlAsyncGRPOConfig, AxolotlGRPOConfig
 from axolotl.core.trainers.grpo.trainer import (
+    AxolotlAsyncGRPOTrainer,
     AxolotlGRPOSequenceParallelTrainer,
     AxolotlGRPOTrainer,
 )
@@ -27,14 +28,18 @@ class GRPOStrategy:
 
     @classmethod
     def get_trainer_class(
-        cls, sequence_parallel: bool
-    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer]:
+        cls, sequence_parallel: bool, async_grpo: bool = False,
+    ) -> type[AxolotlGRPOTrainer] | type[AxolotlGRPOSequenceParallelTrainer] | type[AxolotlAsyncGRPOTrainer]:
         if sequence_parallel:
             return AxolotlGRPOSequenceParallelTrainer
+        if async_grpo:
+            return AxolotlAsyncGRPOTrainer
         return AxolotlGRPOTrainer
 
     @classmethod
-    def get_training_args_class(cls) -> type[AxolotlGRPOConfig]:
+    def get_training_args_class(cls, async_grpo: bool = False) -> type[AxolotlGRPOConfig] | type[AxolotlAsyncGRPOConfig]:
+        if async_grpo:
+            return AxolotlAsyncGRPOConfig
         return AxolotlGRPOConfig
 
     @classmethod
@@ -130,6 +135,28 @@ class GRPOStrategy:
             grpo_args_kwargs["multi_objective_aggregation"] = (
                 trl.multi_objective_aggregation
             )
+
+        # Async GRPO fields
+        if getattr(trl, "async_prefetch", None) is not None:
+            grpo_args_kwargs["async_prefetch"] = trl.async_prefetch
+        if getattr(trl, "prefetch_depth", None) is not None:
+            grpo_args_kwargs["prefetch_depth"] = trl.prefetch_depth
+        if getattr(trl, "vllm_sync_interval", None) is not None:
+            grpo_args_kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
+        if getattr(trl, "streaming_partial_batch", None) is not None:
+            grpo_args_kwargs["streaming_partial_batch"] = trl.streaming_partial_batch
+        if getattr(trl, "streaming_min_groups", None) is not None:
+            grpo_args_kwargs["streaming_min_groups"] = trl.streaming_min_groups
+        if getattr(trl, "vllm_importance_sampling_correction", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_correction"] = trl.vllm_importance_sampling_correction
+        if getattr(trl, "vllm_importance_sampling_mode", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_mode"] = trl.vllm_importance_sampling_mode
+        if getattr(trl, "vllm_importance_sampling_cap", None) is not None:
+            grpo_args_kwargs["vllm_importance_sampling_cap"] = trl.vllm_importance_sampling_cap
+        if getattr(trl, "off_policy_mask_threshold", None) is not None:
+            grpo_args_kwargs["off_policy_mask_threshold"] = trl.off_policy_mask_threshold
+        if getattr(trl, "use_bias_correction_kl", None) is not None:
+            grpo_args_kwargs["use_bias_correction_kl"] = trl.use_bias_correction_kl
 
         return grpo_args_kwargs
 
