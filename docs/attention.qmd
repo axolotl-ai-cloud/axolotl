@@ -13,9 +13,10 @@ sdp_attention: true
 
 For more details: [PyTorch docs](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)
 
-## Flash Attention 2
+## Flash Attention
 
-Uses efficient kernels to compute attention.
+Axolotl supports Flash Attention 2, 3, and 4. The best available version is used automatically
+based on your installed packages and GPU.
 
 ```yaml
 flash_attention: true
@@ -23,11 +24,9 @@ flash_attention: true
 
 For more details: [Flash Attention](https://github.com/Dao-AILab/flash-attention/)
 
-### Nvidia
+### Flash Attention 2
 
-Requirements: Ampere, Ada, or Hopper GPUs
-
-Note: For Turing GPUs or lower, please use other attention methods.
+Requirements: Ampere, Ada, or Hopper GPUs (Turing or lower not supported)
 
 ```bash
 pip install flash-attn --no-build-isolation
@@ -35,11 +34,12 @@ pip install flash-attn --no-build-isolation
 
 ::: {.callout-tip}
 
-If you get `undefined symbol` while training, ensure you installed PyTorch prior to Axolotl. Alternatively, try reinstall or downgrade a version.
+If you get `undefined symbol` while training, ensure you installed PyTorch prior to Axolotl.
+Alternatively, try reinstall or downgrade a version.
 
 :::
 
-#### Flash Attention 3
+### Flash Attention 3
 
 Requirements: Hopper only and CUDA 12.8 (recommended)
 
@@ -50,7 +50,7 @@ cd flash-attention/hopper
 python setup.py install
 ```
 
-#### Flash Attention 4
+### Flash Attention 4
 
 Requirements: Hopper or Blackwell GPUs
 
