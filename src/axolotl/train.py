@@ -69,7 +69,6 @@ def setup_model_and_tokenizer(
     # Load tokenizer
     LOG.debug(
         f"loading tokenizer... {cfg.tokenizer_config or cfg.base_model_config}",
-        main_process_only=True,
     )
     tokenizer = load_tokenizer(cfg)
 

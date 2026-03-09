@@ -128,7 +128,6 @@ class DatasetValidationMixin:
         ):
             LOG.info(
                 "explicitly setting `eval_sample_packing` to match `sample_packing`",
-                main_process_only=True,
             )
             data["eval_sample_packing"] = True
 
