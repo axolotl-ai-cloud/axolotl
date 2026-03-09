@@ -50,6 +50,25 @@ cd flash-attention/hopper
 python setup.py install
 ```
 
+#### Flash Attention 4
+
+Requirements: Hopper or Blackwell GPUs
+
+```bash
+pip install flash-attn-4
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/Dao-AILab/flash-attention.git
+cd flash-attention/flash_attn/cute
+
+pip install -e .
+```
+
+For more details: [flash-attention/flash_attn/cute](https://github.com/Dao-AILab/flash-attention/tree/main/flash_attn/cute)
+
 ### AMD
 
 Requirements: ROCm 6.0 and above.
