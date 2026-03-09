@@ -54,8 +54,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
+            async_grpo = bool(self.cfg.trl and getattr(self.cfg.trl, "async_prefetch", False))
             trainer_cls = GRPOStrategy.get_trainer_class(
-                sequence_parallel=self.cfg.context_parallel_size > 1
+                sequence_parallel=self.cfg.context_parallel_size > 1,
+                async_grpo=async_grpo,
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
@@ -151,7 +153,8 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
-            training_args_cls = GRPOStrategy.get_training_args_class()
+            async_grpo = bool(self.cfg.trl and getattr(self.cfg.trl, "async_prefetch", False))
+            training_args_cls = GRPOStrategy.get_training_args_class(async_grpo=async_grpo)
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
             if self.cfg.rl is RLType.GDPO:
