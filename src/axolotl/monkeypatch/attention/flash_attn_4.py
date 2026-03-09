@@ -11,15 +11,19 @@ LOG = get_logger(__name__)
 
 def patch_flash_attn_4():
     """Patch _lazy_imports to redirect FA2 imports to FA4 if available on supported hardware."""
-    if not importlib.util.find_spec("flash_attn.cute"):
-        return
-
     if not torch.cuda.is_available():
         return
 
     major, _ = torch.cuda.get_device_capability()
     # Matches flash_attn/cute/interface.py: arch / 10 in [9, 10, 11]
     if major not in (9, 10, 11):
+        return
+
+    if not importlib.util.find_spec("flash_attn.cute"):
+        LOG.info(
+            "Flash Attention 4 is available for your GPU and offers faster training speeds. "
+            "To enable: pip install flash-attn-4"
+        )
         return
 
     import transformers.modeling_flash_attention_utils as fa_utils
