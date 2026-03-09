@@ -191,6 +191,12 @@ class TRLConfig(BaseModel):
     )
 
     # Async GRPO fields
+    use_data_producer: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Use the GRPODataProducer protocol for online data generation."
+        },
+    )
     async_prefetch: bool = Field(
         default=False,
         json_schema_extra={

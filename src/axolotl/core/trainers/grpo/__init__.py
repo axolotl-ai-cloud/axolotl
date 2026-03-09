@@ -137,6 +137,8 @@ class GRPOStrategy:
             )
 
         # Async GRPO fields
+        if getattr(trl, "use_data_producer", None) is not None:
+            grpo_args_kwargs["use_data_producer"] = trl.use_data_producer
         if getattr(trl, "async_prefetch", None) is not None:
             grpo_args_kwargs["async_prefetch"] = trl.async_prefetch
         if getattr(trl, "prefetch_depth", None) is not None:
