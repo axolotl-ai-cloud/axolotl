@@ -1,4 +1,4 @@
-"""Dequantization utilities for `bitsandbytes` integration."""
+"""Dequantization utilities for `bitsandbytes` and FP8 integration."""
 
 import ctypes
 
@@ -15,9 +15,39 @@ CUDA_STREAM: torch.cuda.Stream | None = None
 HAS_CUDA_STREAM: bool = Version(bnb.__version__) > Version("0.43.3")
 
 
+def dequantize_fp8(
+    W: torch.Tensor,
+    scale_inv: torch.Tensor,
+    dtype: torch.dtype = torch.bfloat16,
+) -> torch.Tensor:
+    """Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.
+
+    Args:
+        W: FP8 weight tensor [out_features, in_features] in float8_e4m3fn.
+        scale_inv: Per-block inverse scale [ceil(out/block), ceil(in/block)]
+            or per-tensor scalar.
+        dtype: Output dtype (default bf16).
+
+    Returns:
+        Dequantized tensor in the specified dtype.
+    """
+    W_float = W.to(dtype)
+    if scale_inv.numel() == 1:
+        return W_float * scale_inv.to(dtype)
+    if scale_inv.dim() == 2 and W.dim() == 2:
+        sr, sc = scale_inv.shape
+        br = W.shape[0] // sr
+        bc = W.shape[1] // sc
+        return (
+            W_float.reshape(sr, br, sc, bc)
+            * scale_inv[:, None, :, None].to(dtype)
+        ).reshape(W.shape)
+    return W_float * scale_inv.to(dtype)
+
+
 def dequantize(
     W: torch.Tensor,
-    quant_state: QuantState | list | None = None,
+    quant_state: QuantState | list | torch.Tensor | None = None,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
@@ -48,6 +78,15 @@ def dequantize(
     """
     if quant_state is None:
         return W
+
+    # FP8 path: quant_state is actually scale_inv tensor
+    if W.dtype == torch.float8_e4m3fn:
+        scale_inv = quant_state
+        # Caller may pass W.t() (non-contiguous) — dequantize in original
+        # layout then transpose back so the result shape matches the input.
+        if not W.is_contiguous() and W.dim() == 2:
+            return dequantize_fp8(W.t(), scale_inv).t()
+        return dequantize_fp8(W, scale_inv)
 
     # Get the target device from input tensor W
     target_device = W.device

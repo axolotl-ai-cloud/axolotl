@@ -234,6 +234,18 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs, trainer_cls
         )
 
+        # Allow FP8-quantized models to be fine-tuned with LoRA adapters.
+        # transformers' validate_quantization_for_training blocks FP8 because
+        # hf_quantizer.is_trainable is False, but LoRA only trains the adapters
+        # (base weights stay frozen in FP8).
+        if (
+            self.cfg.adapter
+            and hasattr(self.model, "is_quantized")
+            and self.model.is_quantized
+        ):
+            import transformers.trainer as _trainer_module
+            _trainer_module.validate_quantization_for_training = lambda model: None
+
         trainer = trainer_cls(
             *trainer_cls_args,
             args=training_args,
