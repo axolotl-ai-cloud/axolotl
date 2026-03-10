@@ -430,11 +430,11 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             )
             per_group_std = local_grouped.std(dim=1)
             has_signal = (per_group_std > 0).any(dim=1)
+            offset = s_start or 0
 
             if has_signal.any():
                 grouped_adv = advantages.view(-1, num_generations)
                 replay_scores = grouped_adv.abs().sum(dim=1) * per_group_std.sum(dim=1)
-                offset = s_start or 0
                 for group_idx in has_signal.nonzero(as_tuple=True)[0]:
                     gi = group_idx.item()
                     start = offset + gi * num_generations
@@ -450,8 +450,8 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                             group_data[key] = val[start:end].clone()
                     self._replay_buffer.add(replay_scores[gi].item(), group_data)
 
-            # Replace zero-signal groups (only in deferred path, not streaming)
-            if s_start is None:
+            # Replace zero-signal groups with high-signal replay buffer entries
+            if True:
                 no_signal = ~has_signal
                 n_replaced = 0
                 replaced_ranges = []
@@ -462,7 +462,8 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                             break
                         sampled_group = sampled[0]
                         gi = group_idx.item()
-                        start, end = gi * num_generations, (gi + 1) * num_generations
+                        start = offset + gi * num_generations
+                        end = start + num_generations
                         for key, val in sampled_group.items():
                             if key in data and isinstance(data[key], torch.Tensor):
                                 src = val.to(data[key].device)
