@@ -337,9 +337,16 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
     def _compute_rewards_for_batch(
         self, inputs, prompts, completions, completion_ids_list
     ):
-        """Dispatch rewards to parallel subprocess workers when possible."""
-        from accelerate.utils import gather
+        """Dispatch rewards to parallel subprocess workers (synchronous wrapper)."""
+        self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
+        return self._collect_reward_workers(inputs, prompts, completions, completion_ids_list)
 
+    def _launch_reward_workers(self, inputs, prompts, completions, completion_ids_list):
+        """Send reward work to subprocess workers (non-blocking).
+
+        Results are collected later by _collect_reward_workers, allowing GPU
+        logprob computation to overlap with CPU reward computation.
+        """
         reward_can_bg = all(
             not isinstance(rf, nn.Module) and not asyncio.iscoroutinefunction(rf)
             for rf in self.reward_funcs
@@ -347,12 +354,12 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         num_workers = getattr(self.args, "reward_num_workers", 1)
 
         if not reward_can_bg or num_workers <= 1:
-            return self._calculate_rewards(
-                inputs, prompts, completions, completion_ids_list
-            )
+            # Can't parallelize — store args for sync fallback in collect
+            self._reward_workers_used = None
+            self._pending_reward_args = (inputs, prompts, completions, completion_ids_list)
+            return
 
         workers = self._get_reward_workers()
-        device = self.accelerator.device
         num_generations = self.num_generations
         num_prompts = len(prompts)
         num_groups = num_prompts // num_generations
@@ -379,7 +386,28 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             )
             workers_used.append(conn)
 
-        # Collect results
+        self._reward_workers_used = workers_used
+        self._pending_reward_args = (inputs, prompts, completions, completion_ids_list)
+
+    def _collect_reward_workers(self, inputs, prompts, completions, completion_ids_list):
+        """Collect reward results from subprocess workers (blocks until done)."""
+        from accelerate.utils import gather
+
+        workers_used = getattr(self, "_reward_workers_used", None)
+        args = getattr(self, "_pending_reward_args", None)
+        self._reward_workers_used = None
+        self._pending_reward_args = None
+
+        if workers_used is None:
+            # Sync fallback — compute on main thread
+            if args is not None:
+                return self._calculate_rewards(*args)
+            return self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+
+        device = self.accelerator.device
+        num_prompts = len(args[1]) if args else len(prompts)
+
+        # Collect results from workers
         all_worker_results = []
         any_failed = False
         for conn in workers_used:
@@ -404,9 +432,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             return gather(rewards_per_func)
 
         # Fallback to main thread on failure
-        return self._calculate_rewards(
-            inputs, prompts, completions, completion_ids_list
-        )
+        if args is not None:
+            return self._calculate_rewards(*args)
+        return self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
 
     def _post_advantage_hook(
         self,
@@ -451,9 +479,12 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                     self._replay_buffer.add(replay_scores[gi].item(), group_data)
 
             # Replace zero-signal groups with high-signal replay buffer entries
-            if True:
+            # Only in non-streaming path (s_start is None) — streaming scores
+            # groups incrementally, so replacement + logprob recompute would be
+            # too expensive per chunk.
+            n_replaced = 0
+            if s_start is None:
                 no_signal = ~has_signal
-                n_replaced = 0
                 replaced_ranges = []
                 if no_signal.any() and len(self._replay_buffer) > 0:
                     for group_idx in no_signal.nonzero(as_tuple=True)[0]:
