@@ -13,7 +13,7 @@ class ReplayBuffer:
 
     def __init__(self, max_size: int):
         self.max_size = max_size
-        self._heap = []  # min-heap of (score, id, data)
+        self._heap: list[tuple[float, int, dict]] = []  # min-heap of (score, id, data)
         self._counter = 0  # unique tiebreaker for heap
 
     def __len__(self):

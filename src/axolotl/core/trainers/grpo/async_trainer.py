@@ -431,9 +431,9 @@ class GRPODataProducer(BaseDataProducer):
         self._steps_per_generation = steps_per_generation
         self._shuffle_dataset = shuffle_dataset
         self._seed = seed
-        self._trainer = None
-        self._prompt_dl: DataLoader | None = None
-        self._prompt_iter = None
+        self._trainer: Any = None
+        self._prompt_dl: Any = None
+        self._prompt_iter: Any = None
 
     def set_trainer(self, trainer) -> None:
         """Inject the live trainer reference and create the prompt DataLoader."""
@@ -567,7 +567,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # Data producer (the proper architecture for async generation)
         self.data_producer = None
         if getattr(self.args, "use_data_producer", False):
-            self.data_producer = self._create_data_producer(kwargs["args"], kwargs["train_dataset"])
+            self.data_producer = self._create_data_producer(
+                kwargs["args"], kwargs["train_dataset"]
+            )
 
         if self.args.async_prefetch and self.data_producer is None:
             # Legacy path: direct _prepare_inputs override without data producer
@@ -865,9 +867,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # Hooks (overridden by subclasses like FastAsyncGRPOTrainer)
     # ------------------------------------------------------------------
 
-    def _compute_rewards_for_batch(self, inputs, prompts, completions, completion_ids_list):
+    def _compute_rewards_for_batch(
+        self, inputs, prompts, completions, completion_ids_list
+    ):
         """Compute rewards for a batch. Override for parallel workers, caching, etc."""
-        return self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+        return self._calculate_rewards(
+            inputs, prompts, completions, completion_ids_list
+        )
 
     def _post_advantage_hook(
         self,
@@ -1086,7 +1092,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # --- Post-advantage hook (for replay buffer, re-roll, etc.) ---
         self._post_advantage_hook(
-            data, rewards_per_func, advantages, inputs, num_generations, mode,
+            data,
+            rewards_per_func,
+            advantages,
+            inputs,
+            num_generations,
+            mode,
         )
 
         # --- Metrics ---
@@ -1427,8 +1438,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # --- Post-advantage hook (for replay buffer, re-roll, etc.) ---
         self._post_advantage_hook(
-            data, rewards_per_func, advantages, inputs, num_generations, mode,
-            s_start=s_start, s_end=s_end, is_last_chunk=is_last_chunk,
+            data,
+            rewards_per_func,
+            advantages,
+            inputs,
+            num_generations,
+            mode,
+            s_start=s_start,
+            s_end=s_end,
+            is_last_chunk=is_last_chunk,
         )
 
         # --- Chunk metrics ---
