@@ -37,6 +37,7 @@ from trl.extras.profiling import profiling_decorator
 from trl.trainer import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import (
     RepeatSampler,
+    entropy_from_logits,
     nanmax,
     nanmin,
     nanstd,
@@ -281,6 +282,10 @@ class AsyncDataProducer:
         )
         self._queue: deque[concurrent.futures.Future] = deque()
         self._initialized = False
+        # Lock held by the background thread during vLLM generation.
+        # The main thread acquires this lock for weight sync to ensure
+        # merge_adapter/unmerge_adapter don't overlap with generation.
+        self._generate_lock = threading.Lock()
 
     @property
     def config(self) -> ProducerConfig:
@@ -302,7 +307,7 @@ class AsyncDataProducer:
             for i in range(1, self._depth + 1):
                 self._queue.append(
                     self._executor.submit(
-                        self._inner.produce, model, global_step + i, **bg_kwargs
+                        self._locked_produce, model, global_step + i, **bg_kwargs
                     )
                 )
             self._initialized = True
@@ -312,9 +317,14 @@ class AsyncDataProducer:
         bg_kwargs = {**kwargs, **self._background_kwargs}
         next_step = global_step + self._depth
         self._queue.append(
-            self._executor.submit(self._inner.produce, model, next_step, **bg_kwargs)
+            self._executor.submit(self._locked_produce, model, next_step, **bg_kwargs)
         )
         return dataset
+
+    def _locked_produce(self, model: Any, global_step: int, **kwargs) -> Dataset:
+        """Run produce while holding the generate lock."""
+        with self._generate_lock:
+            return self._inner.produce(model, global_step, **kwargs)
 
     def on_rollout_begin(self, global_step: int) -> None:
         if hasattr(self._inner, "on_rollout_begin"):
@@ -664,19 +674,30 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # ------------------------------------------------------------------
 
     def _maybe_sync_vllm_weights(self):
-        """Sync model weights to vLLM if the interval has elapsed."""
+        """Sync model weights to vLLM if the interval has elapsed.
+
+        Weight sync uses merge_adapter() / unmerge_adapter() which modify model
+        weights in-place.  This MUST NOT overlap with a training forward/backward
+        pass, so we drain inflight BG generations first, sync synchronously,
+        then let the BG thread resume.
+        """
         if not (self.use_vllm and self.args.async_prefetch):
             return
         step = self.state.global_step
         interval = self.args.vllm_sync_interval
         if step != self._last_synced_step and step % interval == 0:
-            # Wait for in-flight futures to complete (they reference old weights)
-            if self._async_queue is not None:
+            # Drain inflight BG generations so no concurrent model access
+            if self.data_producer is not None and hasattr(self.data_producer, "_generate_lock"):
+                with self.data_producer._generate_lock:
+                    self.vllm_generation.sync_weights()
+            elif self._async_queue is not None:
                 pending = list(self._async_queue.queue)
                 for f in pending:
                     if isinstance(f, concurrent.futures.Future):
                         f.result()
-            self.vllm_generation.sync_weights()
+                self.vllm_generation.sync_weights()
+            else:
+                self.vllm_generation.sync_weights()
             self._last_synced_step = step
 
     # ------------------------------------------------------------------
@@ -832,8 +853,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     elif not isinstance(values, list):
                         inp[key] = values
 
-        # Sync CUDA before crossing thread boundary
-        torch.cuda.synchronize()
+        # No explicit CUDA sync needed here — both threads share the
+        # default stream, so operations are naturally ordered.
 
         # --- Construct deferred output ---
         output = {
@@ -1312,7 +1333,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
 
         # --- Policy logprobs for this chunk (GPU, overlaps with BG rewards) ---
-        logprob_batch_size = min(batch_size * 4, chunk_size)
+        logprob_batch_size = min(batch_size * 2, chunk_size)
         with disable_gradient_checkpointing(
             self.model, self.args.gradient_checkpointing_kwargs
         ):
