@@ -278,7 +278,7 @@ class TestConsistentParamWrapperNesting:
                     peft_model = get_peft_model(model, lora_config)
                 finally:
                     BaseTuner._inject_parameters = original
-                    patch_peft_target_parameters_matching._axolotl_patched = False
+                    patch_peft_target_parameters_matching._axolotl_patched = False  # type: ignore[attr-defined]
             else:
                 lora_config = LoraConfig(
                     r=4,
