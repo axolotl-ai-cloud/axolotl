@@ -25,7 +25,6 @@ import concurrent.futures
 import logging
 import queue
 import threading
-
 from abc import ABC, abstractmethod
 from collections import deque
 from contextlib import nullcontext
@@ -881,7 +880,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         """
         self._pending_reward_args = (inputs, prompts, completions, completion_ids_list)
 
-    def _collect_reward_workers(self, inputs, prompts, completions, completion_ids_list):
+    def _collect_reward_workers(
+        self, inputs, prompts, completions, completion_ids_list
+    ):
         """Collect reward results. Override to collect from parallel workers.
 
         Default: compute rewards synchronously now.
@@ -890,7 +891,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         if args is not None:
             self._pending_reward_args = None
             return self._compute_rewards_for_batch(*args)
-        return self._compute_rewards_for_batch(inputs, prompts, completions, completion_ids_list)
+        return self._compute_rewards_for_batch(
+            inputs, prompts, completions, completion_ids_list
+        )
 
     def _post_advantage_hook(
         self,
