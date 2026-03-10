@@ -154,3 +154,102 @@ class TestPeftPatchIdempotency:
         finally:
             BaseTuner._inject_parameters = original
             patch_peft_target_parameters_matching._axolotl_patched = False
+
+
+class TestMoeAdapterTrainMergeRoundtrip:
+    """E2E: train adapter on fake quantized MoE experts, then merge without error."""
+
+    @staticmethod
+    def _make_fake_quantized_moe_model():
+        """Build a minimal MoE-like model with parametrized 3D expert weights.
+
+        Uses an identity parametrization to simulate quantized expert params
+        without requiring bitsandbytes or a GPU.
+        """
+        import torch
+        import torch.nn as nn
+        import torch.nn.utils.parametrize as P
+
+        class PassthroughParametrization(nn.Module):
+            def forward(self, x):
+                return x
+
+        class FakeExperts(nn.Module):
+            def __init__(self):
+                super().__init__()
+                # 3D expert weights: (num_experts, out_features, in_features)
+                self.gate_up_proj = nn.Parameter(torch.randn(4, 16, 8))
+                self.down_proj = nn.Parameter(torch.randn(4, 8, 16))
+
+            def forward(self, x):
+                # Use expert 0 for simple computation
+                # x: (batch, in_features=8) -> gate_up_proj[0]: (out_features=16, in_features=8)
+                x = torch.matmul(x, self.gate_up_proj[0].T)  # (batch, 16)
+                # down_proj[0]: (out_features=8, in_features=16)
+                x = torch.matmul(x, self.down_proj[0].T)  # (batch, 8)
+                return x
+
+        class FakeModel(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = nn.Linear(8, 8)
+                self.experts = FakeExperts()
+
+            def forward(self, x):
+                return self.linear(x) + self.experts(x)
+
+        model = FakeModel()
+        P.register_parametrization(
+            model.experts, "gate_up_proj", PassthroughParametrization(), unsafe=True
+        )
+        P.register_parametrization(
+            model.experts, "down_proj", PassthroughParametrization(), unsafe=True
+        )
+        return model
+
+    def test_train_save_merge_no_size_mismatch(self, tmp_path):
+        """Train adapter on two expert params, save, load, merge — must not raise."""
+        import torch
+        from peft import LoraConfig, PeftModel, get_peft_model
+        from peft.tuners.tuners_utils import BaseTuner
+
+        from axolotl.monkeypatch.moe_quant import patch_peft_target_parameters_matching
+
+        adapter_dir = tmp_path / "adapter"
+        lora_cfg = LoraConfig(
+            r=4,
+            lora_alpha=8,
+            target_modules=[],
+            target_parameters=["experts.gate_up_proj", "experts.down_proj"],
+            lora_dropout=0.0,
+            bias="none",
+        )
+        original_inject = BaseTuner._inject_parameters
+
+        # Training phase
+        patch_peft_target_parameters_matching()
+        try:
+            peft_model = get_peft_model(self._make_fake_quantized_moe_model(), lora_cfg)
+        finally:
+            BaseTuner._inject_parameters = original_inject
+            patch_peft_target_parameters_matching._axolotl_patched = False
+
+        optimizer = torch.optim.SGD(peft_model.parameters(), lr=1e-3)
+        for _ in range(3):
+            peft_model(torch.randn(2, 8)).sum().backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        peft_model.save_pretrained(str(adapter_dir))
+
+        # Merge phase: load adapter onto fresh model and merge
+        patch_peft_target_parameters_matching()
+        try:
+            loaded = PeftModel.from_pretrained(
+                self._make_fake_quantized_moe_model(), str(adapter_dir)
+            )
+            merged = loaded.merge_and_unload()
+        finally:
+            BaseTuner._inject_parameters = original_inject
+            patch_peft_target_parameters_matching._axolotl_patched = False
+
+        assert merged is not None
