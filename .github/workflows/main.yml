@@ -8,6 +8,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-axolotl:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
