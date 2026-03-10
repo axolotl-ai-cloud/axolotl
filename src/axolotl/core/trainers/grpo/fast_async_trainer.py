@@ -339,7 +339,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
     ):
         """Dispatch rewards to parallel subprocess workers (synchronous wrapper)."""
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
-        return self._collect_reward_workers(inputs, prompts, completions, completion_ids_list)
+        return self._collect_reward_workers(
+            inputs, prompts, completions, completion_ids_list
+        )
 
     def _launch_reward_workers(self, inputs, prompts, completions, completion_ids_list):
         """Send reward work to subprocess workers (non-blocking).
@@ -356,7 +358,12 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         if not reward_can_bg or num_workers <= 1:
             # Can't parallelize — store args for sync fallback in collect
             self._reward_workers_used = None
-            self._pending_reward_args = (inputs, prompts, completions, completion_ids_list)
+            self._pending_reward_args = (
+                inputs,
+                prompts,
+                completions,
+                completion_ids_list,
+            )
             return
 
         workers = self._get_reward_workers()
@@ -389,7 +396,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         self._reward_workers_used = workers_used
         self._pending_reward_args = (inputs, prompts, completions, completion_ids_list)
 
-    def _collect_reward_workers(self, inputs, prompts, completions, completion_ids_list):
+    def _collect_reward_workers(
+        self, inputs, prompts, completions, completion_ids_list
+    ):
         """Collect reward results from subprocess workers (blocks until done)."""
         from accelerate.utils import gather
 
@@ -402,7 +411,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             # Sync fallback — compute on main thread
             if args is not None:
                 return self._calculate_rewards(*args)
-            return self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+            return self._calculate_rewards(
+                inputs, prompts, completions, completion_ids_list
+            )
 
         device = self.accelerator.device
         num_prompts = len(args[1]) if args else len(prompts)
@@ -434,7 +445,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         # Fallback to main thread on failure
         if args is not None:
             return self._calculate_rewards(*args)
-        return self._calculate_rewards(inputs, prompts, completions, completion_ids_list)
+        return self._calculate_rewards(
+            inputs, prompts, completions, completion_ids_list
+        )
 
     def _post_advantage_hook(
         self,
