@@ -7,6 +7,8 @@ on-the-fly (4-bit via bitsandbytes parametrize, 8-bit via custom int8 parametriz
 reducing peak VRAM from "all experts in bf16" to "one expert at a time."
 """
 
+import contextlib
+import functools
 import os
 
 import bitsandbytes as bnb
@@ -160,8 +162,53 @@ def get_moe_quantized_count():
     return _moe_load_state["count"]
 
 
+@contextlib.contextmanager
+def _sorted_named_params_ctx():
+    """Temporarily make named_parameters(recurse=False) return alphabetically sorted results.
+
+    When PEFT applies target_parameters with multiple params on the same module it creates
+    nested ParamWrappers.  The nesting order (and thus the saved adapter key structure)
+    depends on the iteration order of named_parameters.  During training with
+    quantize_moe_experts the parametrized branch already uses sorted(target_names), but
+    during merge the standard branch follows named_parameters insertion order, which can
+    differ.  Sorting here guarantees both paths produce the same nested structure so
+    adapter keys are always consistent.
+    """
+    original = torch.nn.Module.named_parameters
+
+    @functools.wraps(original)
+    def _sorted(self, *args, **kwargs):
+        recurse = args[1] if len(args) > 1 else kwargs.get("recurse", True)
+        result = original(self, *args, **kwargs)
+        if not recurse:
+            return iter(sorted(result, key=lambda x: x[0]))
+        return result
+
+    torch.nn.Module.named_parameters = _sorted
+    try:
+        yield
+    finally:
+        torch.nn.Module.named_parameters = original
+
+
 def patch_peft_target_parameters_matching():
-    """Fix PEFT's _inject_parameters to use suffix matching for parametrized modules."""
+    """Fix PEFT's _inject_parameters to use suffix matching for parametrized modules
+    and ensure consistent ParamWrapper nesting order across training and merge.
+
+    Two problems are addressed:
+
+    1. Full-path expansion: PEFT's parametrized branch requires exact module-name matches,
+       but users supply short suffixes (e.g. "mlp.experts.gate_up_proj").  We expand those
+       to full paths before injection so PEFT can find the right modules.
+
+    2. Consistent nesting order: when multiple target_parameters land on the same module,
+       PEFT creates nested ParamWrappers whose key structure depends on processing order.
+       The parametrized branch (used during training with quantize_moe_experts) processes
+       targets in sorted() order; the standard branch (used during merge without
+       quantize_moe_experts) follows named_parameters insertion order.  We wrap
+       named_parameters to return sorted results so both branches produce the same nesting,
+       preventing adapter key mismatches (and size-mismatch errors) at merge time.
+    """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
     from peft.tuners.tuners_utils import BaseTuner
@@ -187,9 +234,13 @@ def patch_peft_target_parameters_matching():
 
         peft_config.target_parameters = sorted(expanded)
         try:
-            return original_inject(
-                self, peft_config, model, adapter_name, low_cpu_mem_usage
-            )
+            # Sort named_parameters alphabetically so the standard branch (no
+            # parametrizations, used during merge) produces the same ParamWrapper nesting
+            # order as the parametrized branch (used during training).
+            with _sorted_named_params_ctx():
+                return original_inject(
+                    self, peft_config, model, adapter_name, low_cpu_mem_usage
+                )
         finally:
             peft_config.target_parameters = original_targets
 
