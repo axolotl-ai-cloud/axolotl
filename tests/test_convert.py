@@ -82,7 +82,7 @@ class TestJsonToJsonlConverter:
         converter = JsonToJsonlConverter(
             FileReader(), FileWriter(str(output_file)), JsonParser(), JsonlSerializer()
         )
-        converter.convert(str(input_file), str(output_file))
+        converter.convert(str(input_file))
 
         result = output_file.read_text(encoding="utf-8")
         lines = result.split("\n")
