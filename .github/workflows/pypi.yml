@@ -6,6 +6,8 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   setup_release:
     name: Create Release
