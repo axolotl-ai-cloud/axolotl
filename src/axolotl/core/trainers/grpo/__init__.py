@@ -137,7 +137,7 @@ class GRPOStrategy:
             grpo_args_kwargs["epsilon_high"] = trl.epsilon_high
 
         if trl.use_liger_loss is not None:
-            grpo_args_kwargs["use_liger_loss"] = trl.use_liger_loss
+            grpo_args_kwargs["use_liger_kernel"] = trl.use_liger_loss
 
         if trl.multi_objective_aggregation is not None:
             grpo_args_kwargs["multi_objective_aggregation"] = (
