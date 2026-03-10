@@ -80,6 +80,11 @@ except ImportError:
     PeftModel = None
     use_adapter = nullcontext
 
+try:
+    from liger_kernel.ops.grpo_loss import fused_selective_log_softmax as _fused_selective_log_softmax
+except ImportError:
+    _fused_selective_log_softmax = None
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -1723,6 +1728,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
             micro_batches = micro_batches * self.num_iterations
 
         self._buffered_inputs = micro_batches[1:]
+
+        # Release cached CUDA memory from scoring
+        # before training allocations begin, reducing peak reserved memory.
+        torch.cuda.empty_cache()
+
         return micro_batches[0]
 
     @profiling_decorator
@@ -1745,19 +1755,24 @@ class AsyncGRPOTrainer(GRPOTrainer):
         """Compute log-probs and (optionally) entropies for each token.
 
         When running under no_grad (scoring path), bypasses accelerate's
-        ConvertOutputsToFp32 wrapper to avoid a ~4.6 GB fp32 copy of the
-        logits tensor (vocab=151936).
+        ConvertOutputsToFp32 wrapper to avoid a fp32 copy of the
+        logits tensor.
         """
         # Bypass accelerate's ConvertOutputsToFp32 wrapper which converts the
         # entire (B, L, V) logits tensor from bf16 to fp32 — unnecessary and
-        # extremely wasteful for large vocabularies (~4.6 GB per micro-batch).
-        # We unwrap the model and use autocast to keep logits in bf16.
-        # This is safe because selective_log_softmax immediately gathers only
-        # the needed token positions, discarding the full logits tensor.
+        # extremely wasteful for large vocabularies 
         model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
         autocast_ctx = torch.autocast(device_type=input_ids.device.type, dtype=torch.bfloat16)
 
-        batch_size = batch_size or input_ids.size(0)  # Chunk inputs into smaller batches to reduce memory peak
+        # Use Liger's Triton kernel in scoring path (no grad): fuses
+        # temperature + log_softmax + gather into a single kernel pass.
+        use_fused = (
+            self.use_liger_kernel
+            and _fused_selective_log_softmax is not None
+            and not torch.is_grad_enabled()
+        )
+
+        batch_size = batch_size or input_ids.size(0)
         all_logps = []
         all_entropies = []
         with autocast_ctx:
@@ -1788,26 +1803,33 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 if mm_token_type_ids is not None:
                     model_inputs["mm_token_type_ids"] = mm_token_type_ids[start : start + batch_size]
 
-                # Only add logits_to_keep if the model supports it
                 if "logits_to_keep" in self.model_kwarg_keys:
                     model_inputs["logits_to_keep"] = logits_to_keep + 1
 
                 model_inputs["use_cache"] = False
 
                 logits = model(**model_inputs).logits
-                # Exclude the last value: it corresponds to the next token pred
-                logits = logits[:, :-1, :]  # (B, L-1, H)
-                # Only keep the last logits_to_keep. For model that support logits_to_keep, this is a no-op.
-                logits = logits[:, -logits_to_keep:, :]  # (B, logits_to_keep, H)
-                logits.div_(self.temperature)
                 completion_ids = input_ids_batch[:, -logits_to_keep:]
-                logps = selective_log_softmax(logits, completion_ids)
-                all_logps.append(logps)
 
-                if compute_entropy:
-                    with torch.no_grad():
-                        entropies = entropy_from_logits(logits)
-                    all_entropies.append(entropies)
+                if use_fused:
+                    logits = logits[:, -(logits_to_keep + 1):, :]
+                    if not logits.is_contiguous():
+                        logits = logits.contiguous()
+                    logps = _fused_selective_log_softmax(
+                        logits, completion_ids, self.temperature
+                    )
+                    all_logps.append(logps)
+                else:
+                    logits = logits[:, :-1, :]
+                    logits = logits[:, -logits_to_keep:, :]
+                    logits.div_(self.temperature)
+                    logps = selective_log_softmax(logits, completion_ids)
+                    all_logps.append(logps)
+
+                    if compute_entropy:
+                        with torch.no_grad():
+                            entropies = entropy_from_logits(logits)
+                        all_entropies.append(entropies)
 
         logps = torch.cat(all_logps, dim=0)
         entropies = torch.cat(all_entropies, dim=0) if compute_entropy else None
