@@ -419,7 +419,5 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run cicd.cleanup
