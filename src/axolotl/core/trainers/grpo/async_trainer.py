@@ -33,6 +33,7 @@ from typing import Any
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+from trl.extras.profiling import profiling_decorator
 from trl.trainer import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import (
     RepeatSampler,
@@ -40,6 +41,7 @@ from trl.trainer.utils import (
     nanmin,
     nanstd,
     pad,
+    selective_log_softmax,
     shuffle_sequence_dict,
     split_pixel_values_by_grid,
     split_tensor_dict,
@@ -1722,6 +1724,94 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         self._buffered_inputs = micro_batches[1:]
         return micro_batches[0]
+
+    @profiling_decorator
+    def _get_per_token_logps_and_entropies(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        compute_entropy=False,
+        pixel_values=None,
+        image_grid_thw=None,
+        num_images=None,
+        pixel_attention_mask=None,
+        image_sizes=None,
+        token_type_ids=None,
+        mm_token_type_ids=None,
+    ) -> dict[str, torch.Tensor | None]:
+        """Compute log-probs and (optionally) entropies for each token.
+
+        When running under no_grad (scoring path), bypasses accelerate's
+        ConvertOutputsToFp32 wrapper to avoid a ~4.6 GB fp32 copy of the
+        logits tensor (vocab=151936).
+        """
+        # Bypass accelerate's ConvertOutputsToFp32 wrapper which converts the
+        # entire (B, L, V) logits tensor from bf16 to fp32 — unnecessary and
+        # extremely wasteful for large vocabularies (~4.6 GB per micro-batch).
+        # We unwrap the model and use autocast to keep logits in bf16.
+        # This is safe because selective_log_softmax immediately gathers only
+        # the needed token positions, discarding the full logits tensor.
+        model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
+        autocast_ctx = torch.autocast(device_type=input_ids.device.type, dtype=torch.bfloat16)
+
+        batch_size = batch_size or input_ids.size(0)  # Chunk inputs into smaller batches to reduce memory peak
+        all_logps = []
+        all_entropies = []
+        with autocast_ctx:
+            for start in range(0, input_ids.size(0), batch_size):
+                input_ids_batch = input_ids[start : start + batch_size]
+                attention_mask_batch = attention_mask[start : start + batch_size]
+
+                # Build model inputs
+                model_inputs = {"input_ids": input_ids_batch, "attention_mask": attention_mask_batch}
+                if image_grid_thw is not None and pixel_values is not None:
+                    rows_per_image = image_grid_thw.prod(dim=-1)
+                    rows_per_sample = torch.split(rows_per_image, num_images)
+                    rows_per_sample = torch.stack([s.sum() for s in rows_per_sample])
+                    cum_rows = torch.cat([torch.tensor([0], device=rows_per_sample.device), rows_per_sample.cumsum(0)])
+                    row_start, row_end = cum_rows[start].item(), cum_rows[start + batch_size].item()
+                    model_inputs["pixel_values"] = pixel_values[row_start:row_end]
+                    cum_imgs = torch.tensor([0] + num_images).cumsum(0)
+                    img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
+                    model_inputs["image_grid_thw"] = image_grid_thw[img_start:img_end]
+                elif pixel_values is not None:
+                    model_inputs["pixel_values"] = pixel_values[start : start + batch_size]
+                if pixel_attention_mask is not None:
+                    model_inputs["pixel_attention_mask"] = pixel_attention_mask[start : start + batch_size]
+                if image_sizes is not None:
+                    model_inputs["image_sizes"] = image_sizes[start : start + batch_size]
+                if token_type_ids is not None:
+                    model_inputs["token_type_ids"] = token_type_ids[start : start + batch_size]
+                if mm_token_type_ids is not None:
+                    model_inputs["mm_token_type_ids"] = mm_token_type_ids[start : start + batch_size]
+
+                # Only add logits_to_keep if the model supports it
+                if "logits_to_keep" in self.model_kwarg_keys:
+                    model_inputs["logits_to_keep"] = logits_to_keep + 1
+
+                model_inputs["use_cache"] = False
+
+                logits = model(**model_inputs).logits
+                # Exclude the last value: it corresponds to the next token pred
+                logits = logits[:, :-1, :]  # (B, L-1, H)
+                # Only keep the last logits_to_keep. For model that support logits_to_keep, this is a no-op.
+                logits = logits[:, -logits_to_keep:, :]  # (B, logits_to_keep, H)
+                logits.div_(self.temperature)
+                completion_ids = input_ids_batch[:, -logits_to_keep:]
+                logps = selective_log_softmax(logits, completion_ids)
+                all_logps.append(logps)
+
+                if compute_entropy:
+                    with torch.no_grad():
+                        entropies = entropy_from_logits(logits)
+                    all_entropies.append(entropies)
+
+        logps = torch.cat(all_logps, dim=0)
+        entropies = torch.cat(all_entropies, dim=0) if compute_entropy else None
+        return logps, entropies
 
     # ------------------------------------------------------------------
     # Loss override (adds IS ratio + OPSM)
