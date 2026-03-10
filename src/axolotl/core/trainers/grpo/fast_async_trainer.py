@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 
 import torch
 from torch import nn
+from trl import GRPOTrainer
 
 from axolotl.core.trainers.grpo.async_trainer import (
     AsyncGRPOConfig,
@@ -278,6 +279,7 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             shuffle_dataset=self.shuffle_dataset,
             seed=args.seed,
         )
+        data_producer.set_trainer(self)
         if args.async_prefetch:
             data_producer = AsyncDataProducer(
                 data_producer,
