@@ -19,7 +19,6 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# Module-level state for the loading-time quantization patch.
 _moe_load_state = {
     "count": 0,
     "mode": "4bit",
@@ -30,7 +29,7 @@ _moe_load_state = {
 
 
 class Bnb8bitParametrization(torch.nn.Module):
-    """Parametrization that dequantizes int8 row-wise quantized data on access."""
+    """Dequantizes int8 row-wise quantized data on access."""
 
     def __init__(self, row_stats: torch.Tensor):
         super().__init__()
@@ -38,7 +37,6 @@ class Bnb8bitParametrization(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, quantized_param: torch.Tensor) -> torch.Tensor:
-        # Flatten 3D+ to 2D for BnB's dequant, then reshape back.
         orig_shape = quantized_param.shape
         if quantized_param.ndim > 2:
             quantized_param = quantized_param.reshape(-1, orig_shape[-1])
@@ -70,7 +68,6 @@ def replace_parameter_8bit(module, param_name):
         module, param_name, Bnb8bitParametrization(row_stats), unsafe=True
     )
 
-    # Cache dequantized values during forward to avoid redundant dequantization.
     if not getattr(module, "_axolotl_8bit_hooks_registered", False):
         module.register_forward_pre_hook(_enable_parametrization_cache)
         module.register_forward_hook(_disable_parametrization_cache)
@@ -78,11 +75,7 @@ def replace_parameter_8bit(module, param_name):
 
 
 def patch_moe_quantization_on_load(cfg):
-    """Patch transformers' weight loading to quantize MoE expert params on-the-fly.
-
-    Wraps ``set_param_for_module`` so that 3D+ CUDA tensors with "expert" in their
-    name are quantized (4-bit or 8-bit) as they're loaded, keeping peak VRAM low.
-    """
+    """Patch transformers' weight loading to quantize MoE expert params on-the-fly."""
     mode = "8bit" if getattr(cfg, "load_in_8bit", False) else "4bit"
     _moe_load_state["mode"] = mode
     _moe_load_state["count"] = 0
@@ -105,27 +98,17 @@ def patch_moe_quantization_on_load(cfg):
         _moe_load_state["quant_type"] = quant_type
         _moe_load_state["compress_statistics"] = compress_statistics
 
-    # Disable async tensor loading.  Transformers' convert_and_load_state_dict_in_model
-    # uses a ThreadPoolExecutor to materialise tensors (move from safetensors → CUDA)
-    # ahead of time.  With MoE models this pre-fetches many large bf16 expert tensors
-    # onto the GPU simultaneously — long before our set_param_for_module patch can
-    # quantise and free them one-by-one — causing OOM even at <5 % of weights loaded.
-    # Sequential loading ensures only ONE bf16 expert tensor is on-GPU at a time.
+    # Force sequential tensor loading so we can quantize-and-free one expert at a time.
+    # Without this, transformers pre-fetches all bf16 expert tensors to GPU simultaneously.
     os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
 
-    # Disable caching_allocator_warmup — it pre-allocates a huge tensor at bf16
-    # size for all params, defeating our on-load quantization VRAM savings.
-    def _noop_warmup(*args, **kwargs):
-        pass
-
-    transformers.modeling_utils.caching_allocator_warmup = _noop_warmup
+    transformers.modeling_utils.caching_allocator_warmup = lambda *_: None
 
     original_set_param = transformers.core_model_loading.set_param_for_module
 
     def _patched_set_param_for_module(model, target_name, param_value, *args, **kwargs):
         original_set_param(model, target_name, param_value, *args, **kwargs)
 
-        # Quantize 3D+ expert params that BnB skipped (only on CUDA).
         if param_value.ndim >= 3 and param_value.is_cuda:
             mod_path, _, pname = target_name.rpartition(".")
             mod = model.get_submodule(mod_path) if mod_path else model
@@ -149,7 +132,6 @@ def patch_moe_quantization_on_load(cfg):
                     replace_parameter_8bit(mod, pname)
                 _moe_load_state["count"] += 1
 
-                # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")
                 torch.cuda.empty_cache()
 
@@ -162,65 +144,31 @@ def get_moe_quantized_count():
     return _moe_load_state["count"]
 
 
-@contextlib.contextmanager
-def _sorted_named_params_ctx():
-    """Temporarily make named_parameters(recurse=False) return alphabetically sorted results.
-
-    When PEFT applies target_parameters with multiple params on the same module it creates
-    nested ParamWrappers.  The nesting order (and thus the saved adapter key structure)
-    depends on the iteration order of named_parameters.  During training with
-    quantize_moe_experts the parametrized branch already uses sorted(target_names), but
-    during merge the standard branch follows named_parameters insertion order, which can
-    differ.  Sorting here guarantees both paths produce the same nested structure so
-    adapter keys are always consistent.
-    """
-    original = torch.nn.Module.named_parameters
-
-    @functools.wraps(original)
-    def _sorted(self, *args, **kwargs):
-        recurse = args[1] if len(args) > 1 else kwargs.get("recurse", True)
-        result = original(self, *args, **kwargs)
-        if not recurse:
-            return iter(sorted(result, key=lambda x: x[0]))
-        return result
-
-    torch.nn.Module.named_parameters = _sorted
-    try:
-        yield
-    finally:
-        torch.nn.Module.named_parameters = original
-
-
 def patch_peft_target_parameters_matching():
-    """Fix PEFT's _inject_parameters to use suffix matching for parametrized modules
-    and ensure consistent ParamWrapper nesting order across training and merge.
+    """Fix PEFT's _inject_parameters for suffix matching and portable adapter ordering.
 
-    Two problems are addressed:
+    1. Expands short suffix targets (e.g. "mlp.experts.gate_up_proj") to full module
+       paths so the parametrized branch can match them.
 
-    1. Full-path expansion: PEFT's parametrized branch requires exact module-name matches,
-       but users supply short suffixes (e.g. "mlp.experts.gate_up_proj").  We expand those
-       to full paths before injection so PEFT can find the right modules.
-
-    2. Consistent nesting order: when multiple target_parameters land on the same module,
-       PEFT creates nested ParamWrappers whose key structure depends on processing order.
-       The parametrized branch (used during training with quantize_moe_experts) processes
-       targets in sorted() order; the standard branch (used during merge without
-       quantize_moe_experts) follows named_parameters insertion order.  We wrap
-       named_parameters to return sorted results so both branches produce the same nesting,
-       preventing adapter key mismatches (and size-mismatch errors) at merge time.
+    2. Makes the parametrized branch iterate module.parametrizations in insertion order
+       instead of PEFT's sorted(target_names), matching the standard branch. This ensures
+       adapters saved during training load correctly with vanilla PEFT, vLLM, and other
+       tools without requiring this patch.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
-    from peft.tuners.tuners_utils import BaseTuner
 
-    original_inject = BaseTuner._inject_parameters
+    from contextlib import nullcontext
+
+    from peft.tuners.tuners_utils import BaseTuner, BaseTunerLayer
+    from peft.utils.integrations import init_empty_weights
+    from peft.utils.other import _get_submodules
 
     def _patched_inject_parameters(
         self, peft_config, model, adapter_name, low_cpu_mem_usage
     ):
-        # Patch target_parameters to use full paths for parametrized modules
         original_targets = list(peft_config.target_parameters)
-        expanded = set(original_targets)
+        target_names_set = set(original_targets)
 
         for module_name, module in model.named_modules():
             if not hasattr(module, "parametrizations"):
@@ -230,19 +178,61 @@ def patch_peft_target_parameters_matching():
                 if (
                     module_name == mod_path or module_name.endswith("." + mod_path)
                 ) and hasattr(module, param_name):
-                    expanded.add(f"{module_name}.{param_name}")
+                    target_names_set.add(f"{module_name}.{param_name}")
 
-        peft_config.target_parameters = sorted(expanded)
-        try:
-            # Sort named_parameters alphabetically so the standard branch (no
-            # parametrizations, used during merge) produces the same ParamWrapper nesting
-            # order as the parametrized branch (used during training).
-            with _sorted_named_params_ctx():
-                return original_inject(
-                    self, peft_config, model, adapter_name, low_cpu_mem_usage
+        def strip_base_layer_from_name(mod_name):
+            name = ".base_layer"
+            while name in mod_name:
+                prefix, _, suffix = mod_name.rpartition(name)
+                mod_name = prefix + suffix
+            return mod_name
+
+        def create_and_replace_param(mod_name, key, param_name):
+            parent, target, target_name = _get_submodules(model, mod_name)
+            unwrapped_name = strip_base_layer_from_name(mod_name)
+            unwrapped = model.get_submodule(unwrapped_name)
+            if (
+                isinstance(unwrapped, BaseTunerLayer)
+                and unwrapped.__class__.__name__ != "ParamWrapper"
+            ):
+                raise ValueError(
+                    f"Trying to wrap an `nn.Parameter` of layer '{unwrapped_name}' of type "
+                    f"{type(target).__name__}, which is not a valid target. Make sure that "
+                    "this layer is not also targeted with `target_modules`. For some models, "
+                    "PEFT will do this automatically, try setting `target_modules=[]`."
                 )
-        finally:
-            peft_config.target_parameters = original_targets
+            self._check_target_module_compatiblity(peft_config, model, target_name)
+            ctx = init_empty_weights if low_cpu_mem_usage else nullcontext
+            with ctx():
+                self._create_and_replace(
+                    peft_config,
+                    adapter_name,
+                    target,
+                    target_name,
+                    parent,
+                    current_key=key,
+                    parameter_name=param_name.rpartition(".")[-1],
+                )
+
+        def _matches(key):
+            return (key in target_names_set) or any(
+                key.endswith(f".{t}") for t in target_names_set
+            )
+
+        for module_name, module in model.named_modules():
+            if hasattr(module, "parametrizations"):
+                for param_name in module.parametrizations:
+                    key = f"{module_name}.{param_name}"
+                    if _matches(key):
+                        create_and_replace_param(module_name, key, param_name)
+                        self.targeted_parameter_names.append(key)
+            else:
+                unwrapped_name = strip_base_layer_from_name(module_name)
+                for param_name, _ in module.named_parameters(recurse=False):
+                    key = f"{unwrapped_name}.{param_name}"
+                    if _matches(key):
+                        create_and_replace_param(module_name, key, param_name)
+                        self.targeted_parameter_names.append(key)
 
     BaseTuner._inject_parameters = _patched_inject_parameters
     patch_peft_target_parameters_matching._axolotl_patched = True
