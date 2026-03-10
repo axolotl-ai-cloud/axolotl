@@ -1,14 +1,5 @@
-"""
-Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors.
+"""Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors."""
 
-In transformers v5, MoE models store expert weights as fused 3D tensors that BnB
-skips (only targets nn.Linear). This module patches weight loading to quantize them
-on-the-fly (4-bit via bitsandbytes parametrize, 8-bit via custom int8 parametrization),
-reducing peak VRAM from "all experts in bf16" to "one expert at a time."
-"""
-
-import contextlib
-import functools
 import os
 
 import bitsandbytes as bnb
@@ -37,6 +28,7 @@ class Bnb8bitParametrization(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, quantized_param: torch.Tensor) -> torch.Tensor:
+        """Flatten 3D+ to 2D for BnB's dequant, then reshape back."""
         orig_shape = quantized_param.shape
         if quantized_param.ndim > 2:
             quantized_param = quantized_param.reshape(-1, orig_shape[-1])
@@ -68,6 +60,7 @@ def replace_parameter_8bit(module, param_name):
         module, param_name, Bnb8bitParametrization(row_stats), unsafe=True
     )
 
+    # Cache dequantized values during forward to avoid redundant dequantization.
     if not getattr(module, "_axolotl_8bit_hooks_registered", False):
         module.register_forward_pre_hook(_enable_parametrization_cache)
         module.register_forward_hook(_disable_parametrization_cache)
@@ -132,6 +125,7 @@ def patch_moe_quantization_on_load(cfg):
                     replace_parameter_8bit(mod, pname)
                 _moe_load_state["count"] += 1
 
+                # Release the bf16 tensor so CUDA memory is freed immediately.
                 param_value.data = torch.empty(0, device="cpu")
                 torch.cuda.empty_cache()
 
@@ -145,16 +139,7 @@ def get_moe_quantized_count():
 
 
 def patch_peft_target_parameters_matching():
-    """Fix PEFT's _inject_parameters for suffix matching and portable adapter ordering.
-
-    1. Expands short suffix targets (e.g. "mlp.experts.gate_up_proj") to full module
-       paths so the parametrized branch can match them.
-
-    2. Makes the parametrized branch iterate module.parametrizations in insertion order
-       instead of PEFT's sorted(target_names), matching the standard branch. This ensures
-       adapters saved during training load correctly with vanilla PEFT, vLLM, and other
-       tools without requiring this patch.
-    """
+    """Fix PEFT's _inject_parameters for suffix matching and portable adapter ordering."""
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
 
@@ -170,6 +155,7 @@ def patch_peft_target_parameters_matching():
         original_targets = list(peft_config.target_parameters)
         target_names_set = set(original_targets)
 
+        # Expand short suffixes to full paths for parametrized modules.
         for module_name, module in model.named_modules():
             if not hasattr(module, "parametrizations"):
                 continue
@@ -221,6 +207,9 @@ def patch_peft_target_parameters_matching():
 
         for module_name, module in model.named_modules():
             if hasattr(module, "parametrizations"):
+                # Use insertion order (model definition order) instead of PEFT's
+                # sorted(target_names) so adapter key structure matches the standard
+                # branch and is portable to vanilla PEFT / vLLM without this patch.
                 for param_name in module.parametrizations:
                     key = f"{module_name}.{param_name}"
                     if _matches(key):

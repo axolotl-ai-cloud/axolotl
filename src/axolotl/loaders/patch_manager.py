@@ -410,12 +410,7 @@ class PatchManager:
                 apply_linear8bitlt_save_patch()
 
     def _apply_moe_expert_quantization_patch(self):
-        """Patch transformers weight loading to quantize MoE expert params on-the-fly.
-
-        Also patches PEFT's _inject_parameters whenever lora_target_parameters is set
-        (even without quantize_moe_experts) to ensure consistent ParamWrapper nesting
-        order between training and merge, preventing adapter key mismatches.
-        """
+        """Patch transformers weight loading and PEFT for MoE expert quantization."""
         has_target_params = bool(getattr(self.cfg, "lora_target_parameters", None))
 
         if not self.cfg.quantize_moe_experts and not has_target_params:
