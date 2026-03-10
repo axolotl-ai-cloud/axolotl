@@ -82,7 +82,9 @@ except ImportError:
     use_adapter = nullcontext
 
 try:
-    from liger_kernel.ops.grpo_loss import fused_selective_log_softmax as _fused_selective_log_softmax
+    from liger_kernel.ops.grpo_loss import (
+        fused_selective_log_softmax as _fused_selective_log_softmax,
+    )
 except ImportError:
     _fused_selective_log_softmax = None
 
@@ -554,6 +556,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        # FP8 models: zero out the pad token embedding so that padding
+        # positions have zero hidden states throughout the network.
+        # FP8 linear layers produce NaN on non-zero inputs at masked
+        # positions (the Triton fp8 matmul kernel can't handle the
+        # extreme values that accumulate at unattended positions).
+        self._zero_pad_embedding_for_fp8()
+
         # Ensure custom attributes exist (stock GRPOTrainer.__init__ may not set them).
         for attr, cfg_key, default in [
             (
@@ -673,39 +682,193 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # Weight sync
     # ------------------------------------------------------------------
 
+    def _sync_peft_weights_no_merge(self):
+        """Thread-safe weight sync: compute merged LoRA weights without in-place modification.
+
+        Required for FP8 models where merge_adapter() fails (addmm not implemented
+        for Float8), and also safe for concurrent use since it never modifies base
+        weights in-place.
+        """
+        model = self.vllm_generation.model
+        accelerator = self.vllm_generation.accelerator
+        vllm_client = self.vllm_generation.vllm_client
+        fix_name = self.vllm_generation._fix_param_name_to_vllm
+
+        if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
+            return
+
+        # Build lookup: module_path -> (A, B, scaling) for all active LoRA layers
+        lora_info = {}
+        for mod_name, module in model.base_model.model.named_modules():
+            if not hasattr(module, "lora_A") or not hasattr(module, "active_adapters"):
+                continue
+            active = module.active_adapters[0]
+            if active not in module.lora_A:
+                continue
+            lora_info[mod_name] = (
+                module.lora_A[active].weight.data,
+                module.lora_B[active].weight.data,
+                module.scaling[active],
+            )
+
+        # Build lookup for FP8 scale_inv parameters (needed for dequantization)
+        scale_inv_lookup = {}
+        for pname, pparam in model.named_parameters():
+            if "weight_scale_inv" in pname:
+                # Map weight name -> scale_inv tensor
+                weight_name = pname.replace(".weight_scale_inv", ".weight")
+                scale_inv_lookup[weight_name] = pparam.data
+
+        # Iterate all parameters, computing merged weights for LoRA layers.
+        # Skip LoRA-specific params and FP8 scale params (scales will be
+        # recomputed by vLLM when it receives the merged bf16 weight).
+        params_to_sync = []
+        for name, param in model.named_parameters():
+            vllm_name = name.removeprefix("base_model.model.").replace(
+                ".base_layer", ""
+            )
+            if model.prefix in vllm_name:
+                continue
+            if "original_module" in vllm_name:
+                continue
+            # Skip FP8 quantization scale parameters - they are recomputed
+            # on the vLLM side when we update the weight itself
+            if "weight_scale_inv" in vllm_name or "input_scale" in vllm_name:
+                continue
+            vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
+
+            data = param.data
+            compute_dtype = torch.bfloat16
+
+            if vllm_name.endswith(".weight"):
+                # Dequantize FP8 weights before merging
+                if data.dtype == torch.float8_e4m3fn and name in scale_inv_lookup:
+                    scale_inv = scale_inv_lookup[name]
+                    # Block dequantization: weight * scale_inv (with broadcasting)
+                    fp8_bf16 = data.to(compute_dtype)
+                    if scale_inv.dim() == 2 and fp8_bf16.dim() == 2:
+                        # Block-quantized: scale_inv shape (rows/block, cols/block)
+                        sr, sc = scale_inv.shape
+                        br = fp8_bf16.shape[0] // sr  # block height
+                        bc = fp8_bf16.shape[1] // sc  # block width
+                        # Reshape → multiply by block scale → reshape back
+                        data = (
+                            fp8_bf16.reshape(sr, br, sc, bc)
+                            * scale_inv[:, None, :, None].to(compute_dtype)
+                        ).reshape(fp8_bf16.shape)
+                    elif scale_inv.dim() <= 1:
+                        # Per-tensor or per-channel scale
+                        data = fp8_bf16 * scale_inv.to(compute_dtype)
+                    else:
+                        data = fp8_bf16
+                elif data.dtype == torch.float8_e4m3fn:
+                    # FP8 but no scale found - just cast (lossy)
+                    data = data.to(compute_dtype)
+
+                mod_path = vllm_name[: -len(".weight")]
+                if mod_path in lora_info:
+                    A, B, s = lora_info[mod_path]
+                    merged = data.to(compute_dtype) + s * (
+                        B.to(compute_dtype) @ A.to(compute_dtype)
+                    )
+                    data = merged
+
+            params_to_sync.append((vllm_name, data))
+
+        # Batch sync all params in one HTTP+NCCL call (vs individual calls)
+        if params_to_sync:
+            vllm_client.batch_update_named_params(params_to_sync)
+
+        # Reset prefix cache after weight update
+        vllm_client.reset_prefix_cache()
+
     def _maybe_sync_vllm_weights(self):
         """Sync model weights to vLLM if the interval has elapsed.
 
-        Weight sync uses merge_adapter() / unmerge_adapter() which modify model
-        weights in-place.  This MUST NOT overlap with a training forward/backward
-        pass, so we drain inflight BG generations first, sync synchronously,
-        then let the BG thread resume.
+        Uses _sync_peft_weights_no_merge for PEFT models to avoid
+        merge_adapter/unmerge_adapter (which fails on FP8 and races with
+        training on non-FP8).  Falls back to stock sync_weights for non-PEFT.
         """
         if not (self.use_vllm and self.args.async_prefetch):
             return
         step = self.state.global_step
         interval = self.args.vllm_sync_interval
         if step != self._last_synced_step and step % interval == 0:
-            # Drain inflight BG generations so no concurrent model access
-            if self.data_producer is not None and hasattr(self.data_producer, "_generate_lock"):
-                with self.data_producer._generate_lock:
-                    self.vllm_generation.sync_weights()
-            elif self._async_queue is not None:
-                pending = list(self._async_queue.queue)
-                for f in pending:
-                    if isinstance(f, concurrent.futures.Future):
-                        f.result()
-                self.vllm_generation.sync_weights()
+            from accelerate.utils import is_peft_model
+
+            use_no_merge = is_peft_model(self.vllm_generation.model)
+
+            if use_no_merge:
+                # No-merge sync: computes merged weights as new tensors
+                # (doesn't modify base weights in-place), so it's safe to
+                # run concurrently with BG generation — no lock needed.
+                self._sync_peft_weights_no_merge()
             else:
-                self.vllm_generation.sync_weights()
+                # Non-PEFT: use stock sync (acquires lock to avoid overlap)
+                if self.data_producer is not None and hasattr(
+                    self.data_producer, "_generate_lock"
+                ):
+                    with self.data_producer._generate_lock:
+                        self.vllm_generation.sync_weights()
+                elif self._async_queue is not None:
+                    pending = list(self._async_queue.queue)
+                    for f in pending:
+                        if isinstance(f, concurrent.futures.Future):
+                            f.result()
+                    self.vllm_generation.sync_weights()
+                else:
+                    self.vllm_generation.sync_weights()
             self._last_synced_step = step
+
+    def _zero_pad_embedding_for_fp8(self):
+        """Zero out the pad token embedding for FP8 models.
+
+        FP8 linear layers produce NaN when processing positions with
+        attention_mask=0 (the hidden states at those positions have
+        unconstrained values that overflow FP8 range during
+        quantization). By setting the pad token embedding to zeros,
+        padding positions start with zero hidden states and stay zero
+        through masked attention, preventing NaN from FP8 matmul.
+        """
+        model = self.accelerator.unwrap_model(self.model)
+        # Check if model has FP8 weights
+        has_fp8 = any(
+            p.dtype == torch.float8_e4m3fn
+            for p in model.parameters()
+            if not p.requires_grad
+        )
+        if not has_fp8:
+            return
+
+        # Find the embedding layer
+        if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+            embed = model.model.embed_tokens
+        elif hasattr(model, "base_model") and hasattr(model.base_model, "model"):
+            m = model.base_model.model
+            if hasattr(m, "model") and hasattr(m.model, "embed_tokens"):
+                embed = m.model.embed_tokens
+            else:
+                return
+        else:
+            return
+
+        pad_id = self.processing_class.pad_token_id
+        if pad_id is not None and pad_id < embed.weight.shape[0]:
+            with torch.no_grad():
+                embed.weight.data[pad_id].zero_()
+            import logging
+
+            logging.getLogger("async_grpo").info(
+                f"Zeroed pad token embedding (id={pad_id}) for FP8 NaN prevention"
+            )
 
     # ------------------------------------------------------------------
     # Background-thread generation (no scoring)
     # ------------------------------------------------------------------
 
     def _generate_single_turn(self, prompts, **kwargs):
-        """Override to prevent weight sync from background thread."""
+        """Override to prevent weight sync from background thread and to use
+        no-merge sync for PEFT models (FP8 models can't merge_adapter)."""
         is_bg = threading.current_thread() is not threading.main_thread()
         saved_step = None
 
@@ -713,6 +876,21 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Trick: match _last_loaded_step so the stock sync check is a no-op
             saved_step = getattr(self, "_last_loaded_step", None)
             self._last_loaded_step = self.state.global_step
+
+        # For PEFT models, permanently replace vllm_generation.sync_weights
+        # with our no-merge version to avoid merge_adapter (fails on FP8
+        # and races with training on non-FP8).
+        if not getattr(self, "_patched_sync_weights", False):
+            if self.use_vllm and hasattr(self, "vllm_generation"):
+                from accelerate.utils import is_peft_model
+
+                if is_peft_model(self.vllm_generation.model):
+
+                    def _no_merge_sync():
+                        self._sync_peft_weights_no_merge()
+
+                    self.vllm_generation.sync_weights = _no_merge_sync
+                    self._patched_sync_weights = True
 
         try:
             return super()._generate_single_turn(prompts, **kwargs)
@@ -1074,6 +1252,19 @@ class AsyncGRPOTrainer(GRPOTrainer):
         rewards_per_func = self._collect_reward_workers(
             inputs, prompts, completions, completion_ids_list
         )
+
+        # --- Spot-check: print first completion + reward for debugging ---
+        if completions and self.state.global_step <= 5:
+            import logging as _log
+
+            _spot_log = _log.getLogger("spot_check")
+            _spot_log.setLevel(_log.INFO)
+            _r = rewards_per_func[0].tolist() if rewards_per_func.numel() > 0 else "N/A"
+            _c = completions[0][:300] if completions else "N/A"
+            _p = prompts[0][-200:] if prompts else "N/A"
+            _spot_log.info(f"[SPOT-CHECK step={self.state.global_step}] reward={_r}")
+            _spot_log.info(f"[SPOT-CHECK] prompt (tail): {_p}")
+            _spot_log.info(f"[SPOT-CHECK] completion (head): {_c}")
 
         # --- Advantages ---
         if self.multi_objective_aggregation == "sum_then_normalize":
@@ -1772,7 +1963,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         image_sizes=None,
         token_type_ids=None,
         mm_token_type_ids=None,
-    ) -> dict[str, torch.Tensor | None]:
+    ) -> tuple[Any, torch.Tensor | None]:
         """Compute log-probs and (optionally) entropies for each token.
 
         When running under no_grad (scoring path), bypasses accelerate's
@@ -1781,9 +1972,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         """
         # Bypass accelerate's ConvertOutputsToFp32 wrapper which converts the
         # entire (B, L, V) logits tensor from bf16 to fp32 — unnecessary and
-        # extremely wasteful for large vocabularies 
+        # extremely wasteful for large vocabularies
         model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
-        autocast_ctx = torch.autocast(device_type=input_ids.device.type, dtype=torch.bfloat16)
+        autocast_ctx = torch.autocast(
+            device_type=input_ids.device.type, dtype=torch.bfloat16
+        )
 
         # Use Liger's Triton kernel in scoring path (no grad): fuses
         # temperature + log_softmax + gather into a single kernel pass.
@@ -1802,27 +1995,48 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 attention_mask_batch = attention_mask[start : start + batch_size]
 
                 # Build model inputs
-                model_inputs = {"input_ids": input_ids_batch, "attention_mask": attention_mask_batch}
+                model_inputs = {
+                    "input_ids": input_ids_batch,
+                    "attention_mask": attention_mask_batch,
+                }
                 if image_grid_thw is not None and pixel_values is not None:
                     rows_per_image = image_grid_thw.prod(dim=-1)
                     rows_per_sample = torch.split(rows_per_image, num_images)
                     rows_per_sample = torch.stack([s.sum() for s in rows_per_sample])
-                    cum_rows = torch.cat([torch.tensor([0], device=rows_per_sample.device), rows_per_sample.cumsum(0)])
-                    row_start, row_end = cum_rows[start].item(), cum_rows[start + batch_size].item()
+                    cum_rows = torch.cat(
+                        [
+                            torch.tensor([0], device=rows_per_sample.device),
+                            rows_per_sample.cumsum(0),
+                        ]
+                    )
+                    row_start, row_end = (
+                        cum_rows[start].item(),
+                        cum_rows[start + batch_size].item(),
+                    )
                     model_inputs["pixel_values"] = pixel_values[row_start:row_end]
                     cum_imgs = torch.tensor([0] + num_images).cumsum(0)
                     img_start, img_end = cum_imgs[start], cum_imgs[start + batch_size]
                     model_inputs["image_grid_thw"] = image_grid_thw[img_start:img_end]
                 elif pixel_values is not None:
-                    model_inputs["pixel_values"] = pixel_values[start : start + batch_size]
+                    model_inputs["pixel_values"] = pixel_values[
+                        start : start + batch_size
+                    ]
                 if pixel_attention_mask is not None:
-                    model_inputs["pixel_attention_mask"] = pixel_attention_mask[start : start + batch_size]
+                    model_inputs["pixel_attention_mask"] = pixel_attention_mask[
+                        start : start + batch_size
+                    ]
                 if image_sizes is not None:
-                    model_inputs["image_sizes"] = image_sizes[start : start + batch_size]
+                    model_inputs["image_sizes"] = image_sizes[
+                        start : start + batch_size
+                    ]
                 if token_type_ids is not None:
-                    model_inputs["token_type_ids"] = token_type_ids[start : start + batch_size]
+                    model_inputs["token_type_ids"] = token_type_ids[
+                        start : start + batch_size
+                    ]
                 if mm_token_type_ids is not None:
-                    model_inputs["mm_token_type_ids"] = mm_token_type_ids[start : start + batch_size]
+                    model_inputs["mm_token_type_ids"] = mm_token_type_ids[
+                        start : start + batch_size
+                    ]
 
                 if "logits_to_keep" in self.model_kwarg_keys:
                     model_inputs["logits_to_keep"] = logits_to_keep + 1
@@ -1831,9 +2045,14 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
                 logits = model(**model_inputs).logits
                 completion_ids = input_ids_batch[:, -logits_to_keep:]
+                # FP8 models produce NaN logits at positions where
+                # attention_mask=0 (padding). Replace NaN with 0 so
+                # log_softmax yields uniform distribution for those positions.
+                # The completion_mask ensures these don't affect the loss.
+                logits = torch.nan_to_num(logits, nan=0.0)
 
                 if use_fused:
-                    logits = logits[:, -(logits_to_keep + 1):, :]
+                    logits = logits[:, -(logits_to_keep + 1) :, :]
                     if not logits.is_contiguous():
                         logits = logits.contiguous()
                     logps = _fused_selective_log_softmax(
@@ -2082,12 +2301,3 @@ class AsyncGRPOTrainer(GRPOTrainer):
             )
 
         return loss
-
-    # ------------------------------------------------------------------
-    # Training step override (timing)
-    # ------------------------------------------------------------------
-
-    def training_step(self, model, inputs, num_items_in_batch=None):
-        output = super().training_step(model, inputs, num_items_in_batch)
-        self._step += 1
-        return output
