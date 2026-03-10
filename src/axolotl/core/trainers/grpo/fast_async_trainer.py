@@ -182,7 +182,7 @@ def _persistent_reward_worker(conn):
             ]
             reward_kwargs = {key: [example[key] for example in inputs] for key in keys}
             results = []
-            for reward_func, reward_func_name in zip(
+            for reward_func, _reward_func_name in zip(
                 reward_funcs, reward_func_names, strict=True
             ):
                 output = reward_func(
@@ -360,7 +360,7 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         # Shard by prompt groups across workers
         groups_per_worker = max(1, (num_groups + len(workers) - 1) // len(workers))
         workers_used = []
-        for w_idx, (conn, proc) in enumerate(workers):
+        for w_idx, (conn, _proc) in enumerate(workers):
             g_start = w_idx * groups_per_worker
             g_end = min((w_idx + 1) * groups_per_worker, num_groups)
             if g_start >= num_groups:
