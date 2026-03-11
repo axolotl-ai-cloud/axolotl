@@ -67,6 +67,25 @@ cd flash-attention/flash_attn/cute
 pip install -e .
 ```
 
+::: {.callout-note}
+
+**Hopper (SM90) users**: The backward kernel is not yet included in the pip package. To use FA4
+for training on Hopper, install from source using the instructions above.
+
+:::
+
+::: {.callout-warning}
+
+FA4 kernels are designed around a maximum head dimension of 128. The tile sizes, TMEM
+partitioning, and pipeline stages are all hardcoded for `d ≤ 128`. Models with larger head
+dimensions (e.g. 256, which FA2 supports) are not compatible with FA4. The only exception is the
+asymmetric DeepSeek shape `(192, 128)`, which is supported on Blackwell (SM100/SM110) only.
+
+Axolotl automatically detects the model's head dimensions and will fall back to FA2/3 if they
+exceed FA4's supported range.
+
+:::
+
 For more details: [flash-attention/flash_attn/cute](https://github.com/Dao-AILab/flash-attention/tree/main/flash_attn/cute)
 
 ### AMD
