@@ -5,9 +5,6 @@ E2E tests for custom optimizers using Llama
 import unittest
 
 import pytest
-import torch
-from packaging import version
-
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -289,10 +286,7 @@ class TestCustomOptimizers(unittest.TestCase):
 
 
 
-@pytest.mark.skipif(
-    version.parse(torch.__version__) < version.parse("2.7.0"),
-    reason="test requires torch>=2.7.0",
-)
+@require_torch_2_7_0
 @pytest.mark.parametrize(
     "optimizer_name,expected_class,learning_rate",
     [
@@ -333,7 +327,6 @@ def test_flash_optimizers(tmp_path, optimizer_name, expected_class, learning_rat
             "output_dir": temp_dir,
             "learning_rate": learning_rate,
             "optimizer": optimizer_name,
-            "optim_args": {"master_weight_bits": None},
             "max_steps": 5,
             "lr_scheduler": "cosine",
             "save_first_step": False,
