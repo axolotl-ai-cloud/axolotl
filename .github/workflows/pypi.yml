@@ -3,7 +3,7 @@ name: publish pypi
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions: {}
@@ -30,7 +30,8 @@ jobs:
       name: pypi
       url: https://pypi.org/p/axolotl
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
