@@ -191,6 +191,8 @@ class GRPOStrategy:
             grpo_args_kwargs["skip_zero_advantage_batches"] = (
                 trl.skip_zero_advantage_batches
             )
+        if getattr(trl, "vllm_lora_sync", None) is not None:
+            grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 
         return grpo_args_kwargs
 

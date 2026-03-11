@@ -244,6 +244,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             and self.model.is_quantized
         ):
             import transformers.trainer as _trainer_module
+
             _trainer_module.validate_quantization_for_training = lambda model: None
 
         trainer = trainer_cls(

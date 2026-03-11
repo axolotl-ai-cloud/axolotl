@@ -39,8 +39,7 @@ def dequantize_fp8(
         br = W.shape[0] // sr
         bc = W.shape[1] // sc
         return (
-            W_float.reshape(sr, br, sc, bc)
-            * scale_inv[:, None, :, None].to(dtype)
+            W_float.reshape(sr, br, sc, bc) * scale_inv[:, None, :, None].to(dtype)
         ).reshape(W.shape)
     return W_float * scale_inv.to(dtype)
 

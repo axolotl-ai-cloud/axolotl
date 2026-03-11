@@ -300,7 +300,14 @@ class TRLConfig(BaseModel):
         default=True,
         json_schema_extra={
             "description": "When True, skip gradient computation for micro-batches where all advantages are zero (no learning "
-            "signal). This saves ~0.6s per skipped batch by avoiding the forward/backward pass entirely. The step is "
+            "signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is "
             "logged with skipped_zero_adv_batches=1 for monitoring."
+        },
+    )
+    vllm_lora_sync: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. "
+            "Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model."
         },
     )

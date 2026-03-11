@@ -176,6 +176,7 @@ class AsyncGRPOConfig(GRPOConfig):
 # Data Producer Protocol (standalone — no transformers branch needed)
 # ---------------------------------------------------------------------------
 
+logger = logging.getLogger(__name__)
 _dp_logger = logging.getLogger(__name__ + ".data_producer")
 
 
@@ -270,6 +271,12 @@ class AsyncDataProducer:
 
     While the Trainer trains on the current rollout, this wrapper produces upcoming
     datasets in a background thread.
+
+    FSDP compatibility: Background threads must NOT call cross-rank collectives
+    (gather_object, broadcast_object_list, FSDP all-gather) because the main thread
+    may be doing FSDP forward/backward concurrently, causing deadlocks. When
+    ``num_processes > 1``, only rank 0 runs BG generation; results are broadcast
+    to other ranks on the main thread when ``produce()`` is next called.
     """
 
     def __init__(
@@ -288,6 +295,9 @@ class AsyncDataProducer:
         # The main thread acquires this lock for weight sync to ensure
         # merge_adapter/unmerge_adapter don't overlap with generation.
         self._generate_lock = threading.Lock()
+        # Detected at first produce() call
+        self._num_processes: int | None = None
+        self._is_main: bool | None = None
 
     @property
     def config(self) -> ProducerConfig:
@@ -295,6 +305,16 @@ class AsyncDataProducer:
 
     def produce(self, model: Any, global_step: int, **kwargs) -> Dataset:
         """Return the next dataset, blocking if the prefetch hasn't finished."""
+        # Detect multi-process on first call
+        if self._num_processes is None:
+            accelerator = kwargs.get("accelerator")
+            if accelerator is not None:
+                self._num_processes = accelerator.num_processes
+                self._is_main = accelerator.is_main_process
+            else:
+                self._num_processes = 1
+                self._is_main = True
+
         # During warmup, produce synchronously (on-policy)
         if self._warmup_remaining > 0:
             self._warmup_remaining -= 1
@@ -306,6 +326,10 @@ class AsyncDataProducer:
         if not self._initialized:
             dataset = self._inner.produce(model, global_step, **kwargs)
             bg_kwargs = {**kwargs, **self._background_kwargs}
+            # With FSDP (multi-process), only submit BG tasks on rank 0.
+            # Non-rank-0 processes will receive data via broadcast.
+            if self._num_processes > 1:
+                bg_kwargs["_rank0_only"] = True
             for i in range(1, self._depth + 1):
                 self._queue.append(
                     self._executor.submit(
@@ -315,12 +339,53 @@ class AsyncDataProducer:
             self._initialized = True
             return dataset
 
+        # Get the pre-generated dataset from the BG thread
         dataset = self._queue.popleft().result()
+
+        # With FSDP: BG thread only ran on rank 0. Broadcast to all ranks.
+        if self._num_processes > 1:
+            dataset = self._broadcast_dataset(dataset)
+
         bg_kwargs = {**kwargs, **self._background_kwargs}
+        if self._num_processes > 1:
+            bg_kwargs["_rank0_only"] = True
         next_step = global_step + self._depth
         self._queue.append(
             self._executor.submit(self._locked_produce, model, next_step, **bg_kwargs)
         )
+        return dataset
+
+    def _broadcast_dataset(self, dataset) -> Dataset:
+        """Broadcast a prefetched dataset from rank 0 to all ranks (main thread).
+
+        Rank 0 has a full RolloutDataset from BG generation; other ranks have None.
+        After broadcast, tensors are moved to each rank's local device.
+        """
+        import torch.distributed as dist
+
+        if not dist.is_initialized():
+            return dataset
+
+        # Rank 0 sends _data dict; others receive it
+        obj_list = [dataset._data if self._is_main else None]
+        dist.broadcast_object_list(obj_list, src=0)
+
+        data: dict[str, Any] = obj_list[0]  # type: ignore[assignment]
+
+        # Move tensors to local device (broadcast_object_list deserializes to CPU)
+        accelerator = self._inner._trainer.accelerator  # type: ignore[attr-defined]
+        device = accelerator.device
+        for key, val in data.items():
+            if isinstance(val, torch.Tensor) and val.device != device:
+                data[key] = val.to(device)
+
+        if not self._is_main:
+            from axolotl.core.trainers.grpo.async_trainer import RolloutDataset
+
+            dataset = RolloutDataset(data)
+        else:
+            # Rank 0 already has the dataset, but update _data with device-moved tensors
+            dataset._data = data
         return dataset
 
     def _locked_produce(self, model: Any, global_step: int, **kwargs) -> Dataset:
@@ -362,7 +427,9 @@ class RolloutDataset(Dataset):
     Per-sample tensors are sliced by index; shared metadata is passed through.
     """
 
-    _ALWAYS_SHARED = frozenset({"num_items_in_batch", "_pending_policy_logps"})
+    _ALWAYS_SHARED = frozenset(
+        {"num_items_in_batch", "_pending_policy_logps", "_rank0_only"}
+    )
 
     def __init__(self, data: dict[str, Any]):
         self._data = data
@@ -509,9 +576,16 @@ class GRPODataProducer(BaseDataProducer):
         processing_class: Any = None,
         accelerator: Any = None,
         args: Any = None,
+        _rank0_only: bool = False,
         **kwargs,
-    ) -> RolloutDataset:
+    ) -> RolloutDataset | None:
         """Generate a fresh GRPO training rollout."""
+        is_main = self._trainer.accelerator.is_main_process
+
+        # FSDP rank0-only mode: non-rank-0 returns None (broadcast fills it later)
+        if _rank0_only and not is_main:
+            return None
+
         try:
             inputs = next(self._prompt_iter)
         except StopIteration:
@@ -521,7 +595,7 @@ class GRPODataProducer(BaseDataProducer):
         if skip_policy_logps:
             # Async path: use _generate_only (generation without scoring) which
             # works on stock TRL (no skip_policy_logps parameter needed).
-            output = self._trainer._generate_only(inputs)
+            output = self._trainer._generate_only(inputs, rank0_only=_rank0_only)
         else:
             # Sync path: full generation + scoring
             output = self._trainer._generate_and_score_completions(inputs)
@@ -554,6 +628,39 @@ class AsyncGRPOTrainer(GRPOTrainer):
     """
 
     def __init__(self, *args, **kwargs):
+        # When using native LoRA sync, skip the NCCL communicator init in VLLMGeneration.
+        # The communicator is not needed because weight sync happens via filesystem + HTTP,
+        # and it fails when vLLM and a trainer rank share the same CUDA device.
+        training_args = kwargs.get("args") or (args[1] if len(args) > 1 else None)
+        if training_args is not None and getattr(
+            training_args, "vllm_lora_sync", False
+        ):
+            from trl.generation.vllm_generation import VLLMGeneration
+
+            _orig_init_vllm = VLLMGeneration._init_vllm
+
+            def _init_vllm_no_communicator(self_vllm):
+                """Init vLLM client without NCCL communicator (LoRA sync uses filesystem)."""
+                if self_vllm.mode == "server" and self_vllm.accelerator.is_main_process:
+                    from trl.generation.vllm_client import VLLMClient
+
+                    if self_vllm.server_base_url is not None:
+                        base_url = self_vllm.server_base_url
+                    else:
+                        base_url = (
+                            f"http://{self_vllm.server_host}:{self_vllm.server_port}"
+                        )
+                    self_vllm.vllm_client = VLLMClient(
+                        base_url=base_url,
+                        group_port=self_vllm.group_port,
+                        connection_timeout=self_vllm.server_timeout,
+                    )
+                    # Deliberately skip init_communicator — no NCCL needed
+                elif self_vllm.mode != "server":
+                    _orig_init_vllm(self_vllm)
+
+            VLLMGeneration._init_vllm = _init_vllm_no_communicator
+
         super().__init__(*args, **kwargs)
 
         # FP8 models: zero out the pad token embedding so that padding
@@ -782,42 +889,157 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # Reset prefix cache after weight update
         vllm_client.reset_prefix_cache()
 
+    def _sync_lora_adapter(self):
+        """Sync LoRA adapter to vLLM via filesystem (native LoRA mode).
+
+        Saves the PEFT adapter to a temp directory and POSTs the path to vLLM's
+        /set_lora_adapter/ endpoint. vLLM loads the adapter natively using Punica
+        kernels, avoiding the need to merge weights and NCCL-broadcast the full model.
+
+        Syncs only the LoRA adapter weights via filesystem instead of the full merged model via NCCL.
+
+        FSDP/DeepSpeed: All ranks must participate in the state_dict gather.
+        accelerator.get_state_dict() handles this (FSDP uses FullStateDictConfig
+        with rank0_only=True). Only rank 0 gets the full dict, writes files, and
+        does the HTTP POST.
+        """
+        import os
+        import tempfile
+
+        accelerator = self.vllm_generation.accelerator
+        model = self.vllm_generation.model
+
+        if self.vllm_generation.mode != "server":
+            return
+
+        is_main = accelerator.is_main_process
+
+        # Increment adapter version (all ranks, kept in sync)
+        if not hasattr(self, "_lora_sync_version"):
+            self._lora_sync_version = 0
+            if is_main:
+                self._lora_sync_dir = tempfile.mkdtemp(prefix="lora_sync_")
+            else:
+                self._lora_sync_dir = None
+            # Broadcast sync dir from rank 0 to all ranks
+            if accelerator.num_processes > 1:
+                import torch.distributed as dist
+
+                if dist.is_initialized():
+                    obj_list = [self._lora_sync_dir]
+                    dist.broadcast_object_list(obj_list, src=0)
+                    self._lora_sync_dir = obj_list[0]
+        self._lora_sync_version += 1
+
+        adapter_path = os.path.join(self._lora_sync_dir, f"v{self._lora_sync_version}")
+
+        # Gather state dict from all ranks (FSDP/DeepSpeed gather, rank0_only)
+        # All ranks must participate even though only rank 0 gets the result.
+        # Use self.model_wrapped (the DeepSpeed/FSDP engine) for get_state_dict,
+        # since it has the necessary hooks (e.g. zero_gather_16bit_weights_on_model_save).
+        # self.vllm_generation.model is the unwrapped PEFT model which lacks these.
+        wrapped_model = getattr(self, "model_wrapped", model)
+        state_dict = accelerator.get_state_dict(wrapped_model)
+
+        if is_main:
+            # Unwrap to access PEFT's save_pretrained
+            unwrapped = accelerator.unwrap_model(model)
+            unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
+
+            import requests
+
+            vllm_client = self.vllm_generation.vllm_client
+            url = f"{vllm_client.base_url}/set_lora_adapter/"
+            response = requests.post(
+                url,
+                json={
+                    "lora_name": "active_lora",
+                    "lora_int_id": self._lora_sync_version,
+                    "lora_path": adapter_path,
+                },
+                timeout=30,
+            )
+            if response.status_code != 200:
+                logger.warning(
+                    "Failed to set LoRA adapter: %s %s",
+                    response.status_code,
+                    response.text,
+                )
+                return
+
+            # Reset prefix cache after adapter update
+            vllm_client.reset_prefix_cache()
+
+            # Clean up old adapter versions (keep only current)
+            if self._lora_sync_version > 1:
+                old_path = os.path.join(
+                    self._lora_sync_dir, f"v{self._lora_sync_version - 1}"
+                )
+                if os.path.exists(old_path):
+                    import shutil
+
+                    shutil.rmtree(old_path, ignore_errors=True)
+
+            logger.info(
+                "Synced LoRA adapter v%d to vLLM (%s)",
+                self._lora_sync_version,
+                adapter_path,
+            )
+
+        # Barrier to ensure all ranks complete before resuming forward passes.
+        # Without this, rank 1 may start a forward pass (triggering FSDP unshard)
+        # while rank 0 is still doing save_pretrained, causing FSDP all-gather deadlock.
+        if accelerator.num_processes > 1:
+            import torch.distributed as dist
+
+            if dist.is_initialized():
+                dist.barrier()
+
     def _maybe_sync_vllm_weights(self):
         """Sync model weights to vLLM if the interval has elapsed.
 
-        Uses _sync_peft_weights_no_merge for PEFT models to avoid
-        merge_adapter/unmerge_adapter (which fails on FP8 and races with
-        training on non-FP8).  Falls back to stock sync_weights for non-PEFT.
+        Dispatches to one of three strategies:
+        - vllm_lora_sync: saves adapter to filesystem, vLLM loads natively
+        - PEFT no-merge: computes merged weights as new tensors, NCCL broadcast
+        - Non-PEFT: stock sync_weights via merge_adapter + NCCL
         """
         if not (self.use_vllm and self.args.async_prefetch):
             return
         step = self.state.global_step
         interval = self.args.vllm_sync_interval
         if step != self._last_synced_step and step % interval == 0:
-            from accelerate.utils import is_peft_model
-
-            use_no_merge = is_peft_model(self.vllm_generation.model)
-
-            if use_no_merge:
-                # No-merge sync: computes merged weights as new tensors
-                # (doesn't modify base weights in-place), so it's safe to
-                # run concurrently with BG generation — no lock needed.
-                self._sync_peft_weights_no_merge()
+            if getattr(self.args, "vllm_lora_sync", False):
+                if step == 0:
+                    logger.info("Skipping LoRA sync at step 0 (no training yet)")
+                    self._last_synced_step = step
+                    return
+                # Native LoRA sync: save adapter to filesystem, vLLM loads it directly
+                self._sync_lora_adapter()
             else:
-                # Non-PEFT: use stock sync (acquires lock to avoid overlap)
-                if self.data_producer is not None and hasattr(
-                    self.data_producer, "_generate_lock"
-                ):
-                    with self.data_producer._generate_lock:
-                        self.vllm_generation.sync_weights()
-                elif self._async_queue is not None:
-                    pending = list(self._async_queue.queue)
-                    for f in pending:
-                        if isinstance(f, concurrent.futures.Future):
-                            f.result()
-                    self.vllm_generation.sync_weights()
+                from accelerate.utils import is_peft_model
+
+                use_no_merge = is_peft_model(self.vllm_generation.model)
+
+                if use_no_merge:
+                    # No-merge sync: computes merged weights as new tensors
+                    # (doesn't modify base weights in-place), so it's safe to
+                    # run concurrently with BG generation — no lock needed.
+                    self._sync_peft_weights_no_merge()
                 else:
-                    self.vllm_generation.sync_weights()
+                    # Non-PEFT: use stock sync (acquires lock to avoid overlap)
+                    if self.data_producer is not None and hasattr(
+                        self.data_producer, "_generate_lock"
+                    ):
+                        with self.data_producer._generate_lock:
+                            self.vllm_generation.sync_weights()
+                    elif self._async_queue is not None:
+                        pending = list(self._async_queue.queue)
+                        for f in pending:
+                            if isinstance(f, concurrent.futures.Future):
+                                f.result()
+                        self.vllm_generation.sync_weights()
+                    else:
+                        self.vllm_generation.sync_weights()
             self._last_synced_step = step
 
     def _zero_pad_embedding_for_fp8(self):
@@ -877,20 +1099,26 @@ class AsyncGRPOTrainer(GRPOTrainer):
             saved_step = getattr(self, "_last_loaded_step", None)
             self._last_loaded_step = self.state.global_step
 
-        # For PEFT models, permanently replace vllm_generation.sync_weights
-        # with our no-merge version to avoid merge_adapter (fails on FP8
-        # and races with training on non-FP8).
+        # Permanently replace vllm_generation.sync_weights with our custom
+        # sync to avoid merge_adapter (fails on FP8 / races with training).
+        # For LoRA sync mode, make it a no-op here since _maybe_sync_vllm_weights
+        # handles the sync with proper interval tracking.
         if not getattr(self, "_patched_sync_weights", False):
             if self.use_vllm and hasattr(self, "vllm_generation"):
-                from accelerate.utils import is_peft_model
-
-                if is_peft_model(self.vllm_generation.model):
-
-                    def _no_merge_sync():
-                        self._sync_peft_weights_no_merge()
-
-                    self.vllm_generation.sync_weights = _no_merge_sync
+                if getattr(self.args, "vllm_lora_sync", False):
+                    # No-op: LoRA sync is driven by _maybe_sync_vllm_weights
+                    self.vllm_generation.sync_weights = lambda: None
                     self._patched_sync_weights = True
+                else:
+                    from accelerate.utils import is_peft_model
+
+                    if is_peft_model(self.vllm_generation.model):
+
+                        def _no_merge_sync():
+                            self._sync_peft_weights_no_merge()
+
+                        self.vllm_generation.sync_weights = _no_merge_sync
+                        self._patched_sync_weights = True
 
         try:
             return super()._generate_single_turn(prompts, **kwargs)
@@ -898,12 +1126,104 @@ class AsyncGRPOTrainer(GRPOTrainer):
             if saved_step is not None:
                 self._last_loaded_step = saved_step
 
-    def _generate_only(self, inputs):
+    def _generate_rank0_only(self, prompts):
+        """Generate using vLLM directly on rank 0 without cross-rank collectives.
+
+        Called from BG thread in FSDP mode. Bypasses ``gather_object`` /
+        ``broadcast_object_list`` since the main thread may be running FSDP
+        collectives concurrently.
+
+        Returns the same tuple as ``_generate``.
+        """
+        import copy
+
+        prompts = copy.deepcopy(prompts)
+
+        # Duplicate prompts for num_generations (same as TRL's gather+unique pattern)
+        num_generations = self.num_generations
+        unique_prompts = prompts[::num_generations]
+
+        # Build sampling params
+        vg = self.vllm_generation
+        sampling_params = {
+            "n": num_generations,
+            "repetition_penalty": vg.repetition_penalty,
+            "temperature": vg.temperature,
+            "top_p": vg.top_p,
+            "top_k": vg.top_k,
+            "min_p": 0.0 if vg.min_p is None else vg.min_p,
+            "max_tokens": vg.max_completion_length,
+            "logprobs": vg.logprobs,
+            "structured_outputs_regex": vg.structured_outputs_regex,
+            "generation_kwargs": vg.generation_kwargs,
+        }
+
+        # Call vLLM directly (no collectives)
+        from trl.data_utils import is_conversational
+
+        if is_conversational({"prompt": unique_prompts[0]}):
+            output = vg.vllm_client.chat(
+                messages=unique_prompts,
+                **sampling_params,
+                chat_template_kwargs=vg.chat_template_kwargs,
+                tools=vg.tools,
+                chat_template=vg.chat_template,
+            )
+        else:
+            output = vg.vllm_client.generate(prompts=unique_prompts, **sampling_params)
+
+        # vLLM returns 1 prompt_ids per unique prompt, but num_generations completion_ids.
+        # Duplicate prompt_ids to match completions (one per generation).
+        raw_prompt_ids = output["prompt_ids"]
+        prompt_ids = [pid for pid in raw_prompt_ids for _ in range(num_generations)]
+        completion_ids = output["completion_ids"]
+        logprobs_raw = output["logprobs"]
+        extra_fields = {
+            k: v
+            for k, v in output.items()
+            if k
+            not in {"prompt_ids", "completion_ids", "logprobs", "logprob_token_ids"}
+        }
+
+        # Extract top-1 logprob per token
+        logprobs = [[lp[0] for lp in seq] for seq in logprobs_raw]
+
+        # Decode completions
+        if is_conversational({"prompt": prompts[0]}):
+            contents = self.processing_class.batch_decode(
+                completion_ids, skip_special_tokens=True
+            )
+            completions = [[{"role": "assistant", "content": c}] for c in contents]
+        else:
+            completions = self.processing_class.batch_decode(
+                completion_ids, skip_special_tokens=True
+            )
+
+        tool_mask = extra_fields.pop("env_mask", None)
+
+        # Compute total completion tokens locally (no gather)
+        total_completion_tokens = sum(len(ids) for ids in completion_ids)
+
+        return (
+            prompt_ids,
+            completion_ids,
+            tool_mask,
+            completions,
+            total_completion_tokens,
+            logprobs,
+            extra_fields,
+        )
+
+    def _generate_only(self, inputs, rank0_only=False):
         """Generate completions without scoring.  Runs on background thread.
 
         Mirrors the first half of ``_generate_and_score_completions`` (prompt
         extraction → vLLM generation → tensor padding) and returns a deferred
         output dict for main-thread scoring.
+
+        When ``rank0_only=True`` (FSDP mode), bypasses ``gather_object`` /
+        ``broadcast_object_list`` collectives and calls vLLM directly on rank 0.
+        Results are broadcast to other ranks on the main thread later.
 
         Args:
             inputs: list of dicts (one per sample), as yielded by the DataLoader
@@ -935,15 +1255,34 @@ class AsyncGRPOTrainer(GRPOTrainer):
             ]
 
         # --- Generate completions ---
-        (
-            prompt_ids_list,
-            completion_ids_list,
-            tool_mask_list,
-            completions,
-            num_items_in_batch,
-            sampling_per_token_logps_list,
-            extra_fields,
-        ) = self._generate(prompts)
+        if rank0_only:
+            # FSDP mode: call vLLM directly without cross-rank collectives
+            (
+                prompt_ids_list,
+                completion_ids_list,
+                tool_mask_list,
+                completions,
+                num_items_in_batch,
+                sampling_per_token_logps_list,
+                extra_fields,
+            ) = self._generate_rank0_only(prompts)
+        else:
+            (
+                prompt_ids_list,
+                completion_ids_list,
+                tool_mask_list,
+                completions,
+                num_items_in_batch,
+                sampling_per_token_logps_list,
+                extra_fields,
+            ) = self._generate(prompts)
+            # _generate gathers prompts from all ranks internally. Gather inputs
+            # to match the full-batch output size.
+            if self.accelerator.num_processes > 1:
+                from accelerate.utils import gather_object
+
+                inputs = gather_object(inputs)
+                prompts = [x["prompt"] for x in inputs]
 
         # --- Pad to tensors ---
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
@@ -1048,6 +1387,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             "_deferred_prompts": prompts,
             "_deferred_completions": completions,
             "_deferred_completion_ids_list": completion_ids_list,
+            "_rank0_only": rank0_only,
         }
         if sampling_per_token_logps is not None:
             output["sampling_per_token_logps"] = sampling_per_token_logps
@@ -1137,6 +1477,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         prompts = data.pop("_deferred_prompts")
         completions = data.pop("_deferred_completions")
         completion_ids_list = data.pop("_deferred_completion_ids_list")
+        rank0_only = data.pop("_rank0_only", False)
         del data["_pending_policy_logps"]
 
         prompt_ids = data["prompt_ids"]
@@ -1200,13 +1541,14 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         **forward_kwargs,
                     )
                 else:
-                    model = self.accelerator.unwrap_model(self.model)
+                    unwrapped = self.accelerator.unwrap_model(self.model)
                     adapter_name = (
                         "ref"
-                        if hasattr(model, "peft_config") and "ref" in model.peft_config
+                        if hasattr(unwrapped, "peft_config")
+                        and "ref" in unwrapped.peft_config
                         else None
                     )
-                    with use_adapter(model, adapter_name=adapter_name):
+                    with use_adapter(unwrapped, adapter_name=adapter_name):
                         ref_logps, _ = self._get_per_token_logps_and_entropies(
                             self.model,
                             prompt_completion_ids,
@@ -1252,19 +1594,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
         rewards_per_func = self._collect_reward_workers(
             inputs, prompts, completions, completion_ids_list
         )
-
-        # --- Spot-check: print first completion + reward for debugging ---
-        if completions and self.state.global_step <= 5:
-            import logging as _log
-
-            _spot_log = _log.getLogger("spot_check")
-            _spot_log.setLevel(_log.INFO)
-            _r = rewards_per_func[0].tolist() if rewards_per_func.numel() > 0 else "N/A"
-            _c = completions[0][:300] if completions else "N/A"
-            _p = prompts[0][-200:] if prompts else "N/A"
-            _spot_log.info(f"[SPOT-CHECK step={self.state.global_step}] reward={_r}")
-            _spot_log.info(f"[SPOT-CHECK] prompt (tail): {_p}")
-            _spot_log.info(f"[SPOT-CHECK] completion (head): {_c}")
+        # In rank0_only mode, all ranks compute the same rewards on identical data.
+        # _calculate_rewards / _collect_reward_workers always `gather()` across ranks,
+        # which duplicates the rows (N_local * num_processes).  De-duplicate so that
+        # rewards_per_func matches the data dict (which has N_local rows).
+        if rank0_only and rewards_per_func.size(0) > len(prompts):
+            rewards_per_func = rewards_per_func[: len(prompts)]
 
         # --- Advantages ---
         if self.multi_objective_aggregation == "sum_then_normalize":
@@ -1324,10 +1659,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
             )
 
         # Slice for local process
-        process_slice = slice(
-            self.accelerator.process_index * len(prompts),
-            (self.accelerator.process_index + 1) * len(prompts),
-        )
+        # In rank0_only mode, all ranks already have identical data from broadcast,
+        # so no slicing needed. Otherwise, each rank takes its portion.
+        if rank0_only:
+            process_slice = slice(0, len(prompts))
+        else:
+            process_slice = slice(
+                self.accelerator.process_index * len(prompts),
+                (self.accelerator.process_index + 1) * len(prompts),
+            )
         all_advantages = advantages.clone()
         advantages = advantages[process_slice]
         data["advantages"] = advantages
@@ -1358,8 +1698,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
         )
 
         # Token counting
-        total_prompt = self.accelerator.gather(prompt_mask.sum())
-        total_completion = self.accelerator.gather(completion_mask.sum())
+        total_prompt = self.accelerator.gather(prompt_mask.sum()).sum()
+        total_completion = self.accelerator.gather(completion_mask.sum()).sum()
         self.state.num_input_tokens_seen += (total_prompt + total_completion).item()
         self._metrics[mode]["num_tokens"] = [self.state.num_input_tokens_seen]
 
@@ -1469,6 +1809,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         completions,
         completion_ids_list,
         is_last_chunk,
+        rank0_only=False,
     ):
         """Score a chunk of prompt groups: rewards, policy logprobs, advantages.
 
@@ -1590,13 +1931,14 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         **forward_kwargs,
                     )
                 else:
-                    model = self.accelerator.unwrap_model(self.model)
+                    unwrapped = self.accelerator.unwrap_model(self.model)
                     adapter_name = (
                         "ref"
-                        if hasattr(model, "peft_config") and "ref" in model.peft_config
+                        if hasattr(unwrapped, "peft_config")
+                        and "ref" in unwrapped.peft_config
                         else None
                     )
-                    with use_adapter(model, adapter_name=adapter_name):
+                    with use_adapter(unwrapped, adapter_name=adapter_name):
                         ref_logps, _ = self._get_per_token_logps_and_entropies(
                             self.model,
                             prompt_completion_ids,
@@ -1617,6 +1959,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         rewards_per_func = self._collect_reward_workers(
             inputs, prompts, completions, completion_ids_list
         )
+        # De-duplicate gathered rewards when all ranks computed the same data.
+        # _calculate_rewards always gather()s, which duplicates rows in rank0_only mode.
+        if rewards_per_func.size(0) > chunk_size:
+            rewards_per_func = rewards_per_func[:chunk_size]
 
         # --- Advantages (group-level normalization) ---
         if self.multi_objective_aggregation == "sum_then_normalize":
@@ -1672,10 +2018,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
             )
 
-        process_slice = slice(
-            self.accelerator.process_index * len(prompts),
-            (self.accelerator.process_index + 1) * len(prompts),
-        )
+        if rank0_only:
+            process_slice = slice(0, len(prompts))
+        else:
+            process_slice = slice(
+                self.accelerator.process_index * len(prompts),
+                (self.accelerator.process_index + 1) * len(prompts),
+            )
         advantages = advantages[process_slice]
 
         if "advantages" not in data or not isinstance(data["advantages"], torch.Tensor):
@@ -1715,8 +2064,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             all_prompt_mask = data["prompt_mask"]
             all_completion_mask = data["completion_mask"]
             all_completion_ids = data["completion_ids"]
-            total_p = self.accelerator.gather(all_prompt_mask.sum())
-            total_c = self.accelerator.gather(all_completion_mask.sum())
+            total_p = self.accelerator.gather(all_prompt_mask.sum()).sum()
+            total_c = self.accelerator.gather(all_completion_mask.sum()).sum()
             self.state.num_input_tokens_seen += (total_p + total_c).item()
             self._metrics[mode]["num_tokens"] = [self.state.num_input_tokens_seen]
 
@@ -1814,6 +2163,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         prompts = data.pop("_deferred_prompts")
         completions = data.pop("_deferred_completions")
         completion_ids_list = data.pop("_deferred_completion_ids_list")
+        rank0_only = data.pop("_rank0_only", False)
         del data["_pending_policy_logps"]
 
         all_micro_batches = []
@@ -1833,6 +2183,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 completions=completions[s_start:s_end],
                 completion_ids_list=completion_ids_list[s_start:s_end],
                 is_last_chunk=(chunk_end_g == n_groups),
+                rank0_only=rank0_only,
             )
 
             # Yield micro-batches from this scored chunk
@@ -1972,8 +2323,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         """
         # Bypass accelerate's ConvertOutputsToFp32 wrapper which converts the
         # entire (B, L, V) logits tensor from bf16 to fp32 — unnecessary and
-        # extremely wasteful for large vocabularies
-        model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
+        # extremely wasteful for large vocabularies.
+        # Skip unwrapping for FSDP — parameters are only valid inside FSDP's
+        # forward context; unwrapping exposes flattened/sharded tensors.
+        if not self.is_fsdp_enabled:
+            model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
         autocast_ctx = torch.autocast(
             device_type=input_ids.device.type, dtype=torch.bfloat16
         )
