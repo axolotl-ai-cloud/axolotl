@@ -1,7 +1,5 @@
 """Loading-time quantization for MoE expert weights stored as 3D nn.Parameter tensors."""
 
-import os
-
 import bitsandbytes as bnb
 import torch
 import torch.nn.utils.parametrize as P
@@ -96,6 +94,12 @@ def patch_moe_quantization_on_load(cfg):
     os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
 
     transformers.modeling_utils.caching_allocator_warmup = lambda *_: None
+    # Disable caching_allocator_warmup — it pre-allocates a huge tensor at bf16
+    # size for all params, defeating our on-load quantization VRAM savings.
+    def _noop_warmup(*args, **kwargs):
+        pass
+
+    transformers.modeling_utils.caching_allocator_warmup = _noop_warmup
 
     original_set_param = transformers.core_model_loading.set_param_for_module
 
