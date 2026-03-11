@@ -94,8 +94,17 @@ class FastAsyncGRPOConfig(AsyncGRPOConfig):
         default=True,
         metadata={
             "help": "When True, skip gradient computation for micro-batches where all advantages are zero (no learning "
-            "signal). This saves ~0.6s per skipped batch by avoiding the forward/backward pass entirely. The step is "
+            "signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is "
             "logged with skipped_zero_adv_batches=1 for monitoring."
+        },
+    )
+    vllm_lora_sync: bool = field(
+        default=False,
+        metadata={
+            "help": "When True, sync LoRA adapter weights to vLLM via filesystem instead of merging into base model "
+            "and NCCL-broadcasting all parameters. vLLM loads the adapter natively using Punica kernels. "
+            "Requires vllm_serve_lora serve module (auto-selected when this is True). "
+            "Syncs only LoRA adapter weights (much smaller) vs full merged model. Legacy merge behavior is used when False."
         },
     )
 
@@ -514,6 +523,10 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
                                 tgt_seq_len = (
                                     data[key].size(1) if data[key].dim() > 1 else None
                                 )
+                                if start >= data[key].size(0) or end > data[key].size(
+                                    0
+                                ):
+                                    continue
                                 if tgt_seq_len is not None:
                                     if src.size(1) <= tgt_seq_len:
                                         data[key][start:end] = 0
@@ -597,7 +610,10 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             _n_buffered = 0
             with self._reroll_lock:
                 for group_idx in should_reroll.nonzero(as_tuple=True)[0]:
-                    prompt_input = inputs[group_idx.item() * num_generations]
+                    idx = group_idx.item() * num_generations
+                    if idx >= len(inputs):
+                        continue
+                    prompt_input = inputs[idx]
                     self._reroll_buffer.append(prompt_input)
                     _n_buffered += 1
             if _n_buffered > 0:
@@ -731,7 +747,13 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         ):
             mode = "train" if self.model.training else "eval"
             self._metrics[mode]["skipped_zero_adv_batches"].append(1.0)
-            return torch.tensor(
-                0.0, device=inputs["advantages"].device, requires_grad=True
-            )
+            # Create zero loss with grad_fn. DeepSpeed requires grad_fn != None.
+            # With ZeRO-3, parameters are partitioned (shape=[0], requires_grad=False)
+            # so we can't just do `(p * 0).sum()`. Instead, do a tiny forward pass
+            # with a single token to create a proper computation graph.
+            prompt_ids = inputs["prompt_ids"][:1, :1]  # (1, 1)
+            attn = torch.ones_like(prompt_ids)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                out = model(input_ids=prompt_ids, attention_mask=attn)
+            return out.logits.sum() * 0
         return super()._compute_loss(model, inputs)

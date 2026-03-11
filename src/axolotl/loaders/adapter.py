@@ -162,7 +162,7 @@ def load_lora(
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
     # requires a compute dtype (bf16/fp16). Cast trainable LoRA params.
-    for name, param in model.named_parameters():
+    for _name, param in model.named_parameters():
         if param.requires_grad and param.dtype == torch.float8_e4m3fn:
             param.data = param.data.to(cfg.torch_dtype or torch.bfloat16)
 

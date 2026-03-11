@@ -38,7 +38,18 @@ def do_vllm_serve(
     cfg = load_cfg(config)
     model = cfg.base_model
 
-    serve_module = cli_args.get("serve_module", "trl.scripts.vllm_serve")
+    # Determine serve module: explicit CLI/config > auto-select from vllm_lora_sync > default
+    serve_module = cli_args.get("serve_module") or getattr(
+        cfg.vllm, "serve_module", None
+    )
+    if (
+        serve_module is None
+        and getattr(cfg, "trl", None)
+        and getattr(cfg.trl, "vllm_lora_sync", False)
+    ):
+        serve_module = "axolotl.scripts.vllm_serve_lora"
+    if serve_module is None:
+        serve_module = "trl.scripts.vllm_serve"
     vllm_serve_main = __import__(serve_module, fromlist=["main"]).main
     tensor_parallel_size = 1
     data_parallel_size = 1
@@ -68,7 +79,7 @@ def do_vllm_serve(
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
 
-    vllm_script_args = AxolotlScriptArguments(
+    base_kwargs = dict(
         model=model,
         tensor_parallel_size=tensor_parallel_size,
         data_parallel_size=data_parallel_size,
@@ -78,7 +89,21 @@ def do_vllm_serve(
         dtype=dtype,
         max_model_len=max_model_len,
         enable_prefix_caching=enable_prefix_caching,
-        reasoning_parser=reasoning_parser,
-        enable_reasoning=enable_reasoning,
     )
+
+    # Use LoRAScriptArguments when serving with native LoRA support
+    if serve_module == "axolotl.scripts.vllm_serve_lora":
+        from axolotl.scripts.vllm_serve_lora import LoRAScriptArguments
+
+        lora_kwargs = {}
+        if hasattr(cfg, "lora_r") and cfg.lora_r:
+            lora_kwargs["max_lora_rank"] = cfg.lora_r
+        vllm_script_args = LoRAScriptArguments(**base_kwargs, **lora_kwargs)
+    else:
+        vllm_script_args = AxolotlScriptArguments(
+            **base_kwargs,
+            reasoning_parser=reasoning_parser,
+            enable_reasoning=enable_reasoning,
+        )
+
     vllm_serve_main(vllm_script_args)
