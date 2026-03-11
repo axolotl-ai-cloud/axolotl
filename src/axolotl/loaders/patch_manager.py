@@ -93,6 +93,7 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        self._deactivate_hf_async_load()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
@@ -408,6 +409,11 @@ class PatchManager:
             apply_init_dtype_attrs_patch()
             if self.cfg.load_in_8bit:
                 apply_linear8bitlt_save_patch()
+
+    def _deactivate_hf_async_load(self):
+        """Load weights synchronously so they can be converted and not OOM."""
+        if self.cfg.load_in_4bit or self.cfg.load_in_8bit:
+            os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
 
     def _apply_moe_expert_quantization_patch(self):
         """Patch transformers weight loading to quantize MoE expert params on-the-fly."""
