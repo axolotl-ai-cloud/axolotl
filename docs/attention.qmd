@@ -76,13 +76,9 @@ for training on Hopper, install from source using the instructions above.
 
 ::: {.callout-warning}
 
-FA4 kernels are designed around a maximum head dimension of 128. The tile sizes, TMEM
-partitioning, and pipeline stages are all hardcoded for `d ≤ 128`. Models with larger head
-dimensions (e.g. 256, which FA2 supports) are not compatible with FA4. The only exception is the
-asymmetric DeepSeek shape `(192, 128)`, which is supported on Blackwell (SM100/SM110) only.
-
-Axolotl automatically detects the model's head dimensions and will fall back to FA2/3 if they
-exceed FA4's supported range.
+FA4 only supports head dimensions up to 128 (`d ≤ 128`). The DeepSeek shape `(192, 128)` is
+also supported but only on Blackwell. Axolotl automatically detects incompatible head dimensions
+and falls back to FA2/3.
 
 :::
 
