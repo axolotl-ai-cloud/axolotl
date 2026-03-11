@@ -235,7 +235,7 @@ class PatchManager:
 
         from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
 
-        patch_flash_attn_4()
+        patch_flash_attn_4(self.model_config)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
