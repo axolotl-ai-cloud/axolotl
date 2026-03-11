@@ -157,35 +157,30 @@ class TestPeftPatchIdempotency:
 
 
 class TestMoeAdapterTrainMergeRoundtrip:
-    """E2E: train adapter on fake quantized MoE experts, then merge without error."""
+    """E2E: train adapter on fake quantized MoE experts, then merge without error.
+
+    Reproduces the GLM-4.5-Air bug where weight-loading order (which determines
+    module.parametrizations insertion order during training) differs from model-
+    definition order (which determines named_parameters order during merge onto
+    a non-quantized base model).  Without sorted-order in _inject_parameters,
+    the ParamWrapper nesting is reversed between training and merge → size mismatch.
+    """
 
     @staticmethod
-    def _make_fake_quantized_moe_model():
-        """Build a minimal MoE-like model with parametrized 3D expert weights.
-
-        Uses an identity parametrization to simulate quantized expert params
-        without requiring bitsandbytes or a GPU.
-        """
+    def _make_classes():
+        """Return FakeExperts and FakeModel classes shared by both model builders."""
         import torch
         import torch.nn as nn
-        import torch.nn.utils.parametrize as P
-
-        class PassthroughParametrization(nn.Module):
-            def forward(self, x):
-                return x
 
         class FakeExperts(nn.Module):
             def __init__(self):
                 super().__init__()
-                # 3D expert weights: (num_experts, out_features, in_features)
+                # Model definition order: gate_up_proj first, then down_proj.
                 self.gate_up_proj = nn.Parameter(torch.randn(4, 16, 8))
                 self.down_proj = nn.Parameter(torch.randn(4, 8, 16))
 
             def forward(self, x):
-                # Use expert 0 for simple computation
-                # x: (batch, in_features=8) -> gate_up_proj[0]: (out_features=16, in_features=8)
                 x = torch.matmul(x, self.gate_up_proj[0].T)  # (batch, 16)
-                # down_proj[0]: (out_features=8, in_features=16)
                 x = torch.matmul(x, self.down_proj[0].T)  # (batch, 8)
                 return x
 
@@ -198,17 +193,42 @@ class TestMoeAdapterTrainMergeRoundtrip:
             def forward(self, x):
                 return self.linear(x) + self.experts(x)
 
+        return FakeExperts, FakeModel
+
+    @staticmethod
+    def _make_quantized_model():
+        """Training model: experts have parametrizations registered in *reversed* order.
+
+        Simulates weight-loading order (down_proj before gate_up_proj) differing
+        from model-definition order (gate_up_proj before down_proj).
+        """
+        import torch.nn as nn
+        import torch.nn.utils.parametrize as P
+
+        _, FakeModel = TestMoeAdapterTrainMergeRoundtrip._make_classes()
+
+        class PassthroughParametrization(nn.Module):
+            def forward(self, x):
+                return x
+
         model = FakeModel()
-        P.register_parametrization(
-            model.experts, "gate_up_proj", PassthroughParametrization(), unsafe=True
-        )
+        # Deliberately reversed vs __init__ order to expose the insertion-order bug.
         P.register_parametrization(
             model.experts, "down_proj", PassthroughParametrization(), unsafe=True
         )
+        P.register_parametrization(
+            model.experts, "gate_up_proj", PassthroughParametrization(), unsafe=True
+        )
         return model
 
+    @staticmethod
+    def _make_plain_model():
+        """Merge model: no parametrizations — standard branch uses definition order."""
+        _, FakeModel = TestMoeAdapterTrainMergeRoundtrip._make_classes()
+        return FakeModel()
+
     def test_train_save_merge_no_size_mismatch(self, tmp_path):
-        """Train adapter on two expert params, save, load, merge — must not raise."""
+        """Train on quantized experts, merge onto plain model — must not raise."""
         import torch
         from peft import LoraConfig, PeftModel, get_peft_model
         from peft.tuners.tuners_utils import BaseTuner
@@ -226,10 +246,10 @@ class TestMoeAdapterTrainMergeRoundtrip:
         )
         original_inject = BaseTuner._inject_parameters
 
-        # Training phase
+        # Training phase: quantized model (parametrized branch).
         patch_peft_target_parameters_matching()
         try:
-            peft_model = get_peft_model(self._make_fake_quantized_moe_model(), lora_cfg)
+            peft_model = get_peft_model(self._make_quantized_model(), lora_cfg)
         finally:
             BaseTuner._inject_parameters = original_inject
             patch_peft_target_parameters_matching._axolotl_patched = False
@@ -241,11 +261,13 @@ class TestMoeAdapterTrainMergeRoundtrip:
             optimizer.zero_grad()
         peft_model.save_pretrained(str(adapter_dir))
 
-        # Merge phase: load adapter onto fresh model and merge
+        # Merge phase: plain (non-quantized) model → standard branch.
+        # Without the sorted-order fix, the ParamWrapper nesting would be reversed
+        # relative to training, causing RuntimeError: size mismatch here.
         patch_peft_target_parameters_matching()
         try:
             loaded = PeftModel.from_pretrained(
-                self._make_fake_quantized_moe_model(), str(adapter_dir)
+                self._make_plain_model(), str(adapter_dir)
             )
             merged = loaded.merge_and_unload()
         finally:

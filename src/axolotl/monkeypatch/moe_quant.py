@@ -207,17 +207,20 @@ def patch_peft_target_parameters_matching():
 
         for module_name, module in model.named_modules():
             if hasattr(module, "parametrizations"):
-                # Use insertion order (model definition order) instead of PEFT's
-                # sorted(target_names) so adapter key structure matches the standard
-                # branch and is portable to vanilla PEFT / vLLM without this patch.
-                for param_name in module.parametrizations:
+                # Use sorted order so adapter key structure is deterministic
+                # regardless of weight-loading order, matching vanilla PEFT's
+                # parametrized branch and making adapters portable.
+                for param_name in sorted(module.parametrizations):
                     key = f"{module_name}.{param_name}"
                     if _matches(key):
                         create_and_replace_param(module_name, key, param_name)
                         self.targeted_parameter_names.append(key)
             else:
                 unwrapped_name = strip_base_layer_from_name(module_name)
-                for param_name, _ in module.named_parameters(recurse=False):
+                # Use sorted order to match the parametrized branch above, since
+                # model-definition order and weight-loading order can differ.
+                params = dict(module.named_parameters(recurse=False))
+                for param_name in sorted(params):
                     key = f"{unwrapped_name}.{param_name}"
                     if _matches(key):
                         create_and_replace_param(module_name, key, param_name)
