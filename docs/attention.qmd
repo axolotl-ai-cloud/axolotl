@@ -65,6 +65,10 @@ git clone https://github.com/Dao-AILab/flash-attention.git
 cd flash-attention/flash_attn/cute
 
 pip install -e .
+
+# FA2's flash_attn package includes a cute/ stub that shadows FA4.
+# Remove it so Python can find the real FA4 module:
+rm -r $(python -c "import flash_attn; print(flash_attn.__path__[0])")/cute
 ```
 
 ::: {.callout-note}
