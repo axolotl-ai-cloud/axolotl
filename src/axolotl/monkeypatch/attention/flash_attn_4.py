@@ -65,22 +65,21 @@ def patch_flash_attn_4(model_config=None):
             except ImportError:
                 LOG.warning(
                     "Could not import _validate_head_dims from flash_attn.cute.interface, "
-                    "skipping head dimension validation"
+                    "unable to verify head dimension compatibility, falling back to FA2"
                 )
-                _validate_head_dims = None
+                return
 
-            if _validate_head_dims is not None:
-                # alignment = 16 // element_size; bf16/fp16 = 2 bytes -> alignment = 8
-                alignment = 8
-                try:
-                    _validate_head_dims(head_dim, head_dim_v, major, alignment)
-                except AssertionError as exc:
-                    LOG.warning(
-                        "Model head dimensions not supported by FA4, "
-                        "falling back to FA2: %s",
-                        exc,
-                    )
-                    return
+            # alignment = 16 // element_size; bf16/fp16 = 2 bytes -> alignment = 8
+            alignment = 8
+            try:
+                _validate_head_dims(head_dim, head_dim_v, major, alignment)
+            except AssertionError as exc:
+                LOG.warning(
+                    "Model head dimensions not supported by FA4, "
+                    "falling back to FA2: %s",
+                    exc,
+                )
+                return
 
     import transformers.modeling_flash_attention_utils as fa_utils
 
