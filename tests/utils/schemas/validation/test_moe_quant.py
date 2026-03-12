@@ -200,10 +200,13 @@ class TestMoeAdapterTrainMergeRoundtrip:
         """Training model: experts have parametrizations registered in *reversed* order.
 
         Simulates weight-loading order (down_proj before gate_up_proj) differing
-        from model-definition order (gate_up_proj before down_proj).
+        from model-definition order (gate_up_proj before down_proj), as happens
+        with safetensors checkpoints (alphabetical) vs PyTorch definition order.
         """
         import torch.nn as nn
         import torch.nn.utils.parametrize as P
+
+        from axolotl.monkeypatch.moe_quant import _moe_load_state
 
         _, FakeModel = TestMoeAdapterTrainMergeRoundtrip._make_classes()
 
@@ -212,7 +215,16 @@ class TestMoeAdapterTrainMergeRoundtrip:
                 return x
 
         model = FakeModel()
-        # Deliberately reversed vs __init__ order to expose the insertion-order bug.
+
+        # Simulate _patched_set_param_for_module: record definition order from
+        # _parameters BEFORE any parametrization is applied (all params still
+        # present in definition order at this point).
+        _moe_load_state["expert_param_order"]["experts"] = list(
+            model.experts._parameters.keys()
+        )
+
+        # Register parametrizations in reversed (alphabetical/checkpoint) order
+        # to expose the insertion-order vs definition-order mismatch.
         P.register_parametrization(
             model.experts, "down_proj", PassthroughParametrization(), unsafe=True
         )
@@ -228,12 +240,20 @@ class TestMoeAdapterTrainMergeRoundtrip:
         return FakeModel()
 
     def test_train_save_merge_no_size_mismatch(self, tmp_path):
-        """Train on quantized experts, merge onto plain model — must not raise."""
+        """Train on quantized experts, merge onto plain model — must not raise.
+
+        Critical: the merge phase uses *standard* PEFT (no axolotl patch) to
+        verify the saved adapter is loadable by external tools (vLLM, SGLang,
+        …) without requiring any library patching.
+        """
         import torch
         from peft import LoraConfig, PeftModel, get_peft_model
         from peft.tuners.tuners_utils import BaseTuner
 
-        from axolotl.monkeypatch.moe_quant import patch_peft_target_parameters_matching
+        from axolotl.monkeypatch.moe_quant import (
+            _moe_load_state,
+            patch_peft_target_parameters_matching,
+        )
 
         adapter_dir = tmp_path / "adapter"
         lora_cfg = LoraConfig(
@@ -246,7 +266,8 @@ class TestMoeAdapterTrainMergeRoundtrip:
         )
         original_inject = BaseTuner._inject_parameters
 
-        # Training phase: quantized model (parametrized branch).
+        # Training phase: quantized model (parametrized branch) with axolotl patch.
+        _moe_load_state["expert_param_order"] = {}
         patch_peft_target_parameters_matching()
         try:
             peft_model = get_peft_model(self._make_quantized_model(), lora_cfg)
@@ -261,17 +282,11 @@ class TestMoeAdapterTrainMergeRoundtrip:
             optimizer.zero_grad()
         peft_model.save_pretrained(str(adapter_dir))
 
-        # Merge phase: plain (non-quantized) model → standard branch.
-        # Without the sorted-order fix, the ParamWrapper nesting would be reversed
-        # relative to training, causing RuntimeError: size mismatch here.
-        patch_peft_target_parameters_matching()
-        try:
-            loaded = PeftModel.from_pretrained(
-                self._make_plain_model(), str(adapter_dir)
-            )
-            merged = loaded.merge_and_unload()
-        finally:
-            BaseTuner._inject_parameters = original_inject
-            patch_peft_target_parameters_matching._axolotl_patched = False
-
+        # Merge phase: plain (non-quantized) model with *standard* PEFT (no patch).
+        # This is the external-library compatibility test: the adapter must load
+        # correctly without any axolotl monkey-patching.  Without the definition-
+        # order fix the ParamWrapper nesting would be reversed relative to training,
+        # causing RuntimeError: size mismatch.
+        loaded = PeftModel.from_pretrained(self._make_plain_model(), str(adapter_dir))
+        merged = loaded.merge_and_unload()
         assert merged is not None

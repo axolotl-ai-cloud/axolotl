@@ -16,6 +16,12 @@ _moe_load_state = {
     "quant_type": "nf4",
     "compress_statistics": True,
     "patched": False,
+    # Maps module path → list of param names in model-definition order, recorded
+    # before the first replace_parameter_Xbit call for each expert module.  Used
+    # by patch_peft_target_parameters_matching so the parametrized branch iterates
+    # params in definition order, matching named_parameters() on a non-quantized
+    # model (the order standard PEFT uses when loading without quantization).
+    "expert_param_order": {},
 }
 
 
@@ -72,6 +78,7 @@ def patch_moe_quantization_on_load(cfg):
     mode = "8bit" if getattr(cfg, "load_in_8bit", False) else "4bit"
     _moe_load_state["mode"] = mode
     _moe_load_state["count"] = 0
+    _moe_load_state["expert_param_order"] = {}
 
     if _moe_load_state["patched"]:
         LOG.debug("MoE loading-time quantization patch already active")
@@ -114,6 +121,17 @@ def patch_moe_quantization_on_load(cfg):
                     )
                     return
 
+                # Before the first quantization for this module, record the
+                # parameter definition order from _parameters (still has ALL
+                # params in definition order at this point — none moved to
+                # parametrizations yet for this module).  This order is used
+                # by _patched_inject_parameters so the parametrized branch
+                # matches the named_parameters() order of a non-quantized model.
+                if mod_path not in _moe_load_state["expert_param_order"]:
+                    _moe_load_state["expert_param_order"][mod_path] = list(
+                        mod._parameters.keys()
+                    )
+
                 if _moe_load_state["mode"] == "4bit":
                     replace_parameter_4bit(
                         mod,
@@ -139,7 +157,16 @@ def get_moe_quantized_count():
 
 
 def patch_peft_target_parameters_matching():
-    """Fix PEFT's _inject_parameters for suffix matching and portable adapter ordering."""
+    """Fix PEFT's _inject_parameters for target_parameters on quantized MoE experts.
+
+    1. Expands short suffixes (e.g. "mlp.experts.gate_up_proj") to full module paths
+       for parametrized modules, which PEFT's branch requires exact matches for.
+
+    2. Ensures the parametrized branch iterates params in model-definition order
+       (stored in _moe_load_state["expert_param_order"] before quantization), not
+       checkpoint loading order. This matches what vanilla PEFT does on a plain model,
+       so saved adapters are compatible with vLLM and other tools without patching.
+    """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
 
@@ -153,7 +180,7 @@ def patch_peft_target_parameters_matching():
         self, peft_config, model, adapter_name, low_cpu_mem_usage
     ):
         original_targets = list(peft_config.target_parameters)
-        target_names_set = set(original_targets)
+        expanded = set(original_targets)
 
         # Expand short suffixes to full paths for parametrized modules.
         for module_name, module in model.named_modules():
@@ -164,28 +191,31 @@ def patch_peft_target_parameters_matching():
                 if (
                     module_name == mod_path or module_name.endswith("." + mod_path)
                 ) and hasattr(module, param_name):
-                    target_names_set.add(f"{module_name}.{param_name}")
+                    expanded.add(f"{module_name}.{param_name}")
 
-        def strip_base_layer_from_name(mod_name):
+        target_names_set = expanded
+
+        def strip_base_layer_from_name(module_name):
             name = ".base_layer"
-            while name in mod_name:
-                prefix, _, suffix = mod_name.rpartition(name)
-                mod_name = prefix + suffix
-            return mod_name
+            while name in module_name:
+                prefix, _, suffix = module_name.rpartition(name)
+                module_name = prefix + suffix
+            return module_name
 
-        def create_and_replace_param(mod_name, key, param_name):
-            parent, target, target_name = _get_submodules(model, mod_name)
-            unwrapped_name = strip_base_layer_from_name(mod_name)
-            unwrapped = model.get_submodule(unwrapped_name)
+        def create_and_replace_param(module_name, key, param_name):
+            parent, target, target_name = _get_submodules(model, module_name)
+            unwrapped_module_name = strip_base_layer_from_name(module_name)
+            unwrapped_module = model.get_submodule(unwrapped_module_name)
             if (
-                isinstance(unwrapped, BaseTunerLayer)
-                and unwrapped.__class__.__name__ != "ParamWrapper"
+                isinstance(unwrapped_module, BaseTunerLayer)
+                and unwrapped_module.__class__.__name__ != "ParamWrapper"
             ):
                 raise ValueError(
-                    f"Trying to wrap an `nn.Parameter` of layer '{unwrapped_name}' of type "
-                    f"{type(target).__name__}, which is not a valid target. Make sure that "
-                    "this layer is not also targeted with `target_modules`. For some models, "
-                    "PEFT will do this automatically, try setting `target_modules=[]`."
+                    f"Trying to wrap an `nn.Parameter` of layer "
+                    f"'{unwrapped_module_name}' of type "
+                    f"{type(target).__name__}, which is not a valid target. "
+                    f"Make sure that this layer is not also targeted with "
+                    f"`target_modules`."
                 )
             self._check_target_module_compatiblity(peft_config, model, target_name)
             ctx = init_empty_weights if low_cpu_mem_usage else nullcontext
@@ -200,32 +230,37 @@ def patch_peft_target_parameters_matching():
                     parameter_name=param_name.rpartition(".")[-1],
                 )
 
-        def _matches(key):
-            return (key in target_names_set) or any(
-                key.endswith(f".{t}") for t in target_names_set
-            )
+        # Use definition order (not checkpoint loading order) for parametrized modules
+        # so ParamWrapper nesting matches vanilla PEFT on a plain model.
+        expert_param_order = _moe_load_state.get("expert_param_order", {})
 
         for module_name, module in model.named_modules():
             if hasattr(module, "parametrizations"):
-                # Use sorted order so adapter key structure is deterministic
-                # regardless of weight-loading order, matching vanilla PEFT's
-                # parametrized branch and making adapters portable.
-                for param_name in sorted(module.parametrizations):
+                stored_order = expert_param_order.get(module_name)
+                if stored_order is not None:
+                    params_iter = [
+                        p for p in stored_order if p in module.parametrizations
+                    ]
+                else:
+                    # Fallback for paths that bypass model loading (e.g. unit tests).
+                    params_iter = list(module.parametrizations.keys())
+                for param_name in params_iter:
                     key = f"{module_name}.{param_name}"
-                    if _matches(key):
+                    if (key in target_names_set) or any(
+                        key.endswith(f".{t}") for t in target_names_set
+                    ):
                         create_and_replace_param(module_name, key, param_name)
                         self.targeted_parameter_names.append(key)
             else:
-                unwrapped_name = strip_base_layer_from_name(module_name)
-                # Use sorted order to match the parametrized branch above, since
-                # model-definition order and weight-loading order can differ.
-                params = dict(module.named_parameters(recurse=False))
-                for param_name in sorted(params):
-                    key = f"{unwrapped_name}.{param_name}"
-                    if _matches(key):
+                unwrapped_module_name = strip_base_layer_from_name(module_name)
+                for param_name, _ in module.named_parameters(recurse=False):
+                    key = f"{unwrapped_module_name}.{param_name}"
+                    if (key in target_names_set) or any(
+                        key.endswith(f".{t}") for t in target_names_set
+                    ):
                         create_and_replace_param(module_name, key, param_name)
                         self.targeted_parameter_names.append(key)
 
     BaseTuner._inject_parameters = _patched_inject_parameters
     patch_peft_target_parameters_matching._axolotl_patched = True
-    LOG.info("Patched PEFT _inject_parameters for parametrized module suffix matching")
+    LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")
