@@ -101,6 +101,7 @@ def patch_moe_quantization_on_load(cfg):
     os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
 
     transformers.modeling_utils.caching_allocator_warmup = lambda *_: None
+
     # Disable caching_allocator_warmup — it pre-allocates a huge tensor at bf16
     # size for all params, defeating our on-load quantization VRAM savings.
     def _noop_warmup(*args, **kwargs):
