@@ -78,8 +78,8 @@ def llm_worker(
         enable_prefix_caching=script_args.enable_prefix_caching,
         kv_cache_dtype=script_args.kv_cache_dtype,
         max_model_len=script_args.max_model_len,
-        # Keep the weight sync extension for legacy/fallback
-        worker_extension_cls="trl.scripts.vllm_serve.WeightSyncWorkerExtension",
+        # Use batch-capable worker extension (adds batch_update_named_params + auto-close)
+        worker_extension_cls="axolotl.scripts.vllm_worker_ext.BatchWeightSyncWorkerExtension",
         trust_remote_code=script_args.trust_remote_code,
         model_impl=script_args.vllm_model_impl,
         logprobs_mode="processed_logprobs",
