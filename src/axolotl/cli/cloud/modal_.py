@@ -90,7 +90,7 @@ class ModalCloud(Cloud):
         # grab the sha256 hash from docker hub for this image+tag
         # this ensures that we always get the latest image for this tag, even if it's already cached
         try:
-            manifest = subprocess.check_output(
+            manifest = subprocess.check_output(  # nosec
                 ["docker", "manifest", "inspect", docker_image],
             ).decode("utf-8")
             sha256_hash = json.loads(manifest)["manifests"][0]["digest"]
