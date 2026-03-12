@@ -115,6 +115,7 @@ class PatchManager:
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
+        self._apply_trl_vllm_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -651,6 +652,17 @@ class PatchManager:
             )
 
             patch_apertus_xielu_activation()
+
+    def _apply_trl_vllm_patches(self):
+        """Apply TRL vLLM patches for batched weight sync, NaN logprobs fix, and scalar handling."""
+        if (
+            self.cfg.rl
+            and getattr(self.cfg, "trl", None)
+            and getattr(self.cfg.trl, "use_vllm", False)
+        ):
+            from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+
+            patch_trl_vllm()
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""
