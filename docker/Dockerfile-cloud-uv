@@ -11,7 +11,7 @@ ENV HF_HUB_ENABLE_HF_TRANSFER="1"
 EXPOSE 8888
 EXPOSE 22
 
-COPY scripts/cloud-entrypoint.sh /home/ubuntu/cloud-entrypoint.sh
+COPY scripts/cloud-entrypoint.sh /etc/cloud-entrypoint.sh
 COPY scripts/motd /etc/motd
 
 RUN uv pip install jupyterlab notebook ipywidgets && \
@@ -22,14 +22,14 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /home/ubuntu/.ssh && \
     chmod 700 /home/ubuntu/.ssh && \
-    printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> /home/ubuntu/.bashrc && \
+    printf "\n[[ -z \"\$TMUX\" ]] && tty -s && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> /home/ubuntu/.bashrc && \
     printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> /home/ubuntu/.bashrc && \
-    chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
-    chmod +x /home/ubuntu/cloud-entrypoint.sh && \
+    printf "\n[[ -z \"\$AXOLOTL_SKIP_SWITCH\" ]] && exec sudo -u ubuntu AXOLOTL_SKIP_SWITCH=1 -i\n" >> /root/.bashrc && \
+    chmod +x /etc/cloud-entrypoint.sh && \
     echo 'set-option -g history-limit 5000' >> /home/ubuntu/.tmux.conf && \
     chown -R ubuntu:ubuntu /home/ubuntu /workspace
 
-USER ubuntu
+# USER ubuntu
 
-ENTRYPOINT ["/home/ubuntu/cloud-entrypoint.sh"]
+ENTRYPOINT ["/etc/cloud-entrypoint.sh"]
 CMD ["sleep", "infinity"]
