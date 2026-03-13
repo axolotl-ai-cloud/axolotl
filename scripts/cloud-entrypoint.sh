@@ -104,7 +104,7 @@ if [ "$JUPYTER_DISABLE" != "1" ]; then
     # Run Jupyter Lab as ubuntu user when possible
     JUPYTER_ARGS="--port=8888 --ip=* --ServerApp.allow_origin=*"
     if [ "$(id -u)" -eq 0 ] && id ubuntu &>/dev/null; then
-        sudo -u ubuntu bash -c "JUPYTER_TOKEN='$JUPYTER_TOKEN' jupyter lab $JUPYTER_ARGS" &
+        sudo --preserve-env=PATH,JUPYTER_TOKEN -u ubuntu jupyter lab $JUPYTER_ARGS &
     else
         if [ "$(id -u)" -eq 0 ]; then
             JUPYTER_ARGS="$JUPYTER_ARGS --allow-root"
@@ -131,7 +131,7 @@ fi
 
 # Execute the passed arguments (CMD) as ubuntu when possible
 if [ "$(id -u)" -eq 0 ] && id ubuntu &>/dev/null; then
-    exec sudo -u ubuntu "$@"
+    exec sudo --preserve-env=PATH -u ubuntu "$@"
 else
     exec "$@"
 fi
