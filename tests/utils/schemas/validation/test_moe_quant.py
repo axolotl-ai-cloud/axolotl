@@ -157,13 +157,10 @@ class TestPeftPatchIdempotency:
 
 
 class TestMoeAdapterTrainMergeRoundtrip:
-    """E2E: train adapter on fake quantized MoE experts, then merge without error.
+    """E2E: train adapter on quantized MoE experts, then merge onto plain model.
 
-    Reproduces the GLM-4.5-Air bug where weight-loading order (which determines
-    module.parametrizations insertion order during training) differs from model-
-    definition order (which determines named_parameters order during merge onto
-    a non-quantized base model).  Without sorted-order in _inject_parameters,
-    the ParamWrapper nesting is reversed between training and merge → size mismatch.
+    Verifies that param wrapping order during training matches merge, preventing
+    size mismatch errors when loading adapters in standard PEFT/vLLM.
     """
 
     @staticmethod
@@ -197,12 +194,7 @@ class TestMoeAdapterTrainMergeRoundtrip:
 
     @staticmethod
     def _make_quantized_model():
-        """Training model: experts have parametrizations registered in *reversed* order.
-
-        Simulates weight-loading order (down_proj before gate_up_proj) differing
-        from model-definition order (gate_up_proj before down_proj), as happens
-        with safetensors checkpoints (alphabetical) vs PyTorch definition order.
-        """
+        """Training model: parametrizations registered in alphabetical order."""
         import torch.nn as nn
         import torch.nn.utils.parametrize as P
 
@@ -216,15 +208,12 @@ class TestMoeAdapterTrainMergeRoundtrip:
 
         model = FakeModel()
 
-        # Simulate _patched_set_param_for_module: record definition order from
-        # _parameters BEFORE any parametrization is applied (all params still
-        # present in definition order at this point).
+        # Record definition order before parametrization (mirrors real loading).
         _moe_load_state["expert_param_order"]["experts"] = list(
             model.experts._parameters.keys()
         )
 
-        # Register parametrizations in reversed (alphabetical/checkpoint) order
-        # to expose the insertion-order vs definition-order mismatch.
+        # Register in alphabetical order to expose the ordering mismatch.
         P.register_parametrization(
             model.experts, "down_proj", PassthroughParametrization(), unsafe=True
         )
@@ -240,12 +229,7 @@ class TestMoeAdapterTrainMergeRoundtrip:
         return FakeModel()
 
     def test_train_save_merge_no_size_mismatch(self, tmp_path):
-        """Train on quantized experts, merge onto plain model — must not raise.
-
-        Critical: the merge phase uses *standard* PEFT (no axolotl patch) to
-        verify the saved adapter is loadable by external tools (vLLM, SGLang,
-        …) without requiring any library patching.
-        """
+        """Train on quantized experts, merge onto plain model — must not raise."""
         import torch
         from peft import LoraConfig, PeftModel, get_peft_model
         from peft.tuners.tuners_utils import BaseTuner
@@ -282,11 +266,7 @@ class TestMoeAdapterTrainMergeRoundtrip:
             optimizer.zero_grad()
         peft_model.save_pretrained(str(adapter_dir))
 
-        # Merge phase: plain (non-quantized) model with *standard* PEFT (no patch).
-        # This is the external-library compatibility test: the adapter must load
-        # correctly without any axolotl monkey-patching.  Without the definition-
-        # order fix the ParamWrapper nesting would be reversed relative to training,
-        # causing RuntimeError: size mismatch.
+        # Merge with standard PEFT (no axolotl patch) to verify external compatibility.
         loaded = PeftModel.from_pretrained(self._make_plain_model(), str(adapter_dir))
         merged = loaded.merge_and_unload()
         assert merged is not None

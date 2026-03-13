@@ -14,11 +14,8 @@ _moe_load_state = {
     "quant_type": "nf4",
     "compress_statistics": True,
     "patched": False,
-    # Maps module path → list of param names in model-definition order, recorded
-    # before the first replace_parameter_Xbit call for each expert module.  Used
-    # by patch_peft_target_parameters_matching so the parametrized branch iterates
-    # params in definition order, matching named_parameters() on a non-quantized
-    # model (the order standard PEFT uses when loading without quantization).
+    # Module path → param names in definition order, captured before quantization.
+    # Without this, alphabetical loading order would mismatch merge order.
     "expert_param_order": {},
 }
 
@@ -120,12 +117,8 @@ def patch_moe_quantization_on_load(cfg):
                     )
                     return
 
-                # Before the first quantization for this module, record the
-                # parameter definition order from _parameters (still has ALL
-                # params in definition order at this point — none moved to
-                # parametrizations yet for this module).  This order is used
-                # by _patched_inject_parameters so the parametrized branch
-                # matches the named_parameters() order of a non-quantized model.
+                # Record definition order before parametrizations override it
+                # with alphabetical order.
                 if mod_path not in _moe_load_state["expert_param_order"]:
                     _moe_load_state["expert_param_order"][mod_path] = list(
                         mod._parameters.keys()
@@ -158,13 +151,9 @@ def get_moe_quantized_count():
 def patch_peft_target_parameters_matching():
     """Fix PEFT's _inject_parameters for target_parameters on quantized MoE experts.
 
-    1. Expands short suffixes (e.g. "mlp.experts.gate_up_proj") to full module paths
-       for parametrized modules, which PEFT's branch requires exact matches for.
-
-    2. Ensures the parametrized branch iterates params in model-definition order
-       (stored in _moe_load_state["expert_param_order"] before quantization), not
-       checkpoint loading order. This matches what vanilla PEFT does on a plain model,
-       so saved adapters are compatible with vLLM and other tools without patching.
+    1. Expands short suffixes to full module paths for parametrized modules.
+    2. Iterates params in definition order (not alphabetical order) so saved
+       adapters are compatible with standard PEFT, vLLM, etc.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
@@ -229,7 +218,7 @@ def patch_peft_target_parameters_matching():
                     parameter_name=param_name.rpartition(".")[-1],
                 )
 
-        # Use definition order (not checkpoint loading order) for parametrized modules
+        # Use definition order (not alphabetical order) for parametrized modules
         # so ParamWrapper nesting matches vanilla PEFT on a plain model.
         expert_param_order = _moe_load_state.get("expert_param_order", {})
 
