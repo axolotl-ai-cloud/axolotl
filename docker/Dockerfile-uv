@@ -43,6 +43,18 @@ RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
     git config --get remote.origin.fetch && \
     git config --global credential.helper store
 
-COPY .axolotl-complete.bash /root/.axolotl-complete.bash
-RUN chmod +x /root/.axolotl-complete.bash && \
-    echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
+COPY .axolotl-complete.bash /home/ubuntu/.axolotl-complete.bash
+RUN chmod +x /home/ubuntu/.axolotl-complete.bash && \
+    echo 'source /home/ubuntu/.axolotl-complete.bash' >> /home/ubuntu/.bashrc
+
+# Ensure ubuntu user exists (may already exist from base image)
+RUN id ubuntu &>/dev/null || ( \
+    useradd -m -s /bin/bash -u 1000 ubuntu && \
+    apt-get update && apt-get install -y --no-install-recommends sudo && rm -rf /var/lib/apt/lists/* \
+    ); \
+    echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && \
+    chmod 0440 /etc/sudoers.d/ubuntu
+
+RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
+
+USER ubuntu
