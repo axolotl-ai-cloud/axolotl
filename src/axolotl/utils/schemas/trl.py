@@ -189,3 +189,125 @@ class TRLConfig(BaseModel):
             "'normalize_then_sum' (GDPO): normalizes each reward independently, then sums."
         },
     )
+
+    # Async GRPO fields
+    use_data_producer: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Use the GRPODataProducer protocol for online data generation."
+        },
+    )
+    async_prefetch: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Generate rollouts in a background thread while training on the previous rollout."
+        },
+    )
+    prefetch_depth: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of rollouts to prefetch ahead of training."
+        },
+    )
+    vllm_sync_interval: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Sync model weights to vLLM every N optimizer steps (async mode only)."
+        },
+    )
+    streaming_partial_batch: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Score prompt groups incrementally instead of the full batch at once."
+        },
+    )
+    streaming_min_groups: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Minimum prompt groups to score per streaming chunk."
+        },
+    )
+    vllm_importance_sampling_correction: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply IS correction for distribution mismatch between vLLM and training model."
+        },
+    )
+    vllm_importance_sampling_mode: (
+        Literal["token_truncate", "token_mask", "sequence_truncate", "sequence_mask"]
+        | None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": "IS mode: token_truncate, token_mask, sequence_truncate, or sequence_mask."
+        },
+    )
+    vllm_importance_sampling_cap: float | None = Field(
+        default=None,
+        json_schema_extra={"description": "Cap C for IS ratio clipping/masking."},
+    )
+    off_policy_mask_threshold: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "KL threshold for off-policy sequence masking (OPSM). None = disabled."
+        },
+    )
+    use_bias_correction_kl: bool | None = Field(
+        default=None,
+        json_schema_extra={"description": "Apply IS correction to KL divergence term."},
+    )
+
+    reward_num_workers: int = Field(
+        default=1,
+        json_schema_extra={
+            "description": "Number of persistent subprocess workers for parallel reward computation. Each worker has its "
+            "own main thread so signal.alarm() (used by math_verify) works correctly. Work is sharded across "
+            "workers by prompt groups. Only used with use_data_producer=True and non-nn.Module reward functions."
+        },
+    )
+    replay_buffer_size: int = Field(
+        default=0,
+        json_schema_extra={
+            "description": "[Experimental, disabled by default] Size of the replay buffer for storing high-signal rollout "
+            "groups. When > 0, groups with reward variance are cached and used to replace zero-signal groups "
+            "(where all rewards are identical). Set to 0 to disable. Only used with use_data_producer=True."
+        },
+    )
+    replay_recompute_logps: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "When True (default), recompute old_per_token_logps for replayed groups using the current "
+            "training model. This fixes the importance sampling mismatch that occurs when replaying stale data. "
+            "Only relevant when replay_buffer_size > 0."
+        },
+    )
+    reroll_start_fraction: float = Field(
+        default=1.0,
+        json_schema_extra={
+            "description": "Fraction of total training steps after which deferred re-rolling begins. Zero-signal prompts "
+            "(where all rewards in a group are identical) are buffered and re-injected into later batches when the "
+            "model is more likely to solve them. Set to 1.0 to disable. Only used with use_data_producer=True."
+        },
+    )
+    reroll_max_groups: int = Field(
+        default=1,
+        json_schema_extra={
+            "description": "Maximum number of prompt groups to replace with re-roll candidates per batch. Higher values "
+            "increase data utilization but reduce prompt diversity. Only used with use_data_producer=True."
+        },
+    )
+    skip_zero_advantage_batches: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "When True, skip gradient computation for micro-batches where all advantages are zero (no learning "
+            "signal). This avoids the forward/backward pass entirely when no learning signal is present. The step is "
+            "logged with skipped_zero_adv_batches=1 for monitoring."
+        },
+    )
+    vllm_lora_sync: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Sync LoRA adapter to vLLM via filesystem instead of merging + NCCL broadcast. "
+            "Auto-selects vllm_serve_lora serve module. Syncs only LoRA adapter weights vs full merged model."
+        },
+    )
