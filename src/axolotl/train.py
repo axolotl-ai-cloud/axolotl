@@ -257,7 +257,7 @@ def save_trained_model(
     # Handle ReLoRA early return case
     if cfg.relora:
         if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
-            model = model.merge_and_unload()
+            model = model.merge_and_unload(safe_merge=True)
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
             return

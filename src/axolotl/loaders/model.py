@@ -226,7 +226,7 @@ class ModelLoader:
             isinstance(self.model, (peft.PeftModel, peft.PeftModelForCausalLM))
             and not self.is_qlora_and_fsdp_enabled
         ):
-            self.model = self.model.merge_and_unload()
+            self.model = self.model.merge_and_unload(safe_merge=True)
 
         self._configure_experts_implementation()
         self._apply_activation_checkpointing()

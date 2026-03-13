@@ -26,7 +26,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     model, tokenizer, processor = load_model_and_tokenizer(cfg=cfg)
 
     LOG.info("Running merge of LoRA with base model...")
-    model = model.merge_and_unload(progressbar=True)
+    model = model.merge_and_unload(progressbar=True, safe_merge=True)
     try:
         model.to(dtype=cfg.torch_dtype)
     except ValueError as e:
