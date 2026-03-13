@@ -1,8 +1,15 @@
 #!/bin/bash
 
+# Detect if running as non-root and set sudo prefix accordingly
+if [ "$(id -u)" -ne 0 ]; then
+    SUDO="sudo"
+else
+    SUDO=""
+fi
+
 # Export specific ENV variables to /etc/rp_environment
 echo "Exporting environment variables..."
-printenv | grep -E '^HF_|^BNB_|^CUDA_|^NCCL_|^NV|^RUNPOD_|^PATH=|^_=' | sed 's/^\([^=]*\)=\(.*\)$/export \1="\2"/' | grep -v 'printenv' >> /etc/rp_environment
+printenv | grep -E '^HF_|^BNB_|^CUDA_|^NCCL_|^NV|^RUNPOD_|^PATH=|^_=' | sed 's/^\([^=]*\)=\(.*\)$/export \1="\2"/' | grep -v 'printenv' | $SUDO tee /etc/rp_environment > /dev/null
 echo 'source /etc/rp_environment' >> ~/.bashrc
 
 add_keys_to_authorized() {
@@ -46,19 +53,19 @@ add_keys_to_authorized() {
 
 # Set SSH port
 if [ ! -z "$SSH_PORT" ]; then
-    sed -i "s/#Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
+    $SUDO sed -i "s/#Port 22/Port $SSH_PORT/" /etc/ssh/sshd_config
 fi
 
 if [[ $PUBLIC_KEY ]]; then
     # runpod, prime intellect
     add_keys_to_authorized "$PUBLIC_KEY"
     # Start the SSH service in the background
-    service ssh start
+    $SUDO service ssh start
 elif [[ $SSH_KEY ]]; then
     # latitude.sh
     add_keys_to_authorized "$SSH_KEY"
     # Start the SSH service in the background
-    service ssh start
+    $SUDO service ssh start
 else
     echo "No PUBLIC_KEY or SSH_KEY environment variable provided, not starting openSSH daemon"
 fi
@@ -71,7 +78,11 @@ fi
 
 if [ "$JUPYTER_DISABLE" != "1" ]; then
     # Run Jupyter Lab in the background
-    jupyter lab --port=8888 --ip=* --allow-root --ServerApp.allow_origin=* &
+    JUPYTER_ARGS="--port=8888 --ip=* --ServerApp.allow_origin=*"
+    if [ "$(id -u)" -eq 0 ]; then
+        JUPYTER_ARGS="$JUPYTER_ARGS --allow-root"
+    fi
+    jupyter lab $JUPYTER_ARGS &
 fi
 
 if [ ! -d "/workspace/data/axolotl-artifacts" ]; then
@@ -86,7 +97,7 @@ SLURM_INIT="${SLURM_INIT:-/slurm-init.sh}"
 
 if [[ -f "$SLURM_INIT" ]]; then
   echo "[entrypoint] running $SLURM_INIT..."
-  bash "$SLURM_INIT"
+  $SUDO bash "$SLURM_INIT"
 fi
 
 # Execute the passed arguments (CMD)

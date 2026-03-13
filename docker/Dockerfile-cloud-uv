@@ -1,6 +1,8 @@
 ARG BASE_TAG=main
 FROM axolotlai/axolotl-uv:$BASE_TAG
 
+USER root
+
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HF_HUB_CACHE="/workspace/data/huggingface-cache/hub"
 ENV HF_HOME="/workspace/data/huggingface-cache/hub"
@@ -9,7 +11,7 @@ ENV HF_HUB_ENABLE_HF_TRANSFER="1"
 EXPOSE 8888
 EXPOSE 22
 
-COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
+COPY scripts/cloud-entrypoint.sh /home/ubuntu/cloud-entrypoint.sh
 COPY scripts/motd /etc/motd
 
 RUN uv pip install jupyterlab notebook ipywidgets && \
@@ -18,13 +20,16 @@ RUN apt update && \
     apt install --yes --no-install-recommends openssh-server tmux iproute2 nvtop && \
     rm -rf /var/cache/apt/archives && \
     rm -rf /var/lib/apt/lists/* && \
-    mkdir -p ~/.ssh && \
-    chmod 700 ~/.ssh && \
-    printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> ~/.bashrc && \
-    printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
+    mkdir -p /home/ubuntu/.ssh && \
+    chmod 700 /home/ubuntu/.ssh && \
+    printf "\n[[ -z \"\$TMUX\"  ]] && { tmux attach-session -t ssh_tmux || tmux new-session -s ssh_tmux; exit; }\n" >> /home/ubuntu/.bashrc && \
+    printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> /home/ubuntu/.bashrc && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
-    chmod +x /root/cloud-entrypoint.sh && \
-    echo 'set-option -g history-limit 5000' >> ~/.tmux.conf
+    chmod +x /home/ubuntu/cloud-entrypoint.sh && \
+    echo 'set-option -g history-limit 5000' >> /home/ubuntu/.tmux.conf && \
+    chown -R ubuntu:ubuntu /home/ubuntu /workspace
 
-ENTRYPOINT ["/root/cloud-entrypoint.sh"]
+USER ubuntu
+
+ENTRYPOINT ["/home/ubuntu/cloud-entrypoint.sh"]
 CMD ["sleep", "infinity"]
