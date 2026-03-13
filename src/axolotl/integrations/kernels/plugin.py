@@ -110,6 +110,16 @@ class KernelsPlugin(BasePlugin):
             }
         )
 
+    def add_callbacks_pre_trainer(self, cfg, model):
+        callbacks = []
+        if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.autotune_callback import (
+                AutotuneReportCallback,
+            )
+
+            callbacks.append(AutotuneReportCallback())
+        return callbacks
+
     def _kernelize_model(self, model_type: str):
         from kernels import replace_kernel_forward_from_hub
 
