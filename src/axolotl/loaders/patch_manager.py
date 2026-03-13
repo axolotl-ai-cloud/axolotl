@@ -99,6 +99,7 @@ class PatchManager:
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_sageattn_patches()
+        self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
@@ -227,6 +228,15 @@ class PatchManager:
             from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
+
+    def _apply_flash_attn_4_patches(self):
+        """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
+        if not self.cfg.flash_attention:
+            return
+
+        from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
+
+        patch_flash_attn_4(self.model_config)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
