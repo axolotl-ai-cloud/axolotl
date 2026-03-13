@@ -7,6 +7,7 @@ load_in_4bit: false
 strict: false
 
 plugins:
+  - axolotl.integrations.gemma3.Gemma3TextFromMultimodalPlugin
   - axolotl.integrations.liger.LigerPlugin
 
 liger_rope: true

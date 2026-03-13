@@ -1,12 +1,11 @@
 base_model: google/gemma-3-27b-it
-# Math finetuning configuration for Gemma3-27B
 # hub_model_id: username/custom_model_name
-
 load_in_8bit: false
 load_in_4bit: false
 strict: false
 
 plugins:
+  - axolotl.integrations.gemma3.Gemma3TextFromMultimodalPlugin
   - axolotl.integrations.liger.LigerPlugin
 
 liger_rope: true

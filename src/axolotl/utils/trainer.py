@@ -250,7 +250,7 @@ def filter_sequences_by_length(
 
 
 def process_datasets_for_packing(cfg, train_dataset, eval_dataset):
-    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3"]
+    drop_attn_mask = cfg.model_config_type in ["mamba", "gemma3", "gemma3_text"]
     if drop_attn_mask:
         LOG.info("dropping attention_mask column")
         train_dataset = train_dataset.remove_columns("attention_mask")
