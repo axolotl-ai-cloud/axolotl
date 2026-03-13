@@ -536,7 +536,7 @@ class TestHFCausalTrainerBuilder:
         "cfg_string",
         [
             "sft_cfg",
-            # "rm_cfg",  # TODO fix for num_labels = 2 vs 1
+            "rm_cfg",
             "prm_cfg",
         ],
     )
