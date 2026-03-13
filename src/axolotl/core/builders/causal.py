@@ -421,6 +421,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs["dataset_tags"] = [
                 d["path"] for d in self.cfg.datasets if not Path(d["path"]).is_dir()
             ]
+        # TRL's RewardTrainer validates num_labels=1 on pre-loaded models; ensure the
+        # config reflects this regardless of how the model was instantiated.
+        if (
+            self.cfg.reward_model
+            and getattr(self.model.config, "num_labels", None) != 1
+        ):
+            self.model.config.num_labels = 1
         trainer = trainer_cls(
             model=self.model,
             train_dataset=self.train_dataset,
