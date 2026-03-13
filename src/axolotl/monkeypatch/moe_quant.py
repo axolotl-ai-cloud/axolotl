@@ -96,12 +96,6 @@ def patch_moe_quantization_on_load(cfg):
         _moe_load_state["quant_type"] = quant_type
         _moe_load_state["compress_statistics"] = compress_statistics
 
-    # Force sequential tensor loading so we can quantize-and-free one expert at a time.
-    # Without this, transformers pre-fetches all bf16 expert tensors to GPU simultaneously.
-    os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
-
-    transformers.modeling_utils.caching_allocator_warmup = lambda *_: None
-
     # Disable caching_allocator_warmup — it pre-allocates a huge tensor at bf16
     # size for all params, defeating our on-load quantization VRAM savings.
     def _noop_warmup(*args, **kwargs):
