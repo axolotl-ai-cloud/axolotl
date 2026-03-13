@@ -27,7 +27,9 @@ RUN useradd -m -s /bin/bash -u 1000 ubuntu 2>/dev/null; \
     echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu
 
-RUN uv python install ${PYTHON_VERSION}
+ENV UV_PYTHON_INSTALL_DIR="/opt/uv/python"
+RUN uv python install ${PYTHON_VERSION} && \
+    chmod -R a+rX /opt/uv
 
 WORKDIR /workspace
 
