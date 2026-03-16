@@ -22,6 +22,43 @@ axolotl train examples/mistral4/qlora-vision.yml
 axolotl train examples/mistral4/fft-vision.yml
 ```
 
+## Reasoning Effort
+
+The chat template supports a `reasoning_effort` variable to control the model's reasoning depth:
+
+- `"none"` — instruct mode (default)
+- `"high"` — reasoning mode with explicit thinking steps
+
+Pass it via `chat_template_kwargs` under your dataset config:
+
+```yaml
+datasets:
+  - path: your/dataset
+    type: chat_template
+    chat_template_kwargs:
+      reasoning_effort: high
+```
+
+## Thinking Support
+
+The chat template supports a `thinking` content type in assistant messages for training on reasoning traces (rendered as `[THINK]...[/THINK]` blocks).
+
+To use thinking datasets, add the `thinking` mapping via `message_property_mappings`:
+
+```yaml
+datasets:
+  - path: your/thinking-dataset
+    type: chat_template
+    message_property_mappings:
+      role: role
+      content: content
+      thinking: thinking
+    chat_template_kwargs:
+      reasoning_effort: high
+```
+
+See the [Magistral thinking guide](../magistral/think/README.md) for dataset format details.
+
 ## Tips
 
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
