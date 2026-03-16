@@ -4,12 +4,9 @@ base_model: Qwen/Qwen3.5-27B
 
 # Full fine-tune (FFT) of the text-only path of Qwen3.5-27B.
 #
-# Qwen3.5-27B is an early-fusion VLM (Qwen3_5ForConditionalGeneration), so axolotl
-# loads the full model including the vision encoder. unfrozen_parameters restricts
-# gradient updates to the language model only, freezing model.visual.* and saving
-# the optimizer state that would otherwise be wasted on vision parameters.
-#
-# For multimodal (image+text) fine-tuning, see 7b-lora-vision.yaml.
+# Qwen3.5-27B is early-fusion VLM.
+# To freeze vision encoder for text-only training:
+# For multimodal (image+text) fine-tuning, see 9b-lora-vision.yaml.
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -31,8 +28,7 @@ dataset_prepared_path: last_run_prepared
 sequence_len: 2048
 sample_packing: true
 
-# Freeze the vision encoder; train only the language model.
-# model.visual.* parameters have requires_grad set to False via gradient hooks.
+# Freeze vision encoder
 unfrozen_parameters:
   - model\.language_model\..*
   - lm_head\..*
