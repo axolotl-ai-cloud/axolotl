@@ -416,16 +416,21 @@ class PatchManager:
             os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
 
     def _apply_moe_expert_quantization_patch(self):
-        """Patch transformers weight loading to quantize MoE expert params on-the-fly."""
-        if not self.cfg.quantize_moe_experts:
+        """Patch transformers weight loading and PEFT for MoE expert quantization."""
+        has_target_params = bool(getattr(self.cfg, "lora_target_parameters", None))
+
+        if not self.cfg.quantize_moe_experts and not has_target_params:
             return
 
         from axolotl.monkeypatch.moe_quant import (
-            patch_moe_quantization_on_load,
             patch_peft_target_parameters_matching,
         )
 
-        patch_moe_quantization_on_load(self.cfg)
+        if self.cfg.quantize_moe_experts:
+            from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
+
+            patch_moe_quantization_on_load(self.cfg)
+
         patch_peft_target_parameters_matching()
 
     def _finalize_moe_expert_quantization(self, model: PreTrainedModel):
