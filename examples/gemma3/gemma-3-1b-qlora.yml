@@ -24,10 +24,7 @@ datasets:
 val_set_size: 0.0
 output_dir: ./outputs/out
 
-# Freeze the vision tower — only the language model is trained.
-# Gemma3 loads as Gemma3ForConditionalGeneration (full VLM) even for text-only data,
-# so without this the vision encoder receives zero gradients but still occupies
-# optimizer state. Remove these lines if you want full multimodal training.
+# Freeze vision tower
 unfrozen_parameters:
   - ^model\.language_model\..*
   - ^lm_head\..*
