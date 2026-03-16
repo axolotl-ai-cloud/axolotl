@@ -73,8 +73,10 @@ plugins:
 - ministral3
 - mistral
 - mistral3
+- mistral4
 - mixtral
 - mllama
+- nemotron_h
 - olmo
 - olmo2
 - olmo3

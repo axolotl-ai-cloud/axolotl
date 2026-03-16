@@ -25,6 +25,8 @@ SPARSE_MOE_BLOCK = {
     "olmoe": "OlmoeSparseMoeBlock",
     "mixtral": "MixtralSparseMoeBlock",
     "minimax": "MiniMaxSparseMoeBlock",
+    # softmax -> topk routing (with group-based expert selection)
+    "mistral4": "Mistral4MoE",
     # sigmoid -> topk routing (with group-based expert selection)
     "glm_moe_dsa": "GlmMoeDsaMoE",
     "deepseek_v3": "DeepseekV3MoE",
