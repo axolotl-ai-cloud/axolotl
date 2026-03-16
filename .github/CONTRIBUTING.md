@@ -68,7 +68,7 @@ You can skip certain CI checks by including specific keywords in your commit mes
 
 ### Code Style
 
-axolotl uses [{codestyle}]({URLofCodestyle}) as its code style guide. Please ensure that your code follows these guidelines.
+axolotl uses [Ruff](https://docs.astral.sh/ruff/) as its code style guide. Please ensure that your code follows these guidelines.
 
 Use the pre-commit linter to ensure that your code is formatted consistently.
 ```bash
@@ -83,6 +83,6 @@ Write clear and concise commit messages that briefly describe the changes made i
 
 - [GitHub Help](https://help.github.com/)
 - [GitHub Pull Request Documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests)
-- [{codestyle}]({URLofCodestyle})
+- [Ruff](https://docs.astral.sh/ruff/)
 
 Thank you once again for your interest in contributing to axolotl. We look forward to collaborating with you and creating an even better project together!

@@ -300,7 +300,7 @@ def load_cfg(
     try:
         device_props = torch.cuda.get_device_properties("cuda")
         gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except:
+    except (RuntimeError, AssertionError):
         gpu_version = None
 
     prepare_plugins(cfg)

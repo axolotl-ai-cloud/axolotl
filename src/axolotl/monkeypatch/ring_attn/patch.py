@@ -154,7 +154,6 @@ def register_ring_attn_from_device_mesh(
     LOG.info(
         f"Enabling ring attention sequence parallelism using DeviceMesh "
         f"dimension '{context_parallel_dim}'",
-        main_process_only=True,
     )
 
     # Extract the sequence parallel submesh
