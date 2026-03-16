@@ -1,4 +1,4 @@
-base_model: mistralai/Mistral-Small-4-119B-2602-HF
+base_model: mistralai/Leanstral-2603-HF
 
 load_in_4bit: true
 quantize_moe_experts: true
@@ -20,6 +20,11 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+# uncomment to train on expert layers
+# lora_target_parameters:
+#   - mlp.experts.gate_up_proj
+#   - mlp.experts.down_proj
 
 wandb_project:
 wandb_entity:

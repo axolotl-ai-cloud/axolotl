@@ -1,6 +1,7 @@
-# Finetune Mistral Small 4 with Axolotl
+# Finetune Leanstral with Axolotl
 
-Mistral Small 4 is a 119B parameter MoE vision-language model from MistralAI found on HuggingFace at [Mistral-Small-4-119B-2602-HF](https://huggingface.co/mistralai/Mistral-Small-4-119B-2602-HF).
+Leanstral is an open-source model from MistralAI designed for Lean 4, with 119B total and 6B active parameters.
+It is available on HuggingFace at [Leanstral-2603-HF](https://huggingface.co/mistralai/Leanstral-2603-HF).
 
 Thanks to the team at MistralAI for giving us early access to prepare for this release.
 
@@ -14,16 +15,16 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ```bash
 # text-only
-axolotl train examples/mistral4/qlora-text.yml  # ~69 GiB VRAM
+axolotl train examples/mistral4/qlora-text.yml  # no experts ~69 GiB, experts ~93 GiB
 axolotl train examples/mistral4/fft-text.yml
 
-# vision
-# wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
-axolotl train examples/mistral4/qlora-vision.yml
+# text + vision
+# run: wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
+axolotl train examples/mistral4/qlora-vision.yml  # no experts ~68 GiB
 axolotl train examples/mistral4/fft-vision.yml
 ```
 
-Note: FFT configs provided as reference. Please adjust as needed.
+Note: FFT configs provided as reference. Please adjust hyp as needed. The configs are experimental.
 
 ## Reasoning Effort
 
@@ -69,7 +70,7 @@ See the [Magistral thinking guide](../magistral/think/README.md) for dataset for
 
 ## Related Resources
 
-- [MistralAI Mistral Small 4 Blog](https://mistral.ai/news/mistral-4)
+- [MistralAI Leanstral Blog](https://mistral.ai/news/leanstral)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)

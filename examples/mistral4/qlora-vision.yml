@@ -1,4 +1,4 @@
-base_model: mistralai/Mistral-Small-4-119B-2602-HF
+base_model: mistralai/Leanstral-2603-HF
 processor_type: AutoProcessor
 
 load_in_4bit: true
