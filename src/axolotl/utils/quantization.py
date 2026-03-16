@@ -29,7 +29,7 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         from torchao.prototype.mx_formats import NVFP4InferenceConfig
 
         quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
-    except:
+    except (ImportError, RuntimeError):
         pass
 
     # int4 weight config imports will fail on machines with fbgemm-gpu installed
@@ -38,7 +38,7 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
         quantization_config_to_str[Int4WeightOnlyConfig] = "int4"
-    except:
+    except (ImportError, RuntimeError):
         pass
 
     try:
