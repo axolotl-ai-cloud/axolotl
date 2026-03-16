@@ -13,6 +13,9 @@ on:
        - ".pre-commit-config.yaml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pre-commit:
     name: pre-commit
