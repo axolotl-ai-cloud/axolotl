@@ -3,8 +3,10 @@ name: publish pypi
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
+
+permissions: {}
 
 jobs:
   setup_release:
@@ -28,7 +30,8 @@ jobs:
       name: pypi
       url: https://pypi.org/p/axolotl
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -46,7 +49,7 @@ jobs:
 
       - name: Extract tag name
         id: tag
-        run: echo ::set-output name=TAG_NAME::$(echo $GITHUB_REF | cut -d / -f 3)
+        run: echo "TAG_NAME=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
 
       - name: Update version in VERSION file
         run: |
