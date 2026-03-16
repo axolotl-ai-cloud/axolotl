@@ -1,8 +1,5 @@
 base_model: google/gemma-3-270m-it
 
-model_type: Gemma3ForCausalLM
-cls_model_config: Gemma3TextConfig
-
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
 
@@ -26,6 +23,14 @@ datasets:
 
 val_set_size: 0.0
 output_dir: ./outputs/out
+
+# Freeze the vision tower — only the language model is trained.
+# Gemma3 loads as Gemma3ForConditionalGeneration (full VLM) even for text-only data,
+# so without this the vision encoder receives zero gradients but still occupies
+# optimizer state. Remove these lines if you want full multimodal training.
+unfrozen_parameters:
+  - ^model\.language_model\..*
+  - ^lm_head\..*
 
 adapter: qlora
 lora_r: 32
