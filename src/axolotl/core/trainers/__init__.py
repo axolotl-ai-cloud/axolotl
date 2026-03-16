@@ -4,6 +4,8 @@
 
 from .base import AxolotlTrainer
 from .dpo.trainer import AxolotlDPOTrainer
+from .ebft.strided import AxolotlStridedEBFTTrainer
+from .ebft.trainer import AxolotlEBFTTrainer
 from .mamba import AxolotlMambaTrainer
 from .trl import (
     AxolotlCPOTrainer,

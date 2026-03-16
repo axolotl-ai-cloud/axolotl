@@ -78,6 +78,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = AxolotlKTOTrainer
         elif self.cfg.rl is RLType.SIMPO:
             trainer_cls = AxolotlCPOTrainer
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            trainer_cls = EBFTStrategy.get_trainer_class(self.cfg)
+            trainer_kwargs.update(EBFTStrategy.set_trainer_kwargs(self.cfg))
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
@@ -179,6 +184,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
+
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            training_args_cls = EBFTStrategy.get_training_args_class(self.cfg)
+            training_args_kwargs.update(EBFTStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = EBFTStrategy.get_blocklist_args_kwargs(self.cfg)
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
@@ -211,7 +223,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if (
             self.cfg.adapter
             and self.peft_config
-            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO)
+            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT)
         ):
             trainer_kwargs["peft_config"] = self.peft_config
         if self.cfg.precompute_ref_log_probs is not None:
