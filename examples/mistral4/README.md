@@ -14,13 +14,16 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ```bash
 # text-only
-axolotl train examples/mistral4/qlora-text.yml
+axolotl train examples/mistral4/qlora-text.yml  # ~69 GiB VRAM
 axolotl train examples/mistral4/fft-text.yml
 
 # vision
+# wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
 axolotl train examples/mistral4/qlora-vision.yml
 axolotl train examples/mistral4/fft-vision.yml
 ```
+
+Note: FFT configs provided as reference. Please adjust as needed.
 
 ## Reasoning Effort
 

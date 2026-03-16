@@ -5,7 +5,7 @@ plugins:
 use_kernels: true
 use_sonicmoe: true
 
-# only train language model layers, freeze vision tower + projector
+# only train language model layers, freeze vision tower
 unfrozen_parameters:
   - model.language_model.*
   - lm_head
@@ -33,7 +33,7 @@ wandb_log_model:
 gradient_accumulation_steps: 1
 micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_torch_fused
+optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 2e-5
 
@@ -49,16 +49,11 @@ evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
 
-fsdp:
-  - full_shard
-  - auto_wrap
+fsdp_version: 2
 fsdp_config:
-  fsdp_limit_all_gathers: true
-  fsdp_sync_module_states: true
-  fsdp_offload_params: true
-  fsdp_use_orig_params: false
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_transformer_layer_cls_to_wrap: Mistral4DecoderLayer
-  fsdp_state_dict_type: FULL_STATE_DICT
-  fsdp_sharding_strategy: FULL_SHARD
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  state_dict_type: FULL_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Mistral4DecoderLayer
+  reshard_after_forward: true
