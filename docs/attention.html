@@ -756,9 +756,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
    
   <ul>
   <li><a href="#sdp-attention" id="toc-sdp-attention" class="nav-link active" data-scroll-target="#sdp-attention">SDP Attention</a></li>
-  <li><a href="#flash-attention-2" id="toc-flash-attention-2" class="nav-link" data-scroll-target="#flash-attention-2">Flash Attention 2</a>
+  <li><a href="#flash-attention" id="toc-flash-attention" class="nav-link" data-scroll-target="#flash-attention">Flash Attention</a>
   <ul class="collapse">
-  <li><a href="#nvidia" id="toc-nvidia" class="nav-link" data-scroll-target="#nvidia">Nvidia</a></li>
+  <li><a href="#flash-attention-2" id="toc-flash-attention-2" class="nav-link" data-scroll-target="#flash-attention-2">Flash Attention 2</a></li>
+  <li><a href="#flash-attention-3" id="toc-flash-attention-3" class="nav-link" data-scroll-target="#flash-attention-3">Flash Attention 3</a></li>
+  <li><a href="#flash-attention-4" id="toc-flash-attention-4" class="nav-link" data-scroll-target="#flash-attention-4">Flash Attention 4</a></li>
   <li><a href="#amd" id="toc-amd" class="nav-link" data-scroll-target="#amd">AMD</a></li>
   </ul></li>
   <li><a href="#flex-attention" id="toc-flex-attention" class="nav-link" data-scroll-target="#flex-attention">Flex Attention</a></li>
@@ -801,15 +803,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sdp_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For more details: <a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">PyTorch docs</a></p>
 </section>
-<section id="flash-attention-2" class="level2">
-<h2 class="anchored" data-anchor-id="flash-attention-2">Flash Attention 2</h2>
-<p>Uses efficient kernels to compute attention.</p>
+<section id="flash-attention" class="level2">
+<h2 class="anchored" data-anchor-id="flash-attention">Flash Attention</h2>
+<p>Axolotl supports Flash Attention 2, 3, and 4. The best available version is used automatically
+based on your installed packages and GPU.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For more details: <a href="https://github.com/Dao-AILab/flash-attention/">Flash Attention</a></p>
-<section id="nvidia" class="level3">
-<h3 class="anchored" data-anchor-id="nvidia">Nvidia</h3>
-<p>Requirements: Ampere, Ada, or Hopper GPUs</p>
-<p>Note: For Turing GPUs or lower, please use other attention methods.</p>
+<section id="flash-attention-2" class="level3">
+<h3 class="anchored" data-anchor-id="flash-attention-2">Flash Attention 2</h3>
+<p>Requirements: Ampere, Ada, or Hopper GPUs (Turing or lower not supported)</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install flash-attn <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -821,17 +823,62 @@ Tip
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>If you get <code>undefined symbol</code> while training, ensure you installed PyTorch prior to Axolotl. Alternatively, try reinstall or downgrade a version.</p>
+<p>If you get <code>undefined symbol</code> while training, ensure you installed PyTorch prior to Axolotl.
+Alternatively, try reinstall or downgrade a version.</p>
 </div>
 </div>
-<section id="flash-attention-3" class="level4">
-<h4 class="anchored" data-anchor-id="flash-attention-3">Flash Attention 3</h4>
+</section>
+<section id="flash-attention-3" class="level3">
+<h3 class="anchored" data-anchor-id="flash-attention-3">Flash Attention 3</h3>
 <p>Requirements: Hopper only and CUDA 12.8 (recommended)</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/Dao-AILab/flash-attention.git</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> flash-attention/hopper</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> setup.py install</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="flash-attention-4" class="level3">
+<h3 class="anchored" data-anchor-id="flash-attention-4">Flash Attention 4</h3>
+<p>Requirements: Hopper or Blackwell GPUs</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install flash-attn-4</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Or from source:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/Dao-AILab/flash-attention.git</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> flash-attention/flash_attn/cute</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-e</span> .</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co"># FA2's flash_attn package includes a cute/ stub that shadows FA4.</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Remove it so Python can find the real FA4 module:</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> <span class="at">-r</span> <span class="va">$(</span><span class="ex">python</span> <span class="at">-c</span> <span class="st">"import flash_attn; print(flash_attn.__path__[0])"</span><span class="va">)</span>/cute</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong>Hopper (SM90) users</strong>: The backward kernel is not yet included in the pip package. To use FA4
+for training on Hopper, install from source using the instructions above.</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>FA4 only supports head dimensions up to 128 (<code>d ≤ 128</code>). The DeepSeek shape <code>(192, 128)</code> is
+also supported but only on Blackwell. Axolotl automatically detects incompatible head dimensions
+and falls back to FA2/3.</p>
+</div>
+</div>
+<p>For more details: <a href="https://github.com/Dao-AILab/flash-attention/tree/main/flash_attn/cute">flash-attention/flash_attn/cute</a></p>
 </section>
 <section id="amd" class="level3">
 <h3 class="anchored" data-anchor-id="amd">AMD</h3>
@@ -842,10 +889,10 @@ Tip
 <section id="flex-attention" class="level2">
 <h2 class="anchored" data-anchor-id="flex-attention">Flex Attention</h2>
 <p>A flexible PyTorch API for attention used in combination with <code>torch.compile</code>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># recommended</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="co"># recommended</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">torch_compile</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -864,9 +911,9 @@ Note
 <section id="sageattention" class="level2">
 <h2 class="anchored" data-anchor-id="sageattention">SageAttention</h2>
 <p>Attention kernels with QK Int8 and PV FP16 accumulator.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sage_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sage_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Requirements: Ampere, Ada, or Hopper GPUs</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install sageattention==2.2.0 <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install sageattention==2.2.0 <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -897,7 +944,7 @@ Note
 </section>
 <section id="xformers" class="level2">
 <h2 class="anchored" data-anchor-id="xformers">xFormers</h2>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">xformers_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -929,8 +976,8 @@ Warning
 </div>
 </div>
 <p>Requirements: LLaMA model architecture</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
