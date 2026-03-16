@@ -85,7 +85,6 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         mlp_cls._tiled_mlp_dist_impl = None
         LOG.info(
             f"Successfully monkey-patched TiledMLP for model_type: {model_type}",
-            main_process_only=True,
         )
     except (ImportError, AttributeError) as e:
         raise RuntimeError(
