@@ -1,8 +1,6 @@
 base_model: mistralai/Mistral-Small-4-119B-2602-HF
 processor_type: AutoProcessor
 
-tokenizer_use_mistral_common: true
-
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin
 use_kernels: true
