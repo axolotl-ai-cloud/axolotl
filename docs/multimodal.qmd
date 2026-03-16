@@ -19,6 +19,7 @@ format:
 - [Gemma-3n](#sec-gemma-3n)
 - [Qwen2-VL](#sec-qwen2-vl)
 - [Qwen2.5-VL](#sec-qwen25-vl)
+- [Qwen3.5](#sec-qwen3-5)
 - [GLM-4.6V](#sec-glm-4-6v)
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
@@ -183,6 +184,54 @@ base_model: Qwen/Qwen3-VL-4B-Instruct
 
 chat_template: qwen2_vl  # same as qwen2-vl
 ```
+
+### Qwen3.5 {#sec-qwen3-5}
+
+::: {.callout-note}
+Qwen3.5-2B is text-only. All larger variants (7B and above) are early-fusion VLMs
+(`Qwen3_5ForConditionalGeneration`) — vision and text tokens share the same transformer
+layers. Axolotl always loads the full VLM class regardless of whether images are present
+in the dataset.
+:::
+
+```yaml
+base_model: Qwen/Qwen3.5-9B  # smallest VLM variant
+
+chat_template: qwen3_5
+```
+
+**Text-only FFT with vision encoder frozen (single 80 GB GPU)**
+
+Use `unfrozen_parameters` to restrict gradient updates to the language model, freezing
+`model.visual.*` and avoiding wasted optimizer state for parameters that receive no
+gradient from text-only data.
+
+```yaml
+unfrozen_parameters:
+  - ^model\.language_model\..*
+  - ^lm_head\..*
+```
+
+Measured peak VRAM — Qwen3.5-27B, `adamw_bnb_8bit`, `sequence_len: 2048`:
+
+| Metric | Value |
+|---|---|
+| Max active | 52.89 GiB |
+| Device reserved | 53.31 GiB |
+
+See [examples/qwen3.5/27b-fft.yaml](https://github.com/axolotl-ai/axolotl/blob/main/examples/qwen3.5/27b-fft.yaml).
+
+**Multimodal FFT (image + text, single 80 GB GPU)**
+
+Measured peak VRAM — Qwen3.5-9B, `adamw_bnb_8bit`, `sequence_len: 4096`:
+
+| Metric | Value |
+|---|---|
+| Max active | 60.83 GiB |
+| Device reserved | 62.43 GiB |
+
+See [examples/qwen3.5/9b-fft-vision.yaml](https://github.com/axolotl-ai/axolotl/blob/main/examples/qwen3.5/9b-fft-vision.yaml).
+For 27B multimodal FFT across multiple GPUs, see [examples/qwen3.5/27b-fft-vision.yaml](https://github.com/axolotl-ai/axolotl/blob/main/examples/qwen3.5/27b-fft-vision.yaml).
 
 ### GLM-4.6V {#sec-glm-4-6v}
 

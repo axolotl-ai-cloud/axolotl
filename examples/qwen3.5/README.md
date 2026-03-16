@@ -1,6 +1,6 @@
 # Finetune Qwen3.5 with Axolotl
 
-[Qwen3.5](https://huggingface.co/collections/Qwen/qwen35-68452f3bc6e4b7cfb4e1c803) is a hybrid architecture model series combining Gated DeltaNet linear attention with standard Transformer attention. Models from 7B onwards are early-fusion vision-language models (`Qwen3_5ForConditionalGeneration`), meaning vision and text tokens are processed through the same transformer stack. The 2B variant is text-only.
+[Qwen3.5](https://huggingface.co/collections/Qwen/qwen35-68452f3bc6e4b7cfb4e1c803) is a hybrid architecture model series combining Gated DeltaNet linear attention with standard Transformer attention. Models from 9B onwards are early-fusion vision-language models (`Qwen3_5ForConditionalGeneration`), meaning vision and text tokens are processed through the same transformer stack. The 2B variant is text-only.
 
 Available configs:
 
@@ -10,8 +10,8 @@ Available configs:
 | `27b-fft.yaml` | Qwen3.5-27B | Dense VLM, text-only FFT (vision frozen) | ~53 GiB |
 | `35b-a3b-moe-qlora.yaml` | Qwen3.5-35B-A3B | MoE, text-only QLoRA | — |
 | `122b-a10b-moe-qlora.yaml` | Qwen3.5-122B-A10B | MoE, text-only QLoRA | — |
-| `7b-lora-vision.yaml` | Qwen3.5-7B | Vision+text LoRA, single GPU | — |
-| `7b-fft-vision.yaml` | Qwen3.5-7B/9B | Vision+text FFT, single GPU | ~61 GiB |
+| `9b-lora-vision.yaml` | Qwen3.5-9B | Vision+text LoRA, single GPU | — |
+| `7b-fft-vision.yaml` | Qwen3.5-9B | Vision+text FFT, single GPU | ~61 GiB |
 
 
 ## Getting started
@@ -41,11 +41,11 @@ axolotl train examples/qwen3.5/35b-a3b-moe-qlora.yaml
 # MoE 122B-A10B text-only (QLoRA)
 axolotl train examples/qwen3.5/122b-a10b-moe-qlora.yaml
 
-# 7B vision+text (LoRA, multimodal dataset)
-axolotl train examples/qwen3.5/7b-lora-vision.yaml
+# 9B vision+text (LoRA, multimodal dataset)
+axolotl train examples/qwen3.5/9b-lora-vision.yaml
 
-# 7B/9B vision+text FFT, single 80 GiB GPU (~61 GiB peak)
-axolotl train examples/qwen3.5/7b-fft-vision.yaml
+# 9B vision+text FFT, single 80 GiB GPU (~61 GiB peak)
+axolotl train examples/qwen3.5/9b-fft-vision.yaml
 
 ```
 
