@@ -15,13 +15,13 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ```bash
 # text-only
-axolotl train examples/mistral4/qlora-text.yml  # no experts ~69 GiB, experts ~93 GiB
-axolotl train examples/mistral4/fft-text.yml
+axolotl train examples/leanstral/qlora-text.yml  # no experts ~69 GiB, experts ~93 GiB
+axolotl train examples/leanstral/fft-text.yml
 
 # text + vision
 # run: wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
-axolotl train examples/mistral4/qlora-vision.yml  # no experts ~68 GiB
-axolotl train examples/mistral4/fft-vision.yml
+axolotl train examples/leanstral/qlora-vision.yml  # no experts ~68 GiB
+axolotl train examples/leanstral/fft-vision.yml
 ```
 
 Note: FFT configs provided as reference. Please adjust hyp as needed. The configs are experimental.
