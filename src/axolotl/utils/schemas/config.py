@@ -1222,12 +1222,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="after")
     def check_tf32(self):
-        if self.cfg.tf32 == "auto":
+        if self.tf32 == "auto":
             self.tf32 = self.capabilities.tf32
-        elif self.cfg.tf32:
-            self.tf32 = True
-        else:
-            self.tf32 = False
         return self
 
     @model_validator(mode="after")
