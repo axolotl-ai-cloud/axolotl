@@ -4,12 +4,15 @@
 
 Available configs:
 
-| Config | Model | Type |
-|---|---|---|
-| `27b-qlora.yaml` | Qwen3.5-27B | Dense VLM, text-only path |
-| `35b-a3b-moe-qlora.yaml` | Qwen3.5-35B-A3B | MoE, text-only path |
-| `122b-a10b-moe-qlora.yaml` | Qwen3.5-122B-A10B | MoE, text-only path |
-| `7b-lora-vision.yaml` | Qwen3.5-7B | Vision+text (multimodal) |
+| Config | Model | Type | Peak VRAM |
+|---|---|---|---|
+| `27b-qlora.yaml` | Qwen3.5-27B | Dense VLM, text-only QLoRA | ~47 GiB |
+| `27b-fft.yaml` | Qwen3.5-27B | Dense VLM, text-only FFT (vision frozen) | ~53 GiB |
+| `35b-a3b-moe-qlora.yaml` | Qwen3.5-35B-A3B | MoE, text-only QLoRA | — |
+| `122b-a10b-moe-qlora.yaml` | Qwen3.5-122B-A10B | MoE, text-only QLoRA | — |
+| `7b-lora-vision.yaml` | Qwen3.5-7B | Vision+text LoRA, single GPU | — |
+| `7b-fft-vision.yaml` | Qwen3.5-7B/9B | Vision+text FFT, single GPU | ~61 GiB |
+
 
 ## Getting started
 
@@ -29,6 +32,9 @@ pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.4.1
 # Dense 27B text-only (QLoRA, ~47 GiB VRAM with sample packing)
 axolotl train examples/qwen3.5/27b-qlora.yaml
 
+# Dense 27B text-only FFT with vision encoder frozen (~53 GiB, single 80 GiB GPU)
+axolotl train examples/qwen3.5/27b-fft.yaml
+
 # MoE 35B-A3B text-only (QLoRA)
 axolotl train examples/qwen3.5/35b-a3b-moe-qlora.yaml
 
@@ -37,12 +43,18 @@ axolotl train examples/qwen3.5/122b-a10b-moe-qlora.yaml
 
 # 7B vision+text (LoRA, multimodal dataset)
 axolotl train examples/qwen3.5/7b-lora-vision.yaml
+
+# 7B/9B vision+text FFT, single 80 GiB GPU (~61 GiB peak)
+axolotl train examples/qwen3.5/7b-fft-vision.yaml
+
 ```
 
 ### TIPS
 
 - For inference, you can experiment with `temperature: 0.7`, `top_p: 0.8`, `top_k: 20`, and `min_p: 0`.
-- You can run a full finetuning by removing `adapter: qlora` and `load_in_4bit: true`. See [Multi-GPU](#optimization-guides) below.
+- For **text-only FFT** on 27B, use `27b-fft.yaml` which sets `unfrozen_parameters` to freeze the vision encoder (`model.visual.*`) — this avoids wasting optimizer state on parameters that receive no gradient from text-only data.
+- For **multimodal FFT** on 27B, use `27b-fft-vision.yaml` with FSDP2 across multiple GPUs. Single-GPU FFT of 27B is not feasible in bf16 (~54 GiB weights + ~27 GiB 8-bit Adam exceeds 80 GiB).
+- You can run a full finetuning of smaller configs by removing `adapter: qlora` and `load_in_4bit: true`. See [Multi-GPU](#optimization-guides) below.
 - Read more on loading your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 - The dataset format follows the OpenAI Messages format as seen [here](https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template).
 - For **multimodal** finetuning, set `processor_type: AutoProcessor`, `skip_prepare_dataset: true`, and `remove_unused_columns: false` as shown in `7b-lora-vision.yaml`.
