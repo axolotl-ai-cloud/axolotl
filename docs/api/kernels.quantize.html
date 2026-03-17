@@ -759,6 +759,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.kernels.quantize.dequantize" id="toc-axolotl.kernels.quantize.dequantize" class="nav-link" data-scroll-target="#axolotl.kernels.quantize.dequantize">dequantize</a></li>
+  <li><a href="#axolotl.kernels.quantize.dequantize_fp8" id="toc-axolotl.kernels.quantize.dequantize_fp8" class="nav-link" data-scroll-target="#axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -773,7 +774,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.kernels.quantize" class="level1">
 <h1>kernels.quantize</h1>
 <p><code>kernels.quantize</code></p>
-<p>Dequantization utilities for <code>bitsandbytes</code> integration.</p>
+<p>Dequantization utilities for <code>bitsandbytes</code> and FP8 integration.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -788,6 +789,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.kernels.quantize.dequantize">dequantize</a></td>
 <td>Fast NF4 dequantization using <code>bitsandbytes</code> CUDA kernels.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</a></td>
+<td>Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.kernels.quantize.dequantize" class="level3">
@@ -801,9 +806,9 @@ formats.</p>
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 6%">
-<col style="width: 13%">
-<col style="width: 74%">
+<col style="width: 5%">
+<col style="width: 19%">
+<col style="width: 69%">
 <col style="width: 5%">
 </colgroup>
 <thead>
@@ -823,7 +828,7 @@ formats.</p>
 </tr>
 <tr class="even">
 <td>quant_state</td>
-<td>QuantState | list | None</td>
+<td>QuantState | list | torch.Tensor | None</td>
 <td>Quantization state containing metadata needed for dequantization. Can be either a <code>QuantState</code> object or legacy list format. If None, returns <code>W</code> unchanged.</td>
 <td><code>None</code></td>
 </tr>
@@ -893,6 +898,69 @@ formats.</p>
 <h4 class="doc-section doc-section-note anchored" data-anchor-id="note">Note</h4>
 <p>Uses CUDA streams for better performance when available in newer <code>bitsandbytes</code>
 versions (&gt;0.43.3).</p>
+</section>
+</section>
+<section id="axolotl.kernels.quantize.dequantize_fp8" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.dequantize_fp8(W, scale_inv, dtype<span class="op">=</span>torch.bfloat16)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.</p>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 8%">
+<col style="width: 11%">
+<col style="width: 65%">
+<col style="width: 14%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>W</td>
+<td>torch.Tensor</td>
+<td>FP8 weight tensor [out_features, in_features] in float8_e4m3fn.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>scale_inv</td>
+<td>torch.Tensor</td>
+<td>Per-block inverse scale [ceil(out/block), ceil(in/block)] or per-tensor scalar.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="odd">
+<td>dtype</td>
+<td>torch.dtype</td>
+<td>Output dtype (default bf16).</td>
+<td><code>torch.bfloat16</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-1" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>torch.Tensor</td>
+<td>Dequantized tensor in the specified dtype.</td>
+</tr>
+</tbody>
+</table>
 
 
 </section>
