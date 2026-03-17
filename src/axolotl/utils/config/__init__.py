@@ -196,7 +196,7 @@ def normalize_config(cfg):
     cfg.model_config_type = model_config.model_type
 
     # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
-    if hasattr(model_config, "get_text_config"):
+    if callable(getattr(model_config, "get_text_config", None)):
         text_config = model_config.get_text_config()
         if (
             hasattr(text_config, "model_type")
