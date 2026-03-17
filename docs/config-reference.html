@@ -1506,8 +1506,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-724"><a href="#cb1-724" aria-hidden="true" tabindex="-1"></a><span class="fu">bfloat16</span><span class="kw">:</span><span class="at"> bool | None</span></span>
 <span id="cb1-725"><a href="#cb1-725" aria-hidden="true" tabindex="-1"></a><span class="co"># No AMP (automatic mixed precision)</span></span>
 <span id="cb1-726"><a href="#cb1-726" aria-hidden="true" tabindex="-1"></a><span class="fu">float16</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-727"><a href="#cb1-727" aria-hidden="true" tabindex="-1"></a><span class="co"># Use CUDA tf32 - require &gt;=ampere</span></span>
-<span id="cb1-728"><a href="#cb1-728" aria-hidden="true" tabindex="-1"></a><span class="fu">tf32</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-727"><a href="#cb1-727" aria-hidden="true" tabindex="-1"></a><span class="co"># bool to use CUDA tf32 or 'auto' for automatic detection - require &gt;=ampere</span></span>
+<span id="cb1-728"><a href="#cb1-728" aria-hidden="true" tabindex="-1"></a><span class="fu">tf32</span><span class="kw">:</span><span class="at"> Literal['auto'] | bool | None = auto</span></span>
 <span id="cb1-729"><a href="#cb1-729" aria-hidden="true" tabindex="-1"></a><span class="fu">float32</span><span class="kw">:</span><span class="at"> bool | None</span></span>
 <span id="cb1-730"><a href="#cb1-730" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-731"><a href="#cb1-731" aria-hidden="true" tabindex="-1"></a><span class="co"># Whether to use gradient checkpointing. Available options are: true, false, 'offload',</span></span>
