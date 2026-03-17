@@ -18,9 +18,9 @@ ebft:
   embed_method: last_token
   use_whitening: true
   alignment_coef: 1.0
-  diversity_coef: 0.0  # disabled: alignment signal too weak at this scale to compete
+  diversity_coef: 1.0
   rl_coef: 1.0
-  ce_coef: 0.0
+  ce_coef: 0.0   # paper recommends 0.03 for mixed objective; 0.1 causes CE to dominate
   advantage_estimator: rloo
 
 datasets:

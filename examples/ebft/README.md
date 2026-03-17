@@ -158,9 +158,8 @@ Transform returns: `{"input_ids": ..., "attention_mask": ..., "labels": ...}`
 ### Reward coefficients
 
 - **`alignment_coef`**: Controls the weight of cosine similarity between generated and ground-truth features. Default 1.0.
-- **`diversity_coef`**: Controls the diversity penalty (pairwise dot-product similarity between samples).
-  - **When using `use_whitening: true`**: Set `diversity_coef: 0.0`. Whitening changes embedding norms, creating a scale mismatch between alignment (cosine similarity, normalized to [-1,1]) and diversity (raw dot product, unbounded). The diversity term will dominate and degrade training. A warning is emitted if both are set.
-  - **When using `use_whitening: false`**: `diversity_coef: 1.0` is safe since both alignment and diversity operate on L2-normalized features.
+- **`diversity_coef`**: Controls the diversity penalty (pairwise dot-product similarity between samples). Default 1.0. Per the paper's Variant (i) (eq 49), alignment uses cosine similarity (normalized) while diversity uses raw dot product — both are bounded after whitening.
+- **`use_whitening`**: Recommended. Whitening decorrelates feature dimensions and the paper shows removing it causes the largest degradation. Safe to use with `diversity_coef > 0`.
 - **`n_samples_per_prompt`**: Must be >= 2 if `diversity_coef > 0` (diversity requires pairwise comparisons). Must be >= 2 for RLOO advantage estimation (falls back to REINFORCE with n=1).
 
 ### Feature extraction
