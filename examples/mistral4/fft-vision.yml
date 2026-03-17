@@ -2,6 +2,7 @@ base_model: mistralai/Mistral-Small-4-119B-2603
 processor_type: AutoProcessor
 
 plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.kernels.KernelsPlugin
 use_kernels: true
 use_sonicmoe: true

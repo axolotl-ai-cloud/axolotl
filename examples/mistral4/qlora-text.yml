@@ -1,5 +1,8 @@
 base_model: mistralai/Mistral-Small-4-119B-2603
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
 load_in_4bit: true
 quantize_moe_experts: true
 
@@ -25,6 +28,9 @@ lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_att
 # lora_target_parameters:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
+# lora_mlp_kernel: false
+# lora_qkv_kernel: false
+# lora_o_kernel: false
 
 wandb_project:
 wandb_entity:
