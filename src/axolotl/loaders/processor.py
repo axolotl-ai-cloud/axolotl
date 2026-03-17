@@ -55,12 +55,12 @@ def load_processor(cfg: DictDefault, tokenizer: PreTrainedTokenizerBase):
         )
 
     processor_kwargs["trust_remote_code"] = cfg.trust_remote_code or False
-    processor_kwargs["tokenizer"] = tokenizer
 
     processor = processor_cls.from_pretrained(
         cfg.processor_config,
         **processor_kwargs,
     )
+    processor.tokenizer = tokenizer
 
     # Attempt to load image size from processor if available
     if (

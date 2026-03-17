@@ -19,5 +19,4 @@ class CheckpointSaveMixin(Trainer):
                 f"Trainer does not support saving optimizer and scheduler:  {exc}\n"
                 "Optimizer and scheduler states were not saved - resuming from checkpoints "
                 "for this training run will not be possible.",
-                main_process_only=True,
             )

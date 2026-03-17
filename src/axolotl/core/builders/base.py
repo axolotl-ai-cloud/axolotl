@@ -250,7 +250,7 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
-        training_args_kwargs["tf32"] = self.cfg.tf32
+        training_args_kwargs["tf32"] = True if self.cfg.tf32 is True else False
         if self.cfg.bf16 == "full":
             training_args_kwargs["bf16_full_eval"] = True
         else:

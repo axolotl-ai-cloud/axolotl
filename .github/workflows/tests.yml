@@ -28,6 +28,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions:
+  contents: read
+
 env:
   TRANSFORMERS_IS_CI: "yes"
 
@@ -303,9 +306,10 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run cicd.e2e_tests
 
@@ -371,9 +375,10 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
-          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
           echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
           modal run cicd.e2e_tests
 
@@ -413,7 +418,6 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "CODECOV_TOKEN=${{ secrets.CODECOV_TOKEN }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
           modal run cicd.cleanup
