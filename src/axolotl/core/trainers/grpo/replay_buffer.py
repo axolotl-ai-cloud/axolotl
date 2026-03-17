@@ -21,6 +21,8 @@ class ReplayBuffer:
 
     def add(self, score: float, data: dict):
         """Add a group to the buffer. If full, replaces lowest-scoring entry."""
+        if self.max_size <= 0:
+            return
         self._counter += 1
         if len(self._heap) < self.max_size:
             heapq.heappush(self._heap, (score, self._counter, data))
@@ -29,7 +31,7 @@ class ReplayBuffer:
 
     def sample(self, num_samples: int) -> list[dict] | None:
         """Sample groups weighted by their scores. Returns None if buffer is empty."""
-        if not self._heap:
+        if self.max_size <= 0 or not self._heap:
             return None
 
         scores = torch.tensor([item[0] for item in self._heap], dtype=torch.float32)

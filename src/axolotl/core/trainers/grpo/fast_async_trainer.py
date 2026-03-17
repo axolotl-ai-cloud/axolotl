@@ -359,7 +359,9 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
         logprob computation to overlap with CPU reward computation.
         """
         reward_can_bg = all(
-            not isinstance(rf, nn.Module) and not asyncio.iscoroutinefunction(rf)
+            callable(rf)
+            and not isinstance(rf, nn.Module)
+            and not asyncio.iscoroutinefunction(rf)
             for rf in self.reward_funcs
         )
         num_workers = getattr(self.args, "reward_num_workers", 1)
@@ -434,6 +436,13 @@ class FastAsyncGRPOTrainer(AsyncGRPOTrainer):
             result = conn.recv()
             if result is None:
                 any_failed = True
+                # Drain remaining workers to prevent stale results in pipes
+                for remaining_conn in workers_used:
+                    if remaining_conn is not conn:
+                        try:
+                            remaining_conn.recv()
+                        except Exception:
+                            pass
                 break
             all_worker_results.append(result)
 

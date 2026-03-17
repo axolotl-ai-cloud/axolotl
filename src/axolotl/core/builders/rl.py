@@ -238,6 +238,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         # transformers' validate_quantization_for_training blocks FP8 because
         # hf_quantizer.is_trainable is False, but LoRA only trains the adapters
         # (base weights stay frozen in FP8).
+        _orig_validate_quant = None
         if (
             self.cfg.adapter
             and hasattr(self.model, "is_quantized")
@@ -245,15 +246,24 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         ):
             import transformers.trainer as _trainer_module
 
+            _orig_validate_quant = _trainer_module.validate_quantization_for_training
             _trainer_module.validate_quantization_for_training = lambda model: None
 
-        trainer = trainer_cls(
-            *trainer_cls_args,
-            args=training_args,
-            train_dataset=self.train_dataset,
-            callbacks=self.get_callbacks(),
-            **trainer_kwargs,
-        )
+        try:
+            trainer = trainer_cls(
+                *trainer_cls_args,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
+        finally:
+            if _orig_validate_quant is not None:
+                import transformers.trainer as _trainer_module
+
+                _trainer_module.validate_quantization_for_training = (
+                    _orig_validate_quant
+                )
         if self.cfg.fsdp_config or self.cfg.fsdp:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:

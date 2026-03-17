@@ -38,9 +38,21 @@ def dequantize_fp8(
         sr, sc = scale_inv.shape
         br = W.shape[0] // sr
         bc = W.shape[1] // sc
-        return (
-            W_float.reshape(sr, br, sc, bc) * scale_inv[:, None, :, None].to(dtype)
-        ).reshape(W.shape)
+        # If dimensions are exactly divisible, use fast reshape path
+        if sr * br == W.shape[0] and sc * bc == W.shape[1]:
+            return (
+                W_float.reshape(sr, br, sc, bc) * scale_inv[:, None, :, None].to(dtype)
+            ).reshape(W.shape)
+        # Tail-block handling: compute actual block size (ceil division),
+        # tile scale_inv to cover full shape, then crop to W's dimensions
+        br_ceil = -(-W.shape[0] // sr)  # ceil(rows / scale_rows) = block_size
+        bc_ceil = -(-W.shape[1] // sc)
+        scale_expanded = (
+            scale_inv.to(dtype)
+            .repeat_interleave(br_ceil, dim=0)
+            .repeat_interleave(bc_ceil, dim=1)
+        )[: W.shape[0], : W.shape[1]]
+        return W_float * scale_expanded
     return W_float * scale_inv.to(dtype)
 
 

@@ -36,6 +36,11 @@ class GRPOStrategy:
         | type[AxolotlGRPOSequenceParallelTrainer]
         | type[AxolotlAsyncGRPOTrainer]
     ):
+        if sequence_parallel and async_grpo:
+            raise ValueError(
+                "sequence_parallel and async_grpo cannot both be enabled. "
+                "Disable one of context_parallel_size > 1 or async_prefetch/use_data_producer."
+            )
         if sequence_parallel:
             return AxolotlGRPOSequenceParallelTrainer
         if async_grpo:

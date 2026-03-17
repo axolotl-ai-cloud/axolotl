@@ -48,12 +48,12 @@ def get_lora_parameters(
 
     if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
         quant_state = getattr(W, "quant_state", None)
-        if quant_state is None:
+        if quant_state is None and W.dtype == torch.float8_e4m3fn:
             quant_state = getattr(base_layer, "weight_scale_inv", None)
         return W, b, quant_state, None, None, None
 
     quant_state = getattr(W, "quant_state", None)
-    if quant_state is None:
+    if quant_state is None and W.dtype == torch.float8_e4m3fn:
         quant_state = getattr(base_layer, "weight_scale_inv", None)
 
     active_adapter = (

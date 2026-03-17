@@ -128,7 +128,7 @@ def main(script_args: ScriptArguments):
 
     import uvicorn
     from fastapi import FastAPI
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field as PydanticField
 
     # Request/Response models (defined locally like TRL's vllm_serve.main)
     class GenerateRequest(BaseModel):
@@ -144,7 +144,7 @@ def main(script_args: ScriptArguments):
         logprobs: int | None = 0
         truncate_prompt_tokens: int | None = None
         structured_outputs_regex: str | None = None
-        generation_kwargs: dict = field(default_factory=dict)
+        generation_kwargs: dict = PydanticField(default_factory=dict)
 
     class GenerateResponse(BaseModel):
         prompt_ids: list[list[int]]
@@ -164,8 +164,8 @@ def main(script_args: ScriptArguments):
         logprobs: int | None = 0
         truncate_prompt_tokens: int | None = None
         structured_outputs_regex: str | None = None
-        generation_kwargs: dict = field(default_factory=dict)
-        chat_template_kwargs: dict = field(default_factory=dict)
+        generation_kwargs: dict = PydanticField(default_factory=dict)
+        chat_template_kwargs: dict = PydanticField(default_factory=dict)
 
     class ChatResponse(BaseModel):
         prompt_ids: list[list[int]]
@@ -208,13 +208,30 @@ def main(script_args: ScriptArguments):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        import time
+
+        startup_timeout = 300  # 5 minutes
+        start_time = time.monotonic()
         ready: set[int] = set()
         while len(ready) < script_args.data_parallel_size:
-            for conn in connections:
-                if id(conn) not in ready and conn.poll():
+            elapsed = time.monotonic() - start_time
+            if elapsed > startup_timeout:
+                raise RuntimeError(
+                    f"vLLM workers failed to start within {startup_timeout}s "
+                    f"({len(ready)}/{script_args.data_parallel_size} ready)"
+                )
+            for i, (conn, proc) in enumerate(zip(connections, processes, strict=True)):
+                if id(conn) in ready:
+                    continue
+                if not proc.is_alive():
+                    raise RuntimeError(
+                        f"vLLM worker {i} exited unexpectedly during startup"
+                    )
+                if conn.poll():
                     msg = conn.recv()
                     if isinstance(msg, dict) and msg.get("status") == "ready":
                         ready.add(id(conn))
+            await asyncio.sleep(0.1)
         yield
         for p in processes:
             p.join(timeout=10)

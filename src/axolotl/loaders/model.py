@@ -215,7 +215,8 @@ class ModelLoader:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
         if self.cfg.use_kernels:
             self.model_kwargs["use_kernels"] = self.cfg.use_kernels
-            self.model_kwargs["allow_all_kernels"] = self.cfg.use_kernels
+            if "allow_all_kernels" not in self.model_kwargs:
+                self.model_kwargs["allow_all_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
         self._check_model_requirements()
