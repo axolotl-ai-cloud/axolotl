@@ -49,6 +49,7 @@ class NemoGymPlugin(BasePlugin):
         self._server_base_urls = None
         self._reward_fn = None
         self._dataset_lookup = None
+        self._agent_servers = {}
 
     def get_input_args(self):
         return "axolotl.integrations.nemo_gym.NemoGymArgs"
@@ -95,6 +96,7 @@ class NemoGymPlugin(BasePlugin):
         from .server import (
             ensure_gym_repo,
             ensure_gym_venv,
+            get_agent_servers,
             get_server_base_url,
             get_server_configs,
             get_verify_endpoint,
@@ -117,7 +119,7 @@ class NemoGymPlugin(BasePlugin):
         self._global_config = get_server_configs(head_port=head_port)
         wait_for_resource_servers(self._global_config)
 
-        # Build endpoint maps
+        # Build endpoint maps for resource servers (/verify)
         self._verify_endpoints = {}
         self._server_base_urls = {}
         for server_name in self._global_config:
@@ -129,7 +131,10 @@ class NemoGymPlugin(BasePlugin):
                     self._global_config, server_name
                 )
             except (ValueError, KeyError, TypeError):
-                pass  # Skip non-server config entries
+                pass
+
+        # Discover agent servers (/run) for multi-turn
+        self._agent_servers = get_agent_servers(self._global_config)
 
         # Pre-build dataset lookup for multi-turn (needs to happen at register time,
         # not load_datasets, because load_datasets may not be called if axolotl config
@@ -247,51 +252,52 @@ class NemoGymPlugin(BasePlugin):
             )
 
     def _wire_multi_turn(self, cfg, trainer, model_name, verify_timeout):
-        """Inject multi-turn rollout_func into the trainer."""
-        from .multi_turn import create_multi_turn_rollout_func
+        """Inject multi-turn rollout_func that delegates to NeMo Gym agent /run endpoints.
 
-        max_turns = cfg.nemo_gym_max_turns or 10
-        tool_timeout = cfg.nemo_gym_verify_timeout or 30
+        The agent server handles multi-turn orchestration: it calls our vLLM server
+        for generation, executes tools against resource servers, manages session state,
+        and returns token IDs + logprobs + rewards.
+        """
+        from .multi_turn import create_nemo_gym_rollout_func
 
-        rollout_func = create_multi_turn_rollout_func(
-            global_config=self._global_config,
-            verify_endpoints=self._verify_endpoints,
-            server_base_urls=self._server_base_urls,
+        if not self._agent_servers:
+            LOG.warning(
+                "No NeMo Gym agent servers discovered. Multi-turn requires agent servers "
+                "started via ng_run with an agent config. Falling back to single-turn."
+            )
+            self._wire_single_turn(trainer, model_name, verify_timeout)
+            return
+
+        rollout_func = create_nemo_gym_rollout_func(
+            agent_servers=self._agent_servers,
             dataset_lookup=self._dataset_lookup or {},
-            model_name=model_name,
-            max_turns=max_turns,
-            verify_timeout=verify_timeout,
-            tool_timeout=tool_timeout,
+            request_timeout=float(cfg.nemo_gym_verify_timeout or 10800),
         )
 
-        # Wire the rollout_func into both the trainer and vllm_generation.
-        # TRL checks trainer.rollout_func at init time (line 706-711) and wraps it
-        # into a closure that gets passed to VLLMGeneration. Since we inject after
-        # init, we need to set it on both objects.
+        # Wire into both trainer and vllm_generation
         if hasattr(trainer, "vllm_generation") and trainer.vllm_generation:
             bound_rollout = lambda prompts: rollout_func(prompts, trainer)  # noqa: E731
             trainer.vllm_generation.rollout_func = bound_rollout
-            # Also set on trainer itself (for any code that checks trainer.rollout_func)
             trainer.rollout_func = rollout_func
             LOG.info(
-                f"NeMo Gym multi-turn rollout function injected "
-                f"(max_turns={max_turns})"
+                f"NeMo Gym multi-turn rollout injected "
+                f"(agent servers: {list(self._agent_servers.keys())})"
             )
         else:
             LOG.warning(
-                "Trainer does not support rollout_func. "
-                "Multi-turn requires a GRPO trainer with vLLM."
+                "Trainer does not have vllm_generation. "
+                "Multi-turn rollout_func requires use_vllm=true."
             )
 
-        # Also add a reward function that reads pre-computed rewards from rollout
-        def nemo_gym_reward_from_rollout(completions, **kwargs):
-            rewards = kwargs.get("nemo_gym_reward")
+        # Passthrough reward function — agent /run already computed rewards
+        def env_reward_passthrough(completions, **kwargs):
+            rewards = kwargs.get("env_reward")
             if rewards is not None:
                 return [float(r) for r in rewards]
             return [0.0 for _ in completions]
 
         if hasattr(trainer, "reward_funcs"):
-            trainer.reward_funcs.append(nemo_gym_reward_from_rollout)
+            trainer.reward_funcs.append(env_reward_passthrough)
             trainer.reward_func_names.append("nemo_gym")
             trainer.reward_processing_classes.append(None)
 

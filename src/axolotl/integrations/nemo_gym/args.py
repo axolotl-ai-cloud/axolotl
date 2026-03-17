@@ -70,7 +70,9 @@ class NemoGymArgs(BaseModel):
         json_schema_extra={
             "description": (
                 "List of NeMo Gym dataset configs. Each entry has 'path' (JSONL file path "
-                "relative to nemo_gym_dir) and 'server_name' (resource server name). "
+                "relative to nemo_gym_dir) and optionally 'server_name' (default resource server). "
+                "If the JSONL rows have agent_ref.name, that takes precedence per row, "
+                "enabling multi-environment training from a single dataset file. "
                 "Optional 'max_samples' to limit per dataset."
             )
         },

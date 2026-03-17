@@ -100,9 +100,16 @@ output_dir: ./outputs/nemo_gym_arithmetic
 cd experiments && axolotl train single_turn.yaml
 ```
 
-### 4. Multi-Turn Tool-Calling with LoRA Server Mode (Recommended)
+### 4. Multi-Turn with NeMo Gym Agent Servers (Recommended)
 
-This is the fully validated path: LoRA + vLLM server mode + multi-turn tool execution.
+For multi-turn environments (tool use, multi-step reasoning), the plugin delegates to
+NeMo Gym's agent servers via the `/run` endpoint. The agent handles generation (by
+calling our vLLM server), tool execution, session management, and reward computation.
+
+**Requirements:** NeMo Gym agent servers running via `ng_run` with agent configs that
+reference your vLLM server as the policy model.
+
+LoRA + vLLM server mode is the validated path:
 
 ```yaml
 # multi_turn_lora.yaml
@@ -180,33 +187,37 @@ CUDA_VISIBLE_DEVICES=1 CUDA_HOME=$HOME/env-claude-cu130/cuda_shim \
 
 ### Architecture
 
+**Single-Turn** (reward_fn calls /verify directly):
 ```
-┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  axolotl    │────▶│  GRPO        │────▶│  NeMo Gym        │
-│  train      │     │  Trainer     │     │  /verify endpoint │
-│  (GPU 1)    │     │              │◀────│  (reward signal)  │
-└─────────────┘     └──────────────┘     └──────────────────┘
-      │                    ▲                      ▲
-      │  LoRA sync         │                      │
-      ▼  (filesystem)      │                      │
-┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  vLLM LoRA  │     │  Model       │     │  Resource Server  │
-│  Server     │────▶│  Completions │────▶│  /get_weather     │
-│  (GPU 0)    │     │  (tool calls)│     │  /verify          │
-└─────────────┘     └──────────────┘     └──────────────────┘
+axolotl train → GRPO Trainer generates completions
+  → NeMo Gym plugin reward_fn calls POST /verify on resource server
+  → reward flows back to GRPO for advantage computation
 ```
 
-### Multi-Turn Rollout Flow
+**Multi-Turn** (rollout_func delegates to NeMo Gym agent /run):
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
+│  axolotl    │     │  NeMo Gym    │────▶│  vLLM LoRA       │
+│  train      │────▶│  Agent /run  │◀────│  Server (GPU 0)  │
+│  (GPU 1)    │     │              │     │  /v1/responses    │
+└─────────────┘     └──────┬───────┘     └──────────────────┘
+      │  LoRA sync         │                      ▲
+      │  (filesystem)      ▼                      │
+      └───────────▶ ┌──────────────┐              │
+                    │  Resource    │   model weights
+                    │  Server     │   synced via
+                    │  (tools +   │   /set_lora_adapter
+                    │   verify)   │
+                    └─────────────┘
+```
 
-1. Plugin extracts tools from dataset's `responses_create_params.tools`
-2. Builds prompt with tool definitions + "MUST use tools" system instruction
-3. Disables thinking mode for Qwen3 (`enable_thinking=False`)
-4. Model generates via vLLM server `/generate/` endpoint
-5. Plugin parses `<tool_call>` from model output
-6. Executes tool via `POST /{tool_name}` on resource server
-7. Appends tool result with `role: "tool"` (masked via `env_mask=0`)
-8. Model generates final answer
-9. `POST /verify` returns reward
+The agent server orchestrates the multi-turn loop:
+1. Calls our vLLM server for model generation
+2. Parses tool calls from model output
+3. Executes tools against resource servers
+4. Feeds tool results back to the model
+5. Repeats until done, then calls /verify for reward
+6. Returns token IDs + logprobs + reward to our rollout_func
 
 ### Weight Sync (LoRA Mode)
 

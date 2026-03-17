@@ -171,6 +171,22 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             )
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            if not async_grpo:
+                # Filter out async/fast-async-only fields not in standard GRPOConfig.
+                # These are defined in FastAsyncGRPOConfig and only used by
+                # AxolotlAsyncGRPOConfig. Standard GRPOConfig rejects them.
+                from axolotl.core.trainers.grpo.fast_async_trainer import (
+                    FastAsyncGRPOConfig,
+                )
+                from trl import GRPOConfig as _BaseGRPOConfig
+
+                import dataclasses
+
+                async_only_fields = {
+                    f.name
+                    for f in dataclasses.fields(FastAsyncGRPOConfig)
+                } - {f.name for f in dataclasses.fields(_BaseGRPOConfig)}
+                blocklist_args_kwargs.extend(list(async_only_fields))
             if self.cfg.rl is RLType.GDPO:
                 training_args_kwargs.setdefault(
                     "multi_objective_aggregation", "normalize_then_sum"

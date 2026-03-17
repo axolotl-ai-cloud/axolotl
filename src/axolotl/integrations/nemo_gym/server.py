@@ -150,6 +150,39 @@ def get_server_configs(head_port: int = 11000) -> dict:
     return result
 
 
+def get_agent_servers(
+    global_config: dict, head_host: str = "127.0.0.1"
+) -> dict[str, str]:
+    """Discover NeMo Gym agent servers from the global config.
+
+    Agent servers handle multi-turn orchestration via /run endpoint.
+    Returns mapping of agent_name → URL (e.g., {"simple_agent": "http://host:port"}).
+    """
+    agents = {}
+    for top_name, top_cfg in global_config.items():
+        if not isinstance(top_cfg, dict):
+            continue
+        agent_dict = top_cfg.get("responses_api_agents", {})
+        if not agent_dict:
+            continue
+        for agent_name, agent_cfg in agent_dict.items():
+            if not isinstance(agent_cfg, dict):
+                continue
+            host = agent_cfg.get("host", "127.0.0.1")
+            port = agent_cfg.get("port")
+            if not port:
+                continue
+            # Replace loopback with head_host for remote access
+            if host in ("127.0.0.1", "0.0.0.0", "localhost"):
+                host = head_host
+            # Use the top-level config name (not the inner agent name)
+            # because dataset agent_ref.name references the top-level name
+            agents[top_name] = f"http://{host}:{port}"
+    if agents:
+        LOG.info(f"Discovered NeMo Gym agent servers: {agents}")
+    return agents
+
+
 def get_server_base_url(global_config: dict, server_name: str) -> str:
     """Get the base URL for a given resource server."""
     try:
