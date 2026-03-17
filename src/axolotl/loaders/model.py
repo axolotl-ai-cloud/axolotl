@@ -547,6 +547,16 @@ class ModelLoader:
                 mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
 
+        if self.cfg.model_quantization_config == "FineGrainedFP8Config":
+            from transformers import FineGrainedFP8Config
+
+            fp8_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                fp8_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = FineGrainedFP8Config(
+                **fp8_kwargs
+            )
+
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
