@@ -207,19 +207,13 @@ class NemoGymPlugin(BasePlugin):
         verify_timeout = cfg.nemo_gym_verify_timeout or 30
         multi_turn = cfg.nemo_gym_multi_turn or False
 
-        # When using LoRA sync, make sync_weights a no-op
-        # (weight sync is handled by _sync_lora_adapter via POST /set_lora_adapter/)
-        # TRL's _generate_single_turn calls sync_weights when global_step != _last_loaded_step.
-        # We override by making _last_loaded_step always match, and by replacing sync_weights.
+        # When using LoRA sync, replace sync_weights with LoRA adapter sync.
+        # Standard GRPO's sync_weights uses NCCL (broken with vLLM V1).
+        # Instead, save the LoRA adapter to disk and POST to /set_lora_adapter/.
         trl_cfg = getattr(cfg, "trl", None)
         if trl_cfg and getattr(trl_cfg, "vllm_lora_sync", False):
             if hasattr(trainer, "vllm_generation") and trainer.vllm_generation:
-                # Replace sync_weights with a simple no-op on the instance
-                # This must account for the trl_vllm monkeypatch wrapper
-                trainer.vllm_generation.sync_weights = lambda: None
-                # Also override the class-level method for any other call paths
-                type(trainer.vllm_generation).sync_weights = lambda self: None
-                LOG.info("Patched sync_weights to no-op for LoRA sync")
+                self._setup_lora_sync(trainer)
 
         if multi_turn:
             self._wire_multi_turn(cfg, trainer, model_name, verify_timeout)
@@ -300,6 +294,76 @@ class NemoGymPlugin(BasePlugin):
             trainer.reward_funcs.append(nemo_gym_reward_from_rollout)
             trainer.reward_func_names.append("nemo_gym")
             trainer.reward_processing_classes.append(None)
+
+    def _setup_lora_sync(self, trainer):
+        """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
+
+        Ports the logic from async_trainer._sync_lora_adapter() into a
+        standalone function that works with the standard GRPO trainer.
+        """
+        import os
+        import shutil
+        import tempfile
+
+        import requests as http_requests
+
+        vllm_gen = trainer.vllm_generation
+        sync_state = {"version": 0, "sync_dir": tempfile.mkdtemp(prefix="lora_sync_")}
+
+        def lora_sync_weights():
+            """Save LoRA adapter and POST to vLLM /set_lora_adapter/."""
+            accelerator = vllm_gen.accelerator
+            model = vllm_gen.model
+
+            if vllm_gen.mode != "server":
+                return
+
+            sync_state["version"] += 1
+            version = sync_state["version"]
+            adapter_path = os.path.join(sync_state["sync_dir"], f"v{version}")
+
+            # Gather state dict (all ranks participate for FSDP/DeepSpeed)
+            wrapped_model = getattr(trainer, "model_wrapped", model)
+            state_dict = accelerator.get_state_dict(wrapped_model)
+
+            if accelerator.is_main_process:
+                unwrapped = accelerator.unwrap_model(model)
+                unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
+
+                url = f"{vllm_gen.vllm_client.base_url}/set_lora_adapter/"
+                resp = http_requests.post(
+                    url,
+                    json={
+                        "lora_name": "active_lora",
+                        "lora_int_id": version,
+                        "lora_path": adapter_path,
+                    },
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    LOG.warning(f"Failed to set LoRA adapter: {resp.status_code} {resp.text}")
+                    return
+
+                vllm_gen.vllm_client.reset_prefix_cache()
+
+                # Clean up old version
+                if version > 1:
+                    old = os.path.join(sync_state["sync_dir"], f"v{version - 1}")
+                    if os.path.exists(old):
+                        shutil.rmtree(old, ignore_errors=True)
+
+                LOG.info(f"Synced LoRA adapter v{version} to vLLM ({adapter_path})")
+
+            # Barrier for multi-GPU
+            if accelerator.num_processes > 1:
+                import torch.distributed as dist
+                if dist.is_initialized():
+                    dist.barrier()
+
+        # Replace sync_weights at both instance and class level
+        vllm_gen.sync_weights = lora_sync_weights
+        type(vllm_gen).sync_weights = lambda self: lora_sync_weights()
+        LOG.info("Installed LoRA adapter sync as sync_weights replacement")
 
     def post_train_unload(self, cfg):
         """Cleanup NeMo Gym servers if we started them."""

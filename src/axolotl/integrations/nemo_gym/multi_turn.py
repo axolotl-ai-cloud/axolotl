@@ -17,11 +17,11 @@ TRL's OpenEnv Wordle example:
   - reward = scalar from /verify endpoint
 
 The multi-turn loop:
-  1. /seed_session → get available tools + initial observation
+  1. Extract tools from dataset + /seed_session
   2. Generate model response via generate_rollout_completions()
   3. Parse tool calls from model output
   4. Execute tool calls against resource server endpoints
-  5. Append tool results to conversation
+  5. Append tool results to conversation (with role="tool")
   6. Repeat until no tool calls, done, or max_turns reached
   7. /verify → get final reward
 """
@@ -54,8 +54,8 @@ def create_multi_turn_rollout_func(
     Args:
         global_config: NeMo Gym global config dict.
         verify_endpoints: Mapping of server_name → /verify URL.
-        server_base_urls: Mapping of server_name → base URL (for /seed_session and tools).
-        dataset_lookup: Mapping of prompt text → dataset row dict (for verify_extra, server_name).
+        server_base_urls: Mapping of server_name → base URL.
+        dataset_lookup: Mapping of prompt text → dataset row dict.
         model_name: Model name for verify requests.
         max_turns: Maximum turns per rollout.
         verify_timeout: Timeout for /verify requests.
@@ -66,7 +66,6 @@ def create_multi_turn_rollout_func(
     """
 
     def rollout_func(prompts: list[str], trainer) -> dict[str, Any]:
-        print(f"\n[ROLLOUT_FUNC CALLED] num_prompts={len(prompts)}, first_prompt_len={len(prompts[0]) if prompts else 0}")
         from trl.experimental.openenv import generate_rollout_completions
 
         all_prompt_ids = []
@@ -79,7 +78,7 @@ def create_multi_turn_rollout_func(
         tokenizer = trainer.processing_class
 
         for prompt_text in prompts:
-            # TRL may pass already-templated strings (colocate mode applies chat template
+            # TRL may pass already-templated strings (server mode applies chat template
             # before calling rollout_func). Extract the raw user message for dataset lookup.
             raw_prompt = prompt_text
             for key in dataset_lookup:
@@ -105,18 +104,27 @@ def create_multi_turn_rollout_func(
             all_logprobs.append(episode["logprobs"])
             all_env_masks.append(episode["env_mask"])
             all_rewards.append(episode["reward"])
-            # Track tool usage (env_mask has 0s when tools were executed)
             has_tool = any(m == 0 for m in episode["env_mask"])
             all_tool_used.append(1.0 if has_tool else 0.0)
 
-        # TRL expects logprobs as list[list[list[float]]] (batch x seq x top-k)
-        # Wrap each scalar logprob in a single-element list for top-1 format
-        wrapped_logprobs = [[[lp] for lp in seq] for seq in all_logprobs]
+        # TRL's _generate_single_turn at line 1237 does: logprobs = [[lp[0] for lp in seq] ...]
+        # So we must return list[list[list[float]]] where each token is [float].
+        # Normalize: flatten any nested lists to scalar, then wrap once.
+        def _normalize_logprob(lp):
+            """Extract scalar float from possibly nested logprob."""
+            while isinstance(lp, (list, tuple)) and len(lp) > 0:
+                lp = lp[0]
+            return float(lp) if lp is not None else 0.0
+
+        final_logprobs = [
+            [[_normalize_logprob(lp)] for lp in seq] for seq in all_logprobs
+        ]
 
         return {
             "prompt_ids": all_prompt_ids,
             "completion_ids": all_completion_ids,
-            "logprobs": wrapped_logprobs,
+            "logprobs": final_logprobs,
+            "logprob_token_ids": None,
             "env_mask": all_env_masks,
             "nemo_gym_reward": all_rewards,
             "tool_used": all_tool_used,
@@ -152,37 +160,28 @@ def _rollout_once(
     base_url = server_base_urls.get(server_name, "") if server_name else ""
     verify_url = verify_endpoints.get(server_name, "") if server_name else ""
 
-    # Step 1: Seed session to get tools and initial observation
+    # Step 1: Get tools from dataset and/or seed_session
     tools, initial_observation = _seed_session(
         base_url, verify_extra, timeout=tool_timeout
     )
 
-    # Also extract tools from the dataset row if seed_session didn't provide them
-    # NeMo Gym datasets often have tools in responses_create_params.tools
+    # Extract tools from the dataset row if seed_session didn't provide them
     if not tools and verify_extra:
         dataset_tools = verify_extra.get("responses_create_params", {}).get("tools", [])
         if dataset_tools:
             for tool_def in dataset_tools:
                 if isinstance(tool_def, dict) and "function" in tool_def:
-                    # Already in OpenAI format
                     tools.append(tool_def)
                 elif isinstance(tool_def, dict) and "name" in tool_def:
-                    # NeMo Gym flat format — wrap in OpenAI function tool format
-                    # Strip non-standard fields that confuse chat templates
+                    # NeMo Gym flat format — strip extra fields, wrap cleanly
                     func_def = {
                         "name": tool_def["name"],
                         "parameters": tool_def.get("parameters", {}),
                     }
                     if tool_def.get("description"):
                         func_def["description"] = tool_def["description"]
-                    tools.append({
-                        "type": "function",
-                        "function": func_def,
-                    })
+                    tools.append({"type": "function", "function": func_def})
 
-    # Convert NeMo Gym tool format to the format expected by chat templates
-    # NeMo Gym: [{"type": "function", "function": {"name": ..., "parameters": ...}}]
-    # Some tokenizers want tools directly, others want functions
     chat_tools = tools if tools else None
 
     # Build initial prompt messages with tool-use instruction
@@ -190,17 +189,14 @@ def _rollout_once(
     if initial_observation:
         system_content = initial_observation
     if chat_tools:
-        # Add explicit instruction to use tools — critical for models like Qwen3
-        # that default to thinking mode instead of tool calling
         tool_instruction = (
             "You MUST use the provided tools to answer the user's question. "
             "Call the appropriate tool first, then provide your final answer "
             "based on the tool's response. Do not answer without using a tool."
         )
-        if system_content:
-            system_content = tool_instruction + "\n\n" + system_content
-        else:
-            system_content = tool_instruction
+        system_content = (
+            tool_instruction + "\n\n" + system_content if system_content else tool_instruction
+        )
 
     messages: list[dict[str, str]] = []
     if system_content:
@@ -215,23 +211,20 @@ def _rollout_once(
     if chat_tools:
         template_kwargs["tools"] = chat_tools
     # Disable thinking mode for models that support it (e.g., Qwen3)
-    # Thinking wastes tokens and prevents tool calling
     try:
         tokenizer.apply_chat_template(
             [{"role": "user", "content": "test"}],
-            enable_thinking=False, tokenize=False,
+            enable_thinking=False,
+            tokenize=False,
         )
         template_kwargs["enable_thinking"] = False
     except TypeError:
-        pass  # Tokenizer doesn't support enable_thinking
+        pass
 
     try:
-        initial_prompt_text = tokenizer.apply_chat_template(
-            messages, **template_kwargs
-        )
+        initial_prompt_text = tokenizer.apply_chat_template(messages, **template_kwargs)
     except Exception:
-        # Fallback: some tokenizers don't support tools kwarg
-        # Include tool descriptions in the system message instead
+        # Fallback: embed tools in system message
         if chat_tools:
             tool_desc = "Available tools:\n" + json.dumps(chat_tools, indent=2)
             if messages[0]["role"] == "system":
@@ -243,11 +236,6 @@ def _rollout_once(
         )
 
     prompt_ids = list(tokenizer.encode(initial_prompt_text, add_special_tokens=False))
-    # Debug: print what we built
-    print(f"[ROLLOUT_ONCE] tools={len(tools)}, msgs={len(messages)}, "
-          f"prompt_tokens={len(prompt_ids)}, "
-          f"msg_roles={[m['role'] for m in messages]}, "
-          f"sys_len={len(messages[0]['content']) if messages and messages[0]['role']=='system' else 0}")
 
     completion_ids: list[int] = []
     logprobs_list: list[float] = []
@@ -273,13 +261,6 @@ def _rollout_once(
 
         # Generate model response
         # Pass as_chat=False since we already applied the chat template with tools
-        if turn == 0 and not done:
-            tok_len = len(tokenizer.encode(gen_prompt))
-            print(f"\n[MULTI_TURN] <tools>: {'<tools>' in gen_prompt}, "
-                  f"get_weather: {'get_weather' in gen_prompt}, "
-                  f"tokens: {tok_len}, "
-                  f"ends_with_think: {gen_prompt.rstrip().endswith('</think>')}, "
-                  f"last_50: ...{repr(gen_prompt[-50:])}")
         try:
             outputs = generate_fn(trainer, [gen_prompt], as_chat=False)[0]
         except RuntimeError as exc:
@@ -288,14 +269,9 @@ def _rollout_once(
 
         gen_ids = list(outputs["completion_ids"])
         gen_logprobs = list(outputs["logprobs"])
-        gen_text = outputs.get("text") or tokenizer.decode(gen_ids, skip_special_tokens=True)
-        # Also decode WITHOUT skip_special_tokens to see if tool_call tokens are being stripped
-        gen_text_raw = tokenizer.decode(gen_ids, skip_special_tokens=False)
-
-        if turn == 0:
-            print(f"[MULTI_TURN GEN] Turn {turn}, text (200): {gen_text[:200]}")
-            print(f"[MULTI_TURN GEN] raw (200): {gen_text_raw[:200]}")
-            print(f"[MULTI_TURN GEN] tool_call: {'<tool_call>' in gen_text}, ids[:10]: {gen_ids[:10]}")
+        gen_text = outputs.get("text") or tokenizer.decode(
+            gen_ids, skip_special_tokens=True
+        )
 
         # Add model tokens to episode (these are trainable)
         completion_ids.extend(gen_ids)
@@ -307,15 +283,10 @@ def _rollout_once(
 
         if tool_calls and base_url:
             # Execute tool calls and get results
-            tool_results = _execute_tool_calls(
-                base_url, tool_calls, timeout=tool_timeout
-            )
-
-            # Build tool result as JSON string (matches chat template expectations)
+            tool_results = _execute_tool_calls(base_url, tool_calls, timeout=tool_timeout)
             tool_result_text = _format_tool_results(tool_results)
 
-            # Build the conversation with proper role for tool results
-            # Use "tool" role which chat templates map to <tool_response> blocks
+            # Build conversation with proper "tool" role for results
             next_messages = list(accumulated_messages)
             next_messages.append({"role": "assistant", "content": gen_text})
             for result in tool_results:
@@ -325,31 +296,28 @@ def _rollout_once(
                     "name": result.get("name", ""),
                 })
 
-            # Compute the env tokens as the delta between full template and current
+            # Compute env tokens as delta between templates
             try:
                 next_prompt = tokenizer.apply_chat_template(
                     next_messages, **template_kwargs
                 )
                 current_prompt = tokenizer.apply_chat_template(
                     accumulated_messages + [{"role": "assistant", "content": gen_text}],
-                    add_generation_prompt=False, tokenize=False,
+                    add_generation_prompt=False,
+                    tokenize=False,
                 )
-                # The env tokens are the difference between next and current prompts
-                # (the tool response block + generation prompt)
                 env_text = next_prompt[len(current_prompt):]
                 env_tokens = tokenizer.encode(env_text, add_special_tokens=False)
             except Exception:
-                # Fallback: use plain text formatting
                 env_tokens = tokenizer.encode(tool_result_text, add_special_tokens=False)
 
             completion_ids.extend(env_tokens)
             logprobs_list.extend([0.0] * len(env_tokens))
             env_mask.extend([0] * len(env_tokens))
 
-            # Update conversation history with proper roles
             accumulated_messages = next_messages
         else:
-            # No tool calls - this is the final response
+            # No tool calls — final response
             accumulated_messages.append({"role": "assistant", "content": gen_text})
             done = True
 
@@ -378,23 +346,15 @@ def _seed_session(
     verify_extra: dict,
     timeout: int = 30,
 ) -> tuple[list[dict], str]:
-    """Call /seed_session to initialize the environment and get available tools.
-
-    Returns:
-        (tools, initial_observation) where tools is a list of OpenAI function tool
-        defs and initial_observation is a string observation (may be empty).
-    """
+    """Call /seed_session to initialize the environment and get available tools."""
     if not base_url:
         return [], ""
 
     seed_url = f"{base_url}/seed_session"
     try:
-        # Build seed request from the dataset row
         seed_request = {}
         if "responses_create_params" in verify_extra:
-            seed_request["responses_create_params"] = verify_extra[
-                "responses_create_params"
-            ]
+            seed_request["responses_create_params"] = verify_extra["responses_create_params"]
         if "metadata" in verify_extra:
             seed_request["metadata"] = verify_extra["metadata"]
         if "task_idx" in verify_extra:
@@ -404,7 +364,6 @@ def _seed_session(
         if resp.status_code == 200:
             data = resp.json()
             tools = data.get("tools", [])
-            # Extract observation from response
             obs_items = data.get("obs", [])
             obs_text = ""
             if obs_items:
@@ -419,12 +378,9 @@ def _seed_session(
                 obs_text = "\n".join(obs_parts)
             return tools, obs_text
         elif resp.status_code == 404:
-            # /seed_session not supported - single-turn environment
             return [], ""
         else:
-            LOG.warning(
-                f"seed_session returned {resp.status_code}: {resp.text[:200]}"
-            )
+            LOG.warning(f"seed_session returned {resp.status_code}: {resp.text[:200]}")
             return [], ""
     except requests.exceptions.RequestException as exc:
         LOG.debug(f"seed_session failed (may not be supported): {exc}")
@@ -434,14 +390,7 @@ def _seed_session(
 def _parse_tool_calls(
     model_output: str, available_tools: list[dict]
 ) -> list[dict[str, Any]]:
-    """Parse tool/function calls from model output.
-
-    Supports two formats:
-    1. OpenAI function_call JSON format: {"name": "...", "arguments": {...}}
-    2. XML-style tool calls: <tool_call>{"name": "...", "arguments": {...}}</tool_call>
-
-    Returns list of dicts with 'name' and 'arguments' keys.
-    """
+    """Parse tool/function calls from model output."""
     if not available_tools:
         return []
 
@@ -458,40 +407,30 @@ def _parse_tool_calls(
 
     calls = []
 
-    # Try XML-style tool calls: <tool_call>...</tool_call>
-    xml_pattern = re.compile(
-        r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL
-    )
+    # Try XML-style: <tool_call>...</tool_call>
+    xml_pattern = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
     for match in xml_pattern.finditer(model_output):
         try:
             call_data = json.loads(match.group(1))
             name = call_data.get("name", "")
             if name in tool_names:
-                calls.append(
-                    {
-                        "name": name,
-                        "arguments": call_data.get("arguments", {}),
-                    }
-                )
+                calls.append({"name": name, "arguments": call_data.get("arguments", {})})
         except json.JSONDecodeError:
             continue
 
     if calls:
         return calls
 
-    # Try JSON blocks with function call structure (supports nested braces)
-    json_pattern = re.compile(r'\{[^{}]*"name"\s*:\s*"[^"]*"[^{}]*(?:\{[^{}]*\}[^{}]*)?\}')
+    # Try JSON blocks with nested braces
+    json_pattern = re.compile(
+        r'\{[^{}]*"name"\s*:\s*"[^"]*"[^{}]*(?:\{[^{}]*\}[^{}]*)?\}'
+    )
     for match in json_pattern.finditer(model_output):
         try:
             call_data = json.loads(match.group())
             name = call_data.get("name", "")
             if name in tool_names:
-                calls.append(
-                    {
-                        "name": name,
-                        "arguments": call_data.get("arguments", {}),
-                    }
-                )
+                calls.append({"name": name, "arguments": call_data.get("arguments", {})})
         except json.JSONDecodeError:
             continue
 
@@ -503,70 +442,42 @@ def _execute_tool_calls(
     tool_calls: list[dict[str, Any]],
     timeout: int = 30,
 ) -> list[dict[str, Any]]:
-    """Execute tool calls against the resource server.
-
-    Each tool call is POSTed to base_url/{tool_name}.
-
-    Returns list of dicts with 'name', 'call_id', and 'output' keys.
-    """
+    """Execute tool calls against the resource server."""
     results = []
     for i, call in enumerate(tool_calls):
         name = call["name"]
         arguments = call.get("arguments", {})
-        call_id = f"call_{i}"
-
         tool_url = f"{base_url}/{name}"
         try:
             resp = requests.post(tool_url, json=arguments, timeout=timeout)
             if resp.status_code == 200:
                 output = resp.text
-                # Try to extract a meaningful string from JSON response
                 try:
                     resp_data = resp.json()
                     if isinstance(resp_data, dict):
-                        # Use the first string value or the full JSON
                         output = resp_data.get(
-                            "output",
-                            resp_data.get("result", json.dumps(resp_data)),
+                            "output", resp_data.get("result", json.dumps(resp_data))
                         )
                     elif isinstance(resp_data, str):
                         output = resp_data
                 except (json.JSONDecodeError, ValueError):
                     pass
-                results.append(
-                    {"name": name, "call_id": call_id, "output": str(output)}
-                )
+                results.append({"name": name, "call_id": f"call_{i}", "output": str(output)})
             else:
-                LOG.warning(
-                    f"Tool {name} returned {resp.status_code}: {resp.text[:200]}"
-                )
-                results.append(
-                    {
-                        "name": name,
-                        "call_id": call_id,
-                        "output": f"Error: HTTP {resp.status_code}",
-                    }
-                )
+                LOG.warning(f"Tool {name} returned {resp.status_code}: {resp.text[:200]}")
+                results.append({"name": name, "call_id": f"call_{i}", "output": f"Error: HTTP {resp.status_code}"})
         except requests.exceptions.RequestException as exc:
             LOG.warning(f"Tool execution failed for {name}: {exc}")
-            results.append(
-                {
-                    "name": name,
-                    "call_id": call_id,
-                    "output": f"Error: {exc}",
-                }
-            )
+            results.append({"name": name, "call_id": f"call_{i}", "output": f"Error: {exc}"})
 
     return results
 
 
 def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
-    """Format tool execution results as text for the conversation."""
+    """Format tool execution results as text."""
     parts = []
     for result in tool_results:
-        name = result["name"]
-        output = result["output"]
-        parts.append(f"[Tool: {name}]\n{output}")
+        parts.append(f"[Tool: {result['name']}]\n{result['output']}")
     return "\n\n".join(parts)
 
 
@@ -578,30 +489,17 @@ def _verify_completion(
     model_name: str,
     timeout: int = 30,
 ) -> float:
-    """Call /verify to get the final reward for a completed rollout.
-
-    Constructs the verify request from the accumulated conversation and
-    original dataset row data.
-    """
-    # Extract the final assistant response(s)
+    """Call /verify to get the final reward."""
     assistant_outputs = []
     for msg in accumulated_messages:
         if msg["role"] == "assistant":
-            assistant_outputs.append(
-                {
-                    "id": f"msg_{len(assistant_outputs)}",
-                    "role": "assistant",
-                    "type": "message",
-                    "status": "completed",
-                    "content": [
-                        {
-                            "type": "output_text",
-                            "text": msg["content"],
-                            "annotations": [],
-                        }
-                    ],
-                }
-            )
+            assistant_outputs.append({
+                "id": f"msg_{len(assistant_outputs)}",
+                "role": "assistant",
+                "type": "message",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": msg["content"], "annotations": []}],
+            })
 
     verify_request = {k: v for k, v in verify_extra.items() if v is not None}
     verify_request["responses_create_params"] = {
