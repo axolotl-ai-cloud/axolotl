@@ -407,9 +407,11 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "No AMP (automatic mixed precision)"},
     )  # for non-AMP cases
-    tf32: bool | None = Field(
-        default=None,
-        json_schema_extra={"description": "Use CUDA tf32 - require >=ampere"},
+    tf32: Literal["auto"] | bool | None = Field(
+        default="auto",
+        json_schema_extra={
+            "description": "bool to use CUDA tf32 or 'auto' for automatic detection - require >=ampere"
+        },
     )
     float32: bool | None = None
 
@@ -1216,6 +1218,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def check_tf32(self):
+        if self.tf32 == "auto":
+            self.tf32 = self.capabilities.tf32
         return self
 
     @model_validator(mode="after")
