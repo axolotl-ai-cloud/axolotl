@@ -57,3 +57,10 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Reasoning parser for VLLM"},
     )
+    serve_module: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Python module for vLLM serve script. Set to 'axolotl.scripts.vllm_serve_lora' "
+            "for native LoRA support, or leave None for default TRL serve."
+        },
+    )
