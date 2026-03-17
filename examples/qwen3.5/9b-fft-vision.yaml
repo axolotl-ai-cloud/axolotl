@@ -1,13 +1,6 @@
 base_model: Qwen/Qwen3.5-9B
 processor_type: AutoProcessor
 
-# Full fine-tune (FFT) of Qwen3.5-9B with image+text (multimodal) data.
-# Designed for a single 80GB GPU (A100/H100).
-
-# Memory estimate (bf16): ~14 GB weights + ~7 GB 8-bit Adam = ~21 GB base,
-# leaving ample room for activations at sequence_len 4096.
-
-
 # Required for multimodal training
 skip_prepare_dataset: true
 remove_unused_columns: false

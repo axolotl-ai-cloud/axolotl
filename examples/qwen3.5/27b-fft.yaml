@@ -3,10 +3,6 @@ base_model: Qwen/Qwen3.5-27B
 # hub_model_id: username/custom_model_name
 
 # Full fine-tune (FFT) of the text-only path of Qwen3.5-27B.
-#
-# Qwen3.5-27B is early-fusion VLM.
-# To freeze vision encoder for text-only training:
-# For multimodal (image+text) fine-tuning, see 9b-lora-vision.yaml.
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
