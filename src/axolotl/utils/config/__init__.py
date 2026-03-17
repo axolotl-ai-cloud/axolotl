@@ -195,6 +195,15 @@ def normalize_config(cfg):
 
     cfg.model_config_type = model_config.model_type
 
+    # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
+    if callable(getattr(model_config, "get_text_config", None)):
+        text_config = model_config.get_text_config()
+        if (
+            hasattr(text_config, "model_type")
+            and text_config.model_type != model_config.model_type
+        ):
+            cfg.model_config_type_text = text_config.model_type
+
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (
