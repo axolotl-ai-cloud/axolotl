@@ -300,7 +300,11 @@ def main(script_args: ScriptArguments):
 
         import vllm
         from packaging.version import Version
-        from vllm.sampling_params import GuidedDecodingParams
+
+        try:
+            from vllm.sampling_params import GuidedDecodingParams
+        except ImportError:
+            GuidedDecodingParams = None  # vLLM >= 0.17 uses StructuredOutputsParams
 
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
@@ -350,6 +354,10 @@ def main(script_args: ScriptArguments):
                 generation_kwargs.setdefault(key, None)
 
         sampling_params = SamplingParams(**generation_kwargs)
+        # Debug: log prompt info
+        if prompts:
+            p = prompts[0].get("prompt", "") if isinstance(prompts[0], dict) else str(prompts[0])
+            print(f"[SERVE_GEN] n_prompts={len(prompts)}, has_tools={'<tools>' in p}, len={len(p)}, last_50={repr(p[-50:])}")
         chunked_prompts = chunk_list(prompts, script_args.data_parallel_size)
 
         for conn, chunk in zip(connections, chunked_prompts, strict=True):
