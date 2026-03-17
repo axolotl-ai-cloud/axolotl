@@ -52,6 +52,8 @@ from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
 
+from axolotl.tui.config import TUIConfig
+
 LOG = get_logger(__name__)
 
 
@@ -139,6 +141,12 @@ class AxolotlInputConfig(
     )
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),
+    )
+    tui: TUIConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "TUI dashboard configuration. Set enabled: true to activate."
+        },
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None

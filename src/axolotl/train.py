@@ -554,6 +554,36 @@ def setup_model_and_trainer(
     )
 
 
+def _is_tui_enabled(cfg: DictDefault) -> bool:
+    """Check if TUI is enabled via config or environment variable."""
+    if os.environ.get("AXOLOTL_TUI", "").lower() in ("1", "true", "yes"):
+        return True
+    tui = cfg.get("tui")
+    if tui is None:
+        return False
+    if isinstance(tui, bool):
+        return tui
+    if isinstance(tui, dict):
+        return tui.get("enabled", False)
+    if hasattr(tui, "enabled"):
+        return tui.enabled
+    return False
+
+
+def _get_tui_config(cfg: DictDefault) -> dict:
+    """Extract TUI config dict from cfg."""
+    tui = cfg.get("tui")
+    if tui is None or isinstance(tui, bool):
+        return {"enabled": True}
+    if isinstance(tui, dict):
+        return {**tui, "enabled": True}
+    if hasattr(tui, "model_dump"):
+        d = tui.model_dump()
+        d["enabled"] = True
+        return d
+    return {"enabled": True}
+
+
 @send_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
@@ -576,6 +606,39 @@ def train(
         peft_config,
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
+
+    # Register TUI callback if enabled and rank 0
+    tui_enabled = _is_tui_enabled(cfg)
+    if tui_enabled and cfg.local_rank == 0:
+        from axolotl.tui import AxolotlTUICallback
+        from axolotl.tui.config import TUIConfig
+
+        tui_config = _get_tui_config(cfg)
+        tui_config_obj = TUIConfig(**tui_config) if isinstance(tui_config, dict) else tui_config
+
+        # Reuse the early-started renderer if available (started in do_train)
+        early_renderer = getattr(cfg, "_tui_renderer", None)
+        early_queue = getattr(cfg, "_tui_queue", None)
+
+        tui_callback = AxolotlTUICallback(config=tui_config_obj)
+        if early_renderer is not None and early_queue is not None:
+            # Reuse the already-running renderer and queue
+            tui_callback._renderer = early_renderer
+            tui_callback._queue = early_queue
+            tui_callback._renderer_started_early = True
+        trainer.add_callback(tui_callback)
+
+        # Send model info to the callback
+        model_name = cfg.base_model or ""
+        training_mode = str(cfg.rl) if cfg.rl else "sft"
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        tui_callback._put({
+            "type": "run_info",
+            "model_name": model_name,
+            "training_mode": training_mode,
+            "world_size": world_size,
+        })
+        LOG.info("TUI dashboard enabled")
 
     # Handle untrained tokens if configured
     train_dataset = dataset_meta.train_dataset
