@@ -91,6 +91,7 @@ def preprocess(config: str, cloud: Optional[str] = None, **kwargs):
     type=click.Path(exists=True, path_type=str),
     help="YAML config for sweeping hyperparameters",
 )
+@click.option("--tui", is_flag=True, default=False, help="Enable TUI dashboard")
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
@@ -101,6 +102,7 @@ def train(
     launcher: Literal["accelerate", "torchrun", "python"] = "accelerate",
     cloud: str | None = None,
     sweep: str | None = None,
+    tui: bool = False,
     **kwargs,
 ):
     """
@@ -117,6 +119,10 @@ def train(
     """
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
+
+    # Handle --tui flag: set env var so subprocess workers pick it up
+    if tui:
+        os.environ["AXOLOTL_TUI"] = "1"
 
     # Handle Ray launcher override
     _launcher = None if kwargs.get("use_ray") else launcher
