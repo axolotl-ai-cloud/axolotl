@@ -38,7 +38,6 @@ learning_rate: 2e-5
 bf16: true
 tf32: true
 
-gradient_checkpointing: true
 logging_steps: 1
 flash_attention: true
 
@@ -55,3 +54,4 @@ fsdp_config:
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: Mistral4DecoderLayer
   reshard_after_forward: true
+  activation_checkpointing: true
