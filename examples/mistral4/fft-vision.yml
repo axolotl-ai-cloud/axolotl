@@ -1,10 +1,12 @@
-base_model: mistralai/Leanstral-2603-HF
+base_model: mistralai/Mistral-Small-4-119B-2603
 processor_type: AutoProcessor
 
-load_in_4bit: true
-quantize_moe_experts: true
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_sonicmoe: true
 
-# vision chat template requirements
+# vision requirements
 skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
@@ -17,14 +19,7 @@ dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
 
-adapter: qlora
-
 sequence_len: 2048
-
-lora_r: 32
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|cross_attn|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 wandb_project:
 wandb_entity:
@@ -37,7 +32,7 @@ micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
-learning_rate: 0.0002
+learning_rate: 2e-5
 
 bf16: true
 tf32: true
@@ -50,3 +45,12 @@ warmup_ratio: 0.1
 evals_per_epoch: 1
 saves_per_epoch: 1
 weight_decay: 0.0
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  state_dict_type: FULL_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Mistral4DecoderLayer
+  reshard_after_forward: true

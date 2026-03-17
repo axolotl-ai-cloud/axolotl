@@ -1,7 +1,6 @@
-# Finetune Leanstral with Axolotl
+# Finetune Mistral Small 4 with Axolotl
 
-Leanstral is an open-source model from MistralAI designed for Lean 4, with 119B total and 6B active parameters.
-It is available on HuggingFace at [Leanstral-2603-HF](https://huggingface.co/mistralai/Leanstral-2603-HF).
+Mistral Small 4 is a 119B parameter (6.5B active) multimodal MoE model from MistralAI that unifies instruct, reasoning, and coding capabilities into a single model. It is available on HuggingFace at [Mistral-Small-4-119B-2603](https://huggingface.co/mistralai/Mistral-Small-4-119B-2603).
 
 Thanks to the team at MistralAI for giving us early access to prepare for this release.
 
@@ -11,18 +10,24 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage
 
-3. Run one of the example configs:
+3. Install transformers from main
 
-```bash
-# text-only
-axolotl train examples/leanstral/qlora-text.yml  # no experts ~69 GiB, experts ~93 GiB
-axolotl train examples/leanstral/fft-text.yml
+  ```bash
+  pip install git+https://github.com/huggingface/transformers.git
+  ```
 
-# text + vision
-# run: wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
-axolotl train examples/leanstral/qlora-vision.yml  # no experts ~68 GiB
-axolotl train examples/leanstral/fft-vision.yml
-```
+4. Run one of the example configs:
+
+  ```bash
+  # text-only
+  axolotl train examples/mistral4/qlora-text.yml  # no experts ~69 GiB, experts ~93 GiB
+  axolotl train examples/mistral4/fft-text.yml
+
+  # text + vision
+  # run: wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
+  axolotl train examples/mistral4/qlora-vision.yml  # no experts ~68 GiB
+  axolotl train examples/mistral4/fft-vision.yml
+  ```
 
 Note: FFT configs provided as reference. Please adjust hyp as needed. The configs are experimental.
 
@@ -70,7 +75,7 @@ See the [Magistral thinking guide](../magistral/think/README.md) for dataset for
 
 ## Related Resources
 
-- [MistralAI Leanstral Blog](https://mistral.ai/news/leanstral)
+- [MistralAI Mistral Small 4 Blog](https://mistral.ai/news/mistral-small-4)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)

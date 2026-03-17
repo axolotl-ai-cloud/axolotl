@@ -1,4 +1,4 @@
-base_model: mistralai/Leanstral-2603-HF
+base_model: mistralai/Mistral-Small-4-119B-2603
 
 plugins:
   - axolotl.integrations.kernels.KernelsPlugin
