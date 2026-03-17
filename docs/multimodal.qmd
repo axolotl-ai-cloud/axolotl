@@ -13,6 +13,7 @@ format:
 - [Pixtral](#sec-pixtral)
 - [Llava-1.5](#sec-llava-15)
 - [Mistral-Small-3.1](#sec-mistral-small-31)
+- [Mistral-Small-4](#sec-mistral-small-4)
 - [Magistral-Small-2509](#sec-magistral-small-2509)
 - [Voxtral](#sec-voxtral)
 - [Gemma-3](#sec-gemma-3)
@@ -106,6 +107,12 @@ Please make sure to install vision lib via `pip install 'mistral-common[opencv]=
 
 ```yaml
 base_model: mistralai/Mistral-Small-3.1-24B-Instruct-2503
+```
+
+### Mistral-Small-4 {#sec-mistral-small-4}
+
+```yaml
+base_model: mistralai/Mistral-Small-4-119B-2603
 ```
 
 ### Magistral-Small-2509 {#sec-magistral-small-2509}
