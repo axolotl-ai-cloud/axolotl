@@ -19,7 +19,7 @@ output_dir: ./outputs/out
 sequence_len: 4096
 pad_to_sequence_len: false
 
-wandb_project: 9b-vision
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
