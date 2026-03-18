@@ -327,20 +327,21 @@ def _compute_expert_block_lora(
 def _scatter2scatter_lora_configs():
     """Generate forward kernel autotune configs.
 
-    Search space includes smaller tile sizes and fewer pipeline stages to
-    support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
+    Search space includes BLOCK_M to allow trading token-tile size for
+    larger BLOCK_K/BLOCK_N tiles.  On GPUs with ~99KB SMEM, BLOCK_M=128
+    forces BLOCK_K=32 and BLOCK_N=32; BLOCK_M=64 allows BLOCK_K=128
+    (4× fewer inner-loop iterations).
 
     Search space:
+      BLOCK_M:    {32, 64, 128}
       BLOCK_N:    {32, 64, 128, 256}
       BLOCK_K:    {32, 64, 128}
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
-
-    BLOCK_M is fixed at 128 (module-level constant, not autotuned in the
-    scatter2scatter pattern).
     """
     configs = []
-    for block_n, block_k, warps, stages in product(
+    for block_m, block_n, block_k, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
         [32, 64, 128, 256],  # BLOCK_N
         [32, 64, 128],  # BLOCK_K
         [4, 8],  # num_warps
@@ -348,7 +349,7 @@ def _scatter2scatter_lora_configs():
     ):
         configs.append(
             triton.Config(
-                {"BLOCK_N": block_n, "BLOCK_K": block_k},
+                {"BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k},
                 num_stages=stages,
                 num_warps=warps,
             )
@@ -373,10 +374,11 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
 
     scored = []
     for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
         block_n = config.kwargs["BLOCK_N"]
         block_k = config.kwargs["BLOCK_K"]
         # Base: stages * BLOCK_K * (BLOCK_M + BLOCK_N) + BLOCK_M * BLOCK_N
-        smem_base = _estimate_smem_usage(config.num_stages, BLOCK_M, block_n, block_k)
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
         # A tile [BLOCK_R, BLOCK_K] loaded per stage in the inner loop
         smem_lora_loop = config.num_stages * block_r * block_k * 2
         # B tile [BLOCK_N, BLOCK_R] loaded once in epilogue
@@ -626,7 +628,7 @@ def scatter2scatter_lora(
         N=N,
         E=E,
         ACTUAL_R=R,  # True LoRA rank for weight indexing
-        BLOCK_M=BLOCK_M,
+        # BLOCK_M is autotuned (injected by triton.autotune from Config kwargs)
         BLOCK_R=BLOCK_R,  # Padded tile size >= max(R, 16)
         ACC_TYPE=tl.float32,
         scaling=scaling,
@@ -779,17 +781,18 @@ def _scatter2scatter_lora_dX_configs():
     The inner loop is over N (not K as in forward). The output dimension is K.
     So BLOCK_K tiles the output and BLOCK_N tiles the reduction.
 
-    Search space includes smaller tile sizes and fewer pipeline stages to
-    support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
+    BLOCK_M is now autotunable (was fixed at 128).
 
     Search space:
+      BLOCK_M:    {32, 64, 128}        (token tile)
       BLOCK_K:    {32, 64, 128, 256}   (output tile)
       BLOCK_N:    {32, 64, 128, 256}   (reduction tile)
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
     """
     configs = []
-    for block_k, block_n, warps, stages in product(
+    for block_m, block_k, block_n, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
         [32, 64, 128, 256],  # BLOCK_K (output dimension)
         [32, 64, 128, 256],  # BLOCK_N (reduction dimension)
         [4, 8],  # num_warps
@@ -797,7 +800,7 @@ def _scatter2scatter_lora_dX_configs():
     ):
         configs.append(
             triton.Config(
-                {"BLOCK_K": block_k, "BLOCK_N": block_n},
+                {"BLOCK_M": block_m, "BLOCK_K": block_k, "BLOCK_N": block_n},
                 num_stages=stages,
                 num_warps=warps,
             )
@@ -822,10 +825,11 @@ def _prune_dX_configs(configs, named_args, **kwargs):
 
     scored = []
     for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
         block_k = config.kwargs["BLOCK_K"]
         block_n = config.kwargs["BLOCK_N"]
         # Base: stages * BLOCK_N * (BLOCK_M + BLOCK_K) + BLOCK_M * BLOCK_K
-        smem_base = _estimate_smem_usage(config.num_stages, BLOCK_M, block_k, block_n)
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_k, block_n)
         # B tile [BLOCK_N, BLOCK_R] loaded per stage in the inner loop
         smem_lora_loop = config.num_stages * block_n * block_r * 2
         # A tile [BLOCK_R, BLOCK_K] loaded once in epilogue
@@ -1067,7 +1071,7 @@ def scatter2scatter_lora_dX(
         N=N,
         E=E,
         ACTUAL_R=R,
-        BLOCK_M=BLOCK_M,
+        # BLOCK_M is autotuned (injected by triton.autotune from Config kwargs)
         BLOCK_R=BLOCK_R,
         ACC_TYPE=tl.float32,
         scaling=scaling,
