@@ -134,7 +134,7 @@ trl:
   max_completion_length: 512
   temperature: 0.8
   reward_funcs:
-    - nemo_gym_rewards.reward_env
+    - axolotl.integrations.nemo_gym.rewards.reward_env
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -190,7 +190,7 @@ trl:
   max_completion_length: 128
   temperature: 0.9
   reward_funcs:
-    - nemo_gym_rewards.reward_nemo_gym_verify
+    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
 
 plugins:
   - axolotl.integrations.nemo_gym.NemoGymPlugin
@@ -346,22 +346,24 @@ Note: Tool definitions MUST include `"strict": true` and `"additionalProperties"
 
 ### Reward Functions
 
-Create in a Python file importable from your working directory:
+The plugin provides two built-in reward functions — no user code needed:
+
+```yaml
+trl:
+  reward_funcs:
+    # Multi-turn (nemo_gym_multi_turn: true):
+    # Passthrough — agent /run already computed the reward
+    - axolotl.integrations.nemo_gym.rewards.reward_env
+
+    # Single-turn (nemo_gym_multi_turn: false):
+    # Calls /verify endpoints on NeMo Gym resource servers
+    - axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify
+```
+
+Both are also importable from Python:
 
 ```python
-# nemo_gym_rewards.py
-
-def reward_env(completions, prompts=None, **kwargs):
-    """Passthrough for multi-turn: agent /run already computed rewards."""
-    env_rewards = kwargs.get("env_reward")
-    if env_rewards is not None:
-        return [float(r) for r in env_rewards]
-    return [0.0 for _ in completions]
-
-def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
-    """Single-turn: call /verify per completion."""
-    # (see experiments/nemo_gym_rewards.py for full implementation)
-    ...
+from axolotl.integrations.nemo_gym import reward_env, reward_nemo_gym_verify
 ```
 
 ## Known Issues / Troubleshooting
@@ -373,9 +375,22 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
 - **Tool `strict` field required**: Agent server validates tool definitions require `strict: true`
 
 ### vLLM / Weight Sync
-- **NCCL weight sync broken with vLLM 0.17**: Use `vllm_lora_sync: true` (filesystem + HTTP)
+- **Start vLLM with LoRA + tool calling + runtime loading**:
+  ```bash
+  VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 \
+  CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+    --model Qwen/Qwen3-4B-Instruct-2507 \
+    --max-model-len 4096 \
+    --gpu-memory-utilization 0.7 \
+    --enable-lora --max-lora-rank 64 \
+    --enable-auto-tool-choice --tool-call-parser hermes
+  ```
+- **`VLLM_ALLOW_RUNTIME_LORA_UPDATING=1`**: Required for `vllm_lora_sync: true`. Without it, vLLM won't expose the `/v1/load_lora_adapter` endpoint and weight sync will fail silently. The plugin warns if this endpoint is missing.
+- **`--enable-lora`**: Enables LoRA adapter support in vLLM
+- **`--enable-auto-tool-choice --tool-call-parser hermes`**: Required for Qwen3 tool calling
+- **`max_model_len` must be > `max_completion_length`**: Leave room for prompt tokens (~200). If equal, the NeMo Gym model proxy gets a 400 error and returns empty completions.
 - **`CUDA_HOME` required**: DeepSpeed import needs it for the nvcc shim
-- **Use vLLM native OpenAI server**: For multi-turn agent mode, use `python -m vllm.entrypoints.openai.api_server` (not `trl vllm-serve` or `axolotl vllm-serve`)
+- **NCCL weight sync broken with vLLM 0.17**: Use `vllm_lora_sync: true` (filesystem + HTTP via `/v1/load_lora_adapter`)
 
 ### Multi-Turn
 - **Agent server required**: Multi-turn delegates to NeMo Gym's agent server `/run` endpoint. Without an agent, the plugin falls back to single-turn `/verify`

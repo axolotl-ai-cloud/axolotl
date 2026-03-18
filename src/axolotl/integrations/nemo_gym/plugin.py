@@ -210,6 +210,15 @@ class NemoGymPlugin(BasePlugin):
             args["use_data_producer"] = True
             LOG.info("NeMo Gym multi-turn: forcing use_data_producer=True for data producer protocol")
 
+        # Dataloader workers fork subprocesses that can't handle the async
+        # HTTP connections to NeMo Gym agents. Force num_workers=0.
+        if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
+            LOG.warning(
+                f"NeMo Gym: overriding dataloader_num_workers={cfg.dataloader_num_workers} → 0 "
+                "(forked workers can't use NeMo Gym agent connections)"
+            )
+        cfg.dataloader_num_workers = 0
+
         if args:
             LOG.info(f"NeMo Gym plugin injecting training args: {args}")
         return args if args else None
@@ -231,6 +240,8 @@ class NemoGymPlugin(BasePlugin):
             vllm_gen = trainer.vllm_generation
             if trl_cfg and getattr(trl_cfg, "vllm_lora_sync", False):
                 self._setup_lora_sync(trainer)
+                # Verify the vLLM server supports runtime LoRA loading
+                self._check_lora_endpoint(vllm_gen)
             else:
                 # No NCCL, no LoRA sync — skip all weight sync paths
                 vllm_gen.sync_weights = lambda: LOG.debug("Weight sync skipped (NeMo Gym mode)")
@@ -337,22 +348,47 @@ class NemoGymPlugin(BasePlugin):
         )
 
         # Passthrough reward function — agent /run already computed rewards
-        def env_reward_passthrough(completions, **kwargs):
-            rewards = kwargs.get("env_reward")
-            if rewards is not None:
-                return [float(r) for r in rewards]
-            return [0.0 for _ in completions]
+        from .rewards import reward_env
 
         if hasattr(trainer, "reward_funcs"):
-            trainer.reward_funcs.append(env_reward_passthrough)
+            trainer.reward_funcs.append(reward_env)
             trainer.reward_func_names.append("nemo_gym")
             trainer.reward_processing_classes.append(None)
+
+    @staticmethod
+    def _check_lora_endpoint(vllm_gen):
+        """Verify the vLLM server supports runtime LoRA loading."""
+        import requests as http_requests
+
+        base_url = vllm_gen.vllm_client.base_url
+        try:
+            # Send a dummy load request — if the endpoint exists, we get a
+            # proper error (400/404 about the adapter), not a route 404.
+            resp = http_requests.post(
+                f"{base_url}/v1/load_lora_adapter",
+                json={"lora_name": "__probe__", "lora_path": "/nonexistent"},
+                timeout=5,
+            )
+            if resp.status_code == 404 and "Not Found" in resp.text and "adapter" not in resp.text.lower():
+                LOG.warning(
+                    "vLLM server does not expose /v1/load_lora_adapter. "
+                    "Set VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 when starting vLLM, e.g.:\n"
+                    "  VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 python -m vllm.entrypoints.openai.api_server "
+                    "--enable-lora --max-lora-rank 64 ..."
+                )
+        except Exception:
+            pass  # Server might not be up yet, sync will warn later
 
     def _setup_lora_sync(self, trainer):
         """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
 
-        Ports the logic from async_trainer._sync_lora_adapter() into a
-        standalone function that works with the standard GRPO trainer.
+        Saves the LoRA adapter to disk and loads it into vLLM via the standard
+        ``/v1/load_lora_adapter`` endpoint. Works with both our custom
+        ``vllm_serve_lora.py`` and the standard vLLM OpenAI server
+        (started with ``--enable-lora``).
+
+        The adapter is named after the base model so that all requests
+        (which specify the base model name) automatically use the adapter.
         """
         import os
         import shutil
@@ -361,10 +397,11 @@ class NemoGymPlugin(BasePlugin):
         import requests as http_requests
 
         vllm_gen = trainer.vllm_generation
+        base_model = getattr(trainer.args, "model_name_or_path", None) or "axolotl-lora"
         sync_state = {"version": 0, "sync_dir": tempfile.mkdtemp(prefix="lora_sync_")}
 
         def lora_sync_weights():
-            """Save LoRA adapter and POST to vLLM /set_lora_adapter/."""
+            """Save LoRA adapter and load it into vLLM."""
             accelerator = vllm_gen.accelerator
             model = vllm_gen.model
 
@@ -383,21 +420,36 @@ class NemoGymPlugin(BasePlugin):
                 unwrapped = accelerator.unwrap_model(model)
                 unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
 
-                url = f"{vllm_gen.vllm_client.base_url}/set_lora_adapter/"
+                # Try standard vLLM endpoint first, fall back to custom endpoint
+                base_url = vllm_gen.vllm_client.base_url
                 resp = http_requests.post(
-                    url,
+                    f"{base_url}/v1/load_lora_adapter",
                     json={
-                        "lora_name": "active_lora",
-                        "lora_int_id": version,
+                        "lora_name": base_model,
                         "lora_path": adapter_path,
+                        "load_inplace": True,
                     },
                     timeout=30,
                 )
                 if resp.status_code != 200:
-                    LOG.warning(f"Failed to set LoRA adapter: {resp.status_code} {resp.text}")
-                    return
+                    # Fallback: try custom /set_lora_adapter/ endpoint
+                    resp = http_requests.post(
+                        f"{base_url}/set_lora_adapter/",
+                        json={
+                            "lora_name": "active_lora",
+                            "lora_int_id": version,
+                            "lora_path": adapter_path,
+                        },
+                        timeout=30,
+                    )
+                    if resp.status_code != 200:
+                        LOG.warning(f"Failed to set LoRA adapter: {resp.status_code} {resp.text}")
+                        return
 
-                vllm_gen.vllm_client.reset_prefix_cache()
+                try:
+                    vllm_gen.vllm_client.reset_prefix_cache()
+                except Exception:
+                    pass  # Not critical if cache reset fails
 
                 # Clean up old version
                 if version > 1:

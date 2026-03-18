@@ -15,8 +15,11 @@ call the NeMo Gym /verify endpoints.
 
 from .args import NemoGymArgs
 from .plugin import NemoGymPlugin
+from .rewards import reward_env, reward_nemo_gym_verify
 
 __all__ = [
     "NemoGymArgs",
     "NemoGymPlugin",
+    "reward_env",
+    "reward_nemo_gym_verify",
 ]

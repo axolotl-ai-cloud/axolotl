@@ -949,26 +949,43 @@ class AsyncGRPOTrainer(GRPOTrainer):
             import requests
 
             vllm_client = self.vllm_generation.vllm_client
-            url = f"{vllm_client.base_url}/set_lora_adapter/"
+            base_url = vllm_client.base_url
+            base_model = getattr(self.args, "model_name_or_path", "axolotl-lora")
+
+            # Try standard vLLM /v1/load_lora_adapter first, fall back to custom endpoint
             response = requests.post(
-                url,
+                f"{base_url}/v1/load_lora_adapter",
                 json={
-                    "lora_name": "active_lora",
-                    "lora_int_id": self._lora_sync_version,
+                    "lora_name": base_model,
                     "lora_path": adapter_path,
+                    "load_inplace": True,
                 },
                 timeout=30,
             )
             if response.status_code != 200:
-                logger.warning(
-                    "Failed to set LoRA adapter: %s %s",
-                    response.status_code,
-                    response.text,
+                # Fallback: try custom /set_lora_adapter/ endpoint
+                response = requests.post(
+                    f"{base_url}/set_lora_adapter/",
+                    json={
+                        "lora_name": "active_lora",
+                        "lora_int_id": self._lora_sync_version,
+                        "lora_path": adapter_path,
+                    },
+                    timeout=30,
                 )
-                return
+                if response.status_code != 200:
+                    logger.warning(
+                        "Failed to set LoRA adapter: %s %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return
 
             # Reset prefix cache after adapter update
-            vllm_client.reset_prefix_cache()
+            try:
+                vllm_client.reset_prefix_cache()
+            except Exception:
+                pass  # Not critical
 
             # Clean up old adapter versions (keep only current)
             if self._lora_sync_version > 1:
@@ -2413,6 +2430,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits, completion_ids, self.temperature
                     )
                     all_logps.append(logps)
+                    # Liger fused path doesn't compute entropy — append zeros
+                    if compute_entropy:
+                        all_entropies.append(torch.zeros_like(logps))
                 else:
                     logits = logits[:, :-1, :]
                     logits = logits[:, -logits_to_keep:, :]
