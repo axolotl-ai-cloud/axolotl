@@ -113,6 +113,12 @@ def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Te
     for s in original_shape:
         N *= s
 
+    if not logits.is_cuda:
+        # CPU fallback: stable entropy via log_softmax
+        logp = F.log_softmax(logits.float(), dim=-1)
+        ent = -(logp.exp() * logp).sum(dim=-1)
+        return ent.to(logits.dtype).reshape(original_shape)
+
     output = torch.empty(N, device=logits.device, dtype=torch.float32)
 
     BLOCK_V = 4096

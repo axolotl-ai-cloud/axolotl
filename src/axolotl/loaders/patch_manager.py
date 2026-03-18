@@ -685,21 +685,30 @@ class PatchManager:
         if not self.cfg.rl:
             return
 
+        try:
+            from axolotl.monkeypatch.trainer.utils import (
+                entropy_from_logits,
+                selective_log_softmax,
+            )
+        except (ImportError, ModuleNotFoundError):
+            LOG.warning("Triton not available — skipping trl.trainer.utils patches")
+            return
+
         import trl.trainer.utils
 
-        # Stash original so the Triton wrapper can fall back on CPU tensors
-        from axolotl.monkeypatch.trainer import utils as _axolotl_trainer_utils
-        from axolotl.monkeypatch.trainer.utils import (
-            entropy_from_logits,
-            selective_log_softmax,
-        )
+        # Guard against repeated calls: only stash the original if trl still
+        # points at its own implementation (not our wrapper).
+        if trl.trainer.utils.selective_log_softmax is not selective_log_softmax:
+            from axolotl.monkeypatch.trainer import utils as _axolotl_trainer_utils
 
-        _axolotl_trainer_utils.selective_log_softmax_original = (
-            trl.trainer.utils.selective_log_softmax
-        )
+            _axolotl_trainer_utils.selective_log_softmax_original = (
+                trl.trainer.utils.selective_log_softmax
+            )
+            trl.trainer.utils.selective_log_softmax = selective_log_softmax
 
-        trl.trainer.utils.selective_log_softmax = selective_log_softmax
-        trl.trainer.utils.entropy_from_logits = entropy_from_logits
+        if trl.trainer.utils.entropy_from_logits is not entropy_from_logits:
+            trl.trainer.utils.entropy_from_logits = entropy_from_logits
+
         LOG.info(
             "Patched trl.trainer.utils with Triton selective_log_softmax and entropy_from_logits"
         )
