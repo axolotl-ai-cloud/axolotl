@@ -505,6 +505,20 @@ class ModelLoader:
         elif not is_ds_zero3:
             self.model_kwargs["device_map"] = device_map
 
+            # quantize_moe_experts quantizes expert weights on-the-fly during loading,
+            # so the actual VRAM usage is much less than bf16 estimates.
+            # When device_map is "auto", accelerate's infer_auto_device_map computes
+            # the device map at bf16 size (before quantization), causing it to offload
+            # layers to CPU, which BnB then rejects. Force single-GPU placement to
+            # prevent this. Only applies to the non-FSDP, non-ZeRO3 path (DDP/single).
+            if getattr(self.cfg, "quantize_moe_experts", False) and device_map in (
+                "auto",
+                None,
+            ):
+                self.model_kwargs["device_map"] = {
+                    "": int(os.environ.get("LOCAL_RANK", 0))
+                }
+
             cur_device = get_device_type()
             if "mps" in str(cur_device):
                 self.model_kwargs["device_map"] = "mps:0"
