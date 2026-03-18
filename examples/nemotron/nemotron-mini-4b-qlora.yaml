@@ -55,4 +55,3 @@ evals_per_epoch: 1
 saves_per_epoch: 1
 
 special_tokens:
-  pad_token: <|endoftext|>
