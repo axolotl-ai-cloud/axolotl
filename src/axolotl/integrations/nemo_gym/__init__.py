@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");

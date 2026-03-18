@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import atexit
 import os
-import subprocess
+import subprocess  # nosec B404
 import time
 
 import requests
@@ -50,7 +50,7 @@ def ensure_gym_repo(gym_dir: str, auto_clone: bool = True) -> str:
         )
 
     LOG.info(f"Cloning NeMo Gym to {gym_dir}...")
-    subprocess.run(
+    subprocess.run(  # nosec
         ["git", "clone", "https://github.com/NVIDIA-NeMo/Gym.git", gym_dir],
         check=True,
     )
@@ -64,8 +64,8 @@ def ensure_gym_venv(gym_dir: str):
         return
 
     LOG.info("Setting up NeMo Gym venv...")
-    subprocess.run(["uv", "venv", "--python", "3.12"], cwd=gym_dir, check=True)
-    subprocess.run(
+    subprocess.run(["uv", "venv", "--python", "3.12"], cwd=gym_dir, check=True)  # nosec
+    subprocess.run(  # nosec
         ["bash", "-c", "source .venv/bin/activate && uv sync"],
         cwd=gym_dir,
         check=True,
@@ -100,7 +100,7 @@ def start_servers(
 
     config_str = ",".join(config_paths)
     _ng_log_file = open(os.path.join(gym_dir, "ng_run.log"), "w")  # noqa: SIM115
-    _ng_process = subprocess.Popen(
+    _ng_process = subprocess.Popen(  # nosec
         [
             "bash",
             "-c",
@@ -124,7 +124,7 @@ def start_servers(
                 raise RuntimeError(
                     "NeMo Gym server process exited unexpectedly. "
                     f"Check {gym_dir}/ng_run.log for details."
-                )
+                ) from None
             time.sleep(3)
 
     raise RuntimeError(
@@ -165,7 +165,7 @@ def get_agent_servers(
         agent_dict = top_cfg.get("responses_api_agents", {})
         if not agent_dict:
             continue
-        for agent_name, agent_cfg in agent_dict.items():
+        for _agent_name, agent_cfg in agent_dict.items():
             if not isinstance(agent_cfg, dict):
                 continue
             host = agent_cfg.get("host", "127.0.0.1")
@@ -173,7 +173,7 @@ def get_agent_servers(
             if not port:
                 continue
             # Replace loopback with head_host for remote access
-            if host in ("127.0.0.1", "0.0.0.0", "localhost"):
+            if host in ("127.0.0.1", "0.0.0.0", "localhost"):  # nosec B104
                 host = head_host
             # Use the top-level config name (not the inner agent name)
             # because dataset agent_ref.name references the top-level name

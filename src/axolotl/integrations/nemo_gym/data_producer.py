@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -38,8 +38,14 @@ class NemoGymDataProducer(GRPODataProducer):
     replay buffer, and re-roll all work unchanged.
     """
 
-    def __init__(self, *args, agent_servers: dict[str, str], dataset_lookup: dict,
-                 request_timeout: float = 10800, **kwargs):
+    def __init__(
+        self,
+        *args,
+        agent_servers: dict[str, str],
+        dataset_lookup: dict,
+        request_timeout: float = 10800,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._agent_servers = agent_servers
         self._dataset_lookup = dataset_lookup
@@ -82,14 +88,22 @@ class NemoGymDataProducer(GRPODataProducer):
             prompt_text = ""
             prompt = inp.get("prompt", [])
             if isinstance(prompt, list) and prompt:
-                prompt_text = prompt[-1].get("content", "") if isinstance(prompt[-1], dict) else str(prompt[-1])
+                prompt_text = (
+                    prompt[-1].get("content", "")
+                    if isinstance(prompt[-1], dict)
+                    else str(prompt[-1])
+                )
             elif isinstance(prompt, str):
                 prompt_text = prompt
 
             # Find the full dataset item
             item = self._dataset_lookup.get(prompt_text, {}).get("verify_extra", {})
             if not item:
-                item = {"responses_create_params": {"input": [{"role": "user", "content": prompt_text}]}}
+                item = {
+                    "responses_create_params": {
+                        "input": [{"role": "user", "content": prompt_text}]
+                    }
+                }
             dataset_items.append(item)
 
         # Expand by num_generations (agent produces one rollout per call)
@@ -133,17 +147,29 @@ class NemoGymDataProducer(GRPODataProducer):
         # Pad to tensors
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
         prompt_mask = [torch.ones_like(ids, dtype=torch.long) for ids in prompt_ids]
-        prompt_ids = pad(prompt_ids, padding_value=trainer.pad_token_id, padding_side="left")
+        prompt_ids = pad(
+            prompt_ids, padding_value=trainer.pad_token_id, padding_side="left"
+        )
         prompt_mask = pad(prompt_mask, padding_value=0, padding_side="left")
 
-        completion_ids = [torch.tensor(ids, device=device) for ids in completion_ids_list]
-        completion_mask = [torch.ones_like(ids, dtype=torch.long) for ids in completion_ids]
-        completion_ids = pad(completion_ids, padding_value=trainer.pad_token_id, padding_side="right")
+        completion_ids = [
+            torch.tensor(ids, device=device) for ids in completion_ids_list
+        ]
+        completion_mask = [
+            torch.ones_like(ids, dtype=torch.long) for ids in completion_ids
+        ]
+        completion_ids = pad(
+            completion_ids, padding_value=trainer.pad_token_id, padding_side="right"
+        )
         completion_mask = pad(completion_mask, padding_value=0, padding_side="right")
 
         # Sampling logprobs from agent (used for IS correction)
-        sampling_logps = [torch.tensor(lp, dtype=torch.float32, device=device) for lp in logprobs_list]
-        sampling_per_token_logps = pad(sampling_logps, padding_value=0.0, padding_side="right")
+        sampling_logps = [
+            torch.tensor(lp, dtype=torch.float32, device=device) for lp in logprobs_list
+        ]
+        sampling_per_token_logps = pad(
+            sampling_logps, padding_value=0.0, padding_side="right"
+        )
 
         # env_mask as tool_mask (1=model tokens, 0=tool tokens)
         tool_mask = [torch.tensor(m, device=device) for m in env_mask_list]

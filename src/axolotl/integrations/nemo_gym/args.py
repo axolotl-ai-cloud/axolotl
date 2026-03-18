@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -15,7 +15,7 @@ class NemoGymArgs(BaseModel):
     """Configuration args for the NeMo Gym integration."""
 
     nemo_gym_enabled: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": "Enable NeMo Gym integration for environment-based RL rewards."
         },
@@ -48,19 +48,19 @@ class NemoGymArgs(BaseModel):
         },
     )
     nemo_gym_head_port: int | None = Field(
-        default=None,
+        default=11000,
         json_schema_extra={
             "description": "Port for the NeMo Gym head server. Defaults to 11000."
         },
     )
     nemo_gym_server_timeout: int | None = Field(
-        default=None,
+        default=360,
         json_schema_extra={
             "description": "Timeout in seconds waiting for NeMo Gym servers to start. Defaults to 360."
         },
     )
     nemo_gym_verify_timeout: int | None = Field(
-        default=None,
+        default=30,
         json_schema_extra={
             "description": "Timeout in seconds for individual /verify requests. Defaults to 30."
         },
@@ -78,7 +78,7 @@ class NemoGymArgs(BaseModel):
         },
     )
     nemo_gym_auto_start: bool | None = Field(
-        default=None,
+        default=True,
         json_schema_extra={
             "description": (
                 "Automatically start NeMo Gym resource servers. Defaults to True. "

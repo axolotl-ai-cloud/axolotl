@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -16,16 +16,15 @@ examples/scripts/nemo_gym/train_multi_environment.py.
 
 Architecture:
   rollout_func(prompts, trainer)
-    → expand prompts by num_generations
-    → async POST /run to agent servers (one per sample)
-    → parse response: prompt_ids, completion_ids, logprobs, env_mask, reward
-    → return to TRL for GRPO training
+    -> expand prompts by num_generations
+    -> async POST /run to agent servers (one per sample)
+    -> parse response: prompt_ids, completion_ids, logprobs, env_mask, reward
+    -> return to TRL for GRPO training
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 from axolotl.utils.logging import get_logger
@@ -46,13 +45,15 @@ def create_nemo_gym_rollout_func(
         request_timeout: HTTP timeout for /run requests.
 
     Returns:
-        A rollout_func with signature (prompts: list[str], trainer) → dict.
+        A rollout_func with signature (prompts: list[str], trainer) -> dict.
     """
 
     def rollout_func(prompts: list[str], trainer) -> dict[str, Any]:
         is_training = trainer.model.training
         num_generations = (
-            trainer.num_generations if is_training else getattr(trainer, "num_generations_eval", 1)
+            trainer.num_generations
+            if is_training
+            else getattr(trainer, "num_generations_eval", 1)
         )
         temperature = trainer.temperature
         top_p = getattr(trainer, "top_p", None) or 0.999
@@ -72,7 +73,11 @@ def create_nemo_gym_rollout_func(
                     break
 
             if item is None:
-                item = {"responses_create_params": {"input": [{"role": "user", "content": prompt_str}]}}
+                item = {
+                    "responses_create_params": {
+                        "input": [{"role": "user", "content": prompt_str}]
+                    }
+                }
 
             for _ in range(num_generations):
                 expanded_items.append(item.get("verify_extra", item))
@@ -102,7 +107,7 @@ def create_nemo_gym_rollout_func(
         all_rewards = []
         all_num_turns = []
 
-        for i, response in enumerate(responses):
+        for _i, response in enumerate(responses):
             result = _parse_agent_response(response, eos_token_id)
             all_prompt_ids.append(result["prompt_ids"])
             all_completion_ids.append(result["completion_ids"])
@@ -120,16 +125,14 @@ def create_nemo_gym_rollout_func(
                 lp = lp[0]
             return float(lp) if lp is not None else 0.0
 
-        wrapped_logprobs = [
-            [[_normalize(lp)] for lp in seq] for seq in all_logprobs
-        ]
+        wrapped_logprobs = [[[_normalize(lp)] for lp in seq] for seq in all_logprobs]
 
         return {
             "prompt_ids": unique_prompt_ids,
             "completion_ids": all_completion_ids,
             "env_mask": all_env_masks,
             "logprobs": wrapped_logprobs,
-            "logprob_token_ids": None,
+            "logprob_token_ids": None,  # nosec B105
             "env_reward": all_rewards,
             "num_turns": all_num_turns,
         }
@@ -166,7 +169,13 @@ async def _call_agents(
                 if agent_servers:
                     agent_url = next(iter(agent_servers.values()))
                 else:
-                    results.append({"response": {"output": []}, "reward": 0.0, "error": "No agent server"})
+                    results.append(
+                        {
+                            "response": {"output": []},
+                            "reward": 0.0,
+                            "error": "No agent server",
+                        }
+                    )
                     continue
 
             # Build request body
@@ -181,9 +190,11 @@ async def _call_agents(
         if tasks:
             responses = await asyncio.gather(*tasks, return_exceptions=True)
             for resp in responses:
-                if isinstance(resp, Exception):
+                if isinstance(resp, BaseException):
                     LOG.warning(f"Agent /run failed: {resp}")
-                    results.append({"response": {"output": []}, "reward": 0.0, "error": str(resp)})
+                    results.append(
+                        {"response": {"output": []}, "reward": 0.0, "error": str(resp)}
+                    )
                 else:
                     results.append(resp)
 
@@ -196,7 +207,11 @@ async def _post_run(session, agent_url: str, body: dict) -> dict:
         if resp.status == 200:
             return await resp.json()
         text = await resp.text()
-        return {"response": {"output": []}, "reward": 0.0, "error": f"HTTP {resp.status}: {text[:200]}"}
+        return {
+            "response": {"output": []},
+            "reward": 0.0,
+            "error": f"HTTP {resp.status}: {text[:200]}",
+        }
 
 
 def _parse_agent_response(response: dict, eos_token_id: int) -> dict:
@@ -235,7 +250,11 @@ def _parse_agent_response(response: dict, eos_token_id: int) -> dict:
             break
         if item.get("type") == "message":
             for c in item.get("content", []):
-                if isinstance(c, dict) and c.get("type") == "output_text" and c.get("text", "").strip():
+                if (
+                    isinstance(c, dict)
+                    and c.get("type") == "output_text"
+                    and c.get("text", "").strip()
+                ):
                     has_valid = True
                     break
         if has_valid:
@@ -270,7 +289,7 @@ def _parse_agent_response(response: dict, eos_token_id: int) -> dict:
         else:
             # Subsequent turns: extract tool result tokens (between turns)
             if len(prompt_token_ids) > len(seen_token_ids):
-                tool_result_tokens = prompt_token_ids[len(seen_token_ids):]
+                tool_result_tokens = prompt_token_ids[len(seen_token_ids) :]
                 # Tool result tokens are NOT trained on (env_mask = 0)
                 completion_ids.extend(tool_result_tokens)
                 env_mask.extend([0] * len(tool_result_tokens))
@@ -284,7 +303,7 @@ def _parse_agent_response(response: dict, eos_token_id: int) -> dict:
         gen_logprobs = list(generation_log_probs) if generation_log_probs else []
         if len(gen_logprobs) < len(generation_token_ids):
             gen_logprobs.extend([0.0] * (len(generation_token_ids) - len(gen_logprobs)))
-        logprobs.extend(gen_logprobs[:len(generation_token_ids)])
+        logprobs.extend(gen_logprobs[: len(generation_token_ids)])
 
         # Update seen tokens
         seen_token_ids = list(prompt_token_ids) + list(generation_token_ids)

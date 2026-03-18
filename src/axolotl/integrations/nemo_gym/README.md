@@ -22,7 +22,6 @@ All paths tested end-to-end with Qwen3-0.6B + LoRA, logged to wandb project `nem
 ### Prerequisites
 
 - [uv](https://github.com/astral-sh/uv) package manager (for NeMo Gym's venv)
-- Git
 - Two GPUs recommended (one for vLLM server, one for training)
 
 ### 1. Set Up NeMo Gym
@@ -291,7 +290,7 @@ sync with filesystem + HTTP:
 2. Rank 0 saves adapter to `/tmp/lora_sync_*/vN/`
 3. Rank 0 POSTs to `/set_lora_adapter/` on vLLM server
 4. vLLM loads adapter natively via Punica kernels
-5. Only ~40MB transferred (vs ~1.4GB for full model weights)
+5. Only ~40MB transferred (vs multiple GBs for full model weights)
 
 ### Multi-Environment Support
 

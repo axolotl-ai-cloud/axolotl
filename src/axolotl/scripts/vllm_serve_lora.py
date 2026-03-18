@@ -428,7 +428,9 @@ def main(script_args: ScriptArguments):
         """OpenAI-compatible models endpoint."""
         return {
             "object": "list",
-            "data": [{"id": script_args.model, "object": "model", "owned_by": "axolotl"}],
+            "data": [
+                {"id": script_args.model, "object": "model", "owned_by": "axolotl"}
+            ],
         }
 
     @app.post("/v1/chat/completions")
@@ -443,7 +445,6 @@ def main(script_args: ScriptArguments):
         max_tokens = request_body.get("max_tokens", 512)
         top_p = request_body.get("top_p", 1.0)
         n = request_body.get("n", 1)
-        logprobs_flag = request_body.get("logprobs", False)
 
         generation_kwargs = {
             "n": n,
@@ -452,7 +453,9 @@ def main(script_args: ScriptArguments):
             "max_tokens": max_tokens,
             "logprobs": 0,  # Always return logprobs (NeMo Gym needs them)
         }
-        sampling_params = SamplingParams(**{k: v for k, v in generation_kwargs.items() if v is not None})
+        sampling_params = SamplingParams(
+            **{k: v for k, v in generation_kwargs.items() if v is not None}
+        )
 
         # Send to vLLM worker
         chunked = chunk_list([messages_list], script_args.data_parallel_size)
@@ -487,7 +490,7 @@ def main(script_args: ScriptArguments):
                 if out.logprobs:
                     lp_list = {
                         "content": [
-                            {"token": "", "logprob": next(iter(lp.values())).logprob}
+                            {"token": "", "logprob": next(iter(lp.values())).logprob}  # nosec B105
                             for lp in out.logprobs
                         ]
                     }
@@ -495,7 +498,9 @@ def main(script_args: ScriptArguments):
                 choice = {
                     "index": i * n + j,
                     "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop" if out.finish_reason == "stop" else "length",
+                    "finish_reason": "stop"
+                    if out.finish_reason == "stop"
+                    else "length",
                     "logprobs": lp_list,
                 }
                 # Include token ID information for NeMo Gym
@@ -513,8 +518,12 @@ def main(script_args: ScriptArguments):
             "model": script_args.model,
             "choices": choices,
             "usage": {
-                "prompt_tokens": len(all_outputs[0].prompt_token_ids) if all_outputs else 0,
-                "completion_tokens": sum(len(out.token_ids) for o in all_outputs for out in o.outputs),
+                "prompt_tokens": len(all_outputs[0].prompt_token_ids)
+                if all_outputs
+                else 0,
+                "completion_tokens": sum(
+                    len(out.token_ids) for o in all_outputs for out in o.outputs
+                ),
                 "total_tokens": 0,
             },
         }

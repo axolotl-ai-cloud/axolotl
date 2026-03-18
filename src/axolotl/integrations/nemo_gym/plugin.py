@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -159,9 +159,7 @@ class NemoGymPlugin(BasePlugin):
             f"(multi_turn={'enabled' if multi_turn else 'disabled'})"
         )
 
-    def load_datasets(
-        self, cfg, preprocess=False
-    ) -> Union["TrainDatasetMeta", None]:
+    def load_datasets(self, cfg, preprocess=False) -> Union["TrainDatasetMeta", None]:
         if not cfg.nemo_gym_enabled:
             return None
 
@@ -208,7 +206,9 @@ class NemoGymPlugin(BasePlugin):
         # With async_prefetch=False this runs synchronously — no threading.
         if cfg.nemo_gym_multi_turn and self._agent_servers:
             args["use_data_producer"] = True
-            LOG.info("NeMo Gym multi-turn: forcing use_data_producer=True for data producer protocol")
+            LOG.info(
+                "NeMo Gym multi-turn: forcing use_data_producer=True for data producer protocol"
+            )
 
         # Dataloader workers fork subprocesses that can't handle the async
         # HTTP connections to NeMo Gym agents. Force num_workers=0.
@@ -244,8 +244,12 @@ class NemoGymPlugin(BasePlugin):
                 self._check_lora_endpoint(vllm_gen)
             else:
                 # No NCCL, no LoRA sync — skip all weight sync paths
-                vllm_gen.sync_weights = lambda: LOG.debug("Weight sync skipped (NeMo Gym mode)")
-                type(vllm_gen).sync_weights = lambda self: LOG.debug("Weight sync skipped (NeMo Gym mode)")
+                vllm_gen.sync_weights = lambda: LOG.debug(
+                    "Weight sync skipped (NeMo Gym mode)"
+                )
+                type(vllm_gen).sync_weights = lambda self: LOG.debug(
+                    "Weight sync skipped (NeMo Gym mode)"
+                )
                 # Also patch the async trainer's internal sync method
                 if hasattr(trainer, "_maybe_sync_vllm_weights"):
                     trainer._maybe_sync_vllm_weights = lambda: LOG.debug(
@@ -369,7 +373,11 @@ class NemoGymPlugin(BasePlugin):
                 json={"lora_name": "__probe__", "lora_path": "/nonexistent"},
                 timeout=5,
             )
-            if resp.status_code == 404 and "Not Found" in resp.text and "adapter" not in resp.text.lower():
+            if (
+                resp.status_code == 404
+                and "Not Found" in resp.text
+                and "adapter" not in resp.text.lower()
+            ):
                 LOG.warning(
                     "vLLM server does not expose /v1/load_lora_adapter. "
                     "Set VLLM_ALLOW_RUNTIME_LORA_UPDATING=1 when starting vLLM, e.g.:\n"
@@ -443,7 +451,9 @@ class NemoGymPlugin(BasePlugin):
                         timeout=30,
                     )
                     if resp.status_code != 200:
-                        LOG.warning(f"Failed to set LoRA adapter: {resp.status_code} {resp.text}")
+                        LOG.warning(
+                            f"Failed to set LoRA adapter: {resp.status_code} {resp.text}"
+                        )
                         return
 
                 try:
@@ -462,6 +472,7 @@ class NemoGymPlugin(BasePlugin):
             # Barrier for multi-GPU
             if accelerator.num_processes > 1:
                 import torch.distributed as dist
+
                 if dist.is_initialized():
                     dist.barrier()
 

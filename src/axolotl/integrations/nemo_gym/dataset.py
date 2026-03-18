@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -73,13 +73,15 @@ def load_nemo_gym_datasets(
                 "NeMo Gym dataset creation script."
             )
 
-        LOG.info(f"Loading NeMo Gym dataset from {path} (default server: {default_server})")
+        LOG.info(
+            f"Loading NeMo Gym dataset from {path} (default server: {default_server})"
+        )
 
         with open(path) as f:
             lines = f.readlines()
 
         if max_samples and len(lines) > max_samples:
-            lines = random.sample(lines, max_samples)
+            lines = random.sample(lines, max_samples)  # nosec B311
 
         for line in lines:
             data = json.loads(line)
@@ -93,7 +95,11 @@ def load_nemo_gym_datasets(
                     break
             if not task_prompt and inputs:
                 # Fallback: use the last input's content
-                task_prompt = inputs[-1].get("content", "") if isinstance(inputs[-1], dict) else ""
+                task_prompt = (
+                    inputs[-1].get("content", "")
+                    if isinstance(inputs[-1], dict)
+                    else ""
+                )
 
             # Per-row agent routing: agent_ref.name can override dataset-level server_name.
             # NeMo Gym datasets may use agent names (e.g., "reasoning_gym_simple_agent")

@@ -1,4 +1,4 @@
-# Copyright 2024 Axolotl AI. All rights reserved.
+# Copyright 2026 Axolotl AI. All rights reserved.
 #
 # This software may be used and distributed according to
 # the terms of the Axolotl Community License Agreement (the "License");
@@ -32,6 +32,7 @@ LOG = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Multi-turn passthrough reward
 # ---------------------------------------------------------------------------
+
 
 def reward_env(completions, prompts=None, **kwargs):
     """Passthrough: extract pre-computed reward from NeMo Gym agent /run response.
@@ -81,11 +82,15 @@ def _get_verify_urls(head_port: int = 11000) -> dict[str, str]:
         config = yaml.safe_load(resp.text)
         if isinstance(config, str):
             config = yaml.safe_load(config)
-        for name, cfg in config.items():
+        for _name, cfg in config.items():
             if not isinstance(cfg, dict):
                 continue
             for srv_name, srv_cfg in cfg.get("resources_servers", {}).items():
-                if isinstance(srv_cfg, dict) and "host" in srv_cfg and "port" in srv_cfg:
+                if (
+                    isinstance(srv_cfg, dict)
+                    and "host" in srv_cfg
+                    and "port" in srv_cfg
+                ):
                     _verify_urls[srv_name] = (
                         f"http://{srv_cfg['host']}:{srv_cfg['port']}/verify"
                     )
@@ -114,12 +119,10 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
 
     for i, completion in enumerate(completions):
         text = completion[0]["content"] if completion else ""
-        prompt = (
-            prompts[i][0]["content"]
-            if prompts and i < len(prompts)
-            else ""
+        prompt = prompts[i][0]["content"] if prompts and i < len(prompts) else ""
+        srv_name = (
+            refs[i]["name"] if i < len(refs) and isinstance(refs[i], dict) else ""
         )
-        srv_name = refs[i]["name"] if i < len(refs) and isinstance(refs[i], dict) else ""
         url = verify_urls.get(srv_name, "")
 
         if not url:
@@ -167,6 +170,7 @@ def reward_nemo_gym_verify(completions, prompts=None, **kwargs):
 # ---------------------------------------------------------------------------
 # Factory used internally by the plugin
 # ---------------------------------------------------------------------------
+
 
 def create_nemo_gym_reward_fn(
     global_config: dict,
