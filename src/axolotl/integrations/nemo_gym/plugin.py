@@ -59,17 +59,19 @@ class NemoGymPlugin(BasePlugin):
         if not cfg.nemo_gym_enabled:
             return
 
-        # When using LoRA sync server mode, skip NCCL communicator init
-        # (the async trainer does this too, but we need it for standard GRPO)
+        # Always skip NCCL communicator init in NeMo Gym mode.
+        # NeMo Gym uses its own vLLM server (standard OpenAI API), not the TRL
+        # colocate/NCCL path. The NCCL init fails with vLLM V1 and standard servers.
         trl_cfg = getattr(cfg, "trl", None)
-        if trl_cfg and getattr(trl_cfg, "vllm_lora_sync", False):
+        if trl_cfg and getattr(trl_cfg, "vllm_mode", "server") == "server":
             self._patch_skip_nccl_init()
 
     def _patch_skip_nccl_init(self):
-        """Monkeypatch VLLMClient.init_communicator to no-op for LoRA sync.
+        """Monkeypatch VLLMClient.init_communicator to no-op.
 
-        LoRA sync uses HTTP (POST /set_lora_adapter/) instead of NCCL broadcast.
-        The NCCL communicator is not needed and fails with vLLM V1 engine.
+        NeMo Gym uses its own vLLM server (standard OpenAI API or custom LoRA
+        serve script). The NCCL communicator is not needed and fails with both
+        vLLM V1 engine and standard OpenAI server mode.
         """
         try:
             from trl.generation.vllm_client import VLLMClient
@@ -185,9 +187,9 @@ class NemoGymPlugin(BasePlugin):
         )
 
     def get_training_args(self, cfg):
-        """Pass through vLLM colocate settings that axolotl doesn't map natively."""
+        """Pass through vLLM settings and force async trainer for multi-turn."""
         args = {}
-        # Always pass vLLM settings from the vllm config block to TRL training args
+        # Pass vLLM settings from vllm config block to TRL training args
         if cfg.vllm:
             vllm_cfg = cfg.vllm
             max_len = getattr(vllm_cfg, "max_model_len", None)
@@ -199,8 +201,17 @@ class NemoGymPlugin(BasePlugin):
                 args["vllm_gpu_memory_utilization"] = gpu_util
             if tp_size:
                 args["vllm_tensor_parallel_size"] = tp_size
+
+        # Force async trainer for multi-turn: NemoGymDataProducer needs the
+        # data producer protocol. Setting use_data_producer=True selects
+        # AxolotlAsyncGRPOTrainer which supports _create_data_producer().
+        # With async_prefetch=False this runs synchronously — no threading.
+        if cfg.nemo_gym_multi_turn and self._agent_servers:
+            args["use_data_producer"] = True
+            LOG.info("NeMo Gym multi-turn: forcing use_data_producer=True for data producer protocol")
+
         if args:
-            LOG.info(f"NeMo Gym plugin injecting vLLM training args: {args}")
+            LOG.info(f"NeMo Gym plugin injecting training args: {args}")
         return args if args else None
 
     def post_trainer_create(self, cfg, trainer):
@@ -212,13 +223,24 @@ class NemoGymPlugin(BasePlugin):
         verify_timeout = cfg.nemo_gym_verify_timeout or 30
         multi_turn = cfg.nemo_gym_multi_turn or False
 
-        # When using LoRA sync, replace sync_weights with LoRA adapter sync.
-        # Standard GRPO's sync_weights uses NCCL (broken with vLLM V1).
-        # Instead, save the LoRA adapter to disk and POST to /set_lora_adapter/.
+        # Handle weight sync. NeMo Gym skips NCCL init, so we need to either:
+        # - Install LoRA sync (when vllm_lora_sync=True)
+        # - Or no-op sync_weights (when using standard vLLM server)
         trl_cfg = getattr(cfg, "trl", None)
-        if trl_cfg and getattr(trl_cfg, "vllm_lora_sync", False):
-            if hasattr(trainer, "vllm_generation") and trainer.vllm_generation:
+        if hasattr(trainer, "vllm_generation") and trainer.vllm_generation:
+            vllm_gen = trainer.vllm_generation
+            if trl_cfg and getattr(trl_cfg, "vllm_lora_sync", False):
                 self._setup_lora_sync(trainer)
+            else:
+                # No NCCL, no LoRA sync — skip all weight sync paths
+                vllm_gen.sync_weights = lambda: LOG.debug("Weight sync skipped (NeMo Gym mode)")
+                type(vllm_gen).sync_weights = lambda self: LOG.debug("Weight sync skipped (NeMo Gym mode)")
+                # Also patch the async trainer's internal sync method
+                if hasattr(trainer, "_maybe_sync_vllm_weights"):
+                    trainer._maybe_sync_vllm_weights = lambda: LOG.debug(
+                        "Async weight sync skipped (NeMo Gym mode)"
+                    )
+                LOG.info("Disabled weight sync (NeMo Gym mode, no LoRA sync)")
 
         if multi_turn:
             self._wire_multi_turn(cfg, trainer, model_name, verify_timeout)
@@ -252,14 +274,12 @@ class NemoGymPlugin(BasePlugin):
             )
 
     def _wire_multi_turn(self, cfg, trainer, model_name, verify_timeout):
-        """Inject multi-turn rollout_func that delegates to NeMo Gym agent /run endpoints.
+        """Replace the data producer with NemoGymDataProducer.
 
-        The agent server handles multi-turn orchestration: it calls our vLLM server
-        for generation, executes tools against resource servers, manages session state,
-        and returns token IDs + logprobs + rewards.
+        The plugin forces use_data_producer=True (in get_training_args) which
+        selects AxolotlAsyncGRPOTrainer. Here we swap its data_producer with
+        our NemoGymDataProducer that calls agent /run instead of vLLM generate.
         """
-        from .multi_turn import create_nemo_gym_rollout_func
-
         if not self._agent_servers:
             LOG.warning(
                 "No NeMo Gym agent servers discovered. Multi-turn requires agent servers "
@@ -268,26 +288,53 @@ class NemoGymPlugin(BasePlugin):
             self._wire_single_turn(trainer, model_name, verify_timeout)
             return
 
-        rollout_func = create_nemo_gym_rollout_func(
+        if not hasattr(trainer, "data_producer") or trainer.data_producer is None:
+            LOG.warning(
+                "Trainer has no data_producer. NeMo Gym multi-turn requires "
+                "use_data_producer=true (should be auto-set by plugin)."
+            )
+            return
+
+        from axolotl.core.trainers.grpo.async_trainer import AsyncDataProducer
+
+        from .data_producer import NemoGymDataProducer
+
+        # Get the current producer's config and params
+        current = trainer.data_producer
+        # Unwrap AsyncDataProducer to get the inner producer's config
+        if isinstance(current, AsyncDataProducer):
+            inner = current._inner
+        else:
+            inner = current
+
+        nemo_producer = NemoGymDataProducer(
+            config=inner.config,
+            prompt_dataset=inner._dataset,
+            num_generations=inner._num_generations,
+            generation_batch_size=inner._generation_batch_size,
+            train_batch_size=inner._train_batch_size,
+            steps_per_generation=inner._steps_per_generation,
+            shuffle_dataset=inner._shuffle_dataset,
+            seed=inner._seed,
             agent_servers=self._agent_servers,
             dataset_lookup=self._dataset_lookup or {},
             request_timeout=float(cfg.nemo_gym_verify_timeout or 10800),
         )
+        nemo_producer.set_trainer(trainer)
 
-        # Wire into both trainer and vllm_generation
-        if hasattr(trainer, "vllm_generation") and trainer.vllm_generation:
-            bound_rollout = lambda prompts: rollout_func(prompts, trainer)  # noqa: E731
-            trainer.vllm_generation.rollout_func = bound_rollout
-            trainer.rollout_func = rollout_func
-            LOG.info(
-                f"NeMo Gym multi-turn rollout injected "
-                f"(agent servers: {list(self._agent_servers.keys())})"
+        # Re-wrap in AsyncDataProducer if async prefetch is enabled
+        if getattr(trainer.args, "async_prefetch", False):
+            nemo_producer = AsyncDataProducer(
+                nemo_producer,
+                background_produce_kwargs={"skip_policy_logps": True},
             )
-        else:
-            LOG.warning(
-                "Trainer does not have vllm_generation. "
-                "Multi-turn rollout_func requires use_vllm=true."
-            )
+
+        trainer.data_producer = nemo_producer
+        LOG.info(
+            f"NeMo Gym data producer installed "
+            f"(agent servers: {list(self._agent_servers.keys())}, "
+            f"async={'yes' if getattr(trainer.args, 'async_prefetch', False) else 'no'})"
+        )
 
         # Passthrough reward function — agent /run already computed rewards
         def env_reward_passthrough(completions, **kwargs):

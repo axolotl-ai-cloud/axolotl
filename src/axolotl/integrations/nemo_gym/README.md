@@ -4,12 +4,16 @@ Train LLMs with reinforcement learning using [NVIDIA NeMo Gym](https://github.co
 
 ## Validated Training Paths
 
-| Path | Speed | Multi-turn | Config |
-|------|-------|------------|--------|
-| **Async GRPO + Agent /run** | Fastest (3x) | Yes | `async_prefetch: true` + `nemo_gym_multi_turn: true` |
-| Standard GRPO + Agent /run | Baseline | Yes | `nemo_gym_multi_turn: true` |
-| Standard GRPO + /verify | Simplest | No | Single-turn reward function |
+| Path | Speed | Multi-turn | Architecture |
+|------|-------|------------|--------------|
+| **Async GRPO + Data Producer** | Fastest (3x) | Yes | `NemoGymDataProducer` replaces vLLM generation |
+| Standard GRPO + Data Producer | Baseline | Yes | Same producer, no async prefetch |
+| Standard GRPO + /verify | Simplest | No | Reward function calls /verify directly |
 | FSDP2 + /verify (2 GPU) | Distributed | No | `fsdp_version: 2` |
+
+Multi-turn uses `nemo_gym_multi_turn: true` which auto-enables the async trainer's
+data producer protocol. The plugin's `NemoGymDataProducer` calls NeMo Gym agent `/run`
+endpoints and returns `RolloutDataset` with proper IS correction, env_mask, and rewards.
 
 All paths tested end-to-end with Qwen3-0.6B + LoRA, logged to wandb project `nemo-gym-rl`.
 
@@ -256,14 +260,27 @@ The agent server orchestrates the entire multi-turn loop:
 5. Repeats until done, then calls /verify for reward
 6. Returns token IDs + logprobs + reward to our rollout_func
 
-### Async GRPO
+### Data Producer Architecture (Multi-Turn)
 
-With `async_prefetch: true`, axolotl's async data producer prefetches rollouts in a
-background thread while the main thread trains on the previous batch. This gives ~3x
-speedup over standard synchronous GRPO since generation and training overlap.
+When `nemo_gym_multi_turn: true`, the plugin automatically forces `use_data_producer: true`
+which selects the `AxolotlAsyncGRPOTrainer`. The plugin then swaps the trainer's data
+producer with `NemoGymDataProducer`, which:
 
-The async trainer's own `_sync_lora_adapter()` handles weight sync to the vLLM server
-with proper interval tracking (`vllm_sync_interval`).
+1. Gets a prompt batch from the dataset iterator
+2. Expands by `num_generations` (one agent call per rollout)
+3. Calls NeMo Gym agents via async HTTP (`aiohttp.gather`)
+4. Parses responses into padded tensors (`RolloutDataset`)
+5. Returns with `_pending_policy_logps=True` for deferred scoring
+
+The main thread then runs `_compute_deferred_scores()` which:
+- Computes **policy logprobs** on the training model (GPU forward pass)
+- Computes **IS correction** using agent's sampling logprobs vs training model logprobs
+- Computes advantages with group-level normalization
+- All downstream features work: replay buffer, re-roll, streaming, zero-adv skip
+
+With `async_prefetch: true`, the data producer runs in a background thread — giving ~3x
+speedup as generation and training overlap. With `async_prefetch: false`, it runs
+synchronously on the main thread (still uses the data producer protocol).
 
 ### Weight Sync (LoRA Mode)
 
