@@ -200,7 +200,7 @@ early-fusion VLMs (`Qwen3_5ForConditionalGeneration`).
 :::
 
 ```yaml
-base_model: Qwen/Qwen3.5-9B  # smallest VLM variant
+base_model: Qwen/Qwen3.5-9B
 
 chat_template: qwen3_5
 ```
