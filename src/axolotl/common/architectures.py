@@ -23,4 +23,5 @@ MOE_ARCH_BLOCK = {
     "glm4_moe": "Glm4MoeDecoderLayer",
     "glm4_moe_lite": "Glm4MoeLiteDecoderLayer",
     "glm_moe_dsa": "GlmMoeDsaDecoderLayer",
+    "nemotron_h": "NemotronHMoE",
 }

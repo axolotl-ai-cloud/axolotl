@@ -291,6 +291,16 @@ class PatchManager:
 
             patch_kimi_model()
 
+        if self.cfg.model_config_type == "nemotron_h":
+            # NemotronHBlock inherits from GradientCheckpointingLayer (which has the
+            # gradient_checkpointing attribute), so the default _set_gradient_checkpointing
+            # walker works. The parent class just forgot to declare the support flag.
+            from transformers.models.nemotron_h.modeling_nemotron_h import (
+                NemotronHPreTrainedModel,
+            )
+
+            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
         if self.cfg.fp8:
