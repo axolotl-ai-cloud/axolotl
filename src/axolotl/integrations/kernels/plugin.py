@@ -61,9 +61,11 @@ class KernelsPlugin(BasePlugin):
         return "axolotl.integrations.kernels.KernelsArgs"
 
     def pre_model_load(self, cfg):
+        moe_model_type = cfg.model_config_type_text or cfg.model_config_type
+
         if cfg.use_scattermoe:
             self._register_kernels()
-            self._kernelize_model(cfg.model_config_type)
+            self._kernelize_model(moe_model_type)
         elif cfg.use_sonicmoe:
             if not importlib.util.find_spec("sonicmoe"):
                 raise RuntimeError(
@@ -75,11 +77,9 @@ class KernelsPlugin(BasePlugin):
 
             from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
 
-            LOG.info(
-                f"Applying SonicMoE patches for model type: {cfg.model_config_type}"
-            )
+            LOG.info(f"Applying SonicMoE patches for model type: {moe_model_type}")
             patch_sonicmoe(
-                cfg.model_config_type,
+                moe_model_type,
                 torch_compile=bool(getattr(cfg, "torch_compile", False)),
             )
 
@@ -109,6 +109,16 @@ class KernelsPlugin(BasePlugin):
                 }
             }
         )
+
+    def add_callbacks_pre_trainer(self, cfg, model):
+        callbacks = []
+        if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.autotune_callback import (
+                AutotuneReportCallback,
+            )
+
+            callbacks.append(AutotuneReportCallback())
+        return callbacks
 
     def _kernelize_model(self, model_type: str):
         from kernels import replace_kernel_forward_from_hub

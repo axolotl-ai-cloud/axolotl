@@ -8,6 +8,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build-axolotl:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
@@ -110,6 +113,12 @@ jobs:
             pytorch: 2.9.1
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.12"
+            pytorch: 2.9.1
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
             is_latest: true
           - cuda: 128
             cuda_version: 12.8.1
@@ -174,6 +183,7 @@ jobs:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: 128
@@ -259,11 +269,18 @@ jobs:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
+            pytorch: 2.9.1
+            axolotl_extras:
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: 128
+            cuda_version: 12.8.1
+            python_version: "3.12"
             pytorch: 2.9.1
             axolotl_extras:
             is_latest: true
@@ -326,6 +343,7 @@ jobs:
     if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
+      fail-fast: false
       matrix:
         include:
           - cuda: 128

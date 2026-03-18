@@ -128,7 +128,6 @@ class DatasetValidationMixin:
         ):
             LOG.info(
                 "explicitly setting `eval_sample_packing` to match `sample_packing`",
-                main_process_only=True,
             )
             data["eval_sample_packing"] = True
 
@@ -673,20 +672,6 @@ class LoRAValidationMixin:
             raise ValueError(
                 "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
                 "compatible with DoRA at the moment."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_kernels_rl(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ) and data.get("rl"):
-            raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
-                "compatible with RL at the moment."
             )
         return data
 

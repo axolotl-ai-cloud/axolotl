@@ -25,7 +25,7 @@ def get_lora_parameters(
 ) -> tuple[
     torch.Tensor,
     torch.Tensor | None,
-    QuantState | None,
+    QuantState | torch.Tensor | None,
     torch.Tensor | None,
     torch.Tensor | None,
     float | None,
@@ -48,9 +48,13 @@ def get_lora_parameters(
 
     if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
         quant_state = getattr(W, "quant_state", None)
+        if quant_state is None and W.dtype == torch.float8_e4m3fn:
+            quant_state = getattr(base_layer, "weight_scale_inv", None)
         return W, b, quant_state, None, None, None
 
     quant_state = getattr(W, "quant_state", None)
+    if quant_state is None and W.dtype == torch.float8_e4m3fn:
+        quant_state = getattr(base_layer, "weight_scale_inv", None)
 
     active_adapter = (
         proj.active_adapters[0]
@@ -81,7 +85,7 @@ def matmul_lora(
     X: torch.Tensor,
     W: torch.Tensor,
     b: torch.Tensor | None,
-    W_quant: QuantState | None,
+    W_quant: QuantState | torch.Tensor | None,
     A: torch.Tensor | None,
     B: torch.Tensor | None,
     s: float | None,

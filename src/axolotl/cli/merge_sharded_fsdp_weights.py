@@ -196,12 +196,10 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
     state.wait_for_everyone()
     LOG.info(
         f"FSDP SHARDED_STATE_DICT weights successfully merged to: {output_path}",
-        main_process_only=True,
     )
     LOG.info(
         "Merged weights are only the safetensors and doesn't include the model configuration "
         f"or tokenizer which may be found in {parsed_cfg.output_dir}.",
-        main_process_only=True,
     )
 
 

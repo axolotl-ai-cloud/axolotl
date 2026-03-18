@@ -93,11 +93,13 @@ class PatchManager:
 
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        self._deactivate_hf_async_load()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
         self._apply_sageattn_patches()
+        self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
         self._apply_model_specific_patches()
@@ -114,6 +116,7 @@ class PatchManager:
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
+        self._apply_trl_vllm_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -226,6 +229,15 @@ class PatchManager:
             from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
+
+    def _apply_flash_attn_4_patches(self):
+        """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
+        if not self.cfg.flash_attention:
+            return
+
+        from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
+
+        patch_flash_attn_4(self.model_config)
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
@@ -409,17 +421,27 @@ class PatchManager:
             if self.cfg.load_in_8bit:
                 apply_linear8bitlt_save_patch()
 
+    def _deactivate_hf_async_load(self):
+        """Load weights synchronously so they can be converted and not OOM."""
+        if self.cfg.load_in_4bit or self.cfg.load_in_8bit:
+            os.environ["HF_DEACTIVATE_ASYNC_LOAD"] = "1"
+
     def _apply_moe_expert_quantization_patch(self):
-        """Patch transformers weight loading to quantize MoE expert params on-the-fly."""
-        if not self.cfg.quantize_moe_experts:
+        """Patch transformers weight loading and PEFT for MoE expert quantization."""
+        has_target_params = bool(getattr(self.cfg, "lora_target_parameters", None))
+
+        if not self.cfg.quantize_moe_experts and not has_target_params:
             return
 
         from axolotl.monkeypatch.moe_quant import (
-            patch_moe_quantization_on_load,
             patch_peft_target_parameters_matching,
         )
 
-        patch_moe_quantization_on_load(self.cfg)
+        if self.cfg.quantize_moe_experts:
+            from axolotl.monkeypatch.moe_quant import patch_moe_quantization_on_load
+
+            patch_moe_quantization_on_load(self.cfg)
+
         patch_peft_target_parameters_matching()
 
     def _finalize_moe_expert_quantization(self, model: PreTrainedModel):
@@ -645,6 +667,17 @@ class PatchManager:
             )
 
             patch_apertus_xielu_activation()
+
+    def _apply_trl_vllm_patches(self):
+        """Apply TRL vLLM patches for batched weight sync, NaN logprobs fix, and scalar handling."""
+        if (
+            self.cfg.rl
+            and getattr(self.cfg, "trl", None)
+            and getattr(self.cfg.trl, "use_vllm", False)
+        ):
+            from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+
+            patch_trl_vllm()
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""

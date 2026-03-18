@@ -54,8 +54,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
             trainer_cls = GRPOStrategy.get_trainer_class(
-                sequence_parallel=self.cfg.context_parallel_size > 1
+                sequence_parallel=self.cfg.context_parallel_size > 1,
+                async_grpo=async_grpo,
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
@@ -151,7 +159,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
-            training_args_cls = GRPOStrategy.get_training_args_class()
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
+            training_args_cls = GRPOStrategy.get_training_args_class(
+                async_grpo=async_grpo
+            )
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
             if self.cfg.rl is RLType.GDPO:
@@ -217,13 +234,36 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs, trainer_cls
         )
 
-        trainer = trainer_cls(
-            *trainer_cls_args,
-            args=training_args,
-            train_dataset=self.train_dataset,
-            callbacks=self.get_callbacks(),
-            **trainer_kwargs,
-        )
+        # Allow FP8-quantized models to be fine-tuned with LoRA adapters.
+        # transformers' validate_quantization_for_training blocks FP8 because
+        # hf_quantizer.is_trainable is False, but LoRA only trains the adapters
+        # (base weights stay frozen in FP8).
+        _orig_validate_quant = None
+        if (
+            self.cfg.adapter
+            and hasattr(self.model, "is_quantized")
+            and self.model.is_quantized
+        ):
+            import transformers.trainer as _trainer_module
+
+            _orig_validate_quant = _trainer_module.validate_quantization_for_training
+            _trainer_module.validate_quantization_for_training = lambda model: None
+
+        try:
+            trainer = trainer_cls(
+                *trainer_cls_args,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
+        finally:
+            if _orig_validate_quant is not None:
+                import transformers.trainer as _trainer_module
+
+                _trainer_module.validate_quantization_for_training = (
+                    _orig_validate_quant
+                )
         if self.cfg.fsdp_config or self.cfg.fsdp:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:

@@ -221,6 +221,158 @@ def _unwrap_experts_lora(experts_module):
 
 
 # =============================================================================
+# Routing helpers
+# =============================================================================
+
+
+def _softmax_topk_route(
+    moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta
+):
+    """Softmax→topk routing (Qwen, OLMoE, Mixtral, MiniMax).
+
+    Returns:
+        (routing_weights [T, K], selected_experts [T, K], top_k, num_experts)
+    """
+    router_logits = F.linear(hidden_states, gate_weight)
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(hidden_states, gate_lora_delta)
+    routing_weights = F.softmax(router_logits, dim=-1, dtype=torch.float32)
+
+    top_k = base_gate.top_k
+    num_experts = base_gate.num_experts
+    routing_weights, selected_experts = torch.topk(routing_weights, top_k, dim=-1)
+
+    if getattr(base_gate, "norm_topk_prob", True):
+        routing_weights = routing_weights / routing_weights.sum(dim=-1, keepdim=True)
+
+    return routing_weights, selected_experts, top_k, num_experts
+
+
+def _sigmoid_topk_route(
+    moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta
+):
+    """Sigmoid→topk routing (GLM, DeepSeek V3, MiniMax M2).
+
+    Supports:
+    - ``e_score_correction_bias`` on gate or moe_block
+    - Group-based expert selection when ``n_group > 1``
+    - ``routed_scaling_factor`` applied to final weights
+    - Final weights gathered from original sigmoid probs (not bias-corrected)
+
+    Returns:
+        (routing_weights [T, K], selected_experts [T, K], top_k, num_experts)
+    """
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
+    router_probs = router_logits.sigmoid()  # [T, E]
+
+    top_k = getattr(moe_block, "top_k", getattr(base_gate, "top_k", None))
+    num_experts = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
+
+    # Bias-corrected scores for expert selection (not used for final weights).
+    # glm_moe_dsa/deepseek_v3 store the bias on gate; minimax_m2 on the block.
+    e_score_correction_bias = getattr(base_gate, "e_score_correction_bias", None)
+    if e_score_correction_bias is None:
+        e_score_correction_bias = getattr(moe_block, "e_score_correction_bias", None)
+    if e_score_correction_bias is not None:
+        scores_for_choice = router_probs + e_score_correction_bias
+    else:
+        scores_for_choice = router_probs
+
+    # Group-based selection: pick top groups, mask the rest
+    n_group = getattr(moe_block, "n_group", 1)
+    if n_group > 1:
+        group_scores = (
+            scores_for_choice.view(-1, n_group, num_experts // n_group)
+            .topk(2, dim=-1)[0]
+            .sum(dim=-1)
+        )  # [T, n_group]
+        topk_group = getattr(moe_block, "topk_group", n_group)
+        group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]
+        group_mask = torch.zeros_like(group_scores)
+        group_mask.scatter_(1, group_idx, 1)
+        score_mask = (
+            group_mask.unsqueeze(-1)
+            .expand(-1, n_group, num_experts // n_group)
+            .reshape(-1, num_experts)
+        )
+        scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
+
+    # Final topk from (possibly masked) scores
+    topk_indices = torch.topk(scores_for_choice, k=top_k, dim=-1, sorted=False)[1]
+
+    # Gather weights from original sigmoid scores (not bias-corrected)
+    topk_weights = router_probs.gather(1, topk_indices)
+
+    # Optional renormalization + scaling
+    if getattr(moe_block, "norm_topk_prob", True):
+        topk_weights = topk_weights / (topk_weights.sum(dim=-1, keepdim=True) + 1e-20)
+    routed_scaling_factor = getattr(moe_block, "routed_scaling_factor", 1.0)
+    topk_weights = topk_weights * routed_scaling_factor
+
+    return topk_weights, topk_indices, top_k, num_experts
+
+
+def _route(moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta):
+    """Dispatch to the correct routing strategy based on block attributes.
+
+    Detects sigmoid routing by the presence of ``e_score_correction_bias``
+    on either the gate or the moe_block.
+    """
+    has_sigmoid = (
+        getattr(base_gate, "e_score_correction_bias", None) is not None
+        or getattr(moe_block, "e_score_correction_bias", None) is not None
+    )
+    if has_sigmoid:
+        return _sigmoid_topk_route(
+            moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta
+        )
+    return _softmax_topk_route(
+        moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta
+    )
+
+
+# =============================================================================
+# Shared expert helpers
+# =============================================================================
+
+
+def _compute_shared_expert(moe_block, hidden_states_flat):
+    """Compute shared expert output if the block has one.
+
+    Handles singular (qwen2_moe: ``shared_expert``), plural
+    (glm_moe_dsa/deepseek_v3: ``shared_experts``), and MLP
+    (hunyuan_v1_moe: ``shared_mlp``) attribute names.
+
+    peft wraps individual linear layers inside the shared expert with
+    standard LoRA — calling forward() handles this transparently.
+    """
+    shared_expert = (
+        getattr(moe_block, "shared_expert", None)
+        or getattr(moe_block, "shared_experts", None)
+        or getattr(moe_block, "shared_mlp", None)
+    )
+    if shared_expert is None:
+        return None
+
+    shared_expert_output = shared_expert(hidden_states_flat)
+
+    # Optional sigmoid gate (Qwen2MoE pattern).
+    # shared_expert_gate may also be peft-wrapped (standard LoRA
+    # on nn.Linear), its forward() applies LoRA automatically.
+    shared_expert_gate = getattr(moe_block, "shared_expert_gate", None)
+    if shared_expert_gate is not None:
+        shared_expert_output = (
+            F.sigmoid(shared_expert_gate(hidden_states_flat)) * shared_expert_output
+        )
+
+    return shared_expert_output
+
+
+# =============================================================================
 # Layer classes
 # =============================================================================
 
@@ -281,16 +433,18 @@ class ScatterMoEGatedMLP(nn.Module):
 
 class HFScatterMoEGatedMLP(nn.Module):
     """
-    ScatterMoE-accelerated forward pass for HF MoEs (OLMoE / Qwen2MoE).
+    ScatterMoE-accelerated forward pass for HF MoEs.
 
     Used as a kernel layer via the HF ``kernels`` library.  The ``forward``
-    method replaces the original ``OlmoeSparseMoeBlock.forward``.
+    method replaces the original SparseMoeBlock.forward.
 
-    Supports both full-parameter training and LoRA fine-tuning:
+    Supports:
 
-    * **Full-param**: uses ``parallel_linear`` (base ScatterMoE kernel)
-    * **LoRA**: detects peft ``ParamWrapper`` on ``self.experts``, extracts
-      adapter weights, and uses ``parallel_linear_lora`` (fused kernel)
+    * **Softmax→topk routing**: OLMoE, Qwen2/3MoE, Mixtral, MiniMax
+    * **Sigmoid→topk routing**: GLM, DeepSeek V3, MiniMax M2
+    * **Full-parameter training**: uses ``parallel_linear`` (base ScatterMoE)
+    * **LoRA fine-tuning**: detects peft ``ParamWrapper`` on ``self.experts``,
+      extracts adapter weights, and uses ``parallel_linear_lora`` (fused kernel)
     """
 
     @staticmethod
@@ -302,7 +456,7 @@ class HFScatterMoEGatedMLP(nn.Module):
             self: The MoeSparseMoeBlock module containing:
                 - self.gate: Router (or peft ParamWrapper wrapping it)
                 - self.experts: Experts module (or peft ParamWrapper chain)
-                - self.shared_expert: Optional shared expert (e.g. Qwen2MoE)
+                - self.shared_expert(s): Optional shared expert
                 - self.shared_expert_gate: Optional shared expert gate
             layer_input: Input tensor [batch_size, seq_len, hidden_size]
 
@@ -313,38 +467,17 @@ class HFScatterMoEGatedMLP(nn.Module):
         hidden_states_flat = layer_input.view(-1, hidden_dim)
 
         # ====================================================================
-        # Shared Expert (if present, e.g. Qwen2MoE)
+        # Shared Expert (if present, e.g. Qwen2MoE, DeepSeek V3)
         # ====================================================================
-        # peft wraps individual linear layers inside shared_expert with
-        # standard LoRA — calling forward() handles this transparently.
-        if hasattr(self, "shared_expert") and self.shared_expert is not None:
-            shared_expert_output = self.shared_expert(hidden_states_flat)
-            # shared_expert_gate may also be peft-wrapped (standard LoRA
-            # on nn.Linear), its forward() applies LoRA automatically.
-            shared_expert_gate_output = F.sigmoid(
-                self.shared_expert_gate(hidden_states_flat)
-            )
-            shared_expert_output = shared_expert_output * shared_expert_gate_output
-        else:
-            shared_expert_output = None
+        shared_expert_output = _compute_shared_expert(self, hidden_states_flat)
 
         # ====================================================================
         # Router Computation (with optional gate LoRA)
         # ====================================================================
         base_gate, gate_weight, gate_lora_delta = _unwrap_gate_lora(self.gate)
-        router_logits = F.linear(hidden_states_flat, gate_weight)
-        if gate_lora_delta is not None:
-            router_logits = router_logits + F.linear(
-                hidden_states_flat, gate_lora_delta
-            )
-        routing_weights = F.softmax(router_logits, dim=1, dtype=torch.float)
-
-        top_k = base_gate.top_k
-        num_experts = base_gate.num_experts
-        routing_weights, selected_experts = torch.topk(routing_weights, top_k, dim=-1)
-
-        if base_gate.norm_topk_prob:
-            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+        routing_weights, selected_experts, top_k, num_experts = _route(
+            self, base_gate, hidden_states_flat, gate_weight, gate_lora_delta
+        )
         routing_weights = routing_weights.to(hidden_states_flat.dtype)
 
         sorted_expert_idxs, sorted_scattered_idxs, expert_offsets = flatten_sort_count(

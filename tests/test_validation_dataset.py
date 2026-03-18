@@ -68,6 +68,7 @@ class TestValidationCheckDatasetConfig(BaseValidation):
             cfg,
             capabilities={
                 "bf16": "false",
+                "tf32": "false",
                 "n_gpu": 1,
                 "compute_capability": "8.0",
             },

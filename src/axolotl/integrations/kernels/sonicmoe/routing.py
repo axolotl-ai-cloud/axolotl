@@ -5,6 +5,7 @@ Different MoE architectures use different routing strategies:
 - qwen3_moe / qwen2_moe / qwen3_5_moe / qwen3_vl_moe / qwen3_omni_moe: softmax -> topk (with optional renormalization)
 - gpt_oss: topk -> softmax (uses fused moe_TC_softmax_topk_layer, routing_fn=None)
 - glm_moe_dsa: sigmoid -> topk (with group-based expert selection)
+- mistral4: softmax -> group selection -> topk (with renormalization and scaling)
 
 Each model type maps to a (routing_fn, activation_type, router_attr) triple.
 When routing_fn is None, the fused moe_TC_softmax_topk_layer path is used.
@@ -45,6 +46,8 @@ def get_model_moe_config(model_type: str):
         "minimax",
     ):
         return softmax_topk_routing, ActivationType.SWIGLU, "gate"
+    elif model_type in ("mistral4",):
+        return softmax_group_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in (
         "glm_moe_dsa",
         "deepseek_v3",
@@ -122,6 +125,62 @@ def softmax_topk_routing(
     flat_scores = top_values.reshape(-1)  # [T*K]
     flat_token_idx = token_indices.reshape(-1)  # [T*K]
     flat_expert_idx = top_indices.to(torch.int32).reshape(-1)  # [T*K]
+
+    return flat_scores, flat_token_idx, flat_expert_idx, router_logits
+
+
+def softmax_group_topk_routing(
+    hidden_states: torch.Tensor, moe_block
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Mistral4-style routing: softmax -> group selection -> topk -> renorm -> scale."""
+    gate = moe_block.gate
+    T, H = hidden_states.shape
+    K = moe_block.top_k
+    E = getattr(moe_block, "n_routed_experts", gate.weight.shape[0])
+    n_group = getattr(moe_block, "n_group", 1)
+
+    router_logits = F.linear(hidden_states, gate.weight)  # [T, E]
+    router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
+
+    scores_for_choice = router_probs
+
+    # Group selection: pick top groups, mask the rest
+    if n_group > 1:
+        group_scores = (
+            scores_for_choice.view(-1, n_group, E // n_group)
+            .topk(2, dim=-1)[0]
+            .sum(dim=-1)
+        )
+        group_idx = torch.topk(
+            group_scores, k=moe_block.topk_group, dim=-1, sorted=False
+        )[1]
+        group_mask = torch.zeros_like(group_scores)
+        group_mask.scatter_(1, group_idx, 1)
+        score_mask = (
+            group_mask.unsqueeze(-1).expand(-1, n_group, E // n_group).reshape(-1, E)
+        )
+        scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
+
+    topk_indices = torch.topk(scores_for_choice, k=K, dim=-1, sorted=False)[1]
+    topk_weights = router_probs.gather(1, topk_indices)
+
+    # Renormalization + scaling
+    norm_topk_prob = getattr(moe_block, "norm_topk_prob", True)
+    if norm_topk_prob:
+        topk_weights = topk_weights / (topk_weights.sum(dim=-1, keepdim=True) + 1e-20)
+    routed_scaling_factor = getattr(moe_block, "routed_scaling_factor", 1.0)
+    topk_weights = topk_weights * routed_scaling_factor
+
+    # Flatten for moe_general_routing_inputs
+    token_indices = (
+        torch.arange(T, device=hidden_states.device, dtype=torch.int32)
+        .unsqueeze(1)
+        .expand(T, K)
+    )
+
+    flat_scores = topk_weights.to(torch.float32).reshape(-1)  # [T*K]
+    flat_token_idx = token_indices.reshape(-1)  # [T*K]
+    flat_expert_idx = topk_indices.to(torch.int32).reshape(-1)  # [T*K]
 
     return flat_scores, flat_token_idx, flat_expert_idx, router_logits
 

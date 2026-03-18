@@ -5,6 +5,8 @@ on:
     - cron: '0 0 1 * *'  # Run monthly
   workflow_dispatch:  # Manual kickoff
 
+permissions: {}
+
 jobs:
   auto-update:
     runs-on: ubuntu-latest

@@ -721,6 +721,213 @@ trl:
 
 For more information, see [GRPO docs](https://huggingface.co/docs/trl/v0.17.0/en/grpo_trainer#loss-types).
 
+#### Async GRPO
+
+Async GRPO overlaps vLLM generation with training by producing rollouts in a background thread. While the model trains on the current batch, the next batch is already being generated. This can significantly reduce wall-clock time per step.
+
+```yaml
+trl:
+  use_data_producer: true     # Enable data producer protocol
+  use_vllm: true
+  async_prefetch: true         # Generate rollouts in background thread
+  prefetch_depth: 1            # Number of rollouts to prefetch
+  vllm_sync_interval: 2        # Sync weights to vLLM every N steps
+```
+
+::: {.callout-note}
+Because the background thread generates completions with slightly stale model weights, async GRPO uses importance sampling correction to account for the distribution shift. This is controlled by `vllm_importance_sampling_correction: true` (default when async is enabled).
+:::
+
+##### vLLM LoRA Sync
+
+By default, weight sync to vLLM merges the LoRA adapter into the base model and broadcasts all parameters via NCCL. LoRA sync is a faster alternative that saves only the adapter weights to the filesystem and has vLLM load them natively using Punica kernels.
+
+```yaml
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+lora_target_linear: true
+
+trl:
+  vllm_lora_sync: true         # Enable native LoRA sync
+```
+
+When `vllm_lora_sync: true` is set, axolotl automatically selects the LoRA-aware vLLM serve module. Start vLLM as usual:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
+```
+
+Then start training on a separate GPU:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 axolotl train config.yaml
+```
+
+::: {.callout-tip}
+LoRA sync is especially beneficial with multi-GPU training (FSDP/DeepSpeed), where NCCL merge-sync can cause GPU contention with vLLM generation.
+:::
+
+##### Streaming Partial Batch
+
+Instead of scoring the entire batch at once, streaming mode scores one prompt group at a time. This enables finer-grained zero-advantage skipping and reduces peak memory usage during scoring.
+
+```yaml
+trl:
+  streaming_partial_batch: true
+```
+
+##### Importance Sampling Correction
+
+When using async prefetch, completions are generated from a slightly older version of the model. Importance sampling (IS) correction adjusts the policy gradient to account for this distribution shift.
+
+```yaml
+trl:
+  vllm_importance_sampling_correction: true   # Enable IS correction
+  importance_sampling_level: token             # 'token' or 'sequence'
+  off_policy_mask_threshold: 0.5              # Mask sequences with IS ratio below this
+```
+
+- `importance_sampling_level: token` applies per-token IS ratios (recommended with Liger kernel)
+- `importance_sampling_level: sequence` applies per-sequence IS ratios
+- `off_policy_mask_threshold` masks out sequences where the IS ratio indicates they are too far off-policy
+
+##### Replay Buffer
+
+The replay buffer caches rollout groups that had learning signal (non-zero reward variance) and uses them to replace zero-signal groups in later batches.
+
+```yaml
+trl:
+  replay_buffer_size: 100       # Max cached groups (0 = disabled)
+  replay_recompute_logps: true  # Recompute log-probs for replayed data (recommended)
+```
+
+::: {.callout-note}
+When `replay_recompute_logps: true` (default), old log-probabilities are recomputed using the current model weights. This fixes the IS mismatch that would otherwise occur when replaying stale data.
+:::
+
+##### Deferred Re-rolling
+
+Failed prompts (where the model produces zero reward for all generations) are buffered and re-injected into later batches when the model may be better equipped to solve them.
+
+```yaml
+trl:
+  reroll_start_fraction: 0.5    # Start re-rolling after 50% of training
+  reroll_max_groups: 1          # Max groups to replace per batch
+```
+
+##### Zero-Advantage Batch Skipping
+
+When all advantages in a micro-batch are zero (no learning signal), the forward/backward pass is skipped entirely. This is enabled by default and logged as `skipped_zero_adv_batches=1`.
+
+```yaml
+trl:
+  skip_zero_advantage_batches: true   # default
+```
+
+##### Parallel Reward Workers
+
+Reward functions that use `signal.alarm()` (e.g., `math_verify`) must run in the main thread. Parallel reward workers use subprocesses to work around this limitation while enabling concurrent reward computation.
+
+```yaml
+trl:
+  reward_num_workers: 4         # Number of subprocess workers (1 = no parallelism)
+```
+
+##### Full Async GRPO Example
+
+```yaml
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+
+vllm:
+    host: 0.0.0.0
+    port: 8000
+    gpu_memory_utilization: 0.35
+    dtype: auto
+
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+lora_target_linear: true
+
+rl: grpo
+trl:
+  use_data_producer: true
+  use_vllm: true
+  async_prefetch: true
+  prefetch_depth: 1
+  vllm_sync_interval: 2
+  vllm_lora_sync: true
+  streaming_partial_batch: true
+  vllm_importance_sampling_correction: true
+  off_policy_mask_threshold: 0.5
+  importance_sampling_level: token
+  num_generations: 8
+  max_completion_length: 512
+  reward_funcs:
+    - rewards.accuracy_reward
+  reroll_start_fraction: 0.5
+  replay_buffer_size: 100
+  reward_num_workers: 4
+  skip_zero_advantage_batches: true
+
+datasets:
+  - path: AI-MO/NuminaMath-TIR
+    type: rewards.prompt_transform
+    split: train
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+max_steps: 500
+learning_rate: 1e-5
+bf16: true
+gradient_checkpointing: true
+```
+
+```bash
+# Terminal 1: Start vLLM on GPU 0
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
+
+# Terminal 2: Train on GPU 1
+CUDA_VISIBLE_DEVICES=1 axolotl train config.yaml
+```
+
+##### Multi-GPU Async GRPO
+
+Async GRPO supports FSDP and DeepSpeed ZeRO-3 for multi-GPU training. vLLM runs on one GPU while training is distributed across the remaining GPUs.
+
+**FSDP:**
+
+```yaml
+fsdp:
+  - full_shard
+  - auto_wrap
+fsdp_config:
+  fsdp_transformer_layer_cls_to_wrap: Qwen2DecoderLayer
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+```
+
+**DeepSpeed ZeRO-3:**
+
+```yaml
+deepspeed: deepspeed_configs/zero3_bf16.json
+gradient_checkpointing_kwargs:
+  use_reentrant: true   # Required for ZeRO-3
+```
+
+```bash
+# Terminal 1: Start vLLM on GPU 0
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
+
+# Terminal 2: Train on GPUs 0,1
+CUDA_VISIBLE_DEVICES=0,1 accelerate launch --num_processes 2 -m axolotl.cli.train config.yaml
+```
+
+::: {.callout-important}
+With multi-GPU async prefetch, only rank 0 generates completions in the background thread. Results are broadcast to all ranks on the main thread. This avoids FSDP/DeepSpeed collective deadlocks from unsynchronized background threads.
+:::
+
 ### GDPO
 
 GDPO (Group Reward-Decoupled Policy Optimization) extends GRPO for multi-reward training. It addresses the **reward advantage collapse** problem by normalizing each reward function independently before combining them.

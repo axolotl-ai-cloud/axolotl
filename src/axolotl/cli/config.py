@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import requests
 import torch
 import yaml
-from transformers.utils import is_torch_bf16_gpu_available
+from transformers.utils import is_torch_bf16_gpu_available, is_torch_tf32_available
 
 from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
@@ -300,7 +300,7 @@ def load_cfg(
     try:
         device_props = torch.cuda.get_device_properties("cuda")
         gpu_version = "sm_" + str(device_props.major) + str(device_props.minor)
-    except:
+    except (RuntimeError, AssertionError):
         gpu_version = None
 
     prepare_plugins(cfg)
@@ -310,6 +310,7 @@ def load_cfg(
         capabilities={
             "bf16": is_torch_bf16_gpu_available(),
             "fp8": compute_supports_fp8(),
+            "tf32": is_torch_tf32_available(),
             "n_gpu": int(os.environ.get("WORLD_SIZE", 1)),
             "compute_capability": gpu_version,
         },
