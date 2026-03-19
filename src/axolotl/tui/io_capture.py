@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import queue
-import re
 import sys
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
+from typing import IO
 
 # ---------------------------------------------------------------------------
 # Parser registry
@@ -23,7 +20,8 @@ _parser_registry: list[type[LineParser]] = []
 
 def register_parser(cls: type[LineParser]) -> type[LineParser]:
     """Decorator to register a LineParser subclass."""
-    _parser_registry.append(cls)
+    if cls not in _parser_registry:
+        _parser_registry.append(cls)
     return cls
 
 
@@ -92,7 +90,7 @@ class IOCapture:
         self._parser_chain = parser_chain
         self._queue = metric_queue
         self._log_path = log_path
-        self._log_file = None
+        self._log_file: IO[str] | None = None
         self._thread: threading.Thread | None = None
         self._read_fd: int | None = None
         self._write_fd: int | None = None
@@ -129,7 +127,7 @@ class IOCapture:
 
     def stop(self) -> None:
         # Restore fds — closes the write end, causing reader to see EOF
-        if self._saved_stdout_fd is not None:
+        if self._saved_stdout_fd is not None and self._saved_stderr_fd is not None:
             sys.stdout = sys.__stdout__
             sys.stderr = sys.__stderr__
             os.dup2(self._saved_stdout_fd, 1)
@@ -141,6 +139,10 @@ class IOCapture:
 
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                logging.getLogger(__name__).warning(
+                    "IO capture thread did not exit after 2s"
+                )
             self._thread = None
 
         if self._log_file is not None:
@@ -150,6 +152,7 @@ class IOCapture:
     def _drain(self) -> None:
         # Read raw bytes and split on both \n and \r to handle tqdm progress bars
         # which use \r for in-place updates without \n
+        assert self._read_fd is not None, "_drain called before start()"
         with os.fdopen(self._read_fd, "rb") as pipe:
             buf = b""
             while True:

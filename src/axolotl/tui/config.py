@@ -18,15 +18,11 @@ class TUIConfig(BaseModel):
     )
     log_level: str = Field(
         default="debug",
-        json_schema_extra={
-            "description": "Minimum log level shown in events panel"
-        },
+        json_schema_extra={"description": "Minimum log level shown in events panel"},
     )
     panels: list[str] = Field(
         default_factory=lambda: ["progress", "training", "hardware", "events", "debug"],
-        json_schema_extra={
-            "description": "Ordered list of panels to display"
-        },
+        json_schema_extra={"description": "Ordered list of panels to display"},
     )
     hardware_poll_interval: int = Field(
         default=2,
@@ -34,13 +30,9 @@ class TUIConfig(BaseModel):
     )
     stdout_log_path: str = Field(
         default="axolotl_stdout.log",
-        json_schema_extra={
-            "description": "File path for captured stdout/stderr log"
-        },
+        json_schema_extra={"description": "File path for captured stdout/stderr log"},
     )
     parser_plugins: list[str] = Field(
         default_factory=list,
-        json_schema_extra={
-            "description": "List of extra parser classes to load"
-        },
+        json_schema_extra={"description": "List of extra parser classes to load"},
     )

@@ -14,8 +14,8 @@ class RawLogParser(LineParser):
 
     _LOG_RE = re.compile(
         r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,\.]\d+)"
-        r"\s*[-–]\s*(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)"
-        r"\s*[-–]\s*(?P<msg>.+)$",
+        r"\s*[-]\s*(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)"
+        r"\s*[-]\s*(?P<msg>.+)$",
         re.IGNORECASE,
     )
 

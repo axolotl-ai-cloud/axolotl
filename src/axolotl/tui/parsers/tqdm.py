@@ -25,9 +25,7 @@ class TqdmParser(LineParser):
 
     # Also match simpler forms like:
     #   Fetching 0 files: 0it [00:00, ?it/s]
-    _FETCH_RE = re.compile(
-        r"(?P<desc>[\w\s]+):\s*(?P<current>\d+)(?:it)?\s*\[.*?\]"
-    )
+    _FETCH_RE = re.compile(r"(?P<desc>[\w\s]+):\s*(?P<current>\d+)(?:it)?\s*\[.*?\]")
 
     def parse(self, line: str, source: str) -> list[dict]:
         m = self._TQDM_RE.search(line)
@@ -41,21 +39,48 @@ class TqdmParser(LineParser):
 
             # Surface as a log line with progress info
             if pct == 100 or pct == 0 or pct % 25 == 0:
-                msg = f"[{desc}] {pct}% ({current}/{total})" if desc else f"{pct}% ({current}/{total})"
-                events.append({
-                    "type": "log_line",
-                    "level": "info",
-                    "message": msg,
-                })
+                msg = (
+                    f"[{desc}] {pct}% ({current}/{total})"
+                    if desc
+                    else f"{pct}% ({current}/{total})"
+                )
+                events.append(
+                    {
+                        "type": "log_line",
+                        "level": "info",
+                        "message": msg,
+                    }
+                )
 
             # Also emit as a progress metric
-            events.append({
-                "type": "metrics",
-                "logs": {
-                    f"progress/{desc.lower().replace(' ', '_')}": pct / 100.0,
-                },
-            })
+            cleaned_desc = desc.strip().lower().replace(" ", "_")
+            if not cleaned_desc:
+                cleaned_desc = "progress"
+            events.append(
+                {
+                    "type": "metrics",
+                    "logs": {
+                        f"progress/{cleaned_desc}": pct / 100.0,
+                    },
+                }
+            )
 
             return events
+
+        # Fallback: try simpler fetch-style progress lines
+        m = self._FETCH_RE.search(line)
+        if m:
+            desc = m.group("desc").strip().rstrip(":")
+            current = int(m.group("current"))
+            cleaned_desc = desc.strip().lower().replace(" ", "_")
+            if not cleaned_desc:
+                cleaned_desc = "fetch"
+            return [
+                {
+                    "type": "log_line",
+                    "level": "info",
+                    "message": f"[{desc}] {current}" if desc else f"{current}",
+                }
+            ]
 
         return []

@@ -22,6 +22,9 @@ class CompletionsPanel(BasePanel):
     modes = ["grpo", "dpo"]
 
     def render(self, state: TUIState) -> RenderableType:
+        if "*" not in self.modes and state.training_mode not in self.modes:
+            return Text("")
+
         if not state.completions:
             return Panel(
                 Text("No completions yet...", style="dim"),

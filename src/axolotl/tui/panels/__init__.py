@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 from rich.console import RenderableType
 
@@ -50,7 +49,7 @@ class BasePanel(ABC):
         """Return a rich renderable. Called every tick."""
         ...
 
-    def on_event(self, event: dict) -> None:
+    def on_event(self, event: dict) -> None:  # noqa: B027
         """Optional: react to raw metric events before state is merged."""
         pass
 
