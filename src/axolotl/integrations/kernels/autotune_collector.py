@@ -55,7 +55,7 @@ def _find_lora_ops_module() -> ModuleType | None:
     ``lora_ops`` and that has the ``_scatter2scatter_lora`` kernel
     attribute — that is the runtime copy with populated caches.
     """
-    for name, module in sys.modules.items():
+    for name, module in list(sys.modules.items()):
         if (
             module is not None
             and "lora_ops" in name
