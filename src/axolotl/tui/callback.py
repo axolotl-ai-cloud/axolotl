@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import queue
-from typing import Any
 
 from transformers.trainer_callback import TrainerCallback
 
@@ -33,11 +32,13 @@ class _TUILogHandler(logging.Handler):
         try:
             level = self._LEVEL_MAP.get(record.levelno, "info")
             msg = self.format(record)
-            self._queue.put_nowait({
-                "type": "log_line",
-                "level": level,
-                "message": msg,
-            })
+            self._queue.put_nowait(
+                {
+                    "type": "log_line",
+                    "level": level,
+                    "message": msg,
+                }
+            )
         except queue.Full:
             pass
         except Exception:
@@ -57,6 +58,7 @@ class AxolotlTUICallback(TrainerCallback):
         self._renderer = TUIRenderer(config=config, metric_queue=self._queue)
         self._log_handler: _TUILogHandler | None = None
         self._renderer_started_early: bool = False
+        self._pending_run_info: dict | None = None
 
     def _put(self, event: dict) -> None:
         try:
@@ -65,25 +67,27 @@ class AxolotlTUICallback(TrainerCallback):
             pass
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
-        # Send run info
-        run_name = getattr(args, "run_name", "") or ""
-        self._put(
-            {
-                "type": "run_info",
-                "run_name": run_name,
-                "total_steps": state.max_steps,
-                "total_epochs": int(args.num_train_epochs) if args.num_train_epochs else 1,
-            }
-        )
+        # Send a single unified run_info event with all fields
+        run_info = {
+            "type": "run_info",
+            "run_name": getattr(args, "run_name", "") or "",
+            "total_steps": state.max_steps,
+            "total_epochs": float(args.num_train_epochs)
+            if args.num_train_epochs
+            else 1.0,
+        }
+        # Merge in model_name/training_mode/world_size if stashed by train.py
+        if self._pending_run_info:
+            run_info.update(self._pending_run_info)
+            self._pending_run_info = None
+        self._put(run_info)
 
         if not self._renderer_started_early:
             # Attach a logging handler to feed log messages into the events panel
             self._log_handler = _TUILogHandler(
                 self._queue, min_level=self._config.log_level
             )
-            self._log_handler.setFormatter(
-                logging.Formatter("[%(name)s] %(message)s")
-            )
+            self._log_handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
             # Attach to both root and axolotl loggers (axolotl has propagate=False)
             logging.getLogger().addHandler(self._log_handler)
             logging.getLogger("axolotl").addHandler(self._log_handler)

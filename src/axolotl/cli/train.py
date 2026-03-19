@@ -2,6 +2,7 @@
 
 import gc
 import os
+import queue
 from pathlib import Path
 from typing import Union
 
@@ -36,7 +37,7 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
 
     # Start TUI early (before data loading) so it captures preprocessing events
     tui_renderer = None
-    tui_queue = None
+    tui_queue: queue.Queue | None = None
     is_rank_0 = int(os.getenv("LOCAL_RANK", "0")) == 0
     if is_rank_0:
         from axolotl.train import _is_tui_enabled
@@ -44,12 +45,16 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         if _is_tui_enabled(cfg):
             import queue as _queue
 
+            from axolotl.train import _get_tui_config
             from axolotl.tui.config import TUIConfig
             from axolotl.tui.renderer import TUIRenderer
-            from axolotl.train import _get_tui_config
 
             tui_config_dict = _get_tui_config(cfg)
-            tui_config = TUIConfig(**tui_config_dict) if isinstance(tui_config_dict, dict) else tui_config_dict
+            tui_config = (
+                TUIConfig(**tui_config_dict)
+                if isinstance(tui_config_dict, dict)
+                else tui_config_dict
+            )
             tui_queue = _queue.Queue(maxsize=4096)
             tui_renderer = TUIRenderer(config=tui_config, metric_queue=tui_queue)
 
@@ -58,12 +63,14 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
             training_mode = str(cfg.rl) if cfg.rl else "sft"
             world_size = int(os.environ.get("WORLD_SIZE", 1))
             try:
-                tui_queue.put_nowait({
-                    "type": "run_info",
-                    "model_name": model_name,
-                    "training_mode": training_mode,
-                    "world_size": world_size,
-                })
+                tui_queue.put_nowait(
+                    {
+                        "type": "run_info",
+                        "model_name": model_name,
+                        "training_mode": training_mode,
+                        "world_size": world_size,
+                    }
+                )
             except _queue.Full:
                 pass
 
@@ -74,7 +81,9 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
 
             from axolotl.tui.callback import _TUILogHandler
 
-            _early_log_handler = _TUILogHandler(tui_queue, min_level=tui_config.log_level)
+            _early_log_handler = _TUILogHandler(
+                tui_queue, min_level=tui_config.log_level
+            )
             _early_log_handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
             # Attach to BOTH root and axolotl loggers because axolotl logger
             # has propagate=False so root handler never sees axolotl.* messages
@@ -110,8 +119,9 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
         # (e.g., error during data loading), clean up here
         if tui_renderer is not None and not tui_renderer._stop_event.is_set():
             try:
-                tui_queue.put_nowait({"type": "done"})
-            except Exception:
+                if tui_queue is not None:
+                    tui_queue.put_nowait({"type": "done"})
+            except queue.Full:
                 pass
             tui_renderer.stop()
         # Remove early log handler from both root and axolotl loggers

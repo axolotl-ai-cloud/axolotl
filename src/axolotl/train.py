@@ -9,7 +9,6 @@ import os
 import shutil
 import signal
 import sys
-import typing
 import weakref
 from collections import OrderedDict
 from contextlib import ExitStack
@@ -41,9 +40,6 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
-
-if typing.TYPE_CHECKING:
-    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
 LOG = get_logger(__name__)
 
@@ -487,7 +483,7 @@ def handle_untrained_tokens_fix(
 def setup_model_and_trainer(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[
-    "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
+    Trainer,
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,
@@ -614,7 +610,9 @@ def train(
         from axolotl.tui.config import TUIConfig
 
         tui_config = _get_tui_config(cfg)
-        tui_config_obj = TUIConfig(**tui_config) if isinstance(tui_config, dict) else tui_config
+        tui_config_obj = (
+            TUIConfig(**tui_config) if isinstance(tui_config, dict) else tui_config
+        )
 
         # Reuse the early-started renderer if available (started in do_train)
         early_renderer = getattr(cfg, "_tui_renderer", None)
@@ -628,16 +626,12 @@ def train(
             tui_callback._renderer_started_early = True
         trainer.add_callback(tui_callback)
 
-        # Send model info to the callback
-        model_name = cfg.base_model or ""
-        training_mode = str(cfg.rl) if cfg.rl else "sft"
-        world_size = int(os.environ.get("WORLD_SIZE", 1))
-        tui_callback._put({
-            "type": "run_info",
-            "model_name": model_name,
-            "training_mode": training_mode,
-            "world_size": world_size,
-        })
+        # Stash model info so on_train_begin can emit a single unified run_info event
+        tui_callback._pending_run_info = {
+            "model_name": cfg.base_model or "",
+            "training_mode": str(cfg.rl) if cfg.rl else "sft",
+            "world_size": int(os.environ.get("WORLD_SIZE", 1)),
+        }
         LOG.info("TUI dashboard enabled")
 
     # Handle untrained tokens if configured

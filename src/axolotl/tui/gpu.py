@@ -68,5 +68,5 @@ class GPUPoller:
                     )
                 )
             except Exception:
-                pass
+                LOG.debug("Error polling GPU device %d", i, exc_info=True)
         return stats

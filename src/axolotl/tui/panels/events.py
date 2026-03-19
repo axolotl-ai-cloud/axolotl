@@ -27,7 +27,9 @@ class EventsPanel(BasePanel):
     def render(self, state: TUIState) -> RenderableType:
         lines = Text()
         # Show last 15 non-debug log lines (debug goes to DebugPanel)
-        recent = [l for l in state.log_lines if l.level != "debug"][-15:]
+        recent = [
+            log_entry for log_entry in state.log_lines if log_entry.level != "debug"
+        ][-15:]
         for log_line in recent:
             ts = log_line.timestamp.strftime("%H:%M:%S")
             level = log_line.level.upper()

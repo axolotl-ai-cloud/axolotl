@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from axolotl.tui.config import TUIConfig
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
@@ -51,8 +52,6 @@ from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
 from axolotl.utils.schemas.trl import TRLConfig
 from axolotl.utils.schemas.validation import ValidationMixin
 from axolotl.utils.schemas.vllm import VllmConfig
-
-from axolotl.tui.config import TUIConfig
 
 LOG = get_logger(__name__)
 

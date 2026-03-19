@@ -48,7 +48,7 @@ class TUIState:
     current_step: int = 0
     total_steps: int = 0
     current_epoch: float = 0.0
-    total_epochs: int = 1
+    total_epochs: float = 1.0
     elapsed_seconds: float = 0.0
     eta_seconds: float | None = None
 
@@ -80,6 +80,9 @@ class TUIState:
 
     # Loss history for sparkline
     loss_history: deque[float] = field(default_factory=lambda: deque(maxlen=50))
+
+    # DeepSpeed zero stage (None if not using DeepSpeed)
+    zero_stage: int | None = None
 
     # Arbitrary plugin state
     extra: dict[str, Any] = field(default_factory=dict)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
 import queue
 import threading
@@ -13,7 +12,6 @@ from typing import Any
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
-from rich.text import Text
 
 from axolotl.tui.config import TUIConfig
 from axolotl.tui.gpu import GPUPoller
@@ -49,6 +47,9 @@ class TUIRenderer:
                 self._panels.append(registry[panel_name]())
 
     def _init_parser_chain(self) -> None:
+        # Ensure built-in parsers are imported so @register_parser decorators fire
+        import axolotl.tui.parsers  # noqa: F401
+
         self._parser_chain = ParserChain()
         # Register all built-in parsers
         for parser_cls in get_registered_parsers():
@@ -65,6 +66,8 @@ class TUIRenderer:
                     spec = importlib.util.spec_from_file_location(
                         "custom_parser", file_path
                     )
+                    if spec is None or spec.loader is None:
+                        raise ImportError(f"Cannot load spec for {file_path}")
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
                     parser_cls = getattr(mod, class_name)
@@ -167,10 +170,7 @@ class TUIRenderer:
                 )
                 now = time.time()
                 self._state.elapsed_seconds = now - self._state.start_time.timestamp()
-                if (
-                    self._state.current_step > 0
-                    and self._state.total_steps > 0
-                ):
+                if self._state.current_step > 0 and self._state.total_steps > 0:
                     rate = self._state.elapsed_seconds / self._state.current_step
                     remaining = self._state.total_steps - self._state.current_step
                     self._state.eta_seconds = rate * remaining
@@ -210,6 +210,8 @@ class TUIRenderer:
                     self._state.total_steps = event["total_steps"]
                 if "total_epochs" in event:
                     self._state.total_epochs = event["total_epochs"]
+                if "zero_stage" in event:
+                    self._state.zero_stage = event["zero_stage"]
 
             elif event_type == "done":
                 self._stop_event.set()
@@ -246,6 +248,7 @@ class TUIRenderer:
         self._init_parser_chain()
 
         # Set up I/O capture
+        assert self._parser_chain is not None, "_init_parser_chain must be called first"
         self._io_capture = IOCapture(
             log_path=self._config.stdout_log_path,
             parser_chain=self._parser_chain,
@@ -257,29 +260,31 @@ class TUIRenderer:
         # ensures all progress events appear in the Events panel.
         self._install_tqdm_hook()
 
+        self._io_capture_ready = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        self._io_capture_ready.wait(timeout=5.0)
 
     def _install_tqdm_hook(self) -> None:
         """Replace tqdm's display method to route updates through TUI queue."""
         try:
-            import tqdm
-            import tqdm.auto
             import io
 
+            import tqdm
+            import tqdm.auto
+
             q = self._queue
-            parser = self._tqdm_parser = None
+            self._tqdm_parser = None
             # Find our tqdm parser in the chain
-            for p in (self._parser_chain._parsers if self._parser_chain else []):
+            for p in self._parser_chain._parsers if self._parser_chain else []:
                 if p.name == "tqdm":
                     self._tqdm_parser = p
                     break
 
             # Save originals for restore
-            self._orig_tqdm_init = tqdm.tqdm.__init__
-            self._orig_tqdm_class = tqdm.auto.tqdm
-
-            renderer_self = self
+            self._orig_tqdm_class_auto = tqdm.auto.tqdm
+            self._orig_tqdm_class_tqdm = tqdm.tqdm
+            self._orig_tqdm_class_std = tqdm.std.tqdm
 
             class TUITqdm(tqdm.tqdm):
                 """tqdm subclass that sends progress to TUI instead of terminal."""
@@ -296,31 +301,36 @@ class TUIRenderer:
                     if self.total and self.total > 0:
                         pct = self.n / self.total * 100
                         desc = self.desc.rstrip(": ") if self.desc else ""
-                        elapsed = self.format_interval(self.elapsed) if hasattr(self, 'elapsed') and self.elapsed else "?"
-                        rate = self.format_sizeof(1.0 / self.avg_time) if hasattr(self, 'avg_time') and self.avg_time else "?"
-
                         # Emit events at milestones or at low frequency
                         is_milestone = (
-                            self.n == 0 or
-                            self.n >= self.total or
-                            int(pct) % 25 == 0
+                            self.n == 0 or self.n >= self.total or int(pct) % 25 == 0
                         )
                         if is_milestone:
                             try:
-                                q.put_nowait({
-                                    "type": "log_line",
-                                    "level": "info",
-                                    "message": f"[{desc}] {pct:.0f}% ({self.n}/{self.total})" if desc else f"{pct:.0f}% ({self.n}/{self.total})",
-                                })
+                                q.put_nowait(
+                                    {
+                                        "type": "log_line",
+                                        "level": "info",
+                                        "message": f"[{desc}] {pct:.0f}% ({self.n}/{self.total})"
+                                        if desc
+                                        else f"{pct:.0f}% ({self.n}/{self.total})",
+                                    }
+                                )
                             except Exception:
                                 pass
 
                         try:
-                            metric_key = f"progress/{desc.lower().replace(' ', '_')}" if desc else "progress/unknown"
-                            q.put_nowait({
-                                "type": "metrics",
-                                "logs": {metric_key: pct / 100.0},
-                            })
+                            metric_key = (
+                                f"progress/{desc.lower().replace(' ', '_')}"
+                                if desc
+                                else "progress/unknown"
+                            )
+                            q.put_nowait(
+                                {
+                                    "type": "metrics",
+                                    "logs": {metric_key: pct / 100.0},
+                                }
+                            )
                         except Exception:
                             pass
 
@@ -329,11 +339,15 @@ class TUIRenderer:
                     if self.total and self.total > 0 and self.n > 0:
                         desc = self.desc.rstrip(": ") if self.desc else ""
                         try:
-                            q.put_nowait({
-                                "type": "log_line",
-                                "level": "info",
-                                "message": f"[{desc}] 100% ({self.total}/{self.total}) done" if desc else f"100% ({self.total}/{self.total}) done",
-                            })
+                            q.put_nowait(
+                                {
+                                    "type": "log_line",
+                                    "level": "info",
+                                    "message": f"[{desc}] 100% ({self.total}/{self.total}) done"
+                                    if desc
+                                    else f"100% ({self.total}/{self.total}) done",
+                                }
+                            )
                         except Exception:
                             pass
                     super().close()
@@ -354,11 +368,12 @@ class TUIRenderer:
             import tqdm
             import tqdm.auto
 
-            if hasattr(self, "_orig_tqdm_class"):
-                tqdm.auto.tqdm = self._orig_tqdm_class
-            if hasattr(self, "_orig_tqdm_init"):
-                tqdm.tqdm.__init__ = self._orig_tqdm_init
-                tqdm.std.tqdm = tqdm.tqdm
+            if hasattr(self, "_orig_tqdm_class_auto"):
+                tqdm.auto.tqdm = self._orig_tqdm_class_auto
+            if hasattr(self, "_orig_tqdm_class_tqdm"):
+                tqdm.tqdm = self._orig_tqdm_class_tqdm
+            if hasattr(self, "_orig_tqdm_class_std"):
+                tqdm.std.tqdm = self._orig_tqdm_class_std
         except Exception:
             pass
 
@@ -387,6 +402,10 @@ class TUIRenderer:
         # Start I/O capture — redirects fd 1/2 to pipe AFTER we saved the tty fd
         if self._io_capture:
             self._io_capture.start()
+
+        # Signal that IO capture is live so start() can return
+        if hasattr(self, "_io_capture_ready"):
+            self._io_capture_ready.set()
 
         try:
             with Live(
