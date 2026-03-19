@@ -199,24 +199,30 @@ def _estimate_register_pressure(
     num_warps: int,
     *tile_sizes: tuple[int, int],
 ) -> float:
-    """Estimate per-thread register count from live tile sizes.
+    """Rough estimate of per-thread register footprint from live tile sizes.
 
-    Each tile of shape (rows, cols) requires rows*cols elements distributed
-    across 32 threads per warp, but each thread in the warp holds a fragment.
-    For Triton GEMM-style kernels, the register footprint per thread is
-    approximately sum(rows * cols) / 32 for each live tile, plus ~40 for
-    scalar overhead (loop counters, pointers, masks, etc.).
+    This is a heuristic, NOT an accurate register count.  Triton uses tensor
+    core MMA fragments that pack multiple elements per register, and can spill
+    to local memory when the hardware limit (255 regs/thread) is exceeded.
+
+    The estimate is used to prune only truly extreme configs that would cause
+    excessive spilling or compilation failures.  The threshold is set high
+    (``_MAX_REGS_SOFT_LIMIT``) because the heuristic overestimates — it
+    doesn't account for MMA fragment packing.  Configs like M=64,N=64,K=64
+    (est ~520) work fine in practice via spilling.
 
     Returns estimated registers per thread.
     """
-    # Each thread in a warp holds 1/32 of the tile elements
+    # Each thread in a warp holds ~1/32 of the tile elements
     tile_regs = sum(r * c for r, c in tile_sizes) / 32
     scalar_overhead = 40
     return tile_regs + scalar_overhead
 
 
-# Maximum registers per thread on NVIDIA GPUs
-_MAX_REGS_PER_THREAD = 255
+# Soft limit for register pressure pruning.  Only prune configs with extreme
+# tile products (e.g. M=128,K=256,N=256) that reliably crash on Blackwell.
+# Moderate configs (M=64,N=64,K=64, est ~520) work via register spilling.
+_MAX_REGS_SOFT_LIMIT = 1024
 
 
 # =============================================================================
@@ -419,7 +425,7 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
             (block_r, block_k),  # a tile
             (block_n, block_r),  # b tile (epilogue)
         )
-        if est_regs > _MAX_REGS_PER_THREAD:
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
             continue
 
         scored.append((smem, config))
@@ -999,7 +1005,7 @@ def _prune_dX_configs(configs, named_args, **kwargs):
             (block_n, block_r),  # b tile
             (block_r, block_k),  # a tile (epilogue)
         )
-        if est_regs > _MAX_REGS_PER_THREAD:
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
             continue
 
         scored.append((smem, config))
@@ -1332,7 +1338,7 @@ def _prune_bwd_lora_configs(configs, named_args, **kwargs):
             (block_n, block_r),  # b tile
             (block_m, block_r),  # xa intermediate
         )
-        if est_regs > _MAX_REGS_PER_THREAD:
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
             continue
 
         scored.append((smem, config))
@@ -1581,7 +1587,7 @@ def _prune_split_configs(configs, named_args, **kwargs):
             (block_m, block_dim),  # other tile
             (block_r, BLOCK_INNER),  # lora weight
         )
-        if est_regs > _MAX_REGS_PER_THREAD:
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
             continue
 
         if smem <= smem_cap - _SMEM_SLACK:
