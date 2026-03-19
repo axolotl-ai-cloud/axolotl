@@ -1,4 +1,4 @@
-base_model: Qwen/Qwen3.5-122B-A10B
+base_model: Qwen/Qwen3.5-35B-A3B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -57,7 +57,6 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
@@ -74,3 +73,14 @@ evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+fsdp_config:
+  fsdp_version: 2
+  offload_params: true
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
+  activation_checkpointing: true
