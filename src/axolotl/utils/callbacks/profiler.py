@@ -28,9 +28,7 @@ class PytorchProfilerCallback(TrainerCallback):
         if profiler_steps_start == 0:
             # start recording memory allocations before everything is allocated, because if we start
             # at the beginning of step 0, we won't have any memory allocations in the traces
-            torch.cuda.memory._record_memory_history(
-                enabled="all", stacks="all"
-            )
+            torch.cuda.memory._record_memory_history(enabled="all", stacks="all")
             profiler_steps_start = -1
         self.profiler_steps_start = profiler_steps_start
         self._profiler = None
@@ -43,13 +41,11 @@ class PytorchProfilerCallback(TrainerCallback):
         **kwargs,
     ):
         if state.global_step == self.profiler_steps_start:
-            torch.cuda.memory._record_memory_history(
-                enabled="all", stacks="all"
-            )
+            torch.cuda.memory._record_memory_history(enabled="all", stacks="all")
 
         # Start torch.profiler on the first profiled step
         if state.global_step == max(self.profiler_steps_start, 0):
-            self._profiler = torch.profiler.profile(
+            profiler = torch.profiler.profile(
                 activities=[
                     torch.profiler.ProfilerActivity.CPU,
                     torch.profiler.ProfilerActivity.CUDA,
@@ -58,7 +54,8 @@ class PytorchProfilerCallback(TrainerCallback):
                 profile_memory=True,
                 with_stack=True,
             )
-            self._profiler.__enter__()
+            profiler.__enter__()
+            self._profiler = profiler
 
     def on_step_end(
         self,

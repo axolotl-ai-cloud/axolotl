@@ -566,30 +566,41 @@ def _scatter2scatter_lora_split(
 
     # 1. Base: Y_base = X @ W  (uses base kernel with optimal tile sizes)
     output = scatter2scatter(
-        X=X, W=W, b=b,
+        X=X,
+        W=W,
+        b=b,
         sorted_expert_idxs=sorted_expert_idxs,
         sorted_scattered_idxs=sorted_scattered_idxs,
-        k=k, x_grouped=x_grouped, y_grouped=y_grouped, out=out,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=y_grouped,
+        out=out,
     )
 
     # 2. XA = X @ A^T  (tiny: output is [M*k, R])
     # Reshape A: [R*E, K] → [E, K, R] (expert weights for scatter2scatter)
     W_A = lora_A.reshape(E, R, K).permute(0, 2, 1).contiguous()
     XA = scatter2scatter(
-        X=X, W=W_A,
+        X=X,
+        W=W_A,
         sorted_expert_idxs=sorted_expert_idxs,
         sorted_scattered_idxs=sorted_scattered_idxs,
-        k=k, x_grouped=x_grouped, y_grouped=True,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=True,
     )
 
     # 3. Y_lora = XA @ B^T  (R is tiny, so this is very fast)
     # Reshape B: [N, R*E] → [E, R, N]
     W_B = lora_B.T.reshape(E, R, N).contiguous()
     Y_lora = scatter2scatter(
-        X=XA, W=W_B,
+        X=XA,
+        W=W_B,
         sorted_expert_idxs=sorted_expert_idxs,
         sorted_scattered_idxs=sorted_scattered_idxs,
-        k=1, x_grouped=True, y_grouped=y_grouped,
+        k=1,
+        x_grouped=True,
+        y_grouped=y_grouped,
     )
 
     # 4. Y = Y_base + scaling * Y_lora
@@ -650,13 +661,20 @@ def scatter2scatter_lora(
     N = W.size(2)
 
     # Dispatch: split for few large experts, fused for many small experts
-    if (
-        E <= _SPLIT_LORA_FWD_MAX_EXPERTS
-        and K * N >= _SPLIT_LORA_FWD_THRESHOLD
-    ):
+    if E <= _SPLIT_LORA_FWD_MAX_EXPERTS and K * N >= _SPLIT_LORA_FWD_THRESHOLD:
         return _scatter2scatter_lora_split(
-            X, W, sorted_expert_idxs, sorted_scattered_idxs, k,
-            lora_A, lora_B, scaling, b, x_grouped, y_grouped, out,
+            X,
+            W,
+            sorted_expert_idxs,
+            sorted_scattered_idxs,
+            k,
+            lora_A,
+            lora_B,
+            scaling,
+            b,
+            x_grouped,
+            y_grouped,
+            out,
         )
 
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
@@ -1443,7 +1461,6 @@ def _prune_split_configs(configs, named_args, **kwargs):
     """Prune split kernel configs based on SMEM capacity."""
     smem_cap = _get_smem_capacity()
     block_r = named_args.get("BLOCK_R", 64)
-    inner_dim = named_args.get("INNER_DIM", 2048)
 
     # Fixed inner tile for reduction dimension
     BLOCK_INNER = 64
@@ -1470,33 +1487,47 @@ def _prune_split_configs(configs, named_args, **kwargs):
     key=["M", "K", "N"],
     prune_configs_by={"early_config_prune": _prune_split_configs},
 )
-@triton.heuristics({
-    "NO_DIM_MASK": lambda args: (
-        (args["K"] % args["BLOCK_DIM"]) == 0
-        if args["COMPUTE_DA"]
-        else (args["N"] % args["BLOCK_DIM"]) == 0
-    ),
-})
+@triton.heuristics(
+    {
+        "NO_DIM_MASK": lambda args: (
+            (args["K"] % args["BLOCK_DIM"]) == 0
+            if args["COMPUTE_DA"]
+            else (args["N"] % args["BLOCK_DIM"]) == 0
+        ),
+    }
+)
 @triton.jit
 def _group_bwd_lora_split(
     # Data tensors (DY and X are always present)
-    DY_ptr, stride_dym, stride_dyn,
-    X_ptr, stride_xm, stride_xk,
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    X_ptr,
+    stride_xm,
+    stride_xk,
     # LoRA weight for the inner reduction (B for dA, A for dB)
-    LW_ptr, stride_lw0, stride_lw1,
+    LW_ptr,
+    stride_lw0,
+    stride_lw1,
     # Output gradient tensor (dA or dB)
-    OUT_ptr, stride_out0, stride_out1,
+    OUT_ptr,
+    stride_out0,
+    stride_out1,
     # Expert offsets
     expert_offsets_ptr,
     # Dimensions
-    M, K: tl.constexpr, N: tl.constexpr,
-    ACTUAL_R: tl.constexpr, BLOCK_R: tl.constexpr,
+    M,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_R: tl.constexpr,
     INNER_DIM: tl.constexpr,  # reduction dimension (N for dA, K for dB)
     scaling,
     # Mode flag
     COMPUTE_DA: tl.constexpr,  # True = compute dA, False = compute dB
     # Tile sizes
-    BLOCK_M: tl.constexpr, BLOCK_DIM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_DIM: tl.constexpr,
     ACC_TYPE: tl.constexpr,
     allow_tf32: tl.constexpr,
     NO_DIM_MASK: tl.constexpr,
@@ -1532,9 +1563,9 @@ def _group_bwd_lora_split(
 
     # Output dimension tile (K for dA, N for dB)
     if COMPUTE_DA:
-        OUT_DIM: tl.constexpr = K
+        OUT_DIM: tl.constexpr = K  # type: ignore[no-redef]
     else:
-        OUT_DIM: tl.constexpr = N
+        OUT_DIM: tl.constexpr = N  # type: ignore[no-redef]
     dim_block = dim_block_id * BLOCK_DIM + tl.arange(0, BLOCK_DIM)
     dim_mask = dim_block < OUT_DIM
     R_block = tl.arange(0, BLOCK_R)
@@ -1577,7 +1608,8 @@ def _group_bwd_lora_split(
                 # Load X[M, K_block] (the "outer" tensor for dA)
                 outer = tl.load(
                     X_ptr + M_idx[:, None] * stride_xm + dim_block[None, :] * stride_xk,
-                    mask=M_mask[:, None] & dim_mask[None, :], other=0.0
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
                 ).to(INPUT_DTYPE)
 
                 # Reduce DY[M, :] @ B[e][:, R] over N → [M, R]
@@ -1588,23 +1620,34 @@ def _group_bwd_lora_split(
                     inn_mask = inn_off < N
 
                     dy_tile = tl.load(
-                        DY_ptr + M_idx[:, None] * stride_dym + inn_off[None, :] * stride_dyn,
-                        mask=M_mask[:, None] & inn_mask[None, :], other=0.0
+                        DY_ptr
+                        + M_idx[:, None] * stride_dym
+                        + inn_off[None, :] * stride_dyn,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
                     ).to(INPUT_DTYPE)
                     # B layout: [N, r*E] → stride_lw0=N stride, stride_lw1=r*E stride
                     lw_tile = tl.load(
-                        LW_ptr + inn_off[:, None] * stride_lw0 + (lora_offset + R_block)[None, :] * stride_lw1,
-                        mask=inn_mask[:, None] & R_mask[None, :], other=0.0
+                        LW_ptr
+                        + inn_off[:, None] * stride_lw0
+                        + (lora_offset + R_block)[None, :] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
                     ).to(INPUT_DTYPE)
                     reduced += tl.dot(dy_tile, lw_tile, allow_tf32=allow_tf32)
 
                 # dA += (DY@B)^T @ X: [R, M] @ [M, K_block] → [R, K_block]
-                acc += tl.dot(tl.trans(reduced.to(INPUT_DTYPE)), outer, allow_tf32=allow_tf32)
+                acc += tl.dot(
+                    tl.trans(reduced.to(INPUT_DTYPE)), outer, allow_tf32=allow_tf32
+                )
             else:
                 # Load DY[M, N_block] (the "outer" tensor for dB)
                 outer = tl.load(
-                    DY_ptr + M_idx[:, None] * stride_dym + dim_block[None, :] * stride_dyn,
-                    mask=M_mask[:, None] & dim_mask[None, :], other=0.0
+                    DY_ptr
+                    + M_idx[:, None] * stride_dym
+                    + dim_block[None, :] * stride_dyn,
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
                 ).to(INPUT_DTYPE)
 
                 # Reduce X[M, :] @ A[e][:, :].T over K → [M, R]
@@ -1615,27 +1658,45 @@ def _group_bwd_lora_split(
                     inn_mask = inn_off < K
 
                     x_tile = tl.load(
-                        X_ptr + M_idx[:, None] * stride_xm + inn_off[None, :] * stride_xk,
-                        mask=M_mask[:, None] & inn_mask[None, :], other=0.0
+                        X_ptr
+                        + M_idx[:, None] * stride_xm
+                        + inn_off[None, :] * stride_xk,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
                     ).to(INPUT_DTYPE)
                     # A layout: [r*E, K] → stride_lw0=r*E stride, stride_lw1=K stride
                     # We want A[e]^T: [K, R], so load as [K_inner, R]
                     lw_tile = tl.load(
-                        LW_ptr + (lora_offset + R_block)[None, :] * stride_lw0 + inn_off[:, None] * stride_lw1,
-                        mask=inn_mask[:, None] & R_mask[None, :], other=0.0
+                        LW_ptr
+                        + (lora_offset + R_block)[None, :] * stride_lw0
+                        + inn_off[:, None] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
                     ).to(INPUT_DTYPE)
                     reduced += tl.dot(x_tile, lw_tile, allow_tf32=allow_tf32)
 
                 # dB += DY^T @ (X@A^T): [N_block, M] @ [M, R] → [N_block, R]
-                acc += tl.dot(tl.trans(outer), reduced.to(INPUT_DTYPE), allow_tf32=allow_tf32)
+                acc += tl.dot(
+                    tl.trans(outer), reduced.to(INPUT_DTYPE), allow_tf32=allow_tf32
+                )
 
-        tl.store(out_blk_ptrs, (acc * scaling).to(OUT_ptr.dtype.element_ty), mask=out_mask)
+        tl.store(
+            out_blk_ptrs, (acc * scaling).to(OUT_ptr.dtype.element_ty), mask=out_mask
+        )
     else:
         # Zero out this expert's slice — needed because output uses empty_like
         if COMPUTE_DA:
-            tl.store(out_blk_ptrs, tl.zeros((BLOCK_R, BLOCK_DIM), dtype=OUT_ptr.dtype.element_ty), mask=out_mask)
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_R, BLOCK_DIM), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
         else:
-            tl.store(out_blk_ptrs, tl.zeros((BLOCK_DIM, BLOCK_R), dtype=OUT_ptr.dtype.element_ty), mask=out_mask)
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_DIM, BLOCK_R), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
 
 
 def group_bwd_lora(
@@ -1683,34 +1744,58 @@ def group_bwd_lora(
         return (E, triton.cdiv(K, META["BLOCK_DIM"]))
 
     _group_bwd_lora_split[grid_dA](
-        DY, DY.stride(0), DY.stride(1),
-        X, X.stride(0), X.stride(1),
-        lora_B, lora_B.stride(0), lora_B.stride(1),
-        dA, dA.stride(0), dA.stride(1),
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        dA,
+        dA.stride(0),
+        dA.stride(1),
         expert_offsets,
-        M=DY.size(0), K=K, N=N,
-        ACTUAL_R=R, BLOCK_R=BLOCK_R,
+        M=DY.size(0),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
         INNER_DIM=N,
         scaling=scaling,
         COMPUTE_DA=True,
-        ACC_TYPE=tl.float32, allow_tf32=ALLOW_TF32,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
     )
 
     def grid_dB(META):
         return (E, triton.cdiv(N, META["BLOCK_DIM"]))
 
     _group_bwd_lora_split[grid_dB](
-        DY, DY.stride(0), DY.stride(1),
-        X, X.stride(0), X.stride(1),
-        lora_A, lora_A.stride(0), lora_A.stride(1),
-        dB, dB.stride(0), dB.stride(1),
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        lora_A,
+        lora_A.stride(0),
+        lora_A.stride(1),
+        dB,
+        dB.stride(0),
+        dB.stride(1),
         expert_offsets,
-        M=DY.size(0), K=K, N=N,
-        ACTUAL_R=R, BLOCK_R=BLOCK_R,
+        M=DY.size(0),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
         INNER_DIM=K,
         scaling=scaling,
         COMPUTE_DA=False,
-        ACC_TYPE=tl.float32, allow_tf32=ALLOW_TF32,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
     )
 
     return dA, dB

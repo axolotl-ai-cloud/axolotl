@@ -19,15 +19,25 @@ import torch
 import triton
 import triton.language as tl
 
-
 # NF4 codebook (16 values, precomputed by BnB)
 # These are the normalized float4 reconstruction values
 NF4_CODEBOOK = [
-    -1.0, -0.6961928009986877, -0.5250730514526367, -0.39491748809814453,
-    -0.28444138169288635, -0.18477343022823334, -0.09105003625154495, 0.0,
-    0.07958029955625534, 0.16093020141124725, 0.24611230194568634,
-    0.33791524171829224, 0.44070982933044434, 0.5626170039176941,
-    0.7229568362236023, 1.0,
+    -1.0,
+    -0.6961928009986877,
+    -0.5250730514526367,
+    -0.39491748809814453,
+    -0.28444138169288635,
+    -0.18477343022823334,
+    -0.09105003625154495,
+    0.0,
+    0.07958029955625534,
+    0.16093020141124725,
+    0.24611230194568634,
+    0.33791524171829224,
+    0.44070982933044434,
+    0.5626170039176941,
+    0.7229568362236023,
+    1.0,
 ]
 
 
@@ -46,8 +56,8 @@ def _selective_dequant_nf4_kernel(
     stride_out_e,  # stride for expert dim in output
     # Dimensions
     num_active,
-    packed_per_expert,   # expert_numel // 2
-    blocks_per_expert,   # expert_numel // blocksize
+    packed_per_expert,  # expert_numel // 2
+    blocks_per_expert,  # expert_numel // blocksize
     blocksize: tl.constexpr,
     # Tile size
     BLOCK_SIZE: tl.constexpr,  # elements per thread block (must be multiple of 2)
@@ -79,7 +89,9 @@ def _selective_dequant_nf4_kernel(
 
     # Read packed bytes from the global expert's region
     packed_global_offset = expert_global * packed_per_expert + byte_idx
-    packed_bytes = tl.load(packed_ptr + packed_global_offset, mask=mask, other=0).to(tl.int32)
+    packed_bytes = tl.load(packed_ptr + packed_global_offset, mask=mask, other=0).to(
+        tl.int32
+    )
 
     # Extract 4-bit nibble
     # BnB packing: high nibble = even element, low nibble = odd element
@@ -133,8 +145,9 @@ def selective_dequant_nf4_triton(
 
     # Prepare codebook on device
     if codebook is None:
-        codebook = torch.tensor(NF4_CODEBOOK, dtype=torch.float32,
-                                device=packed_data.device)
+        codebook = torch.tensor(
+            NF4_CODEBOOK, dtype=torch.float32, device=packed_data.device
+        )
     else:
         codebook = codebook.to(device=packed_data.device, dtype=torch.float32)
 
@@ -143,8 +156,7 @@ def selective_dequant_nf4_triton(
     absmax_flat = absmax.reshape(-1).float()  # absmax is usually fp32
 
     # Output buffer
-    out = torch.empty(num_active, expert_numel, dtype=dtype,
-                      device=packed_data.device)
+    out = torch.empty(num_active, expert_numel, dtype=dtype, device=packed_data.device)
 
     BLOCK_SIZE = 1024  # Process 1024 elements per thread block
 

@@ -21,8 +21,6 @@ from global (0..E-1) to compact (0..num_active-1) and pass the smaller
 weight tensor.
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -79,7 +77,7 @@ def _selective_dequant_bnb4(
     raw_param: torch.Tensor,
     quant_state,
     active_experts: torch.Tensor,
-    expert_shape: tuple[int, ...],
+    expert_shape: tuple[int, int],
 ) -> torch.Tensor:
     """Dequantize only selected experts from BnB 4-bit packed data.
 
@@ -231,7 +229,9 @@ def selective_expert_weights(
                 if E_total is None:
                     E_total = int(active_experts.max().item()) + 1
                 expert_numel = orig_shape[0] // E_total
-                d2 = getattr(experts_module, "hidden_dim", None) or getattr(experts_module, "intermediate_dim", None)
+                d2 = getattr(experts_module, "hidden_dim", None) or getattr(
+                    experts_module, "intermediate_dim", None
+                )
                 if d2 and expert_numel % d2 == 0:
                     expert_shape = (expert_numel // d2, d2)
                 else:
@@ -241,9 +241,7 @@ def selective_expert_weights(
                 full = getattr(experts_module, param_name)
                 return full[active_experts]
 
-            return _selective_dequant_bnb4(
-                raw_param, qs, active_experts, expert_shape
-            )
+            return _selective_dequant_bnb4(raw_param, qs, active_experts, expert_shape)
 
     # Dense parameter (bf16/fp32) — direct indexing
     param = getattr(experts_module, param_name)

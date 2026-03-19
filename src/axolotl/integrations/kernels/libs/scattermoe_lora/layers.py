@@ -511,20 +511,26 @@ class HFScatterMoEGatedMLP(nn.Module):
 
             active_experts = get_active_experts(sorted_expert_idxs, num_experts)
             remapped_expert_idxs, compact_offsets = remap_expert_indices(
-                sorted_expert_idxs, expert_offsets, active_experts, num_experts,
+                sorted_expert_idxs,
+                expert_offsets,
+                active_experts,
+                num_experts,
             )
-            num_active = len(active_experts)
-
             # Dequantize only active experts' weights
             gate_up_W = selective_expert_weights(
-                experts, "gate_up_proj", active_experts,
+                experts,
+                "gate_up_proj",
+                active_experts,
             ).transpose(2, 1)  # [num_active, hidden, 2*inter]
 
             # Remap LoRA weights to match compact expert indices
             if gup_lora is not None:
                 gup_A, gup_B, gup_scaling = gup_lora
                 gup_A, gup_B = selective_lora_weights(
-                    gup_A, gup_B, active_experts, num_experts,
+                    gup_A,
+                    gup_B,
+                    active_experts,
+                    num_experts,
                 )
                 gup_lora = (gup_A, gup_B, gup_scaling)
 
@@ -576,13 +582,18 @@ class HFScatterMoEGatedMLP(nn.Module):
         # ====================================================================
         if use_selective:
             down_W = selective_expert_weights(
-                experts, "down_proj", active_experts,
+                experts,
+                "down_proj",
+                active_experts,
             ).transpose(2, 1)  # [num_active, inter, hidden]
 
             if down_lora is not None:
                 down_A, down_B, down_scaling = down_lora
                 down_A, down_B = selective_lora_weights(
-                    down_A, down_B, active_experts, num_experts,
+                    down_A,
+                    down_B,
+                    active_experts,
+                    num_experts,
                 )
                 down_lora = (down_A, down_B, down_scaling)
 
