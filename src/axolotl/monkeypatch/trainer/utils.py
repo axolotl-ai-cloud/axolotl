@@ -243,8 +243,12 @@ def _selective_logsoftmax_fwd_kernel(
     k_offs = tl.arange(0, K_BLOCK)
     k_mask = k_offs < actual_K
     indices = tl.load(index_row_ptr + k_offs, mask=k_mask, other=0).to(tl.int64)
-    selected = tl.load(logits_row_ptr + indices, mask=k_mask, other=0.0).to(tl.float32)
-    tl.store(output_row_ptr + k_offs, selected - lse, mask=k_mask)
+    valid_mask = k_mask & (indices >= 0) & (indices < V)
+    safe_indices = tl.where(valid_mask, indices, 0)
+    selected = tl.load(logits_row_ptr + safe_indices, mask=valid_mask, other=0.0).to(
+        tl.float32
+    )
+    tl.store(output_row_ptr + k_offs, selected - lse, mask=valid_mask)
 
 
 @triton.jit
@@ -286,6 +290,9 @@ def _selective_logsoftmax_bwd_kernel(
     indices = tl.load(
         index_row_ptr + k_offs, mask=k_mask, other=-1
     )  # -1 = never matches
+    valid_mask = k_mask & (indices >= 0) & (indices < V)
+    grad_out = tl.where(valid_mask, grad_out, 0.0)
+    indices = tl.where(valid_mask, indices, -1)
     grad_sum = tl.sum(grad_out, axis=0)
 
     # Fused pass: for each tile, compute -softmax * grad_sum + scatter
