@@ -470,7 +470,7 @@ class TestSelectiveLogSoftmaxOOBSafety:
         logits_ref = logits.detach().clone().requires_grad_(True)
         valid_rows = [1, 3]
         valid_indices = [42, 100]
-        for r, idx in zip(valid_rows, valid_indices):
+        for r, idx in zip(valid_rows, valid_indices, strict=True):
             ref_lp = F.log_softmax(logits_ref[r : r + 1], dim=-1)
             ref_val = ref_lp[0, idx]
             ref_val.backward(retain_graph=True)

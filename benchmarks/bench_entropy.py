@@ -82,7 +82,9 @@ def fmt(values, unit=""):
 
 def benchmark_contiguous():
     print("=" * 60)
-    print(f"CONTIGUOUS BENCHMARK  (warmup={WARMUP}, time={BENCH_ITERS}, mem={MEM_ITERS})")
+    print(
+        f"CONTIGUOUS BENCHMARK  (warmup={WARMUP}, time={BENCH_ITERS}, mem={MEM_ITERS})"
+    )
     print("=" * 60)
 
     configs = [
@@ -102,9 +104,9 @@ def benchmark_contiguous():
             continue
 
         N = B * L
-        print(f"\n{'─'*60}")
+        print(f"\n{'─' * 60}")
         print(f"B={B:2d}, L={L:5d}  ({N:6d} rows, logits {mem_gb:.2f} GB)")
-        print(f"{'─'*60}")
+        print(f"{'─' * 60}")
 
         torch.manual_seed(42)
         logits = torch.randn(B, L, V, device="cuda", dtype=torch.bfloat16)
@@ -114,7 +116,7 @@ def benchmark_contiguous():
         orig_mean = statistics.mean(t_orig)
         triton_mean = statistics.mean(t_triton)
 
-        print(f"  TIME (ms):")
+        print("  TIME (ms):")
         print(f"    original: {fmt(t_orig, 'ms')}")
         print(f"    triton:   {fmt(t_triton, 'ms')}")
         print(f"    speedup:  {orig_mean / triton_mean:.2f}x")
@@ -124,7 +126,7 @@ def benchmark_contiguous():
         orig_peak = statistics.mean(m_orig)
         triton_peak = statistics.mean(m_triton)
 
-        print(f"  MEMORY (peak overhead):")
+        print("  MEMORY (peak overhead):")
         print(f"    original: {fmt(m_orig, 'MB')}")
         print(f"    triton:   {fmt(m_triton, 'MB')}")
         print(f"    saved:    {orig_peak - triton_peak:.1f} MB")
@@ -135,7 +137,9 @@ def benchmark_contiguous():
 
 def benchmark_noncontiguous():
     print("\n" + "=" * 60)
-    print(f"NON-CONTIGUOUS BENCHMARK  (warmup={WARMUP}, time={BENCH_ITERS}, mem={MEM_ITERS})")
+    print(
+        f"NON-CONTIGUOUS BENCHMARK  (warmup={WARMUP}, time={BENCH_ITERS}, mem={MEM_ITERS})"
+    )
     print("=" * 60)
 
     configs = [
@@ -152,12 +156,10 @@ def benchmark_noncontiguous():
             raw = torch.randn(L, B, V, device="cuda", dtype=torch.bfloat16)
             logits_nc = raw.transpose(0, 1)
             raw_gb = L * B * V * 2 / 1e9
-            copy_gb = B * L * V * 2 / 1e9
         elif method == "slice_batch":
             raw = torch.randn(B * 2, L, V, device="cuda", dtype=torch.bfloat16)
             logits_nc = raw[::2]
             raw_gb = B * 2 * L * V * 2 / 1e9
-            copy_gb = B * L * V * 2 / 1e9
         else:
             continue
 
@@ -168,19 +170,21 @@ def benchmark_noncontiguous():
             continue
 
         N = B * L
-        print(f"\n{'─'*60}")
+        print(f"\n{'─' * 60}")
         print(f"B={B}, L={L}  {method}  ({N} rows, raw {raw_gb:.2f} GB)")
-        print(f"{'─'*60}")
+        print(f"{'─' * 60}")
 
         def original_with_copy(logits, chunk_size=128):
-            return entropy_from_logits_original(logits.contiguous(), chunk_size=chunk_size)
+            return entropy_from_logits_original(
+                logits.contiguous(), chunk_size=chunk_size
+            )
 
         t_orig = profile_time(original_with_copy, logits_nc)
         t_triton = profile_time(entropy_from_logits, logits_nc)
         orig_mean = statistics.mean(t_orig)
         triton_mean = statistics.mean(t_triton)
 
-        print(f"  TIME (ms):")
+        print("  TIME (ms):")
         print(f"    orig+copy:     {fmt(t_orig, 'ms')}")
         print(f"    triton-strided:{fmt(t_triton, 'ms')}")
         print(f"    speedup:       {orig_mean / triton_mean:.2f}x")
@@ -190,7 +194,7 @@ def benchmark_noncontiguous():
         orig_peak = statistics.mean(m_orig)
         triton_peak = statistics.mean(m_triton)
 
-        print(f"  MEMORY (peak overhead):")
+        print("  MEMORY (peak overhead):")
         print(f"    orig+copy:     {fmt(m_orig, 'MB')}")
         print(f"    triton-strided:{fmt(m_triton, 'MB')}")
         print(f"    saved:         {orig_peak - triton_peak:.1f} MB")

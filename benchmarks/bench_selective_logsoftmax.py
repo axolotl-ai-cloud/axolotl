@@ -7,7 +7,6 @@ import gc
 import statistics
 
 import torch
-import torch.nn.functional as F
 
 from axolotl.monkeypatch.trainer.utils import (
     selective_log_softmax,
@@ -89,9 +88,9 @@ def benchmark_forward():
             continue
 
         N = B * L
-        print(f"\n{'─'*60}")
+        print(f"\n{'─' * 60}")
         print(f"B={B:2d}, L={L:5d}  ({N:6d} rows, logits {mem_gb:.2f} GB)")
-        print(f"{'─'*60}")
+        print(f"{'─' * 60}")
 
         torch.manual_seed(42)
         logits = torch.randn(B, L, V, device="cuda", dtype=torch.bfloat16)
@@ -102,7 +101,7 @@ def benchmark_forward():
         orig_mean = statistics.mean(t_orig)
         triton_mean = statistics.mean(t_triton)
 
-        print(f"  TIME (ms):")
+        print("  TIME (ms):")
         print(f"    original: {fmt(t_orig, 'ms')}")
         print(f"    triton:   {fmt(t_triton, 'ms')}")
         print(f"    speedup:  {orig_mean / triton_mean:.2f}x")
@@ -112,7 +111,7 @@ def benchmark_forward():
         orig_peak = statistics.mean(m_orig)
         triton_peak = statistics.mean(m_triton)
 
-        print(f"  MEMORY (peak overhead):")
+        print("  MEMORY (peak overhead):")
         print(f"    original: {fmt(m_orig, 'MB')}")
         print(f"    triton:   {fmt(m_triton, 'MB')}")
         print(f"    saved:    {orig_peak - triton_peak:.1f} MB")
@@ -152,9 +151,9 @@ def benchmark_backward():
             continue
 
         N = B * L
-        print(f"\n{'─'*60}")
+        print(f"\n{'─' * 60}")
         print(f"B={B:2d}, L={L:5d}  ({N:6d} rows, logits {mem_gb:.2f} GB)")
-        print(f"{'─'*60}")
+        print(f"{'─' * 60}")
 
         torch.manual_seed(42)
         logits_orig = torch.randn(
@@ -168,7 +167,7 @@ def benchmark_backward():
         orig_mean = statistics.mean(t_orig)
         triton_mean = statistics.mean(t_triton)
 
-        print(f"  FWD+BWD TIME (ms):")
+        print("  FWD+BWD TIME (ms):")
         print(f"    original: {fmt(t_orig, 'ms')}")
         print(f"    triton:   {fmt(t_triton, 'ms')}")
         print(f"    speedup:  {orig_mean / triton_mean:.2f}x")
@@ -178,7 +177,7 @@ def benchmark_backward():
         orig_peak = statistics.mean(m_orig)
         triton_peak = statistics.mean(m_triton)
 
-        print(f"  FWD+BWD MEMORY (peak overhead):")
+        print("  FWD+BWD MEMORY (peak overhead):")
         print(f"    original: {fmt(m_orig, 'MB')}")
         print(f"    triton:   {fmt(m_triton, 'MB')}")
         print(f"    saved:    {orig_peak - triton_peak:.1f} MB")
