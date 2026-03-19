@@ -321,9 +321,9 @@ def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
     # check for multimodal models first
     if hasattr(pretrained_model, "language_model"):
         return pretrained_model.language_model.layers
-    if hasattr(pretrained_model, "text_model"):
-        return pretrained_model.text_model.layers
     if hasattr(pretrained_model, "model"):
+        if hasattr(pretrained_model.model, "language_model"):
+            return pretrained_model.model.language_model.layers
         return pretrained_model.model.layers
 
     raise NotImplementedError(
