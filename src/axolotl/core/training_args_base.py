@@ -237,7 +237,9 @@ class AxolotlTrainingMixins:
 
     layer_offloading: bool | None = field(
         default=None,
-        metadata={"help": "Offload model layer parameters to CPU during forward, prefetch back during backward."},
+        metadata={
+            "help": "Offload model layer parameters to CPU during forward, prefetch back during backward."
+        },
     )
 
     # multi-modal section

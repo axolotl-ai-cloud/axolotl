@@ -32,7 +32,7 @@ def _find_decoder_layers(model: nn.Module) -> tuple[nn.ModuleList | None, list[s
     queue = [model]
     while queue:
         m = queue.pop(0)
-        for name, child in m.named_children():
+        for _name, child in m.named_children():
             if isinstance(child, nn.ModuleList) and len(child) > 0:
                 first_type = type(child[0]).__name__
                 if "DecoderLayer" in first_type or "TransformerBlock" in first_type:
@@ -70,7 +70,9 @@ class LayerOffloadManager:
         # Find decoder layers
         self.layers, layer_types = _find_decoder_layers(model)
         if self.layers is None:
-            LOG.warning("LayerOffloadManager: no decoder layers found, offloading disabled")
+            LOG.warning(
+                "LayerOffloadManager: no decoder layers found, offloading disabled"
+            )
             self.enabled = False
             return
 
@@ -103,7 +105,9 @@ class LayerOffloadManager:
 
         # CPU storage: pinned tensors for each layer's frozen params
         # Populated on first offload
-        self._cpu_data: list[dict[str, torch.Tensor]] = [{} for _ in range(self.n_layers)]
+        self._cpu_data: list[dict[str, torch.Tensor]] = [
+            {} for _ in range(self.n_layers)
+        ]
 
         # Offload all layers upfront
         self._offload_all()
@@ -146,9 +150,13 @@ class LayerOffloadManager:
         """Move frozen params of layer idx back to GPU."""
         if idx in self._on_gpu or idx < 0 or idx >= self.n_layers:
             return
-        ctx = torch.cuda.stream(stream) if stream is not None else contextlib.nullcontext()
+        ctx = (
+            torch.cuda.stream(stream)
+            if stream is not None
+            else contextlib.nullcontext()
+        )
         with ctx:
-            for name, param in self._frozen_params[idx]:
+            for _name, param in self._frozen_params[idx]:
                 if param.device.type == "cuda":
                     continue
                 gpu_data = param.data.to(self._device, non_blocking=True)
@@ -183,6 +191,7 @@ class LayerOffloadManager:
                     # Prefetch next layer(s)
                     for offset in range(1, self.num_prefetch + 1):
                         self._prefetch_layer(i + offset)
+
                 return hook
 
             def make_post_fwd(i):
@@ -193,6 +202,7 @@ class LayerOffloadManager:
                     # Offload last layer after forward
                     if i == self.n_layers - 1:
                         self._offload_layer(i)
+
                 return hook
 
             def make_pre_bwd(i):
@@ -204,6 +214,7 @@ class LayerOffloadManager:
                     # Prefetch previous layer(s)
                     for offset in range(1, self.num_prefetch + 1):
                         self._prefetch_layer(i - offset)
+
                 return hook
 
             def make_post_bwd(i):
@@ -214,6 +225,7 @@ class LayerOffloadManager:
                     # Offload first layer after backward
                     if i == 0:
                         self._offload_layer(i)
+
                 return hook
 
             h1 = layer.register_forward_pre_hook(make_pre_fwd(idx))
