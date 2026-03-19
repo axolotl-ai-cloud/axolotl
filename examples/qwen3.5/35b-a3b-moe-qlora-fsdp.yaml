@@ -26,14 +26,13 @@ adapter: qlora
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
-# Using lora_target_modules as is will result in a very small LoRA adapter for the Qwen3.5 MoE architecture
 lora_target_modules:
    - q_proj
    - k_proj
    - v_proj
    - o_proj
 
-# Use manual regex matching to target more modules
+# Use manual regex matching to target shared experts too
 #lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
 
 # Optional
