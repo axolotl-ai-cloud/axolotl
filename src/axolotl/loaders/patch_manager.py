@@ -117,6 +117,7 @@ class PatchManager:
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
         self._apply_trl_vllm_patches()
+        self._apply_trl_trainer_utils_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -678,6 +679,39 @@ class PatchManager:
             from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
 
             patch_trl_vllm()
+
+    def _apply_trl_trainer_utils_patches(self):
+        """Replace trl.trainer.utils.{selective_log_softmax, entropy_from_logits} with Triton kernels."""
+        if not self.cfg.rl:
+            return
+
+        try:
+            from axolotl.monkeypatch.trainer.utils import (
+                entropy_from_logits,
+                selective_log_softmax,
+            )
+        except (ImportError, ModuleNotFoundError):
+            LOG.warning("Triton not available — skipping trl.trainer.utils patches")
+            return
+
+        import trl.trainer.utils
+
+        # Guard against repeated calls: only stash the original if trl still
+        # points at its own implementation (not our wrapper).
+        if trl.trainer.utils.selective_log_softmax is not selective_log_softmax:
+            from axolotl.monkeypatch.trainer import utils as _axolotl_trainer_utils
+
+            _axolotl_trainer_utils.selective_log_softmax_original = (
+                trl.trainer.utils.selective_log_softmax
+            )
+            trl.trainer.utils.selective_log_softmax = selective_log_softmax
+
+        if trl.trainer.utils.entropy_from_logits is not entropy_from_logits:
+            trl.trainer.utils.entropy_from_logits = entropy_from_logits
+
+        LOG.info(
+            "Patched trl.trainer.utils with Triton selective_log_softmax and entropy_from_logits"
+        )
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""
