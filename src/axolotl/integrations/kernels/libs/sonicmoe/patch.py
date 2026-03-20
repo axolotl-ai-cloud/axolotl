@@ -28,7 +28,38 @@ import torch.nn.functional as F
 from axolotl.integrations.kernels.constants import resolve_moe_block_classes
 from axolotl.utils.logging import get_logger
 
+from .lora import (
+    has_lora,
+    materialize_expert_lora,
+    unwrap_experts_lora,
+    unwrap_gate_lora,
+)
+
 LOG = get_logger(__name__)
+
+
+def _get_expert_weights(experts_module):
+    """Extract expert weights, applying LoRA materialization if PEFT is active.
+
+    Returns:
+        (gate_up_weight, down_weight) in SonicMoE layout [dim, dim, E].
+    """
+    if has_lora(experts_module):
+        base_experts, lora_dict = unwrap_experts_lora(experts_module)
+        gate_up = materialize_expert_lora(
+            base_experts.gate_up_proj, lora_dict.get("gate_up_proj")
+        )
+        down = materialize_expert_lora(
+            base_experts.down_proj, lora_dict.get("down_proj")
+        )
+    else:
+        gate_up = experts_module.gate_up_proj
+        down = experts_module.down_proj
+
+    # Permute to SonicMoE layout:
+    #   gate_up: [E, 2*I, H] -> [2*I, H, E]
+    #   down:    [E, H, I]   -> [H, I, E]
+    return gate_up.permute(1, 2, 0), down.permute(1, 2, 0)
 
 
 def patch_sonicmoe(model_type: str, torch_compile: bool = False):
@@ -113,11 +144,8 @@ def _make_general_forward(moe_cls, routing_fn, activation):
             hidden_states_flat, self
         )
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
-        down_weight = self.experts.down_proj.permute(1, 2, 0)
+        # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
+        gate_up_weight, down_weight = _get_expert_weights(self.experts)
         E = gate_up_weight.shape[-1]
 
         output, _ = moe_general_routing_inputs(
@@ -161,22 +189,25 @@ def _make_fused_forward(moe_cls, activation, router_attr):
         # Shared expert (computed early, matching original model ordering)
         shared_expert_output = _compute_shared_expert(self, hidden_states_flat)
 
-        router = getattr(self, router_attr)
+        # Unwrap router for attribute access + optional LoRA delta
+        raw_router = getattr(self, router_attr)
+        base_router, router_weight, router_lora_delta = unwrap_gate_lora(raw_router)
+        if router_lora_delta is not None:
+            effective_router_weight = router_weight + router_lora_delta
+        else:
+            effective_router_weight = router_weight
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
-        down_weight = self.experts.down_proj.permute(1, 2, 0)
+        # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
+        gate_up_weight, down_weight = _get_expert_weights(self.experts)
 
         output, _router_logits, _expert_freq = moe_TC_softmax_topk_layer(
             hidden_states_flat,
-            router.weight,
+            effective_router_weight,
             gate_up_weight,
             None,  # b1 (no gate/up bias)
             down_weight,
             None,  # b2 (no down bias)
-            router.top_k,
+            base_router.top_k,
             torch.cuda.current_stream().cuda_stream,
             activation,
             False,  # is_inference_mode
