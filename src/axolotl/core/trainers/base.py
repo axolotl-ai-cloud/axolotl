@@ -51,7 +51,7 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
-TOKENS_STATE_FILE = "tokens_state."
+TOKENS_STATE_FILE = "tokens_state.json"
 
 REDUCTION_FNS = {
     "mean": torch.mean,
