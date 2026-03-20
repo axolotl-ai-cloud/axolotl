@@ -1,7 +1,4 @@
-base_model: Qwen/Qwen3.5-27B
-
-# Automatically upload checkpoint and final model to HF
-# hub_model_id: username/custom_model_name
+base_model: Qwen/Qwen3.5-122B-A10B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
@@ -24,21 +21,23 @@ sequence_len: 2048
 sample_packing: true
 
 load_in_4bit: true
+quantize_moe_experts: true
 adapter: qlora
 lora_r: 16
 lora_alpha: 32
+lora_dropout: 0
 lora_target_modules:
   - q_proj
   - k_proj
   - v_proj
   - o_proj
-  - down_proj
-  - up_proj
-  # Uncomment below to also target the linear attention projections.
-  # These use separate in_proj_qkv / in_proj_z / out_proj (Qwen3.5-specific).
-  # - linear_attn.in_proj_qkv
-  # - linear_attn.in_proj_z
-  # - linear_attn.out_proj
+# Regex matching to target shared experts too
+# lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
+
+# Target experts
+# lora_target_parameters:
+#   - mlp.experts.gate_up_proj
+#   - mlp.experts.down_proj
 
 wandb_project:
 wandb_entity:
@@ -56,6 +55,10 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
+lora_mlp_kernel: false
+lora_qkv_kernel: false
+lora_o_kernel: false
+
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
@@ -68,3 +71,14 @@ evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+fsdp_config:
+  fsdp_version: 2
+  offload_params: true
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3_5MoeDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
+  activation_checkpointing: true

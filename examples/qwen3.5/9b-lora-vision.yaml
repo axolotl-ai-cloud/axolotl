@@ -26,8 +26,6 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 # Targets the language model attention and MLP layers.
-# Qwen3.5 is early-fusion: all layers (including those seeing vision tokens) share
-# the same transformer stack, so standard attention targets work for both modalities.
 lora_target_modules:
   - q_proj
   - k_proj
