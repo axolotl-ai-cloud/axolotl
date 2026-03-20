@@ -571,15 +571,6 @@ class PatchManager:
         LOG.info("Patching with xformers attention...")
         hijack_llama_attention()
 
-    def _patch_llama_sample_packing(self):
-        """Apply sample packing patches for LLaMA models."""
-        from axolotl.monkeypatch.llama_patch_multipack import (
-            hijack_llama_prepare_4d_mask,
-        )
-
-        LOG.info("Patching llama _prepare_4d_causal_attention_mask*...")
-        hijack_llama_prepare_4d_mask()
-
     def _patch_llama_derived_model(self):
         """Modify all llama derived models in one block."""
         if self.cfg.is_llama_derived_model and not (
@@ -591,8 +582,6 @@ class PatchManager:
                 self._patch_llama_flash_attention()
             elif self.cfg.xformers_attention:
                 self._patch_llama_xformers_attention()
-            elif self.cfg.sample_packing:
-                self._patch_llama_sample_packing()
             elif self.cfg.s2_attention:
                 raise NotImplementedError(
                     "Shifted-sparse attention not currently implemented without flash attention."
