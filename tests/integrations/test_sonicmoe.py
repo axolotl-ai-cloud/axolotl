@@ -6,11 +6,11 @@ import pytest
 import torch
 
 from axolotl.integrations.kernels.args import KernelsArgs
-from axolotl.integrations.kernels.sonicmoe.routing import (
+from axolotl.integrations.kernels.libs.sonicmoe.routing import (
     sigmoid_topk_routing,
     softmax_topk_routing,
 )
-from axolotl.integrations.kernels.sonicmoe.weight_converter import (
+from axolotl.integrations.kernels.libs.sonicmoe.weight_converter import (
     ConcatenatedToInterleaved,
     InterleavedToConcatenated,
     register_sonicmoe_weight_converter,

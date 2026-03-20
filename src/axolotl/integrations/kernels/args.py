@@ -47,6 +47,28 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def warn_sonicmoe_lora_overhead(cls, data):
+        if data.get("use_sonicmoe") is True and data.get("adapter") in (
+            "lora",
+            "qlora",
+        ):
+            lora_target = data.get("lora_target_modules") or []
+            lora_linear = data.get("lora_target_linear_modules") or []
+            targets = (
+                lora_target if isinstance(lora_target, list) else [lora_target]
+            ) + (lora_linear if isinstance(lora_linear, list) else [lora_linear])
+            expert_keywords = ("gate_up_proj", "down_proj", "experts")
+            if any(kw in t for t in targets for kw in expert_keywords):
+                LOG.info(
+                    "SonicMoE + LoRA on expert modules uses runtime weight materialization "
+                    "(W_eff = W + scaling*B@A per forward). This has slightly higher overhead "
+                    "than ScatterMoE's fused Triton LoRA kernels but works with any CUTLASS kernel."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def disable_mlp_kernel(cls, data):
         if data.get("use_scattermoe") is True or data.get("use_sonicmoe") is True:
             if data.get("lora_mlp_kernel") is True:
