@@ -194,18 +194,11 @@ chat_template: qwen2_vl  # same as qwen2-vl
 
 ### Qwen3.5 {#sec-qwen3-5}
 
-::: {.callout-note}
-Qwen3.5-2B is text-only. All larger variants are
-early-fusion VLMs (`Qwen3_5ForConditionalGeneration`).
-:::
-
 ```yaml
 base_model: Qwen/Qwen3.5-9B
 
 chat_template: qwen3_5
 ```
-
-See [examples/qwen3.5/](https://github.com/axolotl-ai/axolotl/blob/main/examples/qwen3.5/) for available configs.
 
 ### GLM-4.6V {#sec-glm-4-6v}
 
