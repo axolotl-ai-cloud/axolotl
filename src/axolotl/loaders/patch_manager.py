@@ -133,13 +133,6 @@ class PatchManager:
         patch_evaluation_loop()
         patch_maybe_log_save_evaluate()
 
-        if self.cfg.context_parallel_size > 1:
-            from axolotl.monkeypatch.transformers.trainer_context_parallel import (
-                patch_prepare_context_parallel_inputs,
-            )
-
-            patch_prepare_context_parallel_inputs()
-
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
         self._finalize_moe_expert_quantization(model)

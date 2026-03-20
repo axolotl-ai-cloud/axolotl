@@ -81,6 +81,7 @@ def patch_prepare_cp():
     import contextlib
 
     from accelerate import Accelerator
+    from transformers import Trainer
 
     def patched_prepare_cp(self, *args):
         if self.parallelism_config.cp_backend == "deepspeed":
@@ -95,4 +96,11 @@ def patch_prepare_cp():
         self._cp_context = _noop_cp_context
         return args
 
+    def _noop_prepare_context_parallel_inputs(self, model, inputs):
+        return contextlib.nullcontext, inputs
+
+    # prevent double CP partition
     Accelerator._prepare_cp = patched_prepare_cp
+
+    # remove unneeded calculation upstream
+    Trainer._prepare_context_parallel_inputs = _noop_prepare_context_parallel_inputs
