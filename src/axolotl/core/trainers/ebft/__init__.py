@@ -85,6 +85,8 @@ class EBFTStrategy:
                     kwargs["ebft_rl_coef"] = ebft.rl_coef
                 if ebft.advantage_estimator is not None:
                     kwargs["ebft_advantage_estimator"] = ebft.advantage_estimator
+                if ebft.min_completion_prefix is not None:
+                    kwargs["ebft_min_completion_prefix"] = ebft.min_completion_prefix
         else:
             # Structured mode: map TRL config fields
             trl = cfg.trl
@@ -136,6 +138,10 @@ class EBFTStrategy:
                     kwargs["sync_ref_model"] = trl.sync_ref_model
                 if trl.repetition_penalty is not None:
                     kwargs["repetition_penalty"] = trl.repetition_penalty
+                if trl.generation_kwargs is not None:
+                    kwargs["generation_kwargs"] = trl.generation_kwargs
+                if trl.chat_template_kwargs is not None:
+                    kwargs["chat_template_kwargs"] = trl.chat_template_kwargs
 
         return kwargs
 

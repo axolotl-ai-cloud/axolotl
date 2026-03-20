@@ -134,6 +134,13 @@ class EBFTConfig(BaseModel):
         default="rloo",
         json_schema_extra={"description": "Advantage estimator: 'rloo', 'group_norm', 'reinforce'"},
     )
+    min_completion_prefix: int = Field(
+        default=0,
+        json_schema_extra={
+            "description": "Minimum tokens into completion before placing anchors. "
+            "Skips anchors too close to the prompt boundary where features are dominated by prompt context."
+        },
+    )
 
 
 class AxolotlInputConfig(

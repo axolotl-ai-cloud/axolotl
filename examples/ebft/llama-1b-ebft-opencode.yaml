@@ -42,7 +42,7 @@ trl:
 datasets:
   - path: nvidia/OpenCodeInstruct
     type: ebft_opencode.transform
-    train_on_split: train[:1%]        # first 1% for validation runs
+    split: train[:1%]        # first 1% for validation runs
 
 # --- Training hyperparameters ---
 sequence_len: 1024

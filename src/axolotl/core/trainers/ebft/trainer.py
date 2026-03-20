@@ -8,11 +8,13 @@ Paper: "Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Mode
        (Jelassi et al., 2026) https://arxiv.org/abs/2603.12248
 """
 
+import contextlib
 import copy
 from typing import Any
 
 import torch
 from datasets import Dataset, IterableDataset
+from peft import PeftModel
 from transformers import PreTrainedModel, PreTrainedTokenizerBase, TrainerCallback
 
 from axolotl.core.trainers.ebft.args import AxolotlEBFTConfig
@@ -71,16 +73,32 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
             peft_config=peft_config,
         )
 
-        # --- Create frozen feature network ---
-        LOG.info("Creating frozen feature network for EBFT...")
+        # --- Feature network setup ---
         unwrapped = self.accelerator.unwrap_model(self.model)
-        self.feature_network = copy.deepcopy(unwrapped)
-        for param in self.feature_network.parameters():
-            param.requires_grad = False
-        self.feature_network.eval()
+        self._share_feature_weights = isinstance(unwrapped, PeftModel)
+
+        if self._share_feature_weights:
+            # Share weights: use actor's base model with adapters disabled.
+            # Saves a full model copy (~8 GB for 4B model).
+            self.feature_network = None
+            param_gb = sum(p.numel() for p in unwrapped.parameters()) * 2 / 1e9
+            LOG.info(
+                f"EBFT feature network shares actor weights (PEFT disable_adapter). "
+                f"Saving ~{param_gb:.1f} GB"
+            )
+        else:
+            LOG.info("Creating frozen feature network for EBFT (deepcopy)...")
+            self.feature_network = copy.deepcopy(unwrapped)
+            for param in self.feature_network.parameters():
+                param.requires_grad = False
+            self.feature_network.eval()
 
         # Compute layer indices from fractional depths
-        num_layers = unwrapped.config.num_hidden_layers
+        # Handle VLM models where num_hidden_layers is on text_config
+        config = unwrapped.config
+        if hasattr(config, "text_config") and hasattr(config.text_config, "num_hidden_layers"):
+            config = config.text_config
+        num_layers = config.num_hidden_layers
         self.feature_layer_indices = [
             int(frac * num_layers) for frac in args.ebft_feature_layers
         ]
@@ -95,6 +113,7 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
         prompts: list,
         completions: list,
         ground_truth: list[str] | None = None,
+        remaining_turns: list | None = None,
         **kwargs,
     ) -> list[float]:
         """
@@ -104,10 +123,17 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
         as a standard reward function. The `ground_truth` field comes from
         the dataset via reward_kwargs.
 
+        For multi-turn conversations, `remaining_turns` contains the subsequent
+        user/assistant turn pairs. When present, we do sequential rollouts:
+        generate each assistant turn conditioned on history + previous generations,
+        then compute feature-matching rewards on the full generated conversation.
+
         Args:
             prompts: List of prompt strings/messages
             completions: List of generated completion strings
             ground_truth: List of reference completion strings (from dataset)
+            remaining_turns: List of remaining conversation turns after the
+                first assistant turn (for multi-turn rollouts)
 
         Returns:
             List of scalar rewards, one per completion
@@ -120,11 +146,18 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
         args = self.args
         num_gens = self.num_generations
 
+        # --- Multi-turn sequential rollout ---
+        # If remaining_turns is provided, generate subsequent assistant turns
+        # by calling vLLM for each turn, building up the full conversation.
+        if remaining_turns is not None and hasattr(self, "vllm_generation"):
+            completions = self._sequential_rollout(
+                prompts, completions, remaining_turns, num_gens
+            )
+
         # --- Tokenize generated sequences: prompt + completion ---
         gen_texts = []
         for p, c in zip(prompts, completions):
             if isinstance(p, list):
-                # Chat format — extract text
                 prompt_text = self.processing_class.apply_chat_template(
                     p, tokenize=False, add_generation_prompt=True
                 )
@@ -172,12 +205,24 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
         gt_mask = gt_encoded["attention_mask"].to(device)
 
         # --- Extract features from frozen feature network ---
-        gen_hidden = extract_hidden_states(
-            self.feature_network, gen_ids, gen_mask, self.feature_layer_indices
-        )
-        gt_hidden = extract_hidden_states(
-            self.feature_network, gt_ids, gt_mask, self.feature_layer_indices
-        )
+        if self._share_feature_weights:
+            unwrapped = self.accelerator.unwrap_model(self.model)
+            feature_ctx = unwrapped.disable_adapter()
+        else:
+            unwrapped = self.feature_network
+            feature_ctx = contextlib.nullcontext()
+
+        with feature_ctx:
+            was_training = unwrapped.training
+            unwrapped.eval()
+            gen_hidden = extract_hidden_states(
+                unwrapped, gen_ids, gen_mask, self.feature_layer_indices
+            )
+            gt_hidden = extract_hidden_states(
+                unwrapped, gt_ids, gt_mask, self.feature_layer_indices
+            )
+            if was_training:
+                unwrapped.train()
 
         # --- Pool to sequence-level embeddings ---
         gen_emb = apply_embed_method(gen_hidden, args.ebft_embed_method, gen_mask)
@@ -209,6 +254,105 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
         alignment = get_alignment_rewards(gen_emb, gt_emb_expanded)
         diversity = get_diversity_rewards(gen_emb, num_gens)
 
+        # Scale by 2 per paper equation (7):
+        #   r_j = 2*φ(ŷ_j)^T*φ(y) - 2/(n-1) * Σ_{j'≠j} φ(ŷ_j)^T*φ(ŷ_{j'})
+        alignment = alignment * 2
+        diversity = diversity * 2
+
         rewards = args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
 
+        # Log feature-matching metrics
+        LOG.info(
+            f"ebft reward | "
+            f"align {alignment.mean().item():+.3f} ^ | "
+            f"divers {diversity.mean().item():+.3f} v | "
+            f"reward {rewards.mean().item():+.3f} ^"
+        )
+
         return rewards.cpu().tolist()
+
+    @torch.no_grad()
+    def _sequential_rollout(
+        self,
+        prompts: list,
+        first_completions: list,
+        remaining_turns: list,
+        num_gens: int,
+    ) -> list:
+        """
+        Extend single-turn completions into multi-turn conversations.
+
+        For each prompt group, takes the first generated assistant turn and
+        sequentially generates subsequent assistant turns by calling vLLM,
+        building up a full multi-turn conversation.
+
+        Args:
+            prompts: List of prompt message lists (repeated num_gens times)
+            first_completions: List of generated first-turn completions
+            remaining_turns: List of remaining turn pairs after first assistant turn.
+                Each element is a list of dicts: [{"role": "user", "content": "..."},
+                {"role": "assistant", "content": "...GT..."}]
+            num_gens: Number of generations per prompt
+
+        Returns:
+            Extended completions incorporating all generated turns
+        """
+        vllm_client = self.vllm_generation.client
+        max_tokens = getattr(self.args, "max_completion_length", 256)
+        temperature = getattr(self.args, "temperature", 0.7)
+        gen_kwargs = getattr(self.args, "generation_kwargs", None) or {}
+
+        extended_completions = []
+
+        for idx in range(len(prompts)):
+            prompt_msgs = prompts[idx] if isinstance(prompts[idx], list) else []
+            first_comp = first_completions[idx]
+
+            # Extract first completion text
+            if isinstance(first_comp, list):
+                first_text = first_comp[0].get("content", "") if first_comp else ""
+            else:
+                first_text = first_comp
+
+            # Get remaining turns for this prompt (same for all num_gens copies)
+            prompt_idx = idx // num_gens
+            turns = remaining_turns[prompt_idx] if prompt_idx < len(remaining_turns) else []
+
+            if not turns:
+                # No remaining turns — just use the first completion
+                extended_completions.append(first_comp)
+                continue
+
+            # Build conversation with generated first turn
+            conv = list(prompt_msgs) + [{"role": "assistant", "content": first_text}]
+            full_gen_text = first_text
+
+            # Generate subsequent turns
+            for turn in turns:
+                if turn["role"] == "user":
+                    conv.append(turn)
+                elif turn["role"] == "assistant":
+                    # Generate this assistant turn via vLLM
+                    try:
+                        result = vllm_client.chat(
+                            messages=[conv],
+                            n=1,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            generation_kwargs=gen_kwargs,
+                        )
+                        # Extract generated text
+                        gen_ids = result.get("completion_ids", [[]])[0]
+                        gen_text = self.processing_class.decode(
+                            gen_ids, skip_special_tokens=True
+                        )
+                    except Exception as e:
+                        LOG.warning(f"Multi-turn rollout generation failed: {e}")
+                        gen_text = ""
+
+                    conv.append({"role": "assistant", "content": gen_text})
+                    full_gen_text += gen_text
+
+            extended_completions.append(full_gen_text)
+
+        return extended_completions

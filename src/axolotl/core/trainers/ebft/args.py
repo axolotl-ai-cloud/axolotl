@@ -88,3 +88,7 @@ class AxolotlStridedEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, TrainingA
         default="rloo",
         metadata={"help": "Advantage estimator: 'rloo', 'group_norm', or 'reinforce'"},
     )
+    ebft_min_completion_prefix: int = field(
+        default=0,
+        metadata={"help": "Minimum tokens into completion before placing anchors"},
+    )

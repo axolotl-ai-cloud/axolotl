@@ -26,7 +26,7 @@ ebft:
 datasets:
   - path: sjelassi/swallow_code_20m
     type: ebft_pretrain.transform
-    train_on_split: train[:5000]
+    split: train[:5000]
 
 sequence_len: 1024
 micro_batch_size: 1

@@ -9,6 +9,7 @@ from transformers import PreTrainedTokenizer
 
 from axolotl.loaders import load_tokenizer
 from axolotl.prompt_strategies.dpo import load as load_dpo
+from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.orpo import load as load_orpo
 from axolotl.utils.data.lock import FileLockLoader
@@ -209,12 +210,30 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                 ds_transform_fn = load_orpo(_type, cfg, dataset_idx=i)
             elif cfg.rl is RLType.KTO:
                 ds_transform_fn = load_kto(_type, cfg, dataset_idx=i)
+            elif cfg.rl is RLType.EBFT:
+                ds_transform_fn = load_ebft(_type, cfg, dataset_idx=i)
             else:
                 ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
 
             map_kwargs: dict[str, Any] = {}
             if isinstance(ds_transform_fn, tuple):
                 ds_transform_fn, map_kwargs = ds_transform_fn
+            # Handle remove_columns: "__all__" removes all original columns,
+            # or filter a list to only columns that exist in the dataset
+            if "remove_columns" in map_kwargs:
+                ds_columns = (
+                    dataset.column_names
+                    if isinstance(dataset, Dataset)
+                    else dataset["train"].column_names
+                    if isinstance(dataset, DatasetDict)
+                    else []
+                )
+                if map_kwargs["remove_columns"] == "__all__":
+                    map_kwargs["remove_columns"] = list(ds_columns)
+                else:
+                    map_kwargs["remove_columns"] = [
+                        c for c in map_kwargs["remove_columns"] if c in ds_columns
+                    ]
             split_datasets[i] = _map_dataset(
                 cfg, dataset, ds_transform_fn, tokenizer, **map_kwargs
             )

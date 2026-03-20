@@ -1,7 +1,7 @@
-# EBFT Strided Mode: For unstructured text data (raw code, prose)
-# Uses strided block-parallel generation — no vLLM needed.
+# EBFT Strided Structured Mode: For structured (prompt, completion) data
+# Uses strided block-parallel generation on completion spans — no vLLM needed.
 #
-# Run: CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-strided.yaml
+# Run: CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-strided-structured.yaml
 
 base_model: meta-llama/Llama-3.2-1B
 rl: ebft
@@ -20,24 +20,25 @@ ebft:
   alignment_coef: 1.0
   diversity_coef: 1.0
   rl_coef: 1.0
-  ce_coef: 0.0
+  ce_coef: 0.03                       # small CE weight for structured data
   advantage_estimator: rloo
+  min_completion_prefix: 8            # skip anchors too close to prompt boundary
 
 datasets:
-  - path: sjelassi/swallow_code_20m
-    type: ebft_pretrain.transform
-    split: train[:100]
+  - path: nvidia/OpenCodeInstruct
+    type: ebft_strided_structured.transform
+    split: train[:1%]
 
-sequence_len: 256
+sequence_len: 2048
 micro_batch_size: 1
 gradient_accumulation_steps: 2
 num_epochs: 1
-max_steps: 5
+# max_steps: 10
 
 learning_rate: 1.0e-6
 optimizer: adamw_torch_fused
 lr_scheduler: cosine
-warmup_steps: 2
+warmup_steps: 5
 
 adapter: lora
 lora_r: 16
@@ -47,13 +48,17 @@ lora_target_linear: true
 
 bf16: auto
 flash_attention: false  # strided EBFT overrides to flex_attention (or eager fallback) at runtime
+flex_attention: true    # fused flex_attention kernel compiles itself; don't set torch_compile: true
+                        # (full-model compile conflicts with gradient checkpointing + flex_attention)
 gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: true   # required for flex_attention (non-reentrant causes CheckpointError)
 
 special_tokens:
   pad_token: "<|end_of_text|>"
 
 val_set_size: 0.0
-output_dir: ./outputs/ebft-strided-validation
+output_dir: ./outputs/ebft-strided-structured
 
 wandb_project: ebft
 logging_steps: 1
