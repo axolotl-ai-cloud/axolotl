@@ -376,10 +376,14 @@ def _load_and_process_single_dataset(
     streaming: bool = False,
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
-    # Load the dataset
-    dataset = load_dataset_with_config(
-        dataset_config, cfg.hf_use_auth_token, streaming=streaming
-    )
+    # For synthetic datasets, create a minimal placeholder instead of loading from path
+    if dataset_config.path == "synthetic":
+        dataset = Dataset.from_dict({"text": [""]})
+    else:
+        # Load the dataset
+        dataset = load_dataset_with_config(
+            dataset_config, cfg.hf_use_auth_token, streaming=streaming
+        )
 
     # Parse dataset type
     d_base_type, d_prompt_style = _parse_dataset_type(dataset_config.type)
