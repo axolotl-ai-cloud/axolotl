@@ -6,9 +6,6 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ## Getting started
 
-Note: Training this model requires weights in BF16 which we will link to later.
-Users interested in training can convert / descale the existing FP8 weights.
-
 1. Install Axolotl following the [installation guide](https://docs.axolotl.ai/docs/installation.html).
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage
