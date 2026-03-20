@@ -9,7 +9,7 @@ YAML configuration example:
 
     datasets:
       - path: synthetic
-        type: synthetic
+        type: _synthetic
         length: 1000
         sequence_length: 2048
         min_input_id: 100

@@ -1724,7 +1724,7 @@ class TestSyntheticDatasetValidation(BaseValidation):
             [
                 {
                     "path": "synthetic",
-                    "type": "synthetic",
+                    "type": "_synthetic",
                     "length": 100,
                     "sequence_length": 64,
                 }
@@ -1736,7 +1736,7 @@ class TestSyntheticDatasetValidation(BaseValidation):
 
     def test_synthetic_already_sft_does_not_crash(self, minimal_cfg):
         """Synthetic dataset already parsed as SFTDataset should not raise AttributeError."""
-        sft = SFTDataset(path="synthetic", type="synthetic")
+        sft = SFTDataset(path="synthetic", type="_synthetic")
         cfg = self._make_cfg(minimal_cfg, [sft])
 
         # Before the fix, this raised:

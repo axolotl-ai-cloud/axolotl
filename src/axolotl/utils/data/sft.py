@@ -377,7 +377,7 @@ def _load_and_process_single_dataset(
 ) -> tuple[Dataset | IterableDataset, Prompter | None]:
     """Load and process a single dataset based on the passed config."""
     # For synthetic datasets, create a minimal placeholder instead of loading from path
-    if dataset_config.path == "synthetic":
+    if dataset_config.type == "_synthetic":
         dataset = Dataset.from_dict({"text": [""]})
     else:
         # Load the dataset

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from datasets import Dataset
 
-from axolotl.prompt_strategies.synthetic import SyntheticDatasetStrategy, load
+from axolotl.prompt_strategies._synthetic import SyntheticDatasetStrategy, load
 from axolotl.utils.dict import DictDefault
 
 

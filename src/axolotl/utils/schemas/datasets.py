@@ -305,7 +305,7 @@ class SyntheticDataset(BaseModel):
     """
 
     path: Literal["synthetic"] = "synthetic"
-    type: Literal["synthetic"] = "synthetic"
+    type: Literal["_synthetic"] = "_synthetic"
     length: int = Field(
         default=1000,
         json_schema_extra={"description": "Number of rows to generate"},
