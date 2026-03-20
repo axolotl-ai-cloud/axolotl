@@ -490,19 +490,70 @@ class HFScatterMoEGatedMLP(nn.Module):
         experts, gup_lora, down_lora = _unwrap_experts_lora(self.experts)
 
         # ====================================================================
+        # Selective expert weight dequantization
+        # ====================================================================
+        # When experts are BnB-quantized (quantize_moe_experts), dequantize
+        # only the active experts instead of all E. This saves ~97% memory
+        # for the transient dequant buffer when few experts are active.
+        use_selective = (
+            getattr(self, "_use_selective_dequant", False)
+            and hasattr(experts, "parametrizations")
+            and "gate_up_proj" in experts.parametrizations
+        )
+
+        if use_selective:
+            from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (
+                get_active_experts,
+                remap_expert_indices,
+                selective_expert_weights,
+                selective_lora_weights,
+            )
+
+            active_experts = get_active_experts(sorted_expert_idxs, num_experts)
+            remapped_expert_idxs, compact_offsets = remap_expert_indices(
+                sorted_expert_idxs,
+                expert_offsets,
+                active_experts,
+                num_experts,
+            )
+            # Dequantize only active experts' weights
+            gate_up_W = selective_expert_weights(
+                experts,
+                "gate_up_proj",
+                active_experts,
+            ).transpose(2, 1)  # [num_active, hidden, 2*inter]
+
+            # Remap LoRA weights to match compact expert indices
+            if gup_lora is not None:
+                gup_A, gup_B, gup_scaling = gup_lora
+                gup_A, gup_B = selective_lora_weights(
+                    gup_A,
+                    gup_B,
+                    active_experts,
+                    num_experts,
+                )
+                gup_lora = (gup_A, gup_B, gup_scaling)
+
+            # Use remapped indices for ScatterMoE kernels
+            sei_gup = remapped_expert_idxs
+            eo_gup = compact_offsets
+        else:
+            gate_up_W = experts.gate_up_proj.transpose(2, 1)  # [E, hidden, 2*inter]
+            sei_gup = sorted_expert_idxs
+            eo_gup = expert_offsets
+
+        # ====================================================================
         # Gate + Up projection
         # ====================================================================
-        gate_up_W = experts.gate_up_proj.transpose(2, 1)  # [E, hidden, 2*inter]
-
         if gup_lora is not None:
             gup_A, gup_B, gup_scaling = gup_lora
             gup = parallel_linear_lora(
                 hidden_states_flat,
                 gate_up_W,
                 top_k,
-                sorted_expert_idxs,
+                sei_gup,
                 sorted_scattered_idxs,
-                expert_offsets,
+                eo_gup,
                 lora_A=gup_A,
                 lora_B=gup_B,
                 scaling=gup_scaling,
@@ -516,9 +567,9 @@ class HFScatterMoEGatedMLP(nn.Module):
                 hidden_states_flat,
                 gate_up_W,
                 top_k,
-                sorted_expert_idxs,
+                sei_gup,
                 sorted_scattered_idxs,
-                expert_offsets,
+                eo_gup,
                 grouped_in=False,
                 grouped_out=True,
             )
@@ -529,7 +580,29 @@ class HFScatterMoEGatedMLP(nn.Module):
         # ====================================================================
         # Down projection
         # ====================================================================
-        down_W = experts.down_proj.transpose(2, 1)  # [E, inter, hidden]
+        if use_selective:
+            down_W = selective_expert_weights(
+                experts,
+                "down_proj",
+                active_experts,
+            ).transpose(2, 1)  # [num_active, inter, hidden]
+
+            if down_lora is not None:
+                down_A, down_B, down_scaling = down_lora
+                down_A, down_B = selective_lora_weights(
+                    down_A,
+                    down_B,
+                    active_experts,
+                    num_experts,
+                )
+                down_lora = (down_A, down_B, down_scaling)
+
+            sei_down = remapped_expert_idxs
+            eo_down = compact_offsets
+        else:
+            down_W = experts.down_proj.transpose(2, 1)  # [E, inter, hidden]
+            sei_down = sorted_expert_idxs
+            eo_down = expert_offsets
 
         if down_lora is not None:
             down_A, down_B, down_scaling = down_lora
@@ -537,9 +610,9 @@ class HFScatterMoEGatedMLP(nn.Module):
                 h,
                 down_W,
                 1,
-                sorted_expert_idxs,
+                sei_down,
                 sorted_scattered_idxs,
-                expert_offsets,
+                eo_down,
                 lora_A=down_A,
                 lora_B=down_B,
                 scaling=down_scaling,
@@ -554,9 +627,9 @@ class HFScatterMoEGatedMLP(nn.Module):
                 h,
                 down_W,
                 1,
-                sorted_expert_idxs,
+                sei_down,
                 sorted_scattered_idxs,
-                expert_offsets,
+                eo_down,
                 grouped_in=True,
                 grouped_out=False,
                 gates=routing_weights,

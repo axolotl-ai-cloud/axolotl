@@ -68,10 +68,6 @@ def run_cmd(cmd: str, run_folder: str):
     sp_env["AXOLOTL_DATASET_NUM_PROC"] = "8"
 
     # Propagate errors from subprocess.
-    try:
-        exit_code = subprocess.call(cmd.split(), cwd=run_folder, env=sp_env)  # nosec
-        if exit_code:
-            print(f"Command '{cmd}' failed with exit code {exit_code}")
-            return exit_code
-    except Exception as e:  # pylint: disable=broad-except
-        print(f"Command '{cmd}' failed with exception {e}")
+    exit_code = subprocess.call(cmd.split(), cwd=run_folder, env=sp_env)  # nosec
+    if exit_code:
+        raise RuntimeError(f"Command '{cmd}' failed with exit code {exit_code}")

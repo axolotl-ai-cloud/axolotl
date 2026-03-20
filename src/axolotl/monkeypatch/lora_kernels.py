@@ -51,6 +51,29 @@ QKV_PATCHES = [
     value_states = value_states.view(hidden_shape).transpose(1, 2)
 """.lstrip("\n"),
     ),
+    (
+        """
+    query_states, gate = torch.chunk(
+        self.q_proj(hidden_states).view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
+    )
+    gate = gate.reshape(*input_shape, -1)
+
+    query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
+    key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+    value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+""".lstrip("\n"),
+        """
+    query_states, key_states, value_states = self.apply_qkv(hidden_states)
+    query_states, gate = torch.chunk(
+        query_states.view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
+    )
+    gate = gate.reshape(*input_shape, -1)
+
+    query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
+    key_states = self.k_norm(key_states.view(hidden_shape)).transpose(1, 2)
+    value_states = value_states.view(hidden_shape).transpose(1, 2)
+""".lstrip("\n"),
+    ),
 ]
 
 ORIGINAL_O_CODE = """
@@ -299,6 +322,8 @@ def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
     if hasattr(pretrained_model, "language_model"):
         return pretrained_model.language_model.layers
     if hasattr(pretrained_model, "model"):
+        if hasattr(pretrained_model.model, "language_model"):
+            return pretrained_model.model.language_model.layers
         return pretrained_model.model.layers
 
     raise NotImplementedError(

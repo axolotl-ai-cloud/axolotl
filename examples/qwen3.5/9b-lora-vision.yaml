@@ -1,4 +1,4 @@
-base_model: Qwen/Qwen3.5-7B
+base_model: Qwen/Qwen3.5-9B
 processor_type: AutoProcessor
 
 # These 3 lines are required for vision/multimodal training
