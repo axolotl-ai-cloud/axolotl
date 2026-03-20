@@ -790,6 +790,14 @@ class OptimizationValidationMixin:
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
 
+    @staticmethod
+    def _resolve_fsdp_version(data):
+        """Resolve FSDP version from top-level fsdp_version or fsdp_config.fsdp_version."""
+        fsdp_version = data.get("fsdp_version")
+        if fsdp_version is None:
+            fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+        return fsdp_version
+
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
@@ -799,12 +807,29 @@ class OptimizationValidationMixin:
                     "Muon optimizer is currently incompatible with DeepSpeed"
                 )
             if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = data.get("fsdp_version")
-                if fsdp_version is None:
-                    fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+                fsdp_version = cls._resolve_fsdp_version(data)
                 if str(fsdp_version) != "2":
                     raise ValueError(
                         "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
+                    )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_flashoptim_deepspeed_fsdp(cls, data):
+        optimizer = data.get("optimizer") or ""
+        if str(optimizer).startswith("flash_"):
+            if data.get("deepspeed"):
+                raise ValueError(
+                    f"{optimizer} optimizer is incompatible with DeepSpeed. "
+                    "Flash optimizers only support DDP and FSDP2."
+                )
+            if data.get("fsdp") or data.get("fsdp_config"):
+                fsdp_version = cls._resolve_fsdp_version(data)
+                if str(fsdp_version) != "2":
+                    raise ValueError(
+                        f"{optimizer} optimizer is only compatible with FSDP2. "
+                        "Set fsdp_version: 2 to use flash optimizers with FSDP."
                     )
         return data
 

@@ -353,6 +353,30 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = (eps1, eps2)
 
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adamw":
+                from flashoptim import FlashAdamW
+
+                optimizer_cls = FlashAdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adam":
+                from flashoptim import FlashAdam
+
+                optimizer_cls = FlashAdam
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_sgd":
+                from flashoptim import FlashSGD
+
+                optimizer_cls = FlashSGD
+            elif self.cfg.optimizer == "flash_sgdw":
+                from flashoptim import FlashSGDW
+
+                optimizer_cls = FlashSGDW
+            elif self.cfg.optimizer == "flash_lion":
+                from flashoptim import FlashLion
+
+                optimizer_cls = FlashLion
+                if "betas" in adam_kwargs:
+                    optimizer_kwargs["betas"] = adam_kwargs["betas"]
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
