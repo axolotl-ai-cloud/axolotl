@@ -5,6 +5,7 @@ E2E tests for custom optimizers using Llama
 import unittest
 
 import pytest
+
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -283,7 +284,6 @@ class TestCustomOptimizers(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
-
 
 
 @require_torch_2_7_0
