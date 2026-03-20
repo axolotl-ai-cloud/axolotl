@@ -27,16 +27,15 @@ lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
 lora_target_modules:
-   - q_proj
-   - k_proj
-   - v_proj
-   - o_proj
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Regex matching to target shared experts too
+# lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
 
-# Use manual regex matching to target shared experts too
-#lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
-
-# Optional
-#lora_target_parameters:
+# Target experts
+# lora_target_parameters:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
 
@@ -55,7 +54,6 @@ learning_rate: 0.0002
 
 bf16: auto
 tf32: true
-
 
 lora_mlp_kernel: false
 lora_qkv_kernel: false

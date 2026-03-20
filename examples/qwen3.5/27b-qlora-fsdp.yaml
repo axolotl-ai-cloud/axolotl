@@ -1,9 +1,7 @@
 base_model: Qwen/Qwen3.5-27B
+
 # Automatically upload checkpoint and final model to HF
 # hub_model_id: username/custom_model_name
-# Note: Qwen3.5 is an early-fusion VLM (image+text). This config fine-tunes
-# the text-only path. For multimodal (image+text) fine-tuning, add image
-# columns to your dataset following axolotl's multimodal dataset format.
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
