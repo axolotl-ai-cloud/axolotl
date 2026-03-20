@@ -313,10 +313,14 @@ def validate_config(
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
-            elif ds_cfg.get("path") == "synthetic" and not isinstance(
-                ds_cfg, SyntheticDataset
-            ):
-                cfg["datasets"][idx] = SyntheticDataset(**dict(ds_cfg))
+            elif (
+                ds_cfg.get("path")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "path", None)
+            ) == "synthetic" and not isinstance(ds_cfg, SyntheticDataset):
+                cfg["datasets"][idx] = SyntheticDataset(
+                    **(ds_cfg if isinstance(ds_cfg, dict) else dict(ds_cfg))
+                )
             elif not isinstance(ds_cfg, SFTDataset):
                 cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 
