@@ -255,6 +255,23 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def set_reward_model_defaults(cls, data):
+        if data.get("reward_model"):
+            if data.get("num_labels") is None:
+                data["num_labels"] = 1
+            if not (data.get("type_of_model") or data.get("model_type")):
+                data["model_type"] = "AutoModelForSequenceClassification"
+
+        if data.get("process_reward_model"):
+            if data.get("num_labels") is None:
+                data["num_labels"] = 2
+            if not (data.get("type_of_model") or data.get("model_type")):
+                data["model_type"] = "AutoModelForTokenClassification"
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_gas_bsz(cls, data):
         if data.get("gradient_accumulation_steps") and data.get("batch_size"):
             raise ValueError(
