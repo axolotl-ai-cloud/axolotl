@@ -61,7 +61,16 @@ class KernelsPlugin(BasePlugin):
         return "axolotl.integrations.kernels.KernelsArgs"
 
     def pre_model_load(self, cfg):
+        from axolotl.integrations.kernels.constants import SPARSE_MOE_BLOCK
+
+        # Prefer text backbone type for VLMs, but fall back to base type
+        # when the text type isn't in the supported mapping (e.g. qwen3_5_moe_text)
         moe_model_type = cfg.model_config_type_text or cfg.model_config_type
+        if (
+            moe_model_type not in SPARSE_MOE_BLOCK
+            and cfg.model_config_type in SPARSE_MOE_BLOCK
+        ):
+            moe_model_type = cfg.model_config_type
 
         if cfg.use_scattermoe:
             self._register_kernels()
