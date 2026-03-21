@@ -172,6 +172,18 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Llama4TextAttention
 
+    if model_type == "ernie4_5":
+        from transformers.models.ernie4_5.modeling_ernie4_5 import Ernie4_5Attention
+
+        return Ernie4_5Attention
+
+    if model_type == "ernie4_5_moe":
+        from transformers.models.ernie4_5_moe.modeling_ernie4_5_moe import (
+            Ernie4_5_MoeAttention,
+        )
+
+        return Ernie4_5_MoeAttention
+
     if model_type == "mistral3":
         from transformers.models.mistral.modeling_mistral import MistralAttention
 
