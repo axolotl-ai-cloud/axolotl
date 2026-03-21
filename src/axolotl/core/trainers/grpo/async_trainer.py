@@ -1088,7 +1088,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
     # Background-thread generation (no scoring)
     # ------------------------------------------------------------------
 
-    def _generate_single_turn(self, prompts, **kwargs):
+    def _generate_single_turn(self, prompts, *args, **kwargs):
         """Override to prevent weight sync from background thread and to use
         no-merge sync for PEFT models (FP8 models can't merge_adapter)."""
         is_bg = threading.current_thread() is not threading.main_thread()
@@ -1121,7 +1121,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         self._patched_sync_weights = True
 
         try:
-            return super()._generate_single_turn(prompts, **kwargs)
+            return super()._generate_single_turn(prompts, *args, **kwargs)
         finally:
             if saved_step is not None:
                 self._last_loaded_step = saved_step
