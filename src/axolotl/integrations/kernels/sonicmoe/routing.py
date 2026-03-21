@@ -373,15 +373,11 @@ def softmax_group_limited_topk_routing(
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     if topk_method == "greedy":
-        topk_weights, topk_indices = torch.topk(
-            router_probs, k=K, dim=-1, sorted=False
-        )
+        topk_weights, topk_indices = torch.topk(router_probs, k=K, dim=-1, sorted=False)
     elif topk_method == "group_limited_greedy":
         # Group selection: pick top groups by max score per group
         group_scores = (
-            router_probs.view(T, num_group, num_experts // num_group)
-            .max(dim=-1)
-            .values
+            router_probs.view(T, num_group, num_experts // num_group).max(dim=-1).values
         )  # [T, num_group]
         group_idx = torch.topk(
             group_scores, k=moe_block.topk_group, dim=-1, sorted=False
@@ -394,9 +390,7 @@ def softmax_group_limited_topk_routing(
             .reshape(T, -1)
         )
         tmp_scores = router_probs.masked_fill(~score_mask.bool(), 0.0)
-        topk_weights, topk_indices = torch.topk(
-            tmp_scores, k=K, dim=-1, sorted=False
-        )
+        topk_weights, topk_indices = torch.topk(tmp_scores, k=K, dim=-1, sorted=False)
     else:
         raise ValueError(
             f"DeepSeek V2: unsupported topk_method '{topk_method}'. "
