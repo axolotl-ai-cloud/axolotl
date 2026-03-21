@@ -822,6 +822,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
         obj_list = [rollout if self.accelerator.is_main_process else None]
         dist.broadcast_object_list(obj_list, src=0)
         rollout = obj_list[0]
+        assert rollout is not None, "broadcast_object_list failed to deliver rollout"
 
         # Move tensors to local device (broadcast deserializes to CPU)
         device = self.accelerator.device

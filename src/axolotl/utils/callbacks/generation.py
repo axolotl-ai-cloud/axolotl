@@ -71,10 +71,10 @@ class SFTGenerationCallback(TrainerCallback):
             try:
                 import wandb
 
-                if wandb.run is not None:
-                    wandb.log(
+                if wandb.run is not None:  # type: ignore[attr-defined]
+                    wandb.log(  # type: ignore[attr-defined]
                         {
-                            f"samples/sample_{i + 1}": wandb.Html(
+                            f"samples/sample_{i + 1}": wandb.Html(  # type: ignore[attr-defined]
                                 f"<pre>{wandb_text}</pre>"
                             )
                         },
