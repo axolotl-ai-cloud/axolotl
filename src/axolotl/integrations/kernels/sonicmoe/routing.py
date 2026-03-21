@@ -457,7 +457,7 @@ def softmax_topk_wg_routing(
     top_values, top_indices = torch.topk(router_probs, K, dim=-1)  # [T, K] each
 
     # Always renormalize (HunYuan V1 has no norm_topk_prob flag)
-    top_values = top_values / top_values.sum(dim=-1, keepdim=True)
+    top_values = top_values / (top_values.sum(dim=-1, keepdim=True) + 1e-20)
 
     # Flatten for moe_general_routing_inputs
     token_indices = (
