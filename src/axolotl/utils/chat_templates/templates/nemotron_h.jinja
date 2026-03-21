@@ -1,4 +1,4 @@
-{%- if messages[0].role == 'system' %}
+{%- if messages and messages[0].role == 'system' %}
     {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
     {%- set messages = messages[1:] %}
 {%- endif %}

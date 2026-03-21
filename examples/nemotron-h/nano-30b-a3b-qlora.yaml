@@ -25,6 +25,8 @@ dataset_prepared_path: last_run_prepared
 sequence_len: 4096
 sample_packing: true
 
+use_cut_cross_entropy: true
+
 load_in_4bit: true
 quantize_moe_experts: true
 adapter: qlora
@@ -36,6 +38,10 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
+  # Uncomment to also train MoE expert weights:
+  # - up_proj
+  # - down_proj
+  # - gate_proj
 
 wandb_project:
 wandb_entity:
