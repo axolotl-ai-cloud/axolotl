@@ -943,8 +943,8 @@ def _scatter2scatter_lora_dX_configs():
 
     Search space:
       BLOCK_M:    {32, 64, 128}        (token tile)
-      BLOCK_K:    {32, 64}   (output tile)
-      BLOCK_N:    {32, 64, 128, 256}   (reduction tile)
+      BLOCK_K:    {32, 64, 128}   (output tile)
+      BLOCK_N:    {32, 64}   (reduction tile)
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
     """
@@ -1279,7 +1279,7 @@ def _group_bwd_lora_configs():
 
     Search space:
       BLOCK_M:    {32, 64, 128}   (token-loop tile)
-      BLOCK_K:    {32, 64, 128, 256}
+      BLOCK_K:    {32, 64, 128}
       BLOCK_N:    {32, 64}
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
