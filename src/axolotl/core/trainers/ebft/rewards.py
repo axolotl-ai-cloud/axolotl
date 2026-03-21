@@ -74,17 +74,20 @@ def apply_embed_method(
     hidden_states: torch.Tensor,
     method: str,
     attention_mask: torch.Tensor | None = None,
+    prompt_lengths: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Pool per-token hidden states into per-sequence embeddings.
 
     Args:
         hidden_states: (B, S, D) concatenated hidden states
-        method: One of "last_token", "mean_pooling", "concat"
+        method: One of "last_token", "mean_pooling", "completion_mean", "concat"
         attention_mask: (B, S) mask for mean pooling
+        prompt_lengths: (B,) number of prompt tokens per sample (for completion_mean)
 
     Returns:
-        Sequence embeddings: (B, D) for last_token/mean_pooling, (B, 3*D) for concat
+        Sequence embeddings: (B, D) for last_token/mean_pooling/completion_mean,
+                             (B, 3*D) for concat
     """
     if method == "last_token":
         if attention_mask is not None:
@@ -98,6 +101,18 @@ def apply_embed_method(
             mask = attention_mask.unsqueeze(-1).float()  # (B, S, 1)
             return (hidden_states * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
         return hidden_states.mean(dim=1)
+
+    if method == "completion_mean":
+        # Mean pool over completion tokens only (exclude prompt)
+        if prompt_lengths is None:
+            raise ValueError("completion_mean requires prompt_lengths")
+        B, S, _ = hidden_states.shape
+        positions = torch.arange(S, device=hidden_states.device).unsqueeze(0)  # (1, S)
+        comp_mask = positions >= prompt_lengths.unsqueeze(1)  # (B, S)
+        if attention_mask is not None:
+            comp_mask = comp_mask & attention_mask.bool()
+        mask = comp_mask.unsqueeze(-1).float()  # (B, S, 1)
+        return (hidden_states * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
 
     if method == "concat":
         seq_len = hidden_states.shape[1]

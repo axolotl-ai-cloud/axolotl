@@ -220,6 +220,7 @@ class EBFTMixin:
 
         # --- Tokenize generated sequences: prompt + completion ---
         gen_texts = []
+        gen_prompt_texts = []
         for p, c in zip(prompts, completions, strict=True):
             if isinstance(p, list):
                 prompt_text = self.processing_class.apply_chat_template(
@@ -232,6 +233,7 @@ class EBFTMixin:
             else:
                 comp_text = c
             gen_texts.append(prompt_text + comp_text)
+            gen_prompt_texts.append(prompt_text)
 
         gen_encoded = self.processing_class(
             text=gen_texts,
@@ -246,8 +248,18 @@ class EBFTMixin:
         gen_ids = gen_encoded["input_ids"].to(device)
         gen_mask = gen_encoded["attention_mask"].to(device)
 
+        # Compute prompt lengths for completion_mean pooling
+        gen_prompt_lengths = torch.tensor(
+            [
+                len(self.processing_class.encode(pt, add_special_tokens=False))
+                for pt in gen_prompt_texts
+            ],
+            device=device,
+        )
+
         # --- Tokenize ground-truth sequences: prompt + ground_truth ---
         gt_texts = []
+        gt_prompt_texts = []
         for i, (p, gt) in enumerate(zip(prompts, ground_truth, strict=True)):
             if i % num_gens != 0:
                 continue  # Only need one GT per prompt group
@@ -258,6 +270,7 @@ class EBFTMixin:
             else:
                 prompt_text = p
             gt_texts.append(prompt_text + gt)
+            gt_prompt_texts.append(prompt_text)
 
         gt_encoded = self.processing_class(
             text=gt_texts,
@@ -271,6 +284,14 @@ class EBFTMixin:
         )
         gt_ids = gt_encoded["input_ids"].to(device)
         gt_mask = gt_encoded["attention_mask"].to(device)
+
+        gt_prompt_lengths = torch.tensor(
+            [
+                len(self.processing_class.encode(pt, add_special_tokens=False))
+                for pt in gt_prompt_texts
+            ],
+            device=device,
+        )
 
         # --- Extract features from frozen feature network ---
         if self._share_feature_weights:
@@ -293,8 +314,18 @@ class EBFTMixin:
                 unwrapped.train()
 
         # --- Pool to sequence-level embeddings ---
-        gen_emb = apply_embed_method(gen_hidden, args.ebft_embed_method, gen_mask)
-        gt_emb = apply_embed_method(gt_hidden, args.ebft_embed_method, gt_mask)
+        gen_emb = apply_embed_method(
+            gen_hidden,
+            args.ebft_embed_method,
+            gen_mask,
+            prompt_lengths=gen_prompt_lengths,
+        )
+        gt_emb = apply_embed_method(
+            gt_hidden,
+            args.ebft_embed_method,
+            gt_mask,
+            prompt_lengths=gt_prompt_lengths,
+        )
 
         # --- Optional whitening ---
         batch_size = gen_emb.shape[0]
