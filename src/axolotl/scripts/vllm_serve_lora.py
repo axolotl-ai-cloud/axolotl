@@ -300,7 +300,10 @@ def main(script_args: ScriptArguments):
 
         import vllm
         from packaging.version import Version
-        from vllm.sampling_params import GuidedDecodingParams
+        try:
+            from vllm.sampling_params import GuidedDecodingParams
+        except ImportError:
+            GuidedDecodingParams = None  # not available in vLLM 0.17+
 
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
@@ -473,6 +476,40 @@ def main(script_args: ScriptArguments):
             *(loop.run_in_executor(None, c.send, msg) for c in connections)
         )
         return {"message": f"Batch update for {len(params_list)} params"}
+
+    class HTTPWeightUpdateRequest(BaseModel):
+        """Weight update via HTTP (no NCCL needed)."""
+        params: list[dict]  # [{"name": str, "dtype": str, "shape": list, "data": str (base64)}]
+
+    @app.post("/http_update_weights/")
+    async def http_update_weights(request: HTTPWeightUpdateRequest):
+        """Update model weights via HTTP — no NCCL communicator required.
+
+        Tensor data is sent as base64-encoded raw bytes in the request body.
+        Slower than NCCL for large models but works without cross-process setup.
+        """
+        import base64
+
+        weights_to_load = []
+        for p in request.params:
+            dtype = getattr(torch, p["dtype"].split(".")[-1])
+            shape = tuple(p["shape"])
+            raw = base64.b64decode(p["data"])
+            weight = torch.frombuffer(bytearray(raw), dtype=dtype).reshape(shape)
+            weights_to_load.append((p["name"], weight))
+
+        # Send to workers via pipe — each worker calls load_weights directly
+        for conn in connections:
+            conn.send({
+                "type": "call",
+                "method": "load_weights",
+                "kwargs": {"weights": weights_to_load},
+            })
+        loop = asyncio.get_running_loop()
+        results = await asyncio.gather(
+            *(loop.run_in_executor(None, c.recv) for c in connections)
+        )
+        return {"message": f"HTTP weight update for {len(weights_to_load)} params"}
 
     @app.post("/reset_prefix_cache/")
     async def reset_prefix_cache():

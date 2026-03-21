@@ -8,6 +8,7 @@ Two modes:
 from typing import Any
 
 from axolotl.core.trainers.ebft.args import (
+    AxolotlAsyncEBFTConfig,
     AxolotlEBFTConfig,
     AxolotlStridedEBFTConfig,
 )
@@ -30,6 +31,12 @@ class EBFTStrategy:
         if mode == "strided":
             from axolotl.core.trainers.ebft.strided import AxolotlStridedEBFTTrainer
             return AxolotlStridedEBFTTrainer
+
+        # Structured mode: async or sync
+        use_async = cfg and cfg.trl and getattr(cfg.trl, "async_prefetch", False)
+        if use_async:
+            from axolotl.core.trainers.ebft.trainer import AxolotlAsyncEBFTTrainer
+            return AxolotlAsyncEBFTTrainer
         from axolotl.core.trainers.ebft.trainer import AxolotlEBFTTrainer
         return AxolotlEBFTTrainer
 
@@ -38,6 +45,11 @@ class EBFTStrategy:
         mode = _get_ebft_mode(cfg) if cfg else "structured"
         if mode == "strided":
             return AxolotlStridedEBFTConfig
+
+        # Structured mode: async or sync config
+        use_async = cfg and cfg.trl and getattr(cfg.trl, "async_prefetch", False)
+        if use_async:
+            return AxolotlAsyncEBFTConfig
         return AxolotlEBFTConfig
 
     @classmethod
@@ -142,6 +154,12 @@ class EBFTStrategy:
                     kwargs["generation_kwargs"] = trl.generation_kwargs
                 if trl.chat_template_kwargs is not None:
                     kwargs["chat_template_kwargs"] = trl.chat_template_kwargs
+
+                # Async prefetch fields (only pass when enabled — sync config doesn't have these)
+                if getattr(trl, "async_prefetch", False):
+                    kwargs["async_prefetch"] = trl.async_prefetch
+                if getattr(trl, "vllm_lora_sync", False):
+                    kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 
         return kwargs
 

@@ -79,6 +79,11 @@ def do_vllm_serve(
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
 
+    enforce_eager = bool(
+        cli_args.get("enforce_eager")
+        or getattr(cfg.vllm, "enforce_eager", None)
+        or False
+    )
     base_kwargs = dict(
         model=model,
         tensor_parallel_size=tensor_parallel_size,
@@ -89,6 +94,7 @@ def do_vllm_serve(
         dtype=dtype,
         max_model_len=max_model_len,
         enable_prefix_caching=enable_prefix_caching,
+        enforce_eager=enforce_eager,
     )
 
     # Use LoRAScriptArguments when serving with native LoRA support
@@ -98,6 +104,10 @@ def do_vllm_serve(
         lora_kwargs = {}
         if hasattr(cfg, "lora_r") and cfg.lora_r:
             lora_kwargs["max_lora_rank"] = cfg.lora_r
+        # Disable native LoRA in vLLM if not using vllm_lora_sync
+        # (merged weight sync via batch_update doesn't need vLLM LoRA mode)
+        if not getattr(cfg.trl, "vllm_lora_sync", False):
+            lora_kwargs["enable_lora"] = False
         vllm_script_args = LoRAScriptArguments(**base_kwargs, **lora_kwargs)
     else:
         vllm_script_args = AxolotlScriptArguments(

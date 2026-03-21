@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from transformers import TrainingArguments
 from trl import GRPOConfig
 
+from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOConfig
 from axolotl.core.training_args import AxolotlTrainingMixins
 
 
@@ -49,6 +50,21 @@ class EBFTFieldsMixin:
 @dataclass
 class AxolotlEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, GRPOConfig):
     """EBFT config for structured QA data — extends GRPOConfig."""
+
+
+# -- Async structured mode: extends FastAsyncGRPOConfig --
+@dataclass
+class AxolotlAsyncEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, FastAsyncGRPOConfig):
+    """EBFT config for async structured QA data — extends FastAsyncGRPOConfig.
+
+    Includes all async fields: async_prefetch, vllm_lora_sync,
+    skip_zero_advantage_batches, streaming_partial_batch, replay_buffer_size, etc.
+    """
+
+    vllm_lora_sync: bool = field(
+        default=False,
+        metadata={"help": "Sync LoRA adapters to vLLM via filesystem instead of NCCL weight merge."},
+    )
 
 
 # -- Strided mode: extends TrainingArguments for unstructured text --

@@ -156,3 +156,8 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         # Load weights using direct set (handles stacked params)
         for name, weight in weights_to_load:
             self._direct_set_weight(name, weight)
+
+    def http_load_weights(self, weights: list[tuple[str, torch.Tensor]]):
+        """Load weights received via HTTP (no NCCL needed)."""
+        for name, weight in weights:
+            self._direct_set_weight(name, weight.to(self.device))

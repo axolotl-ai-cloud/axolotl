@@ -628,13 +628,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
     """
 
     def __init__(self, *args, **kwargs):
-        # When using native LoRA sync, skip the NCCL communicator init in VLLMGeneration.
-        # The communicator is not needed because weight sync happens via filesystem + HTTP,
-        # and it fails when vLLM and a trainer rank share the same CUDA device.
+        # Skip NCCL communicator init when using LoRA sync (filesystem) or HTTP-only
+        # merged weight sync. NCCL is only needed for the standard update_named_param
+        # path which broadcasts tensors through the communicator.
         training_args = kwargs.get("args") or (args[1] if len(args) > 1 else None)
-        if training_args is not None and getattr(
-            training_args, "vllm_lora_sync", False
-        ):
+        _skip_nccl = False
+        if training_args is not None:
+            if getattr(training_args, "vllm_lora_sync", False):
+                _skip_nccl = True  # LoRA sync uses filesystem + HTTP
+        if _skip_nccl:
             from trl.generation.vllm_generation import VLLMGeneration
 
             _orig_init_vllm = VLLMGeneration._init_vllm
@@ -950,6 +952,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
             vllm_client = self.vllm_generation.vllm_client
             url = f"{vllm_client.base_url}/set_lora_adapter/"
+            sync_timeout = getattr(self.args, "vllm_server_timeout", 300) or 300
             response = requests.post(
                 url,
                 json={
@@ -957,7 +960,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     "lora_int_id": self._lora_sync_version,
                     "lora_path": adapter_path,
                 },
-                timeout=30,
+                timeout=sync_timeout,
             )
             if response.status_code != 200:
                 logger.warning(

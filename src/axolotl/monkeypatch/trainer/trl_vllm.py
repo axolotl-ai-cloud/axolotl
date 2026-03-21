@@ -20,46 +20,71 @@ LOG = logging.getLogger(__name__)
 def _batch_update_named_params(
     self, params: list[tuple[str, torch.Tensor]], chunk_size: int | None = None
 ):
-    """Batched weight sync — sends param metadata via HTTP, tensors via NCCL."""
-    from transformers import is_torch_xpu_available
+    """Batched weight sync — uses NCCL if communicator available, HTTP otherwise."""
+    import base64
 
-    if chunk_size is None:
-        chunks = [params]
-    else:
-        chunks = []
-        current_chunk: list[tuple[str, torch.Tensor]] = []
-        current_elements = 0
-        for name, weights in params:
-            n_elem = weights.numel()
-            if current_chunk and current_elements + n_elem > chunk_size:
-                chunks.append(current_chunk)
-                current_chunk = []
-                current_elements = 0
-            current_chunk.append((name, weights))
-            current_elements += n_elem
-        if current_chunk:
-            chunks.append(current_chunk)
+    has_communicator = getattr(self, "communicator", None) is not None
 
-    for chunk in chunks:
-        param_metadata = [
-            {"name": name, "dtype": str(weights.dtype), "shape": list(weights.shape)}
-            for name, weights in chunk
-        ]
-        url = f"{self.base_url}/batch_update_named_params/"
-        response = self.session.post(url, json={"params": param_metadata})
-        if response.status_code != 200:
-            raise Exception(f"Request failed: {response.status_code}, {response.text}")
+    if has_communicator:
+        # Fast path: metadata via HTTP, tensors via NCCL
+        from transformers import is_torch_xpu_available
 
-        for _name, weights in chunk:
-            if is_torch_xpu_available():
-                self.communicator.broadcast(weights, root=self.rank)
-            else:
-                self.communicator.broadcast(weights, src=self.rank)
-
-        if is_torch_xpu_available():
-            self.communicator.barrier()
+        if chunk_size is None:
+            chunks = [params]
         else:
-            self.communicator.group.barrier()
+            chunks = []
+            current_chunk: list[tuple[str, torch.Tensor]] = []
+            current_elements = 0
+            for name, weights in params:
+                n_elem = weights.numel()
+                if current_chunk and current_elements + n_elem > chunk_size:
+                    chunks.append(current_chunk)
+                    current_chunk = []
+                    current_elements = 0
+                current_chunk.append((name, weights))
+                current_elements += n_elem
+            if current_chunk:
+                chunks.append(current_chunk)
+
+        for chunk in chunks:
+            param_metadata = [
+                {"name": name, "dtype": str(weights.dtype), "shape": list(weights.shape)}
+                for name, weights in chunk
+            ]
+            url = f"{self.base_url}/batch_update_named_params/"
+            response = self.session.post(url, json={"params": param_metadata})
+            if response.status_code != 200:
+                raise Exception(f"Request failed: {response.status_code}, {response.text}")
+
+            for _name, weights in chunk:
+                if is_torch_xpu_available():
+                    self.communicator.broadcast(weights, root=self.rank)
+                else:
+                    self.communicator.broadcast(weights, src=self.rank)
+
+            if is_torch_xpu_available():
+                self.communicator.barrier()
+            else:
+                self.communicator.group.barrier()
+    else:
+        # HTTP-only path: encode tensor data in request body (no NCCL needed).
+        # Slower but works without cross-process communicator setup.
+        MAX_PARAMS_PER_REQUEST = 32  # avoid huge HTTP payloads
+        for i in range(0, len(params), MAX_PARAMS_PER_REQUEST):
+            chunk = params[i:i + MAX_PARAMS_PER_REQUEST]
+            payload = []
+            for name, weights in chunk:
+                raw = weights.contiguous().cpu().numpy().tobytes()
+                payload.append({
+                    "name": name,
+                    "dtype": str(weights.dtype),
+                    "shape": list(weights.shape),
+                    "data": base64.b64encode(raw).decode("ascii"),
+                })
+            url = f"{self.base_url}/http_update_weights/"
+            response = self.session.post(url, json={"params": payload})
+            if response.status_code != 200:
+                raise Exception(f"Request failed: {response.status_code}, {response.text}")
 
 
 def _update_model_params(self, model: nn.Module, chunk_size: int | None = None):

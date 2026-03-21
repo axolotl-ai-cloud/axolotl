@@ -25,24 +25,20 @@ from axolotl.core.trainers.ebft.rewards import (
     get_diversity_rewards,
     whiten_embeddings_batched,
 )
-from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
+from axolotl.core.trainers.grpo.trainer import AxolotlAsyncGRPOTrainer, AxolotlGRPOTrainer
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
-class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
+class EBFTMixin:
     """
-    Energy-Based Fine-Tuning trainer.
+    Mixin that adds EBFT feature-matching reward logic to any GRPO-based trainer.
 
-    Extends GRPOTrainer by replacing external reward functions with
-    feature-matching rewards from a frozen feature network. Reuses all
-    of GRPO's infrastructure: vLLM generation, RLOO advantages, clipped
-    policy gradient loss, distributed training, logging, etc.
-
-    The key trick: we register a callable reward function that computes
-    feature-matching rewards using the frozen network, ground-truth
-    completions from the dataset, and the generated completions.
+    Provides:
+    - Frozen feature network setup (shared weights for PEFT, deepcopy otherwise)
+    - _feature_matching_reward() callable for GRPO reward function interface
+    - _sequential_rollout() for multi-turn conversations
     """
 
     _tag_names = ["trl", "ebft", "axolotl"]
@@ -356,3 +352,13 @@ class AxolotlEBFTTrainer(AxolotlGRPOTrainer):
             extended_completions.append(full_gen_text)
 
         return extended_completions
+
+
+class AxolotlEBFTTrainer(EBFTMixin, AxolotlGRPOTrainer):
+    """EBFT trainer using synchronous GRPO (standard vLLM generation)."""
+    pass
+
+
+class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlAsyncGRPOTrainer):
+    """EBFT trainer using async GRPO (prefetches next batch during training)."""
+    pass
