@@ -29,6 +29,33 @@ from tests.hf_offline_utils import (
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
+# Shim for is_torch_fx_available removed from transformers but still imported
+# by some remote model code (e.g. DeepSeek-V3 modeling_deepseekv3.py)
+import transformers.utils.import_utils as _import_utils
+
+if not hasattr(_import_utils, "is_torch_fx_available"):
+
+    def _is_torch_fx_available():
+        try:
+            import torch.fx  # noqa: F401  # pylint: disable=unused-import
+
+            return True
+        except ImportError:
+            return False
+
+    _import_utils.is_torch_fx_available = _is_torch_fx_available
+
+# is_flash_attn_greater_or_equal_2_10 was replaced by parameterized
+# is_flash_attn_greater_or_equal(version) in newer transformers
+import transformers.utils as _transformers_utils
+
+if not hasattr(_transformers_utils, "is_flash_attn_greater_or_equal_2_10"):
+    from transformers.utils import is_flash_attn_greater_or_equal as _is_flash_attn_gte
+
+    _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: _is_flash_attn_gte(
+        "2.10"
+    )
+
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
     def decorator(func):

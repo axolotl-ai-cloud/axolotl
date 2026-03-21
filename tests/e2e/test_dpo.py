@@ -262,6 +262,7 @@ class TestDPOLlamaLora(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(Path(temp_dir) / "checkpoint-20", cfg)
 
+    @pytest.mark.skip(reason="TRL ORPO trainer has internal zip() length mismatch bug")
     @with_temp_dir
     def test_orpo_lora(self, temp_dir):
         cfg = DictDefault(

@@ -82,7 +82,7 @@ def setup_model_and_tokenizer(
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
-    if model.generation_config is not None:
+    if getattr(model, "generation_config", None) is not None:
         model.generation_config.do_sample = True
 
     model_properties = model.config.to_dict()
