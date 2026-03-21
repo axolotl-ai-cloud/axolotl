@@ -196,9 +196,18 @@ def _make_qat_config(
         )
 
     # Build explicit weight config
-    weight_fq_config: Int4WeightFakeQuantizeConfig | IntxFakeQuantizeConfig | Float8FakeQuantizeConfig | None = None
+    weight_fq_config: (
+        Int4WeightFakeQuantizeConfig
+        | IntxFakeQuantizeConfig
+        | Float8FakeQuantizeConfig
+        | None
+    ) = None
     if weight_dtype == TorchAOQuantDType.int4:
-        gs = group_size if group_size is not None else getattr(base_config, "group_size", 128)
+        gs = (
+            group_size
+            if group_size is not None
+            else getattr(base_config, "group_size", 128)
+        )
         activation_dt = None
         if activation_dtype == TorchAOQuantDType.int8:
             activation_dt = torch.bfloat16
@@ -257,7 +266,9 @@ def prepare_model_for_qat(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    qat_config = _make_qat_config(base_config, weight_dtype, activation_dtype, group_size)
+    qat_config = _make_qat_config(
+        base_config, weight_dtype, activation_dtype, group_size
+    )
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers

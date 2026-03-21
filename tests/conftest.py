@@ -15,6 +15,8 @@ import datasets
 import pytest
 import requests
 import torch
+import transformers.utils as _transformers_utils
+import transformers.utils.import_utils as _import_utils
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
@@ -29,10 +31,7 @@ from tests.hf_offline_utils import (
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
-# Shim for is_torch_fx_available removed from transformers but still imported
-# by some remote model code (e.g. DeepSeek-V3 modeling_deepseekv3.py)
-import transformers.utils.import_utils as _import_utils
-
+# Shim for deepseek v3
 if not hasattr(_import_utils, "is_torch_fx_available"):
 
     def _is_torch_fx_available():
@@ -45,15 +44,11 @@ if not hasattr(_import_utils, "is_torch_fx_available"):
 
     _import_utils.is_torch_fx_available = _is_torch_fx_available
 
-# is_flash_attn_greater_or_equal_2_10 was replaced by parameterized
-# is_flash_attn_greater_or_equal(version) in newer transformers
-import transformers.utils as _transformers_utils
-
 if not hasattr(_transformers_utils, "is_flash_attn_greater_or_equal_2_10"):
     from transformers.utils import is_flash_attn_greater_or_equal as _is_flash_attn_gte
 
-    _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: _is_flash_attn_gte(
-        "2.10"
+    _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: (
+        _is_flash_attn_gte("2.10")
     )
 
 

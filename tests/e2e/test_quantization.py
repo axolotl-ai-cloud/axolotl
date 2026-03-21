@@ -288,7 +288,9 @@ class TestQuantization:
                 if activation_dtype:
                     assert hasattr(child, "activation_fake_quantizer")
                     a_config = child.activation_fake_quantizer.config
-                    assert _get_fake_quant_config_dtype(a_config) == activation_dtype.value
+                    assert (
+                        _get_fake_quant_config_dtype(a_config) == activation_dtype.value
+                    )
                 else:
                     assert child.activation_fake_quantizer is None
 
