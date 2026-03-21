@@ -15,6 +15,14 @@ def transform(cfg, *args, **kwargs):
             "ground_truth": example["output"],
         }
 
-    return transform_fn, {"remove_columns": ["id", "domain", "generation_algorithm",
-                                              "llm_judgement", "unit_tests",
-                                              "tests_execution_status", "average_test_score"]}
+    return transform_fn, {
+        "remove_columns": [
+            "id",
+            "domain",
+            "generation_algorithm",
+            "llm_judgement",
+            "unit_tests",
+            "tests_execution_status",
+            "average_test_score",
+        ]
+    }

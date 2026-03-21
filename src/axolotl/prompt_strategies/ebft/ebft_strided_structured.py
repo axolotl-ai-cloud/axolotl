@@ -14,8 +14,12 @@ def transform(cfg, **kwargs):
 
     def transform_fn(example, tokenizer=None):
         # Extract prompt and completion from the example
-        prompt_text = example.get("input", example.get("prompt", example.get("question", "")))
-        completion_text = example.get("output", example.get("completion", example.get("answer", "")))
+        prompt_text = example.get(
+            "input", example.get("prompt", example.get("question", ""))
+        )
+        completion_text = example.get(
+            "output", example.get("completion", example.get("answer", ""))
+        )
 
         if tokenizer is None:
             return {"prompt": prompt_text}

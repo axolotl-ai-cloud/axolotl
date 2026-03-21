@@ -26,6 +26,7 @@ def transform(cfg, **kwargs):
     Returns the first assistant turn as ground_truth, plus remaining_turns
     for the trainer to do sequential rollout generation.
     """
+
     def transform_fn(example, tokenizer=None):
         messages = example.get("messages", example.get("conversations", []))
 
@@ -69,6 +70,7 @@ def transform(cfg, **kwargs):
 
 def transform_last_turn(cfg, **kwargs):
     """Single-turn: use the last assistant turn as the generation target."""
+
     def transform_fn(example, tokenizer=None):
         messages = example.get("messages", example.get("conversations", []))
 
@@ -104,6 +106,7 @@ def transform_all_turns(cfg, **kwargs):
     Usage in YAML:
         type: ebft_chat_multiturn.transform_all_turns
     """
+
     def transform_fn(examples, tokenizer=None):
         all_prompts = []
         all_ground_truths = []

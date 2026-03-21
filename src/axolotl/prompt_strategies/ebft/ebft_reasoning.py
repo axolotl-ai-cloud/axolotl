@@ -59,7 +59,9 @@ def transform(cfg, **kwargs):
             prompt_msgs.append(msg)
 
         return {
-            "prompt": prompt_msgs_snapshot if "prompt_msgs_snapshot" in dir() else messages[:-1],
+            "prompt": prompt_msgs_snapshot
+            if "prompt_msgs_snapshot" in dir()
+            else messages[:-1],
             "ground_truth": ground_truth,
         }
 
@@ -105,8 +107,8 @@ def transform_split_thinking(cfg, **kwargs):
             if open_tag in content and close_tag in content:
                 start = content.find(open_tag)
                 end = content.find(close_tag)
-                thinking = content[start + len(open_tag):end].strip()
-                answer = content[end + len(close_tag):].strip()
+                thinking = content[start + len(open_tag) : end].strip()
+                answer = content[end + len(close_tag) :].strip()
                 return {
                     **msg,
                     "reasoning_content": thinking,
@@ -145,7 +147,9 @@ def transform_split_thinking(cfg, **kwargs):
             prompt_msgs.append(msg)
 
         return {
-            "prompt": prompt_msgs_snapshot if "prompt_msgs_snapshot" in dir() else split_messages[:-1],
+            "prompt": prompt_msgs_snapshot
+            if "prompt_msgs_snapshot" in dir()
+            else split_messages[:-1],
             "ground_truth": ground_truth,
         }
 
@@ -167,7 +171,9 @@ def transform_answer_only(cfg, **kwargs):
             prompt_msgs.append(msg)
 
         return {
-            "prompt": prompt_msgs_snapshot if "prompt_msgs_snapshot" in dir() else messages[:-1],
+            "prompt": prompt_msgs_snapshot
+            if "prompt_msgs_snapshot" in dir()
+            else messages[:-1],
             "ground_truth": ground_truth,
         }
 
@@ -201,11 +207,16 @@ def transform_strided(cfg, **kwargs):
 
         # Tokenize the full conversation with the chat template
         full_text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False,
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
         )
         full_enc = tokenizer(
-            full_text, truncation=True, max_length=seq_len,
-            add_special_tokens=False, return_tensors=None,
+            full_text,
+            truncation=True,
+            max_length=seq_len,
+            add_special_tokens=False,
+            return_tensors=None,
         )
         input_ids = full_enc["input_ids"]
 
@@ -217,21 +228,31 @@ def transform_strided(cfg, **kwargs):
         for msg in messages:
             if msg["role"] == "assistant":
                 prefix_text = tokenizer.apply_chat_template(
-                    prefix_messages, tokenize=False, add_generation_prompt=True,
+                    prefix_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
                 )
                 prefix_ids = tokenizer(
-                    prefix_text, truncation=True, max_length=seq_len,
-                    add_special_tokens=False, return_tensors=None,
+                    prefix_text,
+                    truncation=True,
+                    max_length=seq_len,
+                    add_special_tokens=False,
+                    return_tensors=None,
                 )["input_ids"]
                 start = len(prefix_ids)
 
                 prefix_messages.append(msg)
                 with_turn_text = tokenizer.apply_chat_template(
-                    prefix_messages, tokenize=False, add_generation_prompt=False,
+                    prefix_messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
                 )
                 with_turn_ids = tokenizer(
-                    with_turn_text, truncation=True, max_length=seq_len,
-                    add_special_tokens=False, return_tensors=None,
+                    with_turn_text,
+                    truncation=True,
+                    max_length=seq_len,
+                    add_special_tokens=False,
+                    return_tensors=None,
                 )["input_ids"]
                 end = len(with_turn_ids)
 

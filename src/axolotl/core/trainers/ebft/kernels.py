@@ -14,7 +14,6 @@ import torch
 import triton
 import triton.language as tl
 
-
 # ---------------------------------------------------------------------------
 # 1. Fused log_softmax + gather (selective log softmax)
 # ---------------------------------------------------------------------------
@@ -22,11 +21,12 @@ import triton.language as tl
 # We compute: for each (b, s), the log_softmax value at logits[b, s, labels[b, s]]
 # This avoids materializing the full (B, S, V) log_softmax output.
 
+
 @triton.jit
 def _fused_log_softmax_gather_kernel(
-    logits_ptr,    # (B*S, V) row-major
-    labels_ptr,    # (B*S,) int64
-    output_ptr,    # (B*S,) float32
+    logits_ptr,  # (B*S, V) row-major
+    labels_ptr,  # (B*S,) int64
+    output_ptr,  # (B*S,) float32
     V: tl.constexpr,  # vocab size
     BLOCK_V: tl.constexpr,  # tile width over vocab
 ):
@@ -61,7 +61,9 @@ def _fused_log_softmax_gather_kernel(
     tl.store(output_ptr + row, result)
 
 
-def fused_log_softmax_gather(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+def fused_log_softmax_gather(
+    logits: torch.Tensor, labels: torch.Tensor
+) -> torch.Tensor:
     """Compute log_softmax(logits, dim=-1).gather(-1, labels) without materializing full output.
 
     Args:
@@ -83,8 +85,11 @@ def fused_log_softmax_gather(logits: torch.Tensor, labels: torch.Tensor) -> torc
     BLOCK_V = min(triton.next_power_of_2(V), 65536)
 
     _fused_log_softmax_gather_kernel[(n_rows,)](
-        logits_2d, labels_1d, output,
-        V=V, BLOCK_V=BLOCK_V,
+        logits_2d,
+        labels_1d,
+        output,
+        V=V,
+        BLOCK_V=BLOCK_V,
     )
 
     return output.view(orig_shape)
@@ -96,11 +101,12 @@ def fused_log_softmax_gather(logits: torch.Tensor, labels: torch.Tensor) -> torc
 # Instead of: (-logp * adv * mask).sum() / mask.sum()
 # We do the masked multiply-accumulate in one kernel, returning (sum, count).
 
+
 @triton.jit
 def _fused_reinforce_loss_kernel(
-    logps_ptr,      # (N,) float32 per-token log probs
-    advs_ptr,       # (N,) float32 advantages
-    mask_ptr,       # (N,) bool action mask
+    logps_ptr,  # (N,) float32 per-token log probs
+    advs_ptr,  # (N,) float32 advantages
+    mask_ptr,  # (N,) bool action mask
     partial_sum_ptr,  # (n_blocks,) partial sums
     partial_cnt_ptr,  # (n_blocks,) partial counts
     N: tl.constexpr,
@@ -144,9 +150,13 @@ def fused_reinforce_loss(
     partial_cnt = torch.empty(n_blocks, device=logps_flat.device, dtype=torch.float32)
 
     _fused_reinforce_loss_kernel[(n_blocks,)](
-        logps_flat, advs_flat, mask_flat,
-        partial_sum, partial_cnt,
-        N=N, BLOCK_N=BLOCK_N,
+        logps_flat,
+        advs_flat,
+        mask_flat,
+        partial_sum,
+        partial_cnt,
+        N=N,
+        BLOCK_N=BLOCK_N,
     )
 
     total_sum = partial_sum.sum()
@@ -160,11 +170,12 @@ def fused_reinforce_loss(
 # Instead of: F.cosine_similarity(gen, gt, dim=-1) which normalizes then dots,
 # we fuse the dot product, norm computation, and division into one kernel.
 
+
 @triton.jit
 def _fused_cosine_sim_kernel(
-    a_ptr,       # (N, D) first set of vectors
-    b_ptr,       # (N, D) second set of vectors
-    out_ptr,     # (N,) cosine similarities
+    a_ptr,  # (N, D) first set of vectors
+    b_ptr,  # (N, D) second set of vectors
+    out_ptr,  # (N,) cosine similarities
     D: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
@@ -213,8 +224,11 @@ def fused_cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     BLOCK_D = min(triton.next_power_of_2(D), 4096)
 
     _fused_cosine_sim_kernel[(N,)](
-        a_2d, b_2d, output,
-        D=D, BLOCK_D=BLOCK_D,
+        a_2d,
+        b_2d,
+        output,
+        D=D,
+        BLOCK_D=BLOCK_D,
     )
 
     return output.view(orig_shape)
@@ -226,11 +240,12 @@ def fused_cosine_similarity(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 # Instead of: bmm(gen, gen.T) → mask diagonal → sum / (n-1)
 # We compute the pairwise dot products and exclusion in one kernel.
 
+
 @triton.jit
 def _fused_diversity_kernel(
-    emb_ptr,     # (B, N, D) embeddings, row-major
-    out_ptr,     # (B, N) diversity penalties
-    N: tl.constexpr,   # n_samples
+    emb_ptr,  # (B, N, D) embeddings, row-major
+    out_ptr,  # (B, N) diversity penalties
+    N: tl.constexpr,  # n_samples
     D: tl.constexpr,
     BLOCK_D: tl.constexpr,
 ):
@@ -249,12 +264,16 @@ def _fused_diversity_kernel(
         for d_start in range(0, D, BLOCK_D):
             d_offsets = d_start + tl.arange(0, BLOCK_D)
             d_mask = d_offsets < D
-            a_vals = tl.load(emb_bi_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32)
-            b_vals = tl.load(emb_bj_ptr + d_offsets, mask=d_mask, other=0.0).to(tl.float32)
+            a_vals = tl.load(emb_bi_ptr + d_offsets, mask=d_mask, other=0.0).to(
+                tl.float32
+            )
+            b_vals = tl.load(emb_bj_ptr + d_offsets, mask=d_mask, other=0.0).to(
+                tl.float32
+            )
             dot += tl.sum(a_vals * b_vals, axis=0)
 
         # Exclude self-similarity (j == i)
-        is_other = (j != i)
+        is_other = j != i
         total_sim += dot * is_other
 
     result = total_sim / (N - 1)
@@ -277,8 +296,11 @@ def fused_diversity_penalty(embeddings: torch.Tensor) -> torch.Tensor:
     BLOCK_D = min(triton.next_power_of_2(D), 4096)
 
     _fused_diversity_kernel[(B, N)](
-        embeddings, output,
-        N=N, D=D, BLOCK_D=BLOCK_D,
+        embeddings,
+        output,
+        N=N,
+        D=D,
+        BLOCK_D=BLOCK_D,
     )
 
     return output

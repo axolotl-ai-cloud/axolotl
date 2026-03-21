@@ -14,8 +14,6 @@ def transform(cfg, *args, **kwargs):
         if tokenizer is None:
             return {"prompt": text}
 
-        pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
-
         encoded = tokenizer(
             text,
             truncation=True,

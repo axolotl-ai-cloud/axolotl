@@ -138,7 +138,10 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             reference_model: bool = True
-            if cfg.rl in {RLType.GRPO, RLType.EBFT} and getattr(cfg.trl, 'beta', 0) == 0:
+            if (
+                cfg.rl in {RLType.GRPO, RLType.EBFT}
+                and getattr(cfg.trl, "beta", 0) == 0
+            ):
                 reference_model = False
             # load the model again for model_ref/baseline
             model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)

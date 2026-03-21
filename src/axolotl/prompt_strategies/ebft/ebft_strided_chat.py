@@ -27,11 +27,16 @@ def transform(cfg, **kwargs):
 
         # Tokenize the full conversation with the chat template
         full_text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False,
+            messages,
+            tokenize=False,
+            add_generation_prompt=False,
         )
         full_enc = tokenizer(
-            full_text, truncation=True, max_length=seq_len,
-            add_special_tokens=False, return_tensors=None,
+            full_text,
+            truncation=True,
+            max_length=seq_len,
+            add_special_tokens=False,
+            return_tensors=None,
         )
         input_ids = full_enc["input_ids"]
 
@@ -45,22 +50,32 @@ def transform(cfg, **kwargs):
             if msg["role"] == "assistant":
                 # Tokenize prefix (everything before this assistant turn + generation prompt)
                 prefix_text = tokenizer.apply_chat_template(
-                    prefix_messages, tokenize=False, add_generation_prompt=True,
+                    prefix_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
                 )
                 prefix_ids = tokenizer(
-                    prefix_text, truncation=True, max_length=seq_len,
-                    add_special_tokens=False, return_tensors=None,
+                    prefix_text,
+                    truncation=True,
+                    max_length=seq_len,
+                    add_special_tokens=False,
+                    return_tensors=None,
                 )["input_ids"]
                 start = len(prefix_ids)
 
                 # Tokenize prefix + this assistant turn
                 prefix_messages.append(msg)
                 with_turn_text = tokenizer.apply_chat_template(
-                    prefix_messages, tokenize=False, add_generation_prompt=False,
+                    prefix_messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
                 )
                 with_turn_ids = tokenizer(
-                    with_turn_text, truncation=True, max_length=seq_len,
-                    add_special_tokens=False, return_tensors=None,
+                    with_turn_text,
+                    truncation=True,
+                    max_length=seq_len,
+                    add_special_tokens=False,
+                    return_tensors=None,
                 )["input_ids"]
                 end = len(with_turn_ids)
 

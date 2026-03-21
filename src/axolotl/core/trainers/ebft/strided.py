@@ -16,11 +16,8 @@ Paper: "Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Mode
 
 import contextlib
 import copy
-import functools
-from typing import Optional
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from transformers import Trainer
 
@@ -31,8 +28,6 @@ from axolotl.core.trainers.ebft.kernels import (  # noqa: F401 — available for
     fused_reinforce_loss,
 )
 from axolotl.core.trainers.ebft.rewards import (
-    get_alignment_rewards,
-    get_diversity_rewards,
     whiten_embeddings_batched,
 )
 from axolotl.core.trainers.mixins import (
@@ -51,6 +46,7 @@ try:
     from torch.nn.attention.flex_attention import (
         create_block_mask,
     )
+
     _FLEX_ATTENTION_AVAILABLE = True
 except ImportError:
     pass
@@ -70,7 +66,9 @@ def _patch_flex_attention_dtype():
     if original_fn is None:
         return
 
-    def patched_flex_attention_forward(module, query, key, value, attention_mask, **kwargs):
+    def patched_flex_attention_forward(
+        module, query, key, value, attention_mask, **kwargs
+    ):
         # Cast q/k/v to the same dtype (use value's dtype as reference,
         # since model weights stay in the original dtype)
         target_dtype = value.dtype
@@ -113,9 +111,17 @@ def override_attn_implementation(model, implementation: str):
 # Strided attention mask builders
 # ---------------------------------------------------------------------------
 
+
 def _strided_mask_mod(
-    b, h, q_idx, kv_idx,
-    prompt_length, context_length, max_generation_length, stride, num_blocks,
+    b,
+    h,
+    q_idx,
+    kv_idx,
+    prompt_length,
+    context_length,
+    max_generation_length,
+    stride,
+    num_blocks,
 ):
     """
     Mask mod function for flex_attention's create_block_mask.
@@ -154,9 +160,7 @@ def _strided_mask_mod(
     kv_gen_step = kv_gen_offset // num_blocks
     kv_block_idx = kv_gen_offset % num_blocks
     same_block_prev = (
-        is_gen_q & is_gen_kv
-        & (kv_block_idx == block_idx)
-        & (kv_gen_step < gen_step)
+        is_gen_q & is_gen_kv & (kv_block_idx == block_idx) & (kv_gen_step < gen_step)
     )
 
     return prompt_causal | in_context | is_self | same_block_prev
@@ -194,7 +198,10 @@ def create_strided_block_mask(
 
     def mask_mod(b, h, q_idx, kv_idx):
         return _strided_mask_mod(
-            b, h, q_idx, kv_idx,
+            b,
+            h,
+            q_idx,
+            kv_idx,
             prompt_length=_prompt_length,
             context_length=_context_length,
             max_generation_length=_max_gen_len,
@@ -256,7 +263,9 @@ def build_strided_dense_mask_and_positions(
     min_value = torch.finfo(dtype).min
     attention_mask = torch.full(
         (batch_size, 1, full_sequence_length, full_sequence_length),
-        min_value, dtype=dtype, device=device,
+        min_value,
+        dtype=dtype,
+        device=device,
     )
 
     causal_mask = torch.tril(
@@ -281,8 +290,14 @@ def build_strided_dense_mask_and_positions(
                     attention_mask[:, 0, gen_pos, prev_pos] = 0.0
 
     position_ids = build_strided_position_ids(
-        full_sequence_length, prompt_length, context_length,
-        generation_step, stride, num_blocks, device, batch_size,
+        full_sequence_length,
+        prompt_length,
+        context_length,
+        generation_step,
+        stride,
+        num_blocks,
+        device,
+        batch_size,
     )
     return attention_mask, position_ids
 
@@ -290,6 +305,7 @@ def build_strided_dense_mask_and_positions(
 # ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
+
 
 class AxolotlStridedEBFTTrainer(
     RngLoaderMixin,
@@ -328,7 +344,9 @@ class AxolotlStridedEBFTTrainer(
         self.ebft_rl_coef = getattr(args, "ebft_rl_coef", 1.0)
         self.ebft_ce_coef = getattr(args, "ebft_ce_coef", 0.0)
         self.ebft_use_whitening = getattr(args, "ebft_use_whitening", False)
-        self.ebft_advantage_estimator = getattr(args, "ebft_advantage_estimator", "rloo")
+        self.ebft_advantage_estimator = getattr(
+            args, "ebft_advantage_estimator", "rloo"
+        )
         self.ebft_min_completion_prefix = getattr(args, "ebft_min_completion_prefix", 0)
 
         # Validate config combinations
@@ -358,7 +376,9 @@ class AxolotlStridedEBFTTrainer(
 
         # Attention implementation selection
         unwrapped = self.accelerator.unwrap_model(self.model)
-        self.use_flex_attention = _FLEX_ATTENTION_AVAILABLE and torch.cuda.is_available()
+        self.use_flex_attention = (
+            _FLEX_ATTENTION_AVAILABLE and torch.cuda.is_available()
+        )
 
         if self.use_flex_attention:
             _patch_flex_attention_dtype()
@@ -376,11 +396,16 @@ class AxolotlStridedEBFTTrainer(
         # or deepcopy (full-parameter models / multi-GPU).
         first_param = next(unwrapped.parameters())
         original_device = first_param.device
-        actor_gpu = original_device.index if (original_device.type == "cuda" and original_device.index is not None) else 0
+        actor_gpu = (
+            original_device.index
+            if (original_device.type == "cuda" and original_device.index is not None)
+            else 0
+        )
         visible_gpus = torch.cuda.device_count()
 
         # Check if we can share weights (PEFT model on single GPU)
         from peft import PeftModel
+
         self._share_feature_weights = (
             isinstance(unwrapped, PeftModel)
             and visible_gpus == 1
@@ -401,7 +426,9 @@ class AxolotlStridedEBFTTrainer(
             # Multi-GPU: deepcopy to a separate device
             self.feature_network = copy.deepcopy(unwrapped)
             self.feature_network.to(dtype=torch.bfloat16)
-            self._feature_device = torch.device(f"cuda:{(actor_gpu + 1) % visible_gpus}")
+            self._feature_device = torch.device(
+                f"cuda:{(actor_gpu + 1) % visible_gpus}"
+            )
             LOG.info(f"Creating frozen feature network on {self._feature_device}...")
             self.feature_network.to(device=self._feature_device)
             if _FLEX_ATTENTION_AVAILABLE and self._feature_device.type == "cuda":
@@ -419,9 +446,14 @@ class AxolotlStridedEBFTTrainer(
         elif original_device.type == "meta":
             # FSDP2 with cpu_ram_efficient_loading
             from transformers import AutoModelForCausalLM
-            feature_model_name = getattr(args, "model_name_or_path", None) or unwrapped.config._name_or_path
+
+            feature_model_name = (
+                getattr(args, "model_name_or_path", None)
+                or unwrapped.config._name_or_path
+            )
             self.feature_network = AutoModelForCausalLM.from_pretrained(
-                feature_model_name, torch_dtype=torch.bfloat16,
+                feature_model_name,
+                torch_dtype=torch.bfloat16,
                 attn_implementation="eager",
             )
             self._feature_device = torch.device(f"cuda:{actor_gpu}")
@@ -448,7 +480,9 @@ class AxolotlStridedEBFTTrainer(
             for param in self.feature_network.parameters():
                 param.requires_grad = False
             self.feature_network.eval()
-            LOG.info(f"Created frozen feature network (deepcopy) on {self._feature_device}")
+            LOG.info(
+                f"Created frozen feature network (deepcopy) on {self._feature_device}"
+            )
 
         num_layers = unwrapped.config.num_hidden_layers
         self.feature_layer_indices = [
@@ -462,7 +496,17 @@ class AxolotlStridedEBFTTrainer(
             f"min_completion_prefix={self.ebft_min_completion_prefix}"
         )
 
-    def _build_strided_mask(self, full_seq_len, seq_len, generation_step, num_blocks, batch_size, device, dtype, anchor_offset=None):
+    def _build_strided_mask(
+        self,
+        full_seq_len,
+        seq_len,
+        generation_step,
+        num_blocks,
+        batch_size,
+        device,
+        dtype,
+        anchor_offset=None,
+    ):
         """Build strided attention mask + position IDs using flex or eager.
 
         Args:
@@ -475,8 +519,14 @@ class AxolotlStridedEBFTTrainer(
             anchor_offset = self.ebft_context_length
 
         pos_ids = build_strided_position_ids(
-            full_seq_len, seq_len, anchor_offset,
-            generation_step, self.ebft_stride, num_blocks, device, batch_size,
+            full_seq_len,
+            seq_len,
+            anchor_offset,
+            generation_step,
+            self.ebft_stride,
+            num_blocks,
+            device,
+            batch_size,
         )
 
         if self.use_flex_attention:
@@ -507,7 +557,9 @@ class AxolotlStridedEBFTTrainer(
         )
         return dense_mask, pos_ids
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+    def compute_loss(
+        self, model, inputs, return_outputs=False, num_items_in_batch=None
+    ):
         """
         Full strided EBFT training step.
 
@@ -542,7 +594,7 @@ class AxolotlStridedEBFTTrainer(
         elif "labels" in inputs:
             # Derive prompt_length from labels: first position where labels != -100
             labels = inputs["labels"].to(device)
-            non_masked = (labels != -100)
+            non_masked = labels != -100
             # prompt_length = index of first non-masked token (or seq_len if all masked)
             has_completion = non_masked.any(dim=1)
             prompt_lengths = torch.where(
@@ -555,7 +607,9 @@ class AxolotlStridedEBFTTrainer(
         if is_structured:
             # Use max prompt_length across batch for uniform anchor_offset
             max_prompt_len = prompt_lengths.max().item()
-            anchor_offset = max(max_prompt_len + self.ebft_min_completion_prefix, ctx_len)
+            anchor_offset = max(
+                max_prompt_len + self.ebft_min_completion_prefix, ctx_len
+            )
         else:
             anchor_offset = ctx_len
 
@@ -574,7 +628,10 @@ class AxolotlStridedEBFTTrainer(
 
         with torch.no_grad():
             full_sequences = self._generate_strided_blocks(
-                model, repeated_ids, num_blocks, anchor_offset=anchor_offset,
+                model,
+                repeated_ids,
+                num_blocks,
+                anchor_offset=anchor_offset,
             )
 
         # --- Step 2: Build strided mask for full generation ---
@@ -585,8 +642,13 @@ class AxolotlStridedEBFTTrainer(
         torch.cuda.empty_cache()
 
         attn_mask, pos_ids = self._build_strided_mask(
-            full_seq_len, seq_len, gen_len, num_blocks,
-            B * n_samples, device, model_dtype,
+            full_seq_len,
+            seq_len,
+            gen_len,
+            num_blocks,
+            B * n_samples,
+            device,
+            model_dtype,
             anchor_offset=anchor_offset,
         )
 
@@ -616,38 +678,43 @@ class AxolotlStridedEBFTTrainer(
             # Process one sample at a time: backbone → chunked lm_head → logprobs
             # This keeps peak memory at ~1 sample's activations instead of B*N.
             for s_idx in range(BN):
-                seq_s = full_sequences[s_idx:s_idx + 1]  # (1, full_seq_len)
+                seq_s = full_sequences[s_idx : s_idx + 1]  # (1, full_seq_len)
                 # Handle attention mask format (BlockMask vs dense 4D)
                 if isinstance(attn_mask, torch.Tensor) and attn_mask.dim() == 4:
-                    mask_s = attn_mask[s_idx:s_idx + 1]
+                    mask_s = attn_mask[s_idx : s_idx + 1]
                 else:
                     mask_s = attn_mask  # BlockMask broadcasts over batch
-                pos_s = pos_ids[s_idx:s_idx + 1]
+                pos_s = pos_ids[s_idx : s_idx + 1]
 
                 with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                     backbone_out = backbone(
-                        seq_s, attention_mask=mask_s, position_ids=pos_s,
+                        seq_s,
+                        attention_mask=mask_s,
+                        position_ids=pos_s,
                         return_dict=True,
                     )
                 hidden_s = backbone_out.last_hidden_state  # (1, full_seq_len, H)
-                labels_s = shift_labels[s_idx:s_idx + 1]
+                labels_s = shift_labels[s_idx : s_idx + 1]
 
                 logps_s = torch.zeros(
-                    1, hidden_s.shape[1] - 1, device=device, dtype=torch.float32,
+                    1,
+                    hidden_s.shape[1] - 1,
+                    device=device,
+                    dtype=torch.float32,
                 )
 
                 region_h = hidden_s[:, compute_start:-1, :]
                 region_l = labels_s[:, compute_start:]
                 chunk_size = 256
                 for i in range(0, region_h.shape[1], chunk_size):
-                    h_chunk = region_h[:, i:i + chunk_size, :]
-                    l_chunk = region_l[:, i:i + chunk_size]
+                    h_chunk = region_h[:, i : i + chunk_size, :]
+                    l_chunk = region_l[:, i : i + chunk_size]
                     with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                         logits_chunk = lm_head(h_chunk)
                     chunk_lp = F.log_softmax(logits_chunk.float(), dim=-1)
-                    logps_s[:, compute_start + i:compute_start + i + h_chunk.shape[1]] = (
-                        chunk_lp.gather(-1, l_chunk.unsqueeze(-1)).squeeze(-1)
-                    )
+                    logps_s[
+                        :, compute_start + i : compute_start + i + h_chunk.shape[1]
+                    ] = chunk_lp.gather(-1, l_chunk.unsqueeze(-1)).squeeze(-1)
                     del logits_chunk, chunk_lp
                 per_token_logps_list.append(logps_s)
                 del hidden_s, backbone_out, region_h
@@ -657,27 +724,33 @@ class AxolotlStridedEBFTTrainer(
             # Fallback: full forward (non-standard model architecture)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 outputs = model(
-                    full_sequences, attention_mask=attn_mask,
-                    position_ids=pos_ids, return_dict=True,
+                    full_sequences,
+                    attention_mask=attn_mask,
+                    position_ids=pos_ids,
+                    return_dict=True,
                 )
             logits = outputs.logits
             per_token_logps = torch.zeros(
-                logits.shape[0], logits.shape[1] - 1,
-                device=device, dtype=torch.float32,
+                logits.shape[0],
+                logits.shape[1] - 1,
+                device=device,
+                dtype=torch.float32,
             )
             region_logits = logits[:, compute_start:-1, :]
             region_labels = shift_labels[:, compute_start:]
             chunk_size = 256
             for i in range(0, region_logits.shape[1], chunk_size):
-                chunk_logits = region_logits[:, i:i + chunk_size, :]
-                chunk_labels = region_labels[:, i:i + chunk_size]
+                chunk_logits = region_logits[:, i : i + chunk_size, :]
+                chunk_labels = region_labels[:, i : i + chunk_size]
                 chunk_lp = F.log_softmax(chunk_logits.float(), dim=-1)
-                per_token_logps[:, compute_start + i:compute_start + i + chunk_logits.shape[1]] = (
-                    chunk_lp.gather(-1, chunk_labels.unsqueeze(-1)).squeeze(-1)
-                )
+                per_token_logps[
+                    :, compute_start + i : compute_start + i + chunk_logits.shape[1]
+                ] = chunk_lp.gather(-1, chunk_labels.unsqueeze(-1)).squeeze(-1)
             del logits, region_logits
 
-        action_mask = torch.zeros(per_token_logps.shape, dtype=torch.bool, device=device)
+        action_mask = torch.zeros(
+            per_token_logps.shape, dtype=torch.bool, device=device
+        )
         # Only mark actual generated tokens (not padding beyond num_blocks * gen_len)
         gen_end = gen_start + num_blocks * gen_len
         action_mask[:, gen_start:gen_end] = True
@@ -685,8 +758,13 @@ class AxolotlStridedEBFTTrainer(
         # --- Step 4: Extract features and compute rewards ---
         with torch.no_grad():
             block_rewards = self._compute_block_rewards(
-                full_sequences, attn_mask, pos_ids,
-                input_ids, num_blocks, B, n_samples,
+                full_sequences,
+                attn_mask,
+                pos_ids,
+                input_ids,
+                num_blocks,
+                B,
+                n_samples,
                 anchor_offset=anchor_offset,
             )
 
@@ -702,12 +780,14 @@ class AxolotlStridedEBFTTrainer(
         full_advantages = torch.zeros_like(per_token_logps)
         # Only fill actual generated region (not padding beyond num_blocks * gen_len)
         adv_len = token_advantages.shape[1]  # = num_blocks * gen_len
-        full_advantages[:, gen_start:gen_start + adv_len] = token_advantages
+        full_advantages[:, gen_start : gen_start + adv_len] = token_advantages
 
         # --- Step 6: Compute loss ---
         # RL loss: REINFORCE on generated tokens (needs grad through per_token_logps)
         rl_loss_per_token = -per_token_logps * full_advantages.detach()
-        rl_loss = (rl_loss_per_token * action_mask.float()).sum() / action_mask.float().sum().clamp(min=1)
+        rl_loss = (
+            rl_loss_per_token * action_mask.float()
+        ).sum() / action_mask.float().sum().clamp(min=1)
 
         # CE loss: For structured data, only compute on completion ground-truth tokens
         # (labels != -100 in the original input). For unstructured data, compute on
@@ -717,14 +797,18 @@ class AxolotlStridedEBFTTrainer(
             if is_structured and "labels" in inputs:
                 labels = inputs["labels"].to(device)  # (B, seq_len)
                 shifted_labels = labels[:, 1:]  # (B, seq_len - 1)
-                ce_mask_base = (shifted_labels != -100)  # (B, seq_len - 1)
+                ce_mask_base = shifted_labels != -100  # (B, seq_len - 1)
                 ce_mask_repeated = ce_mask_base.repeat_interleave(n_samples, dim=0)
-                ce_mask = torch.zeros(per_token_logps.shape, dtype=torch.bool, device=device)
-                ce_mask[:, :ce_mask_repeated.shape[1]] = ce_mask_repeated
+                ce_mask = torch.zeros(
+                    per_token_logps.shape, dtype=torch.bool, device=device
+                )
+                ce_mask[:, : ce_mask_repeated.shape[1]] = ce_mask_repeated
                 ce_mask[:, gen_start:] = False
             else:
                 ce_mask = ~action_mask
-            ce_loss = (-per_token_logps * ce_mask.float()).sum() / ce_mask.float().sum().clamp(min=1)
+            ce_loss = (
+                -per_token_logps * ce_mask.float()
+            ).sum() / ce_mask.float().sum().clamp(min=1)
 
         loss = self.ebft_rl_coef * rl_loss + self.ebft_ce_coef * ce_loss
 
@@ -769,7 +853,9 @@ class AxolotlStridedEBFTTrainer(
 
     @torch._dynamo.disable
     @torch.no_grad()
-    def _generate_strided_blocks(self, model, prompt_ids, num_blocks, anchor_offset=None):
+    def _generate_strided_blocks(
+        self, model, prompt_ids, num_blocks, anchor_offset=None
+    ):
         """Generate tokens using strided block-parallel attention.
 
         Uses eager attention (dense 4D masks) during generation to avoid dynamo
@@ -839,7 +925,9 @@ class AxolotlStridedEBFTTrainer(
                     probs = torch.softmax(block_logits, dim=-1)
 
                     if top_p < 1.0:
-                        sorted_probs, sorted_idx = torch.sort(probs, descending=True, dim=-1)
+                        sorted_probs, sorted_idx = torch.sort(
+                            probs, descending=True, dim=-1
+                        )
                         cumulative = torch.cumsum(sorted_probs, dim=-1)
                         remove = cumulative > top_p
                         remove[..., 1:] = remove[..., :-1].clone()
@@ -862,8 +950,14 @@ class AxolotlStridedEBFTTrainer(
     @torch._dynamo.disable
     @torch.no_grad()
     def _compute_block_rewards(
-        self, full_sequences, attn_mask, pos_ids,
-        original_ids, num_blocks, batch_size, n_samples,
+        self,
+        full_sequences,
+        attn_mask,
+        pos_ids,
+        original_ids,
+        num_blocks,
+        batch_size,
+        n_samples,
         anchor_offset=None,
     ):
         """Extract features and compute per-block rewards. Returns (B, N, NB).
@@ -933,16 +1027,26 @@ class AxolotlStridedEBFTTrainer(
                 dtype=torch.bfloat16,
             )
 
-        with feature_ctx, attn_ctx, torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with (
+            feature_ctx,
+            attn_ctx,
+            torch.autocast(device_type="cuda", dtype=torch.bfloat16),
+        ):
             was_training = feat_model.training
             feat_model.eval()
             fn_outputs = feat_model(
-                fn_seqs, attention_mask=fn_attn_mask, position_ids=fn_pos,
-                output_hidden_states=True, return_dict=True,
+                fn_seqs,
+                attention_mask=fn_attn_mask,
+                position_ids=fn_pos,
+                output_hidden_states=True,
+                return_dict=True,
             )
             if was_training:
                 feat_model.train()
-        hidden_states_cpu = [fn_outputs.hidden_states[idx].to(device) for idx in self.feature_layer_indices]
+        hidden_states_cpu = [
+            fn_outputs.hidden_states[idx].to(device)
+            for idx in self.feature_layer_indices
+        ]
         del fn_outputs, fn_seqs, fn_pos, fn_attn_mask
 
         # Normalize each layer's hidden states separately (like the reference critic),
@@ -955,7 +1059,7 @@ class AxolotlStridedEBFTTrainer(
         # align with where anchors are actually placed.
         gt_features = features[:, anchor_offset:seq_len, :]
         # Only take actual generated tokens (exclude padding beyond num_blocks * gen_len)
-        gen_features = features[:, seq_len:seq_len + num_blocks * gen_len, :]
+        gen_features = features[:, seq_len : seq_len + num_blocks * gen_len, :]
 
         gt_block_features = gt_features.unfold(1, gen_len, stride).permute(0, 1, 3, 2)
         gen_block_features = gen_features.reshape(
@@ -977,12 +1081,21 @@ class AxolotlStridedEBFTTrainer(
             for b in range(batch_size):
                 for nb in range(num_blocks):
                     w_gen, w_gt = whiten_embeddings_batched(
-                        gen_emb[b, :, nb, :], gt_emb[b, :, nb, :],
+                        gen_emb[b, :, nb, :],
+                        gt_emb[b, :, nb, :],
                     )
                     whitened_gen.append(w_gen)
                     whitened_gt.append(w_gt)
-            gen_emb = torch.stack(whitened_gen).view(batch_size, num_blocks, n_samples, -1).transpose(1, 2)
-            gt_emb = torch.stack(whitened_gt).view(batch_size, num_blocks, n_samples, -1).transpose(1, 2)
+            gen_emb = (
+                torch.stack(whitened_gen)
+                .view(batch_size, num_blocks, n_samples, -1)
+                .transpose(1, 2)
+            )
+            gt_emb = (
+                torch.stack(whitened_gt)
+                .view(batch_size, num_blocks, n_samples, -1)
+                .transpose(1, 2)
+            )
 
         alignment = F.cosine_similarity(gen_emb, gt_emb, dim=-1)
 
@@ -990,12 +1103,16 @@ class AxolotlStridedEBFTTrainer(
         diversity = torch.zeros_like(alignment)
         if n_samples > 1:
             # (B, N, NB, D) → (B*NB, N, D) for a single batched bmm
-            gen_for_div = gen_emb.permute(0, 2, 1, 3).reshape(batch_size * num_blocks, n_samples, -1)
+            gen_for_div = gen_emb.permute(0, 2, 1, 3).reshape(
+                batch_size * num_blocks, n_samples, -1
+            )
             sims = torch.bmm(gen_for_div, gen_for_div.transpose(1, 2))  # (B*NB, N, N)
             eye = torch.eye(n_samples, device=device, dtype=torch.bool)
             sims = sims.masked_fill(eye.unsqueeze(0), 0.0)
             div_flat = sims.sum(dim=-1) / (n_samples - 1)  # (B*NB, N)
-            diversity = div_flat.view(batch_size, num_blocks, n_samples).permute(0, 2, 1)  # (B, N, NB)
+            diversity = div_flat.view(batch_size, num_blocks, n_samples).permute(
+                0, 2, 1
+            )  # (B, N, NB)
 
         # Scale by 2 per paper equation (7):
         #   r_j = 2*φ(ŷ_j)^T*φ(y) - 2/(n-1) * Σ_{j'≠j} φ(ŷ_j)^T*φ(ŷ_{j'})
@@ -1013,7 +1130,9 @@ class AxolotlStridedEBFTTrainer(
         self._last_diversity = diversity.mean().item()
         self._last_cfm = cfm_loss.item()
 
-        return self.ebft_alignment_coef * alignment - self.ebft_diversity_coef * diversity
+        return (
+            self.ebft_alignment_coef * alignment - self.ebft_diversity_coef * diversity
+        )
 
     def _compute_advantages(self, rewards, batch_size, n_samples, num_blocks):
         """Compute RLOO advantages. rewards: (B, N, NB) → (B*N, NB)."""

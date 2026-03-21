@@ -10,7 +10,7 @@ Paper: "Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Mode
 
 import contextlib
 import copy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from datasets import Dataset, IterableDataset
@@ -31,6 +31,12 @@ from axolotl.core.trainers.grpo.trainer import (
 )
 from axolotl.utils.logging import get_logger
 
+if TYPE_CHECKING:
+    from collections import defaultdict
+
+    from accelerate import Accelerator
+    from trl.generation.vllm_generation import VLLMGeneration
+
 LOG = get_logger(__name__)
 
 
@@ -43,6 +49,17 @@ class EBFTMixin:
     - _feature_matching_reward() callable for GRPO reward function interface
     - _sequential_rollout() for multi-turn conversations
     """
+
+    # Type stubs for attributes provided by the composed GRPOTrainer base class.
+    # These are not defined here but accessed via cooperative multiple inheritance.
+    if TYPE_CHECKING:
+        accelerator: Accelerator
+        model: PreTrainedModel
+        args: AxolotlEBFTConfig
+        processing_class: PreTrainedTokenizerBase
+        num_generations: int
+        vllm_generation: VLLMGeneration
+        _metrics: defaultdict
 
     _tag_names = ["trl", "ebft", "axolotl"]
 
@@ -65,7 +82,7 @@ class EBFTMixin:
         # Pass our feature-matching reward function to GRPOTrainer
         # It will be called with (prompts, completions, **kwargs) where
         # kwargs includes all extra dataset fields like "ground_truth"
-        super().__init__(
+        super().__init__(  # type: ignore[call-arg]
             model=model,
             reward_funcs=[self._feature_matching_reward],
             args=args,
@@ -76,6 +93,7 @@ class EBFTMixin:
             optimizers=optimizers,
             peft_config=peft_config,
         )
+        assert args is not None
 
         # --- Feature network setup ---
         unwrapped = self.accelerator.unwrap_model(self.model)
@@ -202,7 +220,7 @@ class EBFTMixin:
 
         # --- Tokenize generated sequences: prompt + completion ---
         gen_texts = []
-        for p, c in zip(prompts, completions):
+        for p, c in zip(prompts, completions, strict=True):
             if isinstance(p, list):
                 prompt_text = self.processing_class.apply_chat_template(
                     p, tokenize=False, add_generation_prompt=True
@@ -230,7 +248,7 @@ class EBFTMixin:
 
         # --- Tokenize ground-truth sequences: prompt + ground_truth ---
         gt_texts = []
-        for i, (p, gt) in enumerate(zip(prompts, ground_truth)):
+        for i, (p, gt) in enumerate(zip(prompts, ground_truth, strict=True)):
             if i % num_gens != 0:
                 continue  # Only need one GT per prompt group
             if isinstance(p, list):
