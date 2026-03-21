@@ -512,17 +512,15 @@ def main(script_args: ScriptArguments):
             weight = torch.frombuffer(bytearray(raw), dtype=dtype).reshape(shape)
             weights_to_load.append((p["name"], weight))
 
-        # Send to workers via pipe — each worker calls load_weights directly
-        for conn in connections:
-            conn.send({
-                "type": "call",
-                "method": "load_weights",
-                "kwargs": {"weights": weights_to_load},
-            })
-        loop = asyncio.get_running_loop()
-        results = await asyncio.gather(
-            *(loop.run_in_executor(None, c.recv) for c in connections)
-        )
+        # Send each weight individually via collective_rpc to worker extension's
+        # http_load_weights method. Fire-and-forget for speed.
+        if weights_to_load:
+            kwargs = {"method": "http_load_weights", "kwargs": {"weights": weights_to_load}}
+            msg = {"type": "fire_and_forget", "method": "collective_rpc", "kwargs": kwargs}
+            loop = asyncio.get_running_loop()
+            await asyncio.gather(
+                *(loop.run_in_executor(None, c.send, msg) for c in connections)
+            )
         return {"message": f"HTTP weight update for {len(weights_to_load)} params"}
 
     @app.post("/reset_prefix_cache/")

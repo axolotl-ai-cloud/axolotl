@@ -71,7 +71,11 @@ class EBFTMixin:
 
         # --- Feature network setup ---
         unwrapped = self.accelerator.unwrap_model(self.model)
-        self._share_feature_weights = isinstance(unwrapped, PeftModel)
+        # Check for PEFT model — use hasattr for robustness across DDP/FSDP wrapping
+        self._share_feature_weights = (
+            isinstance(unwrapped, PeftModel)
+            or hasattr(unwrapped, "disable_adapter")
+        )
 
         if self._share_feature_weights:
             # Share weights: use actor's base model with adapters disabled.

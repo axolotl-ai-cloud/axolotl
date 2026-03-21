@@ -636,6 +636,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
         if training_args is not None:
             if getattr(training_args, "vllm_lora_sync", False):
                 _skip_nccl = True  # LoRA sync uses filesystem + HTTP
+            elif getattr(training_args, "async_prefetch", False):
+                # Skip NCCL at init to avoid DDP param count mismatch in multi-GPU.
+                # init_communicator allocates device tensors on rank 0 only, which
+                # causes DDP to see different param counts across ranks.
+                # The communicator is initialized lazily on first weight sync instead.
+                _skip_nccl = True
         if _skip_nccl:
             from trl.generation.vllm_generation import VLLMGeneration
 
@@ -801,6 +807,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         accelerator = self.vllm_generation.accelerator
         if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
             return
+
+        # In multi-GPU async mode, we skip NCCL communicator init to avoid
+        # DDP param count mismatch and NCCL device conflicts. Weight sync
+        # uses the HTTP-only fallback in batch_update_named_params instead.
 
         model = self.vllm_generation.model
         vllm_client = self.vllm_generation.vllm_client
