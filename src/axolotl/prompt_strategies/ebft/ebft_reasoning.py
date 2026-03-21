@@ -41,12 +41,15 @@ def _extract_thinking(text: str) -> tuple[str, str]:
 
 
 def transform(cfg, **kwargs):
-    """Full response including thinking traces for feature matching."""
+    """Full response including thinking traces for feature matching.
+
+    For datasets where assistant content has <think>...</think> tags in the
+    content field. The ground_truth includes the full content (thinking + answer).
+    """
 
     def transform_fn(example, tokenizer=None):
         messages = example.get("messages", example.get("conversations", []))
 
-        # Find last assistant turn
         prompt_msgs = []
         ground_truth = ""
         for msg in messages:
@@ -57,6 +60,79 @@ def transform(cfg, **kwargs):
 
         return {
             "prompt": prompt_msgs_snapshot if "prompt_msgs_snapshot" in dir() else messages[:-1],
+            "ground_truth": ground_truth,
+        }
+
+    return transform_fn, {"remove_columns": "__all__"}
+
+
+def transform_split_thinking(cfg, **kwargs):
+    """Split <think> tags into reasoning_content field for native chat template handling.
+
+    For datasets where thinking is embedded in the content field as <think>...</think>.
+    Splits it into separate reasoning_content and content fields so the model's
+    chat template can format it natively (e.g., Qwen3.5's reasoning_content support).
+
+    The prompt messages are passed through with reasoning_content properly split,
+    so vLLM generation with enable_thinking=true produces comparable outputs.
+    The ground_truth is the full assistant response (thinking + answer) for
+    feature matching.
+
+    Also works for:
+    - <reasoning>...</reasoning> tags
+    - <|begin_of_thought|>...<|end_of_thought|> tags
+    """
+    _THINKING_PAIRS = [
+        ("<think>", "</think>"),
+        ("<reasoning>", "</reasoning>"),
+        ("<|begin_of_thought|>", "<|end_of_thought|>"),
+    ]
+
+    def _split_msg_thinking(msg):
+        """Split thinking from assistant message content into reasoning_content."""
+        if msg["role"] != "assistant":
+            return msg
+        content = msg.get("content", "")
+        # Already has reasoning_content — pass through
+        if "reasoning_content" in msg:
+            return msg
+        for open_tag, close_tag in _THINKING_PAIRS:
+            if open_tag in content and close_tag in content:
+                start = content.find(open_tag)
+                end = content.find(close_tag)
+                thinking = content[start + len(open_tag):end].strip()
+                answer = content[end + len(close_tag):].strip()
+                return {
+                    **msg,
+                    "reasoning_content": thinking,
+                    "content": answer,
+                }
+        return msg
+
+    def transform_fn(example, tokenizer=None):
+        messages = example.get("messages", example.get("conversations", []))
+
+        # Split thinking in all assistant messages
+        split_messages = [_split_msg_thinking(m) for m in messages]
+
+        # Build prompt (all messages except last assistant) and ground_truth
+        prompt_msgs = []
+        ground_truth = ""
+        for msg in split_messages:
+            if msg["role"] == "assistant":
+                prompt_msgs_snapshot = list(prompt_msgs)
+                # ground_truth is the FULL content for feature matching
+                # (reassemble thinking + answer so feature matching compares full response)
+                thinking = msg.get("reasoning_content", "")
+                answer = msg.get("content", "")
+                if thinking:
+                    ground_truth = f"<think>\n{thinking}\n</think>\n\n{answer}"
+                else:
+                    ground_truth = answer
+            prompt_msgs.append(msg)
+
+        return {
+            "prompt": prompt_msgs_snapshot if "prompt_msgs_snapshot" in dir() else split_messages[:-1],
             "ground_truth": ground_truth,
         }
 
