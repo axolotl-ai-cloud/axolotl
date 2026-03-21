@@ -36,12 +36,21 @@ def extract_hidden_states(
     if batch_size is None:
         batch_size = input_ids.shape[0]
 
+    # Use the inner transformer body (skips lm_head) when available.
+    # This avoids the expensive hidden_dim × vocab_size matmul whose
+    # output (logits) is never used — only hidden_states are needed.
+    body = getattr(model, "model", None)
+    if body is not None and hasattr(body, "forward"):
+        forward_model = body
+    else:
+        forward_model = model
+
     all_features = []
     for i in range(0, input_ids.shape[0], batch_size):
         chunk_ids = input_ids[i : i + batch_size]
         chunk_mask = attention_mask[i : i + batch_size]
 
-        outputs = model(
+        outputs = forward_model(
             chunk_ids,
             attention_mask=chunk_mask,
             output_hidden_states=True,
@@ -203,9 +212,7 @@ def whiten_embeddings_batched(
 
     # Safe inverse of singular values
     s_max = S.max()
-    inv_s = torch.where(
-        S > whiten_tol * s_max, 1.0 / (S + 1e-12), torch.zeros_like(S)
-    )
+    inv_s = torch.where(S > whiten_tol * s_max, 1.0 / (S + 1e-12), torch.zeros_like(S))
 
     # W = U @ diag(inv_S) @ U^T
     W = (U * inv_s.unsqueeze(0)) @ U.T  # (B, B)

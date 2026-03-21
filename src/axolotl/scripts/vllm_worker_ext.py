@@ -61,7 +61,7 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
                 ("model.layers.", "language_model.model.layers."),
             ]:
                 if name.startswith(src_prefix):
-                    name = dst_prefix + name[len(src_prefix):]
+                    name = dst_prefix + name[len(src_prefix) :]
                     break
 
         # Check if this is a simple direct param (exists as-is)
@@ -120,8 +120,14 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
 
         # Fallback: try load_weights (may work for non-stacked params)
         # Log the actual param names available for debugging
-        sample_keys = [k for k in params_dict if "layers.31.mlp" in k or "layers.31.self_attn" in k][:3]
-        logger.warning("Falling back to load_weights for param: %s (sample vLLM keys: %s)", name, sample_keys)
+        sample_keys = [
+            k for k in params_dict if "layers.31.mlp" in k or "layers.31.self_attn" in k
+        ][:3]
+        logger.warning(
+            "Falling back to load_weights for param: %s (sample vLLM keys: %s)",
+            name,
+            sample_keys,
+        )
         model.load_weights(weights=[(name, weight)])
 
     def update_named_param(self, name, dtype, shape):
@@ -176,3 +182,31 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         """Load weights received via HTTP (no NCCL needed)."""
         for name, weight in weights:
             self._direct_set_weight(name, weight.to(self.device))
+
+    def http_load_weight(self, name: str, data: bytes, dtype: str, shape: list[int]):
+        """Load a single weight received via HTTP (no NCCL needed).
+
+        Reconstructs the tensor from raw bytes since tensors don't survive
+        vLLM's multiproc IPC serialization.  Uses vLLM's ``load_weights``
+        which handles TP sharding and stacked-param packing automatically.
+        """
+        torch_dtype = getattr(torch, dtype)
+        weight = torch.frombuffer(bytearray(data), dtype=torch_dtype).reshape(shape)
+        model = self.model_runner.model
+        model.load_weights(weights=[(name, weight)])
+
+    def http_load_weights_batch(self, params: list[dict]):
+        """Load multiple weights in a single IPC call.
+
+        Each entry has: name, data (bytes), dtype (str), shape (list[int]).
+        Uses vLLM's ``load_weights`` which handles TP sharding automatically.
+        """
+        model = self.model_runner.model
+        weights = []
+        for p in params:
+            torch_dtype = getattr(torch, p["dtype"])
+            weight = torch.frombuffer(bytearray(p["data"]), dtype=torch_dtype).reshape(
+                p["shape"]
+            )
+            weights.append((p["name"], weight))
+        model.load_weights(weights=weights)

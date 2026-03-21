@@ -44,6 +44,16 @@ class EBFTFieldsMixin:
         default=0.0,
         metadata={"help": "Cross-entropy loss coefficient on ground-truth tokens"},
     )
+    ebft_adaptive_max_tokens: bool = field(
+        default=True,
+        metadata={"help": "Set per-batch max_tokens based on ground-truth length"},
+    )
+    ebft_gt_length_multiplier: float = field(
+        default=1.5,
+        metadata={
+            "help": "Multiplier for ground-truth token count when computing adaptive max_tokens"
+        },
+    )
 
 
 # -- Structured mode: extends GRPOTrainer for QA data with vLLM --
@@ -54,7 +64,9 @@ class AxolotlEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, GRPOConfig):
 
 # -- Async structured mode: extends FastAsyncGRPOConfig --
 @dataclass
-class AxolotlAsyncEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, FastAsyncGRPOConfig):
+class AxolotlAsyncEBFTConfig(
+    EBFTFieldsMixin, AxolotlTrainingMixins, FastAsyncGRPOConfig
+):
     """EBFT config for async structured QA data — extends FastAsyncGRPOConfig.
 
     Includes all async fields: async_prefetch, vllm_lora_sync,
@@ -63,13 +75,17 @@ class AxolotlAsyncEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, FastAsyncGR
 
     vllm_lora_sync: bool = field(
         default=False,
-        metadata={"help": "Sync LoRA adapters to vLLM via filesystem instead of NCCL weight merge."},
+        metadata={
+            "help": "Sync LoRA adapters to vLLM via filesystem instead of NCCL weight merge."
+        },
     )
 
 
 # -- Strided mode: extends TrainingArguments for unstructured text --
 @dataclass
-class AxolotlStridedEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, TrainingArguments):
+class AxolotlStridedEBFTConfig(
+    EBFTFieldsMixin, AxolotlTrainingMixins, TrainingArguments
+):
     """EBFT config for unstructured text with strided block-parallel generation."""
 
     ebft_stride: int = field(

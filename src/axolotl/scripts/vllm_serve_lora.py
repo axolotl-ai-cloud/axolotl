@@ -251,7 +251,10 @@ def main(script_args: ScriptArguments):
         elapsed = _time.monotonic() - t0
         logger.info(
             "%s %s %d %.3fs",
-            request.method, request.url.path, response.status_code, elapsed,
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed,
         )
         return response
 
@@ -314,6 +317,7 @@ def main(script_args: ScriptArguments):
 
         import vllm
         from packaging.version import Version
+
         try:
             from vllm.sampling_params import GuidedDecodingParams
         except ImportError:
@@ -493,7 +497,10 @@ def main(script_args: ScriptArguments):
 
     class HTTPWeightUpdateRequest(BaseModel):
         """Weight update via HTTP (no NCCL needed)."""
-        params: list[dict]  # [{"name": str, "dtype": str, "shape": list, "data": str (base64)}]
+
+        params: list[
+            dict
+        ]  # [{"name": str, "dtype": str, "shape": list, "data": str (base64)}]
 
     @app.post("/http_update_weights/")
     async def http_update_weights(request: HTTPWeightUpdateRequest):
@@ -504,6 +511,8 @@ def main(script_args: ScriptArguments):
         """
         import base64
 
+        import torch
+
         weights_to_load = []
         for p in request.params:
             dtype = getattr(torch, p["dtype"].split(".")[-1])
@@ -512,15 +521,27 @@ def main(script_args: ScriptArguments):
             weight = torch.frombuffer(bytearray(raw), dtype=dtype).reshape(shape)
             weights_to_load.append((p["name"], weight))
 
-        # Send each weight individually via collective_rpc to worker extension's
-        # http_load_weights method. Fire-and-forget for speed.
-        if weights_to_load:
-            kwargs = {"method": "http_load_weights", "kwargs": {"weights": weights_to_load}}
-            msg = {"type": "fire_and_forget", "method": "collective_rpc", "kwargs": kwargs}
-            loop = asyncio.get_running_loop()
-            await asyncio.gather(
-                *(loop.run_in_executor(None, c.send, msg) for c in connections)
+        # Send all weights in a single IPC call.  Tensors don't survive
+        # vLLM's multiproc IPC, so serialize as raw bytes + metadata.
+        param_entries = []
+        for name, weight in weights_to_load:
+            param_entries.append(
+                {
+                    "name": name,
+                    "data": weight.contiguous().numpy().tobytes(),
+                    "dtype": str(weight.dtype).split(".")[-1],
+                    "shape": list(weight.shape),
+                }
             )
+        kwargs = {
+            "method": "http_load_weights_batch",
+            "kwargs": {"params": param_entries},
+        }
+        msg = {"type": "fire_and_forget", "method": "collective_rpc", "kwargs": kwargs}
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(
+            *(loop.run_in_executor(None, c.send, msg) for c in connections)
+        )
         return {"message": f"HTTP weight update for {len(weights_to_load)} params"}
 
     @app.post("/reset_prefix_cache/")

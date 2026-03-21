@@ -72,9 +72,7 @@ class EBFTConfig(BaseModel):
     )
     use_whitening: bool = Field(
         default=False,
-        json_schema_extra={
-            "description": "Apply SVD whitening to feature embeddings"
-        },
+        json_schema_extra={"description": "Apply SVD whitening to feature embeddings"},
     )
     alignment_coef: float = Field(
         default=1.0,
@@ -92,6 +90,18 @@ class EBFTConfig(BaseModel):
         default=0.0,
         json_schema_extra={
             "description": "Cross-entropy loss coefficient on ground-truth tokens"
+        },
+    )
+    adaptive_max_tokens: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Set per-batch max_tokens based on ground-truth length"
+        },
+    )
+    gt_length_multiplier: float = Field(
+        default=1.5,
+        json_schema_extra={
+            "description": "Multiplier for ground-truth token count when computing adaptive max_tokens"
         },
     )
 
@@ -120,7 +130,9 @@ class EBFTConfig(BaseModel):
     )
     temperature: float = Field(
         default=0.6,
-        json_schema_extra={"description": "Sampling temperature for strided generation"},
+        json_schema_extra={
+            "description": "Sampling temperature for strided generation"
+        },
     )
     top_p: float = Field(
         default=1.0,
@@ -132,7 +144,9 @@ class EBFTConfig(BaseModel):
     )
     advantage_estimator: str = Field(
         default="rloo",
-        json_schema_extra={"description": "Advantage estimator: 'rloo', 'group_norm', 'reinforce'"},
+        json_schema_extra={
+            "description": "Advantage estimator: 'rloo', 'group_norm', 'reinforce'"
+        },
     )
     min_completion_prefix: int = Field(
         default=0,

@@ -48,13 +48,19 @@ def _batch_update_named_params(
 
         for chunk in chunks:
             param_metadata = [
-                {"name": name, "dtype": str(weights.dtype), "shape": list(weights.shape)}
+                {
+                    "name": name,
+                    "dtype": str(weights.dtype),
+                    "shape": list(weights.shape),
+                }
                 for name, weights in chunk
             ]
             url = f"{self.base_url}/batch_update_named_params/"
             response = self.session.post(url, json={"params": param_metadata})
             if response.status_code != 200:
-                raise Exception(f"Request failed: {response.status_code}, {response.text}")
+                raise Exception(
+                    f"Request failed: {response.status_code}, {response.text}"
+                )
 
             for _name, weights in chunk:
                 if is_torch_xpu_available():
@@ -71,20 +77,28 @@ def _batch_update_named_params(
         # Slower but works without cross-process communicator setup.
         MAX_PARAMS_PER_REQUEST = 32  # avoid huge HTTP payloads
         for i in range(0, len(params), MAX_PARAMS_PER_REQUEST):
-            chunk = params[i:i + MAX_PARAMS_PER_REQUEST]
+            chunk = params[i : i + MAX_PARAMS_PER_REQUEST]
             payload = []
             for name, weights in chunk:
-                raw = weights.contiguous().cpu().numpy().tobytes()
-                payload.append({
-                    "name": name,
-                    "dtype": str(weights.dtype),
-                    "shape": list(weights.shape),
-                    "data": base64.b64encode(raw).decode("ascii"),
-                })
+                w_cpu = weights.contiguous().cpu()
+                # NumPy doesn't support bfloat16; cast to float32 for serialization
+                if w_cpu.dtype == torch.bfloat16:
+                    w_cpu = w_cpu.float()
+                raw = w_cpu.numpy().tobytes()
+                payload.append(
+                    {
+                        "name": name,
+                        "dtype": str(w_cpu.dtype),
+                        "shape": list(weights.shape),
+                        "data": base64.b64encode(raw).decode("ascii"),
+                    }
+                )
             url = f"{self.base_url}/http_update_weights/"
             response = self.session.post(url, json={"params": payload})
             if response.status_code != 200:
-                raise Exception(f"Request failed: {response.status_code}, {response.text}")
+                raise Exception(
+                    f"Request failed: {response.status_code}, {response.text}"
+                )
 
 
 def _update_model_params(self, model: nn.Module, chunk_size: int | None = None):

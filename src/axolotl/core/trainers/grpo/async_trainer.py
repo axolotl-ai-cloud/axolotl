@@ -788,10 +788,48 @@ class AsyncGRPOTrainer(GRPOTrainer):
             self._executor = None
 
     def _submit_generation(self):
-        """Submit the next background generation job."""
+        """Submit the next background generation job.
+
+        With multi-process (DDP/FSDP), only rank 0 generates to avoid
+        cross-rank NCCL collectives from background threads.  Non-rank-0
+        processes enqueue a sentinel ``None`` that is replaced by a
+        broadcast in ``_prepare_inputs_legacy_async``.
+        """
+        rank0_only = self.accelerator.num_processes > 1
+        if rank0_only and not self.accelerator.is_main_process:
+            # Non-rank-0: nothing to generate; enqueue a resolved None future
+            f: concurrent.futures.Future = concurrent.futures.Future()
+            f.set_result(None)
+            self._async_queue.put(f)
+            return
         batch = next(self._prompt_iter)
-        future = self._executor.submit(self._generate_only, batch)
+        future = self._executor.submit(self._generate_only, batch, rank0_only)
         self._async_queue.put(future)
+
+    # ------------------------------------------------------------------
+    # Broadcast rollout (legacy async, multi-process)
+    # ------------------------------------------------------------------
+
+    def _broadcast_rollout(self, rollout: dict | None) -> dict:
+        """Broadcast a rank0-only rollout dict to all ranks (main thread).
+
+        Rank 0 has the full rollout dict from ``_generate_only``; other ranks
+        have ``None``.  After broadcast, tensors are moved to each rank's
+        local device.
+        """
+        import torch.distributed as dist
+
+        obj_list = [rollout if self.accelerator.is_main_process else None]
+        dist.broadcast_object_list(obj_list, src=0)
+        rollout = obj_list[0]
+
+        # Move tensors to local device (broadcast deserializes to CPU)
+        device = self.accelerator.device
+        for key, val in rollout.items():
+            if isinstance(val, torch.Tensor) and val.device != device:
+                rollout[key] = val.to(device)
+
+        return rollout
 
     # ------------------------------------------------------------------
     # Weight sync
@@ -892,7 +930,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
         # Batch sync only LoRA-modified params via HTTP+NCCL
         if params_to_sync:
             sync_mb = sum(t.numel() * t.element_size() for _, t in params_to_sync) / 1e6
-            logger.info(f"Syncing {len(params_to_sync)} LoRA-modified params ({sync_mb:.0f} MB)")
+            logger.info(
+                f"Syncing {len(params_to_sync)} LoRA-modified params ({sync_mb:.0f} MB)"
+            )
             vllm_client.batch_update_named_params(params_to_sync)
 
         # Reset prefix cache after weight update
@@ -1018,11 +1058,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         step = self.state.global_step
         interval = self.args.vllm_sync_interval
         if step != self._last_synced_step and step % interval == 0:
+            if step == 0:
+                logger.info("Skipping vLLM weight sync at step 0 (no training yet)")
+                self._last_synced_step = step
+                return
             if getattr(self.args, "vllm_lora_sync", False):
-                if step == 0:
-                    logger.info("Skipping LoRA sync at step 0 (no training yet)")
-                    self._last_synced_step = step
-                    return
                 # Native LoRA sync: save adapter to filesystem, vLLM loads it directly
                 self._sync_lora_adapter()
             else:
@@ -1175,9 +1215,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
             output = vg.vllm_client.chat(
                 messages=unique_prompts,
                 **sampling_params,
-                chat_template_kwargs=vg.chat_template_kwargs,
-                tools=vg.tools,
-                chat_template=vg.chat_template,
+                chat_template_kwargs=self.chat_template_kwargs,
+                tools=self.tools,
+                chat_template=getattr(self, "chat_template", None),
             )
         else:
             output = vg.vllm_client.generate(prompts=unique_prompts, **sampling_params)
@@ -2289,6 +2329,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         future = self._async_queue.get()
         rollout = future.result()
         self._submit_generation()
+
+        # With multi-process, only rank 0 generated. Broadcast to all ranks.
+        if self.accelerator.num_processes > 1:
+            rollout = self._broadcast_rollout(rollout)
 
         if self.args.streaming_partial_batch:
             micro_batches = self._score_streaming(rollout)

@@ -25,7 +25,10 @@ from axolotl.core.trainers.ebft.rewards import (
     get_diversity_rewards,
     whiten_embeddings_batched,
 )
-from axolotl.core.trainers.grpo.trainer import AxolotlAsyncGRPOTrainer, AxolotlGRPOTrainer
+from axolotl.core.trainers.grpo.trainer import (
+    AxolotlAsyncGRPOTrainer,
+    AxolotlGRPOTrainer,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -48,10 +51,15 @@ class EBFTMixin:
         model: str | PreTrainedModel,
         args: AxolotlEBFTConfig | None = None,
         train_dataset: Dataset | IterableDataset | None = None,
-        eval_dataset: Dataset | IterableDataset | dict[str, Dataset | IterableDataset] | None = None,
+        eval_dataset: Dataset
+        | IterableDataset
+        | dict[str, Dataset | IterableDataset]
+        | None = None,
         processing_class: PreTrainedTokenizerBase | None = None,
         callbacks: list[TrainerCallback] | None = None,
-        optimizers: tuple[torch.optim.Optimizer | None, torch.optim.lr_scheduler.LambdaLR | None] = (None, None),
+        optimizers: tuple[
+            torch.optim.Optimizer | None, torch.optim.lr_scheduler.LambdaLR | None
+        ] = (None, None),
         peft_config: Any | None = None,
     ):
         # Pass our feature-matching reward function to GRPOTrainer
@@ -72,9 +80,8 @@ class EBFTMixin:
         # --- Feature network setup ---
         unwrapped = self.accelerator.unwrap_model(self.model)
         # Check for PEFT model — use hasattr for robustness across DDP/FSDP wrapping
-        self._share_feature_weights = (
-            isinstance(unwrapped, PeftModel)
-            or hasattr(unwrapped, "disable_adapter")
+        self._share_feature_weights = isinstance(unwrapped, PeftModel) or hasattr(
+            unwrapped, "disable_adapter"
         )
 
         if self._share_feature_weights:
@@ -96,7 +103,9 @@ class EBFTMixin:
         # Compute layer indices from fractional depths
         # Handle VLM models where num_hidden_layers is on text_config
         config = unwrapped.config
-        if hasattr(config, "text_config") and hasattr(config.text_config, "num_hidden_layers"):
+        if hasattr(config, "text_config") and hasattr(
+            config.text_config, "num_hidden_layers"
+        ):
             config = config.text_config
         num_layers = config.num_hidden_layers
         self.feature_layer_indices = [
@@ -106,6 +115,43 @@ class EBFTMixin:
             f"EBFT feature extraction from layers {self.feature_layer_indices} "
             f"(of {num_layers} total), embed_method={args.ebft_embed_method}"
         )
+        if args.ebft_adaptive_max_tokens:
+            LOG.info(
+                f"EBFT adaptive max_tokens enabled "
+                f"(gt_length_multiplier={args.ebft_gt_length_multiplier})"
+            )
+
+    def _generate_only(self, inputs, rank0_only=False):
+        """Override to set per-batch max_tokens based on ground-truth length."""
+        args = self.args
+        if (
+            args.ebft_adaptive_max_tokens
+            and hasattr(self, "vllm_generation")
+            and inputs
+        ):
+            gt_texts = [
+                x.get("ground_truth", "") for x in inputs if x.get("ground_truth")
+            ]
+            if gt_texts:
+                gt_token_counts = [
+                    len(self.processing_class.encode(gt, add_special_tokens=False))
+                    for gt in gt_texts
+                ]
+                multiplier = args.ebft_gt_length_multiplier
+                max_completion = self.vllm_generation.max_completion_length
+                adaptive_max = max(
+                    min(int(c * multiplier), max_completion) for c in gt_token_counts
+                )
+                adaptive_max = max(adaptive_max, 64)
+
+                original = self.vllm_generation.max_completion_length
+                self.vllm_generation.max_completion_length = adaptive_max
+                try:
+                    return super()._generate_only(inputs, rank0_only)
+                finally:
+                    self.vllm_generation.max_completion_length = original
+
+        return super()._generate_only(inputs, rank0_only)
 
     @torch.no_grad()
     def _feature_matching_reward(
@@ -174,7 +220,9 @@ class EBFTMixin:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=getattr(self.args, "max_length", None) or getattr(self.args, "max_seq_length", None) or 2048,
+            max_length=getattr(self.args, "max_length", None)
+            or getattr(self.args, "max_seq_length", None)
+            or 2048,
             add_special_tokens=False,
         )
         gen_ids = gen_encoded["input_ids"].to(device)
@@ -198,7 +246,9 @@ class EBFTMixin:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=getattr(self.args, "max_length", None) or getattr(self.args, "max_seq_length", None) or 2048,
+            max_length=getattr(self.args, "max_length", None)
+            or getattr(self.args, "max_seq_length", None)
+            or 2048,
             add_special_tokens=False,
         )
         gt_ids = gt_encoded["input_ids"].to(device)
@@ -259,7 +309,9 @@ class EBFTMixin:
         alignment = alignment * 2
         diversity = diversity * 2
 
-        rewards = args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
+        rewards = (
+            args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
+        )
 
         # Compute CFM loss: ||E[φ(ŷ)] - φ(y)||^2 (paper eq 2)
         gen_reshaped = gen_emb.view(-1, num_gens, gen_emb.shape[-1])
@@ -335,7 +387,9 @@ class EBFTMixin:
 
             # Get remaining turns for this prompt (same for all num_gens copies)
             prompt_idx = idx // num_gens
-            turns = remaining_turns[prompt_idx] if prompt_idx < len(remaining_turns) else []
+            turns = (
+                remaining_turns[prompt_idx] if prompt_idx < len(remaining_turns) else []
+            )
 
             if not turns:
                 # No remaining turns — just use the first completion
@@ -379,9 +433,11 @@ class EBFTMixin:
 
 class AxolotlEBFTTrainer(EBFTMixin, AxolotlGRPOTrainer):
     """EBFT trainer using synchronous GRPO (standard vLLM generation)."""
+
     pass
 
 
 class AxolotlAsyncEBFTTrainer(EBFTMixin, AxolotlAsyncGRPOTrainer):
     """EBFT trainer using async GRPO (prefetches next batch during training)."""
+
     pass
