@@ -89,7 +89,12 @@ def transform_split_thinking(cfg, **kwargs):
     ]
 
     def _split_msg_thinking(msg):
-        """Split thinking from assistant message content into reasoning_content."""
+        """Split thinking from assistant message content into reasoning_content.
+
+        Always includes reasoning_content key on assistant messages (empty string
+        if no thinking tags found) to ensure consistent HF dataset schema across
+        all examples in a batch.
+        """
         if msg["role"] != "assistant":
             return msg
         content = msg.get("content", "")
@@ -107,13 +112,22 @@ def transform_split_thinking(cfg, **kwargs):
                     "reasoning_content": thinking,
                     "content": answer,
                 }
-        return msg
+        # No thinking tags — still add reasoning_content for schema consistency
+        return {**msg, "reasoning_content": ""}
+
+    def _normalize_msg(msg):
+        """Ensure every message has {role, content, reasoning_content} for HF schema consistency."""
+        return {
+            "role": msg.get("role", ""),
+            "content": msg.get("content", ""),
+            "reasoning_content": msg.get("reasoning_content", ""),
+        }
 
     def transform_fn(example, tokenizer=None):
         messages = example.get("messages", example.get("conversations", []))
 
-        # Split thinking in all assistant messages
-        split_messages = [_split_msg_thinking(m) for m in messages]
+        # Split thinking in all assistant messages, then normalize schema
+        split_messages = [_normalize_msg(_split_msg_thinking(m)) for m in messages]
 
         # Build prompt (all messages except last assistant) and ground_truth
         prompt_msgs = []
@@ -122,7 +136,6 @@ def transform_split_thinking(cfg, **kwargs):
             if msg["role"] == "assistant":
                 prompt_msgs_snapshot = list(prompt_msgs)
                 # ground_truth is the FULL content for feature matching
-                # (reassemble thinking + answer so feature matching compares full response)
                 thinking = msg.get("reasoning_content", "")
                 answer = msg.get("content", "")
                 if thinking:

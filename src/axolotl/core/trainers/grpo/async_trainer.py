@@ -828,10 +828,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 weight_name = pname.replace(".weight_scale_inv", ".weight")
                 scale_inv_lookup[weight_name] = pparam.data
 
-        # Iterate all parameters, computing merged weights for LoRA layers.
-        # Skip LoRA-specific params and FP8 scale params (scales will be
-        # recomputed by vLLM when it receives the merged bf16 weight).
+        # Only sync parameters that have LoRA modifications — skip unchanged
+        # base weights to avoid OOM on the vLLM GPU from allocating the entire
+        # model's worth of NCCL receive buffers.
         params_to_sync = []
+        compute_dtype = torch.bfloat16
         for name, param in model.named_parameters():
             vllm_name = name.removeprefix("base_model.model.").replace(
                 ".base_layer", ""
@@ -840,52 +841,48 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 continue
             if "original_module" in vllm_name:
                 continue
-            # Skip FP8 quantization scale parameters - they are recomputed
-            # on the vLLM side when we update the weight itself
             if "weight_scale_inv" in vllm_name or "input_scale" in vllm_name:
+                continue
+            if not vllm_name.endswith(".weight"):
                 continue
             vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
 
+            # Only sync weights that have LoRA adapters
+            mod_path = vllm_name[: -len(".weight")]
+            if mod_path not in lora_info:
+                continue
+
             data = param.data
-            compute_dtype = torch.bfloat16
 
-            if vllm_name.endswith(".weight"):
-                # Dequantize FP8 weights before merging
-                if data.dtype == torch.float8_e4m3fn and name in scale_inv_lookup:
-                    scale_inv = scale_inv_lookup[name]
-                    # Block dequantization: weight * scale_inv (with broadcasting)
-                    fp8_bf16 = data.to(compute_dtype)
-                    if scale_inv.dim() == 2 and fp8_bf16.dim() == 2:
-                        # Block-quantized: scale_inv shape (rows/block, cols/block)
-                        sr, sc = scale_inv.shape
-                        br = fp8_bf16.shape[0] // sr  # block height
-                        bc = fp8_bf16.shape[1] // sc  # block width
-                        # Reshape → multiply by block scale → reshape back
-                        data = (
-                            fp8_bf16.reshape(sr, br, sc, bc)
-                            * scale_inv[:, None, :, None].to(compute_dtype)
-                        ).reshape(fp8_bf16.shape)
-                    elif scale_inv.dim() <= 1:
-                        # Per-tensor or per-channel scale
-                        data = fp8_bf16 * scale_inv.to(compute_dtype)
-                    else:
-                        data = fp8_bf16
-                elif data.dtype == torch.float8_e4m3fn:
-                    # FP8 but no scale found - just cast (lossy)
-                    data = data.to(compute_dtype)
+            # Dequantize FP8 weights before merging
+            if data.dtype == torch.float8_e4m3fn and name in scale_inv_lookup:
+                scale_inv = scale_inv_lookup[name]
+                fp8_bf16 = data.to(compute_dtype)
+                if scale_inv.dim() == 2 and fp8_bf16.dim() == 2:
+                    sr, sc = scale_inv.shape
+                    br = fp8_bf16.shape[0] // sr
+                    bc = fp8_bf16.shape[1] // sc
+                    data = (
+                        fp8_bf16.reshape(sr, br, sc, bc)
+                        * scale_inv[:, None, :, None].to(compute_dtype)
+                    ).reshape(fp8_bf16.shape)
+                elif scale_inv.dim() <= 1:
+                    data = fp8_bf16 * scale_inv.to(compute_dtype)
+                else:
+                    data = fp8_bf16
+            elif data.dtype == torch.float8_e4m3fn:
+                data = data.to(compute_dtype)
 
-                mod_path = vllm_name[: -len(".weight")]
-                if mod_path in lora_info:
-                    A, B, s = lora_info[mod_path]
-                    merged = data.to(compute_dtype) + s * (
-                        B.to(compute_dtype) @ A.to(compute_dtype)
-                    )
-                    data = merged
+            A, B, s = lora_info[mod_path]
+            merged = data.to(compute_dtype) + s * (
+                B.to(compute_dtype) @ A.to(compute_dtype)
+            )
+            params_to_sync.append((vllm_name, merged))
 
-            params_to_sync.append((vllm_name, data))
-
-        # Batch sync all params in one HTTP+NCCL call (vs individual calls)
+        # Batch sync only LoRA-modified params via HTTP+NCCL
         if params_to_sync:
+            sync_mb = sum(t.numel() * t.element_size() for _, t in params_to_sync) / 1e6
+            logger.info(f"Syncing {len(params_to_sync)} LoRA-modified params ({sync_mb:.0f} MB)")
             vllm_client.batch_update_named_params(params_to_sync)
 
         # Reset prefix cache after weight update

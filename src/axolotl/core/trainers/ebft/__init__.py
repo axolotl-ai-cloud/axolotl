@@ -158,6 +158,8 @@ class EBFTStrategy:
                 # Async prefetch fields (only pass when enabled — sync config doesn't have these)
                 if getattr(trl, "async_prefetch", False):
                     kwargs["async_prefetch"] = trl.async_prefetch
+                    if getattr(trl, "vllm_sync_interval", None) is not None:
+                        kwargs["vllm_sync_interval"] = trl.vllm_sync_interval
                 if getattr(trl, "vllm_lora_sync", False):
                     kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 

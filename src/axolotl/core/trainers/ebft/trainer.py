@@ -257,13 +257,32 @@ class EBFTMixin:
 
         rewards = args.ebft_alignment_coef * alignment - args.ebft_diversity_coef * diversity
 
-        # Log feature-matching metrics
+        # Compute CFM loss: ||E[φ(ŷ)] - φ(y)||^2 (paper eq 2)
+        gen_reshaped = gen_emb.view(-1, num_gens, gen_emb.shape[-1])
+        mean_gen = gen_reshaped.mean(dim=1)  # (num_prompts, D)
+        cfm_loss = ((mean_gen - gt_emb) ** 2).sum(dim=-1).mean()
+
+        # Log feature-matching metrics to console and wandb
+        _align = alignment.mean().item()
+        _divers = diversity.mean().item()
+        _reward = rewards.mean().item()
+        _cfm = cfm_loss.item()
+
         LOG.info(
             f"ebft reward | "
-            f"align {alignment.mean().item():+.3f} ^ | "
-            f"divers {diversity.mean().item():+.3f} v | "
-            f"reward {rewards.mean().item():+.3f} ^"
+            f"align {_align:+.3f} ^ | "
+            f"divers {_divers:+.3f} v | "
+            f"cfm {_cfm:.3f} v | "
+            f"reward {_reward:+.3f} ^"
         )
+
+        # Log to wandb via trainer's _metrics (picked up by GRPO's logging)
+        mode = "train" if self.model.training else "eval"
+        if hasattr(self, "_metrics"):
+            self._metrics[mode]["ebft/alignment"].append(_align)
+            self._metrics[mode]["ebft/diversity"].append(_divers)
+            self._metrics[mode]["ebft/cfm_loss"].append(_cfm)
+            self._metrics[mode]["ebft/reward"].append(_reward)
 
         return rewards.cpu().tolist()
 

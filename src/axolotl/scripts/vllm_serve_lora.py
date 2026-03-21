@@ -241,6 +241,20 @@ def main(script_args: ScriptArguments):
 
     app = FastAPI(lifespan=lifespan)
 
+    # --- Access logging middleware ---
+    import time as _time
+
+    @app.middleware("http")
+    async def access_log_middleware(request, call_next):
+        t0 = _time.monotonic()
+        response = await call_next(request)
+        elapsed = _time.monotonic() - t0
+        logger.info(
+            "%s %s %d %.3fs",
+            request.method, request.url.path, response.status_code, elapsed,
+        )
+        return response
+
     # --- Active LoRA state (shared across endpoints via closure) ---
     active_lora: dict = {"request": None}
 

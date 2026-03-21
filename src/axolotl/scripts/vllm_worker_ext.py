@@ -51,6 +51,19 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         model = self.model_runner.model
         params_dict = dict(model.named_parameters())
 
+        # Handle VLM models where trainer and vLLM use different prefixes.
+        # Trainer (PEFT stripped): "model.layers.X..." or "model.language_model.layers.X..."
+        # vLLM (Qwen3.5):         "language_model.model.layers.X..."
+        if name not in params_dict:
+            # Try common prefix remappings
+            for src_prefix, dst_prefix in [
+                ("model.language_model.layers.", "language_model.model.layers."),
+                ("model.layers.", "language_model.model.layers."),
+            ]:
+                if name.startswith(src_prefix):
+                    name = dst_prefix + name[len(src_prefix):]
+                    break
+
         # Check if this is a simple direct param (exists as-is)
         if name in params_dict:
             params_dict[name].data.copy_(weight.to(params_dict[name].dtype))
@@ -106,7 +119,9 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
                         return
 
         # Fallback: try load_weights (may work for non-stacked params)
-        logger.warning("Falling back to load_weights for param: %s", name)
+        # Log the actual param names available for debugging
+        sample_keys = [k for k in params_dict if "layers.31.mlp" in k or "layers.31.self_attn" in k][:3]
+        logger.warning("Falling back to load_weights for param: %s (sample vLLM keys: %s)", name, sample_keys)
         model.load_weights(weights=[(name, weight)])
 
     def update_named_param(self, name, dtype, shape):
