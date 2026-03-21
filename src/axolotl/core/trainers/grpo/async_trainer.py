@@ -798,13 +798,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
         for Float8), and also safe for concurrent use since it never modifies base
         weights in-place.
         """
-        model = self.vllm_generation.model
         accelerator = self.vllm_generation.accelerator
-        vllm_client = self.vllm_generation.vllm_client
-        fix_name = self.vllm_generation._fix_param_name_to_vllm
-
         if not (self.vllm_generation.mode == "server" and accelerator.is_main_process):
             return
+
+        model = self.vllm_generation.model
+        vllm_client = self.vllm_generation.vllm_client
+        fix_name = self.vllm_generation._fix_param_name_to_vllm
 
         # Build lookup: module_path -> (A, B, scaling) for all active LoRA layers
         lora_info = {}
