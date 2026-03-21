@@ -20,6 +20,7 @@ Test strategy:
 - Tolerances account for tf32 accumulation in Triton kernels
 """
 
+from functools import wraps
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +33,21 @@ pytestmark = pytest.mark.skipif(
 )
 
 _SMOE = "axolotl.integrations.kernels.libs.scattermoe_lora"
+
+
+def skip_on_out_of_resources(func):
+    """Skip test if Triton kernel exceeds GPU shared memory limits."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:  # pylint: disable=broad-except
+            if "OutOfResources" in type(exc).__name__:
+                pytest.skip(f"GPU shared memory too small: {exc}")
+            raise
+
+    return wrapper
 
 
 # =============================================================================
@@ -980,6 +996,7 @@ class TestFusedDX:
     def test_basic(self):
         self._run_fused_dX_test(M=32, K=64, N=128, E=4, R=8, k=2)
 
+    @skip_on_out_of_resources
     def test_large(self):
         self._run_fused_dX_test(M=256, K=256, N=512, E=8, R=16, k=2)
 
@@ -1174,6 +1191,7 @@ class TestFusedGatherBackward:
     def test_basic(self):
         self._run_fused_gather_test(M=32, K=64, N=128, E=4, R=8, k=2)
 
+    @skip_on_out_of_resources
     def test_large(self):
         self._run_fused_gather_test(M=256, K=256, N=512, E=8, R=16, k=2)
 
@@ -1183,6 +1201,7 @@ class TestFusedGatherBackward:
     def test_k1(self):
         self._run_fused_gather_test(M=64, K=64, N=128, E=4, R=8, k=1)
 
+    @skip_on_out_of_resources
     def test_many_experts(self):
         self._run_fused_gather_test(M=128, K=64, N=128, E=16, R=8, k=4)
 
