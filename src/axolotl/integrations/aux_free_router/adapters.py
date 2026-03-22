@@ -88,12 +88,22 @@ class BaseMoEAdapter:
             try:
                 model_or_layer.router_aux_loss_coef = 0.0
             except Exception:  # pragma: no cover - non-critical
-                pass
+                LOG.debug(
+                    "disable_aux_loss: failed to set router_aux_loss_coef on %s",
+                    type(model_or_layer).__name__,
+                    exc_info=True,
+                )
 
     def _register_aux_buffers(
         self, moe_layer: nn.Module, handle: LayerHandle, shim: AuxFreeShim
     ) -> None:
-        device = next(moe_layer.parameters(), torch.tensor(0)).device
+        p = next(moe_layer.parameters(), None)
+        b = next(moe_layer.buffers(), None)
+        device = (
+            p.device
+            if p is not None
+            else (b.device if b is not None else torch.device("cpu"))
+        )
         if not hasattr(moe_layer, "_afb_bias"):
             moe_layer.register_buffer(
                 "_afb_bias", torch.zeros(handle.num_experts, device=device)
@@ -275,7 +285,7 @@ class BailingAdapter(BaseMoEAdapter):
             scores_unbiased = torch.sigmoid(logits.float()).to(logits.dtype)
             bias = moe_layer._afb_bias
             biased_scores = scores_unbiased + bias
-            topk_vals, topk_idx = self.group_limited_topk(biased_scores)
+            _, topk_idx = self.group_limited_topk(biased_scores)
             weights = torch.gather(scores_unbiased, 1, topk_idx)
             if self.top_k > 1:
                 denom = weights.sum(dim=-1, keepdim=True).clamp_min_(1e-20)
@@ -376,6 +386,8 @@ def discover_and_prepare_layers(
         idx += 1
 
     LOG.info(
-        f"AuxFreeMoE: prepared {len(handles)} {adapter.family} layers for aux-free routing"
+        "AuxFreeMoE: prepared %d %s layers for aux-free routing",
+        len(handles),
+        adapter.family,
     )
     return handles

@@ -177,7 +177,9 @@ def softmax_group_topk_routing(
         score_mask = (
             group_mask.unsqueeze(-1).expand(-1, n_group, E // n_group).reshape(-1, E)
         )
-        scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
+        scores_for_choice = scores_for_choice.masked_fill(
+            ~score_mask.bool(), -float("inf")
+        )
 
     topk_indices = torch.topk(scores_for_choice, k=K, dim=-1, sorted=False)[1]
     topk_weights = router_probs.gather(1, topk_indices)
@@ -275,7 +277,9 @@ def sigmoid_topk_routing(
         score_mask = (
             group_mask.unsqueeze(-1).expand(-1, n_group, E // n_group).reshape(-1, E)
         )
-        scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
+        scores_for_choice = scores_for_choice.masked_fill(
+            ~score_mask.bool(), -float("inf")
+        )
 
     # Final topk from (possibly masked) scores
     topk_indices = torch.topk(scores_for_choice, k=K, dim=-1, sorted=False)[1]
@@ -316,6 +320,8 @@ def _accumulate_afb_counts(moe_block, topk_indices: torch.Tensor) -> None:
     ``aux_free_router`` plugin).  The counts are later consumed by the
     ``MoeAuxFreeBiasUpdateCallback`` at each training step.
     """
+    if hasattr(moe_block, "training") and not moe_block.training:
+        return
     afb_counts = getattr(moe_block, "_afb_counts", None)
     if afb_counts is None:
         return

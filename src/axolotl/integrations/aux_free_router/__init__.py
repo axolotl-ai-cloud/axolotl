@@ -4,6 +4,6 @@ from .args import AuxFreeRouterArgs
 from .plugin import AuxFreeMoEPlugin
 
 __all__ = [
-    "AuxFreeRouterArgs",
     "AuxFreeMoEPlugin",
+    "AuxFreeRouterArgs",
 ]

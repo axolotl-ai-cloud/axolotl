@@ -3,7 +3,10 @@ Parity test comparing aux-loss (gshard) vs aux-loss-free (noaux_tc) on Mixtral-t
 Checks that aux-free training loss does not degrade beyond a small tolerance.
 """
 
+import gc
 import unittest
+
+import torch
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
@@ -60,6 +63,11 @@ class TestMoeAuxParity(unittest.TestCase):
         model0, _, trainer0 = train(cfg=cfg0, dataset_meta=dataset_meta0)
         loss0 = _last_logged_loss(trainer0)
         assert loss0 is not None
+
+        # Release baseline resources before starting aux-free run
+        del model0, trainer0, dataset_meta0
+        gc.collect()
+        torch.cuda.empty_cache()
 
         # Aux-free: plugin + noaux_tc
         cfg1 = DictDefault(dict(base_cfg))

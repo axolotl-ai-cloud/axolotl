@@ -37,14 +37,14 @@ class AuxFreeRouterArgs(BaseModel):
     moe_update_rate: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Per-step bias update rate (gamma). Recommended: 0.005–0.05. "
+            "description": "Per-step bias update rate (gamma). Recommended: 0.005-0.05. "
             "If unset, plugin default is 0.01."
         },
     )
     moe_update_momentum: float | None = Field(
         default=None,
         json_schema_extra={
-            "description": "EMA momentum for expert load smoothing (0–1). "
+            "description": "EMA momentum for expert load smoothing (0-1). "
             "If unset, plugin default is 0.9."
         },
     )

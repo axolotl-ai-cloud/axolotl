@@ -21,7 +21,7 @@ class TestLlama4MoeAuxFree(unittest.TestCase):
             {
                 "base_model": "yujiepan/llama-4-tiny-random",
                 "tokenizer_config": "yujiepan/llama-4-tiny-random",
-                "trust_remote_code": True,
+                "trust_remote_code": False,
                 "flash_attention": False,
                 "sequence_len": 512,
                 "bf16": False,

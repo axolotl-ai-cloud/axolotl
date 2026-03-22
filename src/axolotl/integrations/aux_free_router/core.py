@@ -67,7 +67,7 @@ class AuxFreeShim:
         else:
             b = self.state.bias[layer_idx]
         biased = logits + b  # bias is a buffer
-        topk_scores, topk_idx = torch.topk(biased, k=top_k, dim=-1)
+        _topk_scores, topk_idx = torch.topk(biased, k=top_k, dim=-1)
         chosen_logits = torch.gather(logits, -1, topk_idx)
         weights = torch.softmax(chosen_logits.float(), dim=-1).to(logits.dtype)
         return topk_idx, weights

@@ -390,7 +390,9 @@ class TestAuxFreeAdapters(unittest.TestCase):
 
     def test_ep_group_resolution_deferred_until_dist_ready(self):
         if dist.is_available() and dist.is_initialized():
-            dist.destroy_process_group()
+            self.skipTest(
+                "Cannot safely test deferred EP group resolution when a process group is already initialized"
+            )
 
         model, block = _build_bailing_model()
         cfg = _cfg(moe_bias_sync_group="ep", expert_parallel_size=1)

@@ -239,11 +239,17 @@ class AuxFreeMoEPlugin(BasePlugin):
             return dist.group.WORLD
 
         rank = dist.get_rank()
-        group_start = (rank // ep_size) * ep_size
-        ranks = tuple(range(group_start, group_start + ep_size))
-        if ranks not in self._ep_group_cache:
-            self._ep_group_cache[ranks] = dist.new_group(ranks)
-        return self._ep_group_cache[ranks]
+        # All ranks must collectively create all EP subgroups in the same order
+        # to avoid deadlocks (dist.new_group is a collective operation).
+        world_size = world
+        my_group = None
+        for group_start in range(0, world_size, ep_size):
+            ranks = tuple(range(group_start, group_start + ep_size))
+            if ranks not in self._ep_group_cache:
+                self._ep_group_cache[ranks] = dist.new_group(ranks)
+            if rank in ranks:
+                my_group = self._ep_group_cache[ranks]
+        return my_group
 
     def add_callbacks_post_trainer(self, cfg, trainer):
         if getattr(cfg, "moe_balance_type", None) != "noaux_tc":
