@@ -321,6 +321,10 @@ class FusedRMSNormGated(torch.nn.Module):
     def forward(self, hidden_states, gate=None):
         if gate is None:
             raise ValueError("FusedRMSNormGated requires a gate tensor")
+        if hidden_states.device.type != "cuda":
+            raise ValueError(
+                f"FusedRMSNormGated requires CUDA tensors, got device={hidden_states.device}"
+            )
         return FusedRMSNormGatedFunction.apply(
             hidden_states, gate, self.weight, self.variance_epsilon, self.offset
         )
