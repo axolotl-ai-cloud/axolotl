@@ -433,6 +433,12 @@ class AxolotlInputConfig(
             "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
         },
     )
+    layer_offloading: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Offload model layer parameters to CPU during forward, prefetch back during backward."
+        },
+    )
 
     unfrozen_parameters: list[str] | None = Field(
         default=None,

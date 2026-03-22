@@ -508,6 +508,8 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
+        if self.cfg.layer_offloading:
+            training_args_kwargs["layer_offloading"] = True
         if self.cfg.activation_offloading is True:
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
