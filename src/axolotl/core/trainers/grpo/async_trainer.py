@@ -1635,10 +1635,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 logps_diff = per_token_logps_diff
 
             is_ratio = torch.exp(logps_diff)
+            is_floor = 1.0 / is_cap  # symmetric floor (e.g., cap=3.0 -> floor=0.333)
             if is_mode in ("sequence_truncate", "token_truncate"):
-                is_ratio = torch.clamp(is_ratio, max=is_cap)
+                is_ratio = torch.clamp(is_ratio, min=is_floor, max=is_cap)
             elif is_mode in ("sequence_mask", "token_mask"):
                 is_ratio = is_ratio.masked_fill(is_ratio > is_cap, value=0.0)
+                is_ratio = is_ratio.clamp(min=is_floor)
             data["importance_sampling_ratio"] = is_ratio
 
         # --- Collect rewards (launched before logprobs, should be done) ---
