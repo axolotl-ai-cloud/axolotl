@@ -240,7 +240,16 @@ def _softmax_topk_route(
 
     top_k = base_gate.top_k
     num_experts = base_gate.num_experts
-    routing_weights, selected_experts = torch.topk(routing_weights, top_k, dim=-1)
+
+    # Aux-free bias: biased selection, unbiased weights
+    afb_bias = getattr(moe_block, "_afb_bias", None)
+    if afb_bias is not None:
+        scores_for_choice = routing_weights + afb_bias
+        _, selected_experts = torch.topk(scores_for_choice, top_k, dim=-1)
+        routing_weights = routing_weights.gather(1, selected_experts)
+        _accumulate_afb_counts(moe_block, selected_experts)
+    else:
+        routing_weights, selected_experts = torch.topk(routing_weights, top_k, dim=-1)
 
     if getattr(base_gate, "norm_topk_prob", True):
         routing_weights = routing_weights / routing_weights.sum(dim=-1, keepdim=True)
@@ -282,6 +291,11 @@ def _sigmoid_topk_route(
     else:
         scores_for_choice = router_probs
 
+    # Aux-free bias: stacks on top of e_score_correction_bias for selection
+    afb_bias = getattr(moe_block, "_afb_bias", None)
+    if afb_bias is not None:
+        scores_for_choice = scores_for_choice + afb_bias
+
     # Group-based selection: pick top groups, mask the rest
     n_group = getattr(moe_block, "n_group", 1)
     if n_group > 1:
@@ -306,6 +320,10 @@ def _sigmoid_topk_route(
 
     # Gather weights from original sigmoid scores (not bias-corrected)
     topk_weights = router_probs.gather(1, topk_indices)
+
+    # Accumulate counts for aux-free bias update
+    if afb_bias is not None:
+        _accumulate_afb_counts(moe_block, topk_indices)
 
     # Optional renormalization + scaling
     if getattr(moe_block, "norm_topk_prob", True):
@@ -333,6 +351,16 @@ def _route(moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta):
     return _softmax_topk_route(
         moe_block, base_gate, hidden_states, gate_weight, gate_lora_delta
     )
+
+
+def _accumulate_afb_counts(moe_block, topk_indices: torch.Tensor) -> None:
+    """Accumulate per-expert token counts for aux-free bias updates."""
+    afb_counts = getattr(moe_block, "_afb_counts", None)
+    if afb_counts is None:
+        return
+    flat_idx = topk_indices.reshape(-1)
+    counts = torch.bincount(flat_idx, minlength=afb_counts.numel())
+    afb_counts.add_(counts.to(afb_counts.dtype))
 
 
 # =============================================================================

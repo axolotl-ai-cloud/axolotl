@@ -9,6 +9,12 @@ Different MoE architectures use different routing strategies:
 
 Each model type maps to a (routing_fn, activation_type, router_attr) triple.
 When routing_fn is None, the fused moe_TC_softmax_topk_layer path is used.
+
+Aux-loss-free (AFB) bias integration: when the aux_free_router plugin is
+active, ``moe_block._afb_bias`` and ``moe_block._afb_counts`` are registered
+as buffers.  The routing functions transparently inject the bias into expert
+*selection* (biased topk) while keeping mixture *weights* from unbiased
+scores, then accumulate per-expert token counts for the post-step bias update.
 """
 
 import torch
@@ -101,16 +107,24 @@ def softmax_topk_routing(
     router_logits = F.linear(hidden_states, gate.weight)  # [T, E]
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
+    # Aux-free bias: biased selection, unbiased weights
+    afb_bias = getattr(moe_block, "_afb_bias", None)
+    scores_for_choice = router_probs
+    if afb_bias is not None:
+        scores_for_choice = router_probs + afb_bias
+
     # Select top-k experts per token
-    top_values, top_indices = torch.topk(router_probs, K, dim=-1)  # [T, K] each
+    top_values, top_indices = torch.topk(scores_for_choice, K, dim=-1)  # [T, K] each
+
+    # When aux-free bias is active, gather unbiased weights and accumulate counts
+    if afb_bias is not None:
+        top_values = router_probs.gather(1, top_indices)
+        _accumulate_afb_counts(moe_block, top_indices)
 
     # Renormalize if configured (default True for models without the attribute,
     # e.g. Mixtral/MiniMax which always normalize)
     if getattr(gate, "norm_topk_prob", True):
         top_values = top_values / top_values.sum(dim=-1, keepdim=True)
-
-    # no-op: matches transformers which casts to softmax output dtype (float32).
-    # top_values = top_values.to(router_probs.dtype)
 
     # Flatten for moe_general_routing_inputs.
     # Token indices are naturally sorted ascending from the [T, K] layout:
@@ -142,7 +156,11 @@ def softmax_group_topk_routing(
     router_logits = F.linear(hidden_states, gate.weight)  # [T, E]
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
+    # Aux-free bias: inject before group selection / topk
+    afb_bias = getattr(moe_block, "_afb_bias", None)
     scores_for_choice = router_probs
+    if afb_bias is not None:
+        scores_for_choice = router_probs + afb_bias
 
     # Group selection: pick top groups, mask the rest
     if n_group > 1:
@@ -163,6 +181,10 @@ def softmax_group_topk_routing(
 
     topk_indices = torch.topk(scores_for_choice, k=K, dim=-1, sorted=False)[1]
     topk_weights = router_probs.gather(1, topk_indices)
+
+    # Accumulate counts for aux-free bias update
+    if afb_bias is not None:
+        _accumulate_afb_counts(moe_block, topk_indices)
 
     # Renormalization + scaling
     norm_topk_prob = getattr(moe_block, "norm_topk_prob", True)
@@ -233,6 +255,11 @@ def sigmoid_topk_routing(
         )
     scores_for_choice = router_probs + e_score_correction_bias
 
+    # Aux-free bias: stacks on top of e_score_correction_bias for selection
+    afb_bias = getattr(moe_block, "_afb_bias", None)
+    if afb_bias is not None:
+        scores_for_choice = scores_for_choice + afb_bias
+
     # Group-based selection: pick top groups, mask the rest (skip when n_group == 1)
     if n_group > 1:
         group_scores = (
@@ -256,6 +283,10 @@ def sigmoid_topk_routing(
     # Gather weights from original sigmoid scores (not bias-corrected)
     topk_weights = router_probs.gather(1, topk_indices)
 
+    # Accumulate counts for aux-free bias update
+    if afb_bias is not None:
+        _accumulate_afb_counts(moe_block, topk_indices)
+
     # Optional renormalization + scaling
     norm_topk_prob = getattr(moe_block, "norm_topk_prob", True)
     if norm_topk_prob:
@@ -276,3 +307,19 @@ def sigmoid_topk_routing(
     flat_expert_idx = topk_indices.to(torch.int32).reshape(-1)  # [T*K]
 
     return flat_scores, flat_token_idx, flat_expert_idx, router_logits
+
+
+def _accumulate_afb_counts(moe_block, topk_indices: torch.Tensor) -> None:
+    """Accumulate per-expert token counts for the aux-free bias update.
+
+    Called when ``moe_block._afb_bias`` is present (registered by the
+    ``aux_free_router`` plugin).  The counts are later consumed by the
+    ``MoeAuxFreeBiasUpdateCallback`` at each training step.
+    """
+    afb_counts = getattr(moe_block, "_afb_counts", None)
+    if afb_counts is None:
+        return
+    num_experts = afb_counts.numel()
+    flat_idx = topk_indices.reshape(-1)
+    counts = torch.bincount(flat_idx, minlength=num_experts)
+    afb_counts.add_(counts.to(afb_counts.dtype))

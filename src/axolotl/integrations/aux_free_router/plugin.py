@@ -6,7 +6,7 @@ unbiased logits for mixture weights and per-expert biases for top-k selection.
 
 from __future__ import annotations
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 import torch
 import torch.distributed as dist
@@ -21,6 +21,7 @@ from .adapters import (
     Llama4Adapter,
     MixtralAdapter,
     Qwen3Adapter,
+    Qwen35MoeAdapter,
     discover_and_prepare_layers,
 )
 from .core import AuxFreeConfig, AuxFreeShim, AuxFreeState
@@ -47,9 +48,11 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
         # Iterate prepared MoE layers and apply the bias update rule.
         self.shim.begin_step()
         for layer in self.layer_modules:
-            if not hasattr(layer, "_afb_counts") or not hasattr(layer, "_afb_layer_idx"):
+            if not hasattr(layer, "_afb_counts") or not hasattr(
+                layer, "_afb_layer_idx"
+            ):
                 continue
-            counts = getattr(layer, "_afb_counts")
+            counts = layer._afb_counts
             if counts is None:
                 continue
             counts = self.shim.all_reduce_counts(counts)
@@ -57,7 +60,7 @@ class MoeAuxFreeBiasUpdateCallback(TrainerCallback):
             if layer_idx is None:
                 counts.zero_()
                 continue
-            bias = getattr(layer, "_afb_bias")
+            bias = layer._afb_bias
             counts_for_update = counts.to(bias.device)
             tokens_seen = int(counts_for_update.sum().item())
             # local layer-state EMA and bias update
@@ -143,12 +146,16 @@ class AuxFreeMoEPlugin(BasePlugin):
             return
 
         # Be conservative — skip known native aux-free families
-        native_auxfree = getattr(getattr(model, "config", object()), "model_type", "") in (
+        native_auxfree = getattr(
+            getattr(model, "config", object()), "model_type", ""
+        ) in (
             "deepseek_v3",
             "glm4_moe",
         )
         if native_auxfree:
-            LOG.info("AuxFreeMoE: model reports native aux-free routing; skipping patching")
+            LOG.info(
+                "AuxFreeMoE: model reports native aux-free routing; skipping patching"
+            )
             return
 
         # Build aux-free state and shim
@@ -171,6 +178,7 @@ class AuxFreeMoEPlugin(BasePlugin):
         adapters: list[BaseMoEAdapter] = [
             MixtralAdapter(),
             Qwen3Adapter(),
+            Qwen35MoeAdapter(),
             BailingAdapter(),
             Llama4Adapter(),
         ]
@@ -178,7 +186,7 @@ class AuxFreeMoEPlugin(BasePlugin):
         # For initial state sizing, we conservatively assume the first discovered layer defines nE
         n_layers = 0
         n_experts = None
-        for m in model.modules():
+        for _m in model.modules():
             n_layers += 1  # upper bound — we will re-use bias slots sparsely
         device = next(model.parameters(), torch.tensor(0)).device
         if n_layers <= 0:
@@ -186,7 +194,9 @@ class AuxFreeMoEPlugin(BasePlugin):
         if n_experts is None:
             # we'll set a minimal placeholder; prepare() will conceptually use module buffers instead
             n_experts = 2
-        state = AuxFreeState(num_layers=n_layers, num_experts=n_experts, device=device, cfg=af_cfg)
+        state = AuxFreeState(
+            num_layers=n_layers, num_experts=n_experts, device=device, cfg=af_cfg
+        )
         ep_size = getattr(cfg, "expert_parallel_size", None)
         ep_group = None
         if sync_group == "ep":
@@ -207,11 +217,15 @@ class AuxFreeMoEPlugin(BasePlugin):
 
     def _resolve_ep_group(self, cfg) -> Optional[dist.ProcessGroup]:
         if not dist.is_available() or not dist.is_initialized():
-            LOG.warning("AuxFreeMoE: EP sync requested but torch.distributed is not initialized; defaulting to world")
+            LOG.warning(
+                "AuxFreeMoE: EP sync requested but torch.distributed is not initialized; defaulting to world"
+            )
             return None
         ep_size = getattr(cfg, "expert_parallel_size", None)
         if not ep_size or ep_size <= 1:
-            LOG.warning("AuxFreeMoE: moe_bias_sync_group='ep' but expert_parallel_size<=1; defaulting to world")
+            LOG.warning(
+                "AuxFreeMoE: moe_bias_sync_group='ep' but expert_parallel_size<=1; defaulting to world"
+            )
             return None
         world = dist.get_world_size()
         if world % ep_size != 0:
