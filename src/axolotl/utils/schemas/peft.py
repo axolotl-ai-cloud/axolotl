@@ -241,52 +241,73 @@ class MixLoraConfig(BaseModel):
 
     mixlora_num_experts: int | None = Field(
         default=None,
+        ge=1,
         json_schema_extra={
             "description": "Number of LoRA experts per FFN layer for MixLoRA (default 8)"
         },
     )
     mixlora_top_k: int | None = Field(
         default=None,
+        ge=1,
         json_schema_extra={
             "description": "Number of experts to route each token to (default 2)"
         },
     )
     mixlora_router_aux_loss_coef: float | None = Field(
         default=None,
+        ge=0.0,
         json_schema_extra={
             "description": "Coefficient for the auxiliary load balance loss (default 0.01)"
         },
     )
     mixlora_router_init_range: float | None = Field(
         default=None,
+        gt=0.0,
         json_schema_extra={
             "description": "Initialization range for router weights (default 0.02)"
         },
     )
     mixlora_jitter_noise: float | None = Field(
         default=None,
+        ge=0.0,
         json_schema_extra={
             "description": "Noise added to router inputs during training for exploration (default 0.0)"
         },
     )
     mixlora_expert_lora_r: int | None = Field(
         default=None,
+        ge=1,
         json_schema_extra={
             "description": "Separate LoRA rank for MixLoRA experts. Defaults to lora_r if not set."
         },
     )
     mixlora_expert_lora_alpha: int | None = Field(
         default=None,
+        ge=1,
         json_schema_extra={
             "description": "Separate LoRA alpha for MixLoRA experts. Defaults to lora_alpha if not set."
         },
     )
     mixlora_expert_lora_dropout: float | None = Field(
         default=None,
+        ge=0.0,
         json_schema_extra={
             "description": "Separate LoRA dropout for MixLoRA experts. Defaults to lora_dropout if not set."
         },
     )
+
+    @model_validator(mode="after")
+    def validate_mixlora_top_k(self):
+        if (
+            self.mixlora_num_experts is not None
+            and self.mixlora_top_k is not None
+            and self.mixlora_top_k > self.mixlora_num_experts
+        ):
+            raise ValueError(
+                f"mixlora_top_k ({self.mixlora_top_k}) must be <= "
+                f"mixlora_num_experts ({self.mixlora_num_experts})"
+            )
+        return self
 
 
 class ReLoRAConfig(BaseModel):

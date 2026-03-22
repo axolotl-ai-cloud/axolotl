@@ -641,6 +641,10 @@ class LoRAValidationMixin:
     def check_fused_lora(self):
         if self.adapter in ["lora", "qlora", "mixlora"] and self.flash_attn_fuse_mlp:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
+        if self.adapter == "mixlora" and getattr(self, "flash_attn_fuse_qkv", False):
+            raise ValueError(
+                "flash_attn_fuse_qkv is not supported with MixLoRA"
+            )
         return self
 
     @model_validator(mode="before")

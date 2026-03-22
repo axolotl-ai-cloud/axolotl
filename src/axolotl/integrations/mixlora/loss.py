@@ -54,7 +54,8 @@ def collect_mixlora_aux_loss(
             module.reset_aux_loss()
 
     if not aux_losses:
-        return torch.tensor(0.0)
+        device = next(model.parameters()).device
+        return torch.tensor(0.0, device=device)
 
     total_aux_loss = torch.stack(aux_losses).mean()
     return router_aux_loss_coef * total_aux_loss

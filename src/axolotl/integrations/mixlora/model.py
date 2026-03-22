@@ -183,7 +183,7 @@ class MixLoraExpert(nn.Module):
 
     def forward(
         self, x: torch.Tensor, gate_out: torch.Tensor, up_out: torch.Tensor
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute expert output: base FFN output + LoRA deltas.
 
         The base FFN computation (gate_out, up_out) is shared across all experts
@@ -215,7 +215,7 @@ class MixLoraExpert(nn.Module):
         intermediate = F.silu(gate_total) * up_total
 
         # down_proj: base down + LoRA delta
-        # Note: we need to apply the original down_proj to intermmediate,
+        # Note: we need to apply the original down_proj to intermediate,
         # but that's handled in MixLoraFFN. Here we compute the
         # down LoRA delta on the intermediate result.
         down_delta = self.down_lora_b(self.down_lora_a(intermediate)) * self.scaling
@@ -260,13 +260,13 @@ class MixLoraFFN(nn.Module):
         super().__init__()
 
         # Keep original FFN frozen
-        self.original_ffn = original_ffn
-        for param in self.original_ffn.parameters():
+        self.base_ffn = original_ffn
+        for param in self.base_ffn.parameters():
             param.requires_grad = False
 
         # Detect FFN dimensions
-        hidden_dim = original_ffn.gate_proj.in_features
-        intermediate_dim = original_ffn.gate_proj.out_features
+        hidden_dim = self.base_ffn.gate_proj.in_features
+        intermediate_dim = self.base_ffn.gate_proj.out_features
 
         # Router
         self.router = MixLoraRouter(
@@ -299,6 +299,25 @@ class MixLoraFFN(nn.Module):
     def reset_aux_loss(self):
         self._aux_loss = None
 
+    def mixlora_state_dict(self) -> dict[str, torch.Tensor]:
+        """Return state dict containing only the trainable MixLoRA parameters (router + experts).
+
+        Use this for saving MixLoRA-specific weights separately from the PEFT checkpoint.
+        """
+        state = {}
+        for name, param in self.router.named_parameters():
+            state[f"router.{name}"] = param.data
+        for name, param in self.experts.named_parameters():
+            state[f"experts.{name}"] = param.data
+        return state
+
+    def load_mixlora_state_dict(self, state_dict: dict[str, torch.Tensor], strict: bool = True):
+        """Load MixLoRA-specific weights (router + experts) from a state dict."""
+        router_state = {k.removeprefix("router."): v for k, v in state_dict.items() if k.startswith("router.")}
+        expert_state = {k.removeprefix("experts."): v for k, v in state_dict.items() if k.startswith("experts.")}
+        self.router.load_state_dict(router_state, strict=strict)
+        self.experts.load_state_dict(expert_state, strict=strict)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """MixLoRA MoE forward pass.
 
@@ -316,8 +335,8 @@ class MixLoraFFN(nn.Module):
             x_flat = x
 
         # Step 1: Compute shared base FFN outputs (optimization from paper)
-        gate_out = self.original_ffn.gate_proj(x_flat)  # [T, I]
-        up_out = self.original_ffn.up_proj(x_flat)       # [T, I]
+        gate_out = self.base_ffn.gate_proj(x_flat)  # [T, I]
+        up_out = self.base_ffn.up_proj(x_flat)       # [T, I]
 
         # Step 2: Route tokens to experts
         router_weights, expert_indices, aux_loss = self.router(x_flat)
@@ -325,11 +344,10 @@ class MixLoraFFN(nn.Module):
 
         # Step 3: Compute base FFN output (shared SwiGLU + down_proj)
         base_intermediate = F.silu(gate_out) * up_out
-        base_output = self.original_ffn.down_proj(base_intermediate)  # [T, H]
+        base_output = self.base_ffn.down_proj(base_intermediate)  # [T, H]
 
         # Step 4: Compute expert LoRA deltas and aggregate
-        # Initialize delta accumulator
-        final_output = base_output.clone()
+        final_output = base_output
 
         # Process each expert
         for expert_idx, expert in enumerate(self.experts):
@@ -359,9 +377,8 @@ class MixLoraFFN(nn.Module):
             intermediate, down_delta = expert(x_expert, gate_expert, up_expert)
 
             # Apply down_proj to the per-expert intermediate (with LoRA deltas)
-            # We need: down_proj(expert_intermediate) - down_proj(base_intermediate)
-            # = down_proj(intermediate) - base_output[token_indices]
-            expert_full_output = self.original_ffn.down_proj(intermediate)
+            # delta = down_proj(expert_intermediate) - down_proj(base_intermediate) + down_lora_delta
+            expert_full_output = self.base_ffn.down_proj(intermediate)
             expert_delta = expert_full_output - base_output[token_indices] + down_delta
 
             # Weighted accumulation

@@ -211,6 +211,13 @@ def load_adapter(
         from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
 
         patch_model_with_mixlora(peft_model, cfg)
+        if inference:
+            # Ensure MixLoRA modules are in eval mode (disables jitter noise)
+            from axolotl.integrations.mixlora.model import MixLoraFFN
+
+            for module in peft_model.modules():
+                if isinstance(module, MixLoraFFN):
+                    module.eval()
         return peft_model, lora_config
     if adapter == "llama-adapter":
         peft_model, lora_config = load_llama_adapter(model, cfg)

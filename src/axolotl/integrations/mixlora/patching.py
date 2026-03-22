@@ -91,20 +91,30 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
     Returns:
         The patched model (modified in-place).
     """
-    # Resolve config with defaults
-    num_experts = getattr(cfg, "mixlora_num_experts", None) or MIXLORA_DEFAULTS["mixlora_num_experts"]
-    top_k = getattr(cfg, "mixlora_top_k", None) or MIXLORA_DEFAULTS["mixlora_top_k"]
-    router_init_range = getattr(cfg, "mixlora_router_init_range", None) or MIXLORA_DEFAULTS["mixlora_router_init_range"]
+    # Resolve config with defaults (use `is not None` to avoid masking falsy values like 0)
+    num_experts = getattr(cfg, "mixlora_num_experts", None)
+    if num_experts is None:
+        num_experts = MIXLORA_DEFAULTS["mixlora_num_experts"]
+    top_k = getattr(cfg, "mixlora_top_k", None)
+    if top_k is None:
+        top_k = MIXLORA_DEFAULTS["mixlora_top_k"]
+    router_init_range = getattr(cfg, "mixlora_router_init_range", None)
+    if router_init_range is None:
+        router_init_range = MIXLORA_DEFAULTS["mixlora_router_init_range"]
     jitter_noise = getattr(cfg, "mixlora_jitter_noise", None)
     if jitter_noise is None:
         jitter_noise = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
 
     # Expert LoRA config (falls back to main LoRA config)
-    lora_r = getattr(cfg, "mixlora_expert_lora_r", None) or cfg.lora_r
-    lora_alpha = getattr(cfg, "mixlora_expert_lora_alpha", None) or cfg.lora_alpha
+    lora_r = getattr(cfg, "mixlora_expert_lora_r", None)
+    if lora_r is None:
+        lora_r = cfg.lora_r
+    lora_alpha = getattr(cfg, "mixlora_expert_lora_alpha", None)
+    if lora_alpha is None:
+        lora_alpha = cfg.lora_alpha
     lora_dropout = getattr(cfg, "mixlora_expert_lora_dropout", None)
     if lora_dropout is None:
-        lora_dropout = cfg.lora_dropout or 0.0
+        lora_dropout = cfg.lora_dropout if cfg.lora_dropout is not None else 0.0
 
     # Find all FFN modules
     ffn_modules = _find_ffn_modules(model)

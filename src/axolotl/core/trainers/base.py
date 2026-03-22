@@ -401,17 +401,15 @@ class AxolotlTrainer(
         if self.axolotl_cfg and getattr(self.axolotl_cfg, "adapter", None) == "mixlora":
             from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
 
-            router_aux_loss_coef = (
-                getattr(self.axolotl_cfg, "mixlora_router_aux_loss_coef", None) or 0.01
-            )
+            coef = getattr(self.axolotl_cfg, "mixlora_router_aux_loss_coef", None)
+            router_aux_loss_coef = coef if coef is not None else 0.01
             aux_loss = collect_mixlora_aux_loss(
                 model, router_aux_loss_coef=router_aux_loss_coef
             )
-            if aux_loss.item() > 0:
-                loss = loss + aux_loss.to(loss.device)
-                self.store_metrics(
-                    {"mixlora_aux_loss": aux_loss.item()}, train_eval="train"
-                )
+            loss = loss + aux_loss.to(loss.device)
+            self.store_metrics(
+                {"mixlora_aux_loss": aux_loss.item()}, train_eval="train"
+            )
         return loss
 
     @override

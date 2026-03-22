@@ -96,7 +96,7 @@ class TestMixLora:
         assert mixlora_ffn.aux_loss is not None
         assert mixlora_ffn.aux_loss.item() > 0
 
-    @pytest.mark.skip(reason="Requires HF models download, run optionally")
+    @pytest.mark.slow
     def test_patch_model_with_mixlora(self, mock_cfg):
         """Test patching a full model architecture (requires causal LM model)."""
         model = AutoModelForCausalLM.from_pretrained(mock_cfg.base_model)
