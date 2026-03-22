@@ -12,6 +12,7 @@ from torch import nn
 from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
+    apply_lora_embedding,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
@@ -370,13 +371,13 @@ def apply_lora_kernel_patches(
         active_adapter = model.active_adapter
     lora_config = model.model.peft_config[active_adapter]
 
-    # Only patch if conditions are met
-    can_patch = lora_config.lora_dropout == 0 and lora_config.bias == "none"
-
-    if not can_patch:
-        LOG.warning("Cannot patch layers - requires no dropout and no bias")
-        LOG.warning("Please specify `lora_dropout: 0` in your axolotl config file")
-        return model
+    # Log what features are active
+    if lora_config.lora_dropout > 0:
+        LOG.info(f"LoRA kernels: dropout={lora_config.lora_dropout} enabled")
+    if lora_config.bias != "none":
+        LOG.info(f"LoRA kernels: bias={lora_config.bias} enabled")
+    if lora_config.use_dora:
+        LOG.info("LoRA kernels: DoRA enabled")
 
     # This needs to be reset after patching
     original_level = LOG.getEffectiveLevel()
@@ -420,17 +421,14 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A")
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
 
                 if can_patch_qkv:
-                    # Add optimized implementation
                     self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA "
-                        "adapters and no lora_magnitude_vector (DoRA)"
+                        "Cannot patch some attention QKV projections - requires LoRA adapters"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
@@ -439,7 +437,6 @@ def apply_lora_kernel_patches(
                 ]
                 can_patch_o = all(
                     hasattr(module, "lora_A")
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
                     for module in layer_modules
                 )
 
@@ -447,15 +444,13 @@ def apply_lora_kernel_patches(
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention output projection - requires LoRA "
-                        "adapters and no lora_magnitude_vector (DoRA)"
+                        "Cannot patch some attention output projection - requires LoRA adapters"
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
                     hasattr(proj, "lora_A")
-                    and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
                     for proj in (gate_proj, up_proj, down_proj)
                 )
 
@@ -464,13 +459,48 @@ def apply_lora_kernel_patches(
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some MLP layers - requires LoRA adapters and no "
-                        "lora_magnitude_vector (DoRA)"
+                        "Cannot patch some MLP layers - requires LoRA adapters"
                     )
+
+    # Patch embedding layers (model-level, not per-layer)
+    if cfg.lora_embedding_kernel:
+        _patch_embedding_layers(model, cfg)
 
     LOG.setLevel(original_level)
 
     return model
+
+
+def _patch_embedding_layers(model: PeftModelForCausalLM, cfg: DictDefault):
+    """Patch embedding layers with fused LoRA kernel.
+
+    Handles both embed_tokens (nn.Embedding with lora_embedding_A/B) and
+    lm_head (nn.Linear with lora_A/B, used when tied embeddings are untied by PEFT).
+    """
+    pretrained_model = model.model
+    patched = 0
+
+    # Find embedding modules - check common locations
+    for attr_path in [
+        ("model", "embed_tokens"),
+        ("model", "language_model", "embed_tokens"),
+    ]:
+        parent = pretrained_model
+        for attr in attr_path:
+            parent = getattr(parent, attr, None)
+            if parent is None:
+                break
+        if parent is not None and hasattr(parent, "lora_embedding_A"):
+            LOG.info(f"Patching embedding layer: {'.'.join(attr_path)}")
+            parent.forward = types.MethodType(apply_lora_embedding, parent)
+            patched += 1
+
+    # lm_head with LoRA is a Linear layer - already handled by LoRA_O/LoRA_W kernels
+    # when included in target_modules. No special embedding handling needed since
+    # PEFT wraps it as a Linear (not Embedding) even for tied models.
+
+    if not patched:
+        LOG.debug("No embedding layers with LoRA found to patch")
 
 
 class FakeMLP(nn.Module):

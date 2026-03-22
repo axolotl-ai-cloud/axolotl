@@ -105,6 +105,10 @@ def dequantize(
     # Extract quantization state
     if not isinstance(quant_state, list):
         # New style quant_state class
+        # Non-double-quantized models have offset=None and state2=None
+        if quant_state.offset is None or quant_state.state2 is None:
+            # Fall back to bitsandbytes standard dequantize
+            return bnb.functional.dequantize_4bit(W, quant_state, quant_type="nf4")
         absmax = quant_state.absmax.to(target_device)
         shape = quant_state.shape
         dtype = quant_state.dtype
