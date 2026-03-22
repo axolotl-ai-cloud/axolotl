@@ -389,12 +389,20 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        return super().compute_loss(
+        result = super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+        if return_outputs:
+            loss, outputs = result
+            loss = self._add_mixlora_aux_loss(loss, model)
+            return loss, outputs
+
+        result = self._add_mixlora_aux_loss(result, model)
+        return result
 
     def _add_mixlora_aux_loss(self, loss, model):
         """Add MixLoRA router auxiliary load-balance loss if applicable."""

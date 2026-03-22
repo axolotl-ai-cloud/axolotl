@@ -126,6 +126,12 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
         )
         return model
 
+    # Validate resolved config (catches defaults that conflict)
+    if top_k > num_experts:
+        raise ValueError(
+            f"mixlora_top_k ({top_k}) must be <= mixlora_num_experts ({num_experts})"
+        )
+
     LOG.info(
         f"MixLoRA: Patching {len(ffn_modules)} FFN layers with "
         f"{num_experts} experts (top-{top_k}), "
@@ -145,8 +151,15 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
         )
 
         # Move to the same device/dtype as the original
-        device = next(original_ffn.parameters()).device
-        dtype = next(original_ffn.parameters()).dtype
+        first_param = next(original_ffn.parameters(), None)
+        if first_param is None:
+            LOG.warning(
+                f"MixLoRA: FFN {attr_name} has no parameters, skipping device placement"
+            )
+            setattr(parent, attr_name, mixlora_ffn)
+            continue
+        device = first_param.device
+        dtype = first_param.dtype
         # Only move trainable params (router + experts) to the device
         # The original FFN is already on the correct device
         mixlora_ffn.router = mixlora_ffn.router.to(device=device, dtype=dtype)

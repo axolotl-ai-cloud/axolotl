@@ -37,6 +37,9 @@ def collect_mixlora_aux_loss(
     It walks all MixLoraFFN modules, collects their accumulated auxiliary losses,
     computes the mean, scales by the coefficient, and resets the accumulators.
 
+    Note: MixLoraFFN.forward() accumulates aux_loss across gradient accumulation
+    micro-batches. The accumulated loss is collected and reset here.
+
     Args:
         model: The model (may be wrapped in PeftModel, DataParallel, etc.).
         router_aux_loss_coef: Coefficient for the auxiliary loss.

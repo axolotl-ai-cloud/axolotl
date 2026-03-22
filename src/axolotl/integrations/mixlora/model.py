@@ -196,7 +196,9 @@ class MixLoraExpert(nn.Module):
             up_out: [T_expert, intermediate_dim] shared up_proj output.
 
         Returns:
-            [T_expert, hidden_dim] expert output.
+            Tuple of:
+                - intermediate: [T_expert, intermediate_dim] SwiGLU-activated intermediate.
+                - down_delta: [T_expert, hidden_dim] LoRA delta for down_proj.
         """
         if self.lora_dropout is not None:
             x_drop = self.lora_dropout(x)
@@ -329,8 +331,7 @@ class MixLoraFFN(nn.Module):
         """
         input_shape = x.shape
         if x.dim() == 3:
-            batch_size, seq_len, hidden_dim = x.shape
-            x_flat = x.reshape(-1, hidden_dim)
+            x_flat = x.reshape(-1, x.shape[-1])
         else:
             x_flat = x
 
@@ -340,14 +341,18 @@ class MixLoraFFN(nn.Module):
 
         # Step 2: Route tokens to experts
         router_weights, expert_indices, aux_loss = self.router(x_flat)
-        self._aux_loss = aux_loss
+        # Accumulate aux loss across gradient accumulation micro-batches
+        if self._aux_loss is not None:
+            self._aux_loss = self._aux_loss + aux_loss
+        else:
+            self._aux_loss = aux_loss
 
         # Step 3: Compute base FFN output (shared SwiGLU + down_proj)
         base_intermediate = F.silu(gate_out) * up_out
         base_output = self.base_ffn.down_proj(base_intermediate)  # [T, H]
 
         # Step 4: Compute expert LoRA deltas and aggregate
-        final_output = base_output
+        final_output = base_output.clone()
 
         # Process each expert
         for expert_idx, expert in enumerate(self.experts):
