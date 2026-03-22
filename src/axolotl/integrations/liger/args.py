@@ -30,6 +30,15 @@ class LigerArgs(BaseModel):
 
     liger_rope: bool | None = None
     liger_rms_norm: bool | None = None
+    liger_rms_norm_gated: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables fused RMSNorm+SiLU gate Triton kernel for models with "
+                "gated RMSNorm (e.g. Qwen3.5 / Qwen3.5 MoE linear attention layers)."
+            )
+        },
+    )
     liger_layer_norm: bool | None = None
     liger_swiglu: bool | None = None
     liger_glu_activation: bool | None = None
