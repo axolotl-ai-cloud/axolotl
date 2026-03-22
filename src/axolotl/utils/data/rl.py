@@ -224,7 +224,7 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                 ds_columns = (
                     dataset.column_names
                     if isinstance(dataset, Dataset)
-                    else dataset["train"].column_names
+                    else dataset[split].column_names
                     if isinstance(dataset, DatasetDict)
                     else []
                 )

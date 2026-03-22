@@ -50,17 +50,16 @@ def transform(cfg, **kwargs):
     def transform_fn(example, tokenizer=None):
         messages = example.get("messages", example.get("conversations", []))
 
-        prompt_msgs = []
+        prompt_msgs_snapshot = None
         ground_truth = ""
-        for msg in messages:
+        for msg_idx, msg in enumerate(messages):
             if msg["role"] == "assistant":
-                prompt_msgs_snapshot = list(prompt_msgs)
+                prompt_msgs_snapshot = list(messages[:msg_idx])
                 ground_truth = msg["content"]
-            prompt_msgs.append(msg)
 
         return {
             "prompt": prompt_msgs_snapshot
-            if "prompt_msgs_snapshot" in dir()
+            if prompt_msgs_snapshot is not None
             else messages[:-1],
             "ground_truth": ground_truth,
         }

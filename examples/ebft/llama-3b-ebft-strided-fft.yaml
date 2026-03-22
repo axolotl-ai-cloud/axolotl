@@ -52,7 +52,7 @@ flash_attention: false
 gradient_checkpointing: true
 torch_compile: true
 gradient_checkpointing_kwargs:
-  use_reentrant: false
+  use_reentrant: true
 ddp: false
 device_map:
   "": 0

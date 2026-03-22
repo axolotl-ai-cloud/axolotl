@@ -1568,7 +1568,7 @@ class EBFTValidationMixin:
         # Rough estimate: 8.7 GB per sample at S=3900 for 1B model
         if full_seq * n_samples > 20000:
             LOG.warning(
-                f"EBFT strided: full_seq_len={full_seq} × n_samples={n_samples} = "
+                f"EBFT strided: full_seq_len={full_seq} * n_samples={n_samples} = "
                 f"{full_seq * n_samples} token-samples per step. This may require >24GB VRAM "
                 f"for a 1B+ model. Consider reducing sequence_len, n_samples_per_prompt, or stride."
             )

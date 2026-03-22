@@ -292,6 +292,8 @@ def fused_diversity_penalty(embeddings: torch.Tensor) -> torch.Tensor:
     B, N, D = embeddings.shape
     embeddings = embeddings.contiguous()
     output = torch.empty(B, N, device=embeddings.device, dtype=torch.float32)
+    if N <= 1:
+        return output
 
     BLOCK_D = min(triton.next_power_of_2(D), 4096)
 

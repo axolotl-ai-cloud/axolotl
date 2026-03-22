@@ -574,6 +574,7 @@ class AxolotlStridedEBFTTrainer(
         structured data (prompt + completion with labels masking). For structured
         data, anchors are placed only within the completion span.
         """
+        outputs = None
         device = next(model.parameters()).device
         input_ids = inputs["input_ids"].to(device)  # (B, seq_len)
         B, seq_len = input_ids.shape

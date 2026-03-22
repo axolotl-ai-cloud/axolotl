@@ -138,9 +138,10 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             reference_model: bool = True
+            trl_cfg = getattr(cfg, "trl", None)
             if (
                 cfg.rl in {RLType.GRPO, RLType.EBFT}
-                and getattr(cfg.trl, "beta", 0) == 0
+                and getattr(trl_cfg, "beta", 0) == 0
             ):
                 reference_model = False
             # load the model again for model_ref/baseline

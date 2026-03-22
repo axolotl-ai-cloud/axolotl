@@ -25,7 +25,7 @@ def transform(cfg, *args, **kwargs):
         return {
             "input_ids": encoded["input_ids"],
             "attention_mask": encoded["attention_mask"],
-            "labels": encoded["input_ids"],
+            "labels": list(encoded["input_ids"]),
         }
 
     return transform_fn, {"remove_columns": ["question", "answer"]}

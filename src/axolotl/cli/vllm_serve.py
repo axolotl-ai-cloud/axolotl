@@ -79,11 +79,12 @@ def do_vllm_serve(
         cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
     )
 
-    enforce_eager = bool(
-        cli_args.get("enforce_eager")
-        or getattr(cfg.vllm, "enforce_eager", None)
-        or False
+    cli_enforce_eager = cli_args.get("enforce_eager")
+    cfg_enforce_eager = getattr(cfg.vllm, "enforce_eager", None)
+    raw_enforce_eager = (
+        cfg_enforce_eager if cli_enforce_eager is None else cli_enforce_eager
     )
+    enforce_eager = bool(raw_enforce_eager) if raw_enforce_eager is not None else False
     base_kwargs = dict(
         model=model,
         tensor_parallel_size=tensor_parallel_size,

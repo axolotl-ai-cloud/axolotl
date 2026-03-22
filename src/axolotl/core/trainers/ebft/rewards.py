@@ -229,6 +229,7 @@ def whiten_embeddings_batched(
     s_max = S.max()
     inv_s = torch.where(S > whiten_tol * s_max, 1.0 / (S + 1e-12), torch.zeros_like(S))
 
+    # FIXME
     # W = U @ diag(inv_S) @ U^T
     W = (U * inv_s.unsqueeze(0)) @ U.T  # (B, B)
     phi_w = (W @ phi_f).to(phi.dtype)
