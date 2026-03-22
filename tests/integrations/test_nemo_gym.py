@@ -4,9 +4,8 @@ Tests the core parsing, routing, reward, and plugin wiring logic
 without requiring a running NeMo Gym server or GPU.
 """
 
-import json
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
 class TestParseAgentResponse(unittest.TestCase):
@@ -128,17 +127,13 @@ class TestRewardEnv(unittest.TestCase):
     def test_with_list_rewards(self):
         from axolotl.integrations.nemo_gym.rewards import reward_env
 
-        result = reward_env(
-            [["comp1"], ["comp2"]], env_reward=[0.5, 0.8]
-        )
+        result = reward_env([["comp1"], ["comp2"]], env_reward=[0.5, 0.8])
         assert result == [0.5, 0.8]
 
     def test_with_scalar_reward(self):
         from axolotl.integrations.nemo_gym.rewards import reward_env
 
-        result = reward_env(
-            [["comp1"], ["comp2"]], env_reward=0.7
-        )
+        result = reward_env([["comp1"], ["comp2"]], env_reward=0.7)
         assert result == [0.7, 0.7]
 
     def test_missing_reward_returns_zeros(self):
@@ -301,9 +296,6 @@ class TestCallAgentsRouting(unittest.TestCase):
 
     def test_routes_to_correct_agent(self):
         """Items with agent_ref should route to the matching agent server."""
-        import asyncio
-
-        from axolotl.integrations.nemo_gym.multi_turn import _call_agents
 
         agent_servers = {
             "wordle_agent": "http://localhost:11111",
@@ -332,9 +324,7 @@ class TestCallAgentsRouting(unittest.TestCase):
         """Items without agent_ref should use first available agent."""
         agent_servers = {"default_agent": "http://localhost:33333"}
         item = {
-            "responses_create_params": {
-                "input": [{"role": "user", "content": "Hello"}]
-            }
+            "responses_create_params": {"input": [{"role": "user", "content": "Hello"}]}
         }
         agent_ref = item.get("agent_ref", {})
         agent_name = agent_ref.get("name", "")
@@ -349,6 +339,7 @@ class TestPluginDefaults(unittest.TestCase):
 
     def test_dataloader_num_workers_forced_to_zero(self):
         """Plugin should set dataloader_num_workers=0 for NeMo Gym."""
+
         # Simulate the plugin logic
         class FakeCfg:
             dataloader_num_workers = 4
@@ -431,15 +422,13 @@ class TestNemoGymE2E(unittest.TestCase):
     @patch("axolotl.integrations.nemo_gym.data_producer._call_agents")
     def test_produce_returns_valid_rollout_dataset(self, mock_call_agents):
         """Full pipeline: produce() → _call_agents (mocked) → parse → RolloutDataset."""
-        import asyncio
-
-        import torch
 
         from axolotl.integrations.nemo_gym.data_producer import NemoGymDataProducer
 
         # Mock _call_agents — it's async, so return a coroutine
         async def fake_call_agents(**kwargs):
             return [self.AGENT_RESPONSE, self.AGENT_RESPONSE]
+
         mock_call_agents.side_effect = fake_call_agents
 
         # Build a minimal mock of GRPODataProducer's __init__ dependencies
@@ -473,7 +462,9 @@ class TestNemoGymE2E(unittest.TestCase):
                 ]
             ]
         )
-        producer._prompt_dl = [[{"prompt": [{"role": "user", "content": "Play Wordle!"}]}]]
+        producer._prompt_dl = [
+            [{"prompt": [{"role": "user", "content": "Play Wordle!"}]}]
+        ]
 
         # Call produce
         result = producer.produce(model=MagicMock(), global_step=1)
@@ -517,7 +508,6 @@ class TestNemoGymE2E(unittest.TestCase):
     @patch("axolotl.integrations.nemo_gym.data_producer._call_agents")
     def test_produce_handles_failed_agent_response(self, mock_call_agents):
         """Failed agent responses should produce default (length-1) rollouts."""
-        import torch
 
         from axolotl.integrations.nemo_gym.data_producer import NemoGymDataProducer
 
@@ -525,8 +515,13 @@ class TestNemoGymE2E(unittest.TestCase):
         async def fake_call_agents(**kwargs):
             return [
                 self.AGENT_RESPONSE,
-                {"error": "Connection timeout", "response": {"output": []}, "reward": 0.0},
+                {
+                    "error": "Connection timeout",
+                    "response": {"output": []},
+                    "reward": 0.0,
+                },
             ]
+
         mock_call_agents.side_effect = fake_call_agents
 
         producer = NemoGymDataProducer.__new__(NemoGymDataProducer)
@@ -590,7 +585,7 @@ class TestNemoGymE2E(unittest.TestCase):
         assert verify_result == [0.75]
 
         # Both rewards can coexist (as they would in a multi-reward config)
-        combined = [e + v for e, v in zip(env_result, verify_result)]
+        combined = [e + v for e, v in zip(env_result, verify_result, strict=True)]
         assert combined == [1.17]
 
 

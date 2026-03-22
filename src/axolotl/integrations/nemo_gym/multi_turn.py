@@ -81,7 +81,7 @@ def create_nemo_gym_rollout_func(
 
             for _ in range(num_generations):
                 # Preserve agent_ref for routing in _call_agents
-                dispatched = full_item.get("verify_extra", full_item)
+                dispatched: dict = full_item.get("verify_extra", full_item)  # type: ignore[assignment]
                 if isinstance(dispatched, dict) and "agent_ref" not in dispatched:
                     agent_ref = full_item.get("agent_ref")
                     if agent_ref:

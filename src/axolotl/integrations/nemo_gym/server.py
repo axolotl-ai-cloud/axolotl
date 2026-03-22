@@ -101,7 +101,7 @@ def start_servers(
     ng_run_bin = os.path.join(gym_dir, ".venv", "bin", "ng_run")
     config_arg = f"+config_paths=[{','.join(config_paths)}]"
     _ng_log_file = open(os.path.join(gym_dir, "ng_run.log"), "w")  # noqa: SIM115
-    _ng_process = subprocess.Popen(
+    _ng_process = subprocess.Popen(  # nosec B603
         [ng_run_bin, config_arg, "+skip_venv_if_present=true"],
         cwd=gym_dir,
         stdout=_ng_log_file,

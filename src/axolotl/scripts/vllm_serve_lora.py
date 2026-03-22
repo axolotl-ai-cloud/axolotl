@@ -513,7 +513,9 @@ def main(script_args: ScriptArguments):
                 choices.append(choice)
 
         prompt_tokens = len(all_outputs[0].prompt_token_ids) if all_outputs else 0
-        completion_tokens = sum(len(out.token_ids) for o in all_outputs for out in o.outputs)
+        completion_tokens = sum(
+            len(out.token_ids) for o in all_outputs for out in o.outputs
+        )
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
