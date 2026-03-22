@@ -222,9 +222,9 @@ def test_model_specific_activation(model_name, expected_activation):
 
 
 def test_kernel_patch_conditions():
-    """Test various conditions that should prevent kernel patching."""
+    """Test that kernels ARE patched even with dropout and bias (now supported)."""
     test_configs = [
-        # Dropout prevents patching
+        # Dropout — kernels now support this
         {
             "peft_type": "LORA",
             "task_type": "CAUSAL_LM",
@@ -234,7 +234,7 @@ def test_kernel_patch_conditions():
             "lora_dropout": 0.1,
             "bias": "none",
         },
-        # Bias prevents patching
+        # Bias — kernels now support this
         {
             "peft_type": "LORA",
             "task_type": "CAUSAL_LM",
@@ -252,13 +252,14 @@ def test_kernel_patch_conditions():
         model = PeftModelForCausalLM(model, peft_config)
         cfg = DictDefault({"lora_mlp_kernel": True})
 
-        # Should not patch
         patched_model = apply_lora_kernel_patches(model, cfg)
         layer = patched_model.model.model.layers[0].mlp
 
-        # Verify no patches applied
-        assert layer.forward.__func__ is not apply_lora_mlp_swiglu
-        assert layer.forward.__func__ is not apply_lora_mlp_geglu
+        # Verify patches ARE applied (dropout and bias are now supported)
+        assert (
+            layer.forward.__func__ is apply_lora_mlp_swiglu
+            or layer.forward.__func__ is apply_lora_mlp_geglu
+        )
 
 
 def test_kernel_config_options():
@@ -511,7 +512,7 @@ def test_kernel_training_integration_auto_enable(temp_dir):
 
 
 def test_kernel_training_integration_dropout_non_zero(temp_dir):
-    """Test model loading with dropout non-zero should not patch."""
+    """Test model loading with dropout non-zero DOES patch (now supported)."""
 
     from axolotl.cli.utils import load_model_and_tokenizer
 
@@ -546,31 +547,18 @@ def test_kernel_training_integration_dropout_non_zero(temp_dir):
     # Load config
     cfg = load_cfg(str(path))
 
-    # Get original attention class
-    attention_cls = get_attention_cls_from_config(cfg)
-
-    # Store original state before patching
-    original_forward_method = attention_cls.forward
-
     # Load model
     model, tokenizer, _ = load_model_and_tokenizer(cfg=cfg)
 
-    # We call modelloader as that's where the patches are applied
-    # despite the fact that we're not using it to load the model
     model_loader = ModelLoader(cfg, tokenizer)
 
-    # Apply patch
+    # Apply patches — should succeed even with dropout > 0
     model_loader.patch_manager._apply_self_attention_lora_patch()
-
-    # Verify patch was not applied
-    assert attention_cls.forward == original_forward_method
-
-    # Apply apply_lora_kernel_patches
     model_loader.patch_manager._apply_lora_kernel_patch(model)
 
-    # Verify patch was not applied
+    # Verify patches WERE applied (dropout is now supported by kernels)
     layers = get_layers(model)
     for layer in layers:
         for self_attn in find_self_attn_in_layer(layer):
-            assert not hasattr(self_attn, "apply_qkv")
-            assert not hasattr(self_attn, "apply_o")
+            assert hasattr(self_attn, "apply_qkv")
+            assert hasattr(self_attn, "apply_o")
