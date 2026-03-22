@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import httpcore
 from accelerate.commands.config import config_args
 from huggingface_hub import HfApi
 from huggingface_hub.utils import LocalTokenNotFoundError
@@ -47,7 +48,7 @@ def check_user_token() -> bool:
             "Error verifying HuggingFace token. Remember to log in using `hf auth login` and get your access token from https://huggingface.co/settings/tokens if you want to use gated models or datasets."
         )
         return False
-    except HTTPError:
+    except (HTTPError, httpcore.ConnectError):
         LOG.warning(
             "Error accessing HuggingFace. This may be due to a network issue or rate limiting."
         )
