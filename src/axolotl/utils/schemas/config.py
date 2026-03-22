@@ -703,6 +703,12 @@ class AxolotlInputConfig(
             "description": "Apply custom LoRA autograd functions and activation function Triton kernels for speed and memory savings. See: https://docs.axolotl.ai/docs/lora_optims.html"
         },
     )
+    lora_embedding_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Apply custom LoRA autograd function for embedding layers. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
 
     chunked_cross_entropy: bool | None = Field(
         default=None,
@@ -1313,6 +1319,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             data.get("lora_mlp_kernel")
             or data.get("lora_qkv_kernel")
             or data.get("lora_o_kernel")
+            or data.get("lora_embedding_kernel")
         ):
             capabilities = data.get("capabilities")
             is_fsdp = data.get("fsdp_config") is not None
@@ -1360,7 +1367,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set, using unsloth optimizations, or using 8-bit
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
-            kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
+            kernel_fields = [
+                "lora_mlp_kernel",
+                "lora_qkv_kernel",
+                "lora_o_kernel",
+                "lora_embedding_kernel",
+            ]
             if (
                 any(data.get(k) is not None for k in kernel_fields)
                 or any(data.get(k) for k in unsloth_fields)
@@ -1371,10 +1383,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
             # Skip if trust_remote_code is enabled, as lora kernels are not compatible
             if data.get("trust_remote_code"):
-                return data
-
-            # Skip if dropout is not 0, as auto enabling it would just disable it during runtime patch checks
-            if data.get("lora_dropout") != 0:
                 return data
 
             # Check multi-GPU compatibility
@@ -1397,6 +1405,9 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
                 if data.get("lora_o_kernel") is None:
                     data["lora_o_kernel"] = True
+
+                if data.get("lora_embedding_kernel") is None:
+                    data["lora_embedding_kernel"] = True
 
                 LOG.warning(
                     "Auto-enabling LoRA kernel optimizations for faster training. "

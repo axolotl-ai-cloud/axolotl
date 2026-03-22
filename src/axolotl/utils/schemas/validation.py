@@ -681,15 +681,7 @@ class LoRAValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_lora_kernels_dora(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ) and data.get("peft_use_dora"):
-            raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
-                "compatible with DoRA at the moment."
-            )
+        # DoRA is now supported by lora kernels
         return data
 
     @model_validator(mode="before")

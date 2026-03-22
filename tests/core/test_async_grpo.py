@@ -153,7 +153,7 @@ class TestLoraFP8Guard(unittest.TestCase):
 
         proj.base_layer = base_layer
 
-        W, b, quant_state, A, B, s = get_lora_parameters(proj)
+        W, b, quant_state, A, B, s, *_ = get_lora_parameters(proj)
         # quant_state should be None since weight is bf16, not FP8
         self.assertIsNone(quant_state)
 
@@ -174,7 +174,7 @@ class TestLoraFP8Guard(unittest.TestCase):
         scale_inv = torch.ones(1)
         base_layer.weight_scale_inv = scale_inv
 
-        W, b, quant_state, A, B, s = get_lora_parameters(proj)
+        W, b, quant_state, A, B, s, *_ = get_lora_parameters(proj)
         self.assertIs(quant_state, scale_inv)
 
 
