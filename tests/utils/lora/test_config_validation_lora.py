@@ -28,20 +28,22 @@ class TestLoRAConfigValidation:
         result = validate_config(valid_config)
         assert result["adapter"] == "lora"
 
-        with pytest.raises(ValueError, match="not compatible with DoRA"):
-            invalid_config = DictDefault(
-                {
-                    "adapter": "lora",
-                    "lora_mlp_kernel": True,
-                    "peft_use_dora": True,
-                    "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
-                    "micro_batch_size": 1,
-                    "gradient_accumulation_steps": 1,
-                    "learning_rate": 1e-5,
-                    "base_model": "dummy_model",
-                }
-            )
-            validate_config(invalid_config)
+        # DoRA is now compatible with lora kernels
+        dora_kernel_config = DictDefault(
+            {
+                "adapter": "lora",
+                "lora_mlp_kernel": True,
+                "peft_use_dora": True,
+                "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 1e-5,
+                "base_model": "dummy_model",
+            }
+        )
+        result = validate_config(dora_kernel_config)
+        assert result["lora_mlp_kernel"] is True
+        assert result["peft_use_dora"] is True
 
     def test_qlora_4bit_validation(self):
         """Test QLoRA 4-bit configuration validation"""
