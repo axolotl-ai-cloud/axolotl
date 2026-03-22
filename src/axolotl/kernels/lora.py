@@ -651,15 +651,15 @@ class LoRA_MLP(torch.autograd.Function):
             if has_dropout:
                 dX_drop = torch.zeros_like(X_lora)
                 if grad_B_up is not None:
-                    dX_drop.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)
+                    dX_drop.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)  # type: ignore[union-attr]
                 if grad_B_gate is not None:
-                    dX_drop.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)
+                    dX_drop.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)  # type: ignore[union-attr]
                 dX_drop = dX_drop.view(batch, seq_len, hd)
             else:
                 if grad_B_up is not None:
-                    dX.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)
+                    dX.addmm_(grad_B_up, up_A_t.t(), alpha=up_scale)  # type: ignore[union-attr]
                 if grad_B_gate is not None:
-                    dX.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)
+                    dX.addmm_(grad_B_gate, gate_A_t.t(), alpha=gate_scale)  # type: ignore[union-attr]
 
             dX = dX.view(batch, seq_len, hd)
 
@@ -1161,13 +1161,13 @@ class LoRA_QKV(torch.autograd.Function):
         # Transpose LoRA gradients
         if d_A_q is not None:
             d_A_q = d_A_q.t()
-            d_B_q = d_B_q.t()
+            d_B_q = d_B_q.t()  # type: ignore[union-attr]
         if d_A_k is not None:
             d_A_k = d_A_k.t()
-            d_B_k = d_B_k.t()
+            d_B_k = d_B_k.t()  # type: ignore[union-attr]
         if d_A_v is not None:
             d_A_v = d_A_v.t()
-            d_B_v = d_B_v.t()
+            d_B_v = d_B_v.t()  # type: ignore[union-attr]
 
         grad_X = grad_X.view(batch, seq_len, -1)
         if grad_X_drop is not None:
@@ -1234,7 +1234,7 @@ def _lora_only(
         batch, seq_len, _ = X.shape
         X = X.view(-1, X.shape[-1])
         reshape = True
-    At, Bt = A.t().to(dtype), B.t().to(dtype)
+    At, Bt = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
     out = s * X @ At @ Bt
     if lora_bias is not None:
         out = out + s * lora_bias
@@ -1545,8 +1545,8 @@ class LoRA_Embedding(torch.autograd.Function):
 
         if A is not None:
             # LoRA: F.embedding(x, A^T) @ B^T * s
-            A_T = A.t()  # [vocab, rank]
-            B_T = B.t()  # [rank, hidden_dim]
+            A_T = A.t()  # type: ignore[union-attr]  # [vocab, rank]
+            B_T = B.t()  # type: ignore[union-attr]  # [rank, hidden_dim]
             after_A = F.embedding(
                 x,
                 A_T,
@@ -1560,14 +1560,14 @@ class LoRA_Embedding(torch.autograd.Function):
             lora_result = after_A @ B_T  # [batch, seq, hidden_dim]
 
             if has_dora:
-                mag_scale = _compute_dora_scale(W.t(), None, A, B, s, magnitude, dtype)
+                mag_scale = _compute_dora_scale(W.t(), None, A, B, s, magnitude, dtype)  # type: ignore[arg-type]
                 # DoRA: mag_scale * (base + s * lora) + bias
                 # base embedding has no bias
                 result = mag_scale.unsqueeze(0) * (result + s * lora_result)
                 ctx.save_for_backward(
                     x,
                     A.to(dtype),
-                    B.to(dtype),
+                    B.to(dtype),  # type: ignore[union-attr]
                     after_A,
                     magnitude,
                     mag_scale,
@@ -1575,7 +1575,7 @@ class LoRA_Embedding(torch.autograd.Function):
                 )
             else:
                 result = result + s * lora_result
-                ctx.save_for_backward(x, A.to(dtype), B.to(dtype), after_A)
+                ctx.save_for_backward(x, A.to(dtype), B.to(dtype), after_A)  # type: ignore[union-attr]
         else:
             ctx.save_for_backward(
                 x,
