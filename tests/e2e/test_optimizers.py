@@ -298,6 +298,7 @@ class TestCustomOptimizers(unittest.TestCase):
     ],
 )
 def test_flash_optimizers(tmp_path, optimizer_name, expected_class, learning_rate):
+    pytest.importorskip("flashoptim")
     temp_dir = str(tmp_path)
     cfg = DictDefault(
         {

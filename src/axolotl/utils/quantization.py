@@ -10,9 +10,11 @@ from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
 )
+from torchao.quantization.qat.fake_quantize_config import Int4WeightFakeQuantizeConfig
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
+    Int4WeightOnlyConfig,
     Int8DynamicActivationInt4WeightConfig,
 )
 
@@ -173,6 +175,70 @@ def quantize_model(
         )
 
 
+def _make_qat_config(
+    base_config: AOBaseConfig,
+    weight_dtype: TorchAOQuantDType,
+    activation_dtype: TorchAOQuantDType | None,
+    group_size: int | None,
+) -> QATConfig:
+    """Build a QATConfig, explicitly constructing fake quantize configs to ensure
+    group_size and other params are properly propagated (torchao's QATConfig(base_config)
+    does not always map these correctly)."""
+    from torchao.quantization.qat.fake_quantize_config import (
+        Float8FakeQuantizeConfig,
+        IntxFakeQuantizeConfig,
+    )
+
+    if isinstance(base_config, MXFakeQuantizeConfig):
+        return QATConfig(
+            activation_config=base_config,
+            weight_config=base_config,
+        )
+
+    # Build explicit weight config
+    weight_fq_config: (
+        Int4WeightFakeQuantizeConfig
+        | IntxFakeQuantizeConfig
+        | Float8FakeQuantizeConfig
+        | None
+    ) = None
+    if weight_dtype == TorchAOQuantDType.int4:
+        gs = (
+            group_size
+            if group_size is not None
+            else getattr(base_config, "group_size", 128)
+        )
+        activation_dt = None
+        if activation_dtype == TorchAOQuantDType.int8:
+            activation_dt = torch.bfloat16
+        elif activation_dtype == TorchAOQuantDType.float8_e4m3fn:
+            activation_dt = torch.float8_e4m3fn
+        kwargs = {"group_size": gs}
+        if activation_dt is not None:
+            kwargs["activation_dtype"] = activation_dt
+        weight_fq_config = Int4WeightFakeQuantizeConfig(**kwargs)
+    elif weight_dtype == TorchAOQuantDType.float8_e4m3fn:
+        weight_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+
+    # Build explicit activation config
+    activation_fq_config = None
+    if activation_dtype == TorchAOQuantDType.int8:
+        activation_fq_config = IntxFakeQuantizeConfig(
+            dtype=torch.int8, granularity="per_token", is_symmetric=False
+        )
+    elif activation_dtype == TorchAOQuantDType.float8_e4m3fn:
+        activation_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+
+    if weight_fq_config is not None:
+        return QATConfig(
+            weight_config=weight_fq_config,
+            activation_config=activation_fq_config,
+        )
+
+    # Fallback to base_config for unhandled combos
+    return QATConfig(base_config)
+
+
 def prepare_model_for_qat(
     model,
     weight_dtype: TorchAOQuantDType,
@@ -200,13 +266,9 @@ def prepare_model_for_qat(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    if isinstance(base_config, MXFakeQuantizeConfig):
-        qat_config = QATConfig(
-            activation_config=base_config,
-            weight_config=base_config,
-        )
-    else:
-        qat_config = QATConfig(base_config)
+    qat_config = _make_qat_config(
+        base_config, weight_dtype, activation_dtype, group_size
+    )
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
@@ -215,12 +277,9 @@ def prepare_model_for_qat(
             activation_dtype=None,
             group_size=group_size,
         )
-        if isinstance(embedding_base_config, MXFakeQuantizeConfig):
-            embedding_qat_config = QATConfig(
-                weight_config=embedding_base_config,
-            )
-        else:
-            embedding_qat_config = QATConfig(embedding_base_config)
+        embedding_qat_config = _make_qat_config(
+            embedding_base_config, weight_dtype, None, group_size
+        )
         quantize_(
             model,
             embedding_qat_config,

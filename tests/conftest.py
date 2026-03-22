@@ -15,6 +15,8 @@ import datasets
 import pytest
 import requests
 import torch
+import transformers.utils as _transformers_utils
+import transformers.utils.import_utils as _import_utils
 from huggingface_hub import snapshot_download
 from huggingface_hub.errors import LocalEntryNotFoundError
 from tokenizers import AddedToken
@@ -28,6 +30,26 @@ from tests.hf_offline_utils import (
 )
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
+
+# Shim for deepseek v3
+if not hasattr(_import_utils, "is_torch_fx_available"):
+
+    def _is_torch_fx_available():
+        try:
+            import torch.fx  # noqa: F401  # pylint: disable=unused-import
+
+            return True
+        except ImportError:
+            return False
+
+    _import_utils.is_torch_fx_available = _is_torch_fx_available
+
+if not hasattr(_transformers_utils, "is_flash_attn_greater_or_equal_2_10"):
+    from transformers.utils import is_flash_attn_greater_or_equal as _is_flash_attn_gte
+
+    _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: (
+        _is_flash_attn_gte("2.10")
+    )
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):

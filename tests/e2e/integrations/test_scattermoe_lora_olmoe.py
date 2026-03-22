@@ -933,7 +933,7 @@ class TestKernelizeIntegration:
     def _get_repo_path():
         """Get the path to scattermoe_lora within axolotl's plugin."""
         return (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "axolotl"
             / "integrations"
@@ -1219,7 +1219,7 @@ class TestSharedExpertHandling:
 
         # Kernelize
         repo_path = (
-            Path(__file__).parent.parent.parent
+            Path(__file__).parent.parent.parent.parent
             / "src"
             / "axolotl"
             / "integrations"

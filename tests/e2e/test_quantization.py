@@ -35,6 +35,14 @@ from tests.e2e.utils import (
 )
 
 
+def _get_fake_quant_config_dtype(config):
+    """Get the weight dtype from a fake quantize config, handling different config types."""
+    if hasattr(config, "dtype"):
+        return config.dtype
+    # Int4WeightFakeQuantizeConfig doesn't have .dtype — weight is always int4
+    return torch.int4
+
+
 @pytest.fixture()
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
@@ -157,6 +165,18 @@ class TestQuantization:
         expected_exception,
         expected_tensor_class,
     ):
+        # TODO: add mslk-cuda as a CI dependency once pytorch 2.10.x is available
+        # (see https://pypi.org/project/mslk-cuda/)
+        if expected_tensor_class is Int4Tensor and activation_dtype is None:
+            try:
+                from torchao.quantization.quantize_.workflows.int4.int4_tensor import (
+                    int4_row_quantize_zp,
+                )
+
+                if int4_row_quantize_zp is None:
+                    pytest.skip("Int4Tensor requires mslk >= 1.0.0")
+            except ImportError:
+                pytest.skip("Int4Tensor requires mslk >= 1.0.0")
         if expected_exception:
             with pytest.raises(expected_exception):
                 quantize_model(
@@ -252,28 +272,24 @@ class TestQuantization:
         if quantize_embedding:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
             assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
-            assert (
-                model.model.embed_tokens.weight_fake_quantizer.config.dtype
-                == weight_dtype.value
-            )
+            embed_config = model.model.embed_tokens.weight_fake_quantizer.config
+            assert _get_fake_quant_config_dtype(embed_config) == weight_dtype.value
             if group_size:
-                assert (
-                    model.model.embed_tokens.weight_fake_quantizer.config.group_size
-                    == group_size
-                )
+                assert embed_config.group_size == group_size
 
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
                 assert isinstance(child, FakeQuantizedLinear)
                 assert hasattr(child, "weight_fake_quantizer")
-                assert child.weight_fake_quantizer.config.dtype == weight_dtype.value
+                w_config = child.weight_fake_quantizer.config
+                assert _get_fake_quant_config_dtype(w_config) == weight_dtype.value
                 if group_size:
-                    assert child.weight_fake_quantizer.config.group_size == group_size
+                    assert w_config.group_size == group_size
                 if activation_dtype:
                     assert hasattr(child, "activation_fake_quantizer")
+                    a_config = child.activation_fake_quantizer.config
                     assert (
-                        child.activation_fake_quantizer.config.dtype
-                        == activation_dtype.value
+                        _get_fake_quant_config_dtype(a_config) == activation_dtype.value
                     )
                 else:
                     assert child.activation_fake_quantizer is None
@@ -374,9 +390,16 @@ class TestQuantizationCallback:
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert model.lm_head.weight_fake_quantizer.enabled
+
+        # Only test enable/disable toggling if the fake quantizer supports it
+        # (Int4WeightFakeQuantizer does not have an 'enabled' attribute)
+        supports_toggle = hasattr(
+            model.model.embed_tokens.weight_fake_quantizer, "enabled"
+        )
+        if supports_toggle:
+            assert model.model.embed_tokens.weight_fake_quantizer.enabled
+            assert model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
 
@@ -388,9 +411,10 @@ class TestQuantizationCallback:
             model=model,
         )
 
-        # quantization should have been disabled
-        assert not model.model.embed_tokens.weight_fake_quantizer.enabled
-        assert not model.lm_head.weight_fake_quantizer.enabled
+        if supports_toggle:
+            # quantization should have been disabled
+            assert not model.model.embed_tokens.weight_fake_quantizer.enabled
+            assert not model.lm_head.weight_fake_quantizer.enabled
 
         trainer_state.global_step = 100
         qat_callback.on_step_begin(
@@ -400,9 +424,10 @@ class TestQuantizationCallback:
             model=model,
         )
 
-        # quantization should have been enabled
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled
-        assert model.lm_head.weight_fake_quantizer.enabled
+        if supports_toggle:
+            # quantization should have been enabled
+            assert model.model.embed_tokens.weight_fake_quantizer.enabled
+            assert model.lm_head.weight_fake_quantizer.enabled
 
     @require_torch_2_8_0
     def test_qat_callback_fake_quant_after_n_steps_is_none(self, model, trainer_state):
@@ -424,9 +449,10 @@ class TestQuantizationCallback:
 
         # ensure model has been quantized
         assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled
         assert isinstance(model.lm_head, FakeQuantizedLinear)
-        assert model.lm_head.weight_fake_quantizer.enabled
+        if hasattr(model.model.embed_tokens.weight_fake_quantizer, "enabled"):
+            assert model.model.embed_tokens.weight_fake_quantizer.enabled
+            assert model.lm_head.weight_fake_quantizer.enabled
 
         qat_callback = QATCallback(cfg)
         # simulate first training step
@@ -438,5 +464,6 @@ class TestQuantizationCallback:
         )
 
         # quantization should be enabled from the get-go
-        assert model.model.embed_tokens.weight_fake_quantizer.enabled
-        assert model.lm_head.weight_fake_quantizer.enabled
+        if hasattr(model.model.embed_tokens.weight_fake_quantizer, "enabled"):
+            assert model.model.embed_tokens.weight_fake_quantizer.enabled
+            assert model.lm_head.weight_fake_quantizer.enabled

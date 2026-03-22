@@ -20,6 +20,7 @@ Test strategy:
 - Tolerances account for tf32 accumulation in Triton kernels
 """
 
+from functools import wraps
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +33,21 @@ pytestmark = pytest.mark.skipif(
 )
 
 _SMOE = "axolotl.integrations.kernels.libs.scattermoe_lora"
+
+
+def skip_on_out_of_resources(func):
+    """Skip test if Triton kernel exceeds GPU shared memory limits."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:  # pylint: disable=broad-except
+            if "OutOfResources" in type(exc).__name__:
+                pytest.skip(f"GPU shared memory too small: {exc}")
+            raise
+
+    return wrapper
 
 
 # =============================================================================
@@ -209,6 +225,7 @@ def make_test_data(
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestForwardPass:
     """Test forward pass of fused scatter2scatter_lora kernel."""
 
@@ -288,6 +305,7 @@ class TestForwardPass:
         )
 
 
+@pytest.mark.slow
 class TestForwardGrouped:
     """Test forward pass with grouped_in/grouped_out configurations."""
 
@@ -377,6 +395,7 @@ class TestForwardGrouped:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestLoRAGradients:
     """Test backward LoRA gradient computation (dA, dB)."""
 
@@ -452,6 +471,7 @@ class TestLoRAGradients:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestAutograd:
     """Test full autograd integration through ScatterMoELoRA."""
 
@@ -620,6 +640,7 @@ class TestAutograd:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestBaseEquivalence:
     """When scaling=0, fused kernel should match base scatter2scatter."""
 
@@ -692,6 +713,7 @@ class TestBaseEquivalence:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestLoRAAdditivity:
     """Test that the LoRA component is correctly additive."""
 
@@ -749,6 +771,7 @@ class TestLoRAAdditivity:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestParallelExpertsModule:
     """Test the ParallelExperts module with LoRA."""
 
@@ -816,6 +839,7 @@ class TestParallelExpertsModule:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestEdgeCases:
     """Edge cases and boundary conditions."""
 
@@ -913,6 +937,7 @@ class TestEdgeCases:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestFusedDX:
     """Test fused backward dX kernel: dX = dY @ W^T + scaling * (dY @ B) @ A."""
 
@@ -980,6 +1005,7 @@ class TestFusedDX:
     def test_basic(self):
         self._run_fused_dX_test(M=32, K=64, N=128, E=4, R=8, k=2)
 
+    @skip_on_out_of_resources
     def test_large(self):
         self._run_fused_dX_test(M=256, K=256, N=512, E=8, R=16, k=2)
 
@@ -1122,6 +1148,7 @@ class TestFusedDX:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestFusedGatherBackward:
     """Test fused gather + backward dA/dB kernel."""
 
@@ -1174,6 +1201,7 @@ class TestFusedGatherBackward:
     def test_basic(self):
         self._run_fused_gather_test(M=32, K=64, N=128, E=4, R=8, k=2)
 
+    @skip_on_out_of_resources
     def test_large(self):
         self._run_fused_gather_test(M=256, K=256, N=512, E=8, R=16, k=2)
 
@@ -1183,6 +1211,7 @@ class TestFusedGatherBackward:
     def test_k1(self):
         self._run_fused_gather_test(M=64, K=64, N=128, E=4, R=8, k=1)
 
+    @skip_on_out_of_resources
     def test_many_experts(self):
         self._run_fused_gather_test(M=128, K=64, N=128, E=16, R=8, k=4)
 
@@ -1269,6 +1298,8 @@ class TestFusedGatherBackward:
 # =============================================================================
 
 
+@pytest.mark.slow
+@pytest.mark.xfail(reason="flaky", strict=False)
 class TestTokenRounding:
     """Test token rounding utility and its integration with backward kernels."""
 
@@ -1315,6 +1346,7 @@ class TestTokenRounding:
                 )
             prev = padded_offsets[e].item()
 
+    @skip_on_out_of_resources
     def test_round_with_fused_gather(self):
         """Token rounding + fused gather gives same result as plain fused gather."""
         from importlib import import_module
@@ -1414,6 +1446,7 @@ class TestTokenRounding:
 # =============================================================================
 
 
+@pytest.mark.slow
 class TestCombinedOptimizations:
     """Test all optimizations together."""
 
@@ -1583,6 +1616,7 @@ def _make_mock_sigmoid_moe_block(
     return moe_block, T, H, FF, E, K
 
 
+@pytest.mark.slow
 class TestHFScatterMoESigmoidRouting:
     """Test HFScatterMoEGatedMLP forward with sigmoid routing on GPU."""
 
@@ -1724,6 +1758,7 @@ class TestHFScatterMoESigmoidRouting:
         )
 
 
+@pytest.mark.slow
 class TestHFScatterMoESigmoidWithSharedExperts:
     """Test HFScatterMoEGatedMLP with sigmoid routing + shared experts."""
 

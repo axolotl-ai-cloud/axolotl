@@ -25,9 +25,11 @@ def toggle_fake_quant(mod: nn.Module, enable: bool):
         if (
             isinstance(mod, FakeQuantizedLinear)
             and mod.activation_fake_quantizer is not None
+            and hasattr(mod.activation_fake_quantizer, "enabled")
         ):
             mod.activation_fake_quantizer.enabled = enable
-        mod.weight_fake_quantizer.enabled = enable
+        if hasattr(mod.weight_fake_quantizer, "enabled"):
+            mod.weight_fake_quantizer.enabled = enable
 
 
 class QATCallback(TrainerCallback):
