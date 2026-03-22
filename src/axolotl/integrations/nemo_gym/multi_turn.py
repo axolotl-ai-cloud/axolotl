@@ -66,21 +66,27 @@ def create_nemo_gym_rollout_func(
         for prompt_str in prompts:
             # Prompts from TRL are chat-templated strings. Find the dataset item
             # by matching against dataset_lookup keys (raw user message text).
-            item = None
+            full_item = None
             for key, val in dataset_lookup.items():
-                if isinstance(key, str) and key in prompt_str:
-                    item = val
+                if isinstance(key, str) and prompt_str == key:
+                    full_item = val
                     break
 
-            if item is None:
-                item = {
+            if full_item is None:
+                full_item = {
                     "responses_create_params": {
                         "input": [{"role": "user", "content": prompt_str}]
                     }
                 }
 
             for _ in range(num_generations):
-                expanded_items.append(item.get("verify_extra", item))
+                # Preserve agent_ref for routing in _call_agents
+                dispatched = full_item.get("verify_extra", full_item)
+                if isinstance(dispatched, dict) and "agent_ref" not in dispatched:
+                    agent_ref = full_item.get("agent_ref")
+                    if agent_ref:
+                        dispatched = {**dispatched, "agent_ref": agent_ref}
+                expanded_items.append(dispatched)
                 expanded_prompt_indices.append(prompt_str)
 
         # Call NeMo Gym agents

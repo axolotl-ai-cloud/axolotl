@@ -984,8 +984,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Reset prefix cache after adapter update
             try:
                 vllm_client.reset_prefix_cache()
-            except Exception:
-                pass  # Not critical
+            except Exception as exc:
+                logger.warning("Failed to reset prefix cache: %s", exc)
 
             # Clean up old adapter versions (keep only current)
             if self._lora_sync_version > 1:

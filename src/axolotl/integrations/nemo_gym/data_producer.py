@@ -96,14 +96,18 @@ class NemoGymDataProducer(GRPODataProducer):
             elif isinstance(prompt, str):
                 prompt_text = prompt
 
-            # Find the full dataset item
-            item = self._dataset_lookup.get(prompt_text, {}).get("verify_extra", {})
+            # Find the full dataset item, preserving agent_ref for routing
+            full_item = self._dataset_lookup.get(prompt_text, {})
+            item = full_item.get("verify_extra", {})
             if not item:
                 item = {
                     "responses_create_params": {
                         "input": [{"role": "user", "content": prompt_text}]
                     }
                 }
+            # Preserve agent_ref from the dataset row for _call_agents routing
+            if "agent_ref" in full_item and "agent_ref" not in item:
+                item["agent_ref"] = full_item["agent_ref"]
             dataset_items.append(item)
 
         # Expand by num_generations (agent produces one rollout per call)

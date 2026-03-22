@@ -512,19 +512,18 @@ def main(script_args: ScriptArguments):
                     ]
                 choices.append(choice)
 
+        prompt_tokens = len(all_outputs[0].prompt_token_ids) if all_outputs else 0
+        completion_tokens = sum(len(out.token_ids) for o in all_outputs for out in o.outputs)
+
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
             "model": script_args.model,
             "choices": choices,
             "usage": {
-                "prompt_tokens": len(all_outputs[0].prompt_token_ids)
-                if all_outputs
-                else 0,
-                "completion_tokens": sum(
-                    len(out.token_ids) for o in all_outputs for out in o.outputs
-                ),
-                "total_tokens": 0,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
             },
         }
 

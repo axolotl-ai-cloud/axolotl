@@ -98,14 +98,11 @@ def start_servers(
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         pass
 
-    config_str = ",".join(config_paths)
+    ng_run_bin = os.path.join(gym_dir, ".venv", "bin", "ng_run")
+    config_arg = f"+config_paths=[{','.join(config_paths)}]"
     _ng_log_file = open(os.path.join(gym_dir, "ng_run.log"), "w")  # noqa: SIM115
-    _ng_process = subprocess.Popen(  # nosec
-        [
-            "bash",
-            "-c",
-            f'source .venv/bin/activate && ng_run "+config_paths=[{config_str}]"',
-        ],
+    _ng_process = subprocess.Popen(
+        [ng_run_bin, config_arg, "+skip_venv_if_present=true"],
         cwd=gym_dir,
         stdout=_ng_log_file,
         stderr=subprocess.STDOUT,
@@ -173,8 +170,7 @@ def get_agent_servers(
             if not port:
                 continue
             # Replace loopback with head_host for remote access
-            if host in ("127.0.0.1", "0.0.0.0", "localhost"):  # nosec B104
-                host = head_host
+            host = _normalize_host(host, fallback=head_host)
             # Use the top-level config name (not the inner agent name)
             # because dataset agent_ref.name references the top-level name
             agents[top_name] = f"http://{host}:{port}"
@@ -183,11 +179,19 @@ def get_agent_servers(
     return agents
 
 
+def _normalize_host(host: str, fallback: str = "127.0.0.1") -> str:
+    """Normalize bind-all and loopback addresses for reachability."""
+    if host in ("0.0.0.0", "localhost"):  # nosec B104
+        return fallback
+    return host
+
+
 def get_server_base_url(global_config: dict, server_name: str) -> str:
     """Get the base URL for a given resource server."""
     try:
         srv_cfg = global_config[server_name]["resources_servers"][server_name]
-        return f"http://{srv_cfg['host']}:{srv_cfg['port']}"
+        host = _normalize_host(srv_cfg["host"])
+        return f"http://{host}:{srv_cfg['port']}"
     except (KeyError, TypeError) as exc:
         raise ValueError(
             f"Could not find resource server config for '{server_name}' in NeMo Gym. "
@@ -208,7 +212,7 @@ def wait_for_resource_servers(global_config: dict, timeout: int = 180):
         except (KeyError, TypeError):
             continue  # Skip non-server config entries silently
 
-        host, port = srv_cfg["host"], srv_cfg["port"]
+        host, port = _normalize_host(srv_cfg["host"]), srv_cfg["port"]
         LOG.info(f"Waiting for resource server '{srv_name}' at {host}:{port}...")
         for _ in range(timeout // 2):
             try:

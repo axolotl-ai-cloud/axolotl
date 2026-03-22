@@ -228,14 +228,14 @@ cd ~/Gym && ng_run "+config_paths=[resources_servers/reasoning_gym/configs/resou
 ## How It Works
 
 ### Single-Turn
-```
+```text
 axolotl train → GRPO Trainer generates completions
   → NeMo Gym plugin reward_fn calls POST /verify on resource server
   → reward flows back to GRPO for advantage computation
 ```
 
 ### Multi-Turn (Agent /run)
-```
+```text
 ┌─────────────┐     ┌──────────────┐     ┌──────────────────┐
 │  axolotl    │     │  NeMo Gym    │────▶│  vLLM OpenAI     │
 │  train      │────▶│  Agent /run  │◀────│  Server (GPU 0)  │

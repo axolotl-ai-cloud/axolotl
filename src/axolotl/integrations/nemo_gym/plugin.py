@@ -119,7 +119,7 @@ class NemoGymPlugin(BasePlugin):
             )
 
         self._global_config = get_server_configs(head_port=head_port)
-        wait_for_resource_servers(self._global_config)
+        wait_for_resource_servers(self._global_config, timeout=server_timeout)
 
         # Build endpoint maps for resource servers (/verify)
         self._verify_endpoints = {}
@@ -149,7 +149,8 @@ class NemoGymPlugin(BasePlugin):
             self._dataset_lookup = {}
             for i in range(len(dataset)):
                 row = dataset[i]
-                prompt_text = row["prompt"][0]["content"]
+                # Use last message content as key (matches data_producer lookup)
+                prompt_text = row["prompt"][-1]["content"]
                 self._dataset_lookup[prompt_text] = row
             LOG.info(f"Built dataset lookup with {len(self._dataset_lookup)} entries")
 
@@ -175,7 +176,8 @@ class NemoGymPlugin(BasePlugin):
         self._dataset_lookup = {}
         for i in range(len(dataset)):
             row = dataset[i]
-            prompt_text = row["prompt"][0]["content"]
+            # Use last message content as key (matches data_producer lookup)
+            prompt_text = row["prompt"][-1]["content"]
             self._dataset_lookup[prompt_text] = row
 
         return TrainDatasetMeta(
@@ -333,7 +335,8 @@ class NemoGymPlugin(BasePlugin):
             seed=inner._seed,
             agent_servers=self._agent_servers,
             dataset_lookup=self._dataset_lookup or {},
-            request_timeout=float(cfg.nemo_gym_verify_timeout or 10800),
+            # Don't use verify_timeout here — /run is a full multi-turn
+            # rollout that can take minutes. Use the data producer's default (10800s).
         )
         nemo_producer.set_trainer(trainer)
 
@@ -458,8 +461,8 @@ class NemoGymPlugin(BasePlugin):
 
                 try:
                     vllm_gen.vllm_client.reset_prefix_cache()
-                except Exception:
-                    pass  # Not critical if cache reset fails
+                except Exception as exc:
+                    LOG.warning("Failed to reset prefix cache: %s", exc)
 
                 # Clean up old version
                 if version > 1:

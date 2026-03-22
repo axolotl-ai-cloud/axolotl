@@ -77,7 +77,7 @@ def load_nemo_gym_datasets(
             f"Loading NeMo Gym dataset from {path} (default server: {default_server})"
         )
 
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             lines = f.readlines()
 
         if max_samples and len(lines) > max_samples:
