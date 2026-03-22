@@ -106,7 +106,11 @@ def get_lora_parameters(
         and proj.lora_magnitude_vector
         and active_adapter in proj.lora_magnitude_vector
     ):
-        magnitude = proj.lora_magnitude_vector[active_adapter].weight
+        mag_layer = proj.lora_magnitude_vector[active_adapter]
+        magnitude = mag_layer.weight
+        # FSDP2 DTensor unshard for magnitude vector
+        if isinstance(magnitude, DTensor):
+            magnitude = magnitude.full_tensor()
 
     return W, b, quant_state, A, B, s, lora_bias, dropout, magnitude
 
@@ -158,10 +162,12 @@ def _compute_dora_scale(
         mag_norm_scale: [out_features] tensor = magnitude / ||W + s * B @ A||_2
     """
     # Check cache on magnitude tensor (avoids expensive norm recomputation)
+    # Use tensor._version which increments on any in-place modification
+    # (data_ptr doesn't change when optimizers update params in-place)
     cache = getattr(magnitude, "_dora_cache", None)
     if cache is not None:
-        cached_a_ptr, cached_b_ptr, cached_norm = cache
-        if cached_a_ptr == A.data_ptr() and cached_b_ptr == B.data_ptr():
+        cached_a_ver, cached_b_ver, cached_norm = cache
+        if cached_a_ver == A._version and cached_b_ver == B._version:
             return magnitude.to(dtype) / cached_norm
 
     # Full recomputation - try Triton first
@@ -169,9 +175,8 @@ def _compute_dora_scale(
         from .dora import triton_dora_scale
 
         result = triton_dora_scale(W, W_quant, A, B, s, magnitude, dtype)
-        # Cache the weight_norm (derive from result: norm = mag / result)
         weight_norm = (magnitude.to(dtype) / result).detach()
-        magnitude._dora_cache = (A.data_ptr(), B.data_ptr(), weight_norm)
+        magnitude._dora_cache = (A._version, B._version, weight_norm)
         return result
 
     # PyTorch fallback
@@ -181,7 +186,7 @@ def _compute_dora_scale(
     weight_norm = torch.linalg.norm(combined, dim=1).to(dtype)
     weight_norm = weight_norm.detach()
 
-    magnitude._dora_cache = (A.data_ptr(), B.data_ptr(), weight_norm)
+    magnitude._dora_cache = (A._version, B._version, weight_norm)
 
     return magnitude.to(dtype) / weight_norm
 
@@ -203,10 +208,8 @@ def _compute_dora_scale_cached(
     """
     cache = getattr(proj, "_dora_norm_cache", None)
     if cache is not None:
-        cached_a_ptr, cached_b_ptr, cached_norm = cache
-        # Check if LoRA params changed (optimizer step modifies data in-place)
-        if cached_a_ptr == A.data_ptr() and cached_b_ptr == B.data_ptr():
-            # Cache hit - just recompute mag_norm_scale with current magnitude
+        cached_a_ver, cached_b_ver, cached_norm = cache
+        if cached_a_ver == A._version and cached_b_ver == B._version:
             return magnitude.to(dtype) / cached_norm
 
     # Cache miss - full recomputation
@@ -215,8 +218,7 @@ def _compute_dora_scale_cached(
     combined = W_full + s * lora_weight
     weight_norm = torch.linalg.norm(combined, dim=1).to(dtype).detach()
 
-    # Store cache
-    proj._dora_norm_cache = (A.data_ptr(), B.data_ptr(), weight_norm)
+    proj._dora_norm_cache = (A._version, B._version, weight_norm)
 
     return magnitude.to(dtype) / weight_norm
 
@@ -1489,6 +1491,12 @@ def get_embedding_lora_parameters(
     B = embed.lora_embedding_B[active_adapter]  # nn.Parameter [hidden_dim, rank]
     s = embed.scaling[active_adapter]
 
+    # FSDP2 DTensor unshard (mirrors linear path logic)
+    if isinstance(A, DTensor):
+        A = A.full_tensor()
+    if isinstance(B, DTensor):
+        B = B.full_tensor()
+
     dropout = None
     if hasattr(embed, "lora_dropout") and active_adapter in embed.lora_dropout:
         dropout = embed.lora_dropout[active_adapter]
@@ -1499,7 +1507,10 @@ def get_embedding_lora_parameters(
         and embed.lora_magnitude_vector
         and active_adapter in embed.lora_magnitude_vector
     ):
-        magnitude = embed.lora_magnitude_vector[active_adapter].weight
+        mag_layer = embed.lora_magnitude_vector[active_adapter]
+        magnitude = mag_layer.weight
+        if isinstance(magnitude, DTensor):
+            magnitude = magnitude.full_tensor()
 
     return W, A, B, s, dropout, magnitude, base_layer
 
@@ -1561,9 +1572,10 @@ class LoRA_Embedding(torch.autograd.Function):
 
             if has_dora:
                 mag_scale = _compute_dora_scale(W.t(), None, A, B, s, magnitude, dtype)  # type: ignore[arg-type]
-                # DoRA: mag_scale * (base + s * lora) + bias
+                # DoRA: mag_scale * (base + s * lora)
                 # base embedding has no bias
-                result = mag_scale.unsqueeze(0) * (result + s * lora_result)
+                pre_scaled = result + s * lora_result  # unscaled combined
+                result = mag_scale.unsqueeze(0) * pre_scaled
                 ctx.save_for_backward(
                     x,
                     A.to(dtype),
@@ -1571,7 +1583,7 @@ class LoRA_Embedding(torch.autograd.Function):
                     after_A,
                     magnitude,
                     mag_scale,
-                    result,  # result = combined * mag_scale
+                    pre_scaled,  # save unscaled for correct d_mag
                 )
             else:
                 result = result + s * lora_result
@@ -1585,6 +1597,7 @@ class LoRA_Embedding(torch.autograd.Function):
         ctx.has_dora = has_dora
         ctx.has_lora = A is not None
         ctx.padding_idx = padding_idx
+        ctx.scale_grad_by_freq = scale_grad_by_freq
 
         return result
 
@@ -1631,6 +1644,18 @@ class LoRA_Embedding(torch.autograd.Function):
 
             # F.embedding backward: scatter d_after_A into A^T gradient
             x_flat = x.view(-1)
+
+            # Zero out padding_idx contributions (matches F.embedding behavior)
+            if ctx.padding_idx is not None:
+                pad_mask = x_flat != ctx.padding_idx
+                d_after_A = d_after_A * pad_mask.unsqueeze(1).to(d_after_A.dtype)
+
+            # scale_grad_by_freq: divide each contribution by token frequency
+            if ctx.scale_grad_by_freq:
+                counts = torch.bincount(x_flat, minlength=A.shape[1]).clamp(min=1)
+                freq_scale = 1.0 / counts[x_flat].unsqueeze(1).to(d_after_A.dtype)
+                d_after_A = d_after_A * freq_scale
+
             A_f = A.to(compute_dtype)
             d_A_T = torch.zeros_like(A_f.t())  # [vocab, rank]
             d_A_T.index_add_(0, x_flat, d_after_A)
@@ -1659,6 +1684,8 @@ def apply_lora_embedding(self, x: torch.Tensor) -> torch.Tensor:
     # Capture base output dtype (bf16 for bf16 models) to cast back at end
     output_dtype = W.dtype
 
+    # Note: PEFT's Embedding forward does not apply dropout for embeddings
+    # (integer indices can't be dropped; PEFT silently ignores lora_dropout here)
     result = LoRA_Embedding.apply(
         x,
         W,
@@ -1672,9 +1699,6 @@ def apply_lora_embedding(self, x: torch.Tensor) -> torch.Tensor:
         base_layer.scale_grad_by_freq,
         base_layer.sparse,
     )
-
-    if dropout is not None and self.training:
-        result = dropout(result)
 
     # Cast to model dtype (LoRA ops may upcast to float32)
     return result.to(output_dtype)

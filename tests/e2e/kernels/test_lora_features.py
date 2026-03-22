@@ -980,3 +980,266 @@ class TestTritonDoRA:
         tri = triton_dora_scale(W, None, A, B, s, magnitude, DTYPE)
 
         _compare_tensors(tri, ref, "Triton DoRA scale (small)", atol=1e-2, rtol=1e-2)
+
+
+# ============================================================
+# Regression tests for review fixes
+# ============================================================
+
+
+class TestDoRAEmbeddingNoDoubleScale:
+    """Regression: DoRA embedding forward must save the pre-scaled combined
+    tensor, not the already-scaled result, so backward computes d_mag correctly."""
+
+    def test_dora_magnitude_gradient_magnitude(self):
+        """d_mag should be O(1) relative to the gradient, not O(mag_scale^2)."""
+        from peft import PeftModelForCausalLM
+
+        from axolotl.kernels.lora import apply_lora_embedding
+
+        base = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=DTYPE,
+            attn_implementation="eager",
+        ).to(DEVICE)
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            use_dora=True,
+            target_modules=["embed_tokens"],
+        )
+        model = PeftModelForCausalLM(base, lora_config)
+        model.train()
+
+        embed = model.model.model.embed_tokens
+        ids = torch.randint(0, 1000, (2, 16), device=DEVICE)
+
+        # Run PEFT reference to get reference d_mag
+        peft_out = embed(ids)
+        peft_out.sum().backward()
+        peft_mag_grad = None
+        for n, p in embed.named_parameters():
+            if "magnitude" in n and p.grad is not None:
+                peft_mag_grad = p.grad.clone()
+        embed.zero_grad()
+
+        # Run kernel
+        kern_out = apply_lora_embedding(embed, ids)
+        kern_out.to(peft_out.dtype).sum().backward()
+        kern_mag_grad = None
+        for n, p in embed.named_parameters():
+            if "magnitude" in n and p.grad is not None:
+                kern_mag_grad = p.grad.clone()
+        embed.zero_grad()
+
+        assert peft_mag_grad is not None, "PEFT should produce magnitude gradients"
+        assert kern_mag_grad is not None, "Kernel should produce magnitude gradients"
+
+        # Key check: gradients should be same order of magnitude
+        # Double-scaling would make kern_mag_grad ~mag_scale times too large
+        ratio = kern_mag_grad.abs().mean() / peft_mag_grad.abs().mean()
+        assert 0.5 < ratio < 2.0, (
+            f"Magnitude gradient ratio kernel/peft = {ratio:.3f}, "
+            f"expected ~1.0 (double-scaling would give >> 1)"
+        )
+        del model
+
+
+class TestDoraCacheInvalidation:
+    """Regression: DoRA weight norm cache must invalidate after in-place
+    param updates (optimizer steps), not just pointer changes."""
+
+    def test_cache_invalidates_on_inplace_update(self):
+        W = torch.randn(64, 64, dtype=DTYPE, device=DEVICE)
+        A = torch.randn(8, 64, dtype=DTYPE, device=DEVICE)
+        B = torch.randn(64, 8, dtype=DTYPE, device=DEVICE)
+        magnitude = torch.randn(64, dtype=DTYPE, device=DEVICE).abs() + 0.1
+        s = 2.0
+
+        # Clear any existing cache
+        if hasattr(magnitude, "_dora_cache"):
+            del magnitude._dora_cache
+
+        # First call populates cache
+        result1 = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+
+        # Simulate optimizer in-place update (pointer stays same, content changes)
+        old_ptr = A.data_ptr()
+        A.data.add_(torch.randn_like(A) * 0.1)
+        assert A.data_ptr() == old_ptr, "Pointer should not change for in-place ops"
+
+        # Second call must detect the change and recompute
+        result2 = _compute_dora_scale(W, None, A, B, s, magnitude, DTYPE)
+
+        # Results should differ since A changed
+        assert not torch.allclose(result1, result2, atol=1e-4), (
+            "DoRA scale should change after in-place param update — cache not invalidated!"
+        )
+
+
+class TestEmbeddingPaddingIdxGrad:
+    """Regression: custom embedding backward must zero out gradients at
+    padding_idx positions, matching F.embedding behavior."""
+
+    def test_padding_idx_gradient_is_zero(self):
+        from axolotl.kernels.lora import LoRA_Embedding
+
+        vocab, hidden, rank = 100, 32, 4
+        W = torch.randn(
+            vocab, hidden, dtype=torch.float32, device=DEVICE, requires_grad=False
+        )
+        A = torch.randn(
+            rank, vocab, dtype=torch.float32, device=DEVICE, requires_grad=True
+        )
+        B = torch.randn(
+            hidden, rank, dtype=torch.float32, device=DEVICE, requires_grad=True
+        )
+        s = 2.0
+        padding_idx = 0
+
+        # Input containing the padding token
+        x = torch.tensor([[padding_idx, 1, 2, padding_idx, 3]], device=DEVICE)
+
+        out = LoRA_Embedding.apply(
+            x,
+            W,
+            A,
+            B,
+            s,
+            None,
+            padding_idx,
+            None,
+            2.0,
+            False,
+            False,  # max_norm, norm_type, scale_grad_by_freq, sparse
+        )
+        out.sum().backward()
+
+        # The gradient for A at the padding_idx column should be zero
+        # A is [rank, vocab], so A.grad[:, padding_idx] should be zero
+        assert A.grad is not None
+        pad_grad = A.grad[:, padding_idx]
+        assert torch.all(pad_grad == 0), (
+            f"Gradient at padding_idx={padding_idx} should be zero, got {pad_grad}"
+        )
+
+        # Non-padding positions should have non-zero gradients
+        non_pad_grad = A.grad[:, 1]
+        assert non_pad_grad.abs().sum() > 0, "Non-padding gradients should be non-zero"
+
+
+class TestEmbeddingScaleGradByFreq:
+    """Regression: custom embedding backward must scale gradients by
+    inverse frequency when scale_grad_by_freq=True."""
+
+    def test_repeated_tokens_get_scaled_gradients(self):
+        from axolotl.kernels.lora import LoRA_Embedding
+
+        vocab, hidden, rank = 100, 32, 4
+        W = torch.randn(
+            vocab, hidden, dtype=torch.float32, device=DEVICE, requires_grad=False
+        )
+
+        # Run WITHOUT scale_grad_by_freq
+        A1 = torch.randn(
+            rank, vocab, dtype=torch.float32, device=DEVICE, requires_grad=True
+        )
+        B1 = torch.randn(
+            hidden, rank, dtype=torch.float32, device=DEVICE, requires_grad=True
+        )
+        # Token 5 appears 3 times
+        x = torch.tensor([[5, 5, 5, 10, 20]], device=DEVICE)
+
+        out1 = LoRA_Embedding.apply(
+            x,
+            W,
+            A1,
+            B1,
+            2.0,
+            None,
+            None,
+            None,
+            2.0,
+            False,
+            False,
+        )
+        out1.sum().backward()
+        grad_no_scale = A1.grad[:, 5].clone()
+
+        # Run WITH scale_grad_by_freq
+        A2 = A1.data.clone().requires_grad_(True)
+        B2 = B1.data.clone().requires_grad_(True)
+        out2 = LoRA_Embedding.apply(
+            x,
+            W,
+            A2,
+            B2,
+            2.0,
+            None,
+            None,
+            None,
+            2.0,
+            True,
+            False,
+        )
+        out2.sum().backward()
+        grad_with_scale = A2.grad[:, 5].clone()
+
+        # With scale_grad_by_freq, token 5 (count=3) should have grad / 3
+        expected_ratio = 1.0 / 3.0
+        actual_ratio = grad_with_scale.abs().mean() / grad_no_scale.abs().mean()
+        assert abs(actual_ratio - expected_ratio) < 0.01, (
+            f"scale_grad_by_freq ratio for count=3 token: expected {expected_ratio:.3f}, "
+            f"got {actual_ratio:.3f}"
+        )
+
+
+class TestEmbeddingDropoutNotAppliedToBase:
+    """Regression: embedding dropout must NOT be applied to the base embedding
+    output — PEFT's Embedding.forward does not use lora_dropout."""
+
+    def test_kernel_matches_peft_with_dropout_config(self):
+        """Even with lora_dropout>0, embedding output should match PEFT exactly."""
+        from peft import PeftModelForCausalLM
+
+        from axolotl.kernels.lora import apply_lora_embedding
+
+        base = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=DTYPE,
+            attn_implementation="eager",
+        ).to(DEVICE)
+        lora_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.5,  # high dropout
+            target_modules=["embed_tokens"],
+        )
+        model = PeftModelForCausalLM(base, lora_config)
+        model.train()  # training mode — dropout would be active if applied
+
+        embed = model.model.model.embed_tokens
+        ids = torch.randint(0, 1000, (2, 16), device=DEVICE)
+
+        # Run both multiple times — if dropout were applied, results would vary
+        with torch.no_grad():
+            peft_out = embed(ids)
+            kern1 = apply_lora_embedding(embed, ids)
+            kern2 = apply_lora_embedding(embed, ids)
+
+        # Kernel should be deterministic (no dropout)
+        _compare_tensors(
+            kern1.to(peft_out.dtype),
+            kern2.to(peft_out.dtype),
+            "Embedding deterministic (no dropout)",
+            atol=0,
+            rtol=0,
+        )
+
+        # And should match PEFT
+        _compare_tensors(
+            kern1.to(peft_out.dtype),
+            peft_out,
+            "Embedding matches PEFT with dropout config",
+        )
+        del model
