@@ -375,6 +375,13 @@ def softmax_group_limited_topk_routing(
     if topk_method == "greedy":
         topk_weights, topk_indices = torch.topk(router_probs, k=K, dim=-1, sorted=False)
     elif topk_method == "group_limited_greedy":
+        # Guard: selected groups must contain enough experts for topk
+        group_size = num_experts // num_group
+        assert moe_block.topk_group * group_size >= K, (
+            f"DeepSeek V2: topk_group ({moe_block.topk_group}) * group_size "
+            f"({group_size}) = {moe_block.topk_group * group_size} < top_k ({K}). "
+            f"Not enough experts in selected groups for topk selection."
+        )
         # Group selection: pick top groups by max score per group
         group_scores = (
             router_probs.view(T, num_group, num_experts // num_group).max(dim=-1).values
@@ -397,7 +404,8 @@ def softmax_group_limited_topk_routing(
             f"Expected 'greedy' or 'group_limited_greedy'."
         )
 
-    # Scale (no renormalization)
+    # Scale only — no renormalization (weights won't sum to 1.0 per token).
+    # This matches the reference DeepseekV2Moe.route_tokens_to_experts behavior.
     routed_scaling_factor = getattr(moe_block, "routed_scaling_factor", 1.0)
     topk_weights = topk_weights * routed_scaling_factor
 
