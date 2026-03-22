@@ -38,10 +38,10 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
-    adapter: Literal["lora", "qlora", "llama-adapter"] | None = Field(
+    adapter: Literal["lora", "qlora", "llama-adapter", "mixlora"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use 'lora', 'qlora', or 'llama-adapter', or leave blank to train all parameters in original model"
+            "description": "If you want to use 'lora', 'qlora', 'llama-adapter', or 'mixlora', or leave blank to train all parameters in original model"
         },
     )
     lora_model_dir: str | None = Field(
@@ -221,6 +221,72 @@ class LoraConfig(BaseModel):
                 "PEFT's ParamWrapper does not support lora_dropout != 0."
             )
         return self
+
+    @model_validator(mode="after")
+    def validate_mixlora(self):
+        if self.adapter == "mixlora":
+            if not self.lora_r:
+                raise ValueError(
+                    "lora_r is required when using the mixlora adapter"
+                )
+            if not self.lora_alpha:
+                raise ValueError(
+                    "lora_alpha is required when using the mixlora adapter"
+                )
+        return self
+
+
+class MixLoraConfig(BaseModel):
+    """MixLoRA configuration subset for MoE-style LoRA finetuning"""
+
+    mixlora_num_experts: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of LoRA experts per FFN layer for MixLoRA (default 8)"
+        },
+    )
+    mixlora_top_k: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Number of experts to route each token to (default 2)"
+        },
+    )
+    mixlora_router_aux_loss_coef: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Coefficient for the auxiliary load balance loss (default 0.01)"
+        },
+    )
+    mixlora_router_init_range: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Initialization range for router weights (default 0.02)"
+        },
+    )
+    mixlora_jitter_noise: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Noise added to router inputs during training for exploration (default 0.0)"
+        },
+    )
+    mixlora_expert_lora_r: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Separate LoRA rank for MixLoRA experts. Defaults to lora_r if not set."
+        },
+    )
+    mixlora_expert_lora_alpha: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Separate LoRA alpha for MixLoRA experts. Defaults to lora_alpha if not set."
+        },
+    )
+    mixlora_expert_lora_dropout: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Separate LoRA dropout for MixLoRA experts. Defaults to lora_dropout if not set."
+        },
+    )
 
 
 class ReLoRAConfig(BaseModel):

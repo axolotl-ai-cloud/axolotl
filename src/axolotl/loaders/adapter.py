@@ -204,6 +204,14 @@ def load_adapter(
     if adapter in ["lora", "qlora"]:
         peft_model, lora_config = load_lora(model, cfg, inference=inference)
         return peft_model, lora_config
+    if adapter == "mixlora":
+        # First, load standard LoRA for attention layers (q, k, v, o projections)
+        peft_model, lora_config = load_lora(model, cfg, inference=inference)
+        # Then, apply MixLoRA patching to FFN layers (router + LoRA experts)
+        from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
+
+        patch_model_with_mixlora(peft_model, cfg)
+        return peft_model, lora_config
     if adapter == "llama-adapter":
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
