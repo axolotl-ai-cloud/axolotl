@@ -41,9 +41,11 @@ def _sync_weights(eager_mod, fused_mod):
         (2, 128, 256),
         (4, 64, 512),
         (1, 32, 1024),
-        (2, 16, 2560),   # Qwen3.5-4B hidden_size
-        (2, 16, 4096),   # Qwen3.5-9B hidden_size
-        (1, 8, 5120),    # Qwen3.5-27B hidden_size
+        (2, 16, 2560),  # Qwen3.5-4B hidden_size
+        (2, 16, 4096),  # Qwen3.5-9B hidden_size
+        (1, 8, 5120),  # Qwen3.5-27B hidden_size
+        (4, 16, 2048),  # Qwen3.5-35B-A3B (MoE) hidden_size
+        (4, 16, 3072),  # Qwen3.5-122B-A10B (MoE) hidden_size
     ],
 )
 class TestRMSNormGatedForward:
@@ -82,9 +84,11 @@ class TestRMSNormGatedForward:
     [
         (2, 32, 256),
         (2, 16, 512),
-        (2, 16, 2560),   # Qwen3.5-4B
-        (1, 8, 4096),    # Qwen3.5-9B
-        (1, 8, 5120),    # Qwen3.5-27B
+        (2, 16, 2560),  # Qwen3.5-4B
+        (1, 8, 4096),  # Qwen3.5-9B
+        (1, 8, 5120),  # Qwen3.5-27B
+        (2, 16, 2048),  # Qwen3.5-35B-A3B (MoE)
+        (2, 16, 3072),  # Qwen3.5-122B-A10B (MoE)
     ],
 )
 class TestRMSNormGatedBackward:
