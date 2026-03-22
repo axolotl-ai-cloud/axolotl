@@ -1367,7 +1367,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set, using unsloth optimizations, or using 8-bit
             unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
-            kernel_fields = ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel", "lora_embedding_kernel"]
+            kernel_fields = [
+                "lora_mlp_kernel",
+                "lora_qkv_kernel",
+                "lora_o_kernel",
+                "lora_embedding_kernel",
+            ]
             if (
                 any(data.get(k) is not None for k in kernel_fields)
                 or any(data.get(k) for k in unsloth_fields)

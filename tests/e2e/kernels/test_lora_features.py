@@ -11,12 +11,7 @@ from torch import nn
 from transformers import AutoConfig, AutoModelForCausalLM
 
 from axolotl.kernels.lora import (
-    LoRA_MLP,
-    LoRA_O,
-    LoRA_QKV,
-    _apply_dropout,
     _compute_dora_scale,
-    _lora_only,
     apply_lora_mlp_swiglu,
     apply_lora_o,
     apply_lora_qkv,
@@ -47,10 +42,19 @@ def _make_peft_model(
 ):
     """Create a PEFT model with given config."""
     if target_modules is None:
-        target_modules = ["q_proj", "k_proj", "v_proj", "o_proj",
-                          "gate_proj", "up_proj", "down_proj"]
+        target_modules = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ]
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME, torch_dtype=DTYPE, attn_implementation="eager",
+        MODEL_NAME,
+        torch_dtype=DTYPE,
+        attn_implementation="eager",
     ).to(DEVICE)
     lora_config = LoraConfig(
         r=8,
@@ -71,8 +75,9 @@ def _get_layer(peft_model, layer_idx=0):
 
 def _make_input(batch=2, seq_len=16, hidden_size=1024):
     """Create random input tensor."""
-    return torch.randn(batch, seq_len, hidden_size, dtype=DTYPE, device=DEVICE,
-                        requires_grad=True)
+    return torch.randn(
+        batch, seq_len, hidden_size, dtype=DTYPE, device=DEVICE, requires_grad=True
+    )
 
 
 def _compare_tensors(a, b, name="", atol=1e-2, rtol=1e-2):
@@ -325,7 +330,7 @@ class TestQKVKernel:
         # PEFT reference
         X1 = _make_input(hidden_size=model.config.hidden_size)
         pQ, pK, pV = _run_peft_qkv(layer, X1)
-        loss_peft = (pQ.sum() + pK.sum() + pV.sum())
+        loss_peft = pQ.sum() + pK.sum() + pV.sum()
         loss_peft.backward()
 
         peft_grads = {}
@@ -337,7 +342,7 @@ class TestQKVKernel:
         # Kernel
         X2 = X1.detach().clone().requires_grad_(True)
         kQ, kK, kV = _run_kernel_qkv(layer, X2)
-        loss_kern = (kQ.sum() + kK.sum() + kV.sum())
+        loss_kern = kQ.sum() + kK.sum() + kV.sum()
         loss_kern.backward()
 
         kern_grads = {}
@@ -350,8 +355,11 @@ class TestQKVKernel:
         for name in peft_grads:
             if "lora_" in name:
                 _compare_tensors(
-                    kern_grads.get(name), peft_grads[name],
-                    f"grad {name} (bias={bias})", atol=5e-2, rtol=5e-2,
+                    kern_grads.get(name),
+                    peft_grads[name],
+                    f"grad {name} (bias={bias})",
+                    atol=5e-2,
+                    rtol=5e-2,
                 )
         del model
 
@@ -363,7 +371,7 @@ class TestQKVKernel:
 
         X1 = _make_input(hidden_size=model.config.hidden_size)
         pQ, pK, pV = _run_peft_qkv(layer, X1)
-        loss_peft = (pQ.sum() + pK.sum() + pV.sum())
+        loss_peft = pQ.sum() + pK.sum() + pV.sum()
         loss_peft.backward()
 
         peft_grads = {}
@@ -374,7 +382,7 @@ class TestQKVKernel:
 
         X2 = X1.detach().clone().requires_grad_(True)
         kQ, kK, kV = _run_kernel_qkv(layer, X2)
-        loss_kern = (kQ.sum() + kK.sum() + kV.sum())
+        loss_kern = kQ.sum() + kK.sum() + kV.sum()
         loss_kern.backward()
 
         kern_grads = {}
@@ -386,8 +394,11 @@ class TestQKVKernel:
         for name in peft_grads:
             if "lora_" in name or "magnitude" in name:
                 _compare_tensors(
-                    kern_grads.get(name), peft_grads[name],
-                    f"grad {name} (DoRA)", atol=5e-2, rtol=5e-2,
+                    kern_grads.get(name),
+                    peft_grads[name],
+                    f"grad {name} (DoRA)",
+                    atol=5e-2,
+                    rtol=5e-2,
                 )
         del model
 
@@ -438,19 +449,32 @@ class TestOKernel:
         X1 = _make_input(hidden_size=self._o_input_dim(model))
         peft_out = _run_peft_o(layer, X1)
         peft_out.sum().backward()
-        peft_grads = {n: p.grad.clone() for n, p in layer.self_attn.o_proj.named_parameters() if p.grad is not None}
+        peft_grads = {
+            n: p.grad.clone()
+            for n, p in layer.self_attn.o_proj.named_parameters()
+            if p.grad is not None
+        }
         layer.self_attn.o_proj.zero_grad()
 
         X2 = X1.detach().clone().requires_grad_(True)
         kern_out = _run_kernel_o(layer, X2)
         kern_out.sum().backward()
-        kern_grads = {n: p.grad.clone() for n, p in layer.self_attn.o_proj.named_parameters() if p.grad is not None}
+        kern_grads = {
+            n: p.grad.clone()
+            for n, p in layer.self_attn.o_proj.named_parameters()
+            if p.grad is not None
+        }
         layer.self_attn.o_proj.zero_grad()
 
         for name in peft_grads:
             if "lora_" in name:
-                _compare_tensors(kern_grads.get(name), peft_grads[name],
-                                 f"O grad {name} (bias={bias})", atol=5e-2, rtol=5e-2)
+                _compare_tensors(
+                    kern_grads.get(name),
+                    peft_grads[name],
+                    f"O grad {name} (bias={bias})",
+                    atol=5e-2,
+                    rtol=5e-2,
+                )
         del model
 
 
@@ -522,20 +546,33 @@ class TestMLPKernel:
         X1 = _make_input(hidden_size=hidden_size)
         peft_out = _run_peft_mlp(layer, X1)
         peft_out.sum().backward()
-        peft_grads = {n: p.grad.clone() for n, p in layer.mlp.named_parameters() if p.grad is not None}
+        peft_grads = {
+            n: p.grad.clone()
+            for n, p in layer.mlp.named_parameters()
+            if p.grad is not None
+        }
         layer.mlp.zero_grad()
 
         X2 = X1.detach().clone().requires_grad_(True)
         kern_out = _run_kernel_mlp(layer, X2)
         kern_out.sum().backward()
-        kern_grads = {n: p.grad.clone() for n, p in layer.mlp.named_parameters() if p.grad is not None}
+        kern_grads = {
+            n: p.grad.clone()
+            for n, p in layer.mlp.named_parameters()
+            if p.grad is not None
+        }
         layer.mlp.zero_grad()
 
         # MLP backward has longer chain (3 projections + activation) = more bf16 accumulation error
         for name in peft_grads:
             if "lora_" in name:
-                _compare_tensors(kern_grads.get(name), peft_grads[name],
-                                 f"MLP grad {name} (bias={bias})", atol=0.5, rtol=0.1)
+                _compare_tensors(
+                    kern_grads.get(name),
+                    peft_grads[name],
+                    f"MLP grad {name} (bias={bias})",
+                    atol=0.5,
+                    rtol=0.1,
+                )
         del model
 
     def test_backward_dora(self):
@@ -546,19 +583,32 @@ class TestMLPKernel:
         X1 = _make_input(hidden_size=model.config.hidden_size)
         peft_out = _run_peft_mlp(layer, X1)
         peft_out.sum().backward()
-        peft_grads = {n: p.grad.clone() for n, p in layer.mlp.named_parameters() if p.grad is not None}
+        peft_grads = {
+            n: p.grad.clone()
+            for n, p in layer.mlp.named_parameters()
+            if p.grad is not None
+        }
         layer.mlp.zero_grad()
 
         X2 = X1.detach().clone().requires_grad_(True)
         kern_out = _run_kernel_mlp(layer, X2)
         kern_out.sum().backward()
-        kern_grads = {n: p.grad.clone() for n, p in layer.mlp.named_parameters() if p.grad is not None}
+        kern_grads = {
+            n: p.grad.clone()
+            for n, p in layer.mlp.named_parameters()
+            if p.grad is not None
+        }
         layer.mlp.zero_grad()
 
         for name in peft_grads:
             if "lora_" in name or "magnitude" in name:
-                _compare_tensors(kern_grads.get(name), peft_grads[name],
-                                 f"MLP grad {name} (DoRA)", atol=0.5, rtol=0.1)
+                _compare_tensors(
+                    kern_grads.get(name),
+                    peft_grads[name],
+                    f"MLP grad {name} (DoRA)",
+                    atol=0.5,
+                    rtol=0.1,
+                )
         del model
 
 
@@ -570,12 +620,24 @@ class TestFullModelPatch:
         from peft import PeftModelForCausalLM
 
         base_model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, torch_dtype=DTYPE, attn_implementation="eager",
+            MODEL_NAME,
+            torch_dtype=DTYPE,
+            attn_implementation="eager",
         ).to(DEVICE)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, bias="none", use_dora=False,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                            "gate_proj", "up_proj", "down_proj"],
+            r=8,
+            lora_alpha=16,
+            bias="none",
+            use_dora=False,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         model = PeftModelForCausalLM(base_model, lora_config)
         model.eval()
@@ -586,12 +648,14 @@ class TestFullModelPatch:
             peft_out = model(input_ids).logits
 
         # Apply kernel patches
-        cfg = DictDefault({
-            "base_model": MODEL_NAME,
-            "lora_qkv_kernel": True,
-            "lora_o_kernel": True,
-            "lora_mlp_kernel": True,
-        })
+        cfg = DictDefault(
+            {
+                "base_model": MODEL_NAME,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+                "lora_mlp_kernel": True,
+            }
+        )
         patch_self_attn_lora(cfg)
         apply_lora_kernel_patches(model, cfg)
 
@@ -599,9 +663,7 @@ class TestFullModelPatch:
         with torch.no_grad():
             kern_out = model(input_ids).logits
 
-        _compare_tensors(kern_out, peft_out,
-                         "Full model (basic)",
-                         atol=5e-1, rtol=1e-1)
+        _compare_tensors(kern_out, peft_out, "Full model (basic)", atol=5e-1, rtol=1e-1)
         del model
 
 
@@ -610,17 +672,23 @@ class TestEmbeddingKernel:
 
     def _make_embedding_model(self, use_dora=False):
         from peft import PeftModelForCausalLM
+
         model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, torch_dtype=DTYPE, attn_implementation="eager",
+            MODEL_NAME,
+            torch_dtype=DTYPE,
+            attn_implementation="eager",
         ).to(DEVICE)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16, use_dora=use_dora,
+            r=8,
+            lora_alpha=16,
+            use_dora=use_dora,
             target_modules=["embed_tokens"],
         )
         return PeftModelForCausalLM(model, lora_config)
 
     def test_forward_basic(self):
         from axolotl.kernels.lora import apply_lora_embedding
+
         model = self._make_embedding_model()
         model.eval()
 
@@ -637,6 +705,7 @@ class TestEmbeddingKernel:
 
     def test_forward_dora(self):
         from axolotl.kernels.lora import apply_lora_embedding
+
         model = self._make_embedding_model(use_dora=True)
         model.eval()
 
@@ -647,11 +716,14 @@ class TestEmbeddingKernel:
             peft_out = embed(input_ids)
             kern_out = apply_lora_embedding(embed, input_ids)
 
-        _compare_tensors(kern_out.to(peft_out.dtype), peft_out, "Embedding DoRA", atol=0.3, rtol=0.05)
+        _compare_tensors(
+            kern_out.to(peft_out.dtype), peft_out, "Embedding DoRA", atol=0.3, rtol=0.05
+        )
         del model
 
     def test_backward(self):
         from axolotl.kernels.lora import apply_lora_embedding
+
         model = self._make_embedding_model()
         model.train()
 
@@ -678,8 +750,11 @@ class TestEmbeddingKernel:
 
         for name in peft_grads:
             _compare_tensors(
-                kern_grads.get(name), peft_grads[name],
-                f"Embedding grad {name}", atol=5e-2, rtol=5e-2,
+                kern_grads.get(name),
+                peft_grads[name],
+                f"Embedding grad {name}",
+                atol=5e-2,
+                rtol=5e-2,
             )
         del model
 
@@ -693,23 +768,37 @@ class TestTiedEmbeddings:
         from peft import PeftModelForCausalLM
 
         base = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, torch_dtype=DTYPE, attn_implementation="eager",
+            MODEL_NAME,
+            torch_dtype=DTYPE,
+            attn_implementation="eager",
         ).to(DEVICE)
         lora_config = LoraConfig(
-            r=8, lora_alpha=16,
-            target_modules=["embed_tokens", "lm_head", "q_proj", "k_proj", "v_proj",
-                            "o_proj", "gate_proj", "up_proj", "down_proj"],
+            r=8,
+            lora_alpha=16,
+            target_modules=[
+                "embed_tokens",
+                "lm_head",
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         model = PeftModelForCausalLM(base, lora_config)
         model.eval()
 
-        cfg = DictDefault({
-            "base_model": MODEL_NAME,
-            "lora_qkv_kernel": True,
-            "lora_o_kernel": True,
-            "lora_mlp_kernel": True,
-            "lora_embedding_kernel": True,
-        })
+        cfg = DictDefault(
+            {
+                "base_model": MODEL_NAME,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+                "lora_mlp_kernel": True,
+                "lora_embedding_kernel": True,
+            }
+        )
 
         # Apply all kernel patches (class + instance level)
         patch_self_attn_lora(cfg)
@@ -732,7 +821,8 @@ class TestTiedEmbeddings:
         embed = model.model.model.embed_tokens
         has_embed_grad = any(
             p.grad is not None and p.grad.abs().sum() > 0
-            for n, p in embed.named_parameters() if "lora" in n
+            for n, p in embed.named_parameters()
+            if "lora" in n
         )
         assert has_embed_grad, "Embedding LoRA params got no gradients"
         del model
@@ -747,26 +837,39 @@ class TestQuantizedModels:
         from transformers import BitsAndBytesConfig
 
         bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=DTYPE, bnb_4bit_use_double_quant=True,
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=DTYPE,
+            bnb_4bit_use_double_quant=True,
         )
         base = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, quantization_config=bnb_config,
+            MODEL_NAME,
+            quantization_config=bnb_config,
             attn_implementation="eager",
         )
         lora_config = LoraConfig(
-            r=8, lora_alpha=16,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                            "gate_proj", "up_proj", "down_proj"],
+            r=8,
+            lora_alpha=16,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         model = PeftModelForCausalLM(base, lora_config)
 
-        cfg = DictDefault({
-            "base_model": MODEL_NAME,
-            "lora_qkv_kernel": True,
-            "lora_o_kernel": True,
-            "lora_mlp_kernel": True,
-        })
+        cfg = DictDefault(
+            {
+                "base_model": MODEL_NAME,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+                "lora_mlp_kernel": True,
+            }
+        )
         patch_self_attn_lora(cfg)
         apply_lora_kernel_patches(model, cfg)
         model.train()
@@ -775,8 +878,9 @@ class TestQuantizedModels:
         out = model(ids).logits
         assert torch.isfinite(out).all()
         out.sum().backward()
-        has_grads = sum(1 for n, p in model.named_parameters()
-                        if p.grad is not None and "lora" in n)
+        has_grads = sum(
+            1 for n, p in model.named_parameters() if p.grad is not None and "lora" in n
+        )
         assert has_grads > 0, "No LoRA gradients"
         del model
 
@@ -786,26 +890,38 @@ class TestQuantizedModels:
         from transformers import BitsAndBytesConfig
 
         bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=DTYPE,
         )
         base = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, quantization_config=bnb_config,
+            MODEL_NAME,
+            quantization_config=bnb_config,
             attn_implementation="eager",
         )
         lora_config = LoraConfig(
-            r=8, lora_alpha=16,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                            "gate_proj", "up_proj", "down_proj"],
+            r=8,
+            lora_alpha=16,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
         )
         model = PeftModelForCausalLM(base, lora_config)
 
-        cfg = DictDefault({
-            "base_model": MODEL_NAME,
-            "lora_qkv_kernel": True,
-            "lora_o_kernel": True,
-            "lora_mlp_kernel": True,
-        })
+        cfg = DictDefault(
+            {
+                "base_model": MODEL_NAME,
+                "lora_qkv_kernel": True,
+                "lora_o_kernel": True,
+                "lora_mlp_kernel": True,
+            }
+        )
         patch_self_attn_lora(cfg)
         apply_lora_kernel_patches(model, cfg)
         model.train()
@@ -814,8 +930,9 @@ class TestQuantizedModels:
         out = model(ids).logits
         assert torch.isfinite(out).all()
         out.sum().backward()
-        has_grads = sum(1 for n, p in model.named_parameters()
-                        if p.grad is not None and "lora" in n)
+        has_grads = sum(
+            1 for n, p in model.named_parameters() if p.grad is not None and "lora" in n
+        )
         assert has_grads > 0
         del model
 

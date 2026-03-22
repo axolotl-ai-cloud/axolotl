@@ -420,8 +420,7 @@ def apply_lora_kernel_patches(
                     for linear_proj in ["q_proj", "k_proj", "v_proj"]
                 ]
                 can_patch_qkv = all(
-                    hasattr(module, "lora_A")
-                    for module in layer_modules
+                    hasattr(module, "lora_A") for module in layer_modules
                 )
 
                 if can_patch_qkv:
@@ -435,10 +434,7 @@ def apply_lora_kernel_patches(
                 layer_modules = [
                     getattr(self_attn, linear_proj) for linear_proj in ["o_proj"]
                 ]
-                can_patch_o = all(
-                    hasattr(module, "lora_A")
-                    for module in layer_modules
-                )
+                can_patch_o = all(hasattr(module, "lora_A") for module in layer_modules)
 
                 if can_patch_o:
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
@@ -450,8 +446,7 @@ def apply_lora_kernel_patches(
             if cfg.lora_mlp_kernel:
                 # MLP patching
                 can_patch_mlp = all(
-                    hasattr(proj, "lora_A")
-                    for proj in (gate_proj, up_proj, down_proj)
+                    hasattr(proj, "lora_A") for proj in (gate_proj, up_proj, down_proj)
                 )
 
                 if can_patch_mlp:

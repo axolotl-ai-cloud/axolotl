@@ -16,17 +16,17 @@ from .quantize import dequantize
 @triton.jit
 def _dora_fused_norm_kernel(
     # Pointers
-    W_ptr,        # base weight [out, in] (dequantized, row-major)
-    B_ptr,        # LoRA B [out, rank] (row-major)
-    A_ptr,        # LoRA A [rank, in] (row-major)
-    mag_ptr,      # magnitude vector [out]
-    out_ptr,      # output mag_norm_scale [out]
+    W_ptr,  # base weight [out, in] (dequantized, row-major)
+    B_ptr,  # LoRA B [out, rank] (row-major)
+    A_ptr,  # LoRA A [rank, in] (row-major)
+    mag_ptr,  # magnitude vector [out]
+    out_ptr,  # output mag_norm_scale [out]
     # Shapes
     out_features,
     in_features,
     rank,
     # Scaling
-    lora_scale,   # float scaling factor
+    lora_scale,  # float scaling factor
     # Block sizes
     BLOCK_IN: tl.constexpr,
     BLOCK_R: tl.constexpr,  # >= rank, power of 2
@@ -53,7 +53,8 @@ def _dora_fused_norm_kernel(
         # Load W[row, cols]
         w_vals = tl.load(
             W_ptr + row * in_features + cols,
-            mask=col_mask, other=0.0,
+            mask=col_mask,
+            other=0.0,
         ).to(tl.float32)
 
         # Compute (B[row,:] @ A[:, cols]) for this tile
@@ -63,12 +64,14 @@ def _dora_fused_norm_kernel(
             # Load scalar B[row, r]
             b_val = tl.load(
                 B_ptr + row * rank + r,
-                mask=(r < rank), other=0.0,
+                mask=(r < rank),
+                other=0.0,
             ).to(tl.float32)
             # Load vector A[r, cols]
             a_vals = tl.load(
                 A_ptr + r * in_features + cols,
-                mask=(col_mask & (r < rank)), other=0.0,
+                mask=(col_mask & (r < rank)),
+                other=0.0,
             ).to(tl.float32)
             ba_vals += b_val * a_vals
 

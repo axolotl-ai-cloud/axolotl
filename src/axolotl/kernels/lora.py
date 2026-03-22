@@ -332,9 +332,17 @@ class LoRA_MLP(torch.autograd.Function):
         if has_dora:
             # Gate with DoRA
             gate_base = matmul_lora(X, gate_weight, None, gate_quant, None, None, None)
-            gate_lora = _lora_only(X_lora, gate_A, gate_B, gate_scale, gate_lora_bias, dtype)
+            gate_lora = _lora_only(
+                X_lora, gate_A, gate_B, gate_scale, gate_lora_bias, dtype
+            )
             gate_mag_scale = _compute_dora_scale(
-                gate_weight, gate_quant, gate_A, gate_B, gate_scale, gate_magnitude, dtype
+                gate_weight,
+                gate_quant,
+                gate_A,
+                gate_B,
+                gate_scale,
+                gate_magnitude,
+                dtype,
             )
             gate = gate_mag_scale.unsqueeze(0) * (gate_base + gate_lora)
             if gate_bias is not None:
@@ -354,12 +362,26 @@ class LoRA_MLP(torch.autograd.Function):
             up_combined = up_base + up_lora
         else:
             gate = matmul_lora(
-                X, gate_weight, gate_bias, gate_quant, gate_A, gate_B, gate_scale,
-                X_drop=X_drop, lora_bias=gate_lora_bias,
+                X,
+                gate_weight,
+                gate_bias,
+                gate_quant,
+                gate_A,
+                gate_B,
+                gate_scale,
+                X_drop=X_drop,
+                lora_bias=gate_lora_bias,
             )
             up = matmul_lora(
-                X, up_weight, up_bias, up_quant, up_A, up_B, up_scale,
-                X_drop=X_drop, lora_bias=up_lora_bias,
+                X,
+                up_weight,
+                up_bias,
+                up_quant,
+                up_A,
+                up_B,
+                up_scale,
+                X_drop=X_drop,
+                lora_bias=up_lora_bias,
             )
 
         # Activation
@@ -367,10 +389,20 @@ class LoRA_MLP(torch.autograd.Function):
 
         # Down projection (no dropout on hidden - it's an intermediate)
         if has_dora:
-            down_base = matmul_lora(hidden, down_weight, None, down_quant, None, None, None)
-            down_lora = _lora_only(hidden, down_A, down_B, down_scale, down_lora_bias, dtype)
+            down_base = matmul_lora(
+                hidden, down_weight, None, down_quant, None, None, None
+            )
+            down_lora = _lora_only(
+                hidden, down_A, down_B, down_scale, down_lora_bias, dtype
+            )
             down_mag_scale = _compute_dora_scale(
-                down_weight, down_quant, down_A, down_B, down_scale, down_magnitude, dtype
+                down_weight,
+                down_quant,
+                down_A,
+                down_B,
+                down_scale,
+                down_magnitude,
+                dtype,
             )
             down_combined = down_base + down_lora
             output = down_mag_scale.unsqueeze(0) * down_combined
@@ -378,37 +410,59 @@ class LoRA_MLP(torch.autograd.Function):
                 output = output + down_bias
         else:
             output = matmul_lora(
-                hidden, down_weight, down_bias, down_quant, down_A, down_B, down_scale,
+                hidden,
+                down_weight,
+                down_bias,
+                down_quant,
+                down_A,
+                down_B,
+                down_scale,
                 lora_bias=down_lora_bias,
             )
 
         # Save for backward
         if has_dora:
             ctx.save_for_backward(
-                X, X_drop if has_dropout else X, gate, up,
+                X,
+                X_drop if has_dropout else X,
+                gate,
+                up,
                 gate_A.to(dtype) if gate_A is not None else gate_A,
                 gate_B.to(dtype) if gate_B is not None else gate_B,
                 up_A.to(dtype) if up_A is not None else up_A,
                 up_B.to(dtype) if up_B is not None else up_B,
                 down_A.to(dtype) if down_A is not None else down_A,
                 down_B.to(dtype) if down_B is not None else down_B,
-                gate_magnitude, up_magnitude, down_magnitude,
-                gate_mag_scale, up_mag_scale, down_mag_scale,
-                gate_combined, up_combined, down_combined,
-                gate_lora_bias, up_lora_bias, down_lora_bias,
+                gate_magnitude,
+                up_magnitude,
+                down_magnitude,
+                gate_mag_scale,
+                up_mag_scale,
+                down_mag_scale,
+                gate_combined,
+                up_combined,
+                down_combined,
+                gate_lora_bias,
+                up_lora_bias,
+                down_lora_bias,
             )
         else:
             # Pre-convert LoRA matrices to compute dtype for backward
             dtype = X.dtype
             ctx.save_for_backward(
-                X, X_drop if has_dropout else X, gate, up,
+                X,
+                X_drop if has_dropout else X,
+                gate,
+                up,
                 gate_A.to(dtype) if gate_A is not None else gate_A,
                 gate_B.to(dtype) if gate_B is not None else gate_B,
                 up_A.to(dtype) if up_A is not None else up_A,
                 up_B.to(dtype) if up_B is not None else up_B,
                 down_A.to(dtype) if down_A is not None else down_A,
                 down_B.to(dtype) if down_B is not None else down_B,
-                gate_lora_bias, up_lora_bias, down_lora_bias,
+                gate_lora_bias,
+                up_lora_bias,
+                down_lora_bias,
             )
 
         ctx.scales = (gate_scale, up_scale, down_scale)
@@ -436,18 +490,44 @@ class LoRA_MLP(torch.autograd.Function):
 
         if has_dora:
             (
-                X, X_lora, gate, up,
-                gate_A, gate_B, up_A, up_B, down_A, down_B,
-                gate_magnitude, up_magnitude, down_magnitude,
-                gate_mag_scale, up_mag_scale, down_mag_scale,
-                gate_combined, up_combined, down_combined,
-                gate_lora_bias, up_lora_bias, down_lora_bias,
+                X,
+                X_lora,
+                gate,
+                up,
+                gate_A,
+                gate_B,
+                up_A,
+                up_B,
+                down_A,
+                down_B,
+                gate_magnitude,
+                up_magnitude,
+                down_magnitude,
+                gate_mag_scale,
+                up_mag_scale,
+                down_mag_scale,
+                gate_combined,
+                up_combined,
+                down_combined,
+                gate_lora_bias,
+                up_lora_bias,
+                down_lora_bias,
             ) = ctx.saved_tensors
         else:
             (
-                X, X_lora, gate, up,
-                gate_A, gate_B, up_A, up_B, down_A, down_B,
-                gate_lora_bias, up_lora_bias, down_lora_bias,
+                X,
+                X_lora,
+                gate,
+                up,
+                gate_A,
+                gate_B,
+                up_A,
+                up_B,
+                down_A,
+                down_B,
+                gate_lora_bias,
+                up_lora_bias,
+                down_lora_bias,
             ) = ctx.saved_tensors
             gate_magnitude = up_magnitude = down_magnitude = None
             gate_mag_scale = up_mag_scale = down_mag_scale = None
@@ -468,7 +548,6 @@ class LoRA_MLP(torch.autograd.Function):
         X_lora = X_lora.view(-1, X_lora.shape[-1])
         gate = gate.view(-1, gate.shape[-1])
         up = up.view(-1, up.shape[-1])
-        dtype = X.dtype
 
         # DoRA magnitude gradients for down projection
         d_gate_mag = d_up_mag = d_down_mag = None
@@ -476,7 +555,11 @@ class LoRA_MLP(torch.autograd.Function):
 
         if has_dora:
             down_combined_flat = down_combined.view(-1, down_combined.shape[-1])
-            d_down_mag = (grad_output * down_combined_flat).sum(dim=0) * down_mag_scale / down_magnitude
+            d_down_mag = (
+                (grad_output * down_combined_flat).sum(dim=0)
+                * down_mag_scale
+                / down_magnitude
+            )
             grad_output = grad_output * down_mag_scale.unsqueeze(0)
 
         # Down lora bias gradient
@@ -501,8 +584,14 @@ class LoRA_MLP(torch.autograd.Function):
         if has_dora:
             gate_combined_flat = gate_combined.view(-1, gate_combined.shape[-1])
             up_combined_flat = up_combined.view(-1, up_combined.shape[-1])
-            d_gate_mag = (grad_gate * gate_combined_flat).sum(dim=0) * gate_mag_scale / gate_magnitude
-            d_up_mag = (grad_up * up_combined_flat).sum(dim=0) * up_mag_scale / up_magnitude
+            d_gate_mag = (
+                (grad_gate * gate_combined_flat).sum(dim=0)
+                * gate_mag_scale
+                / gate_magnitude
+            )
+            d_up_mag = (
+                (grad_up * up_combined_flat).sum(dim=0) * up_mag_scale / up_magnitude
+            )
             grad_gate = grad_gate * gate_mag_scale.unsqueeze(0)
             grad_up = grad_up * up_mag_scale.unsqueeze(0)
 
@@ -537,7 +626,9 @@ class LoRA_MLP(torch.autograd.Function):
             d_gate_A = torch.empty_like(gate_A_t)
             d_gate_B = torch.empty_like(gate_B_t)
             d_gate_A.addmm_(X_lora.t(), grad_B_gate, alpha=gate_scale, beta=0)
-            d_gate_B.addmm_(gate_A_t.t() @ X_lora.t(), grad_gate, alpha=gate_scale, beta=0)
+            d_gate_B.addmm_(
+                gate_A_t.t() @ X_lora.t(), grad_gate, alpha=gate_scale, beta=0
+            )
 
         # Compute input gradients
         dX = None
@@ -582,22 +673,36 @@ class LoRA_MLP(torch.autograd.Function):
             dX,
             dX_drop,
             # Gate
-            None, None, None,
+            None,
+            None,
+            None,
             d_gate_A.t() if d_gate_A is not None else None,
             d_gate_B.t() if d_gate_B is not None else None,
-            None, d_gate_lora_bias, d_gate_mag,
+            None,
+            d_gate_lora_bias,
+            d_gate_mag,
             # Up
-            None, None, None,
+            None,
+            None,
+            None,
             d_up_A.t() if d_up_A is not None else None,
             d_up_B.t() if d_up_B is not None else None,
-            None, d_up_lora_bias, d_up_mag,
+            None,
+            d_up_lora_bias,
+            d_up_mag,
             # Down
-            None, None, None,
+            None,
+            None,
+            None,
             d_down_A.t() if d_down_A is not None else None,
             d_down_B.t() if d_down_B is not None else None,
-            None, d_down_lora_bias, d_down_mag,
+            None,
+            d_down_lora_bias,
+            d_down_mag,
             # Activation fns and flags
-            None, None, None,
+            None,
+            None,
+            None,
         )
 
 
@@ -606,23 +711,53 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
 
     Supports bias, dropout, and DoRA.
     """
-    gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = get_lora_parameters(self.gate_proj)
-    upW, upb, upW_quant, upA, upB, upS, upLB, upDrop, upMag = get_lora_parameters(self.up_proj)
-    downW, downb, downW_quant, downA, downB, downS, downLB, downDrop, downMag = get_lora_parameters(self.down_proj)
+    gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = (
+        get_lora_parameters(self.gate_proj)
+    )
+    upW, upb, upW_quant, upA, upB, upS, upLB, upDrop, upMag = get_lora_parameters(
+        self.up_proj
+    )
+    downW, downb, downW_quant, downA, downB, downS, downLB, downDrop, downMag = (
+        get_lora_parameters(self.down_proj)
+    )
 
     # Shared dropout mask for gate and up (same input)
     X_drop = _apply_dropout(gateDrop, X, self.training)
 
     out = LoRA_MLP.apply(
-        X, X_drop,
+        X,
+        X_drop,
         # Gate
-        gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateMag,
+        gateW,
+        gateb,
+        gateW_quant,
+        gateA,
+        gateB,
+        gateS,
+        gateLB,
+        gateMag,
         # Up
-        upW, upb, upW_quant, upA, upB, upS, upLB, upMag,
+        upW,
+        upb,
+        upW_quant,
+        upA,
+        upB,
+        upS,
+        upLB,
+        upMag,
         # Down
-        downW, downb, downW_quant, downA, downB, downS, downLB, downMag,
+        downW,
+        downb,
+        downW_quant,
+        downA,
+        downB,
+        downS,
+        downLB,
+        downMag,
         # Activation and flags
-        swiglu_forward, swiglu_backward, inplace,
+        swiglu_forward,
+        swiglu_backward,
+        inplace,
     )
 
     return out
@@ -633,22 +768,52 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
 
     Supports bias, dropout, and DoRA.
     """
-    gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = get_lora_parameters(self.gate_proj)
-    upW, upb, upW_quant, upA, upB, upS, upLB, upDrop, upMag = get_lora_parameters(self.up_proj)
-    downW, downb, downW_quant, downA, downB, downS, downLB, downDrop, downMag = get_lora_parameters(self.down_proj)
+    gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateDrop, gateMag = (
+        get_lora_parameters(self.gate_proj)
+    )
+    upW, upb, upW_quant, upA, upB, upS, upLB, upDrop, upMag = get_lora_parameters(
+        self.up_proj
+    )
+    downW, downb, downW_quant, downA, downB, downS, downLB, downDrop, downMag = (
+        get_lora_parameters(self.down_proj)
+    )
 
     X_drop = _apply_dropout(gateDrop, X, self.training)
 
     out = LoRA_MLP.apply(
-        X, X_drop,
+        X,
+        X_drop,
         # Gate
-        gateW, gateb, gateW_quant, gateA, gateB, gateS, gateLB, gateMag,
+        gateW,
+        gateb,
+        gateW_quant,
+        gateA,
+        gateB,
+        gateS,
+        gateLB,
+        gateMag,
         # Up
-        upW, upb, upW_quant, upA, upB, upS, upLB, upMag,
+        upW,
+        upb,
+        upW_quant,
+        upA,
+        upB,
+        upS,
+        upLB,
+        upMag,
         # Down
-        downW, downb, downW_quant, downA, downB, downS, downLB, downMag,
+        downW,
+        downb,
+        downW_quant,
+        downA,
+        downB,
+        downS,
+        downLB,
+        downMag,
         # Activation and flags
-        geglu_forward, geglu_backward, inplace,
+        geglu_forward,
+        geglu_backward,
+        inplace,
     )
 
     return out
@@ -741,45 +906,78 @@ class LoRA_QKV(torch.autograd.Function):
             V_combined = V_base + V_lora
 
             ctx.save_for_backward(
-                X, X_drop if has_dropout else X,
+                X,
+                X_drop if has_dropout else X,
                 q_A.to(dtype) if q_A is not None else q_A,
                 q_B.to(dtype) if q_B is not None else q_B,
                 k_A.to(dtype) if k_A is not None else k_A,
                 k_B.to(dtype) if k_B is not None else k_B,
                 v_A.to(dtype) if v_A is not None else v_A,
                 v_B.to(dtype) if v_B is not None else v_B,
-                q_magnitude, k_magnitude, v_magnitude,
-                q_mag_scale, k_mag_scale, v_mag_scale,
-                Q_combined, K_combined, V_combined,
-                q_lora_bias, k_lora_bias, v_lora_bias,
+                q_magnitude,
+                k_magnitude,
+                v_magnitude,
+                q_mag_scale,
+                k_mag_scale,
+                v_mag_scale,
+                Q_combined,
+                K_combined,
+                V_combined,
+                q_lora_bias,
+                k_lora_bias,
+                v_lora_bias,
             )
         else:
             # Standard LoRA (with optional dropout and bias)
             Q = matmul_lora(
-                X, q_weight, q_bias, q_quant, q_A, q_B, q_scale,
-                X_drop=X_drop, lora_bias=q_lora_bias,
+                X,
+                q_weight,
+                q_bias,
+                q_quant,
+                q_A,
+                q_B,
+                q_scale,
+                X_drop=X_drop,
+                lora_bias=q_lora_bias,
             )
             K = matmul_lora(
-                X, k_weight, k_bias, k_quant, k_A, k_B, k_scale,
-                X_drop=X_drop, lora_bias=k_lora_bias,
+                X,
+                k_weight,
+                k_bias,
+                k_quant,
+                k_A,
+                k_B,
+                k_scale,
+                X_drop=X_drop,
+                lora_bias=k_lora_bias,
             )
             V = matmul_lora(
-                X, v_weight, v_bias, v_quant, v_A, v_B, v_scale,
-                X_drop=X_drop, lora_bias=v_lora_bias,
+                X,
+                v_weight,
+                v_bias,
+                v_quant,
+                v_A,
+                v_B,
+                v_scale,
+                X_drop=X_drop,
+                lora_bias=v_lora_bias,
             )
 
             # Pre-convert LoRA matrices to compute dtype to avoid
             # redundant fp32→bf16 conversion in backward
             dtype = X.dtype
             ctx.save_for_backward(
-                X, X_drop if has_dropout else X,
+                X,
+                X_drop if has_dropout else X,
                 q_A.to(dtype) if q_A is not None else q_A,
                 q_B.to(dtype) if q_B is not None else q_B,
                 k_A.to(dtype) if k_A is not None else k_A,
                 k_B.to(dtype) if k_B is not None else k_B,
                 v_A.to(dtype) if v_A is not None else v_A,
                 v_B.to(dtype) if v_B is not None else v_B,
-                q_lora_bias, k_lora_bias, v_lora_bias,
+                q_lora_bias,
+                k_lora_bias,
+                v_lora_bias,
             )
 
         ctx.scales = (q_scale, k_scale, v_scale)
@@ -807,24 +1005,45 @@ class LoRA_QKV(torch.autograd.Function):
 
         if has_dora:
             (
-                X, X_lora,
-                A_q, B_q, A_k, B_k, A_v, B_v,
-                q_magnitude, k_magnitude, v_magnitude,
-                q_mag_scale, k_mag_scale, v_mag_scale,
-                Q_combined, K_combined, V_combined,
-                q_lora_bias, k_lora_bias, v_lora_bias,
+                X,
+                X_lora,
+                A_q,
+                B_q,
+                A_k,
+                B_k,
+                A_v,
+                B_v,
+                q_magnitude,
+                k_magnitude,
+                v_magnitude,
+                q_mag_scale,
+                k_mag_scale,
+                v_mag_scale,
+                Q_combined,
+                K_combined,
+                V_combined,
+                q_lora_bias,
+                k_lora_bias,
+                v_lora_bias,
             ) = ctx.saved_tensors
         else:
             (
-                X, X_lora,
-                A_q, B_q, A_k, B_k, A_v, B_v,
-                q_lora_bias, k_lora_bias, v_lora_bias,
+                X,
+                X_lora,
+                A_q,
+                B_q,
+                A_k,
+                B_k,
+                A_v,
+                B_v,
+                q_lora_bias,
+                k_lora_bias,
+                v_lora_bias,
             ) = ctx.saved_tensors
             q_magnitude = k_magnitude = v_magnitude = None
             q_mag_scale = k_mag_scale = v_mag_scale = None
             Q_combined = K_combined = V_combined = None
 
-        dtype = X.dtype
         batch, seq_len = X.shape[:2]
         q_grad = q_grad.view(-1, q_grad.shape[-1])
         k_grad = k_grad.reshape(-1, k_grad.shape[-1])
@@ -964,11 +1183,32 @@ class LoRA_QKV(torch.autograd.Function):
             grad_X,
             grad_X_drop,
             # Q
-            None, None, None, d_A_q, d_B_q, None, d_q_lora_bias, d_q_mag,
+            None,
+            None,
+            None,
+            d_A_q,
+            d_B_q,
+            None,
+            d_q_lora_bias,
+            d_q_mag,
             # K
-            None, None, None, d_A_k, d_B_k, None, d_k_lora_bias, d_k_mag,
+            None,
+            None,
+            None,
+            d_A_k,
+            d_B_k,
+            None,
+            d_k_lora_bias,
+            d_k_mag,
             # V
-            None, None, None, d_A_v, d_B_v, None, d_v_lora_bias, d_v_mag,
+            None,
+            None,
+            None,
+            d_A_v,
+            d_B_v,
+            None,
+            d_v_lora_bias,
+            d_v_mag,
             # inplace
             None,
         )
@@ -984,8 +1224,11 @@ def _lora_only(
 ) -> torch.Tensor:
     """Compute only the LoRA contribution: s * X @ A^T @ B^T + s * lora_bias."""
     if A is None:
-        return torch.zeros(X.shape[:-1] + (B.shape[0] if B is not None else 1,),
-                           device=X.device, dtype=dtype)
+        return torch.zeros(
+            X.shape[:-1] + (B.shape[0] if B is not None else 1,),
+            device=X.device,
+            dtype=dtype,
+        )
     reshape = False
     if X.dim() == 3:
         batch, seq_len, _ = X.shape
@@ -1019,11 +1262,32 @@ def apply_lora_qkv(
         X,
         X_drop,
         # Q
-        QW, Qb, QW_quant, QA, QB, QS, Qlb, Qmag,
+        QW,
+        Qb,
+        QW_quant,
+        QA,
+        QB,
+        QS,
+        Qlb,
+        Qmag,
         # K
-        KW, Kb, KW_quant, KA, KB, KS, Klb, Kmag,
+        KW,
+        Kb,
+        KW_quant,
+        KA,
+        KB,
+        KS,
+        Klb,
+        Kmag,
         # V
-        VW, Vb, VW_quant, VA, VB, VS, Vlb, Vmag,
+        VW,
+        Vb,
+        VW_quant,
+        VA,
+        VB,
+        VS,
+        Vlb,
+        Vmag,
         # Flags
         inplace,
     )
@@ -1069,20 +1333,33 @@ class LoRA_O(torch.autograd.Function):
             ctx.save_for_backward(
                 A.to(dtype) if A is not None else A,
                 B.to(dtype) if B is not None else B,
-                X, X_drop if has_dropout else X,
-                magnitude, mag_scale, combined, lora_bias,
+                X,
+                X_drop if has_dropout else X,
+                magnitude,
+                mag_scale,
+                combined,
+                lora_bias,
             )
         else:
             XW = matmul_lora(
-                X, W, b, W_quant, A, B, s,
-                X_drop=X_drop, lora_bias=lora_bias,
+                X,
+                W,
+                b,
+                W_quant,
+                A,
+                B,
+                s,
+                X_drop=X_drop,
+                lora_bias=lora_bias,
             )
             # Pre-convert LoRA matrices to compute dtype for backward
             dtype = X.dtype
             ctx.save_for_backward(
                 A.to(dtype) if A is not None else A,
                 B.to(dtype) if B is not None else B,
-                X, X_drop if has_dropout else X, lora_bias,
+                X,
+                X_drop if has_dropout else X,
+                lora_bias,
             )
 
         ctx.custom_saved_tensors = (W, W_quant, s)
@@ -1102,7 +1379,9 @@ class LoRA_O(torch.autograd.Function):
         has_dora = ctx.has_dora
 
         if has_dora:
-            A, B, X, X_lora, magnitude, mag_scale, combined, lora_bias = ctx.saved_tensors
+            A, B, X, X_lora, magnitude, mag_scale, combined, lora_bias = (
+                ctx.saved_tensors
+            )
         else:
             A, B, X, X_lora, lora_bias = ctx.saved_tensors
             magnitude = mag_scale = combined = None
@@ -1111,7 +1390,6 @@ class LoRA_O(torch.autograd.Function):
         dY = dY.reshape(-1, dY.shape[-1])
         X = X.reshape(-1, X.shape[-1])
         X_lora = X_lora.reshape(-1, X_lora.shape[-1])
-        dtype = X.dtype
 
         d_mag = d_lora_bias = None
 
@@ -1154,7 +1432,9 @@ class LoRA_O(torch.autograd.Function):
         return (
             dX.view(batch, seq_len, hd),
             dX_drop,
-            None, None, None,
+            None,
+            None,
+            None,
             d_A.t() if d_A is not None else None,
             d_B.t() if d_B is not None else None,
             None,
@@ -1254,8 +1534,12 @@ class LoRA_Embedding(torch.autograd.Function):
 
         # Base embedding lookup
         result = F.embedding(
-            x, W, padding_idx=padding_idx, max_norm=max_norm,
-            norm_type=norm_type, scale_grad_by_freq=scale_grad_by_freq,
+            x,
+            W,
+            padding_idx=padding_idx,
+            max_norm=max_norm,
+            norm_type=norm_type,
+            scale_grad_by_freq=scale_grad_by_freq,
             sparse=sparse,
         )
 
@@ -1264,29 +1548,38 @@ class LoRA_Embedding(torch.autograd.Function):
             A_T = A.t()  # [vocab, rank]
             B_T = B.t()  # [rank, hidden_dim]
             after_A = F.embedding(
-                x, A_T, padding_idx=padding_idx, max_norm=max_norm,
-                norm_type=norm_type, scale_grad_by_freq=scale_grad_by_freq,
+                x,
+                A_T,
+                padding_idx=padding_idx,
+                max_norm=max_norm,
+                norm_type=norm_type,
+                scale_grad_by_freq=scale_grad_by_freq,
                 sparse=sparse,
             )  # [batch, seq, rank]
 
             lora_result = after_A @ B_T  # [batch, seq, hidden_dim]
 
             if has_dora:
-                mag_scale = _compute_dora_scale(
-                    W.t(), None, A, B, s, magnitude, dtype
-                )
+                mag_scale = _compute_dora_scale(W.t(), None, A, B, s, magnitude, dtype)
                 # DoRA: mag_scale * (base + s * lora) + bias
                 # base embedding has no bias
                 result = mag_scale.unsqueeze(0) * (result + s * lora_result)
                 ctx.save_for_backward(
-                    x, A.to(dtype), B.to(dtype), after_A,
-                    magnitude, mag_scale, result,  # result = combined * mag_scale
+                    x,
+                    A.to(dtype),
+                    B.to(dtype),
+                    after_A,
+                    magnitude,
+                    mag_scale,
+                    result,  # result = combined * mag_scale
                 )
             else:
                 result = result + s * lora_result
                 ctx.save_for_backward(x, A.to(dtype), B.to(dtype), after_A)
         else:
-            ctx.save_for_backward(x,)
+            ctx.save_for_backward(
+                x,
+            )
 
         ctx.s = s
         ctx.has_dora = has_dora
@@ -1347,11 +1640,15 @@ class LoRA_Embedding(torch.autograd.Function):
         return (
             None,  # x
             None,  # W (base embedding weight grad handled by PyTorch)
-            d_A,   # A
-            d_B,   # B
+            d_A,  # A
+            d_B,  # B
             None,  # s
-            d_mag, # magnitude
-            None, None, None, None, None,  # padding_idx, max_norm, norm_type, scale_grad_by_freq, sparse
+            d_mag,  # magnitude
+            None,
+            None,
+            None,
+            None,
+            None,  # padding_idx, max_norm, norm_type, scale_grad_by_freq, sparse
         )
 
 
@@ -1363,7 +1660,12 @@ def apply_lora_embedding(self, x: torch.Tensor) -> torch.Tensor:
     output_dtype = W.dtype
 
     result = LoRA_Embedding.apply(
-        x, W, A, B, s, magnitude,
+        x,
+        W,
+        A,
+        B,
+        s,
+        magnitude,
         base_layer.padding_idx,
         base_layer.max_norm,
         base_layer.norm_type,
