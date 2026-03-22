@@ -57,9 +57,7 @@ class TestEmbeddingsLrScale(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
-        check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Loss is too high"
-        )
+        check_tensorboard(temp_dir + "/runs", "train/loss", 2.0, "Loss is too high")
 
     @with_temp_dir
     def test_train_w_embedding_lr(self, temp_dir):
@@ -100,6 +98,4 @@ class TestEmbeddingsLrScale(unittest.TestCase):
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
-        check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.0, "Loss is too high"
-        )
+        check_tensorboard(temp_dir + "/runs", "train/loss", 2.0, "Loss is too high")

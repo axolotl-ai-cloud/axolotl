@@ -94,7 +94,7 @@ class TestSequenceParallelism:
 
         check_tensorboard(
             temp_dir + "/runs",
-            "train/train_loss",
+            "train/loss",
             threshold,
             "Train Loss (%s) is too high",
         )

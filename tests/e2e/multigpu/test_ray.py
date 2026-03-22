@@ -79,7 +79,7 @@ class TestMultiGPURay:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @require_torch_2_7_0
@@ -138,7 +138,7 @@ class TestMultiGPURay:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/loss", 2.3, "Train Loss (%s) is too high"
         )
 
     @require_torch_2_7_0
@@ -205,5 +205,5 @@ class TestMultiGPURay:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/loss", 2.3, "Train Loss (%s) is too high"
         )

@@ -66,7 +66,7 @@ class TestPretrainLlama:
             loss_threshold = 6.5
         check_tensorboard(
             temp_dir + "/runs",
-            "train/train_loss",
+            "train/loss",
             loss_threshold,
             "Train Loss (%s) is too high",
         )

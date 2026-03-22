@@ -66,7 +66,7 @@ class TestStreamingDatasets:
         # Verify training actually happened by checking loss decrease
         check_tensorboard(
             temp_dir + "/runs",
-            "train/train_loss",
+            "train/loss",
             3.0,
             "Train Loss (%s) is too high",
         )

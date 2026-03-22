@@ -37,7 +37,7 @@ def verify_training_success(temp_dir):
             event_file = os.path.join(tb_log_path, event_files[0])
             reader = SummaryReader(event_file)
             df = reader.scalars
-            train_loss_df = df[df.tag == "train/train_loss"]
+            train_loss_df = df[df.tag == "train/loss"]
             if len(train_loss_df) > 0:
                 final_loss = train_loss_df.value.values[-1]
                 assert not torch.isnan(torch.tensor(final_loss)), (

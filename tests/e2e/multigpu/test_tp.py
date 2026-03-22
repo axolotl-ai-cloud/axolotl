@@ -64,5 +64,5 @@ class TestTensorParallel:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 1.0, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/loss", 1.0, "Train Loss (%s) is too high"
         )
