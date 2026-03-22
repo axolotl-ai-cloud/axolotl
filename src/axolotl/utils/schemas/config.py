@@ -22,6 +22,7 @@ from axolotl.utils.schemas.datasets import (
     PretrainingDataset,
     SFTDataset,
     StepwiseSupervisedDataset,
+    SyntheticDataset,
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
@@ -185,7 +186,13 @@ class AxolotlInputConfig(
 
     datasets: (
         Annotated[
-            list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+            list[
+                SFTDataset
+                | DPODataset
+                | KTODataset
+                | StepwiseSupervisedDataset
+                | SyntheticDataset
+            ],
             MinLen(1),
         ]
         | None
@@ -198,7 +205,13 @@ class AxolotlInputConfig(
 
     test_datasets: (
         Annotated[
-            list[SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset],
+            list[
+                SFTDataset
+                | DPODataset
+                | KTODataset
+                | StepwiseSupervisedDataset
+                | SyntheticDataset
+            ],
             MinLen(1),
         ]
         | None

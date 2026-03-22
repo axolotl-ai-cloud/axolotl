@@ -22,7 +22,12 @@ from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
+from axolotl.utils.schemas.datasets import (
+    DPODataset,
+    KTODataset,
+    SFTDataset,
+    SyntheticDataset,
+)
 
 LOG = get_logger(__name__)
 
@@ -308,6 +313,14 @@ def validate_config(
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
+            elif (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            ) == "_synthetic" and not isinstance(ds_cfg, SyntheticDataset):
+                cfg["datasets"][idx] = SyntheticDataset(
+                    **(ds_cfg if isinstance(ds_cfg, dict) else dict(ds_cfg))
+                )
             elif not isinstance(ds_cfg, SFTDataset):
                 cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 
