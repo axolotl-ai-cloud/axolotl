@@ -1,5 +1,5 @@
 """
-Liger FLCE for Qwen3.5. Based on transformers v4.52.
+Liger FLCE for Qwen3.5. Based on transformers v5.3.0.
 """
 
 import sys
