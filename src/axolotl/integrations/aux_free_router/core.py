@@ -5,6 +5,7 @@ from typing import Optional
 
 import torch
 import torch.distributed as dist
+
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -22,9 +23,17 @@ class AuxFreeConfig:
 class AuxFreeState:
     """Holds per-layer bias and EMA load buffers."""
 
-    def __init__(self, num_layers: int, num_experts: int, device: torch.device, cfg: AuxFreeConfig):
+    def __init__(
+        self,
+        num_layers: int,
+        num_experts: int,
+        device: torch.device,
+        cfg: AuxFreeConfig,
+    ):
         self.bias = [torch.zeros(num_experts, device=device) for _ in range(num_layers)]
-        self.ema_load = [torch.zeros(num_experts, device=device) for _ in range(num_layers)]
+        self.ema_load = [
+            torch.zeros(num_experts, device=device) for _ in range(num_layers)
+        ]
         self.cfg = cfg
         self.steps = 0
 
@@ -48,11 +57,13 @@ class AuxFreeShim:
         self._prev_bias_sign: dict[int, torch.Tensor] = {}
 
     @torch.no_grad()
-    def select_experts(self, layer_idx: int, logits: torch.Tensor, top_k: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def select_experts(
+        self, layer_idx: int, logits: torch.Tensor, top_k: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Returns (topk_indices, weights) using biased selection and unbiased weights."""
         module = self._layer_modules.get(layer_idx)
         if module is not None and hasattr(module, "_afb_bias"):
-            b = getattr(module, "_afb_bias")
+            b = module._afb_bias
         else:
             b = self.state.bias[layer_idx]
         biased = logits + b  # bias is a buffer
@@ -64,8 +75,8 @@ class AuxFreeShim:
     def register_layer_buffers(self, layer_idx: int, module: torch.nn.Module) -> None:
         """Bind model buffers so shim updates stay in sync with patched layers."""
         self._layer_modules[layer_idx] = module
-        bias = getattr(module, "_afb_bias")
-        ema = getattr(module, "_afb_ema")
+        bias = module._afb_bias
+        ema = module._afb_ema
         # Keep state views pointing to the same tensors to avoid drift.
         if layer_idx < len(self.state.bias):
             self.state.bias[layer_idx] = bias
@@ -100,8 +111,8 @@ class AuxFreeShim:
             return
         module = self._layer_modules.get(layer_idx)
         if module is not None and hasattr(module, "_afb_ema"):
-            ema = getattr(module, "_afb_ema")
-            bias = getattr(module, "_afb_bias")
+            ema = module._afb_ema
+            bias = module._afb_bias
         else:
             ema = self.state.ema_load[layer_idx]
             bias = self.state.bias[layer_idx]

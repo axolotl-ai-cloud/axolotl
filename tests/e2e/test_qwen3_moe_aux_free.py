@@ -4,11 +4,9 @@ E2E smoke test for Aux-Loss-Free MoE routing on Qwen3-MoE tiny
 
 import unittest
 
-import torch
-
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, validate_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
@@ -65,7 +63,9 @@ class TestQwen3MoeAuxFree(unittest.TestCase):
         # check that at least one sparse MoE block has been patched
         found = False
         for m in model.modules():
-            if m.__class__.__name__.endswith("SparseMoeBlock") and hasattr(m, "_afb_patched"):
+            if m.__class__.__name__.endswith("SparseMoeBlock") and hasattr(
+                m, "_afb_patched"
+            ):
                 assert m._afb_patched is True
                 assert hasattr(m, "_afb_bias") and m._afb_bias.ndim == 1
                 assert hasattr(m, "_afb_counts") and m._afb_counts.ndim == 1

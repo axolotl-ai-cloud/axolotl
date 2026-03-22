@@ -7,7 +7,7 @@ import unittest
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, validate_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import with_temp_dir

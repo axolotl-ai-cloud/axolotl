@@ -8,7 +8,7 @@ import torch
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, validate_config, prepare_plugins
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, with_temp_dir
@@ -67,7 +67,7 @@ class TestMoeAuxFree(unittest.TestCase):
         # Inspect model modules for a patched MoE layer
         patched = None
         for m in model.modules():
-            if hasattr(m, "_afb_patched") and getattr(m, "_afb_patched") is True:
+            if hasattr(m, "_afb_patched") and m._afb_patched is True:
                 patched = m
                 break
         assert patched is not None, "No MoE layer patched by aux-free plugin"

@@ -63,7 +63,9 @@ class TestLlama4MoeAuxFree(unittest.TestCase):
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
 
         patched = next((m for m in model.modules() if hasattr(m, "_afb_bias")), None)
-        assert patched is not None, "Llama 4 MoE layer was not patched by aux-free plugin"
+        assert patched is not None, (
+            "Llama 4 MoE layer was not patched by aux-free plugin"
+        )
         assert patched._afb_bias.ndim == 1
         assert patched._afb_counts.ndim == 1
         check_model_output_exists(temp_dir, cfg)

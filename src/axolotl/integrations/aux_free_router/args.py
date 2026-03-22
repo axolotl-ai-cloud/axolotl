@@ -69,4 +69,3 @@ class AuxFreeRouterArgs(BaseModel):
             "'ep' (expert-parallel group if available). Defaults to 'world' when unset."
         },
     )
-
