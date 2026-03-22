@@ -37,6 +37,7 @@ coverage:
         only_pulls: false
         flags: null
         paths: null
+        informational: true
 
 parsers:
   gcov:

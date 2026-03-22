@@ -3,7 +3,8 @@ set -e
 
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
 
-curl --silent -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/"  --use-compress-program unzstd --strip-components=1
+set -o pipefail
+curl --silent --show-error --fail --retry 3 --retry-delay 5 -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1
 # hf download "NousResearch/Meta-Llama-3-8B"
 # hf download "NousResearch/Meta-Llama-3-8B-Instruct"
 # hf download "microsoft/Phi-4-reasoning"
