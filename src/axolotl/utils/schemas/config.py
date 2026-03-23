@@ -1385,10 +1385,17 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data.get("trust_remote_code"):
                 return data
 
-            # Skip auto-enable for MoE models when native grouped_mm is unavailable.
-            # The grouped_mm fallback in transformers uses torch.mm with out= which
-            # bypasses autocast and fails on mixed bf16/float32 dtypes during eval.
-            if not hasattr(torch.nn.functional, "grouped_mm"):
+            # Skip auto-enable for MoE models when native grouped_mm is unavailable
+            # (torch < 2.9). The grouped_mm fallback in transformers uses torch.mm
+            # with out= which bypasses autocast and fails on mixed dtypes during eval.
+            env_capabilities = data.get("env_capabilities", {})
+            torch_version = env_capabilities.get("torch_version")
+            if torch_version is None:
+                import torch
+
+                torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+            has_grouped_mm = version.parse(torch_version) >= version.parse("2.9.0")
+            if not has_grouped_mm:
                 is_moe = False
                 model_type = data.get("model_config_type", "")
                 if model_type and "moe" in model_type.lower():
