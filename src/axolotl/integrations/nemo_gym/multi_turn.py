@@ -159,7 +159,9 @@ async def _call_agents(
 
     results = []
     connector = aiohttp.TCPConnector(limit_per_host=64, limit=256)
-    client_timeout = aiohttp.ClientTimeout(total=timeout)
+    # Use sock_read for per-request timeout (not total session timeout).
+    # This ensures a single stuck generation doesn't block all other requests.
+    client_timeout = aiohttp.ClientTimeout(total=None, sock_read=timeout)
 
     async with aiohttp.ClientSession(
         connector=connector, timeout=client_timeout, cookie_jar=aiohttp.DummyCookieJar()

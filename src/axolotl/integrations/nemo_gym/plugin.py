@@ -335,8 +335,7 @@ class NemoGymPlugin(BasePlugin):
             seed=inner._seed,
             agent_servers=self._agent_servers,
             dataset_lookup=self._dataset_lookup or {},
-            # Don't use verify_timeout here — /run is a full multi-turn
-            # rollout that can take minutes. Use the data producer's default (10800s).
+            request_timeout=float(cfg.nemo_gym_run_timeout or 300),
         )
         nemo_producer.set_trainer(trainer)
 
@@ -367,6 +366,8 @@ class NemoGymPlugin(BasePlugin):
         """Verify the vLLM server supports runtime LoRA loading."""
         import requests as http_requests
 
+        if not hasattr(vllm_gen, "vllm_client") or vllm_gen.vllm_client is None:
+            return  # Non-main rank in multi-GPU — client only exists on rank 0
         base_url = vllm_gen.vllm_client.base_url
         try:
             # Send a dummy load request — if the endpoint exists, we get a
@@ -393,21 +394,36 @@ class NemoGymPlugin(BasePlugin):
     def _setup_lora_sync(self, trainer):
         """Replace sync_weights with LoRA adapter sync via filesystem + HTTP.
 
-        Saves the LoRA adapter to disk and loads it into vLLM via the standard
-        ``/v1/load_lora_adapter`` endpoint. Works with both our custom
-        ``vllm_serve_lora.py`` and the standard vLLM OpenAI server
-        (started with ``--enable-lora``).
+        If the async trainer is detected (has ``_sync_lora_adapter``), delegates
+        to it — that method already handles multi-GPU (FSDP/DeepSpeed state_dict
+        gather, broadcast sync dir, barrier).
 
-        The adapter is named after the base model so that all requests
-        (which specify the base model name) automatically use the adapter.
+        Otherwise installs a standalone closure for the non-async GRPO path that
+        saves the adapter and POSTs to ``/v1/load_lora_adapter``.
         """
+        vllm_gen = trainer.vllm_generation
+
+        # Async trainer path: delegate to its _sync_lora_adapter (multi-GPU safe)
+        if hasattr(trainer, "_sync_lora_adapter"):
+
+            def lora_sync_weights():
+                trainer._sync_lora_adapter()
+
+            vllm_gen.sync_weights = lora_sync_weights
+            type(vllm_gen).sync_weights = lambda self: lora_sync_weights()
+            LOG.info(
+                "Installed LoRA adapter sync "
+                "(delegates to async trainer._sync_lora_adapter)"
+            )
+            return
+
+        # Non-async standard GRPO path: standalone closure
         import os
         import shutil
         import tempfile
 
         import requests as http_requests
 
-        vllm_gen = trainer.vllm_generation
         base_model = getattr(trainer.args, "model_name_or_path", None) or "axolotl-lora"
         sync_state = {"version": 0, "sync_dir": tempfile.mkdtemp(prefix="lora_sync_")}
 
@@ -423,7 +439,6 @@ class NemoGymPlugin(BasePlugin):
             version = sync_state["version"]
             adapter_path = os.path.join(sync_state["sync_dir"], f"v{version}")
 
-            # Gather state dict (all ranks participate for FSDP/DeepSpeed)
             wrapped_model = getattr(trainer, "model_wrapped", model)
             state_dict = accelerator.get_state_dict(wrapped_model)
 
@@ -431,7 +446,6 @@ class NemoGymPlugin(BasePlugin):
                 unwrapped = accelerator.unwrap_model(model)
                 unwrapped.save_pretrained(adapter_path, state_dict=state_dict)
 
-                # Try standard vLLM endpoint first, fall back to custom endpoint
                 base_url = vllm_gen.vllm_client.base_url
                 resp = http_requests.post(
                     f"{base_url}/v1/load_lora_adapter",
@@ -443,7 +457,6 @@ class NemoGymPlugin(BasePlugin):
                     timeout=30,
                 )
                 if resp.status_code != 200:
-                    # Fallback: try custom /set_lora_adapter/ endpoint
                     resp = http_requests.post(
                         f"{base_url}/set_lora_adapter/",
                         json={
@@ -455,7 +468,8 @@ class NemoGymPlugin(BasePlugin):
                     )
                     if resp.status_code != 200:
                         LOG.warning(
-                            f"Failed to set LoRA adapter: {resp.status_code} {resp.text}"
+                            f"Failed to set LoRA adapter: "
+                            f"{resp.status_code} {resp.text}"
                         )
                         return
 
@@ -464,7 +478,6 @@ class NemoGymPlugin(BasePlugin):
                 except Exception as exc:
                     LOG.warning("Failed to reset prefix cache: %s", exc)
 
-                # Clean up old version
                 if version > 1:
                     old = os.path.join(sync_state["sync_dir"], f"v{version - 1}")
                     if os.path.exists(old):
@@ -472,17 +485,15 @@ class NemoGymPlugin(BasePlugin):
 
                 LOG.info(f"Synced LoRA adapter v{version} to vLLM ({adapter_path})")
 
-            # Barrier for multi-GPU
             if accelerator.num_processes > 1:
                 import torch.distributed as dist
 
                 if dist.is_initialized():
                     dist.barrier()
 
-        # Replace sync_weights at both instance and class level
         vllm_gen.sync_weights = lora_sync_weights
         type(vllm_gen).sync_weights = lambda self: lora_sync_weights()
-        LOG.info("Installed LoRA adapter sync as sync_weights replacement")
+        LOG.info("Installed LoRA adapter sync (standalone fallback)")
 
     def post_train_unload(self, cfg):
         """Cleanup NeMo Gym servers if we started them."""

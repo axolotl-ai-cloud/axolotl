@@ -61,41 +61,48 @@ def reward_env(completions, prompts=None, **kwargs):
 
 # Module-level cache for discovered verify URLs
 _verify_urls: dict[str, str] = {}
+_verify_urls_lock = __import__("threading").Lock()
 
 
 def _get_verify_urls(head_port: int = 11000) -> dict[str, str]:
     """Discover verify endpoints from the NeMo Gym head server.
 
     Results are cached so that the HTTP round-trip only happens once per
-    process.
+    process.  A lock guards against concurrent discovery from multiple
+    threads (e.g. async_prefetch background thread + main training thread).
     """
     global _verify_urls
     if _verify_urls:
         return _verify_urls
 
-    import yaml
+    with _verify_urls_lock:
+        # Double-check after acquiring lock
+        if _verify_urls:
+            return _verify_urls
 
-    try:
-        resp = requests.get(
-            f"http://127.0.0.1:{head_port}/global_config_dict_yaml", timeout=5
-        )
-        config = yaml.safe_load(resp.text)
-        if isinstance(config, str):
-            config = yaml.safe_load(config)
-        for _name, cfg in config.items():
-            if not isinstance(cfg, dict):
-                continue
-            for srv_name, srv_cfg in cfg.get("resources_servers", {}).items():
-                if (
-                    isinstance(srv_cfg, dict)
-                    and "host" in srv_cfg
-                    and "port" in srv_cfg
-                ):
-                    _verify_urls[srv_name] = (
-                        f"http://{srv_cfg['host']}:{srv_cfg['port']}/verify"
-                    )
-    except Exception as exc:
-        LOG.warning(f"Failed to discover NeMo Gym verify endpoints: {exc}")
+        import yaml
+
+        try:
+            resp = requests.get(
+                f"http://127.0.0.1:{head_port}/global_config_dict_yaml", timeout=5
+            )
+            config = yaml.safe_load(resp.text)
+            if isinstance(config, str):
+                config = yaml.safe_load(config)
+            for _name, cfg in config.items():
+                if not isinstance(cfg, dict):
+                    continue
+                for srv_name, srv_cfg in cfg.get("resources_servers", {}).items():
+                    if (
+                        isinstance(srv_cfg, dict)
+                        and "host" in srv_cfg
+                        and "port" in srv_cfg
+                    ):
+                        _verify_urls[srv_name] = (
+                            f"http://{srv_cfg['host']}:{srv_cfg['port']}/verify"
+                        )
+        except Exception as exc:
+            LOG.warning(f"Failed to discover NeMo Gym verify endpoints: {exc}")
 
     return _verify_urls
 

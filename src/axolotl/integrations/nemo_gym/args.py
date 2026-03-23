@@ -65,6 +65,16 @@ class NemoGymArgs(BaseModel):
             "description": "Timeout in seconds for individual /verify requests. Defaults to 30."
         },
     )
+    nemo_gym_run_timeout: int | None = Field(
+        default=300,
+        json_schema_extra={
+            "description": (
+                "Timeout in seconds for each agent /run request (one multi-turn rollout). "
+                "Prevents stuck generations (e.g. model looping on <think> tags) from "
+                "blocking training indefinitely. Defaults to 300 (5 minutes)."
+            )
+        },
+    )
     nemo_gym_datasets: list[dict] | None = Field(
         default=None,
         json_schema_extra={

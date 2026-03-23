@@ -589,5 +589,33 @@ class TestNemoGymE2E(unittest.TestCase):
         assert combined == [1.17]
 
 
+class TestLoRASyncSetup(unittest.TestCase):
+    """Tests for _setup_lora_sync delegation logic."""
+
+    def test_delegates_to_async_trainer(self):
+        """When trainer has _sync_lora_adapter, the closure should delegate."""
+        from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
+
+        plugin = NemoGymPlugin.__new__(NemoGymPlugin)
+
+        trainer = MagicMock()
+        trainer._sync_lora_adapter = MagicMock()
+        trainer.vllm_generation = MagicMock()
+
+        plugin._setup_lora_sync(trainer)
+
+        # The closure should be installed
+        trainer.vllm_generation.sync_weights()
+        trainer._sync_lora_adapter.assert_called_once()
+
+    def test_check_lora_endpoint_skips_non_main_rank(self):
+        """_check_lora_endpoint should not crash when vllm_client is absent (rank 1)."""
+        from axolotl.integrations.nemo_gym.plugin import NemoGymPlugin
+
+        vllm_gen = MagicMock(spec=[])  # No attributes at all
+        # Should not raise
+        NemoGymPlugin._check_lora_endpoint(vllm_gen)
+
+
 if __name__ == "__main__":
     unittest.main()
