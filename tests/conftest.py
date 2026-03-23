@@ -1,5 +1,6 @@
 """Shared pytest fixtures"""
 
+import collections
 import functools
 import importlib
 import logging
@@ -471,6 +472,15 @@ def temp_dir() -> Generator[str, None, None]:
     yield _temp_dir
     # Clean up the directory after the test
     shutil.rmtree(_temp_dir)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_plugin_manager():
+    from axolotl.integrations.base import PluginManager
+
+    yield
+    PluginManager._instance = None
+    PluginManager.plugins = collections.OrderedDict()
 
 
 @pytest.fixture(scope="function", autouse=True)

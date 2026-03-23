@@ -48,7 +48,8 @@ def set_pytorch_cuda_alloc_conf():
     """Set up CUDA allocation config"""
     torch_version = torch.__version__.split(".")
     torch_major, torch_minor = int(torch_version[0]), int(torch_version[1])
-    config_value = "expandable_segments:True,roundup_power2_divisions:16"
+    config_value = "expandable_segments:True"
+    config_older_suffix = ",roundup_power2_divisions:16"
     if (
         torch_major == 2
         and torch_minor >= 9
@@ -60,7 +61,7 @@ def set_pytorch_cuda_alloc_conf():
         and torch_minor >= 2
         and os.getenv("PYTORCH_CUDA_ALLOC_CONF") is None
     ):
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = config_value
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = config_value + config_older_suffix
 
 
 def set_misc_env():
