@@ -18,7 +18,7 @@ class TestMixtral(unittest.TestCase):
     """
 
     @with_temp_dir
-    def test_qloraodel(self, temp_dir):
+    def test_qlora(self, temp_dir):
         cfg = DictDefault(
             {
                 "base_model": "hf-internal-testing/Mixtral-tiny",
