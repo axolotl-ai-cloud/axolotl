@@ -19,6 +19,9 @@ except ImportError:
         from fla.modules.conv import causal_conv1d as fla_causal_conv1d  # FLA < 0.4.1
     except ImportError:
         fla_causal_conv1d = None
+        LOG.warning(
+            "fla.modules.convolution.causal_conv1d (cu_seqlens support) not available. You must install flash-linear-attention or disable packing. Axolotl will crash if packing is enabled."
+        )
 
 
 def get_cu_seqlens(position_ids):
