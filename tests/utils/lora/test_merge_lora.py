@@ -1,8 +1,16 @@
+import json
+import math
 from unittest.mock import Mock, patch
 
+import safetensors.torch
 import torch
 
 from axolotl.cli.merge_lora import do_merge_lora
+from axolotl.cli.utils.lora_merge import (
+    _merge_tensor_with_lora,
+    find_lora_weights,
+    merge_lora_sharded_efficient,
+)
 from axolotl.utils.dict import DictDefault
 
 
@@ -132,6 +140,7 @@ class TestAdapterMergeUnmerge:
                 "torch_dtype": torch.float32,
                 "local_rank": 0,
                 "output_dir": str(tmp_path),
+                "merge_lora_method": "legacy",
             }
         )
 
@@ -167,6 +176,7 @@ class TestAdapterMergeUnmerge:
                 "save_safetensors": True,
                 "output_dir": str(tmp_path),
                 "local_rank": 0,
+                "merge_lora_method": "legacy",
             }
         )
 
@@ -179,3 +189,257 @@ class TestAdapterMergeUnmerge:
                 do_merge_lora(cfg=cfg)
 
             assert mock_load.called
+
+
+class TestEfficientMerge:
+    """Test suite for memory-efficient shard-by-shard LoRA merge."""
+
+    def _make_adapter(self, tmp_path, r=8, alpha=16, use_dora=False, use_rslora=False):
+        """Create a minimal adapter directory with config + weights."""
+        adapter_dir = tmp_path / "adapter"
+        adapter_dir.mkdir()
+
+        config = {
+            "r": r,
+            "lora_alpha": alpha,
+            "target_modules": ["q_proj", "v_proj"],
+            "task_type": "CAUSAL_LM",
+            "bias": "none",
+            "use_dora": use_dora,
+            "use_rslora": use_rslora,
+        }
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+        return adapter_dir, config
+
+    def _make_base_model(self, tmp_path, hidden=32):
+        """Create a minimal base model directory with one shard."""
+        model_dir = tmp_path / "base_model"
+        model_dir.mkdir()
+
+        weights = {
+            "model.layers.0.self_attn.q_proj.weight": torch.randn(hidden, hidden),
+            "model.layers.0.self_attn.v_proj.weight": torch.randn(hidden, hidden),
+            "model.embed_tokens.weight": torch.randn(100, hidden),
+        }
+        safetensors.torch.save_file(weights, model_dir / "model.safetensors")
+
+        # Minimal config files
+        (model_dir / "config.json").write_text("{}")
+        return model_dir, weights
+
+    def test_find_lora_weights(self):
+        lora_state = {
+            "base_model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.randn(
+                8, 32
+            ),
+            "base_model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.randn(
+                32, 8
+            ),
+        }
+        a, b = find_lora_weights(lora_state, "layers.0.self_attn.q_proj.weight")
+        assert a is not None and b is not None
+        assert a.shape == (8, 32)
+
+        a, b = find_lora_weights(lora_state, "layers.0.self_attn.v_proj.weight")
+        assert a is None and b is None
+
+    def test_merge_tensor_basic(self):
+        hidden = 32
+        r = 8
+        base = torch.randn(hidden, hidden)
+        lora_a = torch.randn(r, hidden)
+        lora_b = torch.randn(hidden, r)
+        scale = 2.0
+
+        lora_state = {
+            "base_model.model.layer.q_proj.lora_A.weight": lora_a,
+            "base_model.model.layer.q_proj.lora_B.weight": lora_b,
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base, "layer.q_proj.weight", lora_state, scale, {}, "cpu"
+        )
+        assert was_merged
+        expected = base + scale * (lora_b @ lora_a)
+        assert torch.allclose(merged, expected, atol=1e-5)
+
+    def test_merge_tensor_rslora_scale(self):
+        """RSLoRA should use alpha/sqrt(r) as scaling factor."""
+        r = 16
+        alpha = 32
+        standard_scale = alpha / r  # 2.0
+        rslora_scale = alpha / math.sqrt(r)  # 8.0
+
+        assert rslora_scale != standard_scale
+        assert abs(rslora_scale - 8.0) < 1e-6
+
+    def test_sharded_efficient_merge(self, tmp_path):
+        """End-to-end test of shard-by-shard merge."""
+        hidden = 32
+        r = 8
+        alpha = 16
+
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, _ = self._make_adapter(tmp_path, r=r, alpha=alpha)
+
+        # Create LoRA weights
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+        )
+
+        # Verify output exists and has merged weights
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+        scale = alpha / r
+
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        expected_q = base_weights[q_key] + scale * (
+            lora_state[f"base_model.model.{q_key[:-7]}.lora_B.weight"]
+            @ lora_state[f"base_model.model.{q_key[:-7]}.lora_A.weight"]
+        )
+        assert torch.allclose(merged[q_key], expected_q, atol=1e-5)
+
+        # Embedding should be unchanged
+        assert torch.equal(
+            merged["model.embed_tokens.weight"],
+            base_weights["model.embed_tokens.weight"],
+        )
+
+    def test_dora_merge(self):
+        """DoRA merge applies magnitude normalization."""
+        hidden = 32
+        r = 8
+        scale = 2.0
+
+        base = torch.randn(hidden, hidden)
+        lora_a = torch.randn(r, hidden)
+        lora_b = torch.randn(hidden, r)
+        magnitude = torch.randn(hidden).abs() + 0.1
+
+        lora_state = {
+            "base_model.model.layer.q_proj.lora_A.weight": lora_a,
+            "base_model.model.layer.q_proj.lora_B.weight": lora_b,
+            "base_model.model.layer.q_proj.lora_magnitude_vector": magnitude,
+        }
+
+        merged, was_merged = _merge_tensor_with_lora(
+            base, "layer.q_proj.weight", lora_state, scale, {}, "cpu", use_dora=True
+        )
+        assert was_merged
+
+        # Verify DoRA formula: m * (W + delta) / ||W + delta||
+        delta = scale * (lora_b @ lora_a)
+        combined = base + delta
+        norm = combined.norm(p=2, dim=1, keepdim=True).clamp(min=1e-8)
+        expected = magnitude.unsqueeze(1) * combined / norm
+        assert torch.allclose(merged, expected, atol=1e-5)
+
+    def test_fuse_unfuse_moe_merge(self):
+        """Test fuse→merge→unfuse for MoE expert weights (WeightConverter path)."""
+        from axolotl.cli.utils.lora_merge import _fuse_and_unfuse_with_merge
+
+        hidden = 16
+        intermediate = 32
+        num_experts = 4
+        r = 4
+        scale = 2.0
+
+        # Simulate checkpoint format: per-expert separate tensors
+        shard_tensors = {}
+        for i in range(num_experts):
+            shard_tensors[f"model.layers.0.mlp.experts.{i}.gate_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+            shard_tensors[f"model.layers.0.mlp.experts.{i}.up_proj.weight"] = (
+                torch.randn(intermediate, hidden)
+            )
+            shard_tensors[f"model.layers.0.mlp.experts.{i}.down_proj.weight"] = (
+                torch.randn(hidden, intermediate)
+            )
+        shard_tensors["model.layers.0.self_attn.q_proj.weight"] = torch.randn(
+            hidden, hidden
+        )
+
+        # LoRA targets the fused key (runtime format)
+        lora_state = {
+            "base_model.model.model.layers.0.mlp.experts.gate_up_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.mlp.experts.gate_up_proj.lora_B.weight": torch.randn(
+                intermediate * 2, r
+            ),
+            "base_model.model.model.layers.0.mlp.experts.down_proj.lora_A.weight": torch.randn(
+                r, intermediate
+            ),
+            "base_model.model.model.layers.0.mlp.experts.down_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+        }
+
+        # Build converters matching qwen2_moe pattern
+        from transformers.core_model_loading import (
+            Concatenate,
+            MergeModulelist,
+            WeightConverter,
+        )
+
+        converters = [
+            WeightConverter(
+                source_patterns=[
+                    "mlp.experts.*.gate_proj.weight",
+                    "mlp.experts.*.up_proj.weight",
+                ],
+                target_patterns="mlp.experts.gate_up_proj",
+                operations=[MergeModulelist(dim=0), Concatenate(dim=1)],
+            ),
+            WeightConverter(
+                source_patterns="mlp.experts.*.down_proj.weight",
+                target_patterns="mlp.experts.down_proj",
+                operations=[MergeModulelist(dim=0)],
+            ),
+        ]
+
+        result, merged_count, processed_keys = _fuse_and_unfuse_with_merge(
+            shard_tensors, converters, lora_state, scale, {}, "cpu"
+        )
+
+        # Should have merged 2 LoRA targets (gate_up_proj and down_proj)
+        assert merged_count == 2
+
+        # Processed keys should include all expert weight keys
+        assert len(processed_keys) == num_experts * 3  # gate, up, down per expert
+
+        # Output should be in checkpoint format (per-expert keys)
+        for i in range(num_experts):
+            assert f"model.layers.0.mlp.experts.{i}.gate_proj.weight" in result
+            assert f"model.layers.0.mlp.experts.{i}.up_proj.weight" in result
+            assert f"model.layers.0.mlp.experts.{i}.down_proj.weight" in result
+
+        # Non-expert tensor should be passed through
+        assert "model.layers.0.self_attn.q_proj.weight" in result
+
+        # Verify the expert weights were actually modified (LoRA was applied)
+        for i in range(num_experts):
+            gate_key = f"model.layers.0.mlp.experts.{i}.gate_proj.weight"
+            assert not torch.equal(result[gate_key], shard_tensors[gate_key])

@@ -24,13 +24,13 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    merge_method = str(getattr(cfg, "merge_method", ""))
+    merge_method = str(getattr(cfg, "merge_lora_method", "memory_efficient"))
     if merge_method == "legacy":
         LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)
     else:
         LOG.debug("Using memory-efficient LoRA merging method...")
-    _do_merge_lora_efficient(cfg=cfg)
+        _do_merge_lora_efficient(cfg=cfg)
 
 
 def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
@@ -73,8 +73,8 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     Memory-efficient LoRA merging using shard-by-shard processing.
     Does not load the full model into memory.
 
-    Note: Currently only supports standard LoRA, not advanced methods like DoRA or RSLoRA.
-    Will automatically fall back to legacy method for unsupported configurations.
+    Supports standard LoRA, RSLoRA, and DoRA. Unsupported methods (AdaLoRA, VeRA)
+    will raise NotImplementedError — use legacy method for those.
     """
     LOG.debug("Using memory-efficient LoRA merging method...")
 
@@ -82,12 +82,39 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     safe_tensors = getattr(cfg, "save_safetensors", True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # Detect NF4 quantization from config to simulate QLoRA training dynamics.
+    # Check both current and original (pre-override) config values since do_cli
+    # forces load_in_4bit=False for the legacy path.
+    simulate_nf4 = bool(
+        getattr(cfg, "load_in_4bit", False)
+        or getattr(cfg, "_original_load_in_4bit", False)
+        or getattr(cfg, "adapter", None) == "qlora"
+        or getattr(cfg, "_original_adapter", None) == "qlora"
+    )
+
+    bnb_config_kwargs = getattr(cfg, "bnb_config_kwargs", None) or {}
+    nf4_blocksize = bnb_config_kwargs.get("blocksize", None)
+    nf4_double_quant = bnb_config_kwargs.get(
+        "bnb_4bit_use_double_quant",
+        getattr(cfg, "bnb_4bit_use_double_quant", True),
+    )
+
+    # Detect MoE expert quantization
+    simulate_nf4_experts = bool(
+        getattr(cfg, "quantize_moe_experts", False)
+        or getattr(cfg, "_original_quantize_moe_experts", False)
+    )
+
     merge_lora_sharded_efficient(
         base_model_path=cfg.base_model,
         lora_adapter_path=cfg.lora_model_dir,
         output_path=output_path,
         safe_tensors=safe_tensors,
         device=device,
+        simulate_nf4=simulate_nf4,
+        simulate_nf4_experts=simulate_nf4_experts,
+        nf4_blocksize=nf4_blocksize,
+        nf4_double_quant=nf4_double_quant,
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
@@ -107,6 +134,12 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         ValueError: If target directory for LoRA merged model does not exist.
     """
 
+    # Pre-load config to detect original quantization settings before overrides
+    raw_cfg = load_cfg(config, **kwargs)
+    original_load_in_4bit = getattr(raw_cfg, "load_in_4bit", False)
+    original_adapter = getattr(raw_cfg, "adapter", None)
+    original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)
+
     parsed_cfg = load_cfg(
         config,
         merge_lora=True,
@@ -120,6 +153,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         fsdp_config=None,
         **kwargs,
     )
+
+    # Stash original quantization settings for NF4 simulation in efficient merge
+    parsed_cfg._original_load_in_4bit = original_load_in_4bit
+    parsed_cfg._original_adapter = original_adapter
+    parsed_cfg._original_quantize_moe_experts = original_quantize_moe_experts
 
     if not parsed_cfg.lora_model_dir and parsed_cfg.output_dir:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir
