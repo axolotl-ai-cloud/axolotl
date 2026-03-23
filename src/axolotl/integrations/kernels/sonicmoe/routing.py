@@ -6,7 +6,6 @@ Different MoE architectures use different routing strategies:
 - mistral4: softmax -> group selection -> topk (with renormalization and scaling)
 - glm_moe_dsa / deepseek_v3 / minimax_m2: sigmoid -> topk (with group-based expert selection)
 - ernie4_5_moe: softmax -> bias correction -> topk -> gather (softmax_bias_topk_routing)
-- deepseek_v2: softmax -> group_limited_greedy / greedy -> topk (softmax_group_limited_topk_routing)
 - hunyuan_v1_moe: softmax -> topk via gate.wg (softmax_topk_wg_routing)
 - gpt_oss: topk -> softmax (uses fused moe_TC_softmax_topk_layer, routing_fn=None) [NOT YET SUPPORTED]
 
@@ -62,8 +61,6 @@ def get_model_moe_config(model_type: str):
         return sigmoid_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in ("ernie4_5_moe",):
         return softmax_bias_topk_routing, ActivationType.SWIGLU, "gate"
-    elif model_type in ("deepseek_v2",):
-        return softmax_group_limited_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in ("hunyuan_v1_moe",):
         return softmax_topk_wg_routing, ActivationType.SWIGLU, "gate"
     # Fused topk -> softmax path (routing_fn=None):
@@ -92,7 +89,7 @@ def softmax_topk_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = gate.top_k
 
     # Compute router logits and softmax over all experts
@@ -132,7 +129,7 @@ def softmax_group_topk_routing(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Mistral4-style routing: softmax -> group selection -> topk -> renorm -> scale."""
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
     E = getattr(moe_block, "n_routed_experts", gate.weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
@@ -210,7 +207,7 @@ def sigmoid_topk_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
     E = getattr(moe_block, "n_routed_experts", gate.weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
@@ -300,7 +297,7 @@ def softmax_bias_topk_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = gate.top_k
 
     # Compute router logits and softmax (force float32 for numerical stability)
@@ -362,7 +359,7 @@ def softmax_group_limited_topk_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
     num_group = getattr(moe_block, "num_group", 1)
     num_experts = gate.weight.shape[0]
@@ -372,16 +369,17 @@ def softmax_group_limited_topk_routing(
     router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
-    if topk_method == "greedy":
+    if topk_method == "greedy" or num_group == 1:
         topk_weights, topk_indices = torch.topk(router_probs, k=K, dim=-1, sorted=False)
     elif topk_method == "group_limited_greedy":
         # Guard: selected groups must contain enough experts for topk
         group_size = num_experts // num_group
-        assert moe_block.topk_group * group_size >= K, (
-            f"DeepSeek V2: topk_group ({moe_block.topk_group}) * group_size "
-            f"({group_size}) = {moe_block.topk_group * group_size} < top_k ({K}). "
-            f"Not enough experts in selected groups for topk selection."
-        )
+        if moe_block.topk_group * group_size < K:
+            raise ValueError(
+                f"DeepSeek V2: topk_group ({moe_block.topk_group}) * group_size "
+                f"({group_size}) = {moe_block.topk_group * group_size} < top_k ({K}). "
+                f"Not enough experts in selected groups for topk selection."
+            )
         # Group selection: pick top groups by max score per group
         group_scores = (
             router_probs.view(T, num_group, num_experts // num_group).max(dim=-1).values
@@ -447,7 +445,7 @@ def softmax_topk_wg_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
 
     # Gate computes logits via gate.wg (nn.Linear, float32)
