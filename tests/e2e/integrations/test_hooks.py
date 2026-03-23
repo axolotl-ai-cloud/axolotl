@@ -146,7 +146,7 @@ class TestPluginHooks:
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 5,
-                "flash_attention": True,
+                "flash_attention": False,
                 "bf16": "auto",
                 "save_first_step": False,
             }
