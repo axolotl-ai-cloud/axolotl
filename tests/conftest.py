@@ -479,6 +479,7 @@ def reset_plugin_manager():
     from axolotl.integrations.base import PluginManager
 
     yield
+    PluginManager._cfg = None
     PluginManager._instance = None
     PluginManager.plugins = collections.OrderedDict()
 

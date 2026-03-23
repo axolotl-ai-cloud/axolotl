@@ -40,3 +40,4 @@ class DiffusionPlugin(BasePlugin):
         """Configure trainer after creation."""
         if hasattr(trainer, "axolotl_cfg"):
             trainer.axolotl_cfg = cfg
+        trainer.post_set_axolotl_cfg()
