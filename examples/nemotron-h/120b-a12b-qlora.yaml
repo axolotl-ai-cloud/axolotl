@@ -1,10 +1,14 @@
-# nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16 (or similar smaller Nemotron-H)
+# nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
 # Hybrid Mamba2 / Attention / MoE architecture (model_type: nemotron_h)
+# 120B total params, ~12B active per token, 88 layers
 #
 # Requirements:
 #   pip install mamba-ssm causal-conv1d   # for fast Mamba2 CUDA kernels
+#   flash-attn >= 2.0                     # for flash attention + sample packing
 
-base_model: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
+base_model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
+
+trust_remote_code: true
 
 # Nemotron-H attention layers live in NemotronHBlock.mixer, not the standard
 # layer.self_attn, so the lora kernel patches can't discover them.
@@ -39,6 +43,7 @@ lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.0
 lora_target_modules:
+  # Attention projection layers (present in ~12 attention layers out of 88)
   - q_proj
   - k_proj
   - v_proj
@@ -48,13 +53,13 @@ lora_target_modules:
   # - down_proj
   # - gate_proj
 
-wandb_project:
+wandb_project: nemo
 wandb_entity:
 wandb_watch:
 wandb_name:
 wandb_log_model:
 
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 4
 micro_batch_size: 1
 num_epochs: 1
 optimizer: adamw_torch_4bit
@@ -73,7 +78,7 @@ logging_steps: 1
 flash_attention: true
 
 warmup_ratio: 0.1
-evals_per_epoch: 4
+evals_per_epoch: 2
 saves_per_epoch: 1
 weight_decay: 0.0
 

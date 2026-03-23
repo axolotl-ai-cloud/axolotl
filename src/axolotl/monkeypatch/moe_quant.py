@@ -154,8 +154,8 @@ def patch_peft_target_parameters_matching():
     1. Expands short suffixes to full module paths for parametrized modules.
     2. Iterates params in definition order (not alphabetical order) so saved
        adapters are compatible with standard PEFT, vLLM, etc.
-    3. Skips ParametrizationList modules during lora_target_modules injection so
-       quantized expert params are not mistakenly targeted by name-suffix matching.
+    3. Skips ParametrizationList synthetic paths to prevent PEFT from mistakenly
+       targeting quantized expert params via name-suffix matching.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
@@ -296,11 +296,8 @@ def patch_peft_target_parameters_matching():
 
     BaseTuner._inject_parameters = _patched_inject_parameters
 
-    # Patch _check_target_module_exists to skip ParametrizationList modules.
-    # After quantize_moe_experts runs, expert params become ParametrizationList
-    # modules at paths like "...experts.parametrizations.up_proj". Without this
-    # patch, lora_target_modules name-suffix matching finds "up_proj" there and
-    # tries to wrap it in LoRA, which PEFT rejects.
+    # Skip ParametrizationList synthetic paths (e.g. "...parametrizations.up_proj")
+    # so PEFT suffix-matching doesn't try to wrap quantized expert params in LoRA.
     _original_check = BaseTuner._check_target_module_exists
 
     @staticmethod
