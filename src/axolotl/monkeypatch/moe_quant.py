@@ -298,6 +298,11 @@ def patch_peft_target_parameters_matching():
 
     # Skip ParametrizationList synthetic paths (e.g. "...parametrizations.up_proj")
     # so PEFT suffix-matching doesn't try to wrap quantized expert params in LoRA.
+    # Previous MoE models (Mixtral, DeepSeek, etc.) stored experts as nn.Linear
+    # modules, so PEFT's normal target_modules path worked fine. NemotronH uses
+    # 3D nn.Parameter tensors via our quantize_moe_experts parametrization, which
+    # exposes synthetic ".parametrizations.<name>" paths that PEFT's suffix match
+    # would otherwise treat as target_modules candidates.
     _original_check = BaseTuner._check_target_module_exists
 
     @staticmethod

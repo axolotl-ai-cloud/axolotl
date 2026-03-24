@@ -444,6 +444,9 @@ def apply_lora_kernel_patches(
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
+                # Check is inside lora_mlp_kernel guard so models with an
+                # unsupported activation (e.g. nemotron_h uses relu2) can set
+                # lora_mlp_kernel: false without hitting an error here.
                 if activation not in SUPPORTED_ACTIVATIONS:
                     raise NotImplementedError(
                         f"Activation {activation!r} is not supported by lora_mlp_kernel. "

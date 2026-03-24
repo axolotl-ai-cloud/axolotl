@@ -296,6 +296,9 @@ class PatchManager:
                 NemotronHPreTrainedModel,
             )
 
+            # Upstream omits supports_gradient_checkpointing (defaults to False
+            # from PreTrainedModel). Our patched NemotronHBlock.forward is
+            # compatible with activation checkpointing, so we enable it here.
             NemotronHPreTrainedModel.supports_gradient_checkpointing = True
 
             if self.cfg.sample_packing:
