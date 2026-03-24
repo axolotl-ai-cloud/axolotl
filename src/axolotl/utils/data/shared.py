@@ -516,11 +516,8 @@ def generate_dataset_hash_from_config(
     Returns:
         MD5 hash string representing the configuration.
     """
-    # When added_tokens_overrides is set the tokenizer is saved into output_dir,
-    # so tokenizer.name_or_path becomes an absolute path that includes output_dir.
-    # Changing output_dir would bust the dataset cache even though the tokenizer
-    # is identical. Use the canonical tokenizer config path plus the overrides
-    # content instead so the hash is stable across output_dir changes.
+    # When added_tokens_overrides is set, tokenizer.name_or_path contains output_dir.
+    # Use the canonical tokenizer config + overrides content so the hash is stable across output_dir changes.
     if cfg.get("added_tokens_overrides"):
         tokenizer_fingerprint = (
             f"{cfg.tokenizer_config}+overrides:"

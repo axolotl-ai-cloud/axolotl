@@ -52,7 +52,7 @@ class TestGenerateDatasetHashFromConfig:
         """A different tokenizer path produces a different hash."""
         cfg = _base_cfg()
         h1 = generate_dataset_hash_from_config(cfg, _datasets(), "NousResearch/Llama-3.2-1B")
-        h2 = generate_dataset_hash_from_config(cfg, _datasets(), "mistralai/Mistral-7B-v0.1")
+        h2 = generate_dataset_hash_from_config(cfg, _datasets(), "HuggingFaceTB/SmolLM2-135M")
         assert h1 != h2
 
     def test_different_sequence_len_different_hash(self):
