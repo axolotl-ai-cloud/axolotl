@@ -211,6 +211,10 @@ def whiten_embeddings_batched(
     Whitening decorrelates feature dimensions so no single direction dominates
     the feature-matching loss. Uses pseudo-inverse for rank-deficient cases.
 
+    Note: Singular values scale with sqrt(B), so reward magnitudes are
+    batch-size dependent. This is acceptable because B = n_samples_per_prompt
+    which is fixed during training (typically 2-4).
+
     Args:
         phi: (B, D) generated embeddings (used to estimate covariance)
         phi_gt: (B, D) ground-truth embeddings

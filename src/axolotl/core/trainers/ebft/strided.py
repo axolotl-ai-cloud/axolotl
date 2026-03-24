@@ -142,7 +142,9 @@ def _strided_mask_mod(
     gen_step = gen_offset // num_blocks
     block_idx = gen_offset % num_blocks
 
-    # Context window end for this block
+    # Context window end for this block.
+    # Note: if prompt_length < max_generation_length, context_end clamps to 0 for all
+    # blocks. This is safe because compute_loss guards with num_blocks <= 0 → zero loss.
     context_end = torch.clamp(
         block_idx * stride + context_length,
         max=prompt_length - max_generation_length,

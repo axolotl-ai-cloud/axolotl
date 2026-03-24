@@ -1972,10 +1972,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     seq_is = is_mode in ("sequence_mask", "sequence_truncate")
                     logps_diff = diff.sum(dim=-1, keepdim=True) if seq_is else diff
                     is_ratio = torch.exp(logps_diff)
+                    # Symmetric floor clamp (matches non-streaming path at line ~1651)
+                    is_floor = 1.0 / is_cap
                     if is_mode in ("sequence_truncate", "token_truncate"):
-                        is_ratio = torch.clamp(is_ratio, max=is_cap)
+                        is_ratio = torch.clamp(is_ratio, min=is_floor, max=is_cap)
                     elif is_mode in ("sequence_mask", "token_mask"):
                         is_ratio = is_ratio.masked_fill(is_ratio > is_cap, value=0.0)
+                        is_ratio = is_ratio.clamp(min=is_floor)
                     if "importance_sampling_ratio" not in data:
                         total = len(data["prompt_ids"])
                         shape = (total, 1) if seq_is else (total, is_ratio.size(1))

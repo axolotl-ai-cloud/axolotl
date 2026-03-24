@@ -285,3 +285,10 @@ class TestFusedDiversityPenalty:
         out = fused_diversity_penalty(emb)
 
         torch.testing.assert_close(out, ref, atol=5e-2, rtol=5e-2)
+
+    def test_single_sample_returns_zeros(self):
+        """N=1 should return zeros (no pairs), not garbage from uninitialized memory."""
+        B, D = 3, 128
+        emb = torch.randn(B, 1, D, device=DEVICE, dtype=torch.float32)
+        out = fused_diversity_penalty(emb)
+        assert (out == 0).all(), "N=1 diversity should be exactly zero"

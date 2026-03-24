@@ -139,8 +139,16 @@ class EBFTMixin:
                 f"(gt_length_multiplier={args.ebft_gt_length_multiplier})"
             )
 
+    _adaptive_max_lock = None  # initialized lazily
+
     def _generate_only(self, inputs, rank0_only=False):
-        """Override to set per-batch max_tokens based on ground-truth length."""
+        """Override to set per-batch max_tokens based on ground-truth length.
+
+        Uses a lock to prevent race conditions in async mode where concurrent
+        BG threads could interleave mutations of max_completion_length.
+        """
+        import threading
+
         args = self.args
         if (
             args.ebft_adaptive_max_tokens
@@ -162,12 +170,15 @@ class EBFTMixin:
                 )
                 adaptive_max = max(adaptive_max, 64)
 
-                original = self.vllm_generation.max_completion_length
-                self.vllm_generation.max_completion_length = adaptive_max
-                try:
-                    return super()._generate_only(inputs, rank0_only)
-                finally:
-                    self.vllm_generation.max_completion_length = original
+                if self._adaptive_max_lock is None:
+                    self._adaptive_max_lock = threading.Lock()
+                with self._adaptive_max_lock:
+                    original = self.vllm_generation.max_completion_length
+                    self.vllm_generation.max_completion_length = adaptive_max
+                    try:
+                        return super()._generate_only(inputs, rank0_only)
+                    finally:
+                        self.vllm_generation.max_completion_length = original
 
         return super()._generate_only(inputs, rank0_only)
 
@@ -258,6 +269,8 @@ class EBFTMixin:
         )
 
         # --- Tokenize ground-truth sequences: prompt + ground_truth ---
+        # For multi-turn (remaining_turns present), render the full GT conversation
+        # through the chat template to preserve role markers between turns.
         gt_texts = []
         gt_prompt_texts = []
         for i, (p, gt) in enumerate(zip(prompts, ground_truth, strict=True)):
@@ -267,6 +280,23 @@ class EBFTMixin:
                 prompt_text = self.processing_class.apply_chat_template(
                     p, tokenize=False, add_generation_prompt=True
                 )
+                # Multi-turn: build full GT conversation with remaining turns
+                if remaining_turns is not None:
+                    prompt_idx = i // num_gens
+                    turns = (
+                        remaining_turns[prompt_idx]
+                        if prompt_idx < len(remaining_turns)
+                        else []
+                    )
+                    if turns:
+                        gt_conv = list(p) + [{"role": "assistant", "content": gt}]
+                        gt_conv.extend(turns)
+                        full_gt_text = self.processing_class.apply_chat_template(
+                            gt_conv, tokenize=False, add_generation_prompt=False
+                        )
+                        gt_texts.append(full_gt_text)
+                        gt_prompt_texts.append(prompt_text)
+                        continue
             else:
                 prompt_text = p
             gt_texts.append(prompt_text + gt)
@@ -294,6 +324,10 @@ class EBFTMixin:
         )
 
         # --- Extract features from frozen feature network ---
+        # INVARIANT: disable_adapter() yields the unmodified base weights because
+        # _sync_peft_weights_no_merge and _sync_lora_adapter never call
+        # merge_adapter() — they compute merged weights as new tensors or save
+        # the adapter to filesystem. Base weights are never modified in-place.
         if self._share_feature_weights:
             unwrapped = self.accelerator.unwrap_model(self.model)
             feature_ctx = unwrapped.disable_adapter()
@@ -441,20 +475,17 @@ class EBFTMixin:
             )
 
             if not turns:
-                # No remaining turns — return full text (prompt + first assistant turn)
                 extended_completions.append(first_text)
                 continue
 
             # Build conversation with generated first turn
             conv = list(prompt_msgs) + [{"role": "assistant", "content": first_text}]
-            full_gen_text = first_text
 
             # Generate subsequent turns
             for turn in turns:
                 if turn["role"] == "user":
                     conv.append(turn)
                 elif turn["role"] == "assistant":
-                    # Generate this assistant turn via vLLM
                     try:
                         result = vllm_client.chat(
                             messages=[conv],
@@ -463,7 +494,6 @@ class EBFTMixin:
                             temperature=temperature,
                             generation_kwargs=gen_kwargs,
                         )
-                        # Extract generated text
                         gen_ids = result.get("completion_ids", [[]])[0]
                         gen_text = self.processing_class.decode(
                             gen_ids, skip_special_tokens=True
@@ -473,9 +503,18 @@ class EBFTMixin:
                         gen_text = ""
 
                     conv.append({"role": "assistant", "content": gen_text})
-                    full_gen_text += gen_text
 
-            extended_completions.append(full_gen_text)
+            # Render full conversation through chat template, then extract
+            # everything after the original prompt as the "completion" text.
+            # This preserves role markers and formatting between turns.
+            full_rendered = self.processing_class.apply_chat_template(
+                conv, tokenize=False, add_generation_prompt=False
+            )
+            prompt_rendered = self.processing_class.apply_chat_template(
+                prompt_msgs, tokenize=False, add_generation_prompt=True
+            )
+            completion_text = full_rendered[len(prompt_rendered) :]
+            extended_completions.append(completion_text)
 
         return extended_completions
 

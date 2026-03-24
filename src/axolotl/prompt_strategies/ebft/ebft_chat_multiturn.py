@@ -51,15 +51,12 @@ def transform(cfg, **kwargs):
         if first_gt is None:
             return {"prompt": prompt_msgs, "ground_truth": ""}
 
-        # Build full GT: first assistant turn + all remaining turns' assistant content
-        full_gt = first_gt
-        for msg in remaining:
-            if msg["role"] == "assistant":
-                full_gt += msg["content"]
-
+        # Store only the first assistant turn as ground_truth. The full multi-turn
+        # GT is reconstructed in the reward function via chat template rendering
+        # (using remaining_turns), which preserves role markers between turns.
         return {
             "prompt": prompt_msgs,
-            "ground_truth": full_gt,
+            "ground_truth": first_gt,
             "remaining_turns": remaining,
         }
 
