@@ -760,16 +760,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
   <ul class="collapse">
+  <li><a href="#axolotl.kernels.lora.LoRA_Embedding" id="toc-axolotl.kernels.lora.LoRA_Embedding" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_Embedding">LoRA_Embedding</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_MLP" id="toc-axolotl.kernels.lora.LoRA_MLP" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_MLP">LoRA_MLP</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_O" id="toc-axolotl.kernels.lora.LoRA_O" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_O">LoRA_O</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_QKV" id="toc-axolotl.kernels.lora.LoRA_QKV" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.kernels.lora.apply_lora_embedding" id="toc-axolotl.kernels.lora.apply_lora_embedding" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_embedding">apply_lora_embedding</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_mlp_geglu" id="toc-axolotl.kernels.lora.apply_lora_mlp_geglu" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_mlp_geglu">apply_lora_mlp_geglu</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_mlp_swiglu" id="toc-axolotl.kernels.lora.apply_lora_mlp_swiglu" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_mlp_swiglu">apply_lora_mlp_swiglu</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_o" id="toc-axolotl.kernels.lora.apply_lora_o" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_o">apply_lora_o</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_qkv" id="toc-axolotl.kernels.lora.apply_lora_qkv" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</a></li>
+  <li><a href="#axolotl.kernels.lora.get_embedding_lora_parameters" id="toc-axolotl.kernels.lora.get_embedding_lora_parameters" class="nav-link" data-scroll-target="#axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</a></li>
   <li><a href="#axolotl.kernels.lora.get_lora_parameters" id="toc-axolotl.kernels.lora.get_lora_parameters" class="nav-link" data-scroll-target="#axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</a></li>
   <li><a href="#axolotl.kernels.lora.matmul_lora" id="toc-axolotl.kernels.lora.matmul_lora" class="nav-link" data-scroll-target="#axolotl.kernels.lora.matmul_lora">matmul_lora</a></li>
   </ul></li>
@@ -789,6 +792,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Module for definition of Low-Rank Adaptation (LoRA) Triton kernels.</p>
 <p>See “LoRA: Low-Rank Adaptation of Large Language Models”
 (https://arxiv.org/abs/2106.09685).</p>
+<p>Also supports DoRA (Weight-Decomposed Low-Rank Adaptation):
+See “DoRA: Weight-Decomposed Low-Rank Adaptation” (https://arxiv.org/abs/2402.09353).</p>
 <p>Credit to <code>unsloth</code> (https://unsloth.ai/) for inspiration for this implementation.</p>
 <section id="classes" class="level2">
 <h2 class="anchored" data-anchor-id="classes">Classes</h2>
@@ -801,818 +806,49 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.kernels.lora.LoRA_Embedding">LoRA_Embedding</a></td>
+<td>Fused LoRA embedding: F.embedding(x, W) + s * F.embedding(x, A^T) @ B^T.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.LoRA_MLP">LoRA_MLP</a></td>
 <td>Optimized LoRA MLP implementation.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.LoRA_O">LoRA_O</a></td>
 <td>Optimized LoRA implementation for output projection.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</a></td>
 <td>Optimized LoRA QKV implementation with quantization support.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.kernels.lora.LoRA_Embedding" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_Embedding">LoRA_Embedding</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_Embedding()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Fused LoRA embedding: F.embedding(x, W) + s * F.embedding(x, A^T) @ B^T.</p>
+<p>Supports dropout and DoRA.</p>
+</section>
 <section id="axolotl.kernels.lora.LoRA_MLP" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_MLP">LoRA_MLP</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_MLP()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_MLP()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Optimized LoRA MLP implementation.</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.kernels.lora.LoRA_MLP.backward">backward</a></td>
-<td>Performs backward pass computation for LoRA MLP.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.kernels.lora.LoRA_MLP.forward">forward</a></td>
-<td>Forward pass for LoRA MLP.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.kernels.lora.LoRA_MLP.backward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_MLP.backward">backward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_MLP.backward(ctx, grad_output)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Performs backward pass computation for LoRA MLP.</p>
-<section id="parameters" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 30%">
-<col style="width: 48%">
-<col style="width: 10%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td>Context object storing tensors saved during forward pass</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>grad_output</td>
-<td>torch.Tensor</td>
-<td>Gradient of loss with respect to layer output</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 23%">
-<col style="width: 67%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor | None</td>
-<td>Tuple containing gradients for all inputs from forward pass:</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>None</td>
-<td>- Input gradient tensor (or <code>None</code>)</td>
-</tr>
-<tr class="odd">
-<td></td>
-<td>None</td>
-<td>- <code>None</code> for weights/biases/quantization states</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>None</td>
-<td>- LoRA A/B matrix gradients (or <code>None</code>)</td>
-</tr>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor | None</td>
-<td>- <code>None</code> for scaling factors</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>torch.Tensor | None</td>
-<td>- <code>None</code> for activation functions and flags</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.kernels.lora.LoRA_MLP.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_MLP.forward">forward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_MLP.forward(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    X,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    gate_weight,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    gate_bias,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    gate_quant,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    gate_A,</span>
-<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    gate_B,</span>
-<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>    gate_scale,</span>
-<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    up_weight,</span>
-<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>    up_bias,</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    up_quant,</span>
-<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    up_A,</span>
-<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    up_B,</span>
-<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    up_scale,</span>
-<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    down_weight,</span>
-<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    down_bias,</span>
-<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    down_quant,</span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>    down_A,</span>
-<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>    down_B,</span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    down_scale,</span>
-<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    activation_fn,</span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>    activation_fn_backward,</span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Forward pass for LoRA MLP.</p>
-<section id="parameters-1" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 24%">
-<col style="width: 22%">
-<col style="width: 40%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td></td>
-<td>Autograd context</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input features</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>gate_weight</td>
-<td>torch.Tensor</td>
-<td>Gate projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>gate_bias</td>
-<td>torch.Tensor | None</td>
-<td>Gate projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>gate_quant</td>
-<td>QuantState | None</td>
-<td>Gate quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>gate_A</td>
-<td>torch.Tensor | None</td>
-<td>Gate LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>gate_B</td>
-<td>torch.Tensor | None</td>
-<td>Gate LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>gate_scale</td>
-<td>float</td>
-<td>Gate LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>up_weight</td>
-<td>torch.Tensor</td>
-<td>Up projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>up_quant</td>
-<td>QuantState | None</td>
-<td>Up projection quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>up_A</td>
-<td>torch.Tensor | None</td>
-<td>Up projection LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>up_B</td>
-<td>torch.Tensor | None</td>
-<td>Up projection LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>up_scale</td>
-<td>float</td>
-<td>Up projection LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>down_weight</td>
-<td>torch.Tensor</td>
-<td>Down projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>down_bias</td>
-<td>torch.Tensor | None</td>
-<td>Down projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>down_quant</td>
-<td>QuantState | None</td>
-<td>Down projection quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>down_A</td>
-<td>torch.Tensor | None</td>
-<td>Down projection LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>down_B</td>
-<td>torch.Tensor | None</td>
-<td>Down projection LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>down_scale</td>
-<td>float</td>
-<td>Down projection LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>activation_fn</td>
-<td>Callable</td>
-<td>Forward activation function</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>activation_fn_backward</td>
-<td>Callable</td>
-<td>Backward activation function</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>inplace</td>
-<td>bool | None</td>
-<td>Whether to perform operations in-place</td>
-<td><code>True</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 15%">
-<col style="width: 76%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Output transformed by multi-layer perceptron and activation function</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
+<p>Supports bias, dropout, and DoRA. Dropout is applied to the input for
+gate/up projections. The down projection uses hidden states (post-activation)
+as input, so dropout is not applied there.</p>
 </section>
 <section id="axolotl.kernels.lora.LoRA_O" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_O">LoRA_O</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Optimized LoRA implementation for output projection.</p>
-<section id="methods-1" class="level4">
-<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.kernels.lora.LoRA_O.backward">backward</a></td>
-<td>Backward pass computing gradients for LoRA output projection.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.kernels.lora.LoRA_O.forward">forward</a></td>
-<td>Forward pass for output projection with LoRA.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.kernels.lora.LoRA_O.backward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_O.backward">backward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O.backward(ctx, dY)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Backward pass computing gradients for LoRA output projection.</p>
-<section id="parameters-2" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 37%">
-<col style="width: 41%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td>Autograd context</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>dY</td>
-<td>torch.Tensor</td>
-<td>Gradient of loss with respect to output</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-2" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-2">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 5%">
-<col style="width: 55%">
-<col style="width: 38%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[torch.Tensor, None, None, None, torch.Tensor, torch.Tensor, None]</td>
-<td>Tuple containing gradients for all forward inputs</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.kernels.lora.LoRA_O.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_O.forward">forward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_O.forward(ctx, X, W, b, W_quant, A, B, s)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Forward pass for output projection with LoRA.</p>
-<section id="parameters-3" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 43%">
-<col style="width: 31%">
-<col style="width: 14%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td>Autograd context</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>W</td>
-<td>torch.Tensor</td>
-<td>Output projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>b</td>
-<td>torch.Tensor</td>
-<td>Output projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>W_quant</td>
-<td>QuantState | None</td>
-<td>Weight quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>A</td>
-<td>torch.Tensor</td>
-<td>LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>B</td>
-<td>torch.Tensor</td>
-<td>LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>s</td>
-<td>float</td>
-<td>LoRA scaling factor</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-3" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-3">Returns</h6>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Output projection result</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
+<p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.LoRA_QKV" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Optimized LoRA QKV implementation with quantization support.</p>
-<p>Implements efficient computation of query, key, value projections with LoRA,
-supporting quantization and memory optimization.</p>
-<section id="methods-2" class="level4">
-<h4 class="anchored" data-anchor-id="methods-2">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.kernels.lora.LoRA_QKV.backward">backward</a></td>
-<td>Backward pass computing gradients for LoRA QKV.</td>
-</tr>
-<tr class="even">
-<td><a href="#axolotl.kernels.lora.LoRA_QKV.forward">forward</a></td>
-<td>Forward pass computing Q, K, V projections with LoRA.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.kernels.lora.LoRA_QKV.backward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_QKV.backward">backward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV.backward(ctx, q_grad, k_grad, v_grad)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Backward pass computing gradients for LoRA QKV.</p>
-<section id="parameters-4" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-4">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 9%">
-<col style="width: 42%">
-<col style="width: 35%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td>Autograd context</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>q_grad</td>
-<td>torch.Tensor</td>
-<td>Gradient for query projection</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>k_grad</td>
-<td>torch.Tensor</td>
-<td>Gradient for key projection</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>v_grad</td>
-<td>torch.Tensor</td>
-<td>Gradient for value projection</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-4" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-4">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 2%">
-<col style="width: 79%">
-<col style="width: 17%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[torch.Tensor, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None, None, None, torch.Tensor | None, torch.Tensor | None, None, None]</td>
-<td>Tuple containing gradients for all forward inputs</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-<section id="axolotl.kernels.lora.LoRA_QKV.forward" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_QKV.forward">forward</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV.forward(</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    ctx,</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    X,</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>    q_weight,</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    q_bias,</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    q_quant,</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    q_A,</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    q_B,</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    q_scale,</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    k_weight,</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    k_bias,</span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    k_quant,</span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    k_A,</span>
-<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    k_B,</span>
-<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    k_scale,</span>
-<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    v_weight,</span>
-<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    v_bias,</span>
-<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    v_quant,</span>
-<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    v_A,</span>
-<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    v_B,</span>
-<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>    v_scale,</span>
-<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>    inplace<span class="op">=</span><span class="va">True</span>,</span>
-<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Forward pass computing Q, K, V projections with LoRA.</p>
-<section id="parameters-5" class="level6 doc-section doc-section-parameters">
-<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-5">Parameters</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 37%">
-<col style="width: 40%">
-<col style="width: 12%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>ctx</td>
-<td>torch.autograd.function.FunctionCtx</td>
-<td>Autograd context</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>q_weight</td>
-<td>torch.Tensor</td>
-<td>Query projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>q_bias</td>
-<td>torch.Tensor | None</td>
-<td>Query projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>q_quant</td>
-<td>QuantState | None</td>
-<td>Query quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>q_A</td>
-<td>torch.Tensor | None</td>
-<td>Query LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>q_B</td>
-<td>torch.Tensor | None</td>
-<td>Query LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>q_scale</td>
-<td>float</td>
-<td>Query LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>k_weight</td>
-<td>torch.Tensor</td>
-<td>Key projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>k_bias</td>
-<td>torch.Tensor | None</td>
-<td>Key projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>k_quant</td>
-<td>QuantState | None</td>
-<td>Key quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>k_A</td>
-<td>torch.Tensor | None</td>
-<td>Key LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>k_B</td>
-<td>torch.Tensor | None</td>
-<td>Key LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>k_scale</td>
-<td>float</td>
-<td>Key LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>v_weight</td>
-<td>torch.Tensor</td>
-<td>Value projection weight</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>v_bias</td>
-<td>torch.Tensor | None</td>
-<td>Value projection bias</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>v_quant</td>
-<td>QuantState | None</td>
-<td>Value quantization state</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>v_A</td>
-<td>torch.Tensor | None</td>
-<td>Value LoRA A matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>v_B</td>
-<td>torch.Tensor | None</td>
-<td>Value LoRA B matrix</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>v_scale</td>
-<td>float</td>
-<td>Value LoRA scale</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>inplace</td>
-<td>bool</td>
-<td>Whether to perform operations in-place</td>
-<td><code>True</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-5" class="level6 doc-section doc-section-returns">
-<h6 class="doc-section doc-section-returns anchored" data-anchor-id="returns-5">Returns</h6>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 47%">
-<col style="width: 45%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[torch.Tensor, torch.Tensor, torch.Tensor]</td>
-<td>Tuple of (Query, Key, Value) projection tensors</td>
-</tr>
-</tbody>
-</table>
-</section>
-</section>
-</section>
+<p>Supports bias, dropout, and DoRA (Weight-Decomposed Low-Rank Adaptation).
+Dropout is applied outside this Function so autograd handles its backward.</p>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -1626,20 +862,28 @@ supporting quantization and memory optimization.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.kernels.lora.apply_lora_embedding">apply_lora_embedding</a></td>
+<td>Applies LoRA to embedding layer.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.apply_lora_mlp_geglu">apply_lora_mlp_geglu</a></td>
 <td>Applies LoRA to MLP layer with GEGLU activation.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.apply_lora_mlp_swiglu">apply_lora_mlp_swiglu</a></td>
 <td>Applies LoRA to MLP layer with SwiGLU activation.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.apply_lora_o">apply_lora_o</a></td>
 <td>Applies LoRA to output projection layer.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</a></td>
 <td>Applies LoRA to compute Query, Key, Value projections.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</a></td>
+<td>Extract LoRA parameters from a PEFT Embedding module.</td>
 </tr>
 <tr class="odd">
 <td><a href="#axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</a></td>
@@ -1651,243 +895,48 @@ supporting quantization and memory optimization.</p>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.kernels.lora.apply_lora_embedding" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_embedding">apply_lora_embedding</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_embedding(<span class="va">self</span>, x)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Applies LoRA to embedding layer.</p>
+</section>
 <section id="axolotl.kernels.lora.apply_lora_mlp_geglu" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_mlp_geglu">apply_lora_mlp_geglu</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_geglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_geglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to MLP layer with GEGLU activation.</p>
-<section id="parameters-6" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-6">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 15%">
-<col style="width: 61%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor for the MLP layer</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>inplace</td>
-<td>bool</td>
-<td>Whether to perform operations in-place to save memory</td>
-<td><code>True</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-6" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-6">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 15%">
-<col style="width: 75%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Output tensor after applying LoRA-adapted MLP with GEGLU activation</td>
-</tr>
-</tbody>
-</table>
-</section>
+<p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_mlp_swiglu" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_mlp_swiglu">apply_lora_mlp_swiglu</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_swiglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_swiglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to MLP layer with SwiGLU activation.</p>
-<section id="parameters-7" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-7">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 10%">
-<col style="width: 15%">
-<col style="width: 61%">
-<col style="width: 13%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor for the MLP layer</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>inplace</td>
-<td>bool</td>
-<td>Whether to perform operations in-place to save memory</td>
-<td><code>True</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-7" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-7">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 15%">
-<col style="width: 76%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Output tensor after applying LoRA-adapted MLP with SwiGLU activation</td>
-</tr>
-</tbody>
-</table>
-</section>
+<p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_o" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_o">apply_lora_o</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_o(<span class="va">self</span>, X)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_o(<span class="va">self</span>, X)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to output projection layer.</p>
-<section id="parameters-8" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-8">Parameters</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor</td>
-<td><em>required</em></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-8" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-8">Returns</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Transformed output tensor</td>
-</tr>
-</tbody>
-</table>
-</section>
+<p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_qkv" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_qkv(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_qkv(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to compute Query, Key, Value projections.</p>
-<section id="parameters-9" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-9">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 12%">
-<col style="width: 18%">
-<col style="width: 53%">
-<col style="width: 16%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>X</td>
-<td>torch.Tensor</td>
-<td>Input tensor</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>inplace</td>
-<td>bool</td>
-<td>Whether to perform operations in-place</td>
-<td><code>True</code></td>
-</tr>
-</tbody>
-</table>
+<p>Supports bias, dropout, and DoRA. Dropout is applied outside the autograd
+Function so PyTorch handles its backward automatically. A single shared
+dropout mask is used across Q, K, V projections for memory efficiency.</p>
 </section>
-<section id="returns-9" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-9">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 47%">
-<col style="width: 45%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>tuple[torch.Tensor, torch.Tensor, torch.Tensor]</td>
-<td>Tuple of (Query, Key, Value) projection tensors</td>
-</tr>
-</tbody>
-</table>
-</section>
+<section id="axolotl.kernels.lora.get_embedding_lora_parameters" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_embedding_lora_parameters(embed)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Extract LoRA parameters from a PEFT Embedding module.</p>
 </section>
 <section id="axolotl.kernels.lora.get_lora_parameters" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_lora_parameters(proj)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_lora_parameters(proj)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Gets LoRA parameters from a projection module.</p>
-<section id="parameters-10" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-10">Parameters</h4>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 9%">
@@ -1913,13 +962,13 @@ supporting quantization and memory optimization.</p>
 </tbody>
 </table>
 </section>
-<section id="returns-10" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-10">Returns</h4>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 6%">
-<col style="width: 29%">
-<col style="width: 64%">
+<col style="width: 3%">
+<col style="width: 78%">
+<col style="width: 17%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -1932,17 +981,52 @@ supporting quantization and memory optimization.</p>
 <tr class="odd">
 <td></td>
 <td>torch.Tensor</td>
-<td>A tuple containing the base weights, quantization state, LoRA A and B weights,</td>
+<td>A tuple containing:</td>
 </tr>
 <tr class="even">
 <td></td>
 <td>torch.Tensor | None</td>
-<td>scaling factor, and base layer bias. Quant state, weights, and bias may be</td>
+<td>- W: base weight tensor</td>
 </tr>
 <tr class="odd">
 <td></td>
 <td>QuantState | torch.Tensor | None</td>
-<td><code>None</code> if not available.</td>
+<td>- b: base layer bias (or None)</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>torch.Tensor | None</td>
+<td>- quant_state: quantization state (or None)</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>torch.Tensor | None</td>
+<td>- A: LoRA A weight (or None)</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>float | None</td>
+<td>- B: LoRA B weight (or None)</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>torch.Tensor | None</td>
+<td>- s: LoRA scaling factor (or None)</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>nn.Module | None</td>
+<td>- lora_bias: LoRA B bias (or None)</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>torch.Tensor | None</td>
+<td>- dropout: dropout module (or None)</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>tuple[torch.Tensor, torch.Tensor | None, QuantState | torch.Tensor | None, torch.Tensor | None, torch.Tensor | None, float | None, torch.Tensor | None, nn.Module | None, torch.Tensor | None]</td>
+<td>- magnitude: DoRA magnitude vector (or None)</td>
 </tr>
 </tbody>
 </table>
@@ -1950,16 +1034,27 @@ supporting quantization and memory optimization.</p>
 </section>
 <section id="axolotl.kernels.lora.matmul_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.matmul_lora">matmul_lora</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(X, W, b, W_quant, A, B, s, out<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    X,</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    W,</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    b,</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    W_quant,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>    s,</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>    out<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    X_drop<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    lora_bias<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Efficient fused matmul + LoRA computation.</p>
-<section id="parameters-11" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-11">Parameters</h4>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 8%">
-<col style="width: 34%">
-<col style="width: 45%">
-<col style="width: 11%">
+<col style="width: 29%">
+<col style="width: 52%">
+<col style="width: 9%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -2012,12 +1107,29 @@ supporting quantization and memory optimization.</p>
 <td>Optional output tensor for inplace operations</td>
 <td><code>None</code></td>
 </tr>
+<tr class="even">
+<td>X_drop</td>
+<td>torch.Tensor | None</td>
+<td>Optional dropout-applied input for LoRA path (if None, uses X)</td>
+<td><code>None</code></td>
+</tr>
+<tr class="odd">
+<td>lora_bias</td>
+<td>torch.Tensor | None</td>
+<td>Optional LoRA B layer bias [out_features]</td>
+<td><code>None</code></td>
+</tr>
 </tbody>
 </table>
 </section>
-<section id="returns-11" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-11">Returns</h4>
+<section id="returns-1" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 10%">
+<col style="width: 17%">
+<col style="width: 72%">
+</colgroup>
 <thead>
 <tr class="header">
 <th>Name</th>
@@ -2029,7 +1141,7 @@ supporting quantization and memory optimization.</p>
 <tr class="odd">
 <td></td>
 <td>torch.Tensor</td>
-<td>Result of X @ W + X @ A @ B</td>
+<td>Result of X @ W + s * X_drop @ A @ B + b + s * lora_bias</td>
 </tr>
 </tbody>
 </table>
