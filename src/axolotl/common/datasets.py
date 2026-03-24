@@ -118,7 +118,7 @@ def load_preference_datasets(
     train_dataset, eval_dataset = prepare_preference_datasets(cfg, tokenizer)
 
     total_num_steps: int | None = None
-    if cfg.rl is not RLType.GRPO:
+    if cfg.rl not in {RLType.GRPO, RLType.EBFT}:
         total_num_steps = int(
             math.ceil(len(train_dataset) * cfg.num_epochs / cfg.batch_size)
         )

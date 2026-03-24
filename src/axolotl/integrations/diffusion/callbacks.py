@@ -145,10 +145,10 @@ class DiffusionGenerationCallback(TrainerCallback):
         logger.info("=" * 60)
 
         if self.trainer.axolotl_cfg.use_wandb:
-            if wandb.run is not None:
-                wandb.log(
+            if wandb.run is not None:  # type: ignore[attr-defined]
+                wandb.log(  # type: ignore[attr-defined]
                     {
-                        "generated_samples": wandb.Table(
+                        "generated_samples": wandb.Table(  # type: ignore[attr-defined]
                             columns=[
                                 "step",
                                 "original",

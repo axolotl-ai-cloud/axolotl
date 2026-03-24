@@ -1,0 +1,64 @@
+# EBFT validation config — no vLLM, uses HF generate for simplicity
+# Run: CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-opencode-novllm.yaml
+
+base_model: meta-llama/Llama-3.2-1B
+chat_template: llama3
+rl: ebft
+
+ebft:
+  feature_layers: [0.25, 0.5, 0.75]
+  embed_method: last_token
+  use_whitening: false
+  alignment_coef: 1.0
+  diversity_coef: 1.0
+  ce_coef: 0.0
+
+trl:
+  num_generations: 4
+  max_completion_length: 128
+  temperature: 1.0
+  use_vllm: false
+  scale_rewards: true
+  loss_type: grpo
+  epsilon: 0.2
+
+datasets:
+  - path: nvidia/OpenCodeInstruct
+    type: ebft_opencode.transform
+    split: train[:1%]
+
+sequence_len: 512
+micro_batch_size: 2
+gradient_accumulation_steps: 2
+num_epochs: 1
+max_steps: 10
+
+learning_rate: 1.0e-5
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+warmup_steps: 2
+weight_decay: 0.01
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+bf16: auto
+flash_attention: true
+gradient_checkpointing: true
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+val_set_size: 0.0
+output_dir: ./outputs/ebft-validation
+
+wandb_project: ebft
+wandb_run_id:
+wandb_watch:
+wandb_log_model:
+
+logging_steps: 1
+save_steps: 100

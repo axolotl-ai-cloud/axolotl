@@ -57,6 +57,13 @@ class VllmConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "Reasoning parser for VLLM"},
     )
+    enforce_eager: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Disable CUDA graph capture in vLLM. Required for models with "
+            "causal_conv1d (e.g., Qwen3.5 hybrid linear attention)."
+        },
+    )
     serve_module: str | None = Field(
         default=None,
         json_schema_extra={

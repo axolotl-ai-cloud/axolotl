@@ -241,6 +241,23 @@ def main(script_args: ScriptArguments):
 
     app = FastAPI(lifespan=lifespan)
 
+    # --- Access logging middleware ---
+    import time as _time
+
+    @app.middleware("http")
+    async def access_log_middleware(request, call_next):
+        t0 = _time.monotonic()
+        response = await call_next(request)
+        elapsed = _time.monotonic() - t0
+        logger.info(
+            "%s %s %d %.3fs",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed,
+        )
+        return response
+
     # --- Active LoRA state (shared across endpoints via closure) ---
     active_lora: dict = {"request": None}
 
@@ -300,7 +317,11 @@ def main(script_args: ScriptArguments):
 
         import vllm
         from packaging.version import Version
-        from vllm.sampling_params import GuidedDecodingParams
+
+        try:
+            from vllm.sampling_params import GuidedDecodingParams
+        except ImportError:
+            GuidedDecodingParams = None  # not available in vLLM 0.17+
 
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
@@ -362,7 +383,12 @@ def main(script_args: ScriptArguments):
             }
             conn.send({"type": "call", "method": "generate", "kwargs": kwargs})
 
-        all_outputs = [conn.recv() for conn in connections]
+        # Use run_in_executor so blocking recv() doesn't freeze the event loop
+        # (allows /set_lora_adapter/ and other endpoints to be served concurrently)
+        loop = asyncio.get_running_loop()
+        all_outputs = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
         ]
@@ -404,7 +430,10 @@ def main(script_args: ScriptArguments):
             }
             conn.send({"type": "call", "method": "chat", "kwargs": kwargs})
 
-        all_outputs = [conn.recv() for conn in connections]
+        loop = asyncio.get_running_loop()
+        all_outputs = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         all_outputs = [o for o, c in zip(all_outputs, chunked, strict=True) if c]
         all_outputs = list(chain.from_iterable(all_outputs))
 
@@ -474,11 +503,51 @@ def main(script_args: ScriptArguments):
         )
         return {"message": f"Batch update for {len(params_list)} params"}
 
+    class HTTPWeightUpdateRequest(BaseModel):
+        """Weight update via HTTP (no NCCL needed)."""
+
+        params: list[
+            dict
+        ]  # [{"name": str, "dtype": str, "shape": list, "data": str (base64)}]
+
+    @app.post("/http_update_weights/")
+    async def http_update_weights(request: HTTPWeightUpdateRequest):
+        """Update model weights via HTTP — no NCCL communicator required.
+
+        Tensor data is sent as base64-encoded raw bytes in the request body.
+        Slower than NCCL for large models but works without cross-process setup.
+        """
+        from axolotl.utils.weight_serde import (
+            decode_from_http,
+            encode_for_ipc,
+        )
+
+        weights_to_load = [decode_from_http(p) for p in request.params]
+
+        # Send all weights in a single IPC call.  Tensors don't survive
+        # vLLM's multiproc IPC, so serialize as raw bytes + metadata.
+        param_entries = [
+            encode_for_ipc(name, weight) for name, weight in weights_to_load
+        ]
+        kwargs = {
+            "method": "http_load_weights_batch",
+            "kwargs": {"params": param_entries},
+        }
+        msg = {"type": "fire_and_forget", "method": "collective_rpc", "kwargs": kwargs}
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(
+            *(loop.run_in_executor(None, c.send, msg) for c in connections)
+        )
+        return {"message": f"HTTP weight update for {len(weights_to_load)} params"}
+
     @app.post("/reset_prefix_cache/")
     async def reset_prefix_cache():
         for conn in connections:
             conn.send({"type": "call", "method": "reset_prefix_cache"})
-        results = [conn.recv() for conn in connections]
+        loop = asyncio.get_running_loop()
+        results = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         return {"message": f"Reset prefix cache: {all(results)}"}
 
     @app.post("/close_communicator/")
