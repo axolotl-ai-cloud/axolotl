@@ -417,7 +417,7 @@ class EBFTMixin:
         Returns:
             Extended completions incorporating all generated turns
         """
-        vllm_client = self.vllm_generation.client
+        vllm_client = self.vllm_generation.vllm_client
         max_tokens = getattr(self.args, "max_completion_length", 256)
         temperature = getattr(self.args, "temperature", 0.7)
         gen_kwargs = getattr(self.args, "generation_kwargs", None) or {}
@@ -441,8 +441,8 @@ class EBFTMixin:
             )
 
             if not turns:
-                # No remaining turns — just use the first completion
-                extended_completions.append(first_comp)
+                # No remaining turns — return full text (prompt + first assistant turn)
+                extended_completions.append(first_text)
                 continue
 
             # Build conversation with generated first turn

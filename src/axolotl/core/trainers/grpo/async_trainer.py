@@ -669,7 +669,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
             VLLMGeneration._init_vllm = _init_vllm_no_communicator
 
-        super().__init__(*args, **kwargs)
+        try:
+            super().__init__(*args, **kwargs)
+        finally:
+            # Restore original _init_vllm so other trainers aren't affected
+            if _skip_nccl:
+                VLLMGeneration._init_vllm = _orig_init_vllm  # type: ignore[possibly-undefined]
 
         # FP8 models: zero out the pad token embedding so that padding
         # positions have zero hidden states throughout the network.
@@ -894,11 +899,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 continue
             if not vllm_name.endswith(".weight"):
                 continue
+            # fix_name strips modules_to_save.default. prefix
+            raw_mod_path = vllm_name[: -len(".weight")]
             vllm_name = fix_name(vllm_name, extra_prefixes=["modules_to_save.default."])
-
-            # Only sync weights that have LoRA adapters
             mod_path = vllm_name[: -len(".weight")]
-            if mod_path not in lora_info:
+
+            # Sync weights that have LoRA adapters OR are modules_to_save
+            is_lora = mod_path in lora_info
+            is_modules_to_save = raw_mod_path != mod_path  # fix_name stripped a prefix
+            if not is_lora and not is_modules_to_save:
                 continue
 
             data = param.data
@@ -922,11 +931,15 @@ class AsyncGRPOTrainer(GRPOTrainer):
             elif data.dtype == torch.float8_e4m3fn:
                 data = data.to(compute_dtype)
 
-            A, B, s = lora_info[mod_path]
-            merged = data.to(compute_dtype) + s * (
-                B.to(compute_dtype) @ A.to(compute_dtype)
-            )
-            params_to_sync.append((vllm_name, merged))
+            if is_lora:
+                A, B, s = lora_info[mod_path]
+                merged = data.to(compute_dtype) + s * (
+                    B.to(compute_dtype) @ A.to(compute_dtype)
+                )
+                params_to_sync.append((vllm_name, merged))
+            else:
+                # modules_to_save: send raw weight (no LoRA merge needed)
+                params_to_sync.append((vllm_name, data.to(compute_dtype)))
 
         # Batch sync only LoRA-modified params via HTTP+NCCL
         if params_to_sync:

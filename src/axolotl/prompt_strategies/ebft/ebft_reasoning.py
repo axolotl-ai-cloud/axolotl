@@ -132,6 +132,7 @@ def transform_split_thinking(cfg, **kwargs):
 
         # Build prompt (all messages except last assistant) and ground_truth
         prompt_msgs = []
+        prompt_msgs_snapshot = None
         ground_truth = ""
         for msg in split_messages:
             if msg["role"] == "assistant":
@@ -147,7 +148,7 @@ def transform_split_thinking(cfg, **kwargs):
 
         return {
             "prompt": prompt_msgs_snapshot
-            if "prompt_msgs_snapshot" in dir()
+            if prompt_msgs_snapshot is not None
             else split_messages[:-1],
             "ground_truth": ground_truth,
         }
@@ -162,6 +163,7 @@ def transform_answer_only(cfg, **kwargs):
         messages = example.get("messages", example.get("conversations", []))
 
         prompt_msgs = []
+        prompt_msgs_snapshot = None
         ground_truth = ""
         for msg in messages:
             if msg["role"] == "assistant":
@@ -171,7 +173,7 @@ def transform_answer_only(cfg, **kwargs):
 
         return {
             "prompt": prompt_msgs_snapshot
-            if "prompt_msgs_snapshot" in dir()
+            if prompt_msgs_snapshot is not None
             else messages[:-1],
             "ground_truth": ground_truth,
         }
@@ -202,7 +204,11 @@ def transform_strided(cfg, **kwargs):
                     return {"prompt": m["content"]}
             return {"prompt": str(messages)}
 
-        pad_id = tokenizer.pad_token_id or tokenizer.eos_token_id
+        pad_id = (
+            tokenizer.pad_token_id
+            if tokenizer.pad_token_id is not None
+            else tokenizer.eos_token_id
+        )
 
         # Tokenize the full conversation with the chat template
         full_text = tokenizer.apply_chat_template(
@@ -222,8 +228,11 @@ def transform_strided(cfg, **kwargs):
         # Build labels: -100 for non-assistant tokens
         labels = [-100] * len(input_ids)
 
-        # Find assistant turn boundaries using incremental tokenization
+        # Find assistant turn boundaries using incremental tokenization.
+        # Only the FINAL assistant turn is marked as trainable.
         prefix_messages = []
+        final_start = None
+        final_end = None
         for msg in messages:
             if msg["role"] == "assistant":
                 prefix_text = tokenizer.apply_chat_template(
@@ -255,32 +264,37 @@ def transform_strided(cfg, **kwargs):
                 )["input_ids"]
                 end = len(with_turn_ids)
 
-                # Mark assistant tokens as trainable
-                for i in range(start, min(end, len(labels))):
-                    labels[i] = input_ids[i]
-
-                # Optionally mask <think>...</think> tokens within this turn.
-                # Find think spans by scanning for <think> and </think> token IDs
-                # directly in the input_ids (robust to tokenization alignment).
-                if mask_thinking:
-                    think_open_id = tokenizer.convert_tokens_to_ids("<think>")
-                    think_close_id = tokenizer.convert_tokens_to_ids("</think>")
-                    if think_open_id != tokenizer.unk_token_id:
-                        # Scan from before the assistant turn start to catch
-                        # <think> tags that are part of the template prefix
-                        scan_start = max(0, start - 5)
-                        in_think = False
-                        for i in range(scan_start, min(end, len(labels))):
-                            if input_ids[i] == think_open_id:
-                                in_think = True
-                            if in_think and i >= start:
-                                labels[i] = -100
-                            if input_ids[i] == think_close_id:
-                                in_think = False
-                                if i >= start:
-                                    labels[i] = -100
+                # Record this turn's boundaries; only the last one will be used
+                final_start = start
+                final_end = end
             else:
                 prefix_messages.append(msg)
+
+        # Mark only the final assistant turn as trainable
+        if final_start is not None and final_end is not None:
+            for i in range(final_start, min(final_end, len(labels))):
+                labels[i] = input_ids[i]
+
+            # Optionally mask <think>...</think> tokens within this turn.
+            # Find think spans by scanning for <think> and </think> token IDs
+            # directly in the input_ids (robust to tokenization alignment).
+            if mask_thinking:
+                think_open_id = tokenizer.convert_tokens_to_ids("<think>")
+                think_close_id = tokenizer.convert_tokens_to_ids("</think>")
+                if think_open_id != tokenizer.unk_token_id:
+                    # Scan from before the assistant turn start to catch
+                    # <think> tags that are part of the template prefix
+                    scan_start = max(0, final_start - 5)
+                    in_think = False
+                    for i in range(scan_start, min(final_end, len(labels))):
+                        if input_ids[i] == think_open_id:
+                            in_think = True
+                        if in_think and i >= final_start:
+                            labels[i] = -100
+                        if input_ids[i] == think_close_id:
+                            in_think = False
+                            if i >= final_start:
+                                labels[i] = -100
 
         # Derive prompt_length
         prompt_length = len(input_ids)

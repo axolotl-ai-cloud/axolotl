@@ -515,10 +515,24 @@ def main(script_args: ScriptArguments):
 
         weights_to_load = []
         for p in request.params:
-            dtype = getattr(torch, p["dtype"].split(".")[-1])
+            target_dtype = getattr(torch, p["dtype"].split(".")[-1])
             shape = tuple(p["shape"])
             raw = base64.b64decode(p["data"])
-            weight = torch.frombuffer(bytearray(raw), dtype=dtype).reshape(shape)
+            # Wire format may differ from target dtype (e.g., bf16 sent as fp16
+            # since numpy doesn't support bf16). Detect from raw size.
+            n_elements = 1
+            for s in shape:
+                n_elements *= s
+            wire_bytes_per_elem = len(raw) // max(n_elements, 1)
+            if wire_bytes_per_elem == 2:
+                wire_dtype = torch.float16
+            elif wire_bytes_per_elem == 4:
+                wire_dtype = torch.float32
+            else:
+                wire_dtype = target_dtype
+            weight = torch.frombuffer(bytearray(raw), dtype=wire_dtype).reshape(shape)
+            if wire_dtype != target_dtype:
+                weight = weight.to(target_dtype)
             weights_to_load.append((p["name"], weight))
 
         # Send all weights in a single IPC call.  Tensors don't survive

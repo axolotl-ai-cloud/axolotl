@@ -56,7 +56,9 @@ def _batch_update_named_params(
                 for name, weights in chunk
             ]
             url = f"{self.base_url}/batch_update_named_params/"
-            response = self.session.post(url, json={"params": param_metadata})
+            response = self.session.post(
+                url, json={"params": param_metadata}, timeout=120
+            )
             if response.status_code != 200:
                 raise Exception(
                     f"Request failed: {response.status_code}, {response.text}"
@@ -74,31 +76,50 @@ def _batch_update_named_params(
                 self.communicator.group.barrier()
     else:
         # HTTP-only path: encode tensor data in request body (no NCCL needed).
-        # Slower but works without cross-process communicator setup.
-        MAX_PARAMS_PER_REQUEST = 32  # avoid huge HTTP payloads
-        for i in range(0, len(params), MAX_PARAMS_PER_REQUEST):
-            chunk = params[i : i + MAX_PARAMS_PER_REQUEST]
-            payload = []
-            for name, weights in chunk:
-                w_cpu = weights.contiguous().cpu()
-                # NumPy doesn't support bfloat16; cast to float32 for serialization
-                if w_cpu.dtype == torch.bfloat16:
-                    w_cpu = w_cpu.float()
-                raw = w_cpu.numpy().tobytes()
-                payload.append(
-                    {
-                        "name": name,
-                        "dtype": str(w_cpu.dtype),
-                        "shape": list(weights.shape),
-                        "data": base64.b64encode(raw).decode("ascii"),
-                    }
-                )
-            url = f"{self.base_url}/http_update_weights/"
-            response = self.session.post(url, json={"params": payload})
+        # Batch by byte size to avoid huge HTTP payloads.
+        MAX_BYTES_PER_REQUEST = 10 * 1024 * 1024  # 10 MB
+        HTTP_TIMEOUT = 120  # seconds per request
+
+        payload: list[dict] = []
+        payload_bytes = 0
+        url = f"{self.base_url}/http_update_weights/"
+
+        def _flush(p: list[dict]) -> None:
+            if not p:
+                return
+            response = self.session.post(url, json={"params": p}, timeout=HTTP_TIMEOUT)
             if response.status_code != 200:
                 raise Exception(
                     f"Request failed: {response.status_code}, {response.text}"
                 )
+
+        for name, weights in params:
+            w_cpu = weights.contiguous().cpu()
+            orig_dtype = str(weights.dtype)
+            # NumPy doesn't support bfloat16; cast to float16 to minimize bandwidth
+            if w_cpu.dtype == torch.bfloat16:
+                w_cpu = w_cpu.half()
+            raw = w_cpu.numpy().tobytes()
+            encoded = base64.b64encode(raw).decode("ascii")
+            entry_bytes = len(raw)  # approximate payload size
+
+            # Flush current batch if adding this entry would exceed limit
+            if payload and payload_bytes + entry_bytes > MAX_BYTES_PER_REQUEST:
+                _flush(payload)
+                payload = []
+                payload_bytes = 0
+
+            payload.append(
+                {
+                    "name": name,
+                    "dtype": orig_dtype,
+                    "shape": list(weights.shape),
+                    "data": encoded,
+                }
+            )
+            payload_bytes += entry_bytes
+
+        _flush(payload)  # send remaining
 
 
 def _update_model_params(self, model: nn.Module, chunk_size: int | None = None):

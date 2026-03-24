@@ -115,9 +115,27 @@ def apply_embed_method(
         return (hidden_states * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
 
     if method == "concat":
-        seq_len = hidden_states.shape[1]
-        positions = [seq_len // 4, seq_len // 2, 3 * seq_len // 4]
-        return torch.cat([hidden_states[:, p, :] for p in positions], dim=-1)
+        B, S, D = hidden_states.shape
+        if attention_mask is not None:
+            valid_lens = attention_mask.sum(dim=1).long()  # (B,)
+        else:
+            valid_lens = torch.full(
+                (B,), S, device=hidden_states.device, dtype=torch.long
+            )
+        # Compute quartile positions relative to valid length per sample
+        # First valid position index for each sample (handles right-padding)
+        q1 = (valid_lens // 4).clamp(min=0, max=S - 1)
+        q2 = (valid_lens // 2).clamp(min=0, max=S - 1)
+        q3 = (3 * valid_lens // 4).clamp(min=0, max=S - 1)
+        batch_idx = torch.arange(B, device=hidden_states.device)
+        return torch.cat(
+            [
+                hidden_states[batch_idx, q1],
+                hidden_states[batch_idx, q2],
+                hidden_states[batch_idx, q3],
+            ],
+            dim=-1,
+        )
 
     raise ValueError(f"Unknown embed_method: {method}")
 
@@ -205,14 +223,15 @@ def whiten_embeddings_batched(
     phi_f = phi.float()
     phi_gt_f = phi_gt.float()
 
+    # Feature-space SVD: operate on phi_f.T (D, B) so U is (D, D)
     try:
-        U, S, _ = torch.linalg.svd(phi_f.unsqueeze(0), full_matrices=False)
+        U, S, _ = torch.linalg.svd(phi_f.T.unsqueeze(0), full_matrices=False)
     except torch._C._LinAlgError:
         # Fallback: add small noise
         noise = 1e-6 * phi_f.abs().mean()
         try:
             U, S, _ = torch.linalg.svd(
-                (phi_f + noise * torch.randn_like(phi_f)).unsqueeze(0),
+                (phi_f.T + noise * torch.randn_like(phi_f.T)).unsqueeze(0),
                 full_matrices=False,
             )
         except torch._C._LinAlgError:
@@ -223,17 +242,16 @@ def whiten_embeddings_batched(
                 )
             return phi, phi_gt
 
-    U, S = U.squeeze(0), S.squeeze(0)
+    U, S = U.squeeze(0), S.squeeze(0)  # U: (D, min(D,B)), S: (min(D,B),)
 
     # Safe inverse of singular values
     s_max = S.max()
     inv_s = torch.where(S > whiten_tol * s_max, 1.0 / (S + 1e-12), torch.zeros_like(S))
 
-    # FIXME
-    # W = U @ diag(inv_S) @ U^T
-    W = (U * inv_s.unsqueeze(0)) @ U.T  # (B, B)
-    phi_w = (W @ phi_f).to(phi.dtype)
-    phi_gt_w = (W @ phi_gt_f).to(phi_gt.dtype)
+    # W = U @ diag(inv_s) @ U^T  — feature-space whitening matrix (D, D)
+    W = (U * inv_s.unsqueeze(0)) @ U.T  # (D, D)
+    phi_w = (phi_f @ W).to(phi.dtype)  # (B, D)
+    phi_gt_w = (phi_gt_f @ W).to(phi_gt.dtype)  # (B, D)
 
     if normalize:
         phi_w = F.normalize(phi_w, p=2, dim=-1)

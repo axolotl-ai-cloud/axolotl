@@ -1487,6 +1487,17 @@ class EBFTValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_ebft_config_required(cls, data):
+        """rl: ebft requires an ebft config section."""
+        if data.get("rl") == "ebft" and not data.get("ebft"):
+            raise ValueError(
+                "`ebft` config section is required when `rl: ebft` is set. "
+                "Add an `ebft:` section with at least `mode: structured` or `mode: strided`."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_ebft_torch_compile(cls, data):
         """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
         and CheckpointErrors. The flex_attention kernel compiles itself internally —

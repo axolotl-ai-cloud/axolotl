@@ -64,11 +64,13 @@ class EBFTConfig(BaseModel):
             "description": "Fractional layer depths for feature extraction (e.g., [0.25, 0.5, 0.75])"
         },
     )
-    embed_method: str = Field(
-        default="last_token",
-        json_schema_extra={
-            "description": "Embedding method: 'last_token', 'mean_pooling', or 'concat'"
-        },
+    embed_method: Literal["last_token", "mean_pooling", "completion_mean", "concat"] = (
+        Field(
+            default="last_token",
+            json_schema_extra={
+                "description": "Embedding method: 'last_token', 'mean_pooling', 'completion_mean', or 'concat'"
+            },
+        )
     )
     use_whitening: bool = Field(
         default=False,
@@ -100,13 +102,14 @@ class EBFTConfig(BaseModel):
     )
     gt_length_multiplier: float = Field(
         default=1.5,
+        ge=0.1,
         json_schema_extra={
             "description": "Multiplier for ground-truth token count when computing adaptive max_tokens"
         },
     )
 
     # Strided mode fields (for unstructured text)
-    mode: str = Field(
+    mode: Literal["structured", "strided"] = Field(
         default="structured",
         json_schema_extra={
             "description": "EBFT mode: 'structured' (QA with vLLM) or 'strided' (unstructured text)"
@@ -114,35 +117,42 @@ class EBFTConfig(BaseModel):
     )
     stride: int = Field(
         default=8,
+        ge=1,
         json_schema_extra={"description": "Stride between anchor points (tokens)"},
     )
     context_length: int = Field(
         default=8,
+        ge=1,
         json_schema_extra={"description": "Context window size per block"},
     )
     generate_max_len: int = Field(
         default=8,
+        ge=1,
         json_schema_extra={"description": "Tokens to generate per block"},
     )
     n_samples_per_prompt: int = Field(
         default=4,
+        ge=1,
         json_schema_extra={"description": "Independent rollouts per document"},
     )
     temperature: float = Field(
         default=0.6,
+        ge=0.0,
         json_schema_extra={
             "description": "Sampling temperature for strided generation"
         },
     )
     top_p: float = Field(
         default=1.0,
+        ge=0.0,
+        le=1.0,
         json_schema_extra={"description": "Top-p nucleus sampling threshold"},
     )
     rl_coef: float = Field(
         default=1.0,
         json_schema_extra={"description": "RL policy gradient loss coefficient"},
     )
-    advantage_estimator: str = Field(
+    advantage_estimator: Literal["rloo", "group_norm", "reinforce"] = Field(
         default="rloo",
         json_schema_extra={
             "description": "Advantage estimator: 'rloo', 'group_norm', 'reinforce'"
@@ -150,6 +160,7 @@ class EBFTConfig(BaseModel):
     )
     min_completion_prefix: int = Field(
         default=0,
+        ge=0,
         json_schema_extra={
             "description": "Minimum tokens into completion before placing anchors. "
             "Skips anchors too close to the prompt boundary where features are dominated by prompt context."
