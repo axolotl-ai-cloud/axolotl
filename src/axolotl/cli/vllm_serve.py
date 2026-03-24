@@ -38,18 +38,14 @@ def do_vllm_serve(
     cfg = load_cfg(config)
     model = cfg.base_model
 
-    # Determine serve module: explicit CLI/config > auto-select from vllm_lora_sync > default
+    # Determine serve module: explicit CLI/config > default (axolotl's LoRA-aware serve).
+    # We default to axolotl's serve module instead of TRL's because TRL's sends
+    # truncate_prompt_tokens which is unsupported in vLLM 0.17+.
     serve_module = cli_args.get("serve_module") or getattr(
         cfg.vllm, "serve_module", None
     )
-    if (
-        serve_module is None
-        and getattr(cfg, "trl", None)
-        and getattr(cfg.trl, "vllm_lora_sync", False)
-    ):
-        serve_module = "axolotl.scripts.vllm_serve_lora"
     if serve_module is None:
-        serve_module = "trl.scripts.vllm_serve"
+        serve_module = "axolotl.scripts.vllm_serve_lora"
     vllm_serve_main = __import__(serve_module, fromlist=["main"]).main
     tensor_parallel_size = 1
     data_parallel_size = 1

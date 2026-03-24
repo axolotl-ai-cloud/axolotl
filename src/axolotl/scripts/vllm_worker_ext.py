@@ -183,30 +183,26 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         for name, weight in weights:
             self._direct_set_weight(name, weight.to(self.device))
 
-    def http_load_weight(self, name: str, data: bytes, dtype: str, shape: list[int]):
+    def http_load_weight(self, **kwargs):
         """Load a single weight received via HTTP (no NCCL needed).
 
         Reconstructs the tensor from raw bytes since tensors don't survive
         vLLM's multiproc IPC serialization.  Uses vLLM's ``load_weights``
         which handles TP sharding and stacked-param packing automatically.
         """
-        torch_dtype = getattr(torch, dtype)
-        weight = torch.frombuffer(bytearray(data), dtype=torch_dtype).reshape(shape)
+        from axolotl.utils.weight_serde import decode_from_ipc
+
+        name, weight = decode_from_ipc(kwargs)
         model = self.model_runner.model
         model.load_weights(weights=[(name, weight)])
 
     def http_load_weights_batch(self, params: list[dict]):
         """Load multiple weights in a single IPC call.
 
-        Each entry has: name, data (bytes), dtype (str), shape (list[int]).
         Uses vLLM's ``load_weights`` which handles TP sharding automatically.
         """
+        from axolotl.utils.weight_serde import decode_from_ipc
+
         model = self.model_runner.model
-        weights = []
-        for p in params:
-            torch_dtype = getattr(torch, p["dtype"])
-            weight = torch.frombuffer(bytearray(p["data"]), dtype=torch_dtype).reshape(
-                p["shape"]
-            )
-            weights.append((p["name"], weight))
+        weights = [decode_from_ipc(p) for p in params]
         model.load_weights(weights=weights)

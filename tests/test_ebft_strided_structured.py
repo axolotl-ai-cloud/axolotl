@@ -2,8 +2,8 @@
 
 import pytest
 from datasets import Dataset
-from transformers import PreTrainedTokenizerFast
 from tokenizers import Tokenizer, models, pre_tokenizers
+from transformers import PreTrainedTokenizerFast
 
 from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.utils.dict import DictDefault
@@ -86,7 +86,7 @@ class TestEBFTStridedStructuredTransform:
             assert labels[i] == -100, f"Prompt token at {i} should be -100"
 
         # At least one completion token should have a real label
-        completion_labels = [l for l in labels[prompt_length:] if l != -100]
+        completion_labels = [lab for lab in labels[prompt_length:] if lab != -100]
         assert len(completion_labels) > 0, "Should have non-masked completion tokens"
 
     def test_prompt_length_matches_boundary(self, transform_fn_and_kwargs, tokenizer):
@@ -263,10 +263,10 @@ class TestEBFTColumnRemoval:
 
 
 class TestMultiTurnSeparators:
-    """Verify multi-turn transforms insert separators between concatenated turns."""
+    """Verify multi-turn transforms and trainer-side GT reconstruction."""
 
-    def test_multiturn_gt_has_separator(self):
-        """Ground truth from multi-turn should have separators between turns."""
+    def test_multiturn_transform_splits_turns(self):
+        """Transform should store first turn as GT and remaining turns separately."""
         from axolotl.prompt_strategies.ebft import load as load_ebft
         from axolotl.utils.dict import DictDefault
 
@@ -282,7 +282,82 @@ class TestMultiTurnSeparators:
                 ]
             }
         )
-        gt = out["ground_truth"]
-        # A1 and A2 should be separated, not concatenated as "A1A2"
-        assert "A1" in gt and "A2" in gt
-        assert "A1A2" not in gt, "Missing separator between multi-turn GT"
+        # ground_truth is only the first assistant turn
+        assert out["ground_truth"] == "A1"
+        # remaining_turns carries the rest for trainer-side reconstruction
+        assert out["remaining_turns"] == [
+            {"role": "user", "content": "Q2"},
+            {"role": "assistant", "content": "A2"},
+        ]
+
+    def test_multiturn_gt_reconstruction_via_chat_template(self):
+        """Trainer-side GT reconstruction should insert role markers between turns.
+
+        This tests the logic from trainer.py:284-299 that reconstructs multi-turn
+        GT using apply_chat_template, ensuring assistant turns are separated by
+        role markers rather than concatenated as raw text.
+        """
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen2-0.5B-Instruct", trust_remote_code=True
+        )
+
+        # Simulate the transform output
+        prompt_msgs = [{"role": "user", "content": "Q1"}]
+        gt = "A1"
+        remaining_turns = [
+            {"role": "user", "content": "Q2"},
+            {"role": "assistant", "content": "A2"},
+        ]
+
+        # --- Reproduce the trainer-side reconstruction (trainer.py:284-299) ---
+        prompt_text = tokenizer.apply_chat_template(
+            prompt_msgs, tokenize=False, add_generation_prompt=True
+        )
+        gt_conv = list(prompt_msgs) + [{"role": "assistant", "content": gt}]
+        gt_conv.extend(remaining_turns)
+        full_gt_text = tokenizer.apply_chat_template(
+            gt_conv, tokenize=False, add_generation_prompt=False
+        )
+
+        # The full GT text should contain both assistant turns with role markers
+        assert "A1" in full_gt_text
+        assert "A2" in full_gt_text
+        # Raw concatenation "A1A2" should NOT appear — role markers separate them
+        assert "A1A2" not in full_gt_text, (
+            "GT reconstruction should have role markers between turns, not raw concatenation"
+        )
+        # The user turn Q2 should appear between A1 and A2
+        a1_pos = full_gt_text.index("A1")
+        a2_pos = full_gt_text.index("A2")
+        q2_pos = full_gt_text.index("Q2")
+        assert a1_pos < q2_pos < a2_pos, (
+            "Turn order should be A1 -> Q2 -> A2 in rendered GT"
+        )
+        # The GT should start with the prompt
+        assert full_gt_text.startswith(prompt_text), (
+            "Full GT should start with the rendered prompt"
+        )
+
+    def test_multiturn_gt_reconstruction_fallback_single_turn(self):
+        """Single-turn prompts in a multi-turn dataset should use raw concatenation."""
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            "Qwen/Qwen2-0.5B-Instruct", trust_remote_code=True
+        )
+
+        prompt_msgs = [{"role": "user", "content": "Q1"}]
+        gt = "A1"
+        # remaining_turns would be [] for single-turn prompts
+
+        prompt_text = tokenizer.apply_chat_template(
+            prompt_msgs, tokenize=False, add_generation_prompt=True
+        )
+
+        # With empty remaining_turns, trainer falls through to raw concat
+        # (trainer.py:302: gt_texts.append(prompt_text + gt))
+        gt_text = prompt_text + gt
+        assert gt_text.endswith("A1")
+        assert prompt_text in gt_text

@@ -21,8 +21,6 @@ def _batch_update_named_params(
     self, params: list[tuple[str, torch.Tensor]], chunk_size: int | None = None
 ):
     """Batched weight sync — uses NCCL if communicator available, HTTP otherwise."""
-    import base64
-
     has_communicator = getattr(self, "communicator", None) is not None
 
     if has_communicator:
@@ -93,15 +91,11 @@ def _batch_update_named_params(
                     f"Request failed: {response.status_code}, {response.text}"
                 )
 
+        from axolotl.utils.weight_serde import encode_for_http
+
         for name, weights in params:
-            w_cpu = weights.contiguous().cpu()
-            orig_dtype = str(weights.dtype)
-            # NumPy doesn't support bfloat16; cast to float16 to minimize bandwidth
-            if w_cpu.dtype == torch.bfloat16:
-                w_cpu = w_cpu.half()
-            raw = w_cpu.numpy().tobytes()
-            encoded = base64.b64encode(raw).decode("ascii")
-            entry_bytes = len(raw)  # approximate payload size
+            entry = encode_for_http(name, weights)
+            entry_bytes = weights.nelement() * weights.element_size()
 
             # Flush current batch if adding this entry would exceed limit
             if payload and payload_bytes + entry_bytes > MAX_BYTES_PER_REQUEST:
@@ -109,14 +103,7 @@ def _batch_update_named_params(
                 payload = []
                 payload_bytes = 0
 
-            payload.append(
-                {
-                    "name": name,
-                    "dtype": orig_dtype,
-                    "shape": list(weights.shape),
-                    "data": encoded,
-                }
-            )
+            payload.append(entry)
             payload_bytes += entry_bytes
 
         _flush(payload)  # send remaining

@@ -61,6 +61,13 @@ class EBFTFieldsMixin:
 class AxolotlEBFTConfig(EBFTFieldsMixin, AxolotlTrainingMixins, GRPOConfig):
     """EBFT config for structured QA data — extends GRPOConfig."""
 
+    vllm_lora_sync: bool = field(
+        default=False,
+        metadata={
+            "help": "Sync LoRA adapters to vLLM via filesystem instead of NCCL weight merge."
+        },
+    )
+
 
 # -- Async structured mode: extends FastAsyncGRPOConfig --
 @dataclass

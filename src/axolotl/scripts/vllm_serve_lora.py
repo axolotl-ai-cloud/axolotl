@@ -383,7 +383,12 @@ def main(script_args: ScriptArguments):
             }
             conn.send({"type": "call", "method": "generate", "kwargs": kwargs})
 
-        all_outputs = [conn.recv() for conn in connections]
+        # Use run_in_executor so blocking recv() doesn't freeze the event loop
+        # (allows /set_lora_adapter/ and other endpoints to be served concurrently)
+        loop = asyncio.get_running_loop()
+        all_outputs = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
         ]
@@ -425,7 +430,10 @@ def main(script_args: ScriptArguments):
             }
             conn.send({"type": "call", "method": "chat", "kwargs": kwargs})
 
-        all_outputs = [conn.recv() for conn in connections]
+        loop = asyncio.get_running_loop()
+        all_outputs = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         all_outputs = [o for o, c in zip(all_outputs, chunked, strict=True) if c]
         all_outputs = list(chain.from_iterable(all_outputs))
 
@@ -509,44 +517,18 @@ def main(script_args: ScriptArguments):
         Tensor data is sent as base64-encoded raw bytes in the request body.
         Slower than NCCL for large models but works without cross-process setup.
         """
-        import base64
+        from axolotl.utils.weight_serde import (
+            decode_from_http,
+            encode_for_ipc,
+        )
 
-        import torch
-
-        weights_to_load = []
-        for p in request.params:
-            target_dtype = getattr(torch, p["dtype"].split(".")[-1])
-            shape = tuple(p["shape"])
-            raw = base64.b64decode(p["data"])
-            # Wire format may differ from target dtype (e.g., bf16 sent as fp16
-            # since numpy doesn't support bf16). Detect from raw size.
-            n_elements = 1
-            for s in shape:
-                n_elements *= s
-            wire_bytes_per_elem = len(raw) // max(n_elements, 1)
-            if wire_bytes_per_elem == 2:
-                wire_dtype = torch.float16
-            elif wire_bytes_per_elem == 4:
-                wire_dtype = torch.float32
-            else:
-                wire_dtype = target_dtype
-            weight = torch.frombuffer(bytearray(raw), dtype=wire_dtype).reshape(shape)
-            if wire_dtype != target_dtype:
-                weight = weight.to(target_dtype)
-            weights_to_load.append((p["name"], weight))
+        weights_to_load = [decode_from_http(p) for p in request.params]
 
         # Send all weights in a single IPC call.  Tensors don't survive
         # vLLM's multiproc IPC, so serialize as raw bytes + metadata.
-        param_entries = []
-        for name, weight in weights_to_load:
-            param_entries.append(
-                {
-                    "name": name,
-                    "data": weight.contiguous().numpy().tobytes(),
-                    "dtype": str(weight.dtype).split(".")[-1],
-                    "shape": list(weight.shape),
-                }
-            )
+        param_entries = [
+            encode_for_ipc(name, weight) for name, weight in weights_to_load
+        ]
         kwargs = {
             "method": "http_load_weights_batch",
             "kwargs": {"params": param_entries},
@@ -562,7 +544,10 @@ def main(script_args: ScriptArguments):
     async def reset_prefix_cache():
         for conn in connections:
             conn.send({"type": "call", "method": "reset_prefix_cache"})
-        results = [conn.recv() for conn in connections]
+        loop = asyncio.get_running_loop()
+        results = await asyncio.gather(
+            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+        )
         return {"message": f"Reset prefix cache: {all(results)}"}
 
     @app.post("/close_communicator/")
