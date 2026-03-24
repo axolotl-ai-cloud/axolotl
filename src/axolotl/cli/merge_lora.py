@@ -24,7 +24,7 @@ def do_merge_lora(*, cfg: DictDefault) -> None:
     Args:
         cfg: Dictionary mapping `axolotl` config keys to values.
     """
-    merge_method = str(getattr(cfg, "merge_lora_method", "memory_efficient"))
+    merge_method = str(getattr(cfg, "merge_method", "memory_efficient"))
     if merge_method == "legacy":
         LOG.debug("Using legacy LoRA merging method...")
         _do_merge_lora_legacy(cfg=cfg)

@@ -21,6 +21,7 @@ def _simulate_nf4_roundtrip(
     tensor: torch.Tensor,
     blocksize: Optional[int] = None,
     compress_statistics: bool = True,
+    device: Optional[Union[str, torch.device]] = None,
 ) -> torch.Tensor:
     """
     Simulate NF4 quantization roundtrip to match QLoRA training dynamics.
@@ -35,17 +36,33 @@ def _simulate_nf4_roundtrip(
         tensor: Base model weight tensor (fp16/bf16/fp32)
         blocksize: NF4 quantization block size (default: bitsandbytes default)
         compress_statistics: Whether to use double quantization
+        device: Device for quantization computation.  bitsandbytes requires a
+            CUDA device; defaults to "cuda" when available.
 
     Returns:
         Tensor after NF4 quantize → dequantize roundtrip, in original dtype
     """
     import bitsandbytes.functional as bnb_F
 
+    quant_device: torch.device
+    if device is None:
+        quant_device = torch.device("cuda")
+    elif isinstance(device, str):
+        quant_device = torch.device(device)
+    else:
+        quant_device = device
+
+    if quant_device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(
+            "NF4 simulation requires CUDA but no GPU is available. "
+            "Either run on a machine with a GPU or disable NF4 simulation."
+        )
+
     original_dtype = tensor.dtype
     original_shape = tensor.shape
 
     # bitsandbytes requires float32 input for quantization and contiguous+CUDA tensor
-    flat = tensor.reshape(-1).to(torch.float32).contiguous().cuda()
+    flat = tensor.reshape(-1).to(torch.float32).contiguous().to(quant_device)
 
     quant_kwargs = {
         "quant_type": "nf4",
@@ -101,6 +118,163 @@ def find_lora_weights(
     return None, None
 
 
+def _find_param_wrapper_lora(
+    lora_state: Dict[str, torch.Tensor],
+    key: str,
+    tensor_shape: Optional[tuple] = None,
+) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[str]]:
+    """
+    Find LoRA weights from a ParamWrapper (lora_target_parameters) that targets
+    a parent module containing this weight as a sub-parameter.
+
+    For example, base weight key 'model.layers.0.mlp.experts.down_proj' may have
+    LoRA at 'base_model.model.model.layers.0.mlp.experts.lora_A.weight' (targeting
+    the 'experts' module with 'down_proj' as the parameter_name).
+
+    When tensor_shape is provided, validates that the LoRA dimensions match the
+    target tensor (important when multiple ParamWrappers are nested and each
+    nesting level has different LoRA dimensions).
+
+    Returns (lora_A, lora_B, parameter_name) or (None, None, None).
+    """
+    clean_key = key[:-7] if key.endswith(".weight") else key
+    # Strip trailing parameter name to get the parent module path
+    # e.g., "model.layers.0.mlp.experts.down_proj" → parent="model.layers.0.mlp.experts", param="down_proj"
+    parts = clean_key.rsplit(".", 1)
+    if len(parts) != 2:
+        return None, None, None
+
+    parent_key, param_name = parts
+
+    # PEFT's ParamWrapper nesting: when multiple parameters are targeted on
+    # the same module, it nests wrappers. The outer wrapper's LoRA is at
+    # parent.lora_A/B and inner wrappers use parent.base_layer.lora_A/B,
+    # parent.base_layer.base_layer.lora_A/B, etc.
+    prefixes_to_try = [
+        f"base_model.model.{parent_key}",
+    ]
+    # Walk up .base_layer nesting levels (typically 1-2 deep)
+    for depth in range(1, 4):
+        bl = ".base_layer" * depth
+        prefixes_to_try.append(f"base_model.model.{parent_key}{bl}")
+
+    for prefix in prefixes_to_try:
+        a_key = f"{prefix}.lora_A.weight"
+        b_key = f"{prefix}.lora_B.weight"
+        lora_a = lora_state.get(a_key)
+        lora_b = lora_state.get(b_key)
+        if lora_a is None or lora_b is None:
+            continue
+
+        # When tensor_shape is given, verify dimensions match before returning.
+        # This prevents returning a mismatched LoRA from a different nesting level.
+        if tensor_shape is not None and len(tensor_shape) >= 3:
+            num_experts = tensor_shape[0]
+            if not (
+                lora_a.shape[0] == lora_b.shape[1]
+                and lora_a.shape[0] % num_experts == 0
+                and lora_a.shape[1] == tensor_shape[1]
+                and lora_b.shape[0] == tensor_shape[2]
+            ):
+                continue  # Dimensions don't match, try next nesting level
+
+        return lora_a, lora_b, param_name
+
+    return None, None, None
+
+
+def _build_peft_layer_and_get_delta(
+    lora_a: torch.Tensor,
+    lora_b: torch.Tensor,
+    lora_config_dict: Dict,
+    base_tensor: torch.Tensor,
+    adapter_name: str = "default",
+    is_param_wrapper: bool = False,
+    magnitude: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """
+    Use PEFT's own layer classes to compute the LoRA delta weight.
+
+    Instead of re-implementing the merge math for every LoRA variant, this
+    constructs a lightweight PEFT layer, loads the A/B weights, and calls
+    ``get_delta_weight`` (or ``merge`` for DoRA) which handles standard LoRA,
+    RSLoRA, DoRA, and ParamWrapper (expert-blocked) LoRA.
+
+    Returns the delta tensor (same shape as base_tensor).
+    """
+    import warnings
+
+    import torch.nn as nn
+
+    r_total = lora_a.shape[0]
+    in_features = lora_a.shape[1]
+    out_features = lora_b.shape[0]
+    lora_alpha = lora_config_dict.get("lora_alpha", lora_config_dict.get("r", 1))
+    use_rslora = bool(lora_config_dict.get("use_rslora", False))
+    use_dora = bool(lora_config_dict.get("use_dora", False)) and magnitude is not None
+
+    if is_param_wrapper:
+        from peft.tuners.lora.layer import ParamWrapper
+
+        num_experts = base_tensor.shape[0]
+        r = r_total // num_experts
+
+        class _FakeModule(nn.Module):
+            pass
+
+        fake = _FakeModule()
+        fake.register_parameter(
+            "weight", nn.Parameter(base_tensor.clone(), requires_grad=False)
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            layer = ParamWrapper(
+                fake,
+                adapter_name=adapter_name,
+                parameter_name="weight",
+                r=r,
+                lora_alpha=lora_alpha,
+                use_rslora=use_rslora,
+            )
+        layer.lora_A[adapter_name].weight.data = lora_a
+        layer.lora_B[adapter_name].weight.data = lora_b
+        return layer.get_delta_weight(adapter_name)
+    else:
+        from peft.tuners.lora.layer import Linear as LoraLinear
+
+        base_layer = nn.Linear(in_features, out_features, bias=False)
+        base_layer.weight.data = base_tensor.clone()
+
+        fan_in_fan_out = bool(
+            lora_config_dict.get("fan_in_fan_out", False)
+            or lora_config_dict.get("lora_fan_in_fan_out", False)
+        )
+
+        layer = LoraLinear(
+            base_layer,
+            adapter_name=adapter_name,
+            r=r_total,
+            lora_alpha=lora_alpha,
+            fan_in_fan_out=fan_in_fan_out,
+            use_rslora=use_rslora,
+            use_dora=use_dora,
+        )
+        layer.lora_A[adapter_name].weight.data = lora_a
+        layer.lora_B[adapter_name].weight.data = lora_b
+
+        if use_dora:
+            # DoRA merges magnitude normalization into the weight directly.
+            # Use PEFT's merge() which handles DoRA internally, then
+            # compute the delta as merged_weight - original_weight.
+            mag_layer = layer.lora_magnitude_vector[adapter_name]
+            mag_layer.weight = nn.Parameter(magnitude)
+            layer.merge(adapter_names=[adapter_name])
+            return base_layer.weight.data - base_tensor
+
+        return layer.get_delta_weight(adapter_name)
+
+
 def get_model_shards(model_path: Path) -> list[Path]:
     """Find all model shards in the given path."""
     shards: list[Path] = []
@@ -140,6 +314,11 @@ def copy_non_model_files(
         ) or (filepath.name.startswith("pytorch_model") and filepath.suffix == ".bin"):
             continue
         if filepath.suffix == ".gguf":
+            continue
+        # Skip weight-map index files — they reference shard filenames that may
+        # change during the merge (e.g. .bin → .safetensors).  A correct index
+        # is regenerated after all shards have been written.
+        if filepath.name.endswith(".index.json"):
             continue
 
         LOG.debug(f"Copying {filepath.name} to output")
@@ -239,51 +418,69 @@ def _merge_tensor_with_lora(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                device=device,
             )
 
-        base_fp32 = tensor.to(device).to(torch.float32)
-        a_fp32 = lora_a.to(device).to(torch.float32)
-        b_fp32 = lora_b.to(device).to(torch.float32)
-        delta = scale * (b_fp32 @ a_fp32)
-        if bool(
-            lora_config_dict.get("fan_in_fan_out", False)
-            or lora_config_dict.get("lora_fan_in_fan_out", False)
-        ):
-            delta = delta.T
-
-        if use_dora:
-            # DoRA: Weight = m * (W + delta) / ||W + delta||_col
-            # where m is the learned magnitude vector
-            magnitude = _find_dora_magnitude(lora_state, key, weight_renamings)
-            if magnitude is not None:
-                merged_weight = base_fp32 + delta
-                # Column-wise norm (norm over input dimension = dim 1 for [out, in])
-                weight_norm = merged_weight.norm(p=2, dim=1, keepdim=True)
-                weight_norm = weight_norm.clamp(min=1e-8)
-                mag = magnitude.to(device).to(torch.float32).unsqueeze(1)
-                merged_tensor = (
-                    (mag * merged_weight / weight_norm)
+        magnitude = (
+            _find_dora_magnitude(lora_state, key, weight_renamings)
+            if use_dora
+            else None
+        )
+        delta = _build_peft_layer_and_get_delta(
+            lora_a.to(device),
+            lora_b.to(device),
+            lora_config_dict,
+            tensor.to(device),
+            magnitude=magnitude.to(device) if magnitude is not None else None,
+        )
+        merged_tensor = (
+            (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
+            .to(original_dtype)
+            .detach()
+            .cpu()
+        )
+        return merged_tensor, True
+    else:
+        # Try ParamWrapper LoRA (lora_target_parameters) — the LoRA targets a
+        # parent module and this weight is a sub-parameter of that module.
+        if tensor.ndim >= 3:
+            pw_a, pw_b, param_name = _find_param_wrapper_lora(
+                lora_state, key, tensor_shape=tuple(tensor.shape)
+            )
+            if pw_a is not None and pw_b is not None:
+                LOG.debug(
+                    f"Merging ParamWrapper LoRA for {key} "
+                    f"(param={param_name}): {pw_a.shape}, {pw_b.shape}"
+                )
+                if do_nf4:
+                    tensor = _simulate_nf4_roundtrip(
+                        tensor,
+                        blocksize=nf4_blocksize,
+                        compress_statistics=nf4_double_quant,
+                        device=device,
+                    )
+                original_dtype = tensor.dtype
+                delta = _build_peft_layer_and_get_delta(
+                    pw_a.to(device),
+                    pw_b.to(device),
+                    lora_config_dict,
+                    tensor.to(device),
+                    is_param_wrapper=True,
+                )
+                merged = (
+                    (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
                     .to(original_dtype)
                     .detach()
                     .cpu()
                 )
-                del base_fp32, a_fp32, b_fp32, delta, merged_weight, weight_norm, mag
-                return merged_tensor, True
-            else:
-                LOG.warning(
-                    f"DoRA enabled but magnitude vector not found for {key}, "
-                    f"falling back to standard LoRA merge"
-                )
+                return merged, True
 
-        merged_tensor = (base_fp32 + delta).to(original_dtype).detach().cpu()
-        del base_fp32, a_fp32, b_fp32, delta
-        return merged_tensor, True
-    else:
         if do_nf4:
             tensor = _simulate_nf4_roundtrip(
                 tensor,
                 blocksize=nf4_blocksize,
                 compress_statistics=nf4_double_quant,
+                device=device,
             )
         return tensor.detach().cpu(), False
 
@@ -484,6 +681,7 @@ def _fuse_and_unfuse_with_merge(
                     fused_tensor,
                     blocksize=nf4_blocksize,
                     compress_statistics=nf4_double_quant,
+                    device=device,
                 )
 
             # Try to find and merge LoRA weights for the fused key
@@ -493,72 +691,41 @@ def _fuse_and_unfuse_with_merge(
                     f"Merging LoRA for fused key {fused_key}: {lora_a.shape}, {lora_b.shape}"
                 )
                 original_dtype = fused_tensor.dtype
-                base_fp32 = fused_tensor.to(device).to(torch.float32)
-                a_fp32 = lora_a.to(device).to(torch.float32)
-                b_fp32 = lora_b.to(device).to(torch.float32)
-                delta = scale * (b_fp32 @ a_fp32)
-
-                if use_dora:
-                    magnitude = _find_dora_magnitude(
-                        lora_state, fused_key, weight_renamings
+                magnitude = (
+                    _find_dora_magnitude(lora_state, fused_key, weight_renamings)
+                    if use_dora
+                    else None
+                )
+                delta = _build_peft_layer_and_get_delta(
+                    lora_a.to(device),
+                    lora_b.to(device),
+                    lora_config_dict,
+                    fused_tensor.to(device),
+                    magnitude=magnitude.to(device) if magnitude is not None else None,
+                )
+                fused_tensor = (
+                    (
+                        fused_tensor.to(device).to(torch.float32)
+                        + delta.to(torch.float32)
                     )
-                    if magnitude is not None:
-                        merged_weight = base_fp32 + delta
-                        weight_norm = merged_weight.norm(
-                            p=2, dim=1, keepdim=True
-                        ).clamp(min=1e-8)
-                        mag = magnitude.to(device).to(torch.float32).unsqueeze(1)
-                        fused_tensor = (
-                            (mag * merged_weight / weight_norm)
-                            .to(original_dtype)
-                            .detach()
-                            .cpu()
-                        )
-                        del (
-                            base_fp32,
-                            a_fp32,
-                            b_fp32,
-                            delta,
-                            merged_weight,
-                            weight_norm,
-                            mag,
-                        )
-                    else:
-                        fused_tensor = (
-                            (base_fp32 + delta).to(original_dtype).detach().cpu()
-                        )
-                        del base_fp32, a_fp32, b_fp32, delta
-                else:
-                    fused_tensor = (base_fp32 + delta).to(original_dtype).detach().cpu()
-                    del base_fp32, a_fp32, b_fp32, delta
+                    .to(original_dtype)
+                    .detach()
+                    .cpu()
+                )
                 merged_count += 1
 
-            # Step 3: Unfuse back to checkpoint format for saving
-            # Reverse of fuse: Chunk (reverse of Concatenate) then unstack (reverse of MergeModulelist)
-            if has_concat and len(src_patterns) > 1:
-                # Split along the concat dim back into per-pattern tensors
-                chunks = torch.chunk(fused_tensor, len(src_patterns), dim=concat_dim)
-                unstacked_per_pattern = dict(zip(src_patterns, chunks, strict=True))
-            else:
-                unstacked_per_pattern = {src_patterns[0]: fused_tensor}
+            # Step 3: Save in fused format (runtime format) so that the merged
+            # model can be loaded directly without needing WeightConverter
+            # fusion during from_pretrained (which can OOM for large MoE models).
+            # Remove the original per-expert keys and save the fused tensor
+            # under the runtime key name.
+            for pat_idx in sorted(original_keys_per_pattern.keys()):
+                for ok in original_keys_per_pattern[pat_idx]:
+                    result.pop(ok, None)
+                    processed_keys.add(ok)
 
-            # Unstack (reverse of MergeModulelist): split 3D → list of 2D per-expert
-            for pat_idx, src_pat in enumerate(src_patterns):
-                if src_pat not in unstacked_per_pattern:
-                    continue
-                stacked = unstacked_per_pattern[src_pat]
-                if pat_idx in original_keys_per_pattern:
-                    orig_keys = original_keys_per_pattern[pat_idx]
-                    # Remove old keys from result
-                    for ok in orig_keys:
-                        result.pop(ok, None)
-                    # Split and save with original key names
-                    expert_tensors = torch.unbind(stacked, dim=0)
-                    for orig_key, expert_tensor in zip(
-                        orig_keys, expert_tensors, strict=True
-                    ):
-                        result[orig_key] = expert_tensor.detach().cpu()
-                        processed_keys.add(orig_key)
+            result[fused_key] = fused_tensor.detach().cpu()
+            processed_keys.add(fused_key)
 
     return result, merged_count, processed_keys
 
@@ -635,8 +802,9 @@ def merge_lora_sharded_efficient(
         unsupported_methods.append(f"Task type: {task_type}")
 
     # Check for rank adaptation patterns (AdaLoRA indicators)
+    # Use .get() so empty dicts/None don't false-positive
     if any(
-        key in lora_config_dict
+        lora_config_dict.get(key)
         for key in ["rank_pattern", "alpha_pattern", "target_rank"]
     ):
         unsupported_methods.append("AdaLoRA (rank adaptation detected)")
@@ -700,6 +868,8 @@ def merge_lora_sharded_efficient(
 
     merged_count = 0
     total_tensors = 0
+    # Track weight_map for index regeneration: {tensor_key: shard_filename}
+    weight_map: Dict[str, str] = {}
 
     for shard_path in tqdm(model_shards, desc="Merging shards"):
         merged_tensors = {}
@@ -778,15 +948,35 @@ def merge_lora_sharded_efficient(
             else:
                 torch.save(merged_tensors, output_shard_path)
 
+        for tensor_key in merged_tensors:
+            weight_map[tensor_key] = output_shard_path.name
+
         del merged_tensors, shard_tensors
         if device != "cpu" and torch.cuda.is_available():
             torch.cuda.empty_cache()
         gc.collect()
 
+    # Regenerate weight-map index if the model was sharded
+    if len(model_shards) > 1 and weight_map:
+        import json as _json
+
+        index_name = (
+            "model.safetensors.index.json"
+            if safe_tensors
+            else "pytorch_model.bin.index.json"
+        )
+        index = {
+            "metadata": {"total_size": total_tensors},
+            "weight_map": weight_map,
+        }
+        with open(output_path / index_name, "w") as f:
+            _json.dump(index, f, indent=2)
+        LOG.debug(f"Wrote weight-map index: {index_name}")
+
     if merged_count == 0:
         LOG.warning(
             "No LoRA weights were matched to base model tensors. "
             "This may indicate a key name mismatch between the checkpoint format "
-            "and the LoRA adapter. Consider using merge_lora_method: legacy."
+            "and the LoRA adapter. Consider using merge_method: legacy."
         )
     LOG.info(f"Applied LoRA to {merged_count}/{total_tensors} tensors")
