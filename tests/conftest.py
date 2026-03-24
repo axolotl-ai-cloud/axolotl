@@ -480,8 +480,10 @@ def reset_plugin_manager():
 
     yield
     PluginManager._cfg = None
-    PluginManager._instance = None
-    PluginManager.plugins = collections.OrderedDict()
+    # Don't reset _instance to None — module-level PLUGIN_MANAGER references
+    # in train.py, model.py, etc. would become stale
+    if PluginManager._instance is not None:
+        PluginManager._instance.plugins = collections.OrderedDict()
 
 
 @pytest.fixture(scope="function", autouse=True)
