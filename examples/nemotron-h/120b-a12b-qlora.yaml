@@ -8,8 +8,6 @@
 
 base_model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
 
-trust_remote_code: true
-
 # Nemotron-H attention layers live in NemotronHBlock.mixer, not the standard
 # layer.self_attn, so the lora kernel patches can't discover them.
 # relu2 (mlp_hidden_act) is also unsupported by lora_mlp_kernel.
