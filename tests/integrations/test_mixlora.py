@@ -12,11 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import OrderedDict
+import sys
+import types
+
 import pytest
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM
 
+from axolotl.integrations.base import PluginManager
+from axolotl.integrations.mixlora import MixLoraPlugin
 from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
 from axolotl.integrations.mixlora.model import MixLoraFFN
 from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
@@ -95,6 +101,35 @@ class TestMixLora:
         # Aux loss should be populated
         assert mixlora_ffn.aux_loss is not None
         assert mixlora_ffn.aux_loss.item() > 0
+
+    def test_mixlora_plugin_registers_trainer(self, mock_cfg, monkeypatch):
+        """Test that the MixLoRA plugin wires up the integration trainer."""
+        fake_trainer_module = types.ModuleType("axolotl.integrations.mixlora.trainer")
+
+        class DummyMixLoraTrainer:
+            pass
+
+        fake_trainer_module.MixLoraTrainer = DummyMixLoraTrainer
+        monkeypatch.setitem(
+            sys.modules, "axolotl.integrations.mixlora.trainer", fake_trainer_module
+        )
+
+        plugin_manager = PluginManager.get_instance()
+        original_plugins = plugin_manager.plugins
+
+        try:
+            plugin_manager.plugins = OrderedDict()
+            plugin_manager.register("axolotl.integrations.mixlora.MixLoraPlugin")
+
+            trainer_cls = plugin_manager.get_trainer_cls(mock_cfg)
+
+            assert trainer_cls is DummyMixLoraTrainer
+            assert isinstance(
+                plugin_manager.plugins["axolotl.integrations.mixlora.MixLoraPlugin"],
+                MixLoraPlugin,
+            )
+        finally:
+            plugin_manager.plugins = original_plugins
 
     @pytest.mark.slow
     def test_patch_model_with_mixlora(self, mock_cfg):

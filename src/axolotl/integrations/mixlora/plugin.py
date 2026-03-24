@@ -13,16 +13,19 @@
 # limitations under the License.
 
 """
-MixLoRA integration: MoE-style LoRA finetuning of dense models.
-
-Inserts multiple LoRA-based experts into FFN layers with a trainable router,
-while keeping the base model frozen. Independent LoRA adapters are also added
-to the attention layers via standard PEFT.
-
-Reference: https://arxiv.org/abs/2404.15159
+Plugin for MixLoRA.
 """
 
-from .patching import patch_model_with_mixlora
-from .plugin import MixLoraPlugin
+from axolotl.integrations.base import BasePlugin
 
-__all__ = ["patch_model_with_mixlora", "MixLoraPlugin"]
+class MixLoraPlugin(BasePlugin):
+    """
+    Plugin for MixLoRA support in Axolotl.
+    """
+
+    def get_trainer_cls(self, cfg):
+        if hasattr(cfg, "adapter") and cfg.adapter == "mixlora":
+            from .trainer import MixLoraTrainer
+
+            return MixLoraTrainer
+        return None

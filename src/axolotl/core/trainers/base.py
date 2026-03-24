@@ -389,36 +389,12 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
-        result = super().compute_loss(
+        return super().compute_loss(
             model,
             inputs,
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
-
-        if return_outputs:
-            loss, outputs = result
-            loss = self._add_mixlora_aux_loss(loss, model)
-            return loss, outputs
-
-        result = self._add_mixlora_aux_loss(result, model)
-        return result
-
-    def _add_mixlora_aux_loss(self, loss, model):
-        """Add MixLoRA router auxiliary load-balance loss if applicable."""
-        if self.axolotl_cfg and getattr(self.axolotl_cfg, "adapter", None) == "mixlora":
-            from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
-
-            coef = getattr(self.axolotl_cfg, "mixlora_router_aux_loss_coef", None)
-            router_aux_loss_coef = coef if coef is not None else 0.01
-            aux_loss = collect_mixlora_aux_loss(
-                model, router_aux_loss_coef=router_aux_loss_coef
-            )
-            loss = loss + aux_loss.to(loss.device)
-            self.store_metrics(
-                {"mixlora_aux_loss": aux_loss.item()}, train_eval="train"
-            )
-        return loss
 
     @override
     def evaluate(self, *args, **kwargs):
