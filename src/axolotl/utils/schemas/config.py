@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from axolotl.tui.config import TUIConfig
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
@@ -139,6 +140,12 @@ class AxolotlInputConfig(
     )
     vllm: VllmConfig | None = Field(
         default_factory=lambda: VllmConfig(),
+    )
+    tui: TUIConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "TUI dashboard configuration. Set enabled: true to activate."
+        },
     )
     qat: QATConfig | None = None
     quantization: PTQConfig | None = None

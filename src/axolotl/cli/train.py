@@ -2,6 +2,7 @@
 
 import gc
 import os
+import queue
 from pathlib import Path
 from typing import Union
 
@@ -34,22 +35,101 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
 
-    plugin_manager = PluginManager.get_instance()
-    dataset_meta = plugin_manager.load_datasets(cfg, preprocess=False)
-    if not dataset_meta:
-        if cfg.rl:
-            dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
-        else:
-            dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+    # Start TUI early (before data loading) so it captures preprocessing events
+    tui_renderer = None
+    tui_queue: queue.Queue | None = None
+    is_rank_0 = int(os.getenv("LOCAL_RANK", "0")) == 0
+    if is_rank_0:
+        from axolotl.train import _is_tui_enabled
 
-    model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+        if _is_tui_enabled(cfg):
+            import queue as _queue
 
-    del model, tokenizer, trainer
+            from axolotl.train import _get_tui_config
+            from axolotl.tui.config import TUIConfig
+            from axolotl.tui.renderer import TUIRenderer
 
-    gc.collect()
+            tui_config_dict = _get_tui_config(cfg)
+            tui_config = (
+                TUIConfig(**tui_config_dict)
+                if isinstance(tui_config_dict, dict)
+                else tui_config_dict
+            )
+            tui_queue = _queue.Queue(maxsize=4096)
+            tui_renderer = TUIRenderer(config=tui_config, metric_queue=tui_queue)
 
-    plugin_manager = PluginManager.get_instance()
-    plugin_manager.post_train_unload(cfg)
+            # Send initial run info
+            model_name = cfg.base_model or ""
+            training_mode = str(cfg.rl) if cfg.rl else "sft"
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+            try:
+                tui_queue.put_nowait(
+                    {
+                        "type": "run_info",
+                        "model_name": model_name,
+                        "training_mode": training_mode,
+                        "world_size": world_size,
+                    }
+                )
+            except _queue.Full:
+                pass
+
+            tui_renderer.start()
+
+            # Attach logging handler early
+            import logging
+
+            from axolotl.tui.callback import _TUILogHandler
+
+            _early_log_handler = _TUILogHandler(
+                tui_queue, min_level=tui_config.log_level
+            )
+            _early_log_handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
+            # Attach to BOTH root and axolotl loggers because axolotl logger
+            # has propagate=False so root handler never sees axolotl.* messages
+            root_logger = logging.getLogger()
+            root_logger.addHandler(_early_log_handler)
+            axolotl_logger = logging.getLogger("axolotl")
+            axolotl_logger.addHandler(_early_log_handler)
+
+            # Stash refs on cfg so train() can reuse the renderer
+            cfg._tui_renderer = tui_renderer
+            cfg._tui_queue = tui_queue
+            cfg._tui_early_log_handler = _early_log_handler
+
+    try:
+        plugin_manager = PluginManager.get_instance()
+        dataset_meta = plugin_manager.load_datasets(cfg, preprocess=False)
+        if not dataset_meta:
+            if cfg.rl:
+                dataset_meta = load_preference_datasets(cfg=cfg, cli_args=cli_args)
+            else:
+                dataset_meta = load_datasets(cfg=cfg, cli_args=cli_args)
+
+        model, tokenizer, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+
+        del model, tokenizer, trainer
+
+        gc.collect()
+
+        plugin_manager = PluginManager.get_instance()
+        plugin_manager.post_train_unload(cfg)
+    finally:
+        # If the TUI renderer started early but train() didn't get to stop it
+        # (e.g., error during data loading), clean up here
+        if tui_renderer is not None and not tui_renderer._stop_event.is_set():
+            try:
+                if tui_queue is not None:
+                    tui_queue.put_nowait({"type": "done"})
+            except queue.Full:
+                pass
+            tui_renderer.stop()
+        # Remove early log handler from both root and axolotl loggers
+        if hasattr(cfg, "_tui_early_log_handler"):
+            import logging
+
+            logging.getLogger().removeHandler(cfg._tui_early_log_handler)
+            logging.getLogger("axolotl").removeHandler(cfg._tui_early_log_handler)
 
 
 def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):

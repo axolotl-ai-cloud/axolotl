@@ -9,7 +9,6 @@ import os
 import shutil
 import signal
 import sys
-import typing
 import weakref
 from collections import OrderedDict
 from contextlib import ExitStack
@@ -41,9 +40,6 @@ from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
-
-if typing.TYPE_CHECKING:
-    from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
 LOG = get_logger(__name__)
 
@@ -487,7 +483,7 @@ def handle_untrained_tokens_fix(
 def setup_model_and_trainer(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
 ) -> tuple[
-    "HFRLTrainerBuilder" | "HFCausalTrainerBuilder",
+    Trainer,
     PeftModel | PreTrainedModel,
     PreTrainedTokenizer,
     PeftConfig | None,
@@ -554,6 +550,36 @@ def setup_model_and_trainer(
     )
 
 
+def _is_tui_enabled(cfg: DictDefault) -> bool:
+    """Check if TUI is enabled via config or environment variable."""
+    if os.environ.get("AXOLOTL_TUI", "").lower() in ("1", "true", "yes"):
+        return True
+    tui = cfg.get("tui")
+    if tui is None:
+        return False
+    if isinstance(tui, bool):
+        return tui
+    if isinstance(tui, dict):
+        return tui.get("enabled", False)
+    if hasattr(tui, "enabled"):
+        return tui.enabled
+    return False
+
+
+def _get_tui_config(cfg: DictDefault) -> dict:
+    """Extract TUI config dict from cfg."""
+    tui = cfg.get("tui")
+    if tui is None or isinstance(tui, bool):
+        return {"enabled": True}
+    if isinstance(tui, dict):
+        return {**tui, "enabled": True}
+    if hasattr(tui, "model_dump"):
+        d = tui.model_dump()
+        d["enabled"] = True
+        return d
+    return {"enabled": True}
+
+
 @send_errors
 def train(
     cfg: DictDefault, dataset_meta: TrainDatasetMeta
@@ -576,6 +602,37 @@ def train(
         peft_config,
         processor,
     ) = setup_model_and_trainer(cfg, dataset_meta)
+
+    # Register TUI callback if enabled and rank 0
+    tui_enabled = _is_tui_enabled(cfg)
+    if tui_enabled and cfg.local_rank == 0:
+        from axolotl.tui import AxolotlTUICallback
+        from axolotl.tui.config import TUIConfig
+
+        tui_config = _get_tui_config(cfg)
+        tui_config_obj = (
+            TUIConfig(**tui_config) if isinstance(tui_config, dict) else tui_config
+        )
+
+        # Reuse the early-started renderer if available (started in do_train)
+        early_renderer = getattr(cfg, "_tui_renderer", None)
+        early_queue = getattr(cfg, "_tui_queue", None)
+
+        tui_callback = AxolotlTUICallback(config=tui_config_obj)
+        if early_renderer is not None and early_queue is not None:
+            # Reuse the already-running renderer and queue
+            tui_callback._renderer = early_renderer
+            tui_callback._queue = early_queue
+            tui_callback._renderer_started_early = True
+        trainer.add_callback(tui_callback)
+
+        # Stash model info so on_train_begin can emit a single unified run_info event
+        tui_callback._pending_run_info = {
+            "model_name": cfg.base_model or "",
+            "training_mode": str(cfg.rl) if cfg.rl else "sft",
+            "world_size": int(os.environ.get("WORLD_SIZE", 1)),
+        }
+        LOG.info("TUI dashboard enabled")
 
     # Handle untrained tokens if configured
     train_dataset = dataset_meta.train_dataset
