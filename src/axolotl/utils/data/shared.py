@@ -519,12 +519,8 @@ def generate_dataset_hash_from_config(
     # When added_tokens_overrides is set, tokenizer.name_or_path contains output_dir.
     # Use the canonical tokenizer config + overrides content so the hash is stable across output_dir changes.
     if cfg.get("added_tokens_overrides"):
-        tokenizer_fingerprint = (
-            f"{cfg.tokenizer_config}+overrides:"
-            + ",".join(
-                f"{k}={v}"
-                for k, v in sorted(cfg.added_tokens_overrides.items())
-            )
+        tokenizer_fingerprint = f"{cfg.tokenizer_config}+overrides:" + ",".join(
+            f"{k}={v}" for k, v in sorted(cfg.added_tokens_overrides.items())
         )
     else:
         tokenizer_fingerprint = tokenizer_name

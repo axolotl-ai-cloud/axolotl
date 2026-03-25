@@ -44,15 +44,23 @@ class TestGenerateDatasetHashFromConfig:
     def test_same_config_same_hash(self):
         """Identical configs produce identical hashes."""
         cfg = _base_cfg()
-        h1 = generate_dataset_hash_from_config(cfg, _datasets(), "NousResearch/Llama-3.2-1B")
-        h2 = generate_dataset_hash_from_config(cfg, _datasets(), "NousResearch/Llama-3.2-1B")
+        h1 = generate_dataset_hash_from_config(
+            cfg, _datasets(), "NousResearch/Llama-3.2-1B"
+        )
+        h2 = generate_dataset_hash_from_config(
+            cfg, _datasets(), "NousResearch/Llama-3.2-1B"
+        )
         assert h1 == h2
 
     def test_different_tokenizer_different_hash(self):
         """A different tokenizer path produces a different hash."""
         cfg = _base_cfg()
-        h1 = generate_dataset_hash_from_config(cfg, _datasets(), "NousResearch/Llama-3.2-1B")
-        h2 = generate_dataset_hash_from_config(cfg, _datasets(), "HuggingFaceTB/SmolLM2-135M")
+        h1 = generate_dataset_hash_from_config(
+            cfg, _datasets(), "NousResearch/Llama-3.2-1B"
+        )
+        h2 = generate_dataset_hash_from_config(
+            cfg, _datasets(), "HuggingFaceTB/SmolLM2-135M"
+        )
         assert h1 != h2
 
     def test_different_sequence_len_different_hash(self):
@@ -86,8 +94,12 @@ class TestGenerateDatasetHashFromConfig:
         tokenizer_name_run1 = "/tmp/run_1/modified_tokenizer"
         tokenizer_name_run2 = "/tmp/run_2_different_name/modified_tokenizer"
 
-        h1 = generate_dataset_hash_from_config(cfg_run1, _datasets(), tokenizer_name_run1)
-        h2 = generate_dataset_hash_from_config(cfg_run2, _datasets(), tokenizer_name_run2)
+        h1 = generate_dataset_hash_from_config(
+            cfg_run1, _datasets(), tokenizer_name_run1
+        )
+        h2 = generate_dataset_hash_from_config(
+            cfg_run2, _datasets(), tokenizer_name_run2
+        )
 
         assert h1 == h2, (
             "Dataset cache hash must not change when only output_dir changes "
