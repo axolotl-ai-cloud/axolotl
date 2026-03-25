@@ -15,8 +15,7 @@ Thanks to the team at LiquidAI for giving us early access to prepare for these r
     Here is an example of how to install from pip:
     ```bash
     # Ensure you have a compatible version of Pytorch installed
-    pip3 install packaging setuptools wheel ninja
-    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
     ```
 
 2.  Run one of the finetuning examples below.
@@ -35,7 +34,7 @@ Thanks to the team at LiquidAI for giving us early access to prepare for these r
 
     **LFM2-MoE**
     ```bash
-    pip install git+https://github.com/huggingface/transformers.git@0c9a72e4576fe4c84077f066e585129c97bfd4e6
+    uv pip install git+https://github.com/huggingface/transformers.git@0c9a72e4576fe4c84077f066e585129c97bfd4e6
 
     # LoRA SFT (1x48GB @ 16.2GiB)
     axolotl train examples/LiquidAI/lfm2-8b-a1b-lora.yaml
@@ -45,7 +44,7 @@ Thanks to the team at LiquidAI for giving us early access to prepare for these r
 
 - **Installation Error**: If you encounter `ImportError: ... undefined symbol ...` or `ModuleNotFoundError: No module named 'causal_conv1d_cuda'`, the `causal-conv1d` package may have been installed incorrectly. Try uninstalling it:
   ```bash
-  pip uninstall -y causal-conv1d
+  uv pip uninstall causal-conv1d
   ```
 
 - **Dataset Loading**: Read more on how to load your own dataset in our [documentation](https://docs.axolotl.ai/docs/dataset_loading.html).

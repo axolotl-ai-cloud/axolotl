@@ -11,8 +11,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     Here is an example of how to install from pip:
     ```bash
     # Ensure you have a compatible version of Pytorch installed
-    pip3 install packaging setuptools wheel ninja
-    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 
     # Install Cut Cross Entropy
     python scripts/cutcrossentropy_install.py | sh

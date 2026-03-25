@@ -12,7 +12,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 
 3. Install FLA for improved performance
 ```bash
-pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.4.1
+uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
 ```
 
 4. Run the finetuning example:

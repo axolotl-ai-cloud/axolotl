@@ -10,7 +10,7 @@
 
 3. Install FLA for sample packing support with the Gated DeltaNet linear attention layers:
   ```bash
-  pip3 uninstall -y causal-conv1d && pip3 install flash-linear-attention==0.4.1
+  uv pip uninstall causal-conv1d && uv pip install flash-linear-attention==0.4.1
   ```
   > FLA is required when `sample_packing: true`. Without it, training raises a `RuntimeError` on packed sequences. Vision configs use `sample_packing: false` so FLA is optional there.
 
