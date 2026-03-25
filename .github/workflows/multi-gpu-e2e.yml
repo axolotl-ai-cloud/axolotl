@@ -4,8 +4,7 @@ on:
   pull_request:
     paths:
       - 'tests/e2e/multigpu/**.py'
-      - 'requirements.txt'
-      - 'setup.py'
+      - 'pyproject.toml'
       - 'pyproject.toml'
       - '.github/workflows/multi-gpu-e2e.yml'
       - 'scripts/cutcrossentropy_install.py'
