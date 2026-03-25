@@ -138,6 +138,28 @@ opentelemetry = [
     "prometheus-client",
 ]
 
+[dependency-groups]
+dev = [
+    "black",
+    "mypy",
+    "pre-commit",
+    "types-requests",
+    "quartodoc",
+    "jupyter",
+    "blobfile",
+    "tiktoken",
+]
+test = [
+    "codecov",
+    "codecov-cli",
+    "pytest",
+    "pytest-cov",
+    "pytest-retry",
+    "pytest-sugar",
+    "pytest-xdist",
+    "tbparse",
+]
+
 [project.scripts]
 axolotl = "axolotl.cli.main:main"
 

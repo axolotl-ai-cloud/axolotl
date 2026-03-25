@@ -78,7 +78,8 @@ jobs:
           pip3 install --no-build-isolation -U -e .
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          pip3 install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken
+          pip3 install codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Override with nightly HF packages
         run: |

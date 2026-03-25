@@ -31,7 +31,9 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-uv pip install -r requirements-dev.txt -r requirements-tests.txt
+# Install dev and test dependencies (declared in pyproject.toml [dependency-groups])
+uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 pre-commit install
 
 # test
