@@ -43,7 +43,7 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
     # Map PyTorch version (e.g., 2.9.1 -> torch2.9, 2.10.0 -> torch2.10)
     TORCH_TAG="torch$(echo $PYTORCH_VERSION | grep -oP '^\d+\.\d+')" && \
-    LINUX_TAG = "manylinux_" && \
+    LINUX_TAG="manylinux_" && \
     # Map architecture
     case "$TARGETARCH" in \
         amd64) ARCH_TAG="2_24_x86_64" ;; \
