@@ -1536,6 +1536,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
     ) -> None:
         """Called after advantages are computed. Override for replay buffer, re-roll, etc."""
 
+    def _notify_rollouts_scored(
+        self,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Dispatch on_rollouts_scored to all registered plugins."""
+        from axolotl.integrations.base import PluginManager
+
+        pm = PluginManager.get_instance()
+        if pm and pm.plugins:
+            # Try _axolotl_cfg first (set by causal builder), fall back to
+            # PluginManager's stored cfg (set during register phase).
+            cfg = getattr(self, "_axolotl_cfg", None) or getattr(pm, "_cfg", None)
+            pm.on_rollouts_scored(
+                cfg, self, prompts, completions, rewards, advantages
+            )
+
     # ------------------------------------------------------------------
     # Main-thread scoring
     # ------------------------------------------------------------------
@@ -1868,11 +1887,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
             completion_ids, skip_special_tokens=True
         )
         if gather_object is not None:
-            self._logs["prompt"].extend(gather_object(prompts_text))
-            self._logs["completion"].extend(gather_object(completions_text))
+            gathered_prompts = gather_object(prompts_text)
+            gathered_completions = gather_object(completions_text)
+            self._logs["prompt"].extend(gathered_prompts)
+            self._logs["completion"].extend(gathered_completions)
+        else:
+            gathered_prompts = prompts_text
+            gathered_completions = completions_text
+        rewards_dict = {}
         for i, name in enumerate(self.reward_func_names):
-            self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
-        self._logs["advantages"].extend(all_advantages.tolist())
+            reward_list = rewards_per_func[:, i].tolist()
+            self._logs["rewards"][name].extend(reward_list)
+            rewards_dict[name] = reward_list
+        adv_list = all_advantages.tolist()
+        self._logs["advantages"].extend(adv_list)
+
+        # Notify plugins of scored rollouts
+        self._notify_rollouts_scored(
+            gathered_prompts, gathered_completions, rewards_dict, adv_list
+        )
 
         # Remove deferred keys
         for k in list(data.keys()):

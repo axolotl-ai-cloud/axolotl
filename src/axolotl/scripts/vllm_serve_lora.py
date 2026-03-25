@@ -114,8 +114,12 @@ def llm_worker(
                     load_inplace=lr.get("load_inplace", False),
                 )
 
-            method = getattr(llm, method_name)
-            result = method(*args, **kwargs)
+            try:
+                method = getattr(llm, method_name)
+                result = method(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Worker method %s failed: %s", method_name, exc)
+                result = None
             if command["type"] == "call":
                 connection.send(result)
         elif command["type"] == "shutdown":
@@ -650,13 +654,14 @@ def main(script_args: ScriptArguments):
 
     @app.post("/reset_prefix_cache/")
     async def reset_prefix_cache():
+        # Fire-and-forget: send reset command without waiting for response.
+        # Waiting (recv) is unsafe — if the worker crashes during reset,
+        # the recv blocks forever and kills the server. The worker-side
+        # try/except ensures a crash returns None instead of taking down
+        # the subprocess.
         for conn in connections:
             conn.send({"type": "call", "method": "reset_prefix_cache"})
-        loop = asyncio.get_running_loop()
-        results = await asyncio.gather(
-            *(loop.run_in_executor(None, conn.recv) for conn in connections)
-        )
-        return {"message": f"Reset prefix cache: {all(results)}"}
+        return {"message": "Reset prefix cache received"}
 
     @app.post("/close_communicator/")
     async def close_communicator():
