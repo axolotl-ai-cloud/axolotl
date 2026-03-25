@@ -1,4 +1,4 @@
-# See examples/nemotron-h/README.md for architecture notes and requirements.
+
 base_model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
 
 # LoRA kernel patches are incompatible with this architecture — see README.
@@ -73,4 +73,4 @@ saves_per_epoch: 1
 weight_decay: 0.0
 
 special_tokens:
-  pad_token: <|end_of_text|>
+  pad_token: <unk>
