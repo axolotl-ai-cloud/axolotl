@@ -21,12 +21,6 @@ jobs:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.8.0
-            axolotl_extras:
-            platforms: "linux/amd64"
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
             pytorch: 2.9.0
             axolotl_extras:
             platforms: "linux/amd64,linux/arm64"
@@ -186,12 +180,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.8.0
-            axolotl_extras:
-            platforms: "linux/amd64"
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
