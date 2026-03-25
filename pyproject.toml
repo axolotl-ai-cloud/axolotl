@@ -242,6 +242,10 @@ conflicts = [
         { package = "axolotl" },
         { extra = "fbgemm-gpu" },
     ],
+    [
+        { package = "axolotl" },
+        { extra = "llmcompressor" },
+    ],
 ]
 
 [tool.uv.extra-build-dependencies]
