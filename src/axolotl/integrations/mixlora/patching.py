@@ -22,28 +22,21 @@ the original frozen FFN + router + LoRA experts.
 
 import torch.nn as nn
 
+from axolotl.integrations.mixlora.constants import (
+    MIXLORA_DEFAULTS,
+    MIXLORA_FFN_MODULE_NAMES,
+)
 from axolotl.integrations.mixlora.model import MixLoraFFN
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# Default values for MixLoRA config
-MIXLORA_DEFAULTS = {
-    "mixlora_num_experts": 8,
-    "mixlora_top_k": 2,
-    "mixlora_router_aux_loss_coef": 0.01,
-    "mixlora_router_init_range": 0.02,
-    "mixlora_jitter_noise": 0.0,
-}
-
 
 def _is_swiglu_ffn(module: nn.Module) -> bool:
     """Check if a module is a SwiGLU-style FFN with gate_proj, up_proj, down_proj."""
     return (
-        hasattr(module, "gate_proj")
-        and hasattr(module, "up_proj")
-        and hasattr(module, "down_proj")
+        all(hasattr(module, attr_name) for attr_name in MIXLORA_FFN_MODULE_NAMES)
         and isinstance(module.gate_proj, nn.Linear)
         and isinstance(module.up_proj, nn.Linear)
         and isinstance(module.down_proj, nn.Linear)
@@ -120,11 +113,11 @@ def patch_model_with_mixlora(model: nn.Module, cfg: DictDefault) -> nn.Module:
     ffn_modules = _find_ffn_modules(model)
 
     if not ffn_modules:
-        LOG.warning(
-            "MixLoRA: No SwiGLU FFN modules found (gate_proj, up_proj, down_proj). "
-            "MixLoRA patching had no effect."
+        raise ValueError(
+            "MixLoRA supports SwiGLU FFN modules with `gate_proj`, `up_proj`, and "
+            "`down_proj` linear layers. No compatible FFN modules were found in this "
+            "model, so MixLoRA patching cannot be applied."
         )
-        return model
 
     # Validate resolved config (catches defaults that conflict)
     if top_k > num_experts:

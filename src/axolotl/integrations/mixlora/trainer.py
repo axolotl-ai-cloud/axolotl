@@ -16,10 +16,19 @@
 MixLoRA trainer
 """
 
+import os
+
+import safetensors.torch
+import torch
 from typing_extensions import override
 
 from axolotl.core.trainers.base import AxolotlTrainer
+from axolotl.integrations.mixlora.constants import (
+    MIXLORA_DEFAULTS,
+    MIXLORA_WEIGHTS_NAME,
+)
 from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
+from axolotl.integrations.mixlora.model import mixlora_state_dict
 
 
 class MixLoraTrainer(AxolotlTrainer):
@@ -50,17 +59,38 @@ class MixLoraTrainer(AxolotlTrainer):
         result = self._add_mixlora_aux_loss(result, model)
         return result
 
+    @override
+    def _save(self, output_dir=None, state_dict=None):
+        super()._save(output_dir=output_dir, state_dict=state_dict)
+
+        output_path = output_dir if output_dir is not None else self.args.output_dir
+        state = mixlora_state_dict(self.model)
+        if not state:
+            return
+
+        cpu_state = {
+            key: value.detach().cpu() if isinstance(value, torch.Tensor) else value
+            for key, value in state.items()
+        }
+        safetensors.torch.save_file(
+            cpu_state,
+            os.path.join(output_path, MIXLORA_WEIGHTS_NAME),
+            metadata={"format": "pt"},
+        )
+
     def _add_mixlora_aux_loss(self, loss, model):
         """Add MixLoRA router auxiliary load-balance loss if applicable."""
         coef = getattr(self.axolotl_cfg, "mixlora_router_aux_loss_coef", None)
-        router_aux_loss_coef = coef if coef is not None else 0.01
-        
+        router_aux_loss_coef = (
+            coef if coef is not None else MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
+        )
+
         aux_loss = collect_mixlora_aux_loss(
             model, router_aux_loss_coef=router_aux_loss_coef
         )
-        
+
         loss = loss + aux_loss.to(loss.device)
-        
+
         self.store_metrics(
             {"mixlora_aux_loss": aux_loss.item()}, train_eval="train"
         )

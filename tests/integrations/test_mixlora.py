@@ -17,6 +17,7 @@ import sys
 import types
 
 import pytest
+import safetensors.torch
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM
@@ -24,7 +25,12 @@ from transformers import AutoModelForCausalLM
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.mixlora import MixLoraPlugin
 from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
-from axolotl.integrations.mixlora.model import MixLoraFFN
+from axolotl.integrations.mixlora.model import (
+    MIXLORA_WEIGHTS_NAME,
+    MixLoraFFN,
+    load_mixlora_state_dict,
+    mixlora_state_dict,
+)
 from axolotl.integrations.mixlora.patching import patch_model_with_mixlora
 from axolotl.utils.dict import DictDefault
 
@@ -101,6 +107,67 @@ class TestMixLora:
         # Aux loss should be populated
         assert mixlora_ffn.aux_loss is not None
         assert mixlora_ffn.aux_loss.item() > 0
+
+    def test_mixlora_ffn_training_step_updates_router(self, mock_swiglu_ffn, mock_cfg):
+        """Smoke test that gradients flow through MixLoRA router/expert params."""
+        mixlora_ffn = MixLoraFFN(
+            original_ffn=mock_swiglu_ffn,
+            num_experts=mock_cfg.mixlora_num_experts,
+            top_k=mock_cfg.mixlora_top_k,
+            lora_r=mock_cfg.lora_r,
+            lora_alpha=mock_cfg.lora_alpha,
+            lora_dropout=mock_cfg.lora_dropout,
+        )
+
+        optimizer = torch.optim.AdamW(
+            [p for p in mixlora_ffn.parameters() if p.requires_grad], lr=1e-3
+        )
+
+        router_before = mixlora_ffn.router.gate.weight.detach().clone()
+        x = torch.randn(2, 10, 128)
+
+        optimizer.zero_grad()
+        out = mixlora_ffn(x)
+        loss = out.pow(2).mean() + collect_mixlora_aux_loss(
+            mixlora_ffn,
+            router_aux_loss_coef=mock_cfg.mixlora_router_aux_loss_coef,
+        )
+        loss.backward()
+        optimizer.step()
+
+        assert mixlora_ffn.router.gate.weight.grad is not None
+        assert not torch.allclose(router_before, mixlora_ffn.router.gate.weight)
+
+    def test_mixlora_state_dict_roundtrip(self, mock_swiglu_ffn, mock_cfg, tmp_path):
+        """Checkpoint roundtrip for MixLoRA-only router/expert weights."""
+        source = MixLoraFFN(
+            original_ffn=mock_swiglu_ffn,
+            num_experts=mock_cfg.mixlora_num_experts,
+            top_k=mock_cfg.mixlora_top_k,
+            lora_r=mock_cfg.lora_r,
+            lora_alpha=mock_cfg.lora_alpha,
+            lora_dropout=mock_cfg.lora_dropout,
+        )
+        target = MixLoraFFN(
+            original_ffn=mock_swiglu_ffn,
+            num_experts=mock_cfg.mixlora_num_experts,
+            top_k=mock_cfg.mixlora_top_k,
+            lora_r=mock_cfg.lora_r,
+            lora_alpha=mock_cfg.lora_alpha,
+            lora_dropout=mock_cfg.lora_dropout,
+        )
+
+        with torch.no_grad():
+            source.router.gate.weight.add_(0.123)
+
+        state = mixlora_state_dict(source)
+        ckpt_path = tmp_path / MIXLORA_WEIGHTS_NAME
+        safetensors.torch.save_file(state, str(ckpt_path), metadata={"format": "pt"})
+
+        loaded_state = safetensors.torch.load_file(str(ckpt_path))
+        load_mixlora_state_dict(target, loaded_state, strict=True)
+
+        assert torch.allclose(source.router.gate.weight, target.router.gate.weight)
 
     def test_mixlora_plugin_registers_trainer(self, mock_cfg, monkeypatch):
         """Test that the MixLoRA plugin wires up the integration trainer."""

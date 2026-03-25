@@ -42,6 +42,12 @@ mixlora_expert_lora_alpha: 32    # Defaults to lora_alpha if not set
 mixlora_expert_lora_dropout: 0.1 # Defaults to lora_dropout if not set
 ```
 
+## Limitations
+
+- MixLoRA patching currently supports SwiGLU FFN architectures with `gate_proj`, `up_proj`, and `down_proj` linear modules.
+- `lora_target_modules` must not include `gate_proj`, `up_proj`, or `down_proj`, and `lora_target_linear` is not supported with `adapter: mixlora`.
+- The expert dispatch loop is a straightforward per-expert implementation intended for correctness and integration simplicity over maximum throughput.
+
 ## Citation
 
 ```bib

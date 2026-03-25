@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -341,11 +342,8 @@ class MixLoraFFN(nn.Module):
 
         # Step 2: Route tokens to experts
         router_weights, expert_indices, aux_loss = self.router(x_flat)
-        # Accumulate aux loss across gradient accumulation micro-batches
-        if self._aux_loss is not None:
-            self._aux_loss = self._aux_loss + aux_loss
-        else:
-            self._aux_loss = aux_loss
+        # Keep per-forward aux loss so gradient accumulation scaling remains correct.
+        self._aux_loss = aux_loss
 
         # Step 3: Compute base FFN output (shared SwiGLU + down_proj)
         base_intermediate = F.silu(gate_out) * up_out
@@ -381,12 +379,48 @@ class MixLoraFFN(nn.Module):
             # Compute expert output (intermediate + down_delta)
             intermediate, down_delta = expert(x_expert, gate_expert, up_expert)
 
-            # Apply down_proj to the per-expert intermediate (with LoRA deltas)
-            # delta = down_proj(expert_intermediate) - down_proj(base_intermediate) + down_lora_delta
-            expert_full_output = self.base_ffn.down_proj(intermediate)
-            expert_delta = expert_full_output - base_output[token_indices] + down_delta
+            # Use linearity: down_proj(a) - down_proj(b) = down_proj(a - b)
+            intermediate_delta = intermediate - base_intermediate[token_indices]
+            expert_delta = self.base_ffn.down_proj(intermediate_delta) + down_delta
 
             # Weighted accumulation
             final_output[token_indices] += expert_weights.unsqueeze(-1) * expert_delta
 
         return final_output.reshape(input_shape)
+
+
+def mixlora_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
+    """Collect MixLoRA state from all patched FFN modules in the model."""
+    state: dict[str, torch.Tensor] = {}
+    for module_name, module in model.named_modules():
+        if isinstance(module, MixLoraFFN):
+            module_state = module.mixlora_state_dict()
+            for key, value in module_state.items():
+                state[f"{module_name}.{key}"] = value
+    return state
+
+
+def load_mixlora_state_dict(
+    model: nn.Module,
+    state_dict: dict[str, torch.Tensor],
+    strict: bool = True,
+) -> None:
+    """Load MixLoRA state into all patched FFN modules in the model."""
+    for module_name, module in model.named_modules():
+        if not isinstance(module, MixLoraFFN):
+            continue
+
+        prefix = f"{module_name}."
+        module_state = {
+            key[len(prefix) :]: value
+            for key, value in state_dict.items()
+            if key.startswith(prefix)
+        }
+
+        if not module_state and strict:
+            raise KeyError(
+                f"Missing MixLoRA weights for module '{module_name}' in checkpoint"
+            )
+
+        if module_state:
+            module.load_mixlora_state_dict(module_state, strict=strict)

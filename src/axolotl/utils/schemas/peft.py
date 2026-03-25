@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from axolotl.integrations.mixlora.constants import MIXLORA_DEFAULTS
+
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
@@ -239,36 +241,42 @@ class LoraConfig(BaseModel):
 class MixLoraConfig(BaseModel):
     """MixLoRA configuration subset for MoE-style LoRA finetuning"""
 
+    DEFAULT_NUM_EXPERTS = MIXLORA_DEFAULTS["mixlora_num_experts"]
+    DEFAULT_TOP_K = MIXLORA_DEFAULTS["mixlora_top_k"]
+    DEFAULT_ROUTER_AUX_LOSS_COEF = MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
+    DEFAULT_ROUTER_INIT_RANGE = MIXLORA_DEFAULTS["mixlora_router_init_range"]
+    DEFAULT_JITTER_NOISE = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
+
     mixlora_num_experts: int | None = Field(
-        default=None,
+        default=DEFAULT_NUM_EXPERTS,
         ge=1,
         json_schema_extra={
             "description": "Number of LoRA experts per FFN layer for MixLoRA (default 8)"
         },
     )
     mixlora_top_k: int | None = Field(
-        default=None,
+        default=DEFAULT_TOP_K,
         ge=1,
         json_schema_extra={
             "description": "Number of experts to route each token to (default 2)"
         },
     )
     mixlora_router_aux_loss_coef: float | None = Field(
-        default=None,
+        default=DEFAULT_ROUTER_AUX_LOSS_COEF,
         ge=0.0,
         json_schema_extra={
             "description": "Coefficient for the auxiliary load balance loss (default 0.01)"
         },
     )
     mixlora_router_init_range: float | None = Field(
-        default=None,
+        default=DEFAULT_ROUTER_INIT_RANGE,
         gt=0.0,
         json_schema_extra={
             "description": "Initialization range for router weights (default 0.02)"
         },
     )
     mixlora_jitter_noise: float | None = Field(
-        default=None,
+        default=DEFAULT_JITTER_NOISE,
         ge=0.0,
         json_schema_extra={
             "description": "Noise added to router inputs during training for exploration (default 0.0)"
@@ -298,14 +306,17 @@ class MixLoraConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_mixlora_top_k(self):
-        if (
-            self.mixlora_num_experts is not None
-            and self.mixlora_top_k is not None
-            and self.mixlora_top_k > self.mixlora_num_experts
-        ):
+        num_experts = (
+            self.mixlora_num_experts
+            if self.mixlora_num_experts is not None
+            else self.DEFAULT_NUM_EXPERTS
+        )
+        top_k = self.mixlora_top_k if self.mixlora_top_k is not None else self.DEFAULT_TOP_K
+
+        if top_k > num_experts:
             raise ValueError(
-                f"mixlora_top_k ({self.mixlora_top_k}) must be <= "
-                f"mixlora_num_experts ({self.mixlora_num_experts})"
+                f"mixlora_top_k ({top_k}) must be <= "
+                f"mixlora_num_experts ({num_experts})"
             )
         return self
 
