@@ -46,7 +46,7 @@ RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
     LINUX_TAG="manylinux_" && \
     # Map architecture
     case "$TARGETARCH" in \
-        amd64) ARCH_TAG="2_24_x86_64" ;; \
+        amd64) ARCH_TAG="2_24_x86_64.manylinux_2_28_x86_64" ;; \
         arm64) ARCH_TAG="2_34_aarch64" ;; \
         *) echo "Unsupported architecture: $TARGETARCH"; exit 1 ;; \
     esac && \
