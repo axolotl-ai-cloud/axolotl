@@ -1543,7 +1543,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
         rewards: dict[str, list[float]],
         advantages: list[float],
     ):
-        """Dispatch on_rollouts_scored to all registered plugins."""
+        """Dispatch on_rollouts_scored to all registered plugins (rank 0 only)."""
+        if not self.accelerator.is_main_process:
+            return
+
         from axolotl.integrations.base import PluginManager
 
         pm = PluginManager.get_instance()
@@ -1551,9 +1554,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
             # Try _axolotl_cfg first (set by causal builder), fall back to
             # PluginManager's stored cfg (set during register phase).
             cfg = getattr(self, "_axolotl_cfg", None) or getattr(pm, "_cfg", None)
-            pm.on_rollouts_scored(
-                cfg, self, prompts, completions, rewards, advantages
-            )
+            if cfg is not None:
+                pm.on_rollouts_scored(
+                    cfg, self, prompts, completions, rewards, advantages
+                )
 
     # ------------------------------------------------------------------
     # Main-thread scoring
@@ -1879,7 +1883,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     nanmax(self.accelerator.gather(torch.max(flat_isr))).item()
                 )
 
-        # Log prompt/completion texts
+        # Log prompt/completion texts.
+        # NB: gather_object merges per-rank local texts into a full-batch list
+        # matching rewards_per_func and all_advantages which are already full-batch
+        # tensors (gathered/computed earlier in this method). Lengths stay aligned.
         prompts_text = self.processing_class.batch_decode(
             prompt_ids, skip_special_tokens=True
         )
@@ -1896,10 +1903,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
             gathered_completions = completions_text
         rewards_dict = {}
         for i, name in enumerate(self.reward_func_names):
-            reward_list = rewards_per_func[:, i].tolist()
+            reward_list = rewards_per_func[:, i].tolist()  # already full-batch
             self._logs["rewards"][name].extend(reward_list)
             rewards_dict[name] = reward_list
-        adv_list = all_advantages.tolist()
+        adv_list = all_advantages.tolist()  # already full-batch
         self._logs["advantages"].extend(adv_list)
 
         # Notify plugins of scored rollouts

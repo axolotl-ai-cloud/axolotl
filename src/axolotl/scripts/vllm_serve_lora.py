@@ -119,7 +119,9 @@ def llm_worker(
                 result = method(*args, **kwargs)
             except Exception as exc:
                 logger.warning("Worker method %s failed: %s", method_name, exc)
-                result = None
+                if command["type"] == "call":
+                    connection.send({"error": str(exc), "kind": "worker_error"})
+                continue
             if command["type"] == "call":
                 connection.send(result)
         elif command["type"] == "shutdown":
@@ -654,13 +656,12 @@ def main(script_args: ScriptArguments):
 
     @app.post("/reset_prefix_cache/")
     async def reset_prefix_cache():
-        # Fire-and-forget: send reset command without waiting for response.
-        # Waiting (recv) is unsafe — if the worker crashes during reset,
-        # the recv blocks forever and kills the server. The worker-side
-        # try/except ensures a crash returns None instead of taking down
-        # the subprocess.
+        # Fire-and-forget: send reset without expecting a reply.
+        # Using "fire_and_forget" type so workers don't send back a response
+        # that would sit in the pipe and corrupt the next recv() for
+        # generate/chat calls.
         for conn in connections:
-            conn.send({"type": "call", "method": "reset_prefix_cache"})
+            conn.send({"type": "fire_and_forget", "method": "reset_prefix_cache"})
         return {"message": "Reset prefix cache received"}
 
     @app.post("/close_communicator/")
