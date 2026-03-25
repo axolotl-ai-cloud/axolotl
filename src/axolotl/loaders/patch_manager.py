@@ -292,21 +292,20 @@ class PatchManager:
             patch_kimi_model()
 
         if self.cfg.model_config_type == "nemotron_h":
-            from transformers.models.nemotron_h.modeling_nemotron_h import (
-                NemotronHPreTrainedModel,
-            )
-
-            # Upstream omits supports_gradient_checkpointing (defaults to False
-            # from PreTrainedModel). Our patched NemotronHBlock.forward is
-            # compatible with activation checkpointing, so we enable it here.
-            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
-
             if self.cfg.sample_packing:
+                from transformers.models.nemotron_h.modeling_nemotron_h import (
+                    NemotronHPreTrainedModel,
+                )
                 from axolotl.monkeypatch.models.nemotron_h.modeling import (
                     patch_nemotron_h_modeling_packing,
                 )
 
                 patch_nemotron_h_modeling_packing()
+                # supports_gradient_checkpointing is only enabled after
+                # patch_nemotron_h_modeling_packing() installs the GC-compatible
+                # NemotronHBlock.forward. Without the patch, upstream marks this
+                # False because the original block forward is not GC-safe.
+                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
