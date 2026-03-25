@@ -87,7 +87,7 @@ Features:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
 - Python 3.11
-- PyTorch ≥2.8.0
+- PyTorch ≥2.9.0
 
 ### Google Colab
 
@@ -95,13 +95,17 @@ Features:
 
 ### Installation
 
-#### Using pip
-
 ```bash
-pip3 install -U packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Download example axolotl configs, deepspeed configs
+# Create venv and install
+export UV_TORCH_BACKEND=cu128  # or cu130
+uv venv --no-project --relocatable
+source .venv/bin/activate
+uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
+
+# Download example axolotl configs
 axolotl fetch examples
 axolotl fetch deepspeed_configs  # OPTIONAL
 ```
