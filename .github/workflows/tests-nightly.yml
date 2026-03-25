@@ -76,7 +76,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -U -e .
+          uv pip install --no-build-isolation -e .
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
