@@ -34,7 +34,16 @@ class EBFTStrategy:
             return AxolotlStridedEBFTTrainer
 
         # Structured mode: async or sync
-        use_async = cfg and cfg.trl and getattr(cfg.trl, "async_prefetch", False)
+        # use_data_producer also triggers async trainer (needed for LoRA sync
+        # without async_prefetch, since sync trainer lacks LoRA sync support)
+        use_async = (
+            cfg
+            and cfg.trl
+            and (
+                getattr(cfg.trl, "async_prefetch", False)
+                or getattr(cfg.trl, "use_data_producer", False)
+            )
+        )
         if use_async:
             from axolotl.core.trainers.ebft.trainer import AxolotlAsyncEBFTTrainer
 
@@ -50,7 +59,14 @@ class EBFTStrategy:
             return AxolotlStridedEBFTConfig
 
         # Structured mode: async or sync config
-        use_async = cfg and cfg.trl and getattr(cfg.trl, "async_prefetch", False)
+        use_async = (
+            cfg
+            and cfg.trl
+            and (
+                getattr(cfg.trl, "async_prefetch", False)
+                or getattr(cfg.trl, "use_data_producer", False)
+            )
+        )
         if use_async:
             return AxolotlAsyncEBFTConfig
         return AxolotlEBFTConfig

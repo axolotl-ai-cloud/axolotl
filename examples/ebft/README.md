@@ -47,14 +47,11 @@ For **unstructured text** without prompt/completion splits (e.g., raw code, pros
 ### Structured Mode (QA data + vLLM)
 
 ```bash
-# 1. Start vLLM server
-python -m trl.scripts.vllm_serve \
-    --model meta-llama/Llama-3.2-1B \
-    --host 0.0.0.0 --port 8000 \
-    --gpu-memory-utilization 0.3
+# 1. Start vLLM server (LoRA serve module auto-selected when vllm_lora_sync: true)
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen3-4b-ebft-structured-async.yaml
 
-# 2. Train
-axolotl train examples/ebft/llama-1b-ebft-opencode.yaml
+# 2. Train on a separate GPU
+CUDA_VISIBLE_DEVICES=1 axolotl train examples/ebft/qwen3-4b-ebft-structured-async.yaml
 ```
 
 ### Strided Mode (unstructured text)

@@ -446,6 +446,114 @@ def main(script_args: ScriptArguments):
             "logprob_token_ids": extract_logprobs(all_outputs)[1],
         }
 
+    # --- OpenAI-compatible endpoints (for NeMo Gym agent integration) ---
+
+    @app.get("/v1/models")
+    async def list_models():
+        """OpenAI-compatible models endpoint."""
+        return {
+            "object": "list",
+            "data": [
+                {"id": script_args.model, "object": "model", "owned_by": "axolotl"}
+            ],
+        }
+
+    @app.post("/v1/chat/completions")
+    async def openai_chat_completions(request_body: dict):
+        """OpenAI-compatible chat completions endpoint.
+
+        Translates OpenAI format to our internal /chat/ format so NeMo Gym's
+        model server proxy can call us directly.
+        """
+        messages_list = request_body.get("messages", [])
+        temperature = request_body.get("temperature", 1.0)
+        max_tokens = request_body.get("max_tokens", 512)
+        top_p = request_body.get("top_p", 1.0)
+        n = request_body.get("n", 1)
+
+        generation_kwargs = {
+            "n": n,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "logprobs": 0,  # Always return logprobs (NeMo Gym needs them)
+        }
+        sampling_params = SamplingParams(
+            **{k: v for k, v in generation_kwargs.items() if v is not None}
+        )
+
+        # Send to vLLM worker
+        chunked = chunk_list([messages_list], script_args.data_parallel_size)
+        for conn, chunk in zip(connections, chunked, strict=True):
+            if not chunk:
+                chunk = [[{"role": "user", "content": "<placeholder>"}]]
+            kwargs = {
+                "messages": chunk,
+                "sampling_params": sampling_params,
+                "use_tqdm": False,
+                "lora_request": active_lora["request"],
+            }
+            conn.send({"type": "call", "method": "chat", "kwargs": kwargs})
+
+        all_outputs = [conn.recv() for conn in connections]
+        all_outputs = [o for o, c in zip(all_outputs, chunked, strict=True) if c]
+        all_outputs = list(chain.from_iterable(all_outputs))
+
+        if not all_outputs:
+            return {"choices": [], "model": script_args.model}
+
+        # Format as OpenAI response
+        import uuid
+
+        choices = []
+        for i, output in enumerate(all_outputs):
+            for j, out in enumerate(output.outputs):
+                text = out.text
+                # Extract token IDs if requested
+                # Build logprobs in OpenAI format
+                lp_list = None
+                if out.logprobs:
+                    lp_list = {
+                        "content": [
+                            {"token": "", "logprob": next(iter(lp.values())).logprob}  # nosec B105
+                            for lp in out.logprobs
+                        ]
+                    }
+
+                choice = {
+                    "index": i * n + j,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop"
+                    if out.finish_reason == "stop"
+                    else "length",
+                    "logprobs": lp_list,
+                }
+                # Include token ID information for NeMo Gym
+                choice["prompt_token_ids"] = output.prompt_token_ids
+                choice["generation_token_ids"] = list(out.token_ids)
+                if out.logprobs:
+                    choice["generation_log_probs"] = [
+                        next(iter(lp.values())).logprob for lp in out.logprobs
+                    ]
+                choices.append(choice)
+
+        prompt_tokens = len(all_outputs[0].prompt_token_ids) if all_outputs else 0
+        completion_tokens = sum(
+            len(out.token_ids) for o in all_outputs for out in o.outputs
+        )
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "model": script_args.model,
+            "choices": choices,
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+
     # --- Weight sync endpoints (legacy fallback, same as TRL) ---
 
     @app.post("/init_communicator/")
