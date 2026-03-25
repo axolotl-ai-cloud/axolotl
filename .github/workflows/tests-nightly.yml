@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_SYSTEM_PYTHON: "1"
+
 jobs:
   pre-commit:
     name: pre-commit

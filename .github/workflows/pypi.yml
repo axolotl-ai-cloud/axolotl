@@ -8,6 +8,9 @@ on:
 
 permissions: {}
 
+env:
+  UV_SYSTEM_PYTHON: "1"
+
 jobs:
   setup_release:
     name: Create Release

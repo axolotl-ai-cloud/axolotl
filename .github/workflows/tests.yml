@@ -31,6 +31,7 @@ permissions:
 
 env:
   TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   pre-commit:
