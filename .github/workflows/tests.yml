@@ -7,7 +7,7 @@ on:
       - "main"
     paths:
       - '**.py'
-      - 'pyproject.toml'
+      - 'requirements.txt'
       - '.github/workflows/*.yml'
       - 'requirements-tests.txt'
       - 'cicd/cicd.sh'
@@ -16,7 +16,7 @@ on:
       types: [opened, synchronize, reopened, ready_for_review]
       paths:
        - '**.py'
-       - 'pyproject.toml'
+       - 'requirements.txt'
        - '.github/workflows/*.yml'
        - 'requirements-tests.txt'
        - 'cicd/cicd.sh'
