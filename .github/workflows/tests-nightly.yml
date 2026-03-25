@@ -72,14 +72,6 @@ jobs:
         run: |
           pip3 install torch==${{ matrix.pytorch_version }} torchvision
 
-      - name: Update requirements.txt
-        run: |
-          sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt
-          sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt
-          sed -i 's#^accelerate.*#accelerate @ git+https://github.com/huggingface/accelerate.git@main#' requirements.txt
-          sed -i 's#^trl.*#trl @ git+https://github.com/huggingface/trl.git@main#' requirements.txt
-          sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt
-
       - name: Install dependencies
         run: |
           pip3 show torch
@@ -87,6 +79,15 @@ jobs:
           python scripts/unsloth_install.py | sh
           python scripts/cutcrossentropy_install.py | sh
           pip3 install -r requirements-dev.txt -r requirements-tests.txt
+
+      - name: Override with nightly HF packages
+        run: |
+          pip3 install --no-deps \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main" \
+            "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "trl @ git+https://github.com/huggingface/trl.git@main" \
+            "datasets @ git+https://github.com/huggingface/datasets.git@main"
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
