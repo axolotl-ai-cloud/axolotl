@@ -58,7 +58,7 @@ source .venv/bin/activate
 ### Docker {#sec-docker}
 
 ```{.bash}
-docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
+docker run --gpus '"all"' --rm -it axolotlai/axolotl-uv:main-latest
 ```
 
 For development with Docker:
@@ -75,12 +75,12 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
   --ulimit memlock=-1 --ulimit stack=67108864 \
   --mount type=bind,src="${PWD}",target=/workspace/axolotl \
   -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-  axolotlai/axolotl:main-latest
+  axolotlai/axolotl-uv:main-latest
 ```
 :::
 
 ::: {.callout-important}
-For Blackwell GPUs, please use `axolotlai/axolotl:main-py3.11-cu128-2.9.1` or the cloud variant `axolotlai/axolotl-cloud:main-py3.11-cu128-2.9.1`.
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.11-cu128-2.9.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.11-cu128-2.9.1`.
 :::
 
 Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
@@ -91,7 +91,7 @@ Please refer to the [Docker documentation](docker.qmd) for more information on t
 
 For providers supporting Docker:
 
-- Use `axolotlai/axolotl-cloud:main-latest`
+- Use `axolotlai/axolotl-cloud-uv:main-latest`
 - Available on:
     - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
     - [Vast.ai](https://cloud.vast.ai?ref_id=62897&template_id=bdd4a49fa8bce926defc99471864cace&utm_source=axolotl&utm_medium=partner&utm_campaign=template_launch_july2025&utm_content=docs_link)
