@@ -26,8 +26,15 @@ from trl.scripts.vllm_serve import (
     ScriptArguments,
     chunk_list,
     extract_logprobs,
-    get_open_port,
 )
+
+try:
+    from trl.scripts.vllm_serve import get_open_port
+except ImportError:
+    try:
+        from vllm.utils import get_open_port
+    except ImportError:
+        from vllm.utils.network_utils import get_open_port
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 
