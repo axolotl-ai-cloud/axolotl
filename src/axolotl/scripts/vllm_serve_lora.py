@@ -70,10 +70,21 @@ def llm_worker(
     connection: Connection,
 ) -> None:
     """Worker process that creates a vLLM LLM with LoRA enabled."""
-    os.environ["VLLM_DP_RANK"] = str(data_parallel_rank)
-    os.environ["VLLM_DP_RANK_LOCAL"] = str(data_parallel_rank)
-    os.environ["VLLM_DP_SIZE"] = str(script_args.data_parallel_size)
-    os.environ["VLLM_DP_MASTER_PORT"] = str(master_port)
+    # For DP with TP=1: pin each worker to its own GPU via CUDA_VISIBLE_DEVICES.
+    # vLLM's LLM() offline mode doesn't support DP env vars natively, so we
+    # isolate each worker to a single GPU and let vLLM think it's the only one.
+    if script_args.data_parallel_size > 1 and script_args.tensor_parallel_size == 1:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if visible:
+            gpu_ids = visible.split(",")
+            os.environ["CUDA_VISIBLE_DEVICES"] = gpu_ids[data_parallel_rank]
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(data_parallel_rank)
+    else:
+        os.environ["VLLM_DP_RANK"] = str(data_parallel_rank)
+        os.environ["VLLM_DP_RANK_LOCAL"] = str(data_parallel_rank)
+        os.environ["VLLM_DP_SIZE"] = str(script_args.data_parallel_size)
+        os.environ["VLLM_DP_MASTER_PORT"] = str(master_port)
 
     llm = LLM(
         model=script_args.model,

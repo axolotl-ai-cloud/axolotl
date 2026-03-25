@@ -89,6 +89,9 @@ class GRPOStrategy:
         if trl.num_generations:
             grpo_args_kwargs["num_generations"] = trl.num_generations
 
+        if trl.generation_batch_size is not None:
+            grpo_args_kwargs["generation_batch_size"] = trl.generation_batch_size
+
         if trl.sync_ref_model:
             grpo_args_kwargs["sync_ref_model"] = trl.sync_ref_model
 
