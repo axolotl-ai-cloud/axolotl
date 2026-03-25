@@ -813,6 +813,20 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#sequence-parallelism" id="toc-sequence-parallelism" class="nav-link" data-scroll-target="#sequence-parallelism">Sequence Parallelism</a></li>
   </ul></li>
   <li><a href="#simpo" id="toc-simpo" class="nav-link" data-scroll-target="#simpo">SimPO</a></li>
+  <li><a href="#ebft" id="toc-ebft" class="nav-link" data-scroll-target="#ebft">EBFT</a>
+  <ul class="collapse">
+  <li><a href="#structured-mode" id="toc-structured-mode" class="nav-link" data-scroll-target="#structured-mode">Structured Mode</a></li>
+  <li><a href="#strided-mode" id="toc-strided-mode" class="nav-link" data-scroll-target="#strided-mode">Strided Mode</a></li>
+  <li><a href="#ebft-configuration-reference" id="toc-ebft-configuration-reference" class="nav-link" data-scroll-target="#ebft-configuration-reference">EBFT Configuration Reference</a></li>
+  </ul></li>
+  <li><a href="#nemo-gym-integration" id="toc-nemo-gym-integration" class="nav-link" data-scroll-target="#nemo-gym-integration">NeMo Gym Integration</a>
+  <ul class="collapse">
+  <li><a href="#single-turn-simplest" id="toc-single-turn-simplest" class="nav-link" data-scroll-target="#single-turn-simplest">Single-Turn (Simplest)</a></li>
+  <li><a href="#multi-turn-with-async-grpo-recommended" id="toc-multi-turn-with-async-grpo-recommended" class="nav-link" data-scroll-target="#multi-turn-with-async-grpo-recommended">Multi-Turn with Async GRPO (Recommended)</a></li>
+  <li><a href="#nemo-gym-prerequisites" id="toc-nemo-gym-prerequisites" class="nav-link" data-scroll-target="#nemo-gym-prerequisites">NeMo Gym Prerequisites</a></li>
+  <li><a href="#nemo-gym-configuration-reference" id="toc-nemo-gym-configuration-reference" class="nav-link" data-scroll-target="#nemo-gym-configuration-reference">NeMo Gym Configuration Reference</a></li>
+  <li><a href="#reward-functions-2" id="toc-reward-functions-2" class="nav-link" data-scroll-target="#reward-functions-2">Reward Functions</a></li>
+  </ul></li>
   <li><a href="#using-local-dataset-files" id="toc-using-local-dataset-files" class="nav-link" data-scroll-target="#using-local-dataset-files">Using local dataset files</a></li>
   <li><a href="#trl-auto-unwrapping-for-peft" id="toc-trl-auto-unwrapping-for-peft" class="nav-link" data-scroll-target="#trl-auto-unwrapping-for-peft">TRL auto-unwrapping for PEFT</a></li>
   </ul></li>
@@ -857,6 +871,8 @@ feedback. Various methods include, but not limited to:</p>
 <li><a href="#orpo">Odds Ratio Preference Optimization (ORPO)</a></li>
 <li><a href="#grpo">Group Relative Policy Optimization (GRPO)</a></li>
 <li><a href="#gdpo">Group Reward-Decoupled Policy Optimization (GDPO)</a></li>
+<li><a href="#ebft">Energy-Based Fine-Tuning (EBFT)</a></li>
+<li><a href="#nemo-gym-integration">NeMo Gym Integration</a></li>
 </ul>
 </section>
 <section id="rlhf-using-axolotl" class="level2">
@@ -1805,20 +1821,451 @@ Tip
 <span id="cb64-4"><a href="#cb64-4" aria-hidden="true" tabindex="-1"></a><span class="fu">simpo_gamma</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span><span class="co">  # default in CPOTrainer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This method uses the same dataset format as <a href="#dpo">DPO</a>.</p>
 </section>
+<section id="ebft" class="level3">
+<h3 class="anchored" data-anchor-id="ebft">EBFT</h3>
+<p>EBFT (Energy-Based Fine-Tuning) fine-tunes language models by optimizing a <strong>feature-matching loss</strong> rather than relying on external reward functions. A frozen copy of the model extracts embeddings from both generated and ground-truth completions, and the generator is updated via REINFORCE to match the ground-truth feature moments.</p>
+<p>Paper: <a href="https://arxiv.org/abs/2603.12248">“Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Models”</a> (Jelassi et al., 2026)</p>
+<p><strong>Key advantages:</strong></p>
+<ul>
+<li>No reward model or verifier required — works on any (prompt, completion) data</li>
+<li>Applicable to non-verifiable tasks (code, translation, creative writing)</li>
+<li>Operates on model rollouts (not teacher forcing), reducing distribution shift</li>
+</ul>
+<p>EBFT supports two modes:</p>
+<ul>
+<li><strong>Structured mode</strong>: For QA/instruction data with prompt + completion pairs. Uses vLLM for generation (like GRPO).</li>
+<li><strong>Strided mode</strong>: For unstructured text without prompt/completion splits. Uses strided block-parallel generation with flex_attention — no vLLM needed.</li>
+</ul>
+<section id="structured-mode" class="level4">
+<h4 class="anchored" data-anchor-id="structured-mode">Structured Mode</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb65"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen3-4B</span></span>
+<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> ebft</span></span>
+<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a><span class="fu">ebft</span><span class="kw">:</span></span>
+<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">feature_layers</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="fl">0.25</span><span class="kw">,</span><span class="at"> </span><span class="fl">0.5</span><span class="kw">,</span><span class="at"> </span><span class="fl">0.75</span><span class="kw">]</span><span class="co">    # Extract features at 25%, 50%, 75% depth</span></span>
+<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">embed_method</span><span class="kw">:</span><span class="at"> last_token</span></span>
+<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_whitening</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">alignment_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">                    # Cosine similarity reward weight</span></span>
+<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">diversity_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span><span class="co">                    # Pairwise dot product penalty</span></span>
+<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ce_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0</span><span class="co">                          # Cross-entropy on GT tokens (0 = off)</span></span>
+<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
+<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.7</span></span>
+<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_host</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0.0.0</span></span>
+<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">                   # LoRA adapter sync (recommended)</span></span>
+<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_data_producer</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">                   # Set false for sync mode</span></span>
+<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">scale_rewards</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">loss_type</span><span class="kw">:</span><span class="at"> grpo</span></span>
+<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">epsilon</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.2</span></span>
+<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.5</span></span>
+<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span></span>
+<span id="cb65-31"><a href="#cb65-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-32"><a href="#cb65-32" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb65-33"><a href="#cb65-33" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> nvidia/OpenCodeInstruct</span></span>
+<span id="cb65-34"><a href="#cb65-34" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ebft_opencode.transform</span></span>
+<span id="cb65-35"><a href="#cb65-35" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train[:500]</span></span>
+<span id="cb65-36"><a href="#cb65-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-37"><a href="#cb65-37" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb65-38"><a href="#cb65-38" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb65-39"><a href="#cb65-39" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb65-40"><a href="#cb65-40" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb66"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 1: Start vLLM</span></span>
+<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve config.yaml</span>
+<span id="cb66-3"><a href="#cb66-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb66-4"><a href="#cb66-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 2: Train</span></span>
+<span id="cb66-5"><a href="#cb66-5" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>1 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="strided-mode" class="level4">
+<h4 class="anchored" data-anchor-id="strided-mode">Strided Mode</h4>
+<p>For unstructured text (raw code, prose). No vLLM needed — runs on a single GPU.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb67"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> meta-llama/Llama-3.2-1B</span></span>
+<span id="cb67-2"><a href="#cb67-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb67-3"><a href="#cb67-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> ebft</span></span>
+<span id="cb67-4"><a href="#cb67-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb67-5"><a href="#cb67-5" aria-hidden="true" tabindex="-1"></a><span class="fu">ebft</span><span class="kw">:</span></span>
+<span id="cb67-6"><a href="#cb67-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> strided</span></span>
+<span id="cb67-7"><a href="#cb67-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">stride</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb67-8"><a href="#cb67-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">context_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb67-9"><a href="#cb67-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">generate_max_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">8</span></span>
+<span id="cb67-10"><a href="#cb67-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">n_samples_per_prompt</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb67-11"><a href="#cb67-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.6</span></span>
+<span id="cb67-12"><a href="#cb67-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">feature_layers</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="fl">0.25</span><span class="kw">,</span><span class="at"> </span><span class="fl">0.5</span><span class="kw">,</span><span class="at"> </span><span class="fl">0.75</span><span class="kw">]</span></span>
+<span id="cb67-13"><a href="#cb67-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">embed_method</span><span class="kw">:</span><span class="at"> last_token</span></span>
+<span id="cb67-14"><a href="#cb67-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_whitening</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb67-15"><a href="#cb67-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">alignment_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span></span>
+<span id="cb67-16"><a href="#cb67-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">diversity_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span></span>
+<span id="cb67-17"><a href="#cb67-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">rl_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.0</span></span>
+<span id="cb67-18"><a href="#cb67-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">ce_coef</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.03</span></span>
+<span id="cb67-19"><a href="#cb67-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">advantage_estimator</span><span class="kw">:</span><span class="at"> rloo</span></span>
+<span id="cb67-20"><a href="#cb67-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb67-21"><a href="#cb67-21" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb67-22"><a href="#cb67-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> nvidia/OpenCodeInstruct</span></span>
+<span id="cb67-23"><a href="#cb67-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> ebft_strided_structured.transform</span></span>
+<span id="cb67-24"><a href="#cb67-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train[:1%]</span></span>
+<span id="cb67-25"><a href="#cb67-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb67-26"><a href="#cb67-26" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb67-27"><a href="#cb67-27" aria-hidden="true" tabindex="-1"></a><span class="fu">flex_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">     # Strided mode uses flex_attention</span></span>
+<span id="cb67-28"><a href="#cb67-28" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb67-29"><a href="#cb67-29" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span></span>
+<span id="cb67-30"><a href="#cb67-30" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">    # Required for flex_attention</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb68"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>See <code>examples/ebft/</code> for complete example configs covering Llama 1B/3B/8B and Qwen3 4B/8B models in both modes.</p>
+</div>
+</div>
+</section>
+<section id="ebft-configuration-reference" class="level4">
+<h4 class="anchored" data-anchor-id="ebft-configuration-reference">EBFT Configuration Reference</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 27%">
+<col style="width: 39%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>ebft.feature_layers</code></td>
+<td><code>[0.25, 0.5, 0.75]</code></td>
+<td>Layer depths for feature extraction (fractional)</td>
+</tr>
+<tr class="even">
+<td><code>ebft.embed_method</code></td>
+<td><code>last_token</code></td>
+<td>Feature pooling: <code>last_token</code>, <code>mean_pooling</code>, <code>concat</code></td>
+</tr>
+<tr class="odd">
+<td><code>ebft.use_whitening</code></td>
+<td><code>false</code></td>
+<td>SVD whitening of feature dimensions</td>
+</tr>
+<tr class="even">
+<td><code>ebft.alignment_coef</code></td>
+<td><code>1.0</code></td>
+<td>Cosine similarity reward weight</td>
+</tr>
+<tr class="odd">
+<td><code>ebft.diversity_coef</code></td>
+<td><code>1.0</code></td>
+<td>Pairwise dot product penalty weight</td>
+</tr>
+<tr class="even">
+<td><code>ebft.ce_coef</code></td>
+<td><code>0.0</code></td>
+<td>Cross-entropy loss on ground-truth tokens</td>
+</tr>
+<tr class="odd">
+<td><code>ebft.mode</code></td>
+<td><code>structured</code></td>
+<td><code>structured</code> (vLLM) or <code>strided</code> (no vLLM)</td>
+</tr>
+<tr class="even">
+<td><code>ebft.stride</code></td>
+<td>—</td>
+<td>Tokens between anchor points (strided mode)</td>
+</tr>
+<tr class="odd">
+<td><code>ebft.context_length</code></td>
+<td>—</td>
+<td>Context window per block (strided mode)</td>
+</tr>
+<tr class="even">
+<td><code>ebft.generate_max_len</code></td>
+<td>—</td>
+<td>Tokens to generate per block (strided mode)</td>
+</tr>
+<tr class="odd">
+<td><code>ebft.n_samples_per_prompt</code></td>
+<td>—</td>
+<td>Rollouts per document (strided mode)</td>
+</tr>
+<tr class="even">
+<td><code>ebft.advantage_estimator</code></td>
+<td><code>grpo</code></td>
+<td><code>grpo</code> or <code>rloo</code> (strided mode)</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="nemo-gym-integration" class="level3">
+<h3 class="anchored" data-anchor-id="nemo-gym-integration">NeMo Gym Integration</h3>
+<p><a href="https://github.com/NVIDIA-NeMo/Gym">NeMo Gym</a> provides 50+ verified RL environments (math, coding, tool-use, reasoning) with deterministic reward signals. The axolotl integration supports both <strong>single-turn</strong> (call <code>/verify</code> after generation) and <strong>multi-turn</strong> (agent-based tool execution via <code>/run</code>).</p>
+<section id="single-turn-simplest" class="level4">
+<h4 class="anchored" data-anchor-id="single-turn-simplest">Single-Turn (Simplest)</h4>
+<p>For environments that only need answer verification (math, coding challenges). No agent server needed — the reward function calls <code>/verify</code> directly on the resource server.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb69"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen2.5-0.5B-Instruct</span></span>
+<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> grpo</span></span>
+<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default</span></span>
+<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">                          # Colocate mode (single GPU)</span></span>
+<span id="cb69-8"><a href="#cb69-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb69-9"><a href="#cb69-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">128</span></span>
+<span id="cb69-10"><a href="#cb69-10" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.9</span></span>
+<span id="cb69-11"><a href="#cb69-11" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_funcs</span><span class="kw">:</span></span>
+<span id="cb69-12"><a href="#cb69-12" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify</span></span>
+<span id="cb69-13"><a href="#cb69-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-14"><a href="#cb69-14" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb69-15"><a href="#cb69-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.nemo_gym.NemoGymPlugin</span></span>
+<span id="cb69-16"><a href="#cb69-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-17"><a href="#cb69-17" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb69-18"><a href="#cb69-18" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_dir</span><span class="kw">:</span><span class="at"> ~/Gym</span></span>
+<span id="cb69-19"><a href="#cb69-19" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_auto_start</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb69-20"><a href="#cb69-20" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_head_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">11000</span></span>
+<span id="cb69-21"><a href="#cb69-21" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_datasets</span><span class="kw">:</span></span>
+<span id="cb69-22"><a href="#cb69-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> resources_servers/reasoning_gym/data/train_basic_arithmetic.jsonl</span></span>
+<span id="cb69-23"><a href="#cb69-23" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">server_name</span><span class="kw">:</span><span class="at"> reasoning_gym</span></span>
+<span id="cb69-24"><a href="#cb69-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-25"><a href="#cb69-25" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb69-26"><a href="#cb69-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/reasoning_gym/data/train_basic_arithmetic.jsonl</span></span>
+<span id="cb69-27"><a href="#cb69-27" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb69-28"><a href="#cb69-28" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> responses_create_params.input</span></span>
+<span id="cb69-29"><a href="#cb69-29" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> content</span></span>
+<span id="cb69-30"><a href="#cb69-30" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> role</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb70"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 1: Start NeMo Gym resource server</span></span>
+<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Gym <span class="kw">&amp;&amp;</span> <span class="ex">.venv/bin/ng_run</span> <span class="dt">\</span></span>
+<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">"+config_paths=[resources_servers/reasoning_gym/configs/resources_only.yaml]"</span> <span class="dt">\</span></span>
+<span id="cb70-4"><a href="#cb70-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">"+skip_venv_if_present=true"</span></span>
+<span id="cb70-5"><a href="#cb70-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb70-6"><a href="#cb70-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 2: Train</span></span>
+<span id="cb70-7"><a href="#cb70-7" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>nemo_gym_datasets.path</code> is relative to <code>nemo_gym_dir</code>. Don’t use absolute paths or they will be double-joined.</p>
+</div>
+</div>
+</section>
+<section id="multi-turn-with-async-grpo-recommended" class="level4">
+<h4 class="anchored" data-anchor-id="multi-turn-with-async-grpo-recommended">Multi-Turn with Async GRPO (Recommended)</h4>
+<p>For environments with tool-use (weather, search, databases). An agent server orchestrates multi-turn interactions: generate → parse tool calls → execute tools → feed results back → repeat until done.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb71"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> Qwen/Qwen3-0.6B</span></span>
+<span id="cb71-2"><a href="#cb71-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-3"><a href="#cb71-3" aria-hidden="true" tabindex="-1"></a><span class="fu">rl</span><span class="kw">:</span><span class="at"> grpo</span></span>
+<span id="cb71-4"><a href="#cb71-4" aria-hidden="true" tabindex="-1"></a><span class="fu">chat_template</span><span class="kw">:</span><span class="at"> tokenizer_default</span></span>
+<span id="cb71-5"><a href="#cb71-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-6"><a href="#cb71-6" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb71-7"><a href="#cb71-7" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span>
+<span id="cb71-8"><a href="#cb71-8" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb71-9"><a href="#cb71-9" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="at">q_proj</span><span class="kw">,</span><span class="at"> k_proj</span><span class="kw">,</span><span class="at"> v_proj</span><span class="kw">,</span><span class="at"> o_proj</span><span class="kw">,</span><span class="at"> gate_proj</span><span class="kw">,</span><span class="at"> up_proj</span><span class="kw">,</span><span class="at"> down_proj</span><span class="kw">]</span></span>
+<span id="cb71-10"><a href="#cb71-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-11"><a href="#cb71-11" aria-hidden="true" tabindex="-1"></a><span class="fu">trl</span><span class="kw">:</span></span>
+<span id="cb71-12"><a href="#cb71-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_vllm</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb71-13"><a href="#cb71-13" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_mode</span><span class="kw">:</span><span class="at"> server</span></span>
+<span id="cb71-14"><a href="#cb71-14" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_host</span><span class="kw">:</span><span class="at"> localhost</span></span>
+<span id="cb71-15"><a href="#cb71-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_server_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">8000</span></span>
+<span id="cb71-16"><a href="#cb71-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_lora_sync</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb71-17"><a href="#cb71-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">vllm_sync_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span>
+<span id="cb71-18"><a href="#cb71-18" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_data_producer</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb71-19"><a href="#cb71-19" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">async_prefetch</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">                     # 3x speedup</span></span>
+<span id="cb71-20"><a href="#cb71-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">num_generations</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span></span>
+<span id="cb71-21"><a href="#cb71-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_completion_length</span><span class="kw">:</span><span class="at"> </span><span class="dv">512</span></span>
+<span id="cb71-22"><a href="#cb71-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">temperature</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.8</span></span>
+<span id="cb71-23"><a href="#cb71-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">reward_funcs</span><span class="kw">:</span></span>
+<span id="cb71-24"><a href="#cb71-24" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="kw">-</span><span class="at"> axolotl.integrations.nemo_gym.rewards.reward_env</span></span>
+<span id="cb71-25"><a href="#cb71-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-26"><a href="#cb71-26" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb71-27"><a href="#cb71-27" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.nemo_gym.NemoGymPlugin</span></span>
+<span id="cb71-28"><a href="#cb71-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-29"><a href="#cb71-29" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb71-30"><a href="#cb71-30" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_auto_start</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
+<span id="cb71-31"><a href="#cb71-31" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_head_port</span><span class="kw">:</span><span class="at"> </span><span class="dv">11000</span></span>
+<span id="cb71-32"><a href="#cb71-32" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_multi_turn</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb71-33"><a href="#cb71-33" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_verify_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">120</span></span>
+<span id="cb71-34"><a href="#cb71-34" aria-hidden="true" tabindex="-1"></a><span class="fu">nemo_gym_datasets</span><span class="kw">:</span></span>
+<span id="cb71-35"><a href="#cb71-35" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl</span></span>
+<span id="cb71-36"><a href="#cb71-36" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">server_name</span><span class="kw">:</span><span class="at"> example_single_tool_call</span></span>
+<span id="cb71-37"><a href="#cb71-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-38"><a href="#cb71-38" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb71-39"><a href="#cb71-39" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> ~/Gym/resources_servers/example_single_tool_call/data/weather_tool_calling.jsonl</span></span>
+<span id="cb71-40"><a href="#cb71-40" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb71-41"><a href="#cb71-41" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">field_messages</span><span class="kw">:</span><span class="at"> responses_create_params.input</span></span>
+<span id="cb71-42"><a href="#cb71-42" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_content</span><span class="kw">:</span><span class="at"> content</span></span>
+<span id="cb71-43"><a href="#cb71-43" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_field_role</span><span class="kw">:</span><span class="at"> role</span></span>
+<span id="cb71-44"><a href="#cb71-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-45"><a href="#cb71-45" aria-hidden="true" tabindex="-1"></a><span class="fu">vllm</span><span class="kw">:</span></span>
+<span id="cb71-46"><a href="#cb71-46" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">gpu_memory_utilization</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.85</span></span>
+<span id="cb71-47"><a href="#cb71-47" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_model_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">2048</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Multi-turn requires three services running:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb72"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 1: vLLM with LoRA + tool calling</span></span>
+<span id="cb72-2"><a href="#cb72-2" aria-hidden="true" tabindex="-1"></a><span class="va">VLLM_ALLOW_RUNTIME_LORA_UPDATING</span><span class="op">=</span>1 <span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="dt">\</span></span>
+<span id="cb72-3"><a href="#cb72-3" aria-hidden="true" tabindex="-1"></a>    <span class="ex">python</span> <span class="at">-m</span> vllm.entrypoints.openai.api_server <span class="dt">\</span></span>
+<span id="cb72-4"><a href="#cb72-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">--model</span> Qwen/Qwen3-0.6B <span class="at">--max-model-len</span> 2048 <span class="dt">\</span></span>
+<span id="cb72-5"><a href="#cb72-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">--gpu-memory-utilization</span> 0.85 <span class="dt">\</span></span>
+<span id="cb72-6"><a href="#cb72-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">--enable-lora</span> <span class="at">--max-lora-rank</span> 64 <span class="dt">\</span></span>
+<span id="cb72-7"><a href="#cb72-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">--enable-auto-tool-choice</span> <span class="at">--tool-call-parser</span> hermes</span>
+<span id="cb72-8"><a href="#cb72-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-9"><a href="#cb72-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 2: NeMo Gym servers (resource + model proxy + agent)</span></span>
+<span id="cb72-10"><a href="#cb72-10" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Gym <span class="kw">&amp;&amp;</span> <span class="ex">.venv/bin/ng_run</span> <span class="dt">\</span></span>
+<span id="cb72-11"><a href="#cb72-11" aria-hidden="true" tabindex="-1"></a>    <span class="st">"+config_paths=[configs/axolotl_tool_calling.yaml]"</span> <span class="dt">\</span></span>
+<span id="cb72-12"><a href="#cb72-12" aria-hidden="true" tabindex="-1"></a>    <span class="st">"+skip_venv_if_present=true"</span></span>
+<span id="cb72-13"><a href="#cb72-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb72-14"><a href="#cb72-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 3: Training</span></span>
+<span id="cb72-15"><a href="#cb72-15" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>1 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Multi-turn requires a NeMo Gym agent config YAML that defines three components: a resource server (tools + <code>/verify</code>), a model server proxy (forwards to your vLLM), and an agent server (orchestrates <code>/run</code>). See the <a href="https://github.com/NVIDIA-NeMo/Gym">NeMo Gym README</a> for agent config format.</p>
+</div>
+</div>
+</section>
+<section id="nemo-gym-prerequisites" class="level4">
+<h4 class="anchored" data-anchor-id="nemo-gym-prerequisites">NeMo Gym Prerequisites</h4>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb73"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Clone and set up NeMo Gym</span></span>
+<span id="cb73-2"><a href="#cb73-2" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/NVIDIA-NeMo/Gym.git ~/Gym</span>
+<span id="cb73-3"><a href="#cb73-3" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ~/Gym</span>
+<span id="cb73-4"><a href="#cb73-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--python</span> 3.12 <span class="kw">&amp;&amp;</span> <span class="bu">source</span> .venv/bin/activate <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> sync</span>
+<span id="cb73-5"><a href="#cb73-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb73-6"><a href="#cb73-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Fix pycosat build (GCC 13+)</span></span>
+<span id="cb73-7"><a href="#cb73-7" aria-hidden="true" tabindex="-1"></a><span class="va">CFLAGS</span><span class="op">=</span><span class="st">""</span> <span class="ex">uv</span> pip install pycosat <span class="at">--python</span> .venv/bin/python <span class="at">--no-build-isolation</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="nemo-gym-configuration-reference" class="level4">
+<h4 class="anchored" data-anchor-id="nemo-gym-configuration-reference">NeMo Gym Configuration Reference</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 15%">
+<col style="width: 23%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>nemo_gym_enabled</code></td>
+<td>bool</td>
+<td>—</td>
+<td>Enable the NeMo Gym integration</td>
+</tr>
+<tr class="even">
+<td><code>nemo_gym_dir</code></td>
+<td>str</td>
+<td><code>~/Gym</code></td>
+<td>Path to NeMo Gym repo</td>
+</tr>
+<tr class="odd">
+<td><code>nemo_gym_auto_start</code></td>
+<td>bool</td>
+<td><code>true</code></td>
+<td>Auto-start resource servers</td>
+</tr>
+<tr class="even">
+<td><code>nemo_gym_head_port</code></td>
+<td>int</td>
+<td><code>11000</code></td>
+<td>Head server port</td>
+</tr>
+<tr class="odd">
+<td><code>nemo_gym_multi_turn</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Enable multi-turn via agent <code>/run</code></td>
+</tr>
+<tr class="even">
+<td><code>nemo_gym_verify_timeout</code></td>
+<td>int</td>
+<td><code>30</code></td>
+<td>Per-request timeout (seconds)</td>
+</tr>
+<tr class="odd">
+<td><code>nemo_gym_datasets</code></td>
+<td>list</td>
+<td>required</td>
+<td>Dataset configs with <code>path</code> and <code>server_name</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="reward-functions-2" class="level4">
+<h4 class="anchored" data-anchor-id="reward-functions-2">Reward Functions</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 34%">
+<col style="width: 20%">
+<col style="width: 44%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Function</th>
+<th>Mode</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>axolotl.integrations.nemo_gym.rewards.reward_nemo_gym_verify</code></td>
+<td>Single-turn</td>
+<td>Calls <code>/verify</code>, returns binary reward</td>
+</tr>
+<tr class="even">
+<td><code>axolotl.integrations.nemo_gym.rewards.reward_env</code></td>
+<td>Multi-turn</td>
+<td>Passthrough reward from agent <code>/run</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
 <section id="using-local-dataset-files" class="level3">
 <h3 class="anchored" data-anchor-id="using-local-dataset-files">Using local dataset files</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb65"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
-<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
-<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
-<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb74"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">ds_type</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">data_files</span><span class="kw">:</span></span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> orca_rlhf.jsonl</span></span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">split</span><span class="kw">:</span><span class="at"> train</span></span>
+<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chatml.intel</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="trl-auto-unwrapping-for-peft" class="level3">
 <h3 class="anchored" data-anchor-id="trl-auto-unwrapping-for-peft">TRL auto-unwrapping for PEFT</h3>
 <p>TRL supports auto-unwrapping PEFT models for RL training paradigms which rely on a reference model. This significantly reduces memory pressure as an additional refreference model does not need to be loaded, and reference model log-probabilities can be obtained by disabling PEFT adapters. This is enabled by default. To turn it off, pass the following config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb66"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb66-1"><a href="#cb66-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
-<span id="cb66-2"><a href="#cb66-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb75"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="co"># load ref model when adapter training.</span></span>
+<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a><span class="fu">rl_adapter_ref_model</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>

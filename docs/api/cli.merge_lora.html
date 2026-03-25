@@ -793,7 +793,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </tr>
 <tr class="even">
 <td><a href="#axolotl.cli.merge_lora.do_merge_lora">do_merge_lora</a></td>
-<td>Calls <code>transformers</code>’ <code>merge_and_unload</code> on the model given in the <code>axolotl</code> config</td>
+<td>Merges LoRA adapters with base model using either memory-efficient or legacy approach.</td>
 </tr>
 </tbody>
 </table>
@@ -864,8 +864,7 @@ config values will be overwritten to allow the LoRA merge logic to work as expec
 <section id="axolotl.cli.merge_lora.do_merge_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.merge_lora.do_merge_lora">do_merge_lora</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.merge_lora.do_merge_lora(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Calls <code>transformers</code>’ <code>merge_and_unload</code> on the model given in the <code>axolotl</code> config
-along with the LoRA adapters to combine them into a single base model.</p>
+<p>Merges LoRA adapters with base model using either memory-efficient or legacy approach.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
 <table class="caption-top table">
