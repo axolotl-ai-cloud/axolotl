@@ -49,10 +49,11 @@ For the latest features between releases:
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv venv --no-project --relocatable
+uv sync --extra flash-attn --extra deepspeed
 source .venv/bin/activate
-uv pip install --no-build-isolation -e '.[flash-attn,deepspeed]'
 ```
+
+`uv sync` creates a `.venv`, installs exact pinned versions from `uv.lock`, and sets up an editable install automatically.
 
 ### Docker {#sec-docker}
 

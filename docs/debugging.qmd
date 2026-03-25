@@ -72,7 +72,9 @@ datasets:
 Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) of Axolotl, which ensures that changes you make to the code are reflected at runtime.  Run the following commands from the root of this project:
 
 ```bash
-uv pip install --no-build-isolation -e '.[flash-attn,deepspeed]'
+export UV_TORCH_BACKEND=cu128  # or cu130
+uv sync --extra flash-attn --extra deepspeed --group dev --group test
+source .venv/bin/activate
 ```
 
 #### Remote Hosts
@@ -209,10 +211,11 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 >[!Tip]
 > To understand which containers are available, see the [Docker section of the README](../README.md#docker) and the [DockerHub repo](https://hub.docker.com/r/axolotlai/axolotl/tags).  For details of how the Docker containers are built, see axolotl's [Docker CI builds](../.github/workflows/main.yml).
 
-You will now be in the container.  Next, perform an editable install of Axolotl:
+You will now be in the container.  Next, install Axolotl with dev dependencies:
 
 ```bash
-uv pip install --no-build-isolation -e '.[flash-attn,deepspeed]'
+uv sync --extra flash-attn --extra deepspeed --group dev --group test
+source .venv/bin/activate
 ```
 
 ### Attach To Container

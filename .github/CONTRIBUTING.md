@@ -31,9 +31,10 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-# Install dev and test dependencies (declared in pyproject.toml [dependency-groups])
-uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-    codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+# Install axolotl + dev and test dependencies from lockfile
+export UV_TORCH_BACKEND=cu128  # or cu130
+uv sync --extra flash-attn --extra deepspeed --group dev --group test
+source .venv/bin/activate
 pre-commit install
 
 # test

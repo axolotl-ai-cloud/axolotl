@@ -61,29 +61,25 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==78.1.1 wheel
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken
-          pip3 install codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+          uv pip install --no-build-isolation -U -e .
+          python scripts/unsloth_install.py --uv | sh
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Override with nightly HF packages
         run: |
-          pip3 install --no-deps \
+          uv pip install --no-deps \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
@@ -104,9 +100,8 @@ jobs:
           pytest -v --durations=10 tests/patched/
           pytest -v --durations=10 tests/cli/
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+      - name: cleanup uv cache
+        run: uv cache clean
 
   docker-e2e-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'

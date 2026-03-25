@@ -94,29 +94,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 wheel
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install --no-cache-dir --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken
-          pip3 install codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+          uv pip install --no-build-isolation -U -e .
+          python scripts/unsloth_install.py --uv | sh
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
@@ -191,30 +183,23 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 setuptools_scm build wheel psutil
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          pip3 show torch
+          uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
-          pip3 install --no-cache-dir --no-build-isolation dist/axolotl*.tar.gz
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken
-          pip3 install codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+          uv pip install --no-build-isolation dist/axolotl*.tar.gz
+          python scripts/unsloth_install.py --uv | sh
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
