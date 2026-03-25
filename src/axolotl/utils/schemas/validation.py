@@ -54,6 +54,26 @@ class DatasetValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_deprecated_unsloth_fields(cls, data):
+        deprecated_fields = [
+            "unsloth_cross_entropy_loss",
+            "unsloth_lora_mlp",
+            "unsloth_lora_qkv",
+            "unsloth_lora_o",
+            "unsloth_rms_norm",
+            "unsloth_rope",
+        ]
+        found = [f for f in deprecated_fields if data.get(f)]
+        if found:
+            raise ValueError(
+                f"`{'`, `'.join(found)}` {'has' if len(found) == 1 else 'have'} been removed. "
+                "Please use `lora_mlp_kernel`, `lora_qkv_kernel`, `lora_o_kernel` instead. "
+                "See: https://docs.axolotl.ai/docs/lora_optims.html"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_dataset_or_pretraining_dataset(cls, data):
         if data.get("datasets") is None and data.get("pretraining_dataset") is None:
             raise ValueError("either datasets or pretraining_dataset is required")
@@ -607,36 +627,6 @@ class LoRAValidationMixin:
             )
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_qlora_unsloth(cls, data):
-        if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
-        ):
-            if data.get("adapter") == "lora" and data.get("load_in_8bit"):
-                raise ValueError(
-                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with 8-bit LoRA"
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_axolotl_unsloth(cls, data):
-        is_lora_kernel = any(
-            data.get(k) for k in ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
-        )
-        is_unsloth_lora = any(
-            data.get(k)
-            for k in ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
-        )
-        if is_lora_kernel and is_unsloth_lora:
-            raise ValueError(
-                "both lora_mlp_kernel and unsloth_lora_mlp cannot be true (similarly for lora_qkv_kernel, lora_o_kernel)"
-            )
-        return data
-
     @model_validator(mode="after")
     def check_fused_lora(self):
         if self.adapter in ["lora", "qlora"] and self.flash_attn_fuse_mlp:
@@ -847,17 +837,6 @@ class OptimizationValidationMixin:
             elif batch_flattening_auto:
                 data["batch_flattening"] = False
 
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_xentropy_patch_conflicts(cls, data):
-        if data.get("flash_attn_cross_entropy") and data.get(
-            "unsloth_cross_entropy_loss"
-        ):
-            raise ValueError(
-                "flash_attn_cross_entropy and unsloth_cross_entropy_loss cannot be both enabled"
-            )
         return data
 
     @model_validator(mode="before")

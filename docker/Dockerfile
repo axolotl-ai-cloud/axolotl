@@ -32,7 +32,7 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
         pip install --no-build-isolation -e .[$BASE_EXTRAS,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
     else \
         pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
-    fi && \    python scripts/unsloth_install.py | sh && \
+    fi && \
     python scripts/cutcrossentropy_install.py | sh && \
     pip install pytest && \
     pip cache purge

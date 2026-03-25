@@ -108,7 +108,6 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --no-build-isolation -U -e .
-          python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
@@ -201,7 +200,6 @@ jobs:
           uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
           uv pip install --no-build-isolation dist/axolotl*.tar.gz
-          python scripts/unsloth_install.py --uv | sh
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse

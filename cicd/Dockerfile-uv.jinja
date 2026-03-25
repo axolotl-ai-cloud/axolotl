@@ -40,7 +40,6 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
     fi
 
-RUN python scripts/unsloth_install.py --uv | sh
 RUN python scripts/cutcrossentropy_install.py --uv | sh
 
 # So we can test the Docker image

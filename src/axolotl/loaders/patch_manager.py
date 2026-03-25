@@ -147,7 +147,6 @@ class PatchManager:
     def apply_post_model_load_patches(self, model: PreTrainedModel):
         """Apply patches that require the model instance."""
         self._apply_llama_flash_attn_patches(model)
-        self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
 
@@ -524,24 +523,10 @@ class PatchManager:
             )
 
             patch_fa_llama_cross_entropy()
-        elif self.cfg.unsloth_cross_entropy_loss:
-            from axolotl.monkeypatch.unsloth_ import integrate_cross_entropy_loss_patch
-
-            integrate_cross_entropy_loss_patch(model_type="llama")
-
         if self.cfg.flash_attn_rms_norm and self.has_flash_attn:
             from axolotl.monkeypatch.llama_attn_hijack_flash import patch_llama_rms_norm
 
             patch_llama_rms_norm()
-        elif self.cfg.unsloth_rms_norm:
-            from axolotl.monkeypatch.unsloth_ import patch_unsloth_layernorm
-
-            patch_unsloth_layernorm()
-
-        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-            from axolotl.monkeypatch.unsloth_ import patch_self_attn_lora
-
-            patch_self_attn_lora()
 
     def _patch_llama_flash_attention(self):
         """Apply Flash Attention patches for LLaMA models."""
@@ -606,23 +591,6 @@ class PatchManager:
             if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
                 LOG.info("Patching with SwiGLU...")
                 replace_llama_mlp_with_swiglu(model)
-
-    def _apply_unsloth_patches(self, model):
-        """Apply unsloth optimization patches."""
-        if self.cfg.unsloth_lora_mlp:
-            from axolotl.monkeypatch.unsloth_ import integrate_lora_mlp_patch
-
-            integrate_lora_mlp_patch(peft_model=model)
-
-        if self.cfg.unsloth_lora_qkv or self.cfg.unsloth_lora_o:
-            from axolotl.monkeypatch.unsloth_ import integrate_lora_patch
-
-            integrate_lora_patch(peft_model=model, cfg=self.cfg)
-
-        if self.cfg.unsloth_rope:
-            from axolotl.monkeypatch.unsloth_ import integrate_rope_embeddings
-
-            integrate_rope_embeddings()
 
     def _apply_lora_kernel_patch(self, model):
         """Apply LoRA kernel patches."""
