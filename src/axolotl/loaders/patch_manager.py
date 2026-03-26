@@ -302,6 +302,7 @@ class PatchManager:
                 from transformers.models.nemotron_h.modeling_nemotron_h import (
                     NemotronHPreTrainedModel,
                 )
+
                 from axolotl.monkeypatch.models.nemotron_h.modeling import (
                     patch_nemotron_h_modeling_packing,
                 )
