@@ -76,7 +76,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --no-build-isolation -e .
+          echo "torch==${{ matrix.pytorch_version }}+cpu" > /tmp/torch-pin.txt
+          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
             codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
