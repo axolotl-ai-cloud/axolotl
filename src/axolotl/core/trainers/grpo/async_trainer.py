@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from trl.extras.profiling import profiling_decorator
 from trl.trainer import GRPOConfig, GRPOTrainer
@@ -2618,6 +2619,111 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         return all_logps
 
+    def _get_per_token_logps_and_entropies_flattened(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        prompt_mask=None,
+        compute_entropy=True,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Flattened forward pass for training (with gradients).
+
+        Same padding removal as the scoring path, but:
+        - Gradients flow through for backward pass
+        - Computes entropy alongside logprobs
+        - Per-sequence logprob/entropy extraction preserves grad graph
+        """
+        device = input_ids.device
+        B, L = input_ids.shape
+        if batch_size is None:
+            batch_size = max(1, B)
+
+        autocast_ctx = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+
+        # Pre-allocate output containers (will be filled with grad-carrying slices)
+        all_logps_list: list[torch.Tensor] = []
+        all_entropy_list: list[torch.Tensor] = []
+
+        for chunk_start in range(0, B, batch_size):
+            chunk_end = min(chunk_start + batch_size, B)
+            chunk_ids = input_ids[chunk_start:chunk_end]
+            chunk_mask = attention_mask[chunk_start:chunk_end]
+            n = chunk_end - chunk_start
+
+            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
+            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
+            cu_seqlens[1:] = seq_lens.cumsum(0)
+
+            valid = chunk_mask.bool()
+            flat_ids = chunk_ids[valid].unsqueeze(0)
+            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
+            flat_pos = positions[valid].unsqueeze(0)
+
+            with autocast_ctx:
+                logits = model(
+                    input_ids=flat_ids,
+                    position_ids=flat_pos,
+                    use_cache=False,
+                    cu_seq_lens_q=cu_seqlens,
+                    cu_seq_lens_k=cu_seqlens,
+                    max_length_q=seq_lens.max().item(),
+                    max_length_k=seq_lens.max().item(),
+                ).logits
+                logits = torch.nan_to_num(logits, nan=0.0)
+
+            # Extract logprobs and entropy per-sequence (avoids cross-sequence targets,
+            # preserves gradient graph through selective_log_softmax → logits → model)
+            for i in range(n):
+                slen = seq_lens[i].item()
+                abs_i = chunk_start + i
+                if prompt_mask is not None:
+                    plen = int(prompt_mask[abs_i].sum().item())
+                else:
+                    plen = max(1, slen - logits_to_keep)
+                n_compl = slen - plen
+                s = cu_seqlens[i].item()
+
+                if n_compl <= 0:
+                    # No completion tokens — append zeros
+                    all_logps_list.append(torch.zeros(logits_to_keep, device=device))
+                    if compute_entropy:
+                        all_entropy_list.append(
+                            torch.zeros(logits_to_keep, device=device)
+                        )
+                    continue
+
+                with autocast_ctx:
+                    # Shifted logits and targets for this sequence only
+                    seq_logits = logits[0, s + plen - 1 : s + slen - 1, :]
+                    seq_logits = seq_logits / self.temperature
+                    seq_targets = flat_ids[0, s + plen : s + slen]
+
+                    # Log probs (differentiable)
+                    lps = selective_log_softmax(
+                        seq_logits.unsqueeze(0), seq_targets.unsqueeze(0)
+                    )[0]  # (n_compl,)
+
+                    # Pad to logits_to_keep
+                    if n_compl < logits_to_keep:
+                        lps = F.pad(lps, (0, logits_to_keep - n_compl))
+                    all_logps_list.append(lps[:logits_to_keep])
+
+                    if compute_entropy:
+                        ent = entropy_from_logits(seq_logits)  # (n_compl,)
+                        if n_compl < logits_to_keep:
+                            ent = F.pad(ent, (0, logits_to_keep - n_compl))
+                        all_entropy_list.append(ent[:logits_to_keep])
+
+        # Stack per-sequence results into (B, logits_to_keep) tensors
+        all_logps = torch.stack(all_logps_list, dim=0)
+        all_entropies = (
+            torch.stack(all_entropy_list, dim=0) if compute_entropy else None
+        )
+        return all_logps, all_entropies
+
     @profiling_decorator
     def _get_per_token_logps_and_entropies(
         self,
@@ -2789,20 +2895,47 @@ class AsyncGRPOTrainer(GRPOTrainer):
             else completion_mask * inputs["tool_mask"]
         )
 
-        per_token_logps, entropies = self._get_per_token_logps_and_entropies(
-            model,
-            input_ids,
-            attention_mask,
-            logits_to_keep,
-            compute_entropy=True,
-            pixel_values=inputs.get("pixel_values"),
-            image_grid_thw=inputs.get("image_grid_thw"),
-            num_images=inputs.get("num_images"),
-            pixel_attention_mask=inputs.get("pixel_attention_mask"),
-            image_sizes=inputs.get("image_sizes"),
-            token_type_ids=inputs.get("token_type_ids"),
-            mm_token_type_ids=inputs.get("mm_token_type_ids"),
+        # Check for multimodal inputs
+        forward_kwargs = {
+            k: inputs[k]
+            for k in (
+                "pixel_values",
+                "image_grid_thw",
+                "num_images",
+                "pixel_attention_mask",
+                "image_sizes",
+                "token_type_ids",
+                "mm_token_type_ids",
+            )
+            if k in inputs and inputs[k] is not None
+        }
+
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs
+            and not self.is_fsdp_enabled
         )
+
+        if can_flatten:
+            per_token_logps, entropies = (
+                self._get_per_token_logps_and_entropies_flattened(
+                    model,
+                    input_ids,
+                    attention_mask,
+                    logits_to_keep,
+                    prompt_mask=prompt_mask,
+                    compute_entropy=True,
+                )
+            )
+        else:
+            per_token_logps, entropies = self._get_per_token_logps_and_entropies(
+                model,
+                input_ids,
+                attention_mask,
+                logits_to_keep,
+                compute_entropy=True,
+                **forward_kwargs,
+            )
         if self.top_entropy_quantile < 1.0:
             entropy_mask = self.get_high_entropy_mask(
                 entropies, mask, 1 - self.top_entropy_quantile
