@@ -3,16 +3,15 @@ name: docker-multigpu-tests-biweekly
 on:
   pull_request:
     paths:
-      - 'tests/e2e/multigpu/**.py'
-      - 'pyproject.toml'
-      - 'pyproject.toml'
-      - '.github/workflows/multi-gpu-e2e.yml'
-      - 'scripts/cutcrossentropy_install.py'
-      - 'src/axolotl/core/trainers/mixins/sequence_parallel.py'
-      - 'src/axolotl/utils/distributed.py'
+      - "tests/e2e/multigpu/**.py"
+      - "pyproject.toml"
+      - ".github/workflows/multi-gpu-e2e.yml"
+      - "scripts/cutcrossentropy_install.py"
+      - "src/axolotl/core/trainers/mixins/sequence_parallel.py"
+      - "src/axolotl/utils/distributed.py"
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1,4'  # Runs at 00:00 UTC every monday & thursday
+    - cron: "0 0 * * 1,4" # Runs at 00:00 UTC every monday & thursday
 
 # Cancel jobs on the same ref if a new one is triggered
 concurrency:
@@ -32,19 +31,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-#          - cuda: 129
-#            cuda_version: 12.9.1
-#            python_version: "3.12"
-#            pytorch: 2.9.1
-#            axolotl_extras: "fbgemm-gpu"
-#            num_gpus: 2
-#            dockerfile: "Dockerfile-uv.jinja"
+          #          - cuda: 129
+          #            cuda_version: 12.9.1
+          #            python_version: "3.12"
+          #            pytorch: 2.9.1
+          #            axolotl_extras: "fbgemm-gpu"
+          #            num_gpus: 2
+          #            dockerfile: "Dockerfile-uv.jinja"
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
             axolotl_extras:
-#            axolotl_extras: fbgemm-gpu
+            #            axolotl_extras: fbgemm-gpu
             num_gpus: 2
           - cuda: 128
             cuda_version: 12.8.1

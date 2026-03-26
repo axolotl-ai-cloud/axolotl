@@ -58,7 +58,7 @@ source .venv/bin/activate
 ### Docker {#sec-docker}
 
 ```{.bash}
-docker run --gpus '"all"' --rm -it axolotlai/axolotl-uv:main-latest
+docker run --gpus '"all"' --rm -it --ipc=host axolotlai/axolotl-uv:main-latest
 ```
 
 For development with Docker:
@@ -138,10 +138,6 @@ source .venv/bin/activate
 # Reinstall axolotl
 uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
 ```
-
-::: {.callout-tip}
-`uv pip` is a drop-in replacement for `pip`. Any existing `pip install` command can be run with `uv pip install` instead — it uses the same package format and indexes, just faster.
-:::
 
 ## Using pip (Alternative) {#sec-pip}
 

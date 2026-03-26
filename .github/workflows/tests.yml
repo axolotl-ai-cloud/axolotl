@@ -6,19 +6,20 @@ on:
     branches:
       - "main"
     paths:
-      - '**.py'
-      - 'pyproject.toml'
-      - '.github/workflows/*.yml'
-      - 'cicd/cicd.sh'
-      - 'cicd/Dockerfile.jinja'
+      - "**.py"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/Dockerfile.jinja"
   pull_request:
-      types: [opened, synchronize, reopened, ready_for_review]
-      paths:
-       - '**.py'
-       - 'pyproject.toml'
-       - '.github/workflows/*.yml'
-       - 'cicd/cicd.sh'
-       - 'cicd/Dockerfile.jinja'
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/Dockerfile.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -43,7 +44,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip' # caching pip dependencies
+          cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
