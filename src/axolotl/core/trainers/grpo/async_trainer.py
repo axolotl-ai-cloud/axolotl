@@ -2415,7 +2415,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
           BG thread:  produce(skip_policy_logps=True) → vLLM generation + reward computation
           Main thread: deferred scoring (policy logprobs via GPU forward pass) → training
 
-        Why deferred scoring exists (stability vs throughput tradeoff):
+        Why deferred scoring is necessary for stable training:
           The policy logprobs (old_per_token_logps) must come from the CURRENT
           training model, not the vLLM model (which is N steps behind). Using
           stale vLLM logprobs as old_logps causes the importance sampling ratio
@@ -2430,13 +2430,18 @@ class AsyncGRPOTrainer(GRPOTrainer):
           maximum useful gradient signal before clipping activates.
 
           Cost: one additional forward pass per scoring round (GPU-bound, cannot
-          overlap with training on the same GPU). This is the price of stable
-          training. Use ``batch_flattening: true`` to reduce this cost by
-          eliminating padding tokens from the forward pass.
+          overlap with training on the same GPU). Use ``batch_flattening: true``
+          to reduce this cost by eliminating padding tokens from the forward pass.
 
         Pipeline:
           [produce(BG)] → [deferred_scores(GPU)] → [train×GA(GPU)] → [weight_sync]
                            ↑ can't overlap with train (same GPU)
+
+        Bottleneck: the produce() wait (generation-limited, ~10s at 4B scale)
+        dominates when generation is slower than training + scoring. Async
+        prefetch hides some of this, but the GPU sits idle during the remaining
+        wait. Future optimization: proactive scoring — fetch and score the NEXT
+        batch immediately after buffering the current one, using the idle GPU time.
         """
         # Return from buffer if available
         if self._buffered_inputs:
@@ -2453,10 +2458,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             args=self.args,
         )
 
-        # Convert RolloutDataset back to a dict for scoring/splitting
         rollout = rollout_dataset._data
 
-        # If async (skip_policy_logps=True), score deferred logps on main thread
         if rollout.get("_pending_policy_logps"):
             if self.args.streaming_partial_batch:
                 micro_batches = self._score_streaming(rollout)
@@ -2468,7 +2471,6 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 micro_batches = [unsplit_pixel_values_by_grid(b) for b in batches]
                 micro_batches = micro_batches * self.num_iterations
         else:
-            # Sync path: data is already fully scored
             rollout = split_pixel_values_by_grid(rollout)
             batches = split_tensor_dict(rollout, self.args.steps_per_generation)
             micro_batches = [unsplit_pixel_values_by_grid(b) for b in batches]
