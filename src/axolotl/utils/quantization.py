@@ -5,7 +5,6 @@ Utilities for quantization including QAT and PTQ using torchao.
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
-from torchao.prototype.qat import MXFakeQuantizeConfig
 from torchao.quantization import quantize_
 from torchao.quantization.qat import (
     QATConfig,
@@ -44,10 +43,10 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         pass
 
     try:
-        from torchao.prototype.qat import MXFakeQuantizeConfig
+        from torchao.prototype.mx_formats import MXLinearConfig
 
-        quantization_config_to_str[MXFakeQuantizeConfig] = "mxfp4"
-    except ImportError:
+        quantization_config_to_str[MXLinearConfig] = "mxfp4"
+    except (ImportError, RuntimeError):
         pass
 
 
@@ -121,8 +120,6 @@ def get_quantization_config(
         return NVFP4InferenceConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
-        from torchao.prototype.qat import MXFakeQuantizeConfig
-
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
         if block_size != 32:
@@ -130,7 +127,9 @@ def get_quantization_config(
                 "MXFP4 quantization must use a block_size (group_size) of 32"
             )
 
-        return MXFakeQuantizeConfig(dtype=torch.float4_e2m1fn_x2, block_size=block_size)
+        from torchao.prototype.mx_formats import MXLinearConfig
+
+        return MXLinearConfig(elem_dtype=torch.float4_e2m1fn_x2, block_size=block_size)
 
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
@@ -189,11 +188,14 @@ def _make_qat_config(
         IntxFakeQuantizeConfig,
     )
 
-    if isinstance(base_config, MXFakeQuantizeConfig):
-        return QATConfig(
-            activation_config=base_config,
-            weight_config=base_config,
+    if weight_dtype == TorchAOQuantDType.mxfp4:
+        from torchao.prototype.qat import MXFakeQuantizeConfig
+
+        block_size = getattr(base_config, "block_size", 32)
+        mx_fq = MXFakeQuantizeConfig(
+            dtype=torch.float4_e2m1fn_x2, block_size=block_size
         )
+        return QATConfig(activation_config=mx_fq, weight_config=mx_fq)
 
     # Build explicit weight config
     weight_fq_config: (
