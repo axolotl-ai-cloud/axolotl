@@ -67,6 +67,61 @@ class LoRAScriptArguments(ScriptArguments):
     )
 
 
+def _kill_process_tree(pid: int):
+    """Kill a process and all its descendants."""
+    import subprocess  # nosec B404
+
+    try:
+        # Find all descendants
+        result = subprocess.run(  # nosec B603 B607
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            for child_pid in result.stdout.strip().split("\n"):
+                child_pid = child_pid.strip()
+                if child_pid:
+                    _kill_process_tree(int(child_pid))
+    except (FileNotFoundError, ValueError):
+        pass
+
+    try:
+        os.kill(pid, 9)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _cleanup_engine_cores():
+    """Kill orphan VLLM::EngineCore processes that hold GPU memory.
+
+    When the serve process exits abruptly, EngineCore subprocesses may
+    become orphaned (reparented to init) and hold GPU memory indefinitely.
+    """
+    import subprocess  # nosec B404
+
+    my_pid = os.getpid()
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["pgrep", "-f", "VLLM::EngineCore"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            for pid in result.stdout.strip().split("\n"):
+                pid = pid.strip()
+                if pid and int(pid) != my_pid:
+                    try:
+                        os.kill(int(pid), 9)
+                        logger.info("Killed orphan EngineCore %s", pid)
+                    except (ProcessLookupError, ValueError):
+                        pass
+    except FileNotFoundError:
+        pass
+
+
 def llm_worker(
     script_args: LoRAScriptArguments,
     data_parallel_rank: int,
@@ -113,11 +168,43 @@ def llm_worker(
 
     connection.send({"status": "ready"})
 
+    def _worker_cleanup():
+        """Clean up the LLM and its EngineCore subprocess on worker exit."""
+        try:
+            llm.collective_rpc(method="close_communicator")
+        except Exception:
+            pass
+        # Kill any EngineCore processes that are children of this worker
+        import subprocess  # nosec B404
+
+        try:
+            my_pid = os.getpid()
+            result = subprocess.run(  # nosec B603 B607
+                ["pgrep", "-P", str(my_pid), "-f", "EngineCore"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            for pid in result.stdout.strip().split("\n"):
+                if pid.strip():
+                    try:
+                        os.kill(int(pid.strip()), 9)
+                    except (ProcessLookupError, ValueError):
+                        pass
+        except FileNotFoundError:
+            pass
+
+    import atexit as _atexit
+
+    _atexit.register(_worker_cleanup)
+
     while True:
         try:
             command = connection.recv()
-        except KeyboardInterrupt:
-            llm.collective_rpc(method="close_communicator")
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if command.get("type") == "shutdown":
             break
 
         if command["type"] in ["call", "fire_and_forget"]:
@@ -142,6 +229,15 @@ def llm_worker(
                 logger.warning("Worker method %s failed: %s", method_name, exc)
                 if command["type"] == "call":
                     connection.send({"error": str(exc), "kind": "worker_error"})
+                # If the error is from EngineCore dying, exit the worker —
+                # there's no recovery, and staying alive just produces
+                # infinite 500 errors.
+                if "EngineCore" in str(exc) or "EngineDeadError" in type(exc).__name__:
+                    logger.error(
+                        "EngineCore died, worker exiting. "
+                        "Restart the vLLM server to recover."
+                    )
+                    break
                 continue
             if command["type"] == "call":
                 connection.send(result)
@@ -219,6 +315,25 @@ def main(script_args: ScriptArguments):
                 )
         script_args = lora_args
 
+    # Register cleanup on exit to kill orphan EngineCore processes
+    import atexit
+    import signal
+
+    def _shutdown_handler(*_args):
+        logger.info("Shutdown signal received, cleaning up workers...")
+        for conn in connections:
+            try:
+                conn.send({"type": "shutdown"})
+            except Exception:
+                pass
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+        _cleanup_engine_cores()
+
+    atexit.register(_cleanup_engine_cores)
+    signal.signal(signal.SIGTERM, _shutdown_handler)
+
     # Spawn workers
     master_port = get_open_port()
     connections: list[Connection] = []
@@ -259,12 +374,50 @@ def main(script_args: ScriptArguments):
                     if isinstance(msg, dict) and msg.get("status") == "ready":
                         ready.add(id(conn))
             await asyncio.sleep(0.1)
+
+        # Start a background task to monitor worker health.
+        # If all workers die (e.g. EngineCore crash), shut down the server
+        # instead of serving infinite 500 errors.
+        async def _monitor_workers():
+            while True:
+                await asyncio.sleep(5)
+                alive = [p.is_alive() for p in processes]
+                if not any(alive):
+                    logger.error(
+                        "All vLLM workers died. Shutting down server. "
+                        "Check logs for EngineCore errors and restart."
+                    )
+                    # Kill worker process trees and orphan EngineCore processes
+                    for p in processes:
+                        _kill_process_tree(p.pid)
+                    _cleanup_engine_cores()
+                    os._exit(1)
+
+        monitor_task = asyncio.create_task(_monitor_workers())
         yield
-        for p in processes:
-            p.join(timeout=10)
+        monitor_task.cancel()
+        # Graceful shutdown: send shutdown command, wait for workers to exit,
+        # then escalate to SIGTERM → SIGKILL if needed. Workers may be stuck
+        # in llm.generate() for large models, so allow generous timeouts.
+        logger.info("Shutting down vLLM workers...")
+        for conn in connections:
+            try:
+                conn.send({"type": "shutdown"})
+            except Exception:
+                pass
+        for i, p in enumerate(processes):
+            p.join(timeout=30)
             if p.is_alive():
+                logger.warning("Worker %d didn't exit in 30s, sending SIGTERM", i)
                 p.terminate()
-                p.join()
+                p.join(timeout=15)
+            if p.is_alive():
+                logger.warning("Worker %d didn't respond to SIGTERM, force killing", i)
+                p.kill()
+                p.join(timeout=5)
+        # Kill any orphan EngineCore processes that survived worker shutdown
+        _cleanup_engine_cores()
+        logger.info("vLLM shutdown complete")
 
     app = FastAPI(lifespan=lifespan)
 
@@ -327,6 +480,18 @@ def main(script_args: ScriptArguments):
 
     @app.get("/health/")
     async def health():
+        dead = [i for i, p in enumerate(processes) if not p.is_alive()]
+        if dead:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "dead_workers": dead,
+                    "message": "Worker(s) died. Restart the server.",
+                },
+            )
         return {"status": "ok"}
 
     @app.get("/get_world_size/")
@@ -339,6 +504,14 @@ def main(script_args: ScriptArguments):
     @app.post("/generate/", response_model=GenerateResponse)
     async def generate(request: GenerateRequest):
         """Generate completions with optional LoRA adapter."""
+        # Pre-flight: check workers are alive before sending work
+        dead_workers = [i for i, p in enumerate(processes) if not p.is_alive()]
+        if dead_workers:
+            raise RuntimeError(
+                f"vLLM worker(s) {dead_workers} died (EngineCore crash). "
+                "Restart the vLLM server to recover."
+            )
+
         import base64
         from io import BytesIO
 
@@ -418,8 +591,18 @@ def main(script_args: ScriptArguments):
         # Use run_in_executor so blocking recv() doesn't freeze the event loop
         # (allows /set_lora_adapter/ and other endpoints to be served concurrently)
         loop = asyncio.get_running_loop()
+
+        def _safe_recv(conn):
+            try:
+                return conn.recv()
+            except EOFError:
+                return {
+                    "error": "Worker process died (pipe closed)",
+                    "kind": "worker_dead",
+                }
+
         all_outputs = await asyncio.gather(
-            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+            *(loop.run_in_executor(None, _safe_recv, conn) for conn in connections)
         )
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
@@ -442,6 +625,11 @@ def main(script_args: ScriptArguments):
     @app.post("/chat/", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """Chat endpoint with optional LoRA adapter."""
+        dead_workers = [i for i, p in enumerate(processes) if not p.is_alive()]
+        if dead_workers:
+            raise RuntimeError(
+                f"vLLM worker(s) {dead_workers} died. Restart the server."
+            )
         generation_kwargs = {
             "n": request.n,
             "repetition_penalty": request.repetition_penalty,

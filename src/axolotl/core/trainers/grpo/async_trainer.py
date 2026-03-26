@@ -2437,11 +2437,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
           [produce(BG)] → [deferred_scores(GPU)] → [train×GA(GPU)] → [weight_sync]
                            ↑ can't overlap with train (same GPU)
 
-        Bottleneck: the produce() wait (generation-limited, ~10s at 4B scale)
-        dominates when generation is slower than training + scoring. Async
-        prefetch hides some of this, but the GPU sits idle during the remaining
-        wait. Future optimization: proactive scoring — fetch and score the NEXT
-        batch immediately after buffering the current one, using the idle GPU time.
+        Bottleneck: the produce() wait (generation-limited) dominates when
+        generation is slower than training + scoring. Async prefetch hides
+        part of this by generating in the BG thread while training runs.
         """
         # Return from buffer if available
         if self._buffered_inputs:
