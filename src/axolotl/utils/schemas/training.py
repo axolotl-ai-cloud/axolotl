@@ -61,6 +61,12 @@ class HyperparametersConfig(BaseModel):
             "description": "Whether to mask out or include the human's prompt from the training labels"
         },
     )
+    train_on_last_assistant_only: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Whether to only train on the last assistant turn in a multi-turn conversation."
+        },
+    )
     group_by_length: bool | None = Field(
         default=None,
         json_schema_extra={

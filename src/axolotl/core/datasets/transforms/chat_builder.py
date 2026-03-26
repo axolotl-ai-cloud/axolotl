@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 def chat_message_transform_builder(
     train_on_inputs=False,
+    train_on_last_assistant_only=False,
     conversations_field: str = "messages",
     message_field_role: str | list[str] | None = None,  # commonly "role"
     message_field_content: str | list[str] | None = None,  # commonly "content"
@@ -145,6 +146,15 @@ def chat_message_transform_builder(
                         "weight": weight,
                     }
                 )
+
+        if train_on_last_assistant_only:
+            last_assistant_idx = -1
+            for i, message in enumerate(messages):
+                if message["role"] == "assistant":
+                    last_assistant_idx = i
+            for i, message in enumerate(messages):
+                if message["role"] == "assistant" and i != last_assistant_idx:
+                    message["weight"] = 0
 
         return {"conversation": messages}
 
