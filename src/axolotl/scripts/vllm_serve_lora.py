@@ -61,6 +61,10 @@ class LoRAScriptArguments(ScriptArguments):
         default="bfloat16",
         metadata={"help": "Data type for LoRA weights."},
     )
+    worker_extension_cls: str = field(
+        default="trl.scripts.vllm_serve.WeightSyncWorkerExtension",
+        metadata={"help": "vLLM worker extension class for weight synchronization."},
+    )
 
 
 def llm_worker(
@@ -96,8 +100,7 @@ def llm_worker(
         enable_prefix_caching=script_args.enable_prefix_caching,
         kv_cache_dtype=script_args.kv_cache_dtype,
         max_model_len=script_args.max_model_len,
-        # Use batch-capable worker extension (adds batch_update_named_params + auto-close)
-        worker_extension_cls="axolotl.scripts.vllm_worker_ext.BatchWeightSyncWorkerExtension",
+        worker_extension_cls=script_args.worker_extension_cls,
         trust_remote_code=script_args.trust_remote_code,
         model_impl=script_args.vllm_model_impl,
         logprobs_mode="processed_logprobs",
@@ -156,7 +159,7 @@ def main(script_args: ScriptArguments):
 
     # Request/Response models (defined locally like TRL's vllm_serve.main)
     class GenerateRequest(BaseModel):
-        prompts: list[str]
+        prompts: list[str] | list[list[int]]
         images: list[str] | None = None
         n: int = 1
         repetition_penalty: float = 1.0
@@ -350,7 +353,12 @@ def main(script_args: ScriptArguments):
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
         for prompt, image in zip(request.prompts, images, strict=True):
-            row: dict[str, Any] = {"prompt": prompt}
+            # Support both string prompts and token ID lists
+            row: dict[str, Any]
+            if isinstance(prompt, list):
+                row = {"prompt_token_ids": prompt}
+            else:
+                row = {"prompt": prompt}
             if image is not None:
                 from PIL import Image
 
@@ -416,6 +424,10 @@ def main(script_args: ScriptArguments):
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
         ]
+        # Check for worker errors before flattening
+        for o in all_outputs:
+            if isinstance(o, dict) and "error" in o:
+                raise RuntimeError(f"vLLM worker error: {o['error']}")
         all_outputs = list(chain.from_iterable(all_outputs))
 
         return {

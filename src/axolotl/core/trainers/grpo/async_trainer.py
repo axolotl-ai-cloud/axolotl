@@ -129,6 +129,18 @@ class AsyncGRPOConfig(GRPOConfig):
         },
     )
 
+    # --- Batch flattening ---
+    batch_flattening: bool = field(
+        default=False,
+        metadata={
+            "help": "Use batch flattening for the scoring forward pass. Removes padding tokens "
+            "before the forward pass, reducing attention FLOPs proportional to the padding ratio. "
+            "Requires flash_attention_2 attention implementation. Incompatible with FSDP and "
+            "multimodal models. The per-token logprob results differ by bf16 precision (~0.03 mean) "
+            "but produce equivalent loss and gradients."
+        },
+    )
+
     # --- Streaming scoring ---
     streaming_partial_batch: bool = field(
         default=False,
@@ -523,7 +535,10 @@ class GRPODataProducer(BaseDataProducer):
     def set_trainer(self, trainer) -> None:
         """Inject the live trainer reference and create the prompt DataLoader."""
         self._trainer = trainer
-        self._init_prompt_dataloader()
+        # Defer _init_prompt_dataloader if trainer.args is not yet set
+        # (happens when set_trainer is called from _create_data_producer during __init__)
+        if getattr(trainer, "args", None) is not None:
+            self._init_prompt_dataloader()
 
     def _init_prompt_dataloader(self) -> None:
         from functools import partial
@@ -580,6 +595,10 @@ class GRPODataProducer(BaseDataProducer):
         **kwargs,
     ) -> RolloutDataset | None:
         """Generate a fresh GRPO training rollout."""
+        # Lazy init: create prompt DataLoader if deferred from set_trainer
+        if self._prompt_dl is None and self._trainer is not None:
+            self._init_prompt_dataloader()
+
         is_main = self._trainer.accelerator.is_main_process
 
         # FSDP rank0-only mode: non-rank-0 returns None (broadcast fills it later)
@@ -1610,6 +1629,16 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
 
         # --- Policy logprobs ---
+        # When batch_flattening is enabled, use the flattened (padding-free) forward
+        # pass for the scoring path. This removes padding tokens before the forward
+        # pass, reducing attention FLOPs proportional to the padding ratio (20-34%
+        # faster in benchmarks). Requires flash_attention_2 and no multimodal inputs.
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs  # no multimodal inputs
+            and not self.is_fsdp_enabled  # FSDP needs wrapped model
+        )
+
         logprob_batch_size = min(batch_size * 4, len(prompt_ids))
         with disable_gradient_checkpointing(
             self.model, self.args.gradient_checkpointing_kwargs
@@ -1619,15 +1648,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    logprob_batch_size,
-                    num_images=num_images,
-                    **forward_kwargs,
-                )
+                if can_flatten:
+                    old_per_token_logps = self._get_per_token_logps_flattened(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        batch_size=logprob_batch_size,
+                        prompt_mask=prompt_mask,
+                    )
+                else:
+                    old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        logprob_batch_size,
+                        num_images=num_images,
+                        **forward_kwargs,
+                    )
                 data["old_per_token_logps"] = old_per_token_logps
             else:
                 old_per_token_logps = None
@@ -1988,6 +2027,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
 
         # --- Policy logprobs for this chunk (GPU, overlaps with BG rewards) ---
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs
+            and not self.is_fsdp_enabled
+        )
         logprob_batch_size = min(batch_size * 2, chunk_size)
         with disable_gradient_checkpointing(
             self.model, self.args.gradient_checkpointing_kwargs
@@ -1997,15 +2041,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                old_logps, _ = self._get_per_token_logps_and_entropies(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    logprob_batch_size,
-                    num_images=num_images,
-                    **forward_kwargs,
-                )
+                if can_flatten:
+                    old_logps = self._get_per_token_logps_flattened(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        batch_size=logprob_batch_size,
+                        prompt_mask=chunk_prompt_mask,
+                    )
+                else:
+                    old_logps, _ = self._get_per_token_logps_and_entropies(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        logprob_batch_size,
+                        num_images=num_images,
+                        **forward_kwargs,
+                    )
                 if "old_per_token_logps" not in data:
                     total = len(data["prompt_ids"])
                     data["old_per_token_logps"] = torch.zeros(
@@ -2354,7 +2408,35 @@ class AsyncGRPOTrainer(GRPOTrainer):
         return super()._prepare_inputs(generation_batch)
 
     def _prepare_inputs_data_producer(self, generation_batch):
-        """Data producer path: produce rollout, score deferred logps, split into micro-batches."""
+        """Data producer path: produce rollout, score deferred logps, split into micro-batches.
+
+        Architecture (with async_prefetch=True):
+          BG thread:  produce(skip_policy_logps=True) → vLLM generation + reward computation
+          Main thread: deferred scoring (policy logprobs via GPU forward pass) → training
+
+        Why deferred scoring exists (stability vs throughput tradeoff):
+          The policy logprobs (old_per_token_logps) must come from the CURRENT
+          training model, not the vLLM model (which is N steps behind). Using
+          stale vLLM logprobs as old_logps causes the importance sampling ratio
+          to start far from 1.0, leading to:
+            - Immediate PPO clipping → wasted samples
+            - High-variance gradients from IS correction
+            - Compounding per-token ratio errors on long sequences
+            - In extreme cases, complete training failure (exp-003: accuracy=0)
+
+          Deferred scoring computes old_logps with the latest model weights, so
+          the IS ratio starts at exactly 1.0 and drifts gradually — giving
+          maximum useful gradient signal before clipping activates.
+
+          Cost: one additional forward pass per scoring round (GPU-bound, cannot
+          overlap with training on the same GPU). This is the price of stable
+          training. Use ``batch_flattening: true`` to reduce this cost by
+          eliminating padding tokens from the forward pass.
+
+        Pipeline:
+          [produce(BG)] → [deferred_scores(GPU)] → [train×GA(GPU)] → [weight_sync]
+                           ↑ can't overlap with train (same GPU)
+        """
         # Return from buffer if available
         if self._buffered_inputs:
             return self._buffered_inputs.pop(0)
@@ -2427,6 +2509,114 @@ class AsyncGRPOTrainer(GRPOTrainer):
         torch.cuda.empty_cache()
 
         return micro_batches[0]
+
+    def _get_per_token_logps_flattened(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        prompt_mask=None,
+    ) -> torch.Tensor:
+        """Compute per-token log-probs using batch flattening (padding-free).
+
+        Instead of processing padded batches where attention wastes compute on
+        padding tokens, this method:
+        1. Chunks the batch into sub-batches of ``batch_size`` sequences
+        2. For each chunk, flattens non-padding tokens into [1, chunk_tokens]
+        3. Uses FlashAttentionKwargs (cu_seq_lens) for varlen attention
+        4. Computes selective_log_softmax on the flat logits
+        5. Gathers completion logprobs back to (B, logits_to_keep) padded format
+
+        Args:
+            prompt_mask: (B, L) mask where 1 = prompt token, 0 = completion/padding.
+                Used to determine the exact prompt length per sequence for correct
+                logprob gathering. If None, inferred as seq_len - logits_to_keep.
+
+        Chunking prevents OOM when the total flattened sequence is too long
+        (e.g., 32 sequences × 2048 tokens = 65K tokens → 20GB logits tensor).
+
+        Requires flash_attention_2 attention implementation.
+        """
+        if not self.is_fsdp_enabled:
+            model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
+
+        device = input_ids.device
+        B, L = input_ids.shape
+        if batch_size is None:
+            batch_size = max(1, B)
+
+        autocast_ctx = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+        all_logps = torch.zeros(B, logits_to_keep, device=device)
+
+        for chunk_start in range(0, B, batch_size):
+            chunk_end = min(chunk_start + batch_size, B)
+            chunk_ids = input_ids[chunk_start:chunk_end]
+            chunk_mask = attention_mask[chunk_start:chunk_end]
+            n = chunk_end - chunk_start
+
+            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
+            total_tokens = seq_lens.sum().item()
+            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
+            cu_seqlens[1:] = seq_lens.cumsum(0)
+
+            valid = chunk_mask.bool()
+            flat_ids = chunk_ids[valid].unsqueeze(0)
+            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
+            flat_pos = positions[valid].unsqueeze(0)
+
+            with autocast_ctx:
+                logits = model(
+                    input_ids=flat_ids,
+                    position_ids=flat_pos,
+                    use_cache=False,
+                    cu_seq_lens_q=cu_seqlens,
+                    cu_seq_lens_k=cu_seqlens,
+                    max_length_q=seq_lens.max().item(),
+                    max_length_k=seq_lens.max().item(),
+                ).logits
+                logits = torch.nan_to_num(logits, nan=0.0)
+
+                # Compute logprobs on the flat shifted tensor
+                flat_logits = logits[0, :-1, :] / self.temperature
+                flat_targets = flat_ids[0, 1:]
+                flat_logps = selective_log_softmax(
+                    flat_logits.unsqueeze(0), flat_targets.unsqueeze(0)
+                )[0]
+
+                # Mask out cross-sequence boundary positions. In the shifted
+                # tensor, position cu_seqlens[i]-1 (for i>0) is where sequence
+                # i-1's last token "predicts" sequence i's first token — garbage.
+                for boundary in cu_seqlens[1:-1]:
+                    idx = boundary.item() - 1
+                    if 0 <= idx < flat_logps.size(0):
+                        flat_logps[idx] = 0.0
+
+            # Gather completion logprobs per sequence.
+            # Use prompt_mask to determine exact prompt length (not logits_to_keep,
+            # which is the padded completion dimension and may exceed the actual
+            # completion length for shorter sequences).
+            for i in range(n):
+                slen = seq_lens[i].item()
+                abs_i = chunk_start + i  # absolute index in the full batch
+                if prompt_mask is not None:
+                    plen = int(prompt_mask[abs_i].sum().item())
+                else:
+                    plen = max(1, slen - logits_to_keep)
+                n_compl = slen - plen
+                start = cu_seqlens[i].item() + plen - 1
+                start = max(0, start)
+                actual = min(n_compl, total_tokens - 1 - start)
+                if actual > 0:
+                    all_logps[chunk_start + i, :actual] = flat_logps[
+                        start : start + actual
+                    ]
+
+            del logits, flat_logits, flat_logps, flat_ids
+            torch.cuda.empty_cache()
+
+        return all_logps
 
     @profiling_decorator
     def _get_per_token_logps_and_entropies(

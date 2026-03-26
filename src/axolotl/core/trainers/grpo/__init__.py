@@ -202,6 +202,10 @@ class GRPOStrategy:
         if getattr(trl, "vllm_lora_sync", None) is not None:
             grpo_args_kwargs["vllm_lora_sync"] = trl.vllm_lora_sync
 
+        # Batch flattening (top-level config, not under trl)
+        if getattr(cfg, "batch_flattening", None):
+            grpo_args_kwargs["batch_flattening"] = cfg.batch_flattening
+
         return grpo_args_kwargs
 
     @classmethod
