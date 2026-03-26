@@ -21,10 +21,28 @@ from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
 MODEL_NAME = "Qwen/Qwen3-0.6B"
 
 
+def _fix_patched_attention(model):
+    """Bind apply_qkv on attention modules if LoRA kernel monkeypatch is active.
+
+    The LoRA kernel tests replace ``Qwen3Attention.forward`` at the class level
+    with ``axolotl_attn_forward``, which expects a per-instance ``apply_qkv``
+    method.  Models created *after* that patch but *without* the per-instance
+    setup will crash.  We fix this by binding the original (non-LoRA) apply_qkv.
+    """
+    from axolotl.monkeypatch.lora_kernels import original_apply_o, original_apply_qkv
+
+    for module in model.modules():
+        fwd_name = getattr(type(module).forward, "__name__", "")
+        if "axolotl" in fwd_name and not hasattr(module, "apply_qkv"):
+            module.apply_qkv = types.MethodType(original_apply_qkv, module)
+            module.apply_o = types.MethodType(original_apply_o, module)
+
+
 def setup_model(eval_mode=True):
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME, dtype=torch.bfloat16, attn_implementation="flash_attention_2"
     ).cuda()
+    _fix_patched_attention(model)
     if eval_mode:
         model.eval()
     else:
