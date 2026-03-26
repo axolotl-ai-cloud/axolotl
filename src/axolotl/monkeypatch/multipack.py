@@ -52,6 +52,8 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "seed_oss",
     "lfm2",
     "lfm2_moe",
+    "ernie4_5",
+    "ernie4_5_moe",
     "olmo",
     "olmo2",
     "olmo3",

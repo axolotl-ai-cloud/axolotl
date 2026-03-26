@@ -1012,27 +1012,44 @@ class AsyncGRPOTrainer(GRPOTrainer):
             import requests
 
             vllm_client = self.vllm_generation.vllm_client
-            url = f"{vllm_client.base_url}/set_lora_adapter/"
+            base_url = vllm_client.base_url
+            base_model = getattr(self.args, "model_name_or_path", "axolotl-lora")
             sync_timeout = getattr(self.args, "vllm_server_timeout", 300) or 300
+
+            # Try standard vLLM /v1/load_lora_adapter first, fall back to custom endpoint
             response = requests.post(
-                url,
+                f"{base_url}/v1/load_lora_adapter",
                 json={
-                    "lora_name": "active_lora",
-                    "lora_int_id": self._lora_sync_version,
+                    "lora_name": base_model,
                     "lora_path": adapter_path,
+                    "load_inplace": True,
                 },
                 timeout=sync_timeout,
             )
             if response.status_code != 200:
-                logger.warning(
-                    "Failed to set LoRA adapter: %s %s",
-                    response.status_code,
-                    response.text,
+                # Fallback: try custom /set_lora_adapter/ endpoint
+                response = requests.post(
+                    f"{base_url}/set_lora_adapter/",
+                    json={
+                        "lora_name": "active_lora",
+                        "lora_int_id": self._lora_sync_version,
+                        "lora_path": adapter_path,
+                    },
+                    timeout=30,
                 )
-                return
+                if response.status_code != 200:
+                    logger.warning(
+                        "Failed to set LoRA adapter: %s %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return
 
             # Reset prefix cache after adapter update
-            vllm_client.reset_prefix_cache()
+            try:
+                vllm_client.reset_prefix_cache()
+            except Exception as exc:
+                logger.warning("Failed to reset prefix cache: %s", exc)
 
             # Clean up old adapter versions (keep only current)
             if self._lora_sync_version > 1:
@@ -1519,6 +1536,29 @@ class AsyncGRPOTrainer(GRPOTrainer):
     ) -> None:
         """Called after advantages are computed. Override for replay buffer, re-roll, etc."""
 
+    def _notify_rollouts_scored(
+        self,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Dispatch on_rollouts_scored to all registered plugins (rank 0 only)."""
+        if not self.accelerator.is_main_process:
+            return
+
+        from axolotl.integrations.base import PluginManager
+
+        pm = PluginManager.get_instance()
+        if pm and pm.plugins:
+            # Try _axolotl_cfg first (set by causal builder), fall back to
+            # PluginManager's stored cfg (set during register phase).
+            cfg = getattr(self, "_axolotl_cfg", None) or getattr(pm, "_cfg", None)
+            if cfg is not None:
+                pm.on_rollouts_scored(
+                    cfg, self, prompts, completions, rewards, advantages
+                )
+
     # ------------------------------------------------------------------
     # Main-thread scoring
     # ------------------------------------------------------------------
@@ -1843,7 +1883,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     nanmax(self.accelerator.gather(torch.max(flat_isr))).item()
                 )
 
-        # Log prompt/completion texts
+        # Log prompt/completion texts.
+        # NB: gather_object merges per-rank local texts into a full-batch list
+        # matching rewards_per_func and all_advantages which are already full-batch
+        # tensors (gathered/computed earlier in this method). Lengths stay aligned.
         prompts_text = self.processing_class.batch_decode(
             prompt_ids, skip_special_tokens=True
         )
@@ -1851,11 +1894,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
             completion_ids, skip_special_tokens=True
         )
         if gather_object is not None:
-            self._logs["prompt"].extend(gather_object(prompts_text))
-            self._logs["completion"].extend(gather_object(completions_text))
+            gathered_prompts = gather_object(prompts_text)
+            gathered_completions = gather_object(completions_text)
+            self._logs["prompt"].extend(gathered_prompts)
+            self._logs["completion"].extend(gathered_completions)
+        else:
+            gathered_prompts = prompts_text
+            gathered_completions = completions_text
+        rewards_dict = {}
         for i, name in enumerate(self.reward_func_names):
-            self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
-        self._logs["advantages"].extend(all_advantages.tolist())
+            reward_list = rewards_per_func[:, i].tolist()  # already full-batch
+            self._logs["rewards"][name].extend(reward_list)
+            rewards_dict[name] = reward_list
+        adv_list = all_advantages.tolist()  # already full-batch
+        self._logs["advantages"].extend(adv_list)
+
+        # Notify plugins of scored rollouts
+        self._notify_rollouts_scored(
+            gathered_prompts, gathered_completions, rewards_dict, adv_list
+        )
 
         # Remove deferred keys
         for k in list(data.keys()):
@@ -2486,6 +2543,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits, completion_ids, self.temperature
                     )
                     all_logps.append(logps)
+                    # Liger fused path doesn't compute entropy — append zeros
+                    if compute_entropy:
+                        all_entropies.append(torch.zeros_like(logps))
                 else:
                     logits = logits[:, :-1, :]
                     logits = logits[:, -logits_to_keep:, :]

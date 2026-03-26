@@ -575,7 +575,8 @@ class PatchManager:
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
         if (
-            self.model_config.model_type in ["llama", "llama4"]
+            self.model_config.model_type
+            in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
             and self.cfg.flash_attention
