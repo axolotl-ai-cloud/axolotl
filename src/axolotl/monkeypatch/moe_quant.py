@@ -164,6 +164,16 @@ def patch_peft_target_parameters_matching():
     from peft.utils.integrations import init_empty_weights
     from peft.utils.other import _get_submodules
 
+    # Mapping from unfused parameter names to their fused equivalents.
+    # When a model stores fused weights (e.g. gate_up_proj) but the user
+    # specifies unfused names (gate_proj, up_proj), we auto-expand so the
+    # fused parameter is also targeted. The original unfused names are kept
+    # in the set so that models that do NOT fuse still work.
+    _UNFUSED_TO_FUSED: dict[str, str] = {
+        "gate_proj": "gate_up_proj",
+        "up_proj": "gate_up_proj",
+    }
+
     def _patched_inject_parameters(
         self, peft_config, model, adapter_name, low_cpu_mem_usage
     ):
@@ -176,10 +186,43 @@ def patch_peft_target_parameters_matching():
                 continue
             for target in original_targets:
                 mod_path, _, param_name = target.rpartition(".")
-                if (
+                if not (
                     module_name == mod_path or module_name.endswith("." + mod_path)
-                ) and hasattr(module, param_name):
+                ):
+                    continue
+
+                if hasattr(module, param_name):
                     expanded.add(f"{module_name}.{param_name}")
+                elif param_name in _UNFUSED_TO_FUSED:
+                    # The model uses fused weights (e.g. gate_up_proj) but the
+                    # user specified unfused names (gate_proj / up_proj).
+                    fused_name = _UNFUSED_TO_FUSED[param_name]
+                    if hasattr(module, fused_name):
+                        if fused_name not in expanded:
+                            LOG.warning(
+                                "target_parameter '%s' not found on %s, "
+                                "but fused equivalent '%s' exists — adding "
+                                "it automatically.",
+                                param_name,
+                                module_name,
+                                fused_name,
+                            )
+                        expanded.add(f"{module_name}.{fused_name}")
+                    else:
+                        LOG.warning(
+                            "target_parameter '%s' not found on %s and no "
+                            "fused equivalent exists either — skipping.",
+                            param_name,
+                            module_name,
+                        )
+                else:
+                    LOG.warning(
+                        "target_parameter '%s' not found on %s — skipping. "
+                        "Check that the parameter name matches the model's "
+                        "weight names.",
+                        param_name,
+                        module_name,
+                    )
 
         target_names_set = expanded
 

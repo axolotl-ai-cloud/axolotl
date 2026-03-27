@@ -1176,7 +1176,7 @@ class TestSwanLabProfiling:
 
         # Mock trainer with SwanLab enabled
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:
@@ -1199,7 +1199,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=False)  # Disabled
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=False)  # Disabled
 
         with patch("swanlab.log") as mock_log:
             with swanlab_profiling_context(mock_trainer, "test_function"):
@@ -1213,7 +1213,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
 
         with (
             patch("swanlab.get_run", return_value=None),
@@ -1294,7 +1294,7 @@ class TestSwanLabProfiling:
         )
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         # Config that filters out very fast operations
@@ -1320,7 +1320,7 @@ class TestSwanLabProfiling:
         from axolotl.integrations.swanlab.profiling import swanlab_profiling_context
 
         mock_trainer = MagicMock()
-        mock_trainer.cfg = MagicMock(use_swanlab=True)
+        mock_trainer.axolotl_cfg = MagicMock(use_swanlab=True)
         mock_trainer.__class__.__name__ = "TestTrainer"
 
         with patch("swanlab.get_run") as mock_get_run, patch("swanlab.log") as mock_log:

@@ -691,8 +691,7 @@ def log_prediction_callback_factory(trainer: Trainer, tokenizer, logger: str):
                         ].append(pred_step_text)
                         row_index += 1
                 if logger == "wandb":
-                    # type: ignore[attr-defined]
-                    wandb.run.log(
+                    wandb.run.log(  # type: ignore[attr-defined]
                         {
                             f"{name} - Predictions vs Ground Truth": pd.DataFrame(
                                 table_data
@@ -748,12 +747,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                     mode="w", delete=False, suffix=".yml", prefix="axolotl_config_"
                 ) as temp_file:
                     copyfile(self.axolotl_config_path, temp_file.name)
-                    artifact = wandb.Artifact(
-                        f"config-{wandb.run.id}", type="axolotl-config"
+                    artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                        f"config-{wandb.run.id}",  # type: ignore[attr-defined]
+                        type="axolotl-config",
                     )
                     artifact.add_file(temp_file.name)
-                    wandb.log_artifact(artifact)
-                    wandb.save(temp_file.name)
+                    wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                    wandb.save(temp_file.name)  # type: ignore[attr-defined]
                     LOG.info(
                         "The Axolotl config has been saved to the WandB run under files."
                     )
@@ -779,12 +779,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                             temp_ct_file.write(str(chat_tpl))
                             temp_ct_file.flush()
 
-                        artifact = wandb.Artifact(
-                            f"chat-template-{wandb.run.id}", type="jinja-template"
+                        artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                            f"chat-template-{wandb.run.id}",  # type: ignore[attr-defined]
+                            type="jinja-template",
                         )
                         artifact.add_file(temp_ct_file.name)
-                        wandb.log_artifact(artifact)
-                        wandb.save(temp_ct_file.name)
+                        wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                        wandb.save(temp_ct_file.name)  # type: ignore[attr-defined]
                         LOG.info(
                             "The chat_template_jinja has been saved to the WandB run under files."
                         )
@@ -810,13 +811,13 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
                         else:
                             skip_upload = True
                         if not skip_upload:
-                            artifact = wandb.Artifact(
-                                f"deepspeed-config-{wandb.run.id}",
+                            artifact = wandb.Artifact(  # type: ignore[attr-defined]
+                                f"deepspeed-config-{wandb.run.id}",  # type: ignore[attr-defined]
                                 type="deepspeed-config",
                             )
                             artifact.add_file(temp_file.name)
-                            wandb.log_artifact(artifact)
-                            wandb.save(temp_file.name)
+                            wandb.log_artifact(artifact)  # type: ignore[attr-defined]
+                            wandb.save(temp_file.name)  # type: ignore[attr-defined]
                             LOG.info(
                                 "The DeepSpeed config has been saved to the WandB run under files."
                             )

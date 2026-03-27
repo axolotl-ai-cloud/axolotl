@@ -1,0 +1,86 @@
+# EBFT Structured Mode: Qwen3.5-4B (hybrid linear attention)
+#
+# Qwen3.5 uses hybrid attention: linear attention (conv1d) on 3/4 of layers,
+# full attention every 4th layer. This tests EBFT compatibility.
+#
+# Prerequisites:
+#   1. Start vLLM on GPU 0:
+#      CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve examples/ebft/qwen35-4b-ebft-structured-async.yaml
+#
+#   2. Run training on GPU 1:
+#      CUDA_VISIBLE_DEVICES=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+#          axolotl train examples/ebft/qwen35-4b-ebft-structured-async.yaml
+
+base_model: Qwen/Qwen3.5-4B
+
+rl: ebft
+
+ebft:
+  feature_layers: [0.25, 0.5, 0.75]
+  embed_method: last_token
+  use_whitening: false
+  alignment_coef: 1.0
+  diversity_coef: 1.0
+  ce_coef: 0.0
+
+trl:
+  num_generations: 4
+  max_completion_length: 256
+  temperature: 0.7
+  use_vllm: true
+  vllm_server_host: 0.0.0.0
+  vllm_server_port: 8000
+  scale_rewards: true
+  loss_type: grpo
+  epsilon: 0.2
+  generation_kwargs:
+    stop_token_ids: [248044, 248046]  # <|endoftext|>, <|im_end|>
+  chat_template_kwargs:
+    enable_thinking: false
+  async_prefetch: true
+  vllm_server_timeout: 300
+
+vllm:
+  gpu_memory_utilization: 0.5
+  max_model_len: 2048
+  serve_module: axolotl.scripts.vllm_serve_lora
+  enforce_eager: true
+
+datasets:
+  - path: nvidia/OpenCodeInstruct
+    type: ebft_opencode.transform
+    split: train[:500]
+
+sequence_len: 1024
+micro_batch_size: 1
+gradient_accumulation_steps: 4
+num_epochs: 1
+max_steps: 10
+
+learning_rate: 5.0e-6
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+warmup_steps: 3
+weight_decay: 0.01
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+# Target full-attention q/k/v/o on layers 3,7,11,15,19,23,27,31 + MLP on all layers
+# Avoids linear_attn modules (in_proj_qkv, in_proj_z, etc.) which break vLLM LoRA
+lora_target_modules: ".*\\.layers\\.(3|7|11|15|19|23|27|31)\\.self_attn\\.(q|k|v|o)_proj|.*\\.mlp\\.(gate|up|down)_proj"
+
+bf16: auto
+flash_attention: true
+gradient_checkpointing: true
+
+special_tokens:
+  pad_token: "<|endoftext|>"
+
+val_set_size: 0.0
+output_dir: ./outputs/ebft-qwen35-4b-structured-async
+
+wandb_project: ebft
+logging_steps: 1
+save_steps: 50
