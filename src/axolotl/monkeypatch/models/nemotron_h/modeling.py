@@ -43,6 +43,10 @@ def patch_nemotron_h_modeling_packing():
 
         from axolotl.monkeypatch.utils import get_unpad_data
 
+        # nemotron_h is excluded from SUPPORTED_MULTIPACK_MODEL_TYPES because
+        # trust_remote_code=True would trigger a top-level mamba_ssm import before
+        # CUDA is ready, preventing patch_for_multipack() from running normally.
+        # We must therefore patch _get_unpad_data manually here.
         fa_utils._get_unpad_data = get_unpad_data
     except Exception as exc:  # pragma: no cover
         LOG.warning("Failed to patch _get_unpad_data for NemotronH: %s", exc)
