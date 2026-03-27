@@ -29,7 +29,7 @@ class GRPOStrategy:
     @classmethod
     def get_trainer_class(
         cls,
-        sequence_parallel: bool,
+        sequence_parallel: bool = False,
         async_grpo: bool = False,
     ) -> (
         type[AxolotlGRPOTrainer]
