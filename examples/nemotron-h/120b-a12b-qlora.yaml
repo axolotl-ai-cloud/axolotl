@@ -1,4 +1,3 @@
-
 base_model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
 
 # LoRA kernel patches are incompatible with this architecture — see README.
