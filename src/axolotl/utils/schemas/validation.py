@@ -1250,7 +1250,8 @@ class ModelCompatibilityValidationMixin:
     @model_validator(mode="after")
     def check_nemotron_h_gradient_checkpointing(self):
         if (
-            self.model_config_type == "nemotron_h"
+            self.base_model
+            and "nemotron-h" in self.base_model.lower()
             and self.gradient_checkpointing
             and not self.sample_packing
         ):
