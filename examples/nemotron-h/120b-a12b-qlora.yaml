@@ -43,7 +43,7 @@ lora_target_modules:
   #     - up_proj
   #     - down_proj
 
-wandb_project: nemo
+wandb_project:
 wandb_entity:
 wandb_watch:
 wandb_name:
