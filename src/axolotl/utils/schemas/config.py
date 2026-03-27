@@ -295,6 +295,7 @@ class AxolotlInputConfig(
     )
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = None
+    precompute_ref_log_probs: bool | None = None
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
