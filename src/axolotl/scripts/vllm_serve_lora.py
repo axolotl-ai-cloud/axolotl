@@ -38,6 +38,12 @@ except ImportError:
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
 
+from axolotl.scripts.process_cleanup import (
+    ProcessManager,
+    is_fatal_worker_error,
+    safe_recv,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +66,10 @@ class LoRAScriptArguments(ScriptArguments):
     lora_dtype: str = field(
         default="bfloat16",
         metadata={"help": "Data type for LoRA weights."},
+    )
+    worker_extension_cls: str = field(
+        default="trl.scripts.vllm_serve.WeightSyncWorkerExtension",
+        metadata={"help": "vLLM worker extension class for weight synchronization."},
     )
 
 
@@ -96,8 +106,7 @@ def llm_worker(
         enable_prefix_caching=script_args.enable_prefix_caching,
         kv_cache_dtype=script_args.kv_cache_dtype,
         max_model_len=script_args.max_model_len,
-        # Use batch-capable worker extension (adds batch_update_named_params + auto-close)
-        worker_extension_cls="axolotl.scripts.vllm_worker_ext.BatchWeightSyncWorkerExtension",
+        worker_extension_cls=script_args.worker_extension_cls,
         trust_remote_code=script_args.trust_remote_code,
         model_impl=script_args.vllm_model_impl,
         logprobs_mode="processed_logprobs",
@@ -110,11 +119,28 @@ def llm_worker(
 
     connection.send({"status": "ready"})
 
+    def _worker_cleanup():
+        """Clean up the LLM and its EngineCore subprocess on worker exit."""
+        from axolotl.scripts.process_cleanup import cleanup_orphan_processes
+
+        try:
+            llm.collective_rpc(method="close_communicator")
+        except Exception:
+            pass
+        # Kill EngineCore children of this worker
+        cleanup_orphan_processes("VLLM::EngineCore")
+
+    import atexit as _atexit
+
+    _atexit.register(_worker_cleanup)
+
     while True:
         try:
             command = connection.recv()
-        except KeyboardInterrupt:
-            llm.collective_rpc(method="close_communicator")
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if command.get("type") == "shutdown":
             break
 
         if command["type"] in ["call", "fire_and_forget"]:
@@ -139,6 +165,12 @@ def llm_worker(
                 logger.warning("Worker method %s failed: %s", method_name, exc)
                 if command["type"] == "call":
                     connection.send({"error": str(exc), "kind": "worker_error"})
+                if is_fatal_worker_error(exc):
+                    logger.error(
+                        "Fatal worker error (EngineCore died), exiting. "
+                        "Restart the vLLM server to recover."
+                    )
+                    break
                 continue
             if command["type"] == "call":
                 connection.send(result)
@@ -156,7 +188,7 @@ def main(script_args: ScriptArguments):
 
     # Request/Response models (defined locally like TRL's vllm_serve.main)
     class GenerateRequest(BaseModel):
-        prompts: list[str]
+        prompts: list[str] | list[list[int]]
         images: list[str] | None = None
         n: int = 1
         repetition_penalty: float = 1.0
@@ -230,6 +262,10 @@ def main(script_args: ScriptArguments):
         connections.append(parent_conn)
         processes.append(process)
 
+    # Process lifecycle management
+    manager = ProcessManager(processes, connections)
+    manager.register_cleanup()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         import time
@@ -256,12 +292,11 @@ def main(script_args: ScriptArguments):
                     if isinstance(msg, dict) and msg.get("status") == "ready":
                         ready.add(id(conn))
             await asyncio.sleep(0.1)
+
+        monitor_task = asyncio.create_task(manager.monitor_workers())
         yield
-        for p in processes:
-            p.join(timeout=10)
-            if p.is_alive():
-                p.terminate()
-                p.join()
+        monitor_task.cancel()
+        manager._shutdown_workers()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -324,7 +359,12 @@ def main(script_args: ScriptArguments):
 
     @app.get("/health/")
     async def health():
-        return {"status": "ok"}
+        status = manager.get_health_status()
+        if status["status"] != "ok":
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(status_code=503, content=status)
+        return status
 
     @app.get("/get_world_size/")
     async def get_world_size():
@@ -336,6 +376,8 @@ def main(script_args: ScriptArguments):
     @app.post("/generate/", response_model=GenerateResponse)
     async def generate(request: GenerateRequest):
         """Generate completions with optional LoRA adapter."""
+        manager.check_workers_alive()
+
         import base64
         from io import BytesIO
 
@@ -350,7 +392,12 @@ def main(script_args: ScriptArguments):
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
         for prompt, image in zip(request.prompts, images, strict=True):
-            row: dict[str, Any] = {"prompt": prompt}
+            # Support both string prompts and token ID lists
+            row: dict[str, Any]
+            if isinstance(prompt, list):
+                row = {"prompt_token_ids": prompt}
+            else:
+                row = {"prompt": prompt}
             if image is not None:
                 from PIL import Image
 
@@ -410,12 +457,17 @@ def main(script_args: ScriptArguments):
         # Use run_in_executor so blocking recv() doesn't freeze the event loop
         # (allows /set_lora_adapter/ and other endpoints to be served concurrently)
         loop = asyncio.get_running_loop()
+
         all_outputs = await asyncio.gather(
-            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+            *(loop.run_in_executor(None, safe_recv, conn) for conn in connections)
         )
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
         ]
+        # Check for worker errors before flattening
+        for o in all_outputs:
+            if isinstance(o, dict) and "error" in o:
+                raise RuntimeError(f"vLLM worker error: {o['error']}")
         all_outputs = list(chain.from_iterable(all_outputs))
 
         return {
@@ -430,6 +482,7 @@ def main(script_args: ScriptArguments):
     @app.post("/chat/", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """Chat endpoint with optional LoRA adapter."""
+        manager.check_workers_alive()
         generation_kwargs = {
             "n": request.n,
             "repetition_penalty": request.repetition_penalty,
