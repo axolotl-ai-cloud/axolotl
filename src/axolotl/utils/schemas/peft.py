@@ -1,6 +1,6 @@
 """Pydantic models for PEFT-related configuration"""
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -241,11 +241,11 @@ class LoraConfig(BaseModel):
 class MixLoraConfig(BaseModel):
     """MixLoRA configuration subset for MoE-style LoRA finetuning"""
 
-    DEFAULT_NUM_EXPERTS = MIXLORA_DEFAULTS["mixlora_num_experts"]
-    DEFAULT_TOP_K = MIXLORA_DEFAULTS["mixlora_top_k"]
-    DEFAULT_ROUTER_AUX_LOSS_COEF = MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
-    DEFAULT_ROUTER_INIT_RANGE = MIXLORA_DEFAULTS["mixlora_router_init_range"]
-    DEFAULT_JITTER_NOISE = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
+    DEFAULT_NUM_EXPERTS: ClassVar[int] = MIXLORA_DEFAULTS["mixlora_num_experts"]
+    DEFAULT_TOP_K: ClassVar[int] = MIXLORA_DEFAULTS["mixlora_top_k"]
+    DEFAULT_ROUTER_AUX_LOSS_COEF: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_router_aux_loss_coef"]
+    DEFAULT_ROUTER_INIT_RANGE: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_router_init_range"]
+    DEFAULT_JITTER_NOISE: ClassVar[float] = MIXLORA_DEFAULTS["mixlora_jitter_noise"]
 
     mixlora_num_experts: int | None = Field(
         default=DEFAULT_NUM_EXPERTS,

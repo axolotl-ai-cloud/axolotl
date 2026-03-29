@@ -64,7 +64,19 @@ class MixLoraTrainer(AxolotlTrainer):
         super()._save(output_dir=output_dir, state_dict=state_dict)
 
         output_path = output_dir if output_dir is not None else self.args.output_dir
-        state = mixlora_state_dict(self.model)
+
+        # When a prepared state_dict snapshot is provided, extract MixLoRA
+        # tensors from it so the sidecar stays consistent with the checkpoint
+        # written by super()._save.  Fall back to the live model otherwise.
+        if state_dict is not None:
+            state = {
+                key: value
+                for key, value in state_dict.items()
+                if "router." in key or "experts." in key
+            }
+        else:
+            state = mixlora_state_dict(self.model)
+
         if not state:
             return
 
@@ -91,7 +103,8 @@ class MixLoraTrainer(AxolotlTrainer):
 
         loss = loss + aux_loss.to(loss.device)
 
+        train_eval = "train" if model.training else "eval"
         self.store_metrics(
-            {"mixlora_aux_loss": aux_loss.item()}, train_eval="train"
+            {"mixlora_aux_loss": aux_loss.item()}, train_eval=train_eval
         )
         return loss

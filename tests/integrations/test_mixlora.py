@@ -25,8 +25,8 @@ from transformers import AutoModelForCausalLM
 from axolotl.integrations.base import PluginManager
 from axolotl.integrations.mixlora import MixLoraPlugin
 from axolotl.integrations.mixlora.loss import collect_mixlora_aux_loss
+from axolotl.integrations.mixlora.constants import MIXLORA_WEIGHTS_NAME
 from axolotl.integrations.mixlora.model import (
-    MIXLORA_WEIGHTS_NAME,
     MixLoraFFN,
     load_mixlora_state_dict,
     mixlora_state_dict,

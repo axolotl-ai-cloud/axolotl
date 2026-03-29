@@ -147,6 +147,8 @@ class MixLoraExpert(nn.Module):
         lora_r: LoRA rank.
         lora_alpha: LoRA alpha scaling factor.
         lora_dropout: LoRA dropout probability.
+        activation_fn: Activation function to use (e.g. F.silu). Supplied by
+            MixLoraFFN from the base FFN so expert and base paths stay identical.
     """
 
     def __init__(
@@ -156,8 +158,10 @@ class MixLoraExpert(nn.Module):
         lora_r: int,
         lora_alpha: int,
         lora_dropout: float = 0.0,
+        activation_fn: callable = F.silu,
     ):
         super().__init__()
+        self.activation_fn = activation_fn
         self.scaling = lora_alpha / lora_r
 
         # LoRA for gate_proj: hidden_dim -> intermediate_dim
@@ -214,8 +218,8 @@ class MixLoraExpert(nn.Module):
         up_delta = self.up_lora_b(self.up_lora_a(x_drop)) * self.scaling
         up_total = up_out + up_delta
 
-        # SwiGLU activation: silu(gate) * up
-        intermediate = F.silu(gate_total) * up_total
+        # SwiGLU activation: act(gate) * up
+        intermediate = self.activation_fn(gate_total) * up_total
 
         # down_proj: base down + LoRA delta
         # Note: we need to apply the original down_proj to intermediate,
@@ -271,6 +275,11 @@ class MixLoraFFN(nn.Module):
         hidden_dim = self.base_ffn.gate_proj.in_features
         intermediate_dim = self.base_ffn.gate_proj.out_features
 
+        # Resolve activation function from the base FFN (default to F.silu)
+        self.activation_fn = getattr(self.base_ffn, "act_fn", F.silu)
+        if not callable(self.activation_fn):
+            self.activation_fn = F.silu
+
         # Router
         self.router = MixLoraRouter(
             hidden_dim=hidden_dim,
@@ -288,6 +297,7 @@ class MixLoraFFN(nn.Module):
                 lora_r=lora_r,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
+                activation_fn=self.activation_fn,
             )
             for _ in range(num_experts)
         ])
@@ -336,17 +346,20 @@ class MixLoraFFN(nn.Module):
         else:
             x_flat = x
 
+        # Clear stale aux loss at the start of each forward pass so that
+        # activation-checkpoint replays don't leave behind incorrect values.
+        self._aux_loss = None
+
         # Step 1: Compute shared base FFN outputs (optimization from paper)
         gate_out = self.base_ffn.gate_proj(x_flat)  # [T, I]
         up_out = self.base_ffn.up_proj(x_flat)       # [T, I]
 
         # Step 2: Route tokens to experts
         router_weights, expert_indices, aux_loss = self.router(x_flat)
-        # Keep per-forward aux loss so gradient accumulation scaling remains correct.
         self._aux_loss = aux_loss
 
         # Step 3: Compute base FFN output (shared SwiGLU + down_proj)
-        base_intermediate = F.silu(gate_out) * up_out
+        base_intermediate = self.activation_fn(gate_out) * up_out
         base_output = self.base_ffn.down_proj(base_intermediate)  # [T, H]
 
         # Step 4: Compute expert LoRA deltas and aggregate
@@ -390,7 +403,20 @@ class MixLoraFFN(nn.Module):
 
 
 def mixlora_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
-    """Collect MixLoRA state from all patched FFN modules in the model."""
+    """Collect MixLoRA-specific state (router + expert weights) from all patched FFN modules.
+
+    This is the public API for exporting MixLoRA weights separately from
+    the base-model or PEFT checkpoint.  It is used by ``MixLoraTrainer._save``
+    to persist a sidecar ``mixlora_weights.safetensors`` file alongside the
+    standard PEFT adapter checkpoint.
+
+    Args:
+        model: The full model (may be wrapped in PeftModel, DataParallel, etc.).
+
+    Returns:
+        A flat dict mapping fully-qualified parameter names to tensors,
+        containing only the trainable router and expert parameters.
+    """
     state: dict[str, torch.Tensor] = {}
     for module_name, module in model.named_modules():
         if isinstance(module, MixLoraFFN):
@@ -405,14 +431,58 @@ def load_mixlora_state_dict(
     state_dict: dict[str, torch.Tensor],
     strict: bool = True,
 ) -> None:
-    """Load MixLoRA state into all patched FFN modules in the model."""
-    for module_name, module in model.named_modules():
-        if not isinstance(module, MixLoraFFN):
-            continue
+    """Load MixLoRA-specific state (router + expert weights) into all patched FFN modules.
 
+    This is the counterpart to :func:`mixlora_state_dict`.  It is used by the
+    adapter loader to restore previously-saved MixLoRA sidecar weights.
+
+    When ``strict=True`` the function verifies that:
+    1. Every ``MixLoraFFN`` module in the model has corresponding keys in the
+       checkpoint (no missing modules).
+    2. There are no extra prefixes in the checkpoint that do not correspond to
+       any ``MixLoraFFN`` module in the model (no unexpected/renamed blocks).
+
+    Args:
+        model: The full model (may be wrapped in PeftModel, DataParallel, etc.).
+        state_dict: Flat dict as produced by :func:`mixlora_state_dict`.
+        strict: If True, raise ``KeyError`` on missing or unexpected modules.
+    """
+    model_prefixes: set[str] = set()
+    for module_name, module in model.named_modules():
+        if isinstance(module, MixLoraFFN):
+            model_prefixes.add(module_name)
+
+    # Detect unexpected prefixes in the checkpoint
+    if strict:
+        checkpoint_prefixes: set[str] = set()
+        for key in state_dict:
+            # Keys look like "model.layers.0.mlp.router.gate.weight"
+            # We need to find the prefix that matches a model module name.
+            for mp in model_prefixes:
+                if key.startswith(f"{mp}."):
+                    checkpoint_prefixes.add(mp)
+                    break
+            else:
+                # Key doesn't match any known MixLoRA module prefix
+                # Extract the likely module prefix (everything before router./experts.)
+                for marker in ("router.", "experts."):
+                    if marker in key:
+                        likely_prefix = key[:key.index(marker)].rstrip(".")
+                        checkpoint_prefixes.add(likely_prefix)
+                        break
+
+        extra_prefixes = checkpoint_prefixes - model_prefixes
+        if extra_prefixes:
+            raise KeyError(
+                f"Unexpected MixLoRA module prefixes in checkpoint that do not "
+                f"correspond to any MixLoraFFN in the model: {sorted(extra_prefixes)}"
+            )
+
+    for module_name in model_prefixes:
+        module = model.get_submodule(module_name)
         prefix = f"{module_name}."
         module_state = {
-            key[len(prefix) :]: value
+            key[len(prefix):]: value
             for key, value in state_dict.items()
             if key.startswith(prefix)
         }

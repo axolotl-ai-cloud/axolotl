@@ -52,12 +52,12 @@ mixlora_expert_lora_dropout: 0.1 # Defaults to lora_dropout if not set
 
 ```bib
 @misc{li2024mixloraenhancinglarge,
-      title={MixLoRA: Enhancing Large Language Models Fine-Tuning with LoRA based Mixture of Experts}, 
+      title={MixLoRA: Enhancing Large Language Models Fine-Tuning with LoRA based Mixture of Experts},
       author={Jiahui Li and Qianguzhi Chen and Xiangyu Dong and Zhenwei Qiao and Hang Qi and Jiankai Sun and Jianing Lu and Junjie Zhao and Qingqiu Li and Zhenguo Li},
       year={2024},
       eprint={2404.15159},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2404.15159}, 
+      url={https://arxiv.org/abs/2404.15159},
 }
 ```
