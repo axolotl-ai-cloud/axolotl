@@ -105,6 +105,8 @@ def do_vllm_serve(
         # (merged weight sync via batch_update doesn't need vLLM LoRA mode)
         if not getattr(cfg.trl, "vllm_lora_sync", False):
             lora_kwargs["enable_lora"] = False
+        if getattr(cfg.vllm, "worker_extension_cls", None):
+            lora_kwargs["worker_extension_cls"] = cfg.vllm.worker_extension_cls
         vllm_script_args = LoRAScriptArguments(**base_kwargs, **lora_kwargs)
     else:
         vllm_script_args = AxolotlScriptArguments(
