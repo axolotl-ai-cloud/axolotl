@@ -213,6 +213,13 @@ def _build_peft_layer_and_get_delta(
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
     use_dora = bool(lora_config_dict.get("use_dora", False)) and magnitude is not None
 
+    # Detect whether peft uses the new config-based constructor
+    import inspect
+
+    from peft.tuners.lora.layer import Linear as LoraLinear
+
+    _peft_new_config = "config" in inspect.signature(LoraLinear.__init__).parameters
+
     if is_param_wrapper:
         from peft.tuners.lora.layer import ParamWrapper
 
@@ -229,20 +236,31 @@ def _build_peft_layer_and_get_delta(
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            layer = ParamWrapper(
-                fake,
-                adapter_name=adapter_name,
-                parameter_name="weight",
-                r=r,
-                lora_alpha=lora_alpha,
-                use_rslora=use_rslora,
-            )
+            if _peft_new_config:
+                pw_config = LoraConfig(
+                    r=r, lora_alpha=lora_alpha, use_rslora=use_rslora
+                )
+                layer = ParamWrapper(
+                    fake,
+                    adapter_name=adapter_name,
+                    parameter_name="weight",
+                    config=pw_config,
+                    r=r,
+                    lora_alpha=lora_alpha,
+                )
+            else:
+                layer = ParamWrapper(
+                    fake,
+                    adapter_name=adapter_name,
+                    parameter_name="weight",
+                    r=r,
+                    lora_alpha=lora_alpha,
+                    use_rslora=use_rslora,
+                )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
         return layer.get_delta_weight(adapter_name)
     else:
-        from peft.tuners.lora.layer import Linear as LoraLinear
-
         base_layer = nn.Linear(in_features, out_features, bias=False)
         base_layer.weight.data = base_tensor.clone()
 
@@ -251,15 +269,31 @@ def _build_peft_layer_and_get_delta(
             or lora_config_dict.get("lora_fan_in_fan_out", False)
         )
 
-        layer = LoraLinear(
-            base_layer,
-            adapter_name=adapter_name,
-            r=r_total,
-            lora_alpha=lora_alpha,
-            fan_in_fan_out=fan_in_fan_out,
-            use_rslora=use_rslora,
-            use_dora=use_dora,
-        )
+        if _peft_new_config:
+            lora_cfg = LoraConfig(
+                r=r_total,
+                lora_alpha=lora_alpha,
+                fan_in_fan_out=fan_in_fan_out,
+                use_rslora=use_rslora,
+                use_dora=use_dora,
+            )
+            layer = LoraLinear(
+                base_layer,
+                adapter_name=adapter_name,
+                config=lora_cfg,
+                r=r_total,
+                lora_alpha=lora_alpha,
+            )
+        else:
+            layer = LoraLinear(
+                base_layer,
+                adapter_name=adapter_name,
+                r=r_total,
+                lora_alpha=lora_alpha,
+                fan_in_fan_out=fan_in_fan_out,
+                use_rslora=use_rslora,
+                use_dora=use_dora,
+            )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
 
