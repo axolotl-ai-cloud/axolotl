@@ -6,8 +6,8 @@ from typing import Any, Dict, Union
 
 import torch
 from torch import nn
-from trl import DPOTrainer
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
+from trl import DPOTrainer
 
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
@@ -19,7 +19,6 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
-
 from axolotl.utils.data.utils import remove_double_bos_token
 
 
