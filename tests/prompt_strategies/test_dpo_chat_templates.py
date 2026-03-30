@@ -111,7 +111,7 @@ def fixture_argilla_chat_dataset():
 @pytest.fixture(name="phi3_tokenizer")
 @enable_hf_offline
 def fixture_phi3_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-medium-128k-instruct")
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     return tokenizer
 
