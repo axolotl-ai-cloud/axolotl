@@ -186,8 +186,6 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
-        env:
-          UV_TORCH_BACKEND: cpu
         run: |
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
