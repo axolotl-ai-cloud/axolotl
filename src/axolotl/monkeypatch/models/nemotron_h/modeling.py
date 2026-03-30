@@ -24,11 +24,10 @@ def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
 
 
 def patch_nemotron_h_modeling_packing():
-    """Patch NemotronH for sample packing: seq_idx threading + _get_unpad_data.
+    """Patch NemotronH for sample packing: seq_idx threading into Mamba2 SSM kernels.
 
-    nemotron_h is excluded from SUPPORTED_MULTIPACK_MODEL_TYPES because
-    trust_remote_code=True would trigger a top-level mamba_ssm import before
-    CUDA is ready, so we patch _get_unpad_data manually here instead.
+    _get_unpad_data is handled by SUPPORTED_MULTIPACK_MODEL_TYPES / patch_for_multipack().
+    This function only applies the seq_idx patches that are unique to nemotron_h.
     """
     try:
         mod = importlib.import_module(
@@ -37,20 +36,6 @@ def patch_nemotron_h_modeling_packing():
     except ImportError:
         LOG.warning("nemotron_h not found in transformers, skipping packing patches")
         return
-
-    try:
-        import transformers.modeling_flash_attention_utils as fa_utils
-
-        from axolotl.monkeypatch.utils import get_unpad_data
-
-        # nemotron_h is excluded from SUPPORTED_MULTIPACK_MODEL_TYPES because
-        # sample packing requires seq_idx threading into the Mamba2 SSM kernels,
-        # which is far beyond what patch_for_multipack() provides. The entire
-        # packing suite (including _get_unpad_data) is owned here so it all
-        # applies together in one place.
-        fa_utils._get_unpad_data = get_unpad_data
-    except Exception as exc:  # pragma: no cover
-        LOG.warning("Failed to patch _get_unpad_data for NemotronH: %s", exc)
 
     NemotronHMamba2Mixer = mod.NemotronHMamba2Mixer
     NemotronHBlock = mod.NemotronHBlock
