@@ -7,11 +7,10 @@ import multiprocessing as mp
 import queue
 import sys
 import time
-from typing import Any, Dict, List, Tuple
+from typing import List, Tuple
 
-from datasets import Dataset, concatenate_datasets
+from datasets import Dataset
 from tqdm import tqdm
-from transformers import PreTrainedTokenizer
 
 from axolotl.prompt_tokenizers import PromptTokenizingStrategy
 from axolotl.utils.logging import get_logger
@@ -59,8 +58,8 @@ class WorkQueueTokenizedPromptDataset(Dataset):
         examples = list(dataset)
 
         # Create shared queues
-        work_queue = mp.Queue()
-        result_queue = mp.Queue()
+        work_queue: mp.Queue = mp.Queue()
+        result_queue: mp.Queue = mp.Queue()
 
         # Add all examples to work queue
         for idx, example in enumerate(examples):
@@ -80,7 +79,9 @@ class WorkQueueTokenizedPromptDataset(Dataset):
                             tokenized = self.prompt_tokenizer.tokenize_prompt(example)
                             result_queue.put((idx, tokenized, None))
                         except Exception as e:
-                            LOG.error(f"Worker {worker_id}: Error tokenizing example {idx}: {e}")
+                            LOG.error(
+                                f"Worker {worker_id}: Error tokenizing example {idx}: {e}"
+                            )
                             result_queue.put((idx, None, str(e)))
 
                     except Exception:
@@ -99,7 +100,7 @@ class WorkQueueTokenizedPromptDataset(Dataset):
             processes.append(p)
 
         # Collect results with progress tracking
-        results = [None] * total_examples
+        results: list[dict[str, list] | None] = [None] * total_examples
         completed = 0
         errors = []
 
@@ -159,10 +160,10 @@ class WorkQueueTokenizedPromptDataset(Dataset):
                 LOG.warning(f"  ... and {len(errors) - 5} more errors")
 
         # Combine results in order
-        combined_results = {
+        combined_results: dict[str, list] = {
             "input_ids": [],
             "attention_mask": [],
-            "labels": []
+            "labels": [],
         }
 
         for result in results:
@@ -220,25 +221,31 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     if len(datasets_with_strategies) == 1:
         # Single dataset - use standard function
         strategy, dataset = datasets_with_strategies[0]
-        return [wrap_dataset_for_work_queue_tokenized_prompt(strategy, dataset, process_count, **kwargs)]
+        return [
+            wrap_dataset_for_work_queue_tokenized_prompt(
+                strategy, dataset, process_count, **kwargs
+            )
+        ]
 
     process_count = process_count or mp.cpu_count()
 
     # Calculate total examples and prepare combined work queue
     total_examples = sum(len(dataset) for _, dataset in datasets_with_strategies)
-    LOG.info(f"Processing {total_examples} examples from {len(datasets_with_strategies)} datasets with work queue system")
+    LOG.info(
+        f"Processing {total_examples} examples from {len(datasets_with_strategies)} datasets with work queue system"
+    )
     LOG.info(f"Using {process_count} worker processes")
 
     # Create shared queues
-    work_queue = mp.Queue()
-    result_queue = mp.Queue()
+    work_queue: mp.Queue = mp.Queue()
+    result_queue: mp.Queue = mp.Queue()
 
     # Track dataset boundaries for splitting results later
     dataset_boundaries = []
     current_idx = 0
 
     # Add all examples to work queue with dataset info (but NOT the strategy)
-    for dataset_idx, (strategy, dataset) in enumerate(datasets_with_strategies):
+    for dataset_idx, (_strategy, dataset) in enumerate(datasets_with_strategies):
         dataset_start = current_idx
         examples = list(dataset)
 
@@ -258,7 +265,9 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
             while True:
                 try:
                     # Get work with timeout
-                    global_idx, dataset_idx, example_idx, example = work_queue.get(timeout=1)
+                    global_idx, dataset_idx, example_idx, example = work_queue.get(
+                        timeout=1
+                    )
 
                     # Get the strategy for this dataset
                     strategy = datasets_with_strategies[dataset_idx][0]
@@ -266,10 +275,16 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
                     # Tokenize the example with its specific strategy
                     try:
                         tokenized = strategy.tokenize_prompt(example)
-                        result_queue.put((global_idx, dataset_idx, example_idx, tokenized, None))
+                        result_queue.put(
+                            (global_idx, dataset_idx, example_idx, tokenized, None)
+                        )
                     except Exception as e:
-                        LOG.error(f"Worker {worker_id}: Error tokenizing example {global_idx} from dataset {dataset_idx}: {e}")
-                        result_queue.put((global_idx, dataset_idx, example_idx, None, str(e)))
+                        LOG.error(
+                            f"Worker {worker_id}: Error tokenizing example {global_idx} from dataset {dataset_idx}: {e}"
+                        )
+                        result_queue.put(
+                            (global_idx, dataset_idx, example_idx, None, str(e))
+                        )
 
                 except Exception:
                     # queue.Empty or any other exception - no more work
@@ -287,7 +302,9 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
         processes.append(p)
 
     # Collect results with progress tracking
-    results_by_dataset = [[] for _ in datasets_with_strategies]  # Results organized by dataset
+    results_by_dataset: list[list] = [
+        [] for _ in datasets_with_strategies
+    ]  # Results organized by dataset
     completed = 0
     errors = []
 
@@ -306,12 +323,18 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     while completed < total_examples:
         try:
             # Get result with timeout
-            global_idx, dataset_idx, example_idx, tokenized, error = result_queue.get(timeout=10)
+            global_idx, dataset_idx, example_idx, tokenized, error = result_queue.get(
+                timeout=10
+            )
 
             if error:
                 errors.append(f"Dataset {dataset_idx}, Example {example_idx}: {error}")
                 # Create empty result for failed example
-                empty_result = {"input_ids": [], "attention_mask": [], "labels": []}
+                empty_result: dict[str, list] = {
+                    "input_ids": [],
+                    "attention_mask": [],
+                    "labels": [],
+                }
                 results_by_dataset[dataset_idx].append((example_idx, empty_result))
             else:
                 results_by_dataset[dataset_idx].append((example_idx, tokenized))
@@ -350,7 +373,9 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
     # Convert results back to datasets
     processed_datasets = []
 
-    for dataset_idx, (strategy, original_dataset) in enumerate(datasets_with_strategies):
+    for dataset_idx, (_strategy, _original_dataset) in enumerate(
+        datasets_with_strategies
+    ):
         # Sort results by local index to maintain original order
         dataset_results = sorted(results_by_dataset[dataset_idx], key=lambda x: x[0])
 
@@ -358,10 +383,10 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
         tokenized_results = [result for _, result in dataset_results]
 
         # Combine results in order
-        combined_results = {
+        combined_results: dict[str, list] = {
             "input_ids": [],
             "attention_mask": [],
-            "labels": []
+            "labels": [],
         }
 
         for result in tokenized_results:

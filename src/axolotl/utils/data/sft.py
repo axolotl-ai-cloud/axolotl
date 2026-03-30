@@ -330,15 +330,15 @@ def _load_raw_datasets(
 
     # Check if we should use multi-dataset work queue processing
     use_multi_dataset_queue = (
-        not streaming and
-        cfg.dataset_num_proc and cfg.dataset_num_proc > 1 and
-        len(datasets_configs) > 1
+        not streaming
+        and cfg.dataset_num_proc
+        and cfg.dataset_num_proc > 1
+        and len(datasets_configs) > 1
     )
 
     if use_multi_dataset_queue:
         # Load all datasets first without processing
         raw_datasets = []
-        raw_prompters = []
         strategies = []
 
         for dataset_config in datasets_with_name_generator(datasets_configs):
@@ -371,6 +371,7 @@ def _load_raw_datasets(
 
             # Get the dataset strategy without processing
             from axolotl.prompt_strategies import load
+
             dataset_strategy = load(
                 dataset_config.type, tokenizer, cfg, dataset_config, processor=processor
             )
@@ -394,11 +395,16 @@ def _load_raw_datasets(
 
         # Process all datasets with the multi-dataset work queue
         if raw_datasets:
-            from axolotl.datasets_work_queue import wrap_multiple_datasets_for_work_queue_tokenized_prompt
-            LOG.info(f"Using multi-dataset work queue processing for {len(raw_datasets)} datasets")
+            from axolotl.datasets_work_queue import (
+                wrap_multiple_datasets_for_work_queue_tokenized_prompt,
+            )
+
+            LOG.info(
+                f"Using multi-dataset work queue processing for {len(raw_datasets)} datasets"
+            )
 
             processed_datasets = wrap_multiple_datasets_for_work_queue_tokenized_prompt(
-                list(zip(strategies, raw_datasets)),
+                list(zip(strategies, raw_datasets, strict=True)),
                 process_count=cfg.dataset_num_proc,
                 keep_in_memory=cfg.dataset_keep_in_memory is True,
             )
@@ -407,6 +413,7 @@ def _load_raw_datasets(
             # Add placeholder prompters
             for _ in processed_datasets:
                 from axolotl.prompters import UnsupportedPrompter
+
                 prompters.append(UnsupportedPrompter())
     else:
         # Standard processing for each dataset individually
