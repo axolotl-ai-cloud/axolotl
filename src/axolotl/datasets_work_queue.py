@@ -84,8 +84,7 @@ class WorkQueueTokenizedPromptDataset(Dataset):
                             )
                             result_queue.put((idx, None, str(e)))
 
-                    except Exception:
-                        # queue.Empty or any other exception - no more work
+                    except queue.Empty:
                         break
 
             except Exception as e:
@@ -140,8 +139,10 @@ class WorkQueueTokenizedPromptDataset(Dataset):
                     last_update = current_time
 
             except queue.Empty:
-                LOG.error("Timeout waiting for results")
-                break
+                if all(not p.is_alive() for p in processes):
+                    LOG.error("All workers died before completing all examples")
+                    break
+                LOG.warning("Timeout waiting for results, retrying...")
 
         pbar.close()
 
@@ -167,7 +168,7 @@ class WorkQueueTokenizedPromptDataset(Dataset):
         }
 
         for result in results:
-            if result:
+            if result is not None:
                 combined_results["input_ids"].append(result["input_ids"])
                 combined_results["attention_mask"].append(result["attention_mask"])
                 combined_results["labels"].append(result["labels"])
@@ -286,8 +287,7 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
                             (global_idx, dataset_idx, example_idx, None, str(e))
                         )
 
-                except Exception:
-                    # queue.Empty or any other exception - no more work
+                except queue.Empty:
                     break
 
         except Exception as e:
@@ -351,8 +351,10 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
                 last_update = current_time
 
         except queue.Empty:
-            LOG.error("Timeout waiting for results")
-            break
+            if all(not p.is_alive() for p in processes):
+                LOG.error("All workers died before completing all examples")
+                break
+            LOG.warning("Timeout waiting for results, retrying...")
 
     pbar.close()
 
@@ -390,7 +392,7 @@ def wrap_multiple_datasets_for_work_queue_tokenized_prompt(
         }
 
         for result in tokenized_results:
-            if result:
+            if result is not None:
                 combined_results["input_ids"].append(result["input_ids"])
                 combined_results["attention_mask"].append(result["attention_mask"])
                 combined_results["labels"].append(result["labels"])
