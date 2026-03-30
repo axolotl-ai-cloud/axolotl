@@ -84,7 +84,6 @@ class TestDPOLlamaLora(unittest.TestCase):
                     "pad_token": "<|endoftext|>",
                 },
                 "rl": "dpo",
-                "rpo_alpha": 0.5,
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",

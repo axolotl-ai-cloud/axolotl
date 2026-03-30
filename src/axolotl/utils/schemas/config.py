@@ -296,7 +296,7 @@ class AxolotlInputConfig(
     dpo_label_smoothing: float | None = None
     dpo_norm_loss: bool | None = Field(
         default=None,
-        deprecated="Deprecated in v0.15.1 due to breaking changes in TRL >=v0.29.0. Will be readded upon TRL support."
+        deprecated="Deprecated in v0.15.1 due to breaking changes in TRL >=v0.29.0. Will be readded upon TRL support.",
     )
 
     dpo_use_liger_kernel: bool | None = Field(
@@ -1119,6 +1119,7 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": "Weighting of NLL term in loss from RPO paper"
         },
+        deprecated="Deprecated in v0.15.1 due to removal in TRL >= v0.29.0.",
     )
     simpo_gamma: float | None = Field(
         default=None,
