@@ -1,6 +1,6 @@
 """Pydantic models for TRL trainer configuration"""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,14 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "List of reward weights for the reward functions."
+        },
+    )
+    generation_batch_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Batch size for generation. Controls how many unique "
+            "prompts are generated per step. For full DP utilization, set to "
+            "num_generations * data_parallel_size (or a multiple thereof)."
         },
     )
     num_generations: int | None = Field(
@@ -131,6 +139,20 @@ class TRLConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": "Penalty for tokens that appear in prompt and generated text."
+        },
+    )
+    generation_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional generation parameters passed to vLLM SamplingParams. "
+            "Useful for stop_token_ids, seed, frequency_penalty, etc."
+        },
+    )
+    chat_template_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Additional kwargs for the chat template. "
+            "E.g., {enable_thinking: false} for Qwen3.5 models."
         },
     )
     num_iterations: int | None = Field(

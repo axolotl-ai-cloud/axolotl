@@ -35,6 +35,7 @@ class RLType(str, Enum):
     ORPO = "orpo"
     KTO = "kto"
     SIMPO = "simpo"
+    EBFT = "ebft"
 
 
 class ChatTemplate(str, Enum):

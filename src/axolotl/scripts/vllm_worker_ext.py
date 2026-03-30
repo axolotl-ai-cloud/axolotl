@@ -51,6 +51,19 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         model = self.model_runner.model
         params_dict = dict(model.named_parameters())
 
+        # Handle VLM models where trainer and vLLM use different prefixes.
+        # Trainer (PEFT stripped): "model.layers.X..." or "model.language_model.layers.X..."
+        # vLLM (Qwen3.5):         "language_model.model.layers.X..."
+        if name not in params_dict:
+            # Try common prefix remappings
+            for src_prefix, dst_prefix in [
+                ("model.language_model.layers.", "language_model.model.layers."),
+                ("model.layers.", "language_model.model.layers."),
+            ]:
+                if name.startswith(src_prefix):
+                    name = dst_prefix + name[len(src_prefix) :]
+                    break
+
         # Check if this is a simple direct param (exists as-is)
         if name in params_dict:
             params_dict[name].data.copy_(weight.to(params_dict[name].dtype))
@@ -106,7 +119,15 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
                         return
 
         # Fallback: try load_weights (may work for non-stacked params)
-        logger.warning("Falling back to load_weights for param: %s", name)
+        # Log the actual param names available for debugging
+        sample_keys = [
+            k for k in params_dict if "layers.31.mlp" in k or "layers.31.self_attn" in k
+        ][:3]
+        logger.warning(
+            "Falling back to load_weights for param: %s (sample vLLM keys: %s)",
+            name,
+            sample_keys,
+        )
         model.load_weights(weights=[(name, weight)])
 
     def update_named_param(self, name, dtype, shape):
@@ -156,3 +177,32 @@ class BatchWeightSyncWorkerExtension(WeightSyncWorkerExtension):
         # Load weights using direct set (handles stacked params)
         for name, weight in weights_to_load:
             self._direct_set_weight(name, weight)
+
+    def http_load_weights(self, weights: list[tuple[str, torch.Tensor]]):
+        """Load weights received via HTTP (no NCCL needed)."""
+        for name, weight in weights:
+            self._direct_set_weight(name, weight.to(self.device))
+
+    def http_load_weight(self, **kwargs):
+        """Load a single weight received via HTTP (no NCCL needed).
+
+        Reconstructs the tensor from raw bytes since tensors don't survive
+        vLLM's multiproc IPC serialization.  Uses vLLM's ``load_weights``
+        which handles TP sharding and stacked-param packing automatically.
+        """
+        from axolotl.utils.weight_serde import decode_from_ipc
+
+        name, weight = decode_from_ipc(kwargs)
+        model = self.model_runner.model
+        model.load_weights(weights=[(name, weight)])
+
+    def http_load_weights_batch(self, params: list[dict]):
+        """Load multiple weights in a single IPC call.
+
+        Uses vLLM's ``load_weights`` which handles TP sharding automatically.
+        """
+        from axolotl.utils.weight_serde import decode_from_ipc
+
+        model = self.model_runner.model
+        weights = [decode_from_ipc(p) for p in params]
+        model.load_weights(weights=weights)

@@ -1,0 +1,60 @@
+# EBFT Strided Mode: For unstructured text data (raw code, prose)
+# Uses strided block-parallel generation — no vLLM needed.
+#
+# Run: CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-strided.yaml
+
+base_model: meta-llama/Llama-3.2-1B
+rl: ebft
+
+ebft:
+  mode: strided                       # strided block-parallel generation
+  stride: 8                           # tokens between anchor points
+  context_length: 8                   # context window per block
+  generate_max_len: 8                 # tokens to generate per block
+  n_samples_per_prompt: 4             # rollouts per document
+  temperature: 0.6
+  top_p: 1.0
+  feature_layers: [0.25, 0.5, 0.75]
+  embed_method: last_token
+  use_whitening: true
+  alignment_coef: 1.0
+  diversity_coef: 1.0
+  rl_coef: 1.0
+  ce_coef: 0.0
+  advantage_estimator: rloo
+
+datasets:
+  - path: sjelassi/swallow_code_20m
+    type: ebft_pretrain.transform
+    split: train[:100]
+
+sequence_len: 256
+micro_batch_size: 1
+gradient_accumulation_steps: 2
+num_epochs: 1
+max_steps: 5
+
+learning_rate: 1.0e-6
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+warmup_steps: 2
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+bf16: auto
+flash_attention: false  # strided EBFT overrides to flex_attention (or eager fallback) at runtime
+gradient_checkpointing: true
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+val_set_size: 0.0
+output_dir: ./outputs/ebft-strided-validation
+
+wandb_project: ebft
+logging_steps: 1
+save_steps: 100

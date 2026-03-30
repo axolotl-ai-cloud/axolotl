@@ -1,8 +1,18 @@
-base_model: Qwen/Qwen3.5-35B-A3B
+base_model: Qwen/Qwen3.5-35B-A3B-Base
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-strict: false
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.liger.LigerPlugin
+use_kernels: true
+use_scattermoe: true
+liger_layer_norm: true
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rms_norm_gated: true
+
+torch_compile: false
 
 chat_template: qwen3_5
 datasets:
@@ -13,6 +23,7 @@ datasets:
     message_property_mappings:
       role: from
       content: value
+
 val_set_size: 0.0
 output_dir: ./outputs/out
 dataset_prepared_path: last_run_prepared
@@ -40,6 +51,10 @@ lora_target_modules:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
 
+lora_qkv_kernel: true
+lora_o_kernel: true
+lora_mlp_kernel: false
+
 wandb_project:
 wandb_entity:
 wandb_watch:
@@ -47,22 +62,17 @@ wandb_name:
 wandb_log_model:
 
 gradient_accumulation_steps: 2
-micro_batch_size: 1
+micro_batch_size: 4
 num_epochs: 1
-optimizer: adamw_torch_4bit
+optimizer: adamw_torch_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
 bf16: auto
 tf32: true
 
-lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
-
 gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: false
+activation_offloading: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true

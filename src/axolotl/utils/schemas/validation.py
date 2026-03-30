@@ -837,6 +837,17 @@ class OptimizationValidationMixin:
             if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
                 LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
 
+            # Liger loss takes a separate code path (compute_liger_loss) that
+            # bypasses the flattened training forward pass. Batch flattening
+            # still applies to the scoring/deferred logprobs path.
+            trl_cfg = data.get("trl") or {}
+            if isinstance(trl_cfg, dict) and trl_cfg.get("use_liger_loss"):
+                LOG.warning(
+                    "batch_flattening with use_liger_loss: flattening will only "
+                    "apply to the scoring path (deferred logprobs). The training "
+                    "forward pass uses Liger's fused lm_head+loss kernel instead."
+                )
+
             if (
                 batch_flattening_auto
                 and data.get("flash_attention")
@@ -1482,6 +1493,124 @@ class DistributedValidationMixin:
         return self
 
 
+class EBFTValidationMixin:
+    """Validation for EBFT (Energy-Based Fine-Tuning) configuration."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_config_required(cls, data):
+        """rl: ebft requires an ebft config section."""
+        if data.get("rl") == "ebft" and not data.get("ebft"):
+            raise ValueError(
+                "`ebft` config section is required when `rl: ebft` is set. "
+                "Add an `ebft:` section with at least `mode: structured` or `mode: strided`."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_torch_compile(cls, data):
+        """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
+        and CheckpointErrors. The flex_attention kernel compiles itself internally —
+        whole-model torch.compile is not needed and actively harmful."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("torch_compile") is True
+            and data.get("ebft", {}).get("mode") == "strided"
+        ):
+            if data.get("gradient_checkpointing"):
+                raise ValueError(
+                    "EBFT strided mode: `torch_compile: true` with `gradient_checkpointing: true` "
+                    "causes CheckpointError (BlockMask metadata mismatch during recomputation). "
+                    "Remove `torch_compile` — the flex_attention kernel compiles itself internally."
+                )
+            LOG.warning(
+                "EBFT strided mode: `torch_compile: true` causes dynamo recompiles from "
+                "variable sequence lengths across steps. Consider removing it — "
+                "flex_attention compiles itself internally."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_gradient_checkpointing_reentrant(cls, data):
+        """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("ebft", {}).get("mode") == "strided"
+            and data.get("flex_attention")
+            and data.get("gradient_checkpointing")
+        ):
+            gc_kwargs = data.get("gradient_checkpointing_kwargs") or {}
+            if not gc_kwargs.get("use_reentrant"):
+                LOG.warning(
+                    "EBFT strided mode with flex_attention: setting `use_reentrant: true` in "
+                    "gradient_checkpointing_kwargs (required for flex_attention compatibility). "
+                    "Non-reentrant checkpointing causes CheckpointError with BlockMask metadata."
+                )
+                if data.get("gradient_checkpointing_kwargs") is None:
+                    data["gradient_checkpointing_kwargs"] = {}
+                data["gradient_checkpointing_kwargs"]["use_reentrant"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_activation_offloading(cls, data):
+        """activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
+        which conflicts with flex_attention's use_reentrant requirement."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("ebft", {}).get("mode") == "strided"
+            and data.get("activation_offloading") is True
+            and data.get("flex_attention")
+        ):
+            raise ValueError(
+                "EBFT strided mode: `activation_offloading: true` is incompatible with "
+                "`flex_attention: true`. Activation offloading replaces gradient checkpointing "
+                "with FSDP-style wrapping that conflicts with flex_attention's reentrant "
+                "checkpoint requirement. Remove `activation_offloading` — the strided trainer "
+                "uses micro-batched forward passes for memory efficiency instead."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_strided_sequence_len(cls, data):
+        """Warn if sequence_len is too large for single-GPU strided EBFT."""
+        if data.get("rl") != "ebft" or data.get("ebft", {}).get("mode") != "strided":
+            return data
+        ebft = data.get("ebft", {})
+        seq_len = data.get("sequence_len", 512)
+        n_samples = ebft.get("n_samples_per_prompt", 4)
+        gen_len = ebft.get("generate_max_len", 8)
+        stride = ebft.get("stride", 8)
+        ctx_len = ebft.get("context_length", 8)
+        max_blocks = (seq_len - gen_len - ctx_len) // stride + 1
+        full_seq = seq_len + max_blocks * gen_len
+        # Rough estimate: 8.7 GB per sample at S=3900 for 1B model
+        if full_seq * n_samples > 20000:
+            LOG.warning(
+                f"EBFT strided: full_seq_len={full_seq} * n_samples={n_samples} = "
+                f"{full_seq * n_samples} token-samples per step. This may require >24GB VRAM "
+                f"for a 1B+ model. Consider reducing sequence_len, n_samples_per_prompt, or stride."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_strided_dataset_split(cls, data):
+        """Warn about the common `train_on_split` mistake (silently ignored by schema)."""
+        datasets = data.get("datasets", [])
+        for ds in datasets or []:
+            if isinstance(ds, dict) and ds.get("train_on_split"):
+                LOG.warning(
+                    f"Dataset has `train_on_split: {ds['train_on_split']}` — this field "
+                    f"is not recognized and will be silently ignored. "
+                    f"Use `split: {ds['train_on_split']}` instead."
+                )
+        return data
+
+
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
 
@@ -1507,6 +1636,7 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    EBFTValidationMixin,
     GRPOVllmValidationMixin,
 ):
     """Full validation mixin for Axolotl configuration."""
