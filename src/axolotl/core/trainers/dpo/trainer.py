@@ -77,10 +77,10 @@ class AxolotlDPOTrainer(
 
         if processing_class.bos_token and processing_class.bos_token_id is not None:
             # dpo trainer may incorrectly prepend the bos_token_id to the dpo outputs
-            if res["chosen_input_ids"][0] == processing_class.bos_token_id:
-                res["chosen_input_ids"] = res["chosen_input_ids"][1:]
-            if res["rejected_input_ids"][0] == processing_class.bos_token_id:
-                res["rejected_input_ids"] = res["rejected_input_ids"][1:]
+            if res["chosen_ids"][0] == processing_class.bos_token_id:
+                res["chosen_ids"] = res["chosen_ids"][1:]
+            if res["rejected_ids"][0] == processing_class.bos_token_id:
+                res["rejected_ids"] = res["rejected_ids"][1:]
 
         return res
 

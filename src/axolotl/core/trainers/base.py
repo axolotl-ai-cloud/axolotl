@@ -405,15 +405,13 @@ class AxolotlTrainer(
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
         concatenated_batch = {}
 
-        max_length = max(
-            inputs["input_ids"].shape[1], inputs["rejected_input_ids"].shape[1]
-        )
+        max_length = max(inputs["input_ids"].shape[1], inputs["rejected_ids"].shape[1])
         # Concatenate positive and negative inputs
         concatenated_batch["input_ids"] = pad_to_length(
             inputs["input_ids"], max_length, pad_token
         )
-        concatenated_batch["rejected_input_ids"] = pad_to_length(
-            inputs["rejected_input_ids"], max_length, pad_token
+        concatenated_batch["rejected_ids"] = pad_to_length(
+            inputs["rejected_ids"], max_length, pad_token
         )
         concatenated_batch["labels"] = pad_to_length(
             inputs["labels"], max_length, label_pad_token
@@ -432,7 +430,7 @@ class AxolotlTrainer(
         ).to(device=device)
 
         input_ids = torch.cat(
-            [concatenated_batch["input_ids"], concatenated_batch["rejected_input_ids"]],
+            [concatenated_batch["input_ids"], concatenated_batch["rejected_ids"]],
             dim=0,
         ).to(device=device)
         attention_mask = torch.cat(

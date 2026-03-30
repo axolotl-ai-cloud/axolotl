@@ -223,18 +223,18 @@ class OrpoTokenizationTest:
             DictDefault({"chat_template": "chatml"}),
         )
         res = strat.tokenize_prompt(ds[0])
-        assert "rejected_input_ids" in res
+        assert "rejected_ids" in res
         assert "rejected_labels" in res
         assert "input_ids" in res
         assert "labels" in res
         assert "prompt_attention_mask" in res
 
-        assert len(res["rejected_input_ids"]) == len(res["rejected_labels"])
+        assert len(res["rejected_ids"]) == len(res["rejected_labels"])
         assert len(res["input_ids"]) == len(res["labels"])
         assert len(res["input_ids"]) == len(res["prompt_attention_mask"])
 
         assert res["rejected_labels"][0] == -100
-        assert res["rejected_input_ids"][-1] == res["rejected_labels"][-1]
+        assert res["rejected_ids"][-1] == res["rejected_labels"][-1]
 
         assert res["labels"][0] == -100
         assert res["input_ids"][-1] == res["labels"][-1]
