@@ -1259,6 +1259,21 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_nemotron_h_gradient_checkpointing(self):
+        if (
+            self.base_model
+            and "nemotron-h" in self.base_model.lower()
+            and self.gradient_checkpointing
+            and not self.sample_packing
+        ):
+            raise ValueError(
+                "gradient_checkpointing for nemotron_h requires sample_packing: true. "
+                "The upstream model marks supports_gradient_checkpointing=False; "
+                "axolotl only enables it after applying the sample-packing patch."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_gradient_checkpointing_w_offload(self):
         if self.gradient_checkpointing == "offload":
             LOG.warning(
