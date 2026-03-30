@@ -7,6 +7,7 @@ from typing import Any, Dict, Union
 import torch
 from torch import nn
 from trl import DPOTrainer
+from transformers import PreTrainedTokenizerBase, ProcessorMixin
 
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
@@ -18,6 +19,8 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+
+from axolotl.utils.data.utils import remove_double_bos_token
 
 
 class AxolotlDPOTrainer(
@@ -52,6 +55,24 @@ class AxolotlDPOTrainer(
         kwargs = sanitize_kwargs_for_tagging(tag_names=self.tag_names, kwargs=kwargs)
 
         return super().push_to_hub(*args, **kwargs)
+
+    def _tokenize(
+        self,
+        processing_class: PreTrainedTokenizerBase | ProcessorMixin,
+        input: str | list,
+        **kwargs,
+    ) -> dict[str, list]:
+        """
+        Override TRL's tokenization in DPO trainer to fix double bos_token bug (eg. llama).
+        """
+        result = super()._tokenize(
+            processing_class=processing_class, input=input, **kwargs
+        )
+
+        if self._is_vlm:
+            return result
+
+        return remove_double_bos_token(result, processing_class.bos_token_id)
 
     def training_step(
         self,
