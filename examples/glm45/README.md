@@ -71,7 +71,7 @@ when converting or loading a GLM-4 / GLM4-MoE model in `llama.cpp`, this is like
 Some GLM-4 configs include:
 
 ```json
-"num_nextn_predict_layers": = 1
+"num_nextn_predict_layers": 1
 ```
 
 This enables MTP (multi-token prediction) layers, but these layers are not always included during PEFT/QLoRA training or GGUF conversion.
