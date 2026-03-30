@@ -39,6 +39,8 @@ def patch_sonicmoe(model_type: str, torch_compile: bool = False):
         torch_compile: If True, wrap routing functions with torch.compile
             for kernel fusion (fuses softmax+topk+renorm into fewer launches).
     """
+    from sonicmoe.enums import is_glu
+
     from .routing import get_model_moe_config
     from .weight_converter import register_sonicmoe_weight_converter
 
@@ -49,7 +51,11 @@ def patch_sonicmoe(model_type: str, torch_compile: bool = False):
 
     for moe_cls in resolve_moe_block_classes(model_type):
         _patch_forward(moe_cls, routing_fn, activation, router_attr)
-    register_sonicmoe_weight_converter(model_type)
+
+    # Weight interleaving only applies to GLU models (gate_up_proj).
+    # Non-GLU models have a plain up_proj that needs no conversion.
+    if is_glu(activation):
+        register_sonicmoe_weight_converter(model_type)
 
 
 def _try_compile_routing(routing_fn):
@@ -98,6 +104,9 @@ def _patch_forward(moe_cls, routing_fn, activation, router_attr):
 
 def _make_general_forward(moe_cls, routing_fn, activation):
     """Create forward using routing_fn + moe_general_routing_inputs."""
+    from sonicmoe.enums import is_glu
+
+    glu_activation = is_glu(activation)
 
     def sonicmoe_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         from sonicmoe import moe_general_routing_inputs
@@ -105,7 +114,7 @@ def _make_general_forward(moe_cls, routing_fn, activation):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_flat = hidden_states.view(-1, hidden_dim)
 
-        # Shared expert (computed early, matching original model ordering)
+        # Shared expert
         shared_expert_output = _compute_shared_expert(self, hidden_states_flat)
 
         # Routing
@@ -113,27 +122,41 @@ def _make_general_forward(moe_cls, routing_fn, activation):
             hidden_states_flat, self
         )
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
+        # Optional latent projection before experts (e.g. Nemotron-H)
+        expert_input = hidden_states_flat
+        fc1_latent = getattr(self, "fc1_latent_proj", None)
+        if fc1_latent is not None:
+            expert_input = fc1_latent(expert_input)
+
+        # Permute weights to SonicMoE layout.
+        # GLU models: gate_up_proj [E, 2*I, H] -> [2*I, H, E]
+        # Non-GLU:    up_proj      [E, I, H]   -> [I, H, E]
+        if glu_activation:
+            up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
+        else:
+            up_weight = self.experts.up_proj.permute(1, 2, 0)
         down_weight = self.experts.down_proj.permute(1, 2, 0)
-        E = gate_up_weight.shape[-1]
+        E = up_weight.shape[-1]
 
         output, _ = moe_general_routing_inputs(
-            hidden_states_flat,
+            expert_input,
             router_scores,
             token_indices,
             expert_indices,
-            gate_up_weight,
-            None,  # b1 (no gate/up bias)
+            up_weight,
+            None,  # b1 (no bias)
             down_weight,
-            None,  # b2 (no down bias)
+            None,  # b2 (no bias)
             E,
             torch.cuda.current_stream().cuda_stream,
             activation,
             False,  # is_inference_mode
         )
+
+        # Optional latent projection after experts (e.g. Nemotron-H)
+        fc2_latent = getattr(self, "fc2_latent_proj", None)
+        if fc2_latent is not None:
+            output = fc2_latent(output)
 
         # Add shared expert contribution if present
         if shared_expert_output is not None:
@@ -151,6 +174,9 @@ def _make_general_forward(moe_cls, routing_fn, activation):
 
 def _make_fused_forward(moe_cls, activation, router_attr):
     """Create forward using moe_TC_softmax_topk_layer (topk -> softmax)."""
+    from sonicmoe.enums import is_glu
+
+    glu_activation = is_glu(activation)
 
     def sonicmoe_fused_forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         from sonicmoe import moe_TC_softmax_topk_layer
@@ -158,29 +184,43 @@ def _make_fused_forward(moe_cls, activation, router_attr):
         batch_size, sequence_length, hidden_dim = hidden_states.shape
         hidden_states_flat = hidden_states.view(-1, hidden_dim)
 
-        # Shared expert (computed early, matching original model ordering)
+        # Shared expert
         shared_expert_output = _compute_shared_expert(self, hidden_states_flat)
 
         router = getattr(self, router_attr)
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
+        # Optional latent projection before experts (e.g. Nemotron-H)
+        expert_input = hidden_states_flat
+        fc1_latent = getattr(self, "fc1_latent_proj", None)
+        if fc1_latent is not None:
+            expert_input = fc1_latent(expert_input)
+
+        # Permute weights to SonicMoE layout.
+        # GLU models: gate_up_proj [E, 2*I, H] -> [2*I, H, E]
+        # Non-GLU:    up_proj      [E, I, H]   -> [I, H, E]
+        if glu_activation:
+            up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
+        else:
+            up_weight = self.experts.up_proj.permute(1, 2, 0)
         down_weight = self.experts.down_proj.permute(1, 2, 0)
 
         output, _router_logits, _expert_freq = moe_TC_softmax_topk_layer(
-            hidden_states_flat,
+            expert_input,
             router.weight,
-            gate_up_weight,
-            None,  # b1 (no gate/up bias)
+            up_weight,
+            None,  # b1 (no bias)
             down_weight,
-            None,  # b2 (no down bias)
+            None,  # b2 (no bias)
             router.top_k,
             torch.cuda.current_stream().cuda_stream,
             activation,
             False,  # is_inference_mode
         )
+
+        # Optional latent projection after experts (e.g. Nemotron-H)
+        fc2_latent = getattr(self, "fc2_latent_proj", None)
+        if fc2_latent is not None:
+            output = fc2_latent(output)
 
         # Add shared expert contribution if present
         if shared_expert_output is not None:

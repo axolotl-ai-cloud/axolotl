@@ -196,12 +196,14 @@ def _unwrap_experts_lora(experts_module):
     if num_experts is None:
         # Fallback: infer from parameter shape
         gup = getattr(base_experts, "gate_up_proj", None)
+        if gup is None:
+            gup = getattr(base_experts, "up_proj", None)
         if gup is not None:
             num_experts = gup.shape[0]
 
-    # Extract gate_up_proj LoRA (needs A<->B swap due to transposition)
+    # Extract gate_up_proj (or up_proj for non-GLU) LoRA
     gup_lora = None
-    gup_wrapper = wrappers.get("gate_up_proj")
+    gup_wrapper = wrappers.get("gate_up_proj") or wrappers.get("up_proj")
     if gup_wrapper is not None:
         lora_A, lora_B, scaling = get_lora_params_from_wrapper(gup_wrapper)
         if lora_A is not None:
@@ -490,6 +492,21 @@ class HFScatterMoEGatedMLP(nn.Module):
         experts, gup_lora, down_lora = _unwrap_experts_lora(self.experts)
 
         # ====================================================================
+        # Detect GLU vs non-GLU expert architecture
+        # ====================================================================
+        # GLU models (Qwen, Mixtral, etc.): gate_up_proj [E, 2*I, H]
+        # Non-GLU models (Nemotron-H, etc.): up_proj [E, I, H]
+        has_glu = hasattr(experts, "gate_up_proj")
+        up_proj_name = "gate_up_proj" if has_glu else "up_proj"
+
+        # ====================================================================
+        # Optional latent projection before experts (e.g. Nemotron-H)
+        # ====================================================================
+        fc1_latent = getattr(self, "fc1_latent_proj", None)
+        if fc1_latent is not None:
+            hidden_states_flat = fc1_latent(hidden_states_flat)
+
+        # ====================================================================
         # Selective expert weight dequantization
         # ====================================================================
         # When experts are BnB-quantized (quantize_moe_experts), dequantize
@@ -498,7 +515,7 @@ class HFScatterMoEGatedMLP(nn.Module):
         use_selective = (
             getattr(self, "_use_selective_dequant", False)
             and hasattr(experts, "parametrizations")
-            and "gate_up_proj" in experts.parametrizations
+            and up_proj_name in experts.parametrizations
         )
 
         if use_selective:
@@ -517,11 +534,11 @@ class HFScatterMoEGatedMLP(nn.Module):
                 num_experts,
             )
             # Dequantize only active experts' weights
-            gate_up_W = selective_expert_weights(
+            up_W = selective_expert_weights(
                 experts,
-                "gate_up_proj",
+                up_proj_name,
                 active_experts,
-            ).transpose(2, 1)  # [num_active, hidden, 2*inter]
+            ).transpose(2, 1)
 
             # Remap LoRA weights to match compact expert indices
             if gup_lora is not None:
@@ -538,18 +555,18 @@ class HFScatterMoEGatedMLP(nn.Module):
             sei_gup = remapped_expert_idxs
             eo_gup = compact_offsets
         else:
-            gate_up_W = experts.gate_up_proj.transpose(2, 1)  # [E, hidden, 2*inter]
+            up_W = getattr(experts, up_proj_name).transpose(2, 1)
             sei_gup = sorted_expert_idxs
             eo_gup = expert_offsets
 
         # ====================================================================
-        # Gate + Up projection
+        # Up projection (GLU: gate+up fused, non-GLU: up only)
         # ====================================================================
         if gup_lora is not None:
             gup_A, gup_B, gup_scaling = gup_lora
-            gup = parallel_linear_lora(
+            up_out = parallel_linear_lora(
                 hidden_states_flat,
-                gate_up_W,
+                up_W,
                 top_k,
                 sei_gup,
                 sorted_scattered_idxs,
@@ -563,9 +580,9 @@ class HFScatterMoEGatedMLP(nn.Module):
                 use_fused_gather=True,
             )
         else:
-            gup = parallel_linear(
+            up_out = parallel_linear(
                 hidden_states_flat,
-                gate_up_W,
+                up_W,
                 top_k,
                 sei_gup,
                 sorted_scattered_idxs,
@@ -574,8 +591,13 @@ class HFScatterMoEGatedMLP(nn.Module):
                 grouped_out=True,
             )
 
-        gates, h = gup.chunk(2, dim=-1)
-        h = experts.act_fn(gates) * h
+        # GLU: split into gate and up, apply act_fn(gate) * up
+        # Non-GLU: apply act_fn directly
+        if has_glu:
+            gates, h = up_out.chunk(2, dim=-1)
+            h = experts.act_fn(gates) * h
+        else:
+            h = experts.act_fn(up_out)
 
         # ====================================================================
         # Down projection
@@ -634,6 +656,13 @@ class HFScatterMoEGatedMLP(nn.Module):
                 grouped_out=False,
                 gates=routing_weights,
             )
+
+        # ====================================================================
+        # Optional latent projection after experts (e.g. Nemotron-H)
+        # ====================================================================
+        fc2_latent = getattr(self, "fc2_latent_proj", None)
+        if fc2_latent is not None:
+            expert_output = fc2_latent(expert_output)
 
         # ====================================================================
         # Combine with shared expert and reshape

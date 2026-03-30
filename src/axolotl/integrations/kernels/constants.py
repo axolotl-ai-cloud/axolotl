@@ -36,6 +36,8 @@ SPARSE_MOE_BLOCK = {
     "glm4v_moe": "Glm4vMoeTextMoE",
     # sigmoid -> topk routing (no group selection)
     "minimax_m2": "MiniMaxM2SparseMoeBlock",
+    # Non-GLU MoE (no gate_proj, experts have up_proj + down_proj only)
+    "nemotron_h": "NemotronHMoE",
     # Models below need custom routing (not yet implemented):
     # "ernie4_5_moe": "Ernie4_5_MoeSparseMoeBlock",  # softmax->topk, e_score_correction_bias between softmax and topk
     # "deepseek_v2": "DeepseekV2Moe",  # softmax->topk, group_limited_greedy, different attr names (num_group)
