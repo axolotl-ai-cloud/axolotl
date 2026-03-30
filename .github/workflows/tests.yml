@@ -99,14 +99,12 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
-        env:
-          UV_TORCH_BACKEND: cpu
         run: |
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
 
       - name: Install dependencies
         run: |
-          echo "torch==${{ matrix.pytorch_version }}+cpu" > /tmp/torch-pin.txt
+          echo "torch==${{ matrix.pytorch_version }}" > /tmp/torch-pin.txt
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
