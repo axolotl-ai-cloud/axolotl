@@ -294,7 +294,10 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
-    dpo_norm_loss: bool | None = None
+    dpo_norm_loss: bool | None = Field(
+        default=None,
+        deprecated="Deprecated in v0.15.1 due to breaking changes in TRL >=v0.29.0. Will be readded upon TRL support."
+    )
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,

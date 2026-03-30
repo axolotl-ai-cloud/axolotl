@@ -30,8 +30,6 @@ class DPOStrategy:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
         if cfg.dpo_padding_free is not None:
             training_args_kwargs["padding_free"] = cfg.dpo_padding_free
-        if cfg.dpo_norm_loss is not None:
-            training_args_kwargs["dpo_norm_loss"] = cfg.dpo_norm_loss
         if cfg.dpo_use_liger_kernel is not None:
             training_args_kwargs["use_liger_kernel"] = cfg.dpo_use_liger_kernel
         return training_args_kwargs

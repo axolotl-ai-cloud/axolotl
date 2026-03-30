@@ -21,6 +21,7 @@ class DeprecatedParameters(BaseModel):
     eval_max_new_tokens: int | None = None
     dpo_use_logits_to_keep: bool | None = None
     dpo_generate_during_eval: bool | None = None
+    dpo_norm_loss: bool | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -99,6 +100,16 @@ class DeprecatedParameters(BaseModel):
                 "it has been removed in TRL >= 0.29.0"
             )
         return dpo_generate_during_eval
+
+    @field_validator("dpo_norm_loss")
+    @classmethod
+    def validate_dpo_norm_loss(cls, dpo_norm_loss):
+        if dpo_norm_loss is not None:
+            raise DeprecationWarning(
+                "`dpo_norm_loss` is no longer supported, "
+                "due to breaking changes in TRL >= 0.29.0"
+            )
+        return dpo_norm_loss
 
 
 class RemappedParameters(BaseModel):
