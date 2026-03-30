@@ -191,7 +191,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          echo "torch==${{ matrix.pytorch_version }}+cpu" > /tmp/torch-pin.txt
+          echo "torch==${{ matrix.pytorch_version }}" > /tmp/torch-pin.txt
           uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
           uv pip install --no-build-isolation dist/axolotl*.tar.gz --override /tmp/torch-pin.txt
