@@ -96,6 +96,7 @@ def fixture_dpo_cfg(base_cfg):
             "dpo_use_weighting": True,
             "dpo_label_smoothing": 0.1,
             "beta": 0.1,  # DPO beta
+            "precompute_ref_log_probs": True,
         }
     )
     return cfg
@@ -298,6 +299,7 @@ class TestHFRLTrainerBuilder:
         assert hasattr(training_arguments, "use_weighting")
         assert training_arguments.use_weighting is True
         assert training_arguments.label_smoothing == 0.1
+        assert training_arguments.precompute_ref_log_probs is True
 
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)

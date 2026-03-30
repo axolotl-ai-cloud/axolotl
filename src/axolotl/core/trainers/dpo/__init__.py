@@ -34,4 +34,8 @@ class DPOStrategy:
             training_args_kwargs["dpo_norm_loss"] = cfg.dpo_norm_loss
         if cfg.dpo_use_liger_kernel is not None:
             training_args_kwargs["use_liger_kernel"] = cfg.dpo_use_liger_kernel
+        if cfg.precompute_ref_log_probs is not None:
+            training_args_kwargs["precompute_ref_log_probs"] = (
+                cfg.precompute_ref_log_probs
+            )
         return training_args_kwargs
