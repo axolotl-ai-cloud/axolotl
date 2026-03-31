@@ -22,6 +22,7 @@ class DeprecatedParameters(BaseModel):
     dpo_use_logits_to_keep: bool | None = None
     dpo_generate_during_eval: bool | None = None
     dpo_norm_loss: bool | None = None
+    rpo_alpha: float | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -110,6 +111,16 @@ class DeprecatedParameters(BaseModel):
                 "due to breaking changes in TRL >= 0.29.0"
             )
         return dpo_norm_loss
+
+    @field_validator("rpo_alpha")
+    @classmethod
+    def validate_rpo_alpha(cls, rpo_alpha):
+        if rpo_alpha is not None:
+            raise DeprecationWarning(
+                "`rpo_alpha` has been deprecated in TRL >= 0.29.0, "
+                "and now requires passing multiple loss types, which is not yet supported by Axolotl."
+            )  # TODO: change this warning once multiple dpo loss types are supported.
+        return rpo_alpha
 
 
 class RemappedParameters(BaseModel):

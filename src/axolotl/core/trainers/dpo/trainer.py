@@ -68,10 +68,11 @@ class AxolotlDPOTrainer(
             processing_class=processing_class, input=input, **kwargs
         )
 
-        if self._is_vlm:
-            return result
+        bos_token_id = getattr(processing_class, "bos_token_id", None)
+        if bos_token_id is not None:
+            result = remove_double_bos_token(result, bos_token_id)
 
-        return remove_double_bos_token(result, processing_class.bos_token_id)
+        return result
 
     def training_step(
         self,

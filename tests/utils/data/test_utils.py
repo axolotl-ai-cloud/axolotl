@@ -542,19 +542,6 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
 
 
 class TestRemoveDoubleBOSToken(unittest.TestCase):
-    def test_no_bos_token(self):
-        input_ids = [0] * 3
-        labels = [0] * 3
-
-        example = {
-            "input_ids": input_ids,
-            "labels": labels,
-        }
-
-        example = remove_double_bos_token(example, None)
-        assert example["input_ids"] == [0] * 3
-        assert example["labels"] == [0] * 3
-
     def test_no_remove_bos_token(self):
         input_ids = [0, 1, 2]
         labels = [1, 2, 3]

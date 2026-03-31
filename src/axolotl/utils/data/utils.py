@@ -351,13 +351,12 @@ def handle_long_seq_in_dataset(
     return dataset
 
 
-def remove_double_bos_token(example: dict[str, list], bos_token_id: int | None):
+def remove_double_bos_token(example: dict[str, list], bos_token_id: int):
     """Remove double bos tokens that may occur when retokenizing preprocessed data
     for tokenizers and chat templates that have a bos_token - eg. DPO + Llama.
     """
-    if bos_token_id is not None:
-        input_ids = example["input_ids"]
-        if len(input_ids) >= 2 and input_ids[0] == input_ids[1] == bos_token_id:
-            for key in example:
-                example[key] = example[key][1:]
+    input_ids = example["input_ids"]
+    if len(input_ids) >= 2 and input_ids[0] == input_ids[1] == bos_token_id:
+        for key in example:
+            example[key] = example[key][1:]
     return example
