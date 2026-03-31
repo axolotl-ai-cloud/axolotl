@@ -213,8 +213,8 @@ class TestAssistantDPOChatTemplatePhi3:
             + "<|user|>\ngoodbye<|end|>\n"
             + "<|assistant|>\n"
         )
-        assert result["chosen"] == "goodbye<|end|>"
-        assert result["rejected"] == "party on<|end|>"
+        assert result["chosen"] == "goodbye<|end|>\n<|endoftext|>"
+        assert result["rejected"] == "party on<|end|>\n<|endoftext|>"
 
 
 class TestAssistantDPOChatTemplateGemma:
@@ -288,8 +288,8 @@ class TestArgillaChatDPOChatTemplate:
         )
         result = transform_fn(argilla_chat_dataset[0], tokenizer=phi3_tokenizer)
         assert result["prompt"] == "<|user|>\nhello<|end|>\n" + "<|assistant|>\n"
-        assert result["chosen"] == "goodbye<|end|>"
-        assert result["rejected"] == "party on<|end|>"
+        assert result["chosen"] == "goodbye<|end|>\n<|endoftext|>"
+        assert result["rejected"] == "party on<|end|>\n<|endoftext|>"
 
 
 if __name__ == "__main__":
