@@ -26,10 +26,23 @@ from trl.scripts.vllm_serve import (
     ScriptArguments,
     chunk_list,
     extract_logprobs,
-    get_open_port,
 )
+
+try:
+    from trl.scripts.vllm_serve import get_open_port
+except ImportError:
+    try:
+        from vllm.utils import get_open_port
+    except ImportError:
+        from vllm.utils.network_utils import get_open_port
 from vllm import LLM, SamplingParams
 from vllm.lora.request import LoRARequest
+
+from axolotl.scripts.process_cleanup import (
+    ProcessManager,
+    is_fatal_worker_error,
+    safe_recv,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +67,10 @@ class LoRAScriptArguments(ScriptArguments):
         default="bfloat16",
         metadata={"help": "Data type for LoRA weights."},
     )
+    worker_extension_cls: str = field(
+        default="trl.scripts.vllm_serve.WeightSyncWorkerExtension",
+        metadata={"help": "vLLM worker extension class for weight synchronization."},
+    )
 
 
 def llm_worker(
@@ -63,10 +80,21 @@ def llm_worker(
     connection: Connection,
 ) -> None:
     """Worker process that creates a vLLM LLM with LoRA enabled."""
-    os.environ["VLLM_DP_RANK"] = str(data_parallel_rank)
-    os.environ["VLLM_DP_RANK_LOCAL"] = str(data_parallel_rank)
-    os.environ["VLLM_DP_SIZE"] = str(script_args.data_parallel_size)
-    os.environ["VLLM_DP_MASTER_PORT"] = str(master_port)
+    # For DP with TP=1: pin each worker to its own GPU via CUDA_VISIBLE_DEVICES.
+    # vLLM's LLM() offline mode doesn't support DP env vars natively, so we
+    # isolate each worker to a single GPU and let vLLM think it's the only one.
+    if script_args.data_parallel_size > 1 and script_args.tensor_parallel_size == 1:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if visible:
+            gpu_ids = visible.split(",")
+            os.environ["CUDA_VISIBLE_DEVICES"] = gpu_ids[data_parallel_rank]
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(data_parallel_rank)
+    else:
+        os.environ["VLLM_DP_RANK"] = str(data_parallel_rank)
+        os.environ["VLLM_DP_RANK_LOCAL"] = str(data_parallel_rank)
+        os.environ["VLLM_DP_SIZE"] = str(script_args.data_parallel_size)
+        os.environ["VLLM_DP_MASTER_PORT"] = str(master_port)
 
     llm = LLM(
         model=script_args.model,
@@ -78,8 +106,7 @@ def llm_worker(
         enable_prefix_caching=script_args.enable_prefix_caching,
         kv_cache_dtype=script_args.kv_cache_dtype,
         max_model_len=script_args.max_model_len,
-        # Use batch-capable worker extension (adds batch_update_named_params + auto-close)
-        worker_extension_cls="axolotl.scripts.vllm_worker_ext.BatchWeightSyncWorkerExtension",
+        worker_extension_cls=script_args.worker_extension_cls,
         trust_remote_code=script_args.trust_remote_code,
         model_impl=script_args.vllm_model_impl,
         logprobs_mode="processed_logprobs",
@@ -92,11 +119,28 @@ def llm_worker(
 
     connection.send({"status": "ready"})
 
+    def _worker_cleanup():
+        """Clean up the LLM and its EngineCore subprocess on worker exit."""
+        from axolotl.scripts.process_cleanup import cleanup_orphan_processes
+
+        try:
+            llm.collective_rpc(method="close_communicator")
+        except Exception:
+            pass
+        # Kill EngineCore children of this worker
+        cleanup_orphan_processes("VLLM::EngineCore")
+
+    import atexit as _atexit
+
+    _atexit.register(_worker_cleanup)
+
     while True:
         try:
             command = connection.recv()
-        except KeyboardInterrupt:
-            llm.collective_rpc(method="close_communicator")
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if command.get("type") == "shutdown":
             break
 
         if command["type"] in ["call", "fire_and_forget"]:
@@ -114,8 +158,20 @@ def llm_worker(
                     load_inplace=lr.get("load_inplace", False),
                 )
 
-            method = getattr(llm, method_name)
-            result = method(*args, **kwargs)
+            try:
+                method = getattr(llm, method_name)
+                result = method(*args, **kwargs)
+            except Exception as exc:
+                logger.warning("Worker method %s failed: %s", method_name, exc)
+                if command["type"] == "call":
+                    connection.send({"error": str(exc), "kind": "worker_error"})
+                if is_fatal_worker_error(exc):
+                    logger.error(
+                        "Fatal worker error (EngineCore died), exiting. "
+                        "Restart the vLLM server to recover."
+                    )
+                    break
+                continue
             if command["type"] == "call":
                 connection.send(result)
         elif command["type"] == "shutdown":
@@ -132,7 +188,7 @@ def main(script_args: ScriptArguments):
 
     # Request/Response models (defined locally like TRL's vllm_serve.main)
     class GenerateRequest(BaseModel):
-        prompts: list[str]
+        prompts: list[str] | list[list[int]]
         images: list[str] | None = None
         n: int = 1
         repetition_penalty: float = 1.0
@@ -206,6 +262,10 @@ def main(script_args: ScriptArguments):
         connections.append(parent_conn)
         processes.append(process)
 
+    # Process lifecycle management
+    manager = ProcessManager(processes, connections)
+    manager.register_cleanup()
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         import time
@@ -232,12 +292,11 @@ def main(script_args: ScriptArguments):
                     if isinstance(msg, dict) and msg.get("status") == "ready":
                         ready.add(id(conn))
             await asyncio.sleep(0.1)
+
+        monitor_task = asyncio.create_task(manager.monitor_workers())
         yield
-        for p in processes:
-            p.join(timeout=10)
-            if p.is_alive():
-                p.terminate()
-                p.join()
+        monitor_task.cancel()
+        manager._shutdown_workers()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -300,7 +359,12 @@ def main(script_args: ScriptArguments):
 
     @app.get("/health/")
     async def health():
-        return {"status": "ok"}
+        status = manager.get_health_status()
+        if status["status"] != "ok":
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(status_code=503, content=status)
+        return status
 
     @app.get("/get_world_size/")
     async def get_world_size():
@@ -312,6 +376,8 @@ def main(script_args: ScriptArguments):
     @app.post("/generate/", response_model=GenerateResponse)
     async def generate(request: GenerateRequest):
         """Generate completions with optional LoRA adapter."""
+        manager.check_workers_alive()
+
         import base64
         from io import BytesIO
 
@@ -326,7 +392,12 @@ def main(script_args: ScriptArguments):
         images: list[str | None] = request.images or [None] * len(request.prompts)  # type: ignore[assignment,list-item]
         prompts: list[dict[str, Any]] = []
         for prompt, image in zip(request.prompts, images, strict=True):
-            row: dict[str, Any] = {"prompt": prompt}
+            # Support both string prompts and token ID lists
+            row: dict[str, Any]
+            if isinstance(prompt, list):
+                row = {"prompt_token_ids": prompt}
+            else:
+                row = {"prompt": prompt}
             if image is not None:
                 from PIL import Image
 
@@ -386,12 +457,17 @@ def main(script_args: ScriptArguments):
         # Use run_in_executor so blocking recv() doesn't freeze the event loop
         # (allows /set_lora_adapter/ and other endpoints to be served concurrently)
         loop = asyncio.get_running_loop()
+
         all_outputs = await asyncio.gather(
-            *(loop.run_in_executor(None, conn.recv) for conn in connections)
+            *(loop.run_in_executor(None, safe_recv, conn) for conn in connections)
         )
         all_outputs = [
             o for o, c in zip(all_outputs, chunked_prompts, strict=True) if c
         ]
+        # Check for worker errors before flattening
+        for o in all_outputs:
+            if isinstance(o, dict) and "error" in o:
+                raise RuntimeError(f"vLLM worker error: {o['error']}")
         all_outputs = list(chain.from_iterable(all_outputs))
 
         return {
@@ -406,6 +482,7 @@ def main(script_args: ScriptArguments):
     @app.post("/chat/", response_model=ChatResponse)
     async def chat(request: ChatRequest):
         """Chat endpoint with optional LoRA adapter."""
+        manager.check_workers_alive()
         generation_kwargs = {
             "n": request.n,
             "repetition_penalty": request.repetition_penalty,
@@ -444,6 +521,114 @@ def main(script_args: ScriptArguments):
             ],
             "logprobs": extract_logprobs(all_outputs)[0],
             "logprob_token_ids": extract_logprobs(all_outputs)[1],
+        }
+
+    # --- OpenAI-compatible endpoints (for NeMo Gym agent integration) ---
+
+    @app.get("/v1/models")
+    async def list_models():
+        """OpenAI-compatible models endpoint."""
+        return {
+            "object": "list",
+            "data": [
+                {"id": script_args.model, "object": "model", "owned_by": "axolotl"}
+            ],
+        }
+
+    @app.post("/v1/chat/completions")
+    async def openai_chat_completions(request_body: dict):
+        """OpenAI-compatible chat completions endpoint.
+
+        Translates OpenAI format to our internal /chat/ format so NeMo Gym's
+        model server proxy can call us directly.
+        """
+        messages_list = request_body.get("messages", [])
+        temperature = request_body.get("temperature", 1.0)
+        max_tokens = request_body.get("max_tokens", 512)
+        top_p = request_body.get("top_p", 1.0)
+        n = request_body.get("n", 1)
+
+        generation_kwargs = {
+            "n": n,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "logprobs": 0,  # Always return logprobs (NeMo Gym needs them)
+        }
+        sampling_params = SamplingParams(
+            **{k: v for k, v in generation_kwargs.items() if v is not None}
+        )
+
+        # Send to vLLM worker
+        chunked = chunk_list([messages_list], script_args.data_parallel_size)
+        for conn, chunk in zip(connections, chunked, strict=True):
+            if not chunk:
+                chunk = [[{"role": "user", "content": "<placeholder>"}]]
+            kwargs = {
+                "messages": chunk,
+                "sampling_params": sampling_params,
+                "use_tqdm": False,
+                "lora_request": active_lora["request"],
+            }
+            conn.send({"type": "call", "method": "chat", "kwargs": kwargs})
+
+        all_outputs = [conn.recv() for conn in connections]
+        all_outputs = [o for o, c in zip(all_outputs, chunked, strict=True) if c]
+        all_outputs = list(chain.from_iterable(all_outputs))
+
+        if not all_outputs:
+            return {"choices": [], "model": script_args.model}
+
+        # Format as OpenAI response
+        import uuid
+
+        choices = []
+        for i, output in enumerate(all_outputs):
+            for j, out in enumerate(output.outputs):
+                text = out.text
+                # Extract token IDs if requested
+                # Build logprobs in OpenAI format
+                lp_list = None
+                if out.logprobs:
+                    lp_list = {
+                        "content": [
+                            {"token": "", "logprob": next(iter(lp.values())).logprob}  # nosec B105
+                            for lp in out.logprobs
+                        ]
+                    }
+
+                choice = {
+                    "index": i * n + j,
+                    "message": {"role": "assistant", "content": text},
+                    "finish_reason": "stop"
+                    if out.finish_reason == "stop"
+                    else "length",
+                    "logprobs": lp_list,
+                }
+                # Include token ID information for NeMo Gym
+                choice["prompt_token_ids"] = output.prompt_token_ids
+                choice["generation_token_ids"] = list(out.token_ids)
+                if out.logprobs:
+                    choice["generation_log_probs"] = [
+                        next(iter(lp.values())).logprob for lp in out.logprobs
+                    ]
+                choices.append(choice)
+
+        prompt_tokens = len(all_outputs[0].prompt_token_ids) if all_outputs else 0
+        completion_tokens = sum(
+            len(out.token_ids) for o in all_outputs for out in o.outputs
+        )
+
+        return {
+            "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            "object": "chat.completion",
+            "model": script_args.model,
+            "choices": choices,
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
         }
 
     # --- Weight sync endpoints (legacy fallback, same as TRL) ---
@@ -542,13 +727,13 @@ def main(script_args: ScriptArguments):
 
     @app.post("/reset_prefix_cache/")
     async def reset_prefix_cache():
+        # Fire-and-forget: send reset without expecting a reply.
+        # Using "fire_and_forget" type so workers don't send back a response
+        # that would sit in the pipe and corrupt the next recv() for
+        # generate/chat calls.
         for conn in connections:
-            conn.send({"type": "call", "method": "reset_prefix_cache"})
-        loop = asyncio.get_running_loop()
-        results = await asyncio.gather(
-            *(loop.run_in_executor(None, conn.recv) for conn in connections)
-        )
-        return {"message": f"Reset prefix cache: {all(results)}"}
+            conn.send({"type": "fire_and_forget", "method": "reset_prefix_cache"})
+        return {"message": "Reset prefix cache received"}
 
     @app.post("/close_communicator/")
     async def close_communicator():

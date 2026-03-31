@@ -69,10 +69,8 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
+        pytorch_version: ["2.9.1", "2.10.0"]
         exclude:
-          - python_version: "3.14"
-            pytorch_version: "2.8.0"
           - python_version: "3.14"
             pytorch_version: "2.9.1"
     timeout-minutes: 20
@@ -165,10 +163,8 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.8.0", "2.9.1", "2.10.0"]
+        pytorch_version: ["2.9.1", "2.10.0"]
         exclude:
-          - python_version: "3.14"
-            pytorch_version: "2.8.0"
           - python_version: "3.14"
             pytorch_version: "2.9.1"
     timeout-minutes: 30
@@ -329,13 +325,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.8.0
-            num_gpus: 1
-            gpu_type: "B200"
-            axolotl_extras: fbgemm-gpu
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"

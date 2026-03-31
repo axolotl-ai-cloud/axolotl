@@ -837,6 +837,17 @@ class OptimizationValidationMixin:
             if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
                 LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
 
+            # Liger loss takes a separate code path (compute_liger_loss) that
+            # bypasses the flattened training forward pass. Batch flattening
+            # still applies to the scoring/deferred logprobs path.
+            trl_cfg = data.get("trl") or {}
+            if isinstance(trl_cfg, dict) and trl_cfg.get("use_liger_loss"):
+                LOG.warning(
+                    "batch_flattening with use_liger_loss: flattening will only "
+                    "apply to the scoring path (deferred logprobs). The training "
+                    "forward pass uses Liger's fused lm_head+loss kernel instead."
+                )
+
             if (
                 batch_flattening_auto
                 and data.get("flash_attention")
@@ -1245,6 +1256,21 @@ class ModelCompatibilityValidationMixin:
             self.base_model and "mpt" in self.base_model.lower()
         ) and self.gradient_checkpointing:
             raise ValueError("gradient_checkpointing is not supported for MPT models")
+        return self
+
+    @model_validator(mode="after")
+    def check_nemotron_h_gradient_checkpointing(self):
+        if (
+            self.base_model
+            and "nemotron-h" in self.base_model.lower()
+            and self.gradient_checkpointing
+            and not self.sample_packing
+        ):
+            raise ValueError(
+                "gradient_checkpointing for nemotron_h requires sample_packing: true. "
+                "The upstream model marks supports_gradient_checkpointing=False; "
+                "axolotl only enables it after applying the sample-packing patch."
+            )
         return self
 
     @model_validator(mode="after")

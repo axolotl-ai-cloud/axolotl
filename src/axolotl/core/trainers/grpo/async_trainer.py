@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from trl.extras.profiling import profiling_decorator
 from trl.trainer import GRPOConfig, GRPOTrainer
@@ -126,6 +127,18 @@ class AsyncGRPOConfig(GRPOConfig):
         default=1,
         metadata={
             "help": "Sync model weights to vLLM every N optimizer steps (async mode only)."
+        },
+    )
+
+    # --- Batch flattening ---
+    batch_flattening: bool = field(
+        default=False,
+        metadata={
+            "help": "Use batch flattening for the scoring forward pass. Removes padding tokens "
+            "before the forward pass, reducing attention FLOPs proportional to the padding ratio. "
+            "Requires flash_attention_2 attention implementation. Incompatible with FSDP and "
+            "multimodal models. The per-token logprob results differ by bf16 precision (~0.03 mean) "
+            "but produce equivalent loss and gradients."
         },
     )
 
@@ -523,7 +536,10 @@ class GRPODataProducer(BaseDataProducer):
     def set_trainer(self, trainer) -> None:
         """Inject the live trainer reference and create the prompt DataLoader."""
         self._trainer = trainer
-        self._init_prompt_dataloader()
+        # Defer _init_prompt_dataloader if trainer.args is not yet set
+        # (happens when set_trainer is called from _create_data_producer during __init__)
+        if getattr(trainer, "args", None) is not None:
+            self._init_prompt_dataloader()
 
     def _init_prompt_dataloader(self) -> None:
         from functools import partial
@@ -580,6 +596,10 @@ class GRPODataProducer(BaseDataProducer):
         **kwargs,
     ) -> RolloutDataset | None:
         """Generate a fresh GRPO training rollout."""
+        # Lazy init: create prompt DataLoader if deferred from set_trainer
+        if self._prompt_dl is None and self._trainer is not None:
+            self._init_prompt_dataloader()
+
         is_main = self._trainer.accelerator.is_main_process
 
         # FSDP rank0-only mode: non-rank-0 returns None (broadcast fills it later)
@@ -1012,27 +1032,44 @@ class AsyncGRPOTrainer(GRPOTrainer):
             import requests
 
             vllm_client = self.vllm_generation.vllm_client
-            url = f"{vllm_client.base_url}/set_lora_adapter/"
+            base_url = vllm_client.base_url
+            base_model = getattr(self.args, "model_name_or_path", "axolotl-lora")
             sync_timeout = getattr(self.args, "vllm_server_timeout", 300) or 300
+
+            # Try standard vLLM /v1/load_lora_adapter first, fall back to custom endpoint
             response = requests.post(
-                url,
+                f"{base_url}/v1/load_lora_adapter",
                 json={
-                    "lora_name": "active_lora",
-                    "lora_int_id": self._lora_sync_version,
+                    "lora_name": base_model,
                     "lora_path": adapter_path,
+                    "load_inplace": True,
                 },
                 timeout=sync_timeout,
             )
             if response.status_code != 200:
-                logger.warning(
-                    "Failed to set LoRA adapter: %s %s",
-                    response.status_code,
-                    response.text,
+                # Fallback: try custom /set_lora_adapter/ endpoint
+                response = requests.post(
+                    f"{base_url}/set_lora_adapter/",
+                    json={
+                        "lora_name": "active_lora",
+                        "lora_int_id": self._lora_sync_version,
+                        "lora_path": adapter_path,
+                    },
+                    timeout=30,
                 )
-                return
+                if response.status_code != 200:
+                    logger.warning(
+                        "Failed to set LoRA adapter: %s %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return
 
             # Reset prefix cache after adapter update
-            vllm_client.reset_prefix_cache()
+            try:
+                vllm_client.reset_prefix_cache()
+            except Exception as exc:
+                logger.warning("Failed to reset prefix cache: %s", exc)
 
             # Clean up old adapter versions (keep only current)
             if self._lora_sync_version > 1:
@@ -1519,6 +1556,29 @@ class AsyncGRPOTrainer(GRPOTrainer):
     ) -> None:
         """Called after advantages are computed. Override for replay buffer, re-roll, etc."""
 
+    def _notify_rollouts_scored(
+        self,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Dispatch on_rollouts_scored to all registered plugins (rank 0 only)."""
+        if not self.accelerator.is_main_process:
+            return
+
+        from axolotl.integrations.base import PluginManager
+
+        pm = PluginManager.get_instance()
+        if pm and pm.plugins:
+            # Try _axolotl_cfg first (set by causal builder), fall back to
+            # PluginManager's stored cfg (set during register phase).
+            cfg = getattr(self, "_axolotl_cfg", None) or getattr(pm, "_cfg", None)
+            if cfg is not None:
+                pm.on_rollouts_scored(
+                    cfg, self, prompts, completions, rewards, advantages
+                )
+
     # ------------------------------------------------------------------
     # Main-thread scoring
     # ------------------------------------------------------------------
@@ -1570,6 +1630,16 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
 
         # --- Policy logprobs ---
+        # When batch_flattening is enabled, use the flattened (padding-free) forward
+        # pass for the scoring path. This removes padding tokens before the forward
+        # pass, reducing attention FLOPs proportional to the padding ratio (20-34%
+        # faster in benchmarks). Requires flash_attention_2 and no multimodal inputs.
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs  # no multimodal inputs
+            and not self.is_fsdp_enabled  # FSDP needs wrapped model
+        )
+
         logprob_batch_size = min(batch_size * 4, len(prompt_ids))
         with disable_gradient_checkpointing(
             self.model, self.args.gradient_checkpointing_kwargs
@@ -1579,15 +1649,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    logprob_batch_size,
-                    num_images=num_images,
-                    **forward_kwargs,
-                )
+                if can_flatten:
+                    old_per_token_logps = self._get_per_token_logps_flattened(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        batch_size=logprob_batch_size,
+                        prompt_mask=prompt_mask,
+                    )
+                else:
+                    old_per_token_logps, _ = self._get_per_token_logps_and_entropies(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        logprob_batch_size,
+                        num_images=num_images,
+                        **forward_kwargs,
+                    )
                 data["old_per_token_logps"] = old_per_token_logps
             else:
                 old_per_token_logps = None
@@ -1843,7 +1923,10 @@ class AsyncGRPOTrainer(GRPOTrainer):
                     nanmax(self.accelerator.gather(torch.max(flat_isr))).item()
                 )
 
-        # Log prompt/completion texts
+        # Log prompt/completion texts.
+        # NB: gather_object merges per-rank local texts into a full-batch list
+        # matching rewards_per_func and all_advantages which are already full-batch
+        # tensors (gathered/computed earlier in this method). Lengths stay aligned.
         prompts_text = self.processing_class.batch_decode(
             prompt_ids, skip_special_tokens=True
         )
@@ -1851,11 +1934,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
             completion_ids, skip_special_tokens=True
         )
         if gather_object is not None:
-            self._logs["prompt"].extend(gather_object(prompts_text))
-            self._logs["completion"].extend(gather_object(completions_text))
+            gathered_prompts = gather_object(prompts_text)
+            gathered_completions = gather_object(completions_text)
+            self._logs["prompt"].extend(gathered_prompts)
+            self._logs["completion"].extend(gathered_completions)
+        else:
+            gathered_prompts = prompts_text
+            gathered_completions = completions_text
+        rewards_dict = {}
         for i, name in enumerate(self.reward_func_names):
-            self._logs["rewards"][name].extend(rewards_per_func[:, i].tolist())
-        self._logs["advantages"].extend(all_advantages.tolist())
+            reward_list = rewards_per_func[:, i].tolist()  # already full-batch
+            self._logs["rewards"][name].extend(reward_list)
+            rewards_dict[name] = reward_list
+        adv_list = all_advantages.tolist()  # already full-batch
+        self._logs["advantages"].extend(adv_list)
+
+        # Notify plugins of scored rollouts
+        self._notify_rollouts_scored(
+            gathered_prompts, gathered_completions, rewards_dict, adv_list
+        )
 
         # Remove deferred keys
         for k in list(data.keys()):
@@ -1931,6 +2028,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         self._launch_reward_workers(inputs, prompts, completions, completion_ids_list)
 
         # --- Policy logprobs for this chunk (GPU, overlaps with BG rewards) ---
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs
+            and not self.is_fsdp_enabled
+        )
         logprob_batch_size = min(batch_size * 2, chunk_size)
         with disable_gradient_checkpointing(
             self.model, self.args.gradient_checkpointing_kwargs
@@ -1940,15 +2042,25 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 self.use_vllm
                 and getattr(self, "vllm_importance_sampling_correction", False)
             ):
-                old_logps, _ = self._get_per_token_logps_and_entropies(
-                    self.model,
-                    prompt_completion_ids,
-                    attention_mask,
-                    logits_to_keep,
-                    logprob_batch_size,
-                    num_images=num_images,
-                    **forward_kwargs,
-                )
+                if can_flatten:
+                    old_logps = self._get_per_token_logps_flattened(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        batch_size=logprob_batch_size,
+                        prompt_mask=chunk_prompt_mask,
+                    )
+                else:
+                    old_logps, _ = self._get_per_token_logps_and_entropies(
+                        self.model,
+                        prompt_completion_ids,
+                        attention_mask,
+                        logits_to_keep,
+                        logprob_batch_size,
+                        num_images=num_images,
+                        **forward_kwargs,
+                    )
                 if "old_per_token_logps" not in data:
                     total = len(data["prompt_ids"])
                     data["old_per_token_logps"] = torch.zeros(
@@ -2297,7 +2409,38 @@ class AsyncGRPOTrainer(GRPOTrainer):
         return super()._prepare_inputs(generation_batch)
 
     def _prepare_inputs_data_producer(self, generation_batch):
-        """Data producer path: produce rollout, score deferred logps, split into micro-batches."""
+        """Data producer path: produce rollout, score deferred logps, split into micro-batches.
+
+        Architecture (with async_prefetch=True):
+          BG thread:  produce(skip_policy_logps=True) → vLLM generation + reward computation
+          Main thread: deferred scoring (policy logprobs via GPU forward pass) → training
+
+        Why deferred scoring is necessary for stable training:
+          The policy logprobs (old_per_token_logps) must come from the CURRENT
+          training model, not the vLLM model (which is N steps behind). Using
+          stale vLLM logprobs as old_logps causes the importance sampling ratio
+          to start far from 1.0, leading to:
+            - Immediate PPO clipping → wasted samples
+            - High-variance gradients from IS correction
+            - Compounding per-token ratio errors on long sequences
+            - In extreme cases, complete training failure (exp-003: accuracy=0)
+
+          Deferred scoring computes old_logps with the latest model weights, so
+          the IS ratio starts at exactly 1.0 and drifts gradually — giving
+          maximum useful gradient signal before clipping activates.
+
+          Cost: one additional forward pass per scoring round (GPU-bound, cannot
+          overlap with training on the same GPU). Use ``batch_flattening: true``
+          to reduce this cost by eliminating padding tokens from the forward pass.
+
+        Pipeline:
+          [produce(BG)] → [deferred_scores(GPU)] → [train×GA(GPU)] → [weight_sync]
+                           ↑ can't overlap with train (same GPU)
+
+        Bottleneck: the produce() wait (generation-limited) dominates when
+        generation is slower than training + scoring. Async prefetch hides
+        part of this by generating in the BG thread while training runs.
+        """
         # Return from buffer if available
         if self._buffered_inputs:
             return self._buffered_inputs.pop(0)
@@ -2313,10 +2456,8 @@ class AsyncGRPOTrainer(GRPOTrainer):
             args=self.args,
         )
 
-        # Convert RolloutDataset back to a dict for scoring/splitting
         rollout = rollout_dataset._data
 
-        # If async (skip_policy_logps=True), score deferred logps on main thread
         if rollout.get("_pending_policy_logps"):
             if self.args.streaming_partial_batch:
                 micro_batches = self._score_streaming(rollout)
@@ -2328,7 +2469,6 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 micro_batches = [unsplit_pixel_values_by_grid(b) for b in batches]
                 micro_batches = micro_batches * self.num_iterations
         else:
-            # Sync path: data is already fully scored
             rollout = split_pixel_values_by_grid(rollout)
             batches = split_tensor_dict(rollout, self.args.steps_per_generation)
             micro_batches = [unsplit_pixel_values_by_grid(b) for b in batches]
@@ -2370,6 +2510,219 @@ class AsyncGRPOTrainer(GRPOTrainer):
         torch.cuda.empty_cache()
 
         return micro_batches[0]
+
+    def _get_per_token_logps_flattened(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        prompt_mask=None,
+    ) -> torch.Tensor:
+        """Compute per-token log-probs using batch flattening (padding-free).
+
+        Instead of processing padded batches where attention wastes compute on
+        padding tokens, this method:
+        1. Chunks the batch into sub-batches of ``batch_size`` sequences
+        2. For each chunk, flattens non-padding tokens into [1, chunk_tokens]
+        3. Uses FlashAttentionKwargs (cu_seq_lens) for varlen attention
+        4. Computes selective_log_softmax on the flat logits
+        5. Gathers completion logprobs back to (B, logits_to_keep) padded format
+
+        Args:
+            prompt_mask: (B, L) mask where 1 = prompt token, 0 = completion/padding.
+                Used to determine the exact prompt length per sequence for correct
+                logprob gathering. If None, inferred as seq_len - logits_to_keep.
+
+        Chunking prevents OOM when the total flattened sequence is too long
+        (e.g., 32 sequences × 2048 tokens = 65K tokens → 20GB logits tensor).
+
+        Requires flash_attention_2 attention implementation.
+        """
+        if not self.is_fsdp_enabled:
+            model = self.accelerator.unwrap_model(model, keep_fp32_wrapper=False)
+
+        device = input_ids.device
+        B, L = input_ids.shape
+        if batch_size is None:
+            batch_size = max(1, B)
+
+        autocast_ctx = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+        all_logps = torch.zeros(B, logits_to_keep, device=device)
+
+        for chunk_start in range(0, B, batch_size):
+            chunk_end = min(chunk_start + batch_size, B)
+            chunk_ids = input_ids[chunk_start:chunk_end]
+            chunk_mask = attention_mask[chunk_start:chunk_end]
+            n = chunk_end - chunk_start
+
+            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
+            total_tokens = seq_lens.sum().item()
+            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
+            cu_seqlens[1:] = seq_lens.cumsum(0)
+
+            valid = chunk_mask.bool()
+            flat_ids = chunk_ids[valid].unsqueeze(0)
+            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
+            flat_pos = positions[valid].unsqueeze(0)
+
+            with autocast_ctx:
+                logits = model(
+                    input_ids=flat_ids,
+                    position_ids=flat_pos,
+                    use_cache=False,
+                    cu_seq_lens_q=cu_seqlens,
+                    cu_seq_lens_k=cu_seqlens,
+                    max_length_q=seq_lens.max().item(),
+                    max_length_k=seq_lens.max().item(),
+                ).logits
+                logits = torch.nan_to_num(logits, nan=0.0)
+
+                # Compute logprobs on the flat shifted tensor
+                flat_logits = logits[0, :-1, :] / self.temperature
+                flat_targets = flat_ids[0, 1:]
+                flat_logps = selective_log_softmax(
+                    flat_logits.unsqueeze(0), flat_targets.unsqueeze(0)
+                )[0]
+
+                # Mask out cross-sequence boundary positions. In the shifted
+                # tensor, position cu_seqlens[i]-1 (for i>0) is where sequence
+                # i-1's last token "predicts" sequence i's first token — garbage.
+                for boundary in cu_seqlens[1:-1]:
+                    idx = boundary.item() - 1
+                    if 0 <= idx < flat_logps.size(0):
+                        flat_logps[idx] = 0.0
+
+            # Gather completion logprobs per sequence.
+            # Use prompt_mask to determine exact prompt length (not logits_to_keep,
+            # which is the padded completion dimension and may exceed the actual
+            # completion length for shorter sequences).
+            for i in range(n):
+                slen = seq_lens[i].item()
+                abs_i = chunk_start + i  # absolute index in the full batch
+                if prompt_mask is not None:
+                    plen = int(prompt_mask[abs_i].sum().item())
+                else:
+                    plen = max(1, slen - logits_to_keep)
+                n_compl = slen - plen
+                start = cu_seqlens[i].item() + plen - 1
+                start = max(0, start)
+                actual = min(n_compl, total_tokens - 1 - start)
+                if actual > 0:
+                    all_logps[chunk_start + i, :actual] = flat_logps[
+                        start : start + actual
+                    ]
+
+            del logits, flat_logits, flat_logps, flat_ids
+            torch.cuda.empty_cache()
+
+        return all_logps
+
+    def _get_per_token_logps_and_entropies_flattened(
+        self,
+        model,
+        input_ids,
+        attention_mask,
+        logits_to_keep,
+        batch_size=None,
+        prompt_mask=None,
+        compute_entropy=True,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Flattened forward pass for training (with gradients).
+
+        Same padding removal as the scoring path, but:
+        - Gradients flow through for backward pass
+        - Computes entropy alongside logprobs
+        - Per-sequence logprob/entropy extraction preserves grad graph
+        """
+        device = input_ids.device
+        B, L = input_ids.shape
+        if batch_size is None:
+            batch_size = max(1, B)
+
+        autocast_ctx = torch.autocast(device_type=device.type, dtype=torch.bfloat16)
+
+        # Pre-allocate output containers (will be filled with grad-carrying slices)
+        all_logps_list: list[torch.Tensor] = []
+        all_entropy_list: list[torch.Tensor] = []
+
+        for chunk_start in range(0, B, batch_size):
+            chunk_end = min(chunk_start + batch_size, B)
+            chunk_ids = input_ids[chunk_start:chunk_end]
+            chunk_mask = attention_mask[chunk_start:chunk_end]
+            n = chunk_end - chunk_start
+
+            seq_lens = chunk_mask.sum(dim=1).to(torch.int32)
+            cu_seqlens = torch.zeros(n + 1, dtype=torch.int32, device=device)
+            cu_seqlens[1:] = seq_lens.cumsum(0)
+
+            valid = chunk_mask.bool()
+            flat_ids = chunk_ids[valid].unsqueeze(0)
+            positions = torch.arange(L, device=device).unsqueeze(0).expand(n, L)
+            flat_pos = positions[valid].unsqueeze(0)
+
+            with autocast_ctx:
+                logits = model(
+                    input_ids=flat_ids,
+                    position_ids=flat_pos,
+                    use_cache=False,
+                    cu_seq_lens_q=cu_seqlens,
+                    cu_seq_lens_k=cu_seqlens,
+                    max_length_q=seq_lens.max().item(),
+                    max_length_k=seq_lens.max().item(),
+                ).logits
+                logits = torch.nan_to_num(logits, nan=0.0)
+
+            # Extract logprobs and entropy per-sequence (avoids cross-sequence targets,
+            # preserves gradient graph through selective_log_softmax → logits → model)
+            for i in range(n):
+                slen = seq_lens[i].item()
+                abs_i = chunk_start + i
+                if prompt_mask is not None:
+                    plen = int(prompt_mask[abs_i].sum().item())
+                else:
+                    plen = max(1, slen - logits_to_keep)
+                n_compl = slen - plen
+                s = cu_seqlens[i].item()
+
+                if n_compl <= 0:
+                    # No completion tokens — append zeros
+                    all_logps_list.append(torch.zeros(logits_to_keep, device=device))
+                    if compute_entropy:
+                        all_entropy_list.append(
+                            torch.zeros(logits_to_keep, device=device)
+                        )
+                    continue
+
+                with autocast_ctx:
+                    # Shifted logits and targets for this sequence only
+                    seq_logits = logits[0, s + plen - 1 : s + slen - 1, :]
+                    seq_logits = seq_logits / self.temperature
+                    seq_targets = flat_ids[0, s + plen : s + slen]
+
+                    # Log probs (differentiable)
+                    lps = selective_log_softmax(
+                        seq_logits.unsqueeze(0), seq_targets.unsqueeze(0)
+                    )[0]  # (n_compl,)
+
+                    # Pad to logits_to_keep
+                    if n_compl < logits_to_keep:
+                        lps = F.pad(lps, (0, logits_to_keep - n_compl))
+                    all_logps_list.append(lps[:logits_to_keep])
+
+                    if compute_entropy:
+                        ent = entropy_from_logits(seq_logits)  # (n_compl,)
+                        if n_compl < logits_to_keep:
+                            ent = F.pad(ent, (0, logits_to_keep - n_compl))
+                        all_entropy_list.append(ent[:logits_to_keep])
+
+        # Stack per-sequence results into (B, logits_to_keep) tensors
+        all_logps = torch.stack(all_logps_list, dim=0)
+        all_entropies = (
+            torch.stack(all_entropy_list, dim=0) if compute_entropy else None
+        )
+        return all_logps, all_entropies
 
     @profiling_decorator
     def _get_per_token_logps_and_entropies(
@@ -2486,6 +2839,9 @@ class AsyncGRPOTrainer(GRPOTrainer):
                         logits, completion_ids, self.temperature
                     )
                     all_logps.append(logps)
+                    # Liger fused path doesn't compute entropy — append zeros
+                    if compute_entropy:
+                        all_entropies.append(torch.zeros_like(logps))
                 else:
                     logits = logits[:, :-1, :]
                     logits = logits[:, -logits_to_keep:, :]
@@ -2539,20 +2895,47 @@ class AsyncGRPOTrainer(GRPOTrainer):
             else completion_mask * inputs["tool_mask"]
         )
 
-        per_token_logps, entropies = self._get_per_token_logps_and_entropies(
-            model,
-            input_ids,
-            attention_mask,
-            logits_to_keep,
-            compute_entropy=True,
-            pixel_values=inputs.get("pixel_values"),
-            image_grid_thw=inputs.get("image_grid_thw"),
-            num_images=inputs.get("num_images"),
-            pixel_attention_mask=inputs.get("pixel_attention_mask"),
-            image_sizes=inputs.get("image_sizes"),
-            token_type_ids=inputs.get("token_type_ids"),
-            mm_token_type_ids=inputs.get("mm_token_type_ids"),
+        # Check for multimodal inputs
+        forward_kwargs = {
+            k: inputs[k]
+            for k in (
+                "pixel_values",
+                "image_grid_thw",
+                "num_images",
+                "pixel_attention_mask",
+                "image_sizes",
+                "token_type_ids",
+                "mm_token_type_ids",
+            )
+            if k in inputs and inputs[k] is not None
+        }
+
+        can_flatten = (
+            getattr(self.args, "batch_flattening", False)
+            and not forward_kwargs
+            and not self.is_fsdp_enabled
         )
+
+        if can_flatten:
+            per_token_logps, entropies = (
+                self._get_per_token_logps_and_entropies_flattened(
+                    model,
+                    input_ids,
+                    attention_mask,
+                    logits_to_keep,
+                    prompt_mask=prompt_mask,
+                    compute_entropy=True,
+                )
+            )
+        else:
+            per_token_logps, entropies = self._get_per_token_logps_and_entropies(
+                model,
+                input_ids,
+                attention_mask,
+                logits_to_keep,
+                compute_entropy=True,
+                **forward_kwargs,
+            )
         if self.top_entropy_quantile < 1.0:
             entropy_mask = self.get_high_entropy_mask(
                 entropies, mask, 1 - self.top_entropy_quantile

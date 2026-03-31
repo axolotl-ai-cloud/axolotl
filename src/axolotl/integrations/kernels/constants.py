@@ -6,6 +6,11 @@ Used by both ScatterMoE and SonicMoE kernel paths.
 
 Values can be a single class name (str) or a list of class names for models
 with multiple MoE block types (e.g. qwen3_omni_moe has Thinker + Talker).
+
+Models with custom routing (see sonicmoe/routing.py for implementations):
+- ernie4_5_moe: softmax→bias correction→topk (softmax_bias_topk_routing)
+- deepseek_v2: softmax→group_limited_greedy (softmax_group_limited_topk_routing)
+- hunyuan_v1_moe: softmax→topk via gate.wg (softmax_topk_wg_routing)
 """
 
 import importlib
@@ -39,10 +44,16 @@ SPARSE_MOE_BLOCK = {
     # Non-GLU MoE (no gate_proj, experts have up_proj + down_proj only)
     "nemotron_h": "NemotronHMoE",
     # Models below need custom routing (not yet implemented):
-    # "ernie4_5_moe": "Ernie4_5_MoeSparseMoeBlock",  # softmax->topk, e_score_correction_bias between softmax and topk
     # "deepseek_v2": "DeepseekV2Moe",  # softmax->topk, group_limited_greedy, different attr names (num_group)
-    # "hunyuan_v1_moe": "HunYuanMoEV1Moe",  # softmax->topk, gate.wg (not gate.weight), scatter routing
-    # "gpt_oss": "GptOssMLP",  # topk->softmax, transposed layout [E,H,2*I], custom GLU, expert biases
+    # softmax->topk, e_score_correction_bias between softmax and topk
+    "ernie4_5_moe": "Ernie4_5_MoeSparseMoeBlock",
+    # softmax->topk, group_limited_greedy, different attr names (num_group)
+    "deepseek_v2": "DeepseekV2Moe",
+    # softmax->topk, gate.wg (not gate.weight)
+    "hunyuan_v1_moe": "HunYuanMoEV1Moe",
+    # TODO: gpt_oss deferred — transposed weight layout [E,H,2*I], expert biases,
+    # and custom GLU activation require a dedicated forward path in patch.py.
+    # "gpt_oss": "GptOssMLP",
 }
 
 

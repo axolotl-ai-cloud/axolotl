@@ -66,6 +66,14 @@ class TRLConfig(BaseModel):
             "description": "List of reward weights for the reward functions."
         },
     )
+    generation_batch_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Batch size for generation. Controls how many unique "
+            "prompts are generated per step. For full DP utilization, set to "
+            "num_generations * data_parallel_size (or a multiple thereof)."
+        },
+    )
     num_generations: int | None = Field(
         default=None,
         json_schema_extra={"description": "Number of generations to sample."},

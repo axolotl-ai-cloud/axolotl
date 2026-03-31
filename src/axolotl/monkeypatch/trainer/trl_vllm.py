@@ -57,7 +57,16 @@ def _batch_update_named_params(
             response = self.session.post(
                 url, json={"params": param_metadata}, timeout=120
             )
-            if response.status_code != 200:
+            if response.status_code == 404:
+                # Server doesn't support batch endpoint — fall back to individual updates
+                for meta in param_metadata:
+                    ind_url = f"{self.base_url}/update_named_param/"
+                    ind_response = self.session.post(ind_url, json=meta, timeout=120)
+                    if ind_response.status_code != 200:
+                        raise Exception(
+                            f"Individual update failed: {ind_response.status_code}, {ind_response.text}"
+                        )
+            elif response.status_code != 200:
                 raise Exception(
                     f"Request failed: {response.status_code}, {response.text}"
                 )
