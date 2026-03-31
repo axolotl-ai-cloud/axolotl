@@ -96,6 +96,8 @@ def fixture_dpo_cfg(base_cfg):
             "dpo_use_weighting": True,
             "dpo_label_smoothing": 0.1,
             "beta": 0.1,  # DPO beta
+            "dpo_loss_type": ["sigmoid", "sft"],
+            "dpo_loss_weights": [1.0, 0.5],
         }
     )
     return cfg
@@ -300,6 +302,8 @@ class TestHFRLTrainerBuilder:
         assert training_arguments.use_weighting is True
         assert training_arguments.label_smoothing == 0.1
         assert training_arguments.precompute_ref_log_probs is True
+        assert training_arguments.loss_type == ["sigmoid", "sft"]
+        assert training_arguments.loss_weights == [1.0, 0.5]
 
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)

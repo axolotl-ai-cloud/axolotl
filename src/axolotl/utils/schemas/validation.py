@@ -762,6 +762,20 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_dpo(cls, data):
+        if data.get("rl") == "dpo":
+            loss_types = data.get("dpo_loss_type")
+            loss_weights = data.get("dpo_loss_weights")
+
+            if loss_types and loss_weights and len(loss_types) != len(loss_weights):
+                raise ValueError(
+                    f"`dpo_loss_type` and `dpo_loss_weights` must be the same length, "
+                    f"but got {len(loss_types)} losses and {len(loss_weights)} weights"
+                )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
         """Surface GRPO batch-shape mismatches at config-parse time.
 
