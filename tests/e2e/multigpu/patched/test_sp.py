@@ -1,5 +1,6 @@
 """E2E tests for sequence parallelism"""
 
+import importlib
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,10 @@ class TestSequenceParallelism:
             "Train Loss (%s) is too high",
         )
 
+    @pytest.mark.skipif(
+        importlib.util.find_spec("ring_flash_attn") is None,
+        reason="ring_flash_attn not installed",
+    )
     @pytest.mark.parametrize(
         "sample_packing, micro_batch_size, pad_to_sequence_len, ring_attn_func, threshold",
         [
