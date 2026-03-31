@@ -394,14 +394,14 @@ def apply_lora_kernel_patches(
         activation = text_config.hidden_act
     elif hasattr(text_config, "hidden_activation"):
         activation = text_config.hidden_activation
+    elif hasattr(text_config, "mlp_hidden_act"):
+        # Hybrid models (e.g. nemotron_h) use mlp_hidden_act instead of hidden_act
+        activation = text_config.mlp_hidden_act
 
     # map activation to supported activation
-    if "gelu" in activation:
+    if activation and "gelu" in activation:
         # gemma3 uses gelu_pytorch_tanh
         activation = "gelu"
-
-    if activation not in SUPPORTED_ACTIVATIONS:
-        raise NotImplementedError(f"Activation {activation} is not supported")
 
     layers = get_layers(model)
 
@@ -444,6 +444,15 @@ def apply_lora_kernel_patches(
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
+                # Check is inside lora_mlp_kernel guard so models with an
+                # unsupported activation (e.g. nemotron_h uses relu2) can set
+                # lora_mlp_kernel: false without hitting an error here.
+                if activation not in SUPPORTED_ACTIVATIONS:
+                    raise NotImplementedError(
+                        f"Activation {activation!r} is not supported by lora_mlp_kernel. "
+                        f"Set `lora_mlp_kernel: false` in your config or use a model with "
+                        f"a supported activation ({SUPPORTED_ACTIVATIONS})."
+                    )
                 # MLP patching
                 can_patch_mlp = all(
                     hasattr(proj, "lora_A") for proj in (gate_proj, up_proj, down_proj)
