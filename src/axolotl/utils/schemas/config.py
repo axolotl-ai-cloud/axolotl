@@ -1359,8 +1359,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 and not self.is_preprocess
                 and (self.bf16 is True or self.bfloat16 is True)
             ):
-                raise ValueError(
-                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
+                LOG.warn(
+                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above. Training will fail, but other operations (such as merging) are still functional."
                 )
         return self
 
