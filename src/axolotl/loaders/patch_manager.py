@@ -8,6 +8,7 @@ import os
 from functools import cached_property
 
 import addict
+import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
@@ -265,7 +266,11 @@ class PatchManager:
 
             patch_qwen3_next_modeling_packing()
 
-        if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+        if (
+            torch.cuda.is_available()
+            and self.cfg.model_config_type == "qwen3_5"
+            and self.cfg.sample_packing
+        ):
             from axolotl.monkeypatch.models.qwen3_5.modeling import (
                 patch_qwen3_5_modeling_packing,
             )
