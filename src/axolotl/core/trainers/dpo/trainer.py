@@ -68,7 +68,14 @@ class AxolotlDPOTrainer(
             processing_class=processing_class, input=input, **kwargs
         )
 
-        bos_token_id = getattr(processing_class, "bos_token_id", None)
+        # Handle multimodal models
+        tokenizer = (
+            getattr(processing_class, "tokenizer", None)
+            if isinstance(processing_class, ProcessorMixin)
+            else processing_class
+        )
+
+        bos_token_id = getattr(tokenizer, "bos_token_id", None) if tokenizer else None
         if bos_token_id is not None:
             result = remove_double_bos_token(result, bos_token_id)
 
