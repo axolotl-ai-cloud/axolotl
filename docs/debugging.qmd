@@ -6,6 +6,10 @@ description: How to debug Axolotl
 
 This document provides some tips and tricks for debugging Axolotl.  It also provides an example configuration for debugging with VSCode.  A good debugging setup is essential to understanding how Axolotl code works behind the scenes.
 
+::: {.callout-tip}
+For training-specific debugging (loss spikes, NaN gradients, OOM errors, RL training stability), see [Training Stability & Debugging](training_stability.qmd).
+:::
+
 ## Table of Contents
 
 - [General Tips](#general-tips)

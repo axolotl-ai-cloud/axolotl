@@ -238,6 +238,7 @@ website:
         - section: "Getting Started"
           contents:
             - docs/getting-started.qmd
+            - docs/choosing_method.qmd
             - docs/installation.qmd
             - docs/inference.qmd
             - section: "Model Guides"
@@ -302,6 +303,9 @@ website:
           contents:
             - docs/multimodal.qmd
             - docs/rlhf.qmd
+            - docs/grpo.qmd
+            - docs/ebft.qmd
+            - docs/vllm_serving.qmd
             - docs/reward_modelling.qmd
             - docs/lr_groups.qmd
             - docs/lora_optims.qmd
@@ -334,6 +338,7 @@ website:
         - section: "Troubleshooting"
           contents:
             - docs/faq.qmd
+            - docs/training_stability.qmd
             - docs/debugging.qmd
             - docs/nccl.qmd
 
