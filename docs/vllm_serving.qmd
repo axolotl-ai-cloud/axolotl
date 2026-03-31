@@ -288,116 +288,11 @@ These control how the trainer interacts with vLLM.
 | `vllm_enable_sleep_mode` | bool | `None` | Offload vLLM VRAM when idle (colocate mode) |
 | `vllm_guided_decoding_regex` | str | `None` | Regex constraint for guided decoding |
 
-### Async Generation Options (`trl:` section)
-
-These enable the async data pipeline where generation happens in a background thread while training proceeds on the previous batch.
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `use_data_producer` | bool | `false` | Enable the async data producer protocol |
-| `async_prefetch` | bool | `false` | Generate rollouts in a background thread during training |
-| `prefetch_depth` | int | `None` | Number of rollouts to prefetch ahead |
-| `streaming_partial_batch` | bool | `None` | Score prompt groups incrementally instead of full batch |
-| `streaming_min_groups` | int | `None` | Minimum prompt groups per streaming chunk |
-
-### Off-Policy Correction Options (`trl:` section)
-
-These handle distribution mismatch when vLLM weights are stale relative to the training model.
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `vllm_importance_sampling_correction` | bool | `None` | Apply IS correction for distribution mismatch |
-| `importance_sampling_level` | str | `None` | `token` or `sequence` level IS ratios |
-| `off_policy_mask_threshold` | float | `None` | KL threshold for off-policy sequence masking |
-| `vllm_importance_sampling_mode` | str | `None` | IS mode: `token_truncate`, `token_mask`, `sequence_truncate`, or `sequence_mask` |
-| `vllm_importance_sampling_cap` | float | `None` | Cap for IS ratio clipping/masking |
-| `use_bias_correction_kl` | bool | `None` | Apply IS correction to KL divergence term |
+For async pipeline and off-policy correction options, see the [GRPO Configuration Reference](grpo.qmd#configuration-reference).
 
 ## Complete Example {#sec-complete-example}
 
-Below is a full config for GRPO training with vLLM, LoRA sync, and async generation.
-
-```yaml
-base_model: Qwen/Qwen2.5-1.5B-Instruct
-
-# vLLM server configuration
-vllm:
-  host: 0.0.0.0
-  port: 8000
-  gpu_memory_utilization: 0.85
-  dtype: auto
-  max_model_len: 4096
-
-# LoRA adapter
-adapter: lora
-lora_r: 32
-lora_alpha: 64
-lora_target_linear: true
-
-# GRPO training
-rl: grpo
-trl:
-  # vLLM connection
-  use_vllm: true
-  vllm_server_host: 0.0.0.0
-  vllm_server_port: 8000
-  vllm_server_timeout: 300
-
-  # Generation
-  num_generations: 16
-  max_completion_length: 2048
-  temperature: 0.7
-
-  # Rewards
-  reward_funcs:
-    - rewards.accuracy_reward
-    - rewards.format_reward
-  reward_weights:
-    - 1.0
-    - 0.5
-
-  # Async pipeline
-  use_data_producer: true
-  async_prefetch: true
-  prefetch_depth: 5
-  streaming_partial_batch: true
-  streaming_min_groups: 1
-
-  # Weight sync
-  vllm_lora_sync: true
-  vllm_sync_interval: 5
-
-  # Off-policy correction
-  vllm_importance_sampling_correction: true
-  importance_sampling_level: token
-  off_policy_mask_threshold: 0.5
-
-  log_completions: true
-
-# Dataset
-datasets:
-  - path: openai/gsm8k
-    name: main
-    type: rewards.oai_gsm8k_transform
-    split: train
-
-skip_prepare_dataset: true
-val_set_size: 0.0
-
-# Training hyperparameters
-micro_batch_size: 4
-gradient_accumulation_steps: 8
-learning_rate: 5e-6
-num_epochs: 1
-lr_scheduler: cosine
-warmup_steps: 10
-gradient_checkpointing: true
-bf16: true
-
-output_dir: /tmp/grpo-output
-```
-
-**To run this config:**
+For a full working GRPO config including vLLM, LoRA sync, async generation, rewards, and dataset setup, see the [GRPO Quick Start](grpo.qmd#quick-start). That config includes all the vLLM settings covered in this guide.
 
 ```bash
 # Terminal 1: Start vLLM

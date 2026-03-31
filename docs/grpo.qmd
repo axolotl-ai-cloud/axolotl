@@ -305,76 +305,30 @@ Each worker runs in its own subprocess with its own main thread, so `signal.alar
 
 ## vLLM Setup
 
-### Server mode (recommended)
+GRPO requires a running vLLM server for generation. For a complete guide on server modes, LoRA sync, weight synchronization, and restart procedures, see [vLLM Serving](vllm_serving.qmd).
 
-In server mode, vLLM runs as a separate HTTP server on a dedicated GPU. This is the default and recommended mode.
+The minimal setup:
 
 ```yaml
 vllm:
   host: 0.0.0.0
   port: 8000
   gpu_memory_utilization: 0.85
-  dtype: auto
-  max_model_len: 2048
 
 trl:
   use_vllm: true
-  vllm_server_host: 0.0.0.0
-  vllm_server_port: 8000
+  vllm_lora_sync: true         # Recommended with LoRA — faster sync, no NCCL contention
+  vllm_sync_interval: 5        # Sync weights every 5 steps
 ```
-
-Start the server:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
+CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml   # GPU 0: vLLM
+CUDA_VISIBLE_DEVICES=1 axolotl train config.yaml         # GPU 1: training
 ```
 
-### Colocate mode
-
-In colocate mode, vLLM shares a GPU with the trainer. This uses less hardware but is slower because generation and training cannot overlap on the GPU. The vLLM server offloads weights from VRAM when idle (sleep mode).
-
-```yaml
-trl:
-  use_vllm: true
-  vllm_mode: colocate
-  vllm_enable_sleep_mode: true
-
-vllm:
-  gpu_memory_utilization: 0.5
-  tensor_parallel_size: 1
-```
-
-### LoRA sync mode
-
-By default, weight synchronization merges the LoRA adapter into the base model and broadcasts all parameters via NCCL. LoRA sync is a faster alternative: it saves only the adapter weights (~40 MB for a typical LoRA) to the filesystem and has vLLM load them natively using Punica kernels.
-
-```yaml
-adapter: lora
-trl:
-  vllm_lora_sync: true
-```
-
-When `vllm_lora_sync: true` is set, `axolotl vllm-serve` automatically selects the LoRA-aware serve module. No additional setup is needed.
-
-Benefits of LoRA sync:
-
-- Sync time drops from 0.35-5s (NCCL merge) to ~200ms (filesystem copy)
-- No NCCL communicator needed, eliminating GPU contention with vLLM
-- Only ~40 MB of adapter weights transferred vs ~1.4 GB merged weights
-
-:::{.callout-note}
-LoRA sync requires `adapter: lora` in your config. It is not compatible with full fine-tuning.
+:::{.callout-warning}
+vLLM must be restarted between experiments — stale weight syncs corrupt server state. See [Restart Requirements](vllm_serving.qmd#sec-restart).
 :::
-
-### Restarting vLLM between experiments
-
-vLLM must be fully restarted between experiments. Stale weight syncs corrupt server state. When killing vLLM, you typically need to kill both the main process and the EngineCore subprocess:
-
-```bash
-pkill -9 -f "vllm|EngineCore"
-```
-
-Verify GPU memory is freed with `nvidia-smi` before starting a new server.
 
 
 ## Async Training Features
@@ -463,52 +417,18 @@ Work is sharded across workers by prompt group. For simple reward functions, a s
 
 ## Importance Sampling and Off-Policy Correction
 
-When using async prefetch, completions are generated from a slightly older version of the model. As training progresses and the model diverges from the version that generated the completions, the distribution mismatch grows. Importance sampling (IS) correction adjusts the policy gradient to account for this.
-
-### Enabling IS correction
+When using async prefetch, completions are generated from a slightly older policy. IS correction adjusts the gradient to account for this mismatch.
 
 ```yaml
 trl:
   vllm_importance_sampling_correction: true
-  importance_sampling_level: token
+  importance_sampling_level: token     # 'token' recommended (especially with Liger kernel)
+  off_policy_mask_threshold: 0.5       # KL threshold — masks sequences that are too off-policy
 ```
 
-- `token`: computes IS ratios per-token. Recommended, especially when using Liger kernel (sequence-level IS has numerical issues with Liger's chunked computation).
-- `sequence`: computes IS ratios per-sequence.
+Use `token` level IS. Sequence-level has numerical issues with Liger's chunked computation. The `off_policy_mask_threshold` (OPSM) is a safety net that drops sequences where KL divergence exceeds the threshold — 0.5 is a reasonable starting point.
 
-### IS modes
-
-The IS mode controls how the correction is applied:
-
-```yaml
-trl:
-  vllm_importance_sampling_mode: token_mask  # or token_truncate, sequence_mask, sequence_truncate
-  vllm_importance_sampling_cap: 5.0
-```
-
-- `token_mask` / `sequence_mask`: zero out contributions where the IS ratio exceeds the cap.
-- `token_truncate` / `sequence_truncate`: clip the IS ratio to the cap value.
-- `vllm_importance_sampling_cap`: the threshold C for clipping/masking (default varies by mode).
-
-### Off-policy sequence masking (OPSM)
-
-OPSM masks entire sequences where the KL divergence between the generation policy and current policy exceeds a threshold. This is a coarser but more aggressive form of off-policy correction.
-
-```yaml
-trl:
-  off_policy_mask_threshold: 0.5
-```
-
-A threshold of 0.5 is a reasonable starting point. Lower values are more aggressive (mask more sequences). Set to `null` or omit to disable.
-
-### Bias-corrected KL
-
-When IS correction is active, the KL divergence penalty term can also be corrected for the distribution shift:
-
-```yaml
-trl:
-  use_bias_correction_kl: true
-```
+For detailed coverage of IS modes (`token_mask`, `token_truncate`, etc.), capping, and bias-corrected KL, see [vLLM Serving — IS Correction](vllm_serving.qmd#sec-weight-sync).
 
 
 ## Scaling
@@ -579,35 +499,17 @@ DeepSpeed ZeRO-3 requires `use_reentrant: true` for gradient checkpointing. This
 
 ## Monitoring and Debugging
 
-### Healthy metric ranges
+For detailed metric ranges, failure diagnosis, and OOM debugging, see [Training Stability & Debugging](training_stability.qmd).
 
-| Metric | Healthy Range | What it means |
-|--------|--------------|---------------|
-| `rewards/*/mean` | > 0.15 within 20 steps | The model is learning to solve the task |
-| `reward_std` | > 0 on most steps | There is variance within groups (learning signal exists) |
-| `frac_reward_zero_std` | < 0.8 | Fraction of groups with zero reward variance |
-| `grad_norm` | 0.001 - 1.0 | Gradient magnitude; 0.0 = skipped, > 10 = unstable |
-| `entropy` | 0.05 - 0.5 | Model output diversity; < 0.01 = mode collapse |
-| `sampling/sampling_logp_difference/mean` | < 0.1 | Policy divergence from vLLM weights; > 1.0 = too stale |
-| `clip_ratio/region_mean` | < 0.1 | PPO clipping frequency; > 0.3 = clipping too aggressive |
-| `skipped_zero_adv_batches` | Occasional 1s | Zero-advantage skip triggered; persistent = no learning signal |
+Quick health checks during GRPO training:
 
-### Common failures
-
-**Rewards stay at zero.** Check that your reward function is correct by testing it standalone: `python -c "from rewards import accuracy_reward; print(accuracy_reward(...))"`. Verify that the dataset columns your reward function expects (e.g., `answer`) are not being removed by the transform.
-
-**OOM during training.** The logits tensor for policy log-probability computation scales with `batch_size * sequence_length * vocab_size`. Reduce `micro_batch_size`, `num_generations`, or `max_completion_length`. Using `use_liger_loss: true` enables fused kernels that avoid materializing the full logits tensor during scoring.
-
-**vLLM connection refused.** The server takes 30-90 seconds to start. Increase `vllm_server_timeout` if needed. Check that the host and port match between `vllm:` and `trl:` config sections.
-
-**Import errors for reward module.** The module must be importable from the working directory where `axolotl train` runs. If your project root contains a `vllm/` directory, it can shadow the installed vLLM package -- run from a subdirectory instead.
-
-**Accuracy drops to zero after initial progress.** If using `importance_sampling_level: sequence` with Liger kernel, switch to `token`. Sequence-level IS has numerical issues with Liger's chunked computation.
-
-**Training hangs with FSDP.** Background threads performing FSDP collectives can deadlock. Set `async_prefetch: false` or ensure rank-0-only background generation is active.
+- `rewards/*/mean` should be > 0.15 within 20 steps — if it stays at 0, test your reward function standalone
+- `reward_std` should be > 0 on most steps — all-zero means no learning signal
+- `entropy` in 0.05-0.5 — below 0.01 suggests mode collapse
+- `grad_norm` in 0.001-1.0 — > 10 is unstable, 0.0 is expected when zero-advantage skip fires
 
 :::{.callout-tip}
-Pipe training output to a log file for later analysis: `axolotl train config.yaml 2>&1 | tee /tmp/training.log`
+Pipe training output to a log file: `axolotl train config.yaml 2>&1 | tee /tmp/training.log`
 :::
 
 

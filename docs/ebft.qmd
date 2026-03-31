@@ -118,32 +118,20 @@ datasets:
     type: ebft_opencode.transform
     split: train[:500]
 
-sequence_len: 1024
-micro_batch_size: 2
-gradient_accumulation_steps: 4
-max_steps: 20
-
-learning_rate: 5.0e-6
-optimizer: adamw_torch_fused
-lr_scheduler: cosine
-warmup_steps: 5
-
+# Standard training settings (see getting-started.qmd for details)
 adapter: lora
 lora_r: 16
 lora_alpha: 32
 lora_target_linear: true
-
+sequence_len: 1024
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+max_steps: 20
+learning_rate: 5.0e-6
 bf16: auto
 flash_attention: true
 gradient_checkpointing: true
-
-special_tokens:
-  pad_token: "<|endoftext|>"
-
-val_set_size: 0.0
 output_dir: ./outputs/ebft-quickstart
-wandb_project: ebft
-logging_steps: 1
 ```
 
 **Step 2**: Start vLLM on GPU 0:
