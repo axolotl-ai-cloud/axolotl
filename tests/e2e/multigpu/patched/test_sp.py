@@ -99,6 +99,9 @@ class TestSequenceParallelism:
             "Train Loss (%s) is too high",
         )
 
+    @pytest.mark.skip(
+        reason="ring_flash_attn w transformers imports unmaintained upstream",
+    )
     @pytest.mark.parametrize(
         "sample_packing, micro_batch_size, pad_to_sequence_len, ring_attn_func, threshold",
         [
