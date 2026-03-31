@@ -294,7 +294,6 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
-    dpo_norm_loss: bool | None = None
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
@@ -1109,12 +1108,6 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping."
-        },
-    )
-    rpo_alpha: float | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Weighting of NLL term in loss from RPO paper"
         },
     )
     simpo_gamma: float | None = Field(
