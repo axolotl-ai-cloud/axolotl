@@ -58,13 +58,15 @@ No reward functions, no vLLM server, no custom Python modules (unless using `use
 
 ## Quick Start -- DPO with chat_template
 
-Minimal working config for DPO:
+Minimal config showing only what's specific to DPO. For adapter, optimizer, and other general training settings, see [AGENTS_SFT.md](AGENTS_SFT.md).
 
 ```yaml
 base_model: Qwen/Qwen2.5-0.5B
-
 chat_template: qwen_25
+
+# --- DPO-specific ---
 rl: dpo
+sample_packing: false              # required: packing not supported for preference methods
 
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_dpo_test
@@ -76,31 +78,17 @@ datasets:
       role: role
       content: content
     roles:
-      system:
-        - system
-      user:
-        - user
-      assistant:
-        - assistant
+      system: [system]
+      user: [user]
+      assistant: [assistant]
 
+# --- Standard training (see AGENTS_SFT.md for guidance) ---
 sequence_len: 2048
-sample_packing: false
 output_dir: ./outputs/dpo-out
-
-gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 4
-optimizer: adamw_bnb_8bit
-lr_scheduler: cosine
 learning_rate: 0.0002
-
 bf16: auto
-gradient_checkpointing: true
-flash_attention: true
-
-warmup_ratio: 0.1
-evals_per_epoch: 4
-saves_per_epoch: 1
 ```
 
 Run:
@@ -303,57 +291,29 @@ If a `prompt` field exists, it overrides the user message extracted from `chosen
 
 ## YAML Config Templates
 
+These templates show only the fields specific to each preference method. Combine with adapter/optimizer/training settings from [AGENTS_SFT.md](AGENTS_SFT.md).
+
 ### DPO
 
 ```yaml
-base_model: meta-llama/Meta-Llama-3-8B-Instruct
-
-chat_template: llama3
 rl: dpo
+sample_packing: false
 
-# Optional DPO-specific parameters
+# Optional DPO-specific tuning knobs
 # rl_beta: 0.1                  # KL penalty strength (default: 0.1)
 # dpo_label_smoothing: 0.0      # Label smoothing (incompatible with IPO)
-# dpo_use_weighting: false       # Use WPO-style weighting
+# dpo_use_weighting: false       # WPO-style weighting
 # dpo_norm_loss: false           # Normalize log-probs like IPO
 # dpo_use_liger_kernel: false    # Fused DPO loss kernel
 # dpo_padding_free: false        # Padding-free training
 # rpo_alpha: null                # NLL regularization term (RPO paper)
 
 datasets:
-  - path: fozziethebeat/alpaca_messages_2k_dpo_test
+  - path: my_preference_dataset
     type: chat_template.default
-    field_messages: conversation
+    field_messages: messages
     field_chosen: chosen
     field_rejected: rejected
-    message_property_mappings:
-      role: role
-      content: content
-    roles:
-      system: [system]
-      user: [user]
-      assistant: [assistant]
-
-adapter: lora
-lora_r: 32
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_linear: true
-
-sequence_len: 4096
-sample_packing: false
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 4
-optimizer: adamw_bnb_8bit
-lr_scheduler: cosine
-learning_rate: 0.0002
-warmup_ratio: 0.1
-
-bf16: auto
-gradient_checkpointing: true
-flash_attention: true
-output_dir: ./outputs/dpo-out
 ```
 
 ### IPO
@@ -370,109 +330,56 @@ IPO uses the same dataset formats as DPO. Internally, it sets `loss_type: "ipo"`
 ### KTO
 
 ```yaml
-base_model: meta-llama/Llama-3.2-1B
-
 rl: kto
+sample_packing: false
+remove_unused_columns: false      # Required for KTO
+
+# KTO-specific
 rl_beta: 0.5                     # KL penalty (default: 0.1)
 kto_desirable_weight: 0.2        # Weight for desirable examples (default: 1.0)
 kto_undesirable_weight: 1.0      # Weight for undesirable examples (default: 1.0)
-
-remove_unused_columns: false      # Required for KTO
 
 datasets:
   - path: argilla/ultrafeedback-binarized-preferences-cleaned-kto
     type: llama3.ultra
     split: train
 
-adapter: qlora
-lora_r: 32
-lora_alpha: 64
-lora_dropout: 0.05
-lora_target_linear: true
-
-sequence_len: 2048
-sample_packing: false             # Not supported with KTO
-pad_to_sequence_len: false
-
-gradient_accumulation_steps: 1
-micro_batch_size: 2
-num_epochs: 1
-optimizer: adamw_8bit
-lr_scheduler: cosine
-learning_rate: 0.0002
-warmup_ratio: 0.1
-
-bf16: auto
-gradient_checkpointing: true
-gradient_checkpointing_kwargs:
-  use_reentrant: true             # Recommended for KTO
-flash_attention: true
-output_dir: ./outputs/kto-out
-
 special_tokens:
-  pad_token: "<|end_of_text|>"
+  pad_token: "<|end_of_text|>"    # KTO often needs explicit pad token
 ```
 
 ### ORPO
 
 ```yaml
-base_model: mistralai/Mistral-7B-v0.1
-
 rl: orpo
-orpo_alpha: 0.1                   # Ratio loss weight (mapped to TRL beta)
+sample_packing: false
 remove_unused_columns: false       # Required for ORPO
+orpo_alpha: 0.1                   # Ratio loss weight (mapped to TRL beta)
 
-chat_template: chatml
+chat_template: chatml              # ORPO requires explicit chat_template
 datasets:
   - path: argilla/ultrafeedback-binarized-preferences-cleaned
     type: chat_template.argilla
-
-adapter: qlora
-lora_r: 32
-lora_alpha: 16
-lora_dropout: 0.05
-lora_target_linear: true
-
-sequence_len: 4096
-sample_packing: false
-
-gradient_accumulation_steps: 4
-micro_batch_size: 2
-num_epochs: 1
-optimizer: adamw_bnb_8bit
-lr_scheduler: cosine
-learning_rate: 0.0002
-warmup_ratio: 0.1
-
-bf16: auto
-gradient_checkpointing: true
-flash_attention: true
-output_dir: ./outputs/orpo-out
 ```
+
+ORPO and SimPO do not load a reference model, saving ~50% VRAM vs DPO.
 
 ### SimPO
 
 ```yaml
-base_model: meta-llama/Meta-Llama-3-8B-Instruct
-
 rl: simpo
+sample_packing: false
 simpo_gamma: 1.0                  # Target reward margin
 cpo_alpha: 0.0                    # BC regularizer weight (optional)
 # rl_beta: 2.0                    # KL penalty strength
 
 # SimPO uses the same dataset formats as DPO
-chat_template: llama3
 datasets:
   - path: my_preference_dataset
     type: chat_template.default
     field_messages: messages
     field_chosen: chosen
     field_rejected: rejected
-
-sequence_len: 4096
-sample_packing: false
-# ... standard training params ...
-output_dir: ./outputs/simpo-out
 ```
 
 SimPO internally uses `AxolotlCPOConfig` with `loss_type: "simpo"`. It does not load a reference model.
@@ -540,28 +447,12 @@ Decision tree:
 
 ## Running
 
-### Single GPU
-
 ```bash
-axolotl train config.yaml
+axolotl train config.yaml                                    # single GPU
+accelerate launch -m axolotl.cli.train config.yaml           # multi-GPU
 ```
 
-### Multi-GPU (accelerate)
-
-```bash
-accelerate launch -m axolotl.cli.train config.yaml
-```
-
-### With LoRA + QLoRA
-
-Add to config:
-```yaml
-adapter: qlora          # or lora
-load_in_4bit: true      # only for qlora
-lora_r: 32
-lora_alpha: 16          # or 2x lora_r
-lora_target_linear: true
-```
+For adapter setup, multi-GPU config, and other runtime details, see [AGENTS_SFT.md](AGENTS_SFT.md).
 
 ## Healthy Training Indicators
 
