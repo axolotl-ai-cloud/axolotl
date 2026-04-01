@@ -1,5 +1,6 @@
 """Module with Pydantic models for configuration."""
 
+import re
 from typing import Annotated, Any, Literal
 
 from accelerate.utils import is_fp8_available
@@ -1335,6 +1336,39 @@ class AxolotlInputConfig(
             LOG.warning(
                 "We found loss to drop to 0 with SageAttention full finetuning."
                 "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_save_strategy_best_requires_metric(cls, data):
+        if data.get("save_strategy") == "best" and not data.get(
+            "metric_for_best_model"
+        ):
+            raise ValueError(
+                "save_strategy: 'best' requires metric_for_best_model to be set. "
+                "Please specify the metric to use, e.g. metric_for_best_model: eval_loss"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_target_modules_regex(cls, data):
+        lora_target_modules = data.get("lora_target_modules")
+        if not isinstance(lora_target_modules, list):
+            return data
+        invalid = []
+        for pattern in lora_target_modules:
+            if not isinstance(pattern, str):
+                continue
+            try:
+                re.compile(pattern)
+            except re.error:
+                invalid.append(pattern)
+        if invalid:
+            raise ValueError(
+                f"lora_target_modules contains invalid regex pattern(s): {invalid}. "
+                "Please provide valid Python regex patterns or plain module name strings."
             )
         return data
 
