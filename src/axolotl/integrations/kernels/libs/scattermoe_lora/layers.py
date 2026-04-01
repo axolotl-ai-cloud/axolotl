@@ -599,6 +599,11 @@ class HFScatterMoEGatedMLP(nn.Module):
         else:
             h = experts.act_fn(up_out)
 
+        # Some activations (e.g. relu2) upcast to fp32 internally.
+        # Cast back to weight dtype for the down projection Triton kernel.
+        if h.dtype != experts.down_proj.dtype:
+            h = h.to(experts.down_proj.dtype)
+
         # ====================================================================
         # Down projection
         # ====================================================================
