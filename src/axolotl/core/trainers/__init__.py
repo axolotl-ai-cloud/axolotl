@@ -2,6 +2,8 @@
 
 # flake8: noqa
 
+from axolotl.utils import make_lazy_getattr
+
 from .base import AxolotlTrainer
 
 # noinspection PyUnresolvedReferences
@@ -30,11 +32,4 @@ _LAZY_IMPORTS = {
     "AxolotlRewardTrainer": ".trl",
 }
 
-
-def __getattr__(name):
-    if name in _LAZY_IMPORTS:
-        import importlib
-
-        module = importlib.import_module(_LAZY_IMPORTS[name], __name__)
-        return getattr(module, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__getattr__ = make_lazy_getattr(_LAZY_IMPORTS, __name__, globals())
