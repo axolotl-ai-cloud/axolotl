@@ -1333,6 +1333,39 @@ class AxolotlInputConfig(
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_save_strategy_best_requires_metric(cls, data):
+        if data.get("save_strategy") == "best" and not data.get(
+            "metric_for_best_model"
+        ):
+            raise ValueError(
+                "save_strategy: 'best' requires metric_for_best_model to be set. "
+                "Please specify the metric to use, e.g. metric_for_best_model: eval_loss"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_target_modules_regex(cls, data):
+        lora_target_modules = data.get("lora_target_modules")
+        if not isinstance(lora_target_modules, list):
+            return data
+        invalid = []
+        for pattern in lora_target_modules:
+            if not isinstance(pattern, str):
+                continue
+            try:
+                re.compile(pattern)
+            except re.error:
+                invalid.append(pattern)
+        if invalid:
+            raise ValueError(
+                f"lora_target_modules contains invalid regex pattern(s): {invalid}. "
+                "Please provide valid Python regex patterns or plain module name strings."
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """Wrapper to valdiate GPU capabilities with the configured options"""
@@ -1738,48 +1771,5 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "prepare pipeline, which is skipped. Either set "
                 "skip_prepare_dataset: false or disable "
                 "dataset_exact_deduplication."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_save_strategy_best_requires_metric(cls, data):
-        if data.get("save_strategy") == "best" and not data.get(
-            "metric_for_best_model"
-        ):
-            raise ValueError(
-                "save_strategy: 'best' requires metric_for_best_model to be set. "
-                "Please specify the metric to use, e.g. metric_for_best_model: eval_loss"
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_streaming_with_val_set_size(cls, data):
-        if data.get("streaming") and data.get("val_set_size", 0):
-            raise ValueError(
-                "val_set_size is not supported with streaming=True. "
-                "Use test_datasets instead to specify a separate evaluation dataset."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_target_modules_regex(cls, data):
-        lora_target_modules = data.get("lora_target_modules")
-        if not isinstance(lora_target_modules, list):
-            return data
-        invalid = []
-        for pattern in lora_target_modules:
-            if not isinstance(pattern, str):
-                continue
-            try:
-                re.compile(pattern)
-            except re.error:
-                invalid.append(pattern)
-        if invalid:
-            raise ValueError(
-                f"lora_target_modules contains invalid regex pattern(s): {invalid}. "
-                "Please provide valid Python regex patterns or plain module name strings."
             )
         return data

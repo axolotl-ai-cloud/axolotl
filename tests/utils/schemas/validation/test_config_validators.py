@@ -50,12 +50,16 @@ class TestStreamingWithValSetSizeValidator:
     """streaming=True is incompatible with val_set_size > 0."""
 
     def test_streaming_with_val_set_size_raises(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(streaming=True, val_set_size=0.1)
+        cfg = min_base_cfg | DictDefault(
+            streaming=True, val_set_size=0.1, max_steps=100
+        )
         with pytest.raises(ValueError, match="val_set_size"):
             validate_config(cfg)
 
     def test_streaming_with_val_set_size_zero_passes(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(streaming=True, val_set_size=0.0)
+        cfg = min_base_cfg | DictDefault(
+            streaming=True, val_set_size=0.0, max_steps=100
+        )
         validated = validate_config(cfg)
         assert validated.streaming is True
 
