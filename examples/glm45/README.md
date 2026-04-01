@@ -58,42 +58,13 @@ datasets:
 - **LoRA kernels**: Incompatible with this model. Must be explicitly disabled (`lora_*_kernel: false`).
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
-### ⚠️ GGUF / llama.cpp loading error (missing tensors)
+### GGUF / llama.cpp loading error (missing tensors)
 
-If you encounter an error like:
+If you see `missing tensor 'blk.X.attn_norm.weight'` when loading a GLM-4 / GLM4-MoE model in llama.cpp, this is likely
+caused by `num_nextn_predict_layers` being set to `1` in `config.json` while the MTP weights were not exported (possible
+after PEFT/QLoRA training).
 
-```
-llama_model_load: error loading model: missing tensor 'blk.X.attn_norm.weight'
-```
-
-when converting or loading a GLM-4 / GLM4-MoE model in `llama.cpp`, this is likely caused by a mismatch between the model config and exported weights.
-
-Some GLM-4 configs include:
-
-```json
-"num_nextn_predict_layers": 1
-```
-
-This enables MTP (multi-token prediction) layers, but these layers are not always included during PEFT/QLoRA training or GGUF conversion.
-
-#### ✅ Fix
-
-Before converting to GGUF, set:
-
-```json
-"num_nextn_predict_layers": 0
-```
-
-in your `config.json`, then reconvert the model.
-
-#### Why this happens
-
-* The config enables MTP layers
-* The actual weights do not include them
-* This causes tensor misalignment during loading in `llama.cpp`
-
-This is an upstream configuration mismatch rather than an Axolotl-specific issue.
-
+**Fix:** Set `"num_nextn_predict_layers": 0` in your `config.json` before converting to GGUF.
 
 ## Optimization Guides
 
