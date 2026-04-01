@@ -295,6 +295,12 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
+    precompute_ref_log_probs: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Precompute reference model log probabilities for DPO"
+        },
+    )
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
@@ -1386,8 +1392,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 and not self.is_preprocess
                 and (self.bf16 is True or self.bfloat16 is True)
             ):
-                raise ValueError(
-                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
+                LOG.warning(
+                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above. Training will fail, but other operations (such as merging) are still functional."
                 )
         return self
 
