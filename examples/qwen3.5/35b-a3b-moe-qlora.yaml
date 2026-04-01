@@ -42,14 +42,14 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
+  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
+  # - gate_up_proj
+  # - down_proj
 
-# Regex matching to target shared experts too
-# lora_target_modules: 'model\.(language_model\.)?layers\.[\d]+\.(mlp|self_attn)\.(shared_expert\.)?(up|down|gate|gate_up|q|k|v|o)_proj'
-
-# Target experts
-lora_target_parameters:
-  - mlp.experts.gate_up_proj
-  - mlp.experts.down_proj
+# Target routed experts (3D nn.Parameter tensors, not nn.Linear — use lora_target_parameters):
+# lora_target_parameters:
+#   - mlp.experts.gate_up_proj
+#   - mlp.experts.down_proj
 
 lora_qkv_kernel: true
 lora_o_kernel: true
