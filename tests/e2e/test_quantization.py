@@ -11,14 +11,8 @@ from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
+    Int8DynamicActivationIntxWeightConfig,
 )
-
-try:
-    from torchao.quantization.quant_api import Int8DynamicActivationInt4WeightConfig
-except ImportError:
-    from torchao.quantization.quant_api import (
-        Int8DynamicActivationIntxWeightConfig as Int8DynamicActivationInt4WeightConfig,
-    )
 from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
@@ -71,7 +65,7 @@ ptq_config_test_cases = [
         TorchAOQuantDType.int4,
         TorchAOQuantDType.int8,
         None,
-        Int8DynamicActivationInt4WeightConfig,
+        Int8DynamicActivationIntxWeightConfig,
     ),
     (
         TorchAOQuantDType.float8_e4m3fn,
