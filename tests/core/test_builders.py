@@ -96,7 +96,6 @@ def fixture_dpo_cfg(base_cfg):
             "dpo_use_weighting": True,
             "dpo_label_smoothing": 0.1,
             "beta": 0.1,  # DPO beta
-            "precompute_ref_log_probs": True,
         }
     )
     return cfg
@@ -290,6 +289,7 @@ class TestHFRLTrainerBuilder:
         # assert training_arguments.gradient_checkpointing is True
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
+        dpo_cfg["precompute_ref_log_probs"] = True
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
         training_arguments, _ = builder._build_training_arguments(100)
 
