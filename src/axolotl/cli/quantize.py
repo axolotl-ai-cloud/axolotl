@@ -5,7 +5,7 @@ CLI to post-training quantize a model using torchao
 from pathlib import Path
 from typing import Union
 
-from transformers import AutoConfig, AutoModelForCausalLM, TorchAoConfig
+from transformers import AutoConfig, AutoModelForCausalLM
 
 from axolotl.cli.config import load_cfg
 from axolotl.loaders import load_processor, load_tokenizer
@@ -93,17 +93,22 @@ def do_quantize(
         weight_dtype, activation_dtype, group_size
     )
 
-    ao_config = TorchAoConfig(
-        quant_type=quantization_config,
-        include_input_output_embeddings=quantize_embedding,
-    )
-    model.config.quantization_config = ao_config
-
     LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
-    model.save_pretrained(
-        str(Path(output_dir) / "quantized"),
-        progressbar=True,
-    )
+    try:
+        model.save_pretrained(
+            str(Path(output_dir) / "quantized"),
+            progressbar=True,
+        )
+    except NotImplementedError:
+        LOG.warning(
+            "Model weight conversions do not support reverse_op, "
+            "retrying save with save_original_format=False"
+        )
+        model.save_pretrained(
+            str(Path(output_dir) / "quantized"),
+            progressbar=True,
+            save_original_format=False,
+        )
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         progressbar=True,
