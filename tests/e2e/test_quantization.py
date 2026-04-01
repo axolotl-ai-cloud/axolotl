@@ -5,7 +5,6 @@ Tests for axolotl.utils.quantization
 import pytest
 import torch
 from torch import nn
-from torchao.prototype.mx_formats import MXLinearConfig
 from torchao.quantization import LinearActivationQuantizedTensor
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
@@ -129,6 +128,8 @@ class TestQuantization:
     @require_torch_2_8_0
     @requires_sm_ge_100
     def test_get_ptq_config_mxfp4(self):
+        from torchao.prototype.mx_formats import MXLinearConfig
+
         config = get_quantization_config(TorchAOQuantDType.mxfp4, None, 32)
         assert isinstance(config, MXLinearConfig)
         assert config.elem_dtype == torch.float4_e2m1fn_x2
