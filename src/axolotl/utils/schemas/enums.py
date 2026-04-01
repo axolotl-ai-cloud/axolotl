@@ -97,6 +97,19 @@ class CustomSupportedOptimizers(str, Enum):
     flash_lion = "flash_lion"
 
 
+class AttnImplementation(str, Enum):
+    """Attention backend implementations"""
+
+    eager = "eager"  # pylint: disable=invalid-name
+    flash = "flash"  # pylint: disable=invalid-name
+    sdpa = "sdpa"  # pylint: disable=invalid-name
+    xformers = "xformers"  # pylint: disable=invalid-name
+    flex = "flex"  # pylint: disable=invalid-name
+    sage = "sage"  # pylint: disable=invalid-name
+    s2 = "s2"  # pylint: disable=invalid-name
+    fp8 = "fp8"  # pylint: disable=invalid-name
+
+
 class RingAttnFunc(str, Enum):
     """Enum class for supported `ring-flash-attn` implementations"""
 

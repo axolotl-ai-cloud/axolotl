@@ -27,7 +27,12 @@ from axolotl.utils.schemas.datasets import (
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
-from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.enums import (
+    AttnImplementation,
+    ChatTemplate,
+    RingAttnFunc,
+    RLType,
+)
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
@@ -786,10 +791,10 @@ class AxolotlInputConfig(
 
     eager_attention: bool | None = None
 
-    attn_implementation: str | None = Field(
+    attn_implementation: AttnImplementation | str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Specify a custom attention implementation, used mostly for kernels."
+            "description": "Attention backend: eager, flash, sdpa, xformers, flex, sage, s2, fp8, or a custom string for kernels."
         },
     )
 
@@ -1345,6 +1350,81 @@ class AxolotlInputConfig(
                         f"Token {untrained_token_id} is fixed via `fix_untrained_tokens`, yet not in `peft_trainable_token_indices: ` list. "
                         "Please add it, otherwise the token won't be trained on."
                     )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_attn_implementation(cls, data):
+        """Normalize attention config: map between attn_implementation enum and legacy boolean flags."""
+        attn_impl = data.get("attn_implementation")
+
+        # Mapping: attn_implementation value -> (primary flag, extra flags to set)
+        impl_to_flags = {
+            "eager": (("eager_attention",), ()),
+            "flash": (("flash_attention",), ()),
+            "sdpa": (("sdp_attention",), ()),
+            "xformers": (("xformers_attention",), ("flash_attention",)),
+            "flex": (("flex_attention",), ()),
+            "sage": (("sage_attention",), ("flash_attention",)),
+            "s2": (("s2_attention",), ("flash_attention",)),
+            "fp8": ((), ()),  # new, no legacy flags
+        }
+
+        # Reverse mapping: legacy flag -> attn_implementation value
+        flag_to_impl = {
+            "eager_attention": "eager",
+            "flash_attention": "flash",
+            "sdp_attention": "sdpa",
+            "xformers_attention": "xformers",
+            "flex_attention": "flex",
+            "sage_attention": "sage",
+            "s2_attention": "s2",
+        }
+
+        # Find which legacy flags are set
+        set_flags = [f for f, impl in flag_to_impl.items() if data.get(f)]
+
+        if attn_impl and set_flags:
+            # Both set — check consistency
+            if attn_impl in impl_to_flags:
+                expected_primary, expected_extra = impl_to_flags[attn_impl]
+                expected_flags = set(expected_primary) | set(expected_extra)
+                for flag in set_flags:
+                    if flag not in expected_flags:
+                        raise ValueError(
+                            f"attn_implementation={attn_impl!r} conflicts with {flag}=true. "
+                            f"Use only attn_implementation or the legacy flag, not both."
+                        )
+        elif attn_impl and not set_flags:
+            # attn_implementation set, no legacy flags — set them for backwards compat
+            if attn_impl in impl_to_flags:
+                primary, extra = impl_to_flags[attn_impl]
+                for flag in (*primary, *extra):
+                    data[flag] = True
+        elif not attn_impl and set_flags:
+            # Legacy flags set, no attn_implementation — map to enum, warn
+            # Priority: specific backends first, then generic flash/sdp/eager
+            # s2 and sage require flash_attention internally, so they must be
+            # checked before flash_attention to avoid masking
+            priority = [
+                "xformers_attention",
+                "s2_attention",
+                "sage_attention",
+                "flex_attention",
+                "flash_attention",
+                "sdp_attention",
+                "eager_attention",
+            ]
+            for flag in priority:
+                if flag in set_flags:
+                    data["attn_implementation"] = flag_to_impl[flag]
+                    LOG.warning(
+                        "`%s: true` is deprecated. Use `attn_implementation: %s` instead.",
+                        flag,
+                        flag_to_impl[flag],
+                    )
+                    break
+
         return data
 
     @model_validator(mode="before")

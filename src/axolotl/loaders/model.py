@@ -634,6 +634,23 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
+        # Map attn_implementation enum values to HF attn_implementation strings.
+        # xformers/sage are registered in ALL_ATTENTION_FUNCTIONS and
+        # ALL_MASK_ATTENTION_FUNCTIONS under their own names with FA2 mask
+        # behavior, so they no longer need to masquerade as flash_attention_2.
+        # s2 still uses flash_attention_2 because it modifies FA2 internals.
+        # Hub kernel strings (e.g. "kernels-community/flash-attn3") fall
+        # through the .get() and are passed to HF unchanged.
+        _ATTN_IMPL_TO_HF = {
+            "eager": "eager",
+            "flash": "flash_attention_2",
+            "sdpa": "sdpa",
+            "xformers": "xformers",
+            "flex": "flex_attention",
+            "sage": "sage",
+            "s2": "flash_attention_2",
+            "fp8": "sdpa",
+        }
         if self.cfg.gemma4_hybrid_attn_impl:
             # Load model with flash_attention_2 for sliding window layers;
             # global layers will be patched to sdpa post-load.
@@ -642,11 +659,14 @@ class ModelLoader:
             # Set flash_attention so multipack/sample_packing patches activate
             self.cfg.flash_attention = True
         elif self.cfg.attn_implementation:
-            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
+            hf_impl = _ATTN_IMPL_TO_HF.get(
+                self.cfg.attn_implementation, self.cfg.attn_implementation
+            )
+            self.model_kwargs["attn_implementation"] = hf_impl
+            self.model_config._attn_implementation = hf_impl
         elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"
             self.model_config._attn_implementation = "flex_attention"
-
         elif self.cfg.flash_attention:
             if not self.cfg.sample_packing and self.cfg.s2_attention:
                 pass
