@@ -154,6 +154,8 @@ def patch_peft_target_parameters_matching():
     1. Expands short suffixes to full module paths for parametrized modules.
     2. Iterates params in definition order (not alphabetical order) so saved
        adapters are compatible with standard PEFT, vLLM, etc.
+    3. Skips ParametrizationList synthetic paths to prevent PEFT from mistakenly
+       targeting quantized expert params via name-suffix matching.
     """
     if getattr(patch_peft_target_parameters_matching, "_axolotl_patched", False):
         return
@@ -293,5 +295,23 @@ def patch_peft_target_parameters_matching():
                         self.targeted_parameter_names.append(key)
 
     BaseTuner._inject_parameters = _patched_inject_parameters
+
+    # Skip ParametrizationList synthetic paths (e.g. "...parametrizations.up_proj")
+    # so PEFT suffix-matching doesn't try to wrap quantized expert params in LoRA.
+    # Previous MoE models (Mixtral, DeepSeek, etc.) stored experts as nn.Linear
+    # modules, so PEFT's normal target_modules path worked fine. NemotronH uses
+    # 3D nn.Parameter tensors via our quantize_moe_experts parametrization, which
+    # exposes synthetic ".parametrizations.<name>" paths that PEFT's suffix match
+    # would otherwise treat as target_modules candidates.
+    _original_check = BaseTuner._check_target_module_exists
+
+    @staticmethod
+    def _patched_check_target_module_exists(config, key):
+        if ".parametrizations." in key:
+            return False
+        return _original_check(config, key)
+
+    BaseTuner._check_target_module_exists = _patched_check_target_module_exists
+
     patch_peft_target_parameters_matching._axolotl_patched = True
     LOG.info("Patched PEFT _inject_parameters for consistent ParamWrapper ordering")
