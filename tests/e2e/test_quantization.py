@@ -11,8 +11,14 @@ from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
-    Int8DynamicActivationInt4WeightConfig,
 )
+
+try:
+    from torchao.quantization.quant_api import Int8DynamicActivationInt4WeightConfig
+except ImportError:
+    from torchao.quantization.quant_api import (
+        Int8DynamicActivationIntxWeightConfig as Int8DynamicActivationInt4WeightConfig,
+    )
 from torchao.quantization.quantize_.workflows.int4.int4_tensor import Int4Tensor
 from transformers import AutoModelForCausalLM
 from transformers.trainer_callback import TrainerState
@@ -128,11 +134,11 @@ class TestQuantization:
     @require_torch_2_8_0
     @requires_sm_ge_100
     def test_get_ptq_config_mxfp4(self):
-        from torchao.prototype.mx_formats import MXLinearConfig
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
 
         config = get_quantization_config(TorchAOQuantDType.mxfp4, None, 32)
-        assert isinstance(config, MXLinearConfig)
-        assert config.elem_dtype == torch.float4_e2m1fn_x2
+        assert isinstance(config, MXDynamicActivationMXWeightConfig)
+        assert config.weight_dtype == torch.float4_e2m1fn_x2
         assert config.block_size == 32
 
     @require_torch_2_8_0
