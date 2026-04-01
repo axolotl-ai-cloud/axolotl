@@ -955,7 +955,10 @@ def colab_inference_post_train_callback(trainer: Trainer):
             """
             handle T4 gpu, we need to convert attention to eager for inference
             """
-            if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
+            if "Tesla T4" in self.gpu_name and (
+                self.cfg.xformers_attention
+                or self.cfg.attn_implementation == "xformers"
+            ):
                 trainer.model.config._attn_implementation = "eager"
             trainer.model.gradient_checkpointing_disable()
             trainer.model.config.use_cache = True

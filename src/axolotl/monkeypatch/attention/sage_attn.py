@@ -191,21 +191,9 @@ def sage_attention_forward(
 
 
 def patch_sageattn():
-    """Patch SageAttention for use with transformers."""
+    """Validate SageAttention is available. Registration in the attention/mask
+    function registries is handled by register_sage_attn() in __init__.py."""
 
     _check_sageattn_imported()
 
-    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
-
-    # Replace flash attention with sage attention
-    ALL_ATTENTION_FUNCTIONS.register("flash_attention_2", sage_attention_forward)
-
-    # Note: New method after transformers refactor to use ALL_MASK_ATTENTION_FUNCTIONS
-    # Register sage_attention with the global attention interface
-    # ALL_ATTENTION_FUNCTIONS.register("sage_attention", sage_attention_forward)
-
-    # from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS, flash_attention_mask
-
-    # ALL_MASK_ATTENTION_FUNCTIONS.register("sage_attention", flash_attention_mask)
-
-    LOG.info("SageAttention patched successfully")
+    LOG.info("SageAttention validated successfully")

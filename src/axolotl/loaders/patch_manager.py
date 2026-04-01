@@ -172,6 +172,7 @@ class PatchManager:
         self._apply_llama_flash_attn_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
+        self._apply_fp8_attention_patches(model)
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -252,11 +253,29 @@ class PatchManager:
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
-        if self.cfg.xformers_attention and self.cfg.sample_packing:
-            from axolotl.monkeypatch.attention import patch_xformers_attn_over_fa2
+        if self.cfg.xformers_attention:
+            from axolotl.monkeypatch.attention import register_xformers_attn
 
-            patch_xformers_attn_over_fa2()
-            self.cfg.flash_attention = True
+            register_xformers_attn()
+
+            if self.cfg.sample_packing:
+                # Also patch FA2 slot for legacy code paths that use it directly
+                from axolotl.monkeypatch.attention import patch_xformers_attn_over_fa2
+
+                patch_xformers_attn_over_fa2()
+                self.cfg.flash_attention = True
+
+        if self.cfg.sage_attention:
+            from axolotl.monkeypatch.attention import register_sage_attn
+
+            register_sage_attn()
+
+    def _apply_fp8_attention_patches(self, model):
+        """Apply FP8 low-precision attention via torchao."""
+        if self.cfg.attn_implementation == "fp8":
+            from axolotl.monkeypatch.attention.fp8_attn import patch_fp8_attention
+
+            patch_fp8_attention(model)
 
     def _apply_chunked_cross_entropy_patch(self):
         if self.cfg.chunked_cross_entropy:

@@ -201,6 +201,7 @@ class AttentionValidationMixin:
     def check_sample_packing_without_attention(cls, data):
         if (
             data.get("sample_packing")
+            and not data.get("attn_implementation")
             and not data.get("flash_attention")
             and not data.get("sdp_attention")
             and not data.get("flex_attention")
@@ -215,7 +216,9 @@ class AttentionValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_sample_packing_with_s2attn(cls, data):
-        if data.get("sample_packing") and data.get("s2_attention"):
+        if data.get("sample_packing") and (
+            data.get("s2_attention") or data.get("attn_implementation") == "s2"
+        ):
             raise ValueError(
                 "Received `sample_packing=true` and `s2_attention=true`; however, \
                 shifted-sparse attention does not currently support sample packing."
@@ -225,10 +228,12 @@ class AttentionValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_scaling_softmax_requires_flex(cls, data):
-        if data.get("scaling_softmax") and not data.get("flex_attention"):
+        if data.get("scaling_softmax") and not (
+            data.get("flex_attention") or data.get("attn_implementation") == "flex"
+        ):
             raise ValueError(
-                "scaling_softmax requires flex_attention: true\n"
-                "Add 'flex_attention: true' to your config file.\n"
+                "scaling_softmax requires flex attention.\n"
+                "Add 'attn_implementation: flex' to your config file.\n"
             )
         return data
 
