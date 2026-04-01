@@ -8,6 +8,7 @@ import os
 from functools import cached_property
 
 import addict
+import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
@@ -142,6 +143,12 @@ class PatchManager:
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
+        if self.cfg.model_config_type == "nemotron_h":
+            # Must run after model build because NemotronHForCausalLM.__init__
+            # calls register_nemotron_h_conversion_mapping() with overwrite=True,
+            # which would clobber any earlier fix.
+            self._fix_nemotron_h_conversion_mapping()
+
         self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -252,44 +259,106 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_next.modeling import (
-                patch_qwen3_next_modeling_packing,
-            )
-
-            patch_qwen3_next_modeling_packing()
-
-        if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_modeling_packing,
-            )
-
-            patch_qwen3_5_modeling_packing()
-
-        if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_moe_modeling_packing,
-            )
-
-            patch_qwen3_5_moe_modeling_packing()
-
-        if (
-            self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
-            and self.cfg.is_multimodal
-            and self.cfg.flash_attention
-        ):
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_vlm_flash_attention,
-            )
-
-            patch_qwen3_5_vlm_flash_attention()
-
         if self.cfg.model_config_type == "kimi_linear":
             from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
                 patch_kimi_model,
             )
 
             patch_kimi_model()
+
+        if self.cfg.model_config_type == "nemotron_h":
+            if self.cfg.sample_packing:
+                from transformers.models.nemotron_h.modeling_nemotron_h import (
+                    NemotronHPreTrainedModel,
+                )
+
+                from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                    patch_nemotron_h_modeling_packing,
+                )
+
+                patch_nemotron_h_modeling_packing()
+                # supports_gradient_checkpointing is only enabled after
+                # patch_nemotron_h_modeling_packing() installs the GC-compatible
+                # NemotronHBlock.forward. Without the patch, upstream marks this
+                # False because the original block forward is not GC-safe.
+                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
+        # Patches requiring CUDA
+        if torch.cuda.is_available():
+            if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                    patch_qwen3_next_modeling_packing,
+                )
+
+                patch_qwen3_next_modeling_packing()
+
+            if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_modeling_packing,
+                )
+
+                patch_qwen3_5_modeling_packing()
+
+            if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_moe_modeling_packing,
+                )
+
+                patch_qwen3_5_moe_modeling_packing()
+
+            if (
+                self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
+                and self.cfg.is_multimodal
+                and self.cfg.flash_attention
+            ):
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_vlm_flash_attention,
+                )
+
+                patch_qwen3_5_vlm_flash_attention()
+
+    @staticmethod
+    def _fix_nemotron_h_conversion_mapping():
+        """Remove the spurious embedding→embeddings WeightRenaming from the
+        nemotron_h checkpoint conversion mapping.
+
+        The nvidia Hub model registers:
+            WeightRenaming("embedding.weight", "embeddings.weight")
+        to handle a legacy checkpoint variant. Its reverse (applied on save)
+        converts ``embeddings`` back to ``embedding``, which silently renames
+        ``backbone.embeddings.weight`` → ``backbone.embedding.weight`` when
+        merging LoRA adapters back into the base model.
+        """
+        try:
+            from transformers.conversion_mapping import (
+                WeightRenaming,
+                get_checkpoint_conversion_mapping,
+                register_checkpoint_conversion_mapping,
+            )
+        except ImportError:
+            return
+
+        mapping = get_checkpoint_conversion_mapping("nemotron_h")
+        if mapping is None:
+            return
+
+        filtered = [
+            entry
+            for entry in mapping
+            if not (
+                isinstance(entry, WeightRenaming)
+                and entry.source_patterns == ["embedding.weight"]
+                and entry.target_patterns == ["embeddings.weight"]
+            )
+        ]
+        if len(filtered) != len(mapping):
+            register_checkpoint_conversion_mapping(
+                "nemotron_h", filtered, overwrite=True
+            )
+            LOG.info(
+                "Removed embedding→embeddings WeightRenaming from nemotron_h "
+                "checkpoint conversion mapping"
+            )
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
