@@ -95,6 +95,7 @@ class PatchManager:
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
         self._deactivate_hf_async_load()
+        self._apply_torchao_patches()
         self._apply_transformers_patches()
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
@@ -124,6 +125,12 @@ class PatchManager:
         """Apply post plugin-pre_model_load load patches based on config."""
         self._apply_tiled_mlp(self.cfg.model_config_type)
         self._apply_moe_expert_quantization_patch()
+
+    @staticmethod
+    def _apply_torchao_patches():
+        from axolotl.monkeypatch.torchao_optim import patch_torchao_optim_state_8bit
+
+        patch_torchao_optim_state_8bit()
 
     def _apply_transformers_patches(self):
         from axolotl.monkeypatch.transformers.trainer_loss_calc import (
