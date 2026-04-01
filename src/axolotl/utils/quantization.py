@@ -11,6 +11,7 @@ from torchao.quantization.qat import (
     QATConfig,
 )
 from torchao.quantization.qat.fake_quantize_config import Int4WeightFakeQuantizeConfig
+from torchao.quantization.granularity import PerGroup
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
