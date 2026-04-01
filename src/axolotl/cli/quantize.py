@@ -100,10 +100,21 @@ def do_quantize(
     model.config.quantization_config = ao_config
 
     LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
-    model.save_pretrained(
-        str(Path(output_dir) / "quantized"),
-        progressbar=True,
-    )
+    try:
+        model.save_pretrained(
+            str(Path(output_dir) / "quantized"),
+            progressbar=True,
+        )
+    except NotImplementedError:
+        LOG.warning(
+            "Model weight conversions do not support reverse_op, "
+            "retrying save with save_original_format=False"
+        )
+        model.save_pretrained(
+            str(Path(output_dir) / "quantized"),
+            progressbar=True,
+            save_original_format=False,
+        )
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         progressbar=True,

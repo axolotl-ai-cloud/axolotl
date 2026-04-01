@@ -136,6 +136,28 @@ def get_quantization_config(
     )
 
 
+def _register_mx_state_dict_hook(model):
+    """Register a state_dict hook that dequantizes MXTensor subclasses for safe serialization.
+
+    MXTensor (from torchao MX/MXFP4 quantization) doesn't expose a valid Python storage,
+    causing safetensors' storage_ptr() to fail during save_pretrained. This hook converts
+    MXTensor values to plain tensors via dequantize() so the model can be saved.
+    """
+
+    def _dequantize_mx_tensors(module, state_dict, prefix, local_metadata):
+        try:
+            from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        except ImportError:
+            return state_dict
+
+        for key in list(state_dict.keys()):
+            if isinstance(state_dict[key], MXTensor):
+                state_dict[key] = state_dict[key].dequantize()
+        return state_dict
+
+    model._register_state_dict_hook(_dequantize_mx_tensors)
+
+
 def quantize_model(
     model,
     weight_dtype: TorchAOQuantDType,
@@ -172,6 +194,9 @@ def quantize_model(
             embedding_quantize_config,
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
+
+    if weight_dtype == TorchAOQuantDType.mxfp4:
+        _register_mx_state_dict_hook(model)
 
 
 def _make_qat_config(

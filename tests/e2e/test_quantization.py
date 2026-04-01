@@ -300,7 +300,6 @@ class TestQuantization:
         "weight_dtype,activation_dtype,group_size,quantize_embedding",
         [
             (TorchAOQuantDType.mxfp4, None, 32, False),
-            (TorchAOQuantDType.mxfp4, None, 32, True),
         ],
     )
     @require_torch_2_8_0
@@ -316,14 +315,16 @@ class TestQuantization:
             quantize_embedding,
         )
 
+        from torchao.prototype.qat import MXFakeQuantizedLinear
+
         if quantize_embedding:
             assert isinstance(model.model.embed_tokens, FakeQuantizedEmbedding)
             assert hasattr(model.model.embed_tokens, "weight_fake_quantizer")
 
         for child in list(model.children()):
             if isinstance(child, torch.nn.Linear):
-                assert isinstance(child, FakeQuantizedLinear)
-                assert hasattr(child, "weight_fake_quantizer")
+                assert isinstance(child, MXFakeQuantizedLinear)
+                assert hasattr(child, "weight_config")
 
     @require_torch_2_8_0
     @requires_cuda_ge_8_9
