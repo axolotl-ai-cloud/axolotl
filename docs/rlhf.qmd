@@ -925,7 +925,7 @@ gradient_checkpointing_kwargs:
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
 
 # Terminal 2: Train on GPUs 0,1
-CUDA_VISIBLE_DEVICES=0,1 accelerate launch --num_processes 2 -m axolotl.cli.train config.yaml
+CUDA_VISIBLE_DEVICES=0,1 axolotl train config.yaml
 ```
 
 ::: {.callout-important}

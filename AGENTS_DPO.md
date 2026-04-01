@@ -448,8 +448,7 @@ Decision tree:
 ## Running
 
 ```bash
-axolotl train config.yaml                                    # single GPU
-accelerate launch -m axolotl.cli.train config.yaml           # multi-GPU
+axolotl train config.yaml                                    # single or multi-GPU
 ```
 
 For adapter setup, multi-GPU config, and other runtime details, see [AGENTS_SFT.md](AGENTS_SFT.md).

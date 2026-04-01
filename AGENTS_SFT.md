@@ -392,7 +392,7 @@ fsdp_config:
 
 Launch:
 ```bash
-accelerate launch --num_processes <N> -m axolotl.cli.train config.yaml
+axolotl train config.yaml
 ```
 
 For FSDP2 (newer, simpler config):
@@ -412,7 +412,7 @@ deepspeed: deepspeed_configs/zero3_bf16.json
 
 Launch:
 ```bash
-accelerate launch --num_processes <N> -m axolotl.cli.train config.yaml
+axolotl train config.yaml
 ```
 
 Key notes:
@@ -427,9 +427,9 @@ Key notes:
 axolotl train config.yaml
 ```
 
-Or with accelerate (multi-GPU):
+Or multi-GPU:
 ```bash
-accelerate launch --num_processes 2 -m axolotl.cli.train config.yaml
+axolotl train config.yaml
 ```
 
 ### Preprocess (validate data before training)

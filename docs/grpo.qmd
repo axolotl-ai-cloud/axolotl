@@ -467,7 +467,7 @@ Launch with:
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
 
 # GPUs 0,1: Training (FSDP will use both visible GPUs)
-CUDA_VISIBLE_DEVICES=0,1 accelerate launch --num_processes 2 -m axolotl.cli.train config.yaml
+CUDA_VISIBLE_DEVICES=0,1 axolotl train config.yaml
 ```
 
 :::{.callout-warning}
