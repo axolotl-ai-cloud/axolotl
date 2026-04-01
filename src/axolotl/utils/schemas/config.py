@@ -294,6 +294,12 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
+    precompute_ref_log_probs: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Precompute reference model log probabilities for DPO"
+        },
+    )
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,

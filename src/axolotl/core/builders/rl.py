@@ -239,10 +239,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT)
         ):
             trainer_kwargs["peft_config"] = self.peft_config
-        if self.cfg.precompute_ref_log_probs is not None:
-            trainer_kwargs["precompute_ref_log_probs"] = (
-                self.cfg.precompute_ref_log_probs
-            )
 
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 
