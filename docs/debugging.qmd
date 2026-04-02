@@ -6,6 +6,10 @@ description: How to debug Axolotl
 
 This document provides some tips and tricks for debugging Axolotl.  It also provides an example configuration for debugging with VSCode.  A good debugging setup is essential to understanding how Axolotl code works behind the scenes.
 
+::: {.callout-tip}
+For training-specific debugging (loss spikes, NaN gradients, OOM errors, RL training stability), see [Training Stability & Debugging](training_stability.qmd).
+:::
+
 ## Table of Contents
 
 - [General Tips](#general-tips)
@@ -85,7 +89,7 @@ If you developing on a remote host, you can easily use VSCode to debug remotely.
 
 The easiest way to get started is to modify the [.vscode/launch.json](../.vscode/launch.json) file in this project.  This is just an example configuration, so you may need to modify or copy it to suit your needs.
 
-For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_chat_template.yml`, you would use the below configuration[^1].  Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to `devtools` and set the `env` variable `HF_HOME` to a temporary folder that is later partially deleted.  This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.
+For example, to mimic the command `cd devtools && CUDA_VISIBLE_DEVICES=0 axolotl train dev_chat_template.yml`, you would use the below configuration[^1].  Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to `devtools` and set the `env` variable `HF_HOME` to a temporary folder that is later partially deleted.  This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.
 
 ```json
 // .vscode/launch.json
@@ -242,6 +246,6 @@ style="border-radius: 10px; display: block; margin: auto;" width="560" height="3
 </div>
 <br>
 
-[^1]: The config actually mimics the command `CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/chat_template.yml`, but this is the same thing.
+[^1]: The VSCode config uses `accelerate.commands.launch` as the Python module entry point, which is what `axolotl train` invokes under the hood.
 
 [^2]: Many of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit.  You can read more about these flags [here](https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html).

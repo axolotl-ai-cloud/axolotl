@@ -170,17 +170,26 @@ More details can be found in [Merging LoRA weights](inference.qmd#sec-merging).
 
 ## Next Steps {#sec-next-steps}
 
-Now that you have the basics, you might want to:
+Now that you have the basics, explore these guides based on what you want to do:
 
-- Try different model architectures
-- Experiment with hyperparameters
-- Use more advanced training methods
-- Scale up to larger models
+**Choose your path:**
 
-Check our other guides for details on these topics:
+- [Choosing a Fine-Tuning Method](choosing_method.qmd) — SFT vs LoRA vs QLoRA vs GRPO vs DPO, with hardware recommendations
 
-- [Configuration Guide](config-reference.qmd) - Full configuration options
-- [Dataset Loading](dataset_loading.qmd) - Loading datasets from various sources
-- [Dataset Formats](dataset-formats) - Working with different data formats
-- [Multi-GPU Training](multi-gpu.qmd)
-- [Multi-Node Training](multi-node.qmd)
+**Core guides:**
+
+- [Dataset Loading](dataset_loading.qmd) — Loading datasets from various sources
+- [Dataset Formats](dataset-formats) — Working with different data formats
+- [Optimizations](optimizations.qmd) — Flash attention, gradient checkpointing, sample packing
+- [Training Stability & Debugging](training_stability.qmd) — Monitoring metrics, fixing NaN, OOM debugging
+
+**Advanced training methods:**
+
+- [RLHF / Preference Learning](rlhf.qmd) — DPO, KTO, GRPO, EBFT
+- [GRPO Training](grpo.qmd) — RL with custom rewards and vLLM generation
+- [vLLM Serving](vllm_serving.qmd) — Setting up vLLM for GRPO
+
+**Scaling up:**
+
+- [Multi-GPU Training](multi-gpu.qmd) — DeepSpeed, FSDP, DDP
+- [Multi-Node Training](multi-node.qmd) — Distributed training across machines
