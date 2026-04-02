@@ -358,6 +358,17 @@ class PatchManager:
 
             patch_kimi_model()
 
+        if self.cfg.model_config_type in ("nemotron_h", "falcon_h1"):
+            # Prefer the installed mamba_ssm over Hub-cached kernels: the Hub build
+            # targets an older causal_conv1d API incompatible with causal_conv1d>=1.5.
+            try:
+                import mamba_ssm
+                from transformers.integrations.hub_kernels import _KERNEL_MODULE_MAPPING
+
+                _KERNEL_MODULE_MAPPING.setdefault("mamba-ssm", mamba_ssm)
+            except ImportError:
+                pass
+
         if self.cfg.model_config_type == "nemotron_h":
             if self.cfg.sample_packing:
                 from transformers.models.nemotron_h.modeling_nemotron_h import (
@@ -574,14 +585,15 @@ class PatchManager:
             elif hasattr(self.model_config, "auto_map"):
                 auto_map_config = self.model_config.auto_map
 
-            # Determine if the model has remote code
-            if auto_map_config is not None:
-                has_remote_code = "AutoModelForCausalLM" in auto_map_config
-            else:
-                has_remote_code = False
-
-            if has_remote_code and self.cfg.trust_remote_code is not None:
-                # If explicitly set in YAML, prefer that
+            # nemotron_h and falcon_h1 are native transformers types (5.x+); their Hub
+            # repos still carry auto_map pointing to legacy remote code that imports
+            # removed symbols. Exclude them regardless of auto_map presence.
+            has_remote_code = (
+                auto_map_config is not None
+                and "AutoModelForCausalLM" in auto_map_config
+                and self.cfg.model_config_type not in ("nemotron_h", "falcon_h1")
+            )
+            if self.cfg.trust_remote_code is not None:
                 has_remote_code = self.cfg.trust_remote_code
 
             patch_for_multipack(
