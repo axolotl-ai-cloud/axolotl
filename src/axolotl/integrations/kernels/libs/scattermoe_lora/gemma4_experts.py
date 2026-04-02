@@ -91,6 +91,48 @@ def _get_base_param(param):
     return param
 
 
+def _parallel_linear_maybe_lora(
+    x,
+    weight,
+    top_k,
+    sorted_expert_idxs,
+    sorted_scattered_idxs,
+    expert_offsets,
+    lora_tuple,
+    grouped_in,
+    grouped_out,
+    gates=None,
+):
+    """Call parallel_linear or parallel_linear_lora depending on whether LoRA is active."""
+    if lora_tuple is not None:
+        lora_A, lora_B, scaling = lora_tuple
+        return parallel_linear_lora(
+            x,
+            weight,
+            top_k,
+            sorted_expert_idxs,
+            sorted_scattered_idxs,
+            expert_offsets,
+            lora_A,
+            lora_B,
+            scaling,
+            grouped_in=grouped_in,
+            grouped_out=grouped_out,
+            gates=gates,
+        )
+    return parallel_linear(
+        x,
+        weight,
+        top_k,
+        sorted_expert_idxs,
+        sorted_scattered_idxs,
+        expert_offsets,
+        grouped_in=grouped_in,
+        grouped_out=grouped_out,
+        gates=gates,
+    )
+
+
 def scattermoe_experts_forward(
     self,
     hidden_states: torch.Tensor,
@@ -114,94 +156,39 @@ def scattermoe_experts_forward(
     gate_up_weight = _get_base_param(self.gate_up_proj).transpose(2, 1)
     down_weight = _get_base_param(self.down_proj).transpose(2, 1)
 
-    # Check for LoRA
+    # Extract LoRA params if PEFT is active
+    gup_lora, down_lora = None, None
     if _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
-        if gup_lora is not None:
-            lora_A, lora_B, scaling = gup_lora
-            gates_h = parallel_linear_lora(
-                hidden_states,
-                gate_up_weight,
-                K,
-                sorted_expert_idxs,
-                sorted_scattered_idxs,
-                expert_offsets,
-                lora_A,
-                lora_B,
-                scaling,
-                grouped_in=False,
-                grouped_out=True,
-            )
-        else:
-            gates_h = parallel_linear(
-                hidden_states,
-                gate_up_weight,
-                K,
-                sorted_expert_idxs,
-                sorted_scattered_idxs,
-                expert_offsets,
-                grouped_in=False,
-                grouped_out=True,
-            )
+    # Gate-up projection (with optional LoRA)
+    gates_h = _parallel_linear_maybe_lora(
+        hidden_states,
+        gate_up_weight,
+        K,
+        sorted_expert_idxs,
+        sorted_scattered_idxs,
+        expert_offsets,
+        gup_lora,
+        grouped_in=False,
+        grouped_out=True,
+    )
+    gates, h = gates_h.chunk(2, dim=-1)
+    h = self.act_fn(gates) * h
 
-        gates, h = gates_h.chunk(2, dim=-1)
-        h = self.act_fn(gates) * h
-
-        if down_lora is not None:
-            lora_A, lora_B, scaling = down_lora
-            output = parallel_linear_lora(
-                h,
-                down_weight,
-                1,
-                sorted_expert_idxs,
-                sorted_scattered_idxs,
-                expert_offsets,
-                lora_A,
-                lora_B,
-                scaling,
-                grouped_in=True,
-                grouped_out=False,
-                gates=routing_weights,
-            )
-        else:
-            output = parallel_linear(
-                h,
-                down_weight,
-                1,
-                sorted_expert_idxs,
-                sorted_scattered_idxs,
-                expert_offsets,
-                grouped_in=True,
-                grouped_out=False,
-                gates=routing_weights,
-            )
-    else:
-        # No LoRA — standard ScatterMoE path
-        gates_h = parallel_linear(
-            hidden_states,
-            gate_up_weight,
-            K,
-            sorted_expert_idxs,
-            sorted_scattered_idxs,
-            expert_offsets,
-            grouped_in=False,
-            grouped_out=True,
-        )
-        gates, h = gates_h.chunk(2, dim=-1)
-        h = self.act_fn(gates) * h
-
-        output = parallel_linear(
-            h,
-            down_weight,
-            1,
-            sorted_expert_idxs,
-            sorted_scattered_idxs,
-            expert_offsets,
-            grouped_in=True,
-            grouped_out=False,
-            gates=routing_weights,
-        )
+    # Down projection (with optional LoRA + routing weights)
+    output = _parallel_linear_maybe_lora(
+        h,
+        down_weight,
+        1,
+        sorted_expert_idxs,
+        sorted_scattered_idxs,
+        expert_offsets,
+        down_lora,
+        grouped_in=True,
+        grouped_out=False,
+        gates=routing_weights,
+    )
 
     return output
 

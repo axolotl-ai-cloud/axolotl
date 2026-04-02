@@ -28,7 +28,7 @@ use_scattermoe: true
 use_sonicmoe: true
 ```
 
-**Important:** Setting `experts_implementation` is incompatible with custom kernel options.
+**Important:** Setting `experts_implementation` to `batched_mm` or `grouped_mm` is incompatible with custom kernel options. The exception is `experts_implementation: scattermoe`, which is used for models like Gemma 4 that embed MoE directly in the decoder layer (no SparseMoeBlock) and dispatch through the transformers `ExpertsInterface`.
 
 ### SonicMoE installation
 

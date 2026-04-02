@@ -54,8 +54,10 @@ lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
 
-# Restrict LoRA to text backbone only (skip vision/audio encoders)
-lora_target_modules:
+# Restrict LoRA to text backbone only (skip vision/audio encoders).
+# lora_target_modules is intentionally empty — all module targeting is done
+# via regex in lora_target_linear_modules below.
+lora_target_modules: []
 lora_target_linear_modules:
   - language_model\.model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj
 

@@ -535,9 +535,9 @@ def gemma4_routing(
     router = moe_block.router
 
     # Unwrap PEFT LoRA on router.proj (the nn.Linear)
-    base_proj, proj_weight, proj_lora_delta = unwrap_gate_lora(router.proj)
+    _, proj_weight, proj_lora_delta = unwrap_gate_lora(router.proj)
 
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = router.top_k if hasattr(router, "top_k") else router.config.top_k_experts
 
     # Reproduce Gemma4TextRouter.forward:

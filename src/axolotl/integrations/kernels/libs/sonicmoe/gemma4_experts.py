@@ -49,7 +49,7 @@ def gemma4_sonicmoe_experts_forward(
     from sonicmoe import moe_general_routing_inputs
     from sonicmoe.enums import ActivationType
 
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = top_k_index.shape[1]
     E = self.num_experts
 
@@ -69,6 +69,10 @@ def gemma4_sonicmoe_experts_forward(
     gate_up_weight = gate_up_weight.to(hidden_states.dtype)
     down_weight = down_weight.to(hidden_states.dtype)
 
+    if not torch.cuda.is_available():
+        raise RuntimeError("SonicMoE requires CUDA. No CUDA device available.")
+    cuda_stream = torch.cuda.current_stream().cuda_stream
+
     output, _ = moe_general_routing_inputs(
         hidden_states,
         flat_scores,
@@ -79,7 +83,7 @@ def gemma4_sonicmoe_experts_forward(
         down_weight,
         None,  # b2 (no down bias)
         E,
-        torch.cuda.current_stream().cuda_stream,
+        cuda_stream,
         ActivationType.GEGLU,
         False,  # is_inference_mode
     )

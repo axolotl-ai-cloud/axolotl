@@ -517,12 +517,24 @@ class AxolotlTrainer(
         )
 
         # Perform a single forward pass
+        forward_kwargs = {
+            "input_ids": concat_inputs["input_ids"],
+            "attention_mask": concat_inputs["attention_mask"],
+            "labels": concat_inputs["labels"],
+        }
+        # Gemma4 requires mm_token_type_ids during training (even for text-only)
+        if (
+            getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+            and "mm_token_type_ids" not in concat_inputs
+        ):
+            forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
+                concat_inputs["input_ids"]
+            )
+        elif "mm_token_type_ids" in concat_inputs:
+            forward_kwargs["mm_token_type_ids"] = concat_inputs["mm_token_type_ids"]
+
         outputs = model(
-            **{
-                "input_ids": concat_inputs["input_ids"],
-                "attention_mask": concat_inputs["attention_mask"],
-                "labels": concat_inputs["labels"],
-            },
+            **forward_kwargs,
             output_hidden_states=True,
         )
 

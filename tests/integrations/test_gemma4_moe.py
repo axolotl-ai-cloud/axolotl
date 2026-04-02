@@ -510,7 +510,7 @@ class TestGemma4SonicMoE:
         hidden_states = torch.randn(T, H)
 
         # Reference
-        ref_probs, ref_weights, ref_indices = router(hidden_states)
+        _ref_probs, ref_weights, ref_indices = router(hidden_states)
 
         # Routing function
         flat_scores, flat_token_idx, flat_expert_idx, router_logits = routing_fn(
@@ -1043,12 +1043,10 @@ class TestScatterMoEExpertsInterfaceMultiModel:
         ref_output = eager(hidden_states, top_k_index, top_k_weights)
         scatter_output = scatter(hidden_states, top_k_index, top_k_weights)
 
-        (
-            torch.testing.assert_close(
-                scatter_output,
-                ref_output,
-                atol=1e-2,
-                rtol=1e-2,
-            ),
-            f"{cls_name}: ScatterMoE output doesn't match eager",
+        torch.testing.assert_close(
+            scatter_output,
+            ref_output,
+            atol=1e-2,
+            rtol=1e-2,
+            msg=f"{cls_name}: ScatterMoE output doesn't match eager",
         )

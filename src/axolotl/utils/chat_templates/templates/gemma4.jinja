@@ -138,16 +138,19 @@
         {{- argument -}}
     {%- endif -%}
 {%- endmacro -%}
+{#- Removes '<|channel>...<channel|>' thinking blocks from model output.
+    Splits on the end token '<channel|>', then checks each part for the start
+    token '<|channel>' and keeps only the text before it. -#}
 {%- macro strip_thinking(text) -%}
-    {%- set ns = namespace(result='') -%}
+    {%- set ns = namespace(cleaned='') -%}
     {%- for part in text.split('<channel|>') -%}
         {%- if '<|channel>' in part -%}
-            {%- set ns.result = ns.result + part.split('<|channel>')[0] -%}
+            {%- set ns.cleaned = ns.cleaned + part.split('<|channel>')[0] -%}
         {%- else -%}
-            {%- set ns.result = ns.result + part -%}
+            {%- set ns.cleaned = ns.cleaned + part -%}
         {%- endif -%}
     {%- endfor -%}
-    {{- ns.result | trim -}}
+    {{- ns.cleaned | trim -}}
 {%- endmacro -%}
 
 {%- set ns = namespace(prev_message_type=None) -%}
@@ -182,6 +185,8 @@
 
 {#- Loop through messages -#}
 {%- for message in loop_messages -%}
+    {#- Reset so only special message types (tool_call, image, etc.) influence
+        the generation prompt formatting below. Plain text leaves it as None. -#}
     {%- set ns.prev_message_type = None -%}
     {%- set role = 'model' if message['role'] == 'assistant' else message['role'] -%}
         {{- '<|turn>' + role + '\n' }}
