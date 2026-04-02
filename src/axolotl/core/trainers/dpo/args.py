@@ -2,8 +2,7 @@
 Axolotl specific DPO args
 """
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 from trl import DPOConfig
 
@@ -15,6 +14,3 @@ class AxolotlDPOConfig(AxolotlTrainingMixins, DPOConfig):
     """
     DPO config for DPO training
     """
-
-    dpo_norm_loss: bool | None = False
-    rpo_alpha: Optional[float] = field(default=None)

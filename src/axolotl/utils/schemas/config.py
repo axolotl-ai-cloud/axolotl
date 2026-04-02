@@ -1,5 +1,6 @@
 """Module with Pydantic models for configuration."""
 
+import re
 from typing import Annotated, Any, Literal
 
 from accelerate.utils import is_fp8_available
@@ -294,7 +295,12 @@ class AxolotlInputConfig(
         },
     )
     dpo_label_smoothing: float | None = None
-    dpo_norm_loss: bool | None = None
+    precompute_ref_log_probs: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Precompute reference model log probabilities for DPO"
+        },
+    )
 
     dpo_use_liger_kernel: bool | None = Field(
         default=None,
@@ -1111,12 +1117,6 @@ class AxolotlInputConfig(
             "description": "Parameter controlling the relative ratio loss weight in the ORPO loss. Passed to `beta` in `ORPOConfig` due to trl mapping."
         },
     )
-    rpo_alpha: float | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Weighting of NLL term in loss from RPO paper"
-        },
-    )
     simpo_gamma: float | None = Field(
         default=None,
         json_schema_extra={"description": "Target reward margin for the SimPO loss"},
@@ -1339,6 +1339,39 @@ class AxolotlInputConfig(
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_save_strategy_best_requires_metric(cls, data):
+        if data.get("save_strategy") == "best" and not data.get(
+            "metric_for_best_model"
+        ):
+            raise ValueError(
+                "save_strategy: 'best' requires metric_for_best_model to be set. "
+                "Please specify the metric to use, e.g. metric_for_best_model: eval_loss"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_lora_target_modules_regex(cls, data):
+        lora_target_modules = data.get("lora_target_modules")
+        if not isinstance(lora_target_modules, list):
+            return data
+        invalid = []
+        for pattern in lora_target_modules:
+            if not isinstance(pattern, str):
+                continue
+            try:
+                re.compile(pattern)
+            except re.error:
+                invalid.append(pattern)
+        if invalid:
+            raise ValueError(
+                f"lora_target_modules contains invalid regex pattern(s): {invalid}. "
+                "Please provide valid Python regex patterns or plain module name strings."
+            )
+        return data
+
 
 class AxolotlConfigWCapabilities(AxolotlInputConfig):
     """Wrapper to valdiate GPU capabilities with the configured options"""
@@ -1359,8 +1392,8 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 and not self.is_preprocess
                 and (self.bf16 is True or self.bfloat16 is True)
             ):
-                raise ValueError(
-                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above."
+                LOG.warning(
+                    "bf16 requested, but AMP is not supported on this GPU. Requires Ampere series or above. Training will fail, but other operations (such as merging) are still functional."
                 )
         return self
 

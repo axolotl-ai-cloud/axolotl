@@ -12,7 +12,7 @@ packaging==26.0
 huggingface_hub>=1.1.7
 peft>=0.18.1
 tokenizers>=0.22.1
-transformers==5.3.0
+transformers==5.4.0
 accelerate==1.13.0
 datasets==4.5.0
 deepspeed>=0.18.6,<0.19.0
@@ -61,7 +61,7 @@ zstandard==0.22.0
 fastcore
 
 # lm eval harness
-lm_eval==0.4.7
+lm_eval==0.4.11
 langdetect==1.0.9
 immutabledict==4.2.0
 antlr4-python3-runtime==4.13.2

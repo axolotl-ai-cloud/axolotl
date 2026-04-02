@@ -127,9 +127,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
-        if self.cfg.rpo_alpha is not None:
-            training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
-
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
@@ -242,10 +239,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT)
         ):
             trainer_kwargs["peft_config"] = self.peft_config
-        if self.cfg.precompute_ref_log_probs is not None:
-            trainer_kwargs["precompute_ref_log_probs"] = (
-                self.cfg.precompute_ref_log_probs
-            )
 
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 

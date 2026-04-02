@@ -21,7 +21,7 @@ class DPOStrategy:
     def set_training_args_kwargs(cls, cfg):
         training_args_kwargs = {}
         if cfg.rl is RLType.IPO:
-            training_args_kwargs["loss_type"] = "ipo"
+            training_args_kwargs["loss_type"] = ["ipo"]
         # Label smoothing is not compatible with IPO
         if cfg.rl is RLType.DPO and cfg.dpo_label_smoothing:
             training_args_kwargs["label_smoothing"] = cfg.dpo_label_smoothing
@@ -30,8 +30,10 @@ class DPOStrategy:
             training_args_kwargs["use_weighting"] = cfg.dpo_use_weighting
         if cfg.dpo_padding_free is not None:
             training_args_kwargs["padding_free"] = cfg.dpo_padding_free
-        if cfg.dpo_norm_loss is not None:
-            training_args_kwargs["dpo_norm_loss"] = cfg.dpo_norm_loss
         if cfg.dpo_use_liger_kernel is not None:
             training_args_kwargs["use_liger_kernel"] = cfg.dpo_use_liger_kernel
+        if cfg.precompute_ref_log_probs is not None:
+            training_args_kwargs["precompute_ref_log_probs"] = (
+                cfg.precompute_ref_log_probs
+            )
         return training_args_kwargs

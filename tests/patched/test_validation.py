@@ -726,8 +726,12 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with pytest.raises(ValueError, match=r".*AMP is not supported on this GPU*"):
+        with self._caplog.at_level("WARNING"):
             AxolotlConfigWCapabilities(**cfg.to_dict())
+            assert any(
+                "AMP is not supported" in record.message
+                for record in self._caplog.records
+            )
 
         cfg = (
             DictDefault(
