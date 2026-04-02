@@ -5,7 +5,7 @@ Tests for axolotl.utils.quantization
 import pytest
 import torch
 from torch import nn
-from torchao.quantization import LinearActivationQuantizedTensor
+from torchao.quantization import IntxUnpackedToInt8Tensor
 from torchao.quantization.qat.embedding import FakeQuantizedEmbedding
 from torchao.quantization.qat.linear import FakeQuantizedLinear
 from torchao.quantization.quant_api import (
@@ -90,7 +90,7 @@ ptq_test_cases = [
         8,
         False,
         None,
-        LinearActivationQuantizedTensor,
+        IntxUnpackedToInt8Tensor,
     ),
     # (
     #     TorchAOQuantDType.int4,
