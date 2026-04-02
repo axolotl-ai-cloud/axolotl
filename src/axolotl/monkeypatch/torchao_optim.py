@@ -3,17 +3,19 @@ Patch for torchao optim subclasses that crash under torch.compile.
 
 torchao 0.17.0 PR #3934 added an "appearance dtype" to OptimState{4,8}bit and
 OptimStateFp8, allowing them to report as e.g. bf16 while internally storing
-quantized codes.  Two issues:
+quantized codes.  Three issues:
 
-1. aten._to_copy doesn't clone internal tensors, so same-device dtype changes
-   (e.g. .float()) create an accidental view relationship.  torch.compile's
-   fake-tensor metadata check then fails because the view's base dtype doesn't
-   match (AssertionError: torch.bfloat16 != torch.float32).
+1. aten.view.default doesn't propagate the appearance dtype, so views (e.g. from
+   DTensor.from_local()) revert to float32 while the base is bf16.  torch.compile's
+   fake-tensor metadata check then fails (AssertionError: torch.bfloat16 != torch.float32).
 
-2. aten.view.dtype is unimplemented, so if the view path IS taken, it crashes
+2. aten._to_copy doesn't clone internal tensors, so same-device dtype changes
+   (e.g. .float()) create an accidental view relationship with the same issue.
+
+3. aten.view.dtype is unimplemented, so if the dtype-view path IS taken, it crashes
    with NotImplementedError.
 
-Fix: clone in _to_copy (primary) and register view.dtype (safety net).
+Fix: propagate dtype in view.default (primary), clone in _to_copy, register view.dtype.
 
 Upstream issue: https://github.com/pytorch/ao/issues/XXXX
 """
@@ -40,6 +42,14 @@ def patch_torchao_optim_state_8bit():
         from torchao.optim.subclass_8bit import OptimState8bit
     except ImportError:
         return
+
+    # Patch view.default to propagate appearance dtype
+    @OptimState8bit.implements(aten.view.default)
+    def _(func, types, args, kwargs):
+        x, shape = args
+        return OptimState8bit(
+            x.codes.view(shape), x.scale, x.qmap, x.signed, dtype=x.dtype
+        )
 
     # Patch _to_copy to clone internal tensors (breaks accidental view)
     @OptimState8bit.implements(aten._to_copy.default)
@@ -70,6 +80,21 @@ def patch_torchao_optim_state_8bit():
         OptimState4bit = None
 
     if OptimState4bit is not None:
+
+        @OptimState4bit.implements(aten.view.default)
+        def _(func, types, args, kwargs):
+            x, shape = args
+            if tuple(x.shape) == tuple(shape):
+                return OptimState4bit(
+                    x.codes, x.scale, x.qmap, x.signed, x._shape, dtype=x.dtype
+                )
+            if len(shape) == 1 and shape[0] == -1:
+                return OptimState4bit(
+                    x.codes, x.scale, x.qmap, x.signed, (x.numel(),), dtype=x.dtype
+                )
+            raise ValueError(
+                f"{x.__class__.__name__} only supports .view() with same shape or shape=[-1]"
+            )
 
         @OptimState4bit.implements(aten._to_copy.default)
         def _(func, types, args, kwargs):
@@ -102,6 +127,11 @@ def patch_torchao_optim_state_8bit():
         OptimStateFp8 = None
 
     if OptimStateFp8 is not None:
+
+        @OptimStateFp8.implements(aten.view.default)
+        def _(func, types, args, kwargs):
+            x, shape = args
+            return OptimStateFp8(x.codes.view(shape), x.scale, dtype=x.dtype)
 
         @OptimStateFp8.implements(aten._to_copy.default)
         def _(func, types, args, kwargs):
