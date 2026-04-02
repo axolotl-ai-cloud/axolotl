@@ -212,9 +212,40 @@ class TestWeightConverterRegistration:
                 )
                 break
 
-    def test_register_unsupported_model_type_warns(self):
-        # A model type with no conversion mapping should warn but not raise
-        register_sonicmoe_weight_converter("nonexistent_model_type_xyz")
+    def test_register_adds_same_key_converter(self):
+        from transformers.conversion_mapping import get_checkpoint_conversion_mapping
+
+        register_sonicmoe_weight_converter("qwen3_moe")
+
+        modified = get_checkpoint_conversion_mapping("qwen3_moe")
+        # Should have a same-key converter for already-fused checkpoints
+        same_key = [
+            c
+            for c in modified
+            if hasattr(c, "source_patterns")
+            and c.source_patterns == ["mlp.experts.gate_up_proj"]
+            and c.target_patterns == ["mlp.experts.gate_up_proj"]
+        ]
+        assert len(same_key) == 1
+        assert isinstance(same_key[0].operations[0], ConcatenatedToInterleaved)
+
+    def test_register_creates_mapping_when_none(self):
+        from transformers.conversion_mapping import get_checkpoint_conversion_mapping
+
+        # qwen3_5_moe has no conversion mapping in transformers
+        register_sonicmoe_weight_converter("qwen3_5_moe")
+
+        mapping = get_checkpoint_conversion_mapping("qwen3_5_moe")
+        assert mapping is not None
+        same_key = [
+            c
+            for c in mapping
+            if hasattr(c, "source_patterns")
+            and c.source_patterns == ["mlp.experts.gate_up_proj"]
+            and c.target_patterns == ["mlp.experts.gate_up_proj"]
+        ]
+        assert len(same_key) == 1
+        assert isinstance(same_key[0].operations[0], ConcatenatedToInterleaved)
 
 
 def _make_qwen_moe_block(T=8, H=16, E=4, K=2):

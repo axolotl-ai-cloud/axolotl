@@ -42,6 +42,7 @@ def get_model_moe_config(model_type: str):
         "qwen2_moe",
         "qwen3_moe",
         "qwen3_5_moe",
+        "qwen3_5_moe_text",
         "qwen3_next",
         "qwen3_vl_moe",
         "qwen3_omni_moe",

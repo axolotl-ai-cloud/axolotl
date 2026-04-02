@@ -129,15 +129,41 @@ class InterleavedToConcatenated(ConversionOps):
         return ConcatenatedToInterleaved(self.dim)
 
 
+def _make_same_key_interleave_converter():
+    """Create a WeightConverter that interleaves an already-fused gate_up_proj."""
+    from transformers.core_model_loading import WeightConverter
+
+    return WeightConverter(
+        source_patterns="mlp.experts.gate_up_proj",
+        target_patterns="mlp.experts.gate_up_proj",
+        operations=[ConcatenatedToInterleaved(dim=1)],
+    )
+
+
+def _has_same_key_interleave(mapping) -> bool:
+    """Check whether the mapping already has a same-key gate_up_proj interleave converter."""
+    for conv in mapping:
+        if (
+            hasattr(conv, "source_patterns")
+            and conv.source_patterns == ["mlp.experts.gate_up_proj"]
+            and conv.target_patterns == ["mlp.experts.gate_up_proj"]
+            and hasattr(conv, "operations")
+            and any(isinstance(op, ConcatenatedToInterleaved) for op in conv.operations)
+        ):
+            return True
+    return False
+
+
 def register_sonicmoe_weight_converter(model_type: str):
-    """Override the conversion mapping to add interleave step for gate_up_proj.
+    """Register weight converters to interleave gate_up_proj for SonicMoE.
 
-    Appends a ConcatenatedToInterleaved operation to the existing gate_up_proj
-    converter chain. For example, qwen3_moe's chain becomes:
-        MergeModulelist(dim=0) -> Concatenate(dim=1) -> ConcatenatedToInterleaved(dim=1)
+    Handles two checkpoint formats:
+    1. Separate per-expert weights (e.g. qwen3_moe): appends interleave to the
+       existing merge chain (MergeModulelist -> Concatenate -> Interleave).
+    2. Already-fused gate_up_proj (e.g. qwen3_5_moe_text): adds a same-key
+       converter (gate_up_proj -> gate_up_proj with Interleave).
 
-    The reverse is auto-generated for saving:
-        InterleavedToConcatenated(dim=1) -> Chunk(dim=1) -> SplitModulelist(dim=0)
+    The loader matches whichever source pattern exists in the checkpoint.
     """
     from transformers.conversion_mapping import (
         get_checkpoint_conversion_mapping,
@@ -145,37 +171,32 @@ def register_sonicmoe_weight_converter(model_type: str):
     )
 
     existing = get_checkpoint_conversion_mapping(model_type)
+
     if existing is None:
-        LOG.warning(
-            f"No conversion mapping found for model type '{model_type}'. "
-            "SonicMoE weight interleaving will not be applied during checkpoint loading."
-        )
+        # No mapping at all — create one with just the same-key converter
+        mapping = [_make_same_key_interleave_converter()]
+        register_checkpoint_conversion_mapping(model_type, mapping)
+        LOG.info(f"Registered SonicMoE weight converter for model type '{model_type}'")
         return
 
-    # Find the gate_up_proj converter and append ConcatenatedToInterleaved
-    patched = False
+    # Append interleave to any existing many-to-one merge chain
     for converter in existing:
         if hasattr(converter, "operations") and any(
             "gate_up_proj" in pat for pat in converter.target_patterns
         ):
-            # Guard against double registration (e.g. plugin reloaded)
-            if any(
+            has_separate_sources = any(
+                "gate_proj" in pat or "up_proj" in pat
+                for pat in converter.source_patterns
+            )
+            if has_separate_sources and not any(
                 isinstance(op, ConcatenatedToInterleaved) for op in converter.operations
             ):
-                LOG.info(
-                    f"SonicMoE weight converter already registered for '{model_type}'"
-                )
-                return
-            converter.operations.append(ConcatenatedToInterleaved(dim=1))
-            patched = True
+                converter.operations.append(ConcatenatedToInterleaved(dim=1))
             break
 
-    if not patched:
-        LOG.warning(
-            f"Could not find gate_up_proj converter for model type '{model_type}'. "
-            "SonicMoE weight interleaving will not be applied during checkpoint loading."
-        )
-        return
+    # Also add a same-key converter for already-fused checkpoints
+    if not _has_same_key_interleave(existing):
+        existing.append(_make_same_key_interleave_converter())
 
     register_checkpoint_conversion_mapping(model_type, existing, overwrite=True)
     LOG.info(f"Registered SonicMoE weight converter for model type '{model_type}'")
