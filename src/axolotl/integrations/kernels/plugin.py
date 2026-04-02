@@ -90,6 +90,7 @@ class KernelsPlugin(BasePlugin):
             patch_sonicmoe(
                 moe_model_type,
                 torch_compile=bool(getattr(cfg, "torch_compile", False)),
+                base_model_type=cfg.model_config_type,
             )
 
     def _register_kernels(self):

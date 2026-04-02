@@ -62,16 +62,37 @@ def _get_expert_weights(experts_module):
     return gate_up.permute(1, 2, 0), down.permute(1, 2, 0)
 
 
-def patch_sonicmoe(model_type: str, torch_compile: bool = False):
-    """Main entry point: patch SparseMoeBlock for SonicMoE support.
+def _fix_qwen3_5_moe_text_weight_renaming(model_type: str, base_model_type: str):
+    """Strip qwen3_5_moe_text WeightRenaming in VLM mode to preserve custom loaders."""
+    if model_type != "qwen3_5_moe_text" or base_model_type == "qwen3_5_moe_text":
+        return
 
-    Args:
-        model_type: The HuggingFace model type (e.g. "qwen3_moe").
-        torch_compile: If True, wrap routing functions with torch.compile
-            for kernel fusion (fuses softmax+topk+renorm into fewer launches).
-    """
+    try:
+        from transformers.conversion_mapping import (
+            get_checkpoint_conversion_mapping,
+            register_checkpoint_conversion_mapping,
+        )
+        from transformers.core_model_loading import WeightRenaming
+    except ImportError:
+        return
+
+    text_mapping = get_checkpoint_conversion_mapping(model_type)
+    if text_mapping and isinstance(text_mapping[0], WeightRenaming):
+        text_mapping.pop(0)
+        register_checkpoint_conversion_mapping(model_type, text_mapping, overwrite=True)
+        LOG.info("Stripped qwen3_5_moe_text WeightRenaming for VLM mode")
+
+
+def patch_sonicmoe(
+    model_type: str,
+    torch_compile: bool = False,
+    base_model_type: str | None = None,
+):
+    """Patch SparseMoeBlock for SonicMoE support."""
     from .routing import get_model_moe_config
     from .weight_converter import register_sonicmoe_weight_converter
+
+    _fix_qwen3_5_moe_text_weight_renaming(model_type, base_model_type or model_type)
 
     routing_fn, activation, router_attr = get_model_moe_config(model_type)
 
