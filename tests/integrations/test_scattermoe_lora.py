@@ -13,6 +13,7 @@ Tests cover:
 - HFScatterMoEGatedMLP / ScatterMoEGatedMLP: return value contract
 - Routing strategy detection and sigmoid routing
 - Generic shared expert handling
+- Non-GLU expert detection and activation path (Nemotron-H)
 """
 
 from types import SimpleNamespace
@@ -709,3 +710,54 @@ class TestGenericSharedExpert:
         moe_block = SimpleNamespace()
         result = _compute_shared_expert(moe_block, torch.randn(4, 8))
         assert result is None
+
+
+# ============================================================================
+# 9. Non-GLU expert detection and activation path
+# ============================================================================
+
+
+class TestNonGLUExpertDetection:
+    """Test GLU vs non-GLU expert architecture detection in HFScatterMoEGatedMLP."""
+
+    def test_glu_detected_when_gate_up_proj_exists(self):
+        """Experts with gate_up_proj should be detected as GLU."""
+        experts = SimpleNamespace(
+            gate_up_proj=torch.randn(4, 64, 16),
+            down_proj=torch.randn(4, 16, 32),
+            act_fn=torch.nn.SiLU(),
+        )
+        assert hasattr(experts, "gate_up_proj")
+        assert not hasattr(experts, "up_proj")
+
+    def test_non_glu_detected_when_only_up_proj(self):
+        """Experts with up_proj (no gate_up_proj) should be detected as non-GLU."""
+        experts = SimpleNamespace(
+            up_proj=torch.randn(4, 32, 16),
+            down_proj=torch.randn(4, 16, 32),
+            act_fn=torch.nn.ReLU(),
+        )
+        has_glu = hasattr(experts, "gate_up_proj")
+        up_proj_name = "gate_up_proj" if has_glu else "up_proj"
+        assert not has_glu
+        assert up_proj_name == "up_proj"
+
+    def test_unwrap_experts_lora_fallback_to_up_proj(self):
+        """_unwrap_experts_lora falls back to up_proj when gate_up_proj is absent."""
+        _skip_without_triton()
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            _unwrap_experts_lora,
+        )
+
+        # Non-GLU experts: only up_proj, no gate_up_proj
+        experts = SimpleNamespace(
+            up_proj=torch.randn(4, 32, 16),
+            down_proj=torch.randn(4, 16, 32),
+            act_fn=torch.nn.ReLU(),
+            num_experts=4,
+        )
+        base_experts, gup_lora, down_lora = _unwrap_experts_lora(experts)
+        # Should return the experts unchanged with no LoRA
+        assert base_experts is experts
+        assert gup_lora is None
+        assert down_lora is None

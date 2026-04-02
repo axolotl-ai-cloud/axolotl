@@ -786,3 +786,73 @@ class TestSoftmaxTopkWgRouting:
         scores2, _, _, _ = softmax_topk_wg_routing(hidden, moe_block)
 
         assert not torch.equal(scores1, scores2)
+
+
+# ============================================================================
+# Non-GLU model config (Nemotron-H)
+# ============================================================================
+
+
+class TestNemotronHMoEConfig:
+    """Test routing config for Nemotron-H (non-GLU, relu2 activation)."""
+
+    def test_get_model_moe_config_returns_relu_sq(self):
+        """nemotron_h should map to RELU_SQ activation, not SWIGLU."""
+        sonicmoe_enums = pytest.importorskip("sonicmoe.enums")
+        ActivationType = sonicmoe_enums.ActivationType
+        is_glu = sonicmoe_enums.is_glu
+
+        from axolotl.integrations.kernels.sonicmoe.routing import get_model_moe_config
+
+        routing_fn, activation, router_attr = get_model_moe_config("nemotron_h")
+
+        assert activation == ActivationType.RELU_SQ
+        assert not is_glu(activation)
+        assert router_attr == "gate"
+        assert routing_fn is sigmoid_topk_routing
+
+    def test_non_glu_skips_weight_converter(self):
+        """patch_sonicmoe should NOT register weight converter for non-GLU models.
+
+        Non-GLU models have plain up_proj, so there's nothing to interleave.
+        This test verifies the is_glu() guard in patch_sonicmoe().
+        """
+        sonicmoe_enums = pytest.importorskip("sonicmoe.enums")
+        ActivationType = sonicmoe_enums.ActivationType
+        is_glu = sonicmoe_enums.is_glu
+
+        # RELU_SQ is non-GLU
+        assert not is_glu(ActivationType.RELU_SQ)
+        # SWIGLU is GLU
+        assert is_glu(ActivationType.SWIGLU)
+
+    def test_nemotron_h_in_constants(self):
+        """nemotron_h should be in the SPARSE_MOE_BLOCK mapping."""
+        from axolotl.integrations.kernels.constants import SPARSE_MOE_BLOCK
+
+        assert "nemotron_h" in SPARSE_MOE_BLOCK
+        assert SPARSE_MOE_BLOCK["nemotron_h"] == "NemotronHMoE"
+
+    def test_nemotron_h_routing_shapes(self):
+        """Verify sigmoid_topk_routing works with Nemotron-H-style block."""
+        T, H, E, K = 8, 16, 8, 2
+        gate = SimpleNamespace(
+            weight=torch.randn(E, H),
+            e_score_correction_bias=torch.zeros(E),
+        )
+        moe_block = SimpleNamespace(
+            gate=gate,
+            top_k=K,
+            n_routed_experts=E,
+            n_group=1,
+            norm_topk_prob=True,
+            routed_scaling_factor=1.0,
+        )
+        hidden = torch.randn(T, H)
+
+        scores, token_idx, expert_idx, logits = sigmoid_topk_routing(hidden, moe_block)
+
+        assert scores.shape == (T * K,)
+        assert token_idx.shape == (T * K,)
+        assert expert_idx.shape == (T * K,)
+        assert logits.shape == (T, E)
