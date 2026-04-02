@@ -49,6 +49,11 @@ class ParallelLinear(torch.autograd.Function):
         grouped_in: bool = False,
         grouped_out: bool = False,
     ):
+        # Cast weights to match input dtype (e.g. 8-bit LoRA)
+        if expert_weights.dtype != x.dtype:
+            expert_weights = expert_weights.to(x.dtype)
+        if expert_biases is not None and expert_biases.dtype != x.dtype:
+            expert_biases = expert_biases.to(x.dtype)
         with torch.device(x.device):
             output = kernels.ops.scatter2scatter(
                 X=x,

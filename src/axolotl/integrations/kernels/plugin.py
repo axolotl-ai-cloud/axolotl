@@ -84,12 +84,13 @@ class KernelsPlugin(BasePlugin):
 
             _check_sonicmoe_gpu_compat()
 
-            from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
+            from axolotl.integrations.kernels.libs.sonicmoe import patch_sonicmoe
 
             LOG.info(f"Applying SonicMoE patches for model type: {moe_model_type}")
             patch_sonicmoe(
                 moe_model_type,
                 torch_compile=bool(getattr(cfg, "torch_compile", False)),
+                base_model_type=cfg.model_config_type,
             )
 
     def _register_kernels(self):

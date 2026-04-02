@@ -28,19 +28,71 @@ import torch.nn.functional as F
 from axolotl.integrations.kernels.constants import resolve_moe_block_classes
 from axolotl.utils.logging import get_logger
 
+from .lora import (
+    has_lora,
+    materialize_expert_lora,
+    unwrap_experts_lora,
+    unwrap_gate_lora,
+)
+
 LOG = get_logger(__name__)
 
 
-def patch_sonicmoe(model_type: str, torch_compile: bool = False):
-    """Main entry point: patch SparseMoeBlock for SonicMoE support.
+def _get_expert_weights(experts_module):
+    """Extract expert weights, applying LoRA materialization if PEFT is active.
 
-    Args:
-        model_type: The HuggingFace model type (e.g. "qwen3_moe").
-        torch_compile: If True, wrap routing functions with torch.compile
-            for kernel fusion (fuses softmax+topk+renorm into fewer launches).
+    Returns:
+        (gate_up_weight, down_weight) in SonicMoE layout [dim, dim, E].
     """
+    if has_lora(experts_module):
+        base_experts, lora_dict = unwrap_experts_lora(experts_module)
+        gate_up = materialize_expert_lora(
+            base_experts.gate_up_proj, lora_dict.get("gate_up_proj")
+        )
+        down = materialize_expert_lora(
+            base_experts.down_proj, lora_dict.get("down_proj")
+        )
+    else:
+        gate_up = experts_module.gate_up_proj
+        down = experts_module.down_proj
+
+    # Permute to SonicMoE layout:
+    #   gate_up: [E, 2*I, H] -> [2*I, H, E]
+    #   down:    [E, H, I]   -> [H, I, E]
+    return gate_up.permute(1, 2, 0), down.permute(1, 2, 0)
+
+
+def _fix_qwen3_5_moe_text_weight_renaming(model_type: str, base_model_type: str):
+    """Strip qwen3_5_moe_text WeightRenaming in VLM mode to preserve custom loaders."""
+    if model_type != "qwen3_5_moe_text" or base_model_type == "qwen3_5_moe_text":
+        return
+
+    try:
+        from transformers.conversion_mapping import (
+            get_checkpoint_conversion_mapping,
+            register_checkpoint_conversion_mapping,
+        )
+        from transformers.core_model_loading import WeightRenaming
+    except ImportError:
+        return
+
+    text_mapping = get_checkpoint_conversion_mapping(model_type)
+    if text_mapping and isinstance(text_mapping[0], WeightRenaming):
+        text_mapping.pop(0)
+        register_checkpoint_conversion_mapping(model_type, text_mapping, overwrite=True)
+        LOG.info("Stripped qwen3_5_moe_text WeightRenaming for VLM mode")
+
+
+def patch_sonicmoe(
+    model_type: str,
+    torch_compile: bool = False,
+    base_model_type: str | None = None,
+):
+    """Patch SparseMoeBlock for SonicMoE support."""
     from .routing import get_model_moe_config
     from .weight_converter import register_sonicmoe_weight_converter
+
+    _fix_qwen3_5_moe_text_weight_renaming(model_type, base_model_type or model_type)
 
     routing_fn, activation, router_attr = get_model_moe_config(model_type)
 
@@ -113,11 +165,10 @@ def _make_general_forward(moe_cls, routing_fn, activation):
             hidden_states_flat, self
         )
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
-        down_weight = self.experts.down_proj.permute(1, 2, 0)
+        # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
+        gate_up_weight, down_weight = _get_expert_weights(self.experts)
+        gate_up_weight = gate_up_weight.to(hidden_states_flat.dtype)
+        down_weight = down_weight.to(hidden_states_flat.dtype)
         E = gate_up_weight.shape[-1]
 
         output, _ = moe_general_routing_inputs(
@@ -161,22 +212,30 @@ def _make_fused_forward(moe_cls, activation, router_attr):
         # Shared expert (computed early, matching original model ordering)
         shared_expert_output = _compute_shared_expert(self, hidden_states_flat)
 
-        router = getattr(self, router_attr)
+        # Unwrap router for attribute access + optional LoRA delta
+        raw_router = getattr(self, router_attr)
+        base_router, router_weight, router_lora_delta = unwrap_gate_lora(raw_router)
+        if router_lora_delta is not None:
+            # Materialize local tensor to avoid DTensor + Tensor add under FSDP
+            if hasattr(router_weight, "to_local"):
+                router_weight = router_weight.to_local()
+            effective_router_weight = router_weight + router_lora_delta
+        else:
+            effective_router_weight = router_weight
 
-        # Permute weights to SonicMoE layout:
-        #   gate_up: [E, 2*I, H] -> [2*I, H, E]
-        #   down:    [E, H, I]   -> [H, I, E]
-        gate_up_weight = self.experts.gate_up_proj.permute(1, 2, 0)
-        down_weight = self.experts.down_proj.permute(1, 2, 0)
+        # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
+        gate_up_weight, down_weight = _get_expert_weights(self.experts)
+        gate_up_weight = gate_up_weight.to(hidden_states_flat.dtype)
+        down_weight = down_weight.to(hidden_states_flat.dtype)
 
         output, _router_logits, _expert_freq = moe_TC_softmax_topk_layer(
             hidden_states_flat,
-            router.weight,
+            effective_router_weight,
             gate_up_weight,
             None,  # b1 (no gate/up bias)
             down_weight,
             None,  # b2 (no down bias)
-            router.top_k,
+            base_router.top_k,
             torch.cuda.current_stream().cuda_stream,
             activation,
             False,  # is_inference_mode
