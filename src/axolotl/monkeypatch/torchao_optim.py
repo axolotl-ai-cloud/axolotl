@@ -1,17 +1,19 @@
 """
-Patch for torchao optim subclasses missing aten.view.dtype dispatch.
+Patch for torchao optim subclasses that crash under torch.compile.
 
 torchao 0.17.0 PR #3934 added an "appearance dtype" to OptimState{4,8}bit and
 OptimStateFp8, allowing them to report as e.g. bf16 while internally storing
-quantized codes.  However, it did not implement aten.view.dtype, which PyTorch's
-dynamo fake-tensor machinery calls (in meta_utils.py) when a tensor subclass view
-has a different dtype than its base.
+quantized codes.  Two issues:
 
-This causes torch.compile'd optimizer steps to crash with:
-  NotImplementedError: OptimState8bit dispatch: ... aten.view.dtype
+1. aten._to_copy doesn't clone internal tensors, so same-device dtype changes
+   (e.g. .float()) create an accidental view relationship.  torch.compile's
+   fake-tensor metadata check then fails because the view's base dtype doesn't
+   match (AssertionError: torch.bfloat16 != torch.float32).
 
-The fix registers the missing op so it just updates the appearance dtype, matching
-the existing aten._to_copy.default behavior.
+2. aten.view.dtype is unimplemented, so if the view path IS taken, it crashes
+   with NotImplementedError.
+
+Fix: clone in _to_copy (primary) and register view.dtype (safety net).
 
 Upstream issue: https://github.com/pytorch/ao/issues/XXXX
 """
@@ -19,60 +21,104 @@ Upstream issue: https://github.com/pytorch/ao/issues/XXXX
 import logging
 
 import torch
+from torch.utils._python_dispatch import return_and_correct_aliasing
 
 logger = logging.getLogger(__name__)
 
 aten = torch.ops.aten
 
 
-def _needs_patch(cls):
+def _needs_view_dtype_patch(cls):
     """Check if a subclass is missing aten.view.dtype."""
     op_table = getattr(cls, "_ATEN_OP_TABLE", {}).get(cls, {})
     return aten.view.dtype not in op_table
 
 
 def patch_torchao_optim_state_8bit():
-    """Register aten.view.dtype for torchao optim subclasses if missing."""
+    """Patch torchao optim subclasses for torch.compile compatibility."""
     try:
         from torchao.optim.subclass_8bit import OptimState8bit
     except ImportError:
         return
 
-    if _needs_patch(OptimState8bit):
+    # Patch _to_copy to clone internal tensors (breaks accidental view)
+    @OptimState8bit.implements(aten._to_copy.default)
+    def _(func, types, args, kwargs):
+        dtype = kwargs.get("dtype", args[0].dtype)
+        device = kwargs.get("device", None)
+        out = OptimState8bit(
+            args[0].codes.to(device=device).clone(),
+            args[0].scale.to(device=device).clone(),
+            args[0].qmap.to(device=device).clone(),
+            args[0].signed,
+            dtype=dtype,
+        )
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+    if _needs_view_dtype_patch(OptimState8bit):
 
         @OptimState8bit.implements(aten.view.dtype)
         def _(func, types, args, kwargs):
             x, dtype = args
             return OptimState8bit(x.codes, x.scale, x.qmap, x.signed, dtype=dtype)
 
-        logger.debug("Patched OptimState8bit with aten.view.dtype support")
+    logger.debug("Patched OptimState8bit for torch.compile compatibility")
 
     try:
         from torchao.optim.subclass_4bit import OptimState4bit
     except ImportError:
         OptimState4bit = None
 
-    if OptimState4bit is not None and _needs_patch(OptimState4bit):
+    if OptimState4bit is not None:
 
-        @OptimState4bit.implements(aten.view.dtype)
+        @OptimState4bit.implements(aten._to_copy.default)
         def _(func, types, args, kwargs):
-            x, dtype = args
-            return OptimState4bit(
-                x.codes, x.scale, x.qmap, x.signed, x.shape, dtype=dtype
+            dtype = kwargs.get("dtype", args[0].dtype)
+            device = kwargs.get("device", None)
+            out = OptimState4bit(
+                args[0].codes.to(device=device).clone(),
+                args[0].scale.to(device=device).clone(),
+                args[0].qmap.to(device=device).clone(),
+                args[0].signed,
+                args[0].shape,
+                dtype=dtype,
             )
+            return return_and_correct_aliasing(func, args, kwargs, out)
 
-        logger.debug("Patched OptimState4bit with aten.view.dtype support")
+        if _needs_view_dtype_patch(OptimState4bit):
+
+            @OptimState4bit.implements(aten.view.dtype)
+            def _(func, types, args, kwargs):
+                x, dtype = args
+                return OptimState4bit(
+                    x.codes, x.scale, x.qmap, x.signed, x.shape, dtype=dtype
+                )
+
+        logger.debug("Patched OptimState4bit for torch.compile compatibility")
 
     try:
         from torchao.optim.subclass_fp8 import OptimStateFp8
     except ImportError:
         OptimStateFp8 = None
 
-    if OptimStateFp8 is not None and _needs_patch(OptimStateFp8):
+    if OptimStateFp8 is not None:
 
-        @OptimStateFp8.implements(aten.view.dtype)
+        @OptimStateFp8.implements(aten._to_copy.default)
         def _(func, types, args, kwargs):
-            x, dtype = args
-            return OptimStateFp8(x.codes, x.scale, dtype=dtype)
+            dtype = kwargs.get("dtype", args[0].dtype)
+            device = kwargs.get("device", None)
+            out = OptimStateFp8(
+                args[0].codes.to(device=device).clone(),
+                args[0].scale.to(device=device).clone(),
+                dtype=dtype,
+            )
+            return return_and_correct_aliasing(func, args, kwargs, out)
 
-        logger.debug("Patched OptimStateFp8 with aten.view.dtype support")
+        if _needs_view_dtype_patch(OptimStateFp8):
+
+            @OptimStateFp8.implements(aten.view.dtype)
+            def _(func, types, args, kwargs):
+                x, dtype = args
+                return OptimStateFp8(x.codes, x.scale, dtype=dtype)
+
+        logger.debug("Patched OptimStateFp8 for torch.compile compatibility")
