@@ -268,6 +268,7 @@ class TestSonicMoEGateOnlyLoRA:
             out = model(input_ids, labels=input_ids)
             loss = out.loss
             assert not math.isnan(loss.item()), f"NaN loss at step {step}"
+            assert not math.isinf(loss.item()), f"Inf loss at step {step}"
             losses.append(loss.item())
 
             loss.backward()
@@ -305,6 +306,7 @@ class TestSonicMoENoLoRARegression:
             out = model(input_ids, labels=input_ids)
             loss = out.loss
             assert not math.isnan(loss.item()), f"NaN loss at step {step}"
+            assert not math.isinf(loss.item()), f"Inf loss at step {step}"
             losses.append(loss.item())
 
             loss.backward()

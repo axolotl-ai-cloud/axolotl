@@ -216,6 +216,9 @@ def _make_fused_forward(moe_cls, activation, router_attr):
         raw_router = getattr(self, router_attr)
         base_router, router_weight, router_lora_delta = unwrap_gate_lora(raw_router)
         if router_lora_delta is not None:
+            # Materialize local tensor to avoid DTensor + Tensor add under FSDP
+            if hasattr(router_weight, "to_local"):
+                router_weight = router_weight.to_local()
             effective_router_weight = router_weight + router_lora_delta
         else:
             effective_router_weight = router_weight

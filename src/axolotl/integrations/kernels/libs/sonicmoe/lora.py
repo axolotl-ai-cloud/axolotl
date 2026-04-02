@@ -47,7 +47,11 @@ def get_lora_params_from_wrapper(module) -> tuple:
     lora_B_dict = getattr(module, "lora_B", {})
     scaling_dict = getattr(module, "scaling", {})
 
-    if adapter_name not in lora_A_dict:
+    if (
+        adapter_name not in lora_A_dict
+        or adapter_name not in lora_B_dict
+        or adapter_name not in scaling_dict
+    ):
         return None, None, None
 
     lora_A = lora_A_dict[adapter_name].weight

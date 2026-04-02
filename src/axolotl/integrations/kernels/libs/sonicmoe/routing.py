@@ -97,9 +97,12 @@ def softmax_topk_routing(
 
     # Compute router logits and softmax over all experts.
     # Two F.linear calls avoid mixing DTensor (gate_weight) + Tensor (delta) under FSDP.
-    router_logits = F.linear(hidden_states, gate_weight)  # [T, E]
+    # Cast to float32 to match LoRA delta dtype (PEFT computes in fp32).
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
     if gate_lora_delta is not None:
-        router_logits = router_logits + F.linear(hidden_states, gate_lora_delta)
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Select top-k experts per token
@@ -140,9 +143,11 @@ def softmax_group_topk_routing(
     E = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
 
-    router_logits = F.linear(hidden_states, gate_weight)  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
     if gate_lora_delta is not None:
-        router_logits = router_logits + F.linear(hidden_states, gate_lora_delta)
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     scores_for_choice = router_probs

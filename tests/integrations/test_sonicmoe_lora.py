@@ -267,6 +267,7 @@ class TestMoELoRAMaterialize:
 
     def test_no_grad_for_base_weight(self, setup):
         W, A, B, scaling, E, r = setup
+        W.requires_grad_(True)
         W_eff = MoELoRAMaterialize.apply(W, A, B, scaling)
         loss = W_eff.sum()
         loss.backward()
