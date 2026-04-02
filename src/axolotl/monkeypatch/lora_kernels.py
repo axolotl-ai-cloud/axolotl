@@ -75,6 +75,44 @@ QKV_PATCHES = [
     value_states = value_states.view(hidden_shape).transpose(1, 2)
 """.lstrip("\n"),
     ),
+    # Gemma4: norm between proj and transpose, RoPE between norm and transpose,
+    # conditional KV sharing (is_kv_shared_layer), v_proj may be None (attention_k_eq_v).
+    # We only fuse the projection calls; norms, RoPE, and KV sharing stay as-is.
+    (
+        """
+    query_states = self.q_proj(hidden_states).view(hidden_shape)
+    query_states = self.q_norm(query_states)
+    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
+    query_states = query_states.transpose(1, 2)
+
+    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer
+    if self.is_kv_shared_layer and past_key_values is not None:
+        key_states, value_states = past_key_values.shared_layers[self.kv_shared_layer_index]
+        # Device of past layer may be different from current one
+        key_states = key_states.to(query_states.device)
+        value_states = value_states.to(query_states.device)
+    else:
+        key_states = self.k_proj(hidden_states).view(hidden_shape)
+        value_states = self.v_proj(hidden_states).view(hidden_shape) if self.v_proj is not None else key_states
+""".lstrip("\n"),
+        """
+    query_states, key_states, value_states = self.apply_qkv(hidden_states)
+    query_states = query_states.view(hidden_shape)
+    query_states = self.q_norm(query_states)
+    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
+    query_states = query_states.transpose(1, 2)
+
+    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer
+    if self.is_kv_shared_layer and past_key_values is not None:
+        key_states, value_states = past_key_values.shared_layers[self.kv_shared_layer_index]
+        # Device of past layer may be different from current one
+        key_states = key_states.to(query_states.device)
+        value_states = value_states.to(query_states.device)
+    else:
+        key_states = key_states.view(hidden_shape)
+        value_states = value_states.view(hidden_shape) if self.v_proj is not None else key_states
+""".lstrip("\n"),
+    ),
 ]
 
 ORIGINAL_O_CODE = """
@@ -109,6 +147,23 @@ def original_apply_qkv(
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
     value_states = self.v_proj(hidden_states)
+
+    return query_states, key_states, value_states
+
+
+def original_apply_qkv_optional_v(
+    self: nn.Module, hidden_states: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """QKV projection for models where v_proj may be None (e.g. Gemma4 attention_k_eq_v).
+
+    When v_proj is None, key_states are reused as value_states.
+    """
+    query_states = self.q_proj(hidden_states)
+    key_states = self.k_proj(hidden_states)
+    if self.v_proj is not None:
+        value_states = self.v_proj(hidden_states)
+    else:
+        value_states = key_states
 
     return query_states, key_states, value_states
 
@@ -182,6 +237,11 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
         from transformers.models.gemma3.modeling_gemma3 import Gemma3Attention
 
         return Gemma3Attention
+
+    if model_type in ("gemma4", "gemma4_text"):
+        from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
+
+        return Gemma4TextAttention
 
     try:
         # Dynamically import the module and attention class
@@ -410,14 +470,24 @@ def apply_lora_kernel_patches(
         # Add QKV, O fallback implementations to start
         # These will be overwritten later (if some conditions apply)
         for self_attn in find_self_attn_in_layer(layer):
-            self_attn.apply_qkv = types.MethodType(original_apply_qkv, self_attn)
+            # Use v_proj-optional fallback for models where v_proj can be None
+            # (e.g. Gemma4 with attention_k_eq_v=True)
+            if getattr(self_attn, "v_proj", None) is None:
+                self_attn.apply_qkv = types.MethodType(
+                    original_apply_qkv_optional_v, self_attn
+                )
+            else:
+                self_attn.apply_qkv = types.MethodType(original_apply_qkv, self_attn)
             self_attn.apply_o = types.MethodType(original_apply_o, self_attn)
 
             if cfg.lora_qkv_kernel:
                 # Query, key, value patching
+                # Filter out None projections (e.g. Gemma4 v_proj when attention_k_eq_v=True)
+                proj_names = ["q_proj", "k_proj", "v_proj"]
                 layer_modules = [
-                    getattr(self_attn, linear_proj)
-                    for linear_proj in ["q_proj", "k_proj", "v_proj"]
+                    getattr(self_attn, name)
+                    for name in proj_names
+                    if getattr(self_attn, name, None) is not None
                 ]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A") for module in layer_modules

@@ -34,12 +34,14 @@ class KernelsArgs(BaseModel):
     @classmethod
     def check_experts_implementation(cls, data):
         experts_implementation = data.get("experts_implementation")
+        allowed = {"eager", "scattermoe"}
         if experts_implementation is None:
             # transformers may default to batched_mm when unset
             data["experts_implementation"] = "eager"
-        elif experts_implementation != "eager":
+        elif experts_implementation not in allowed:
             LOG.warning(
-                "`experts_implementation` must be set to 'eager' to use this. Automatically setting it to 'eager'."
+                f"`experts_implementation={experts_implementation!r}` is not compatible with "
+                f"custom MoE kernels (allowed: {allowed}). Automatically setting to 'eager'."
             )
             data["experts_implementation"] = "eager"
 

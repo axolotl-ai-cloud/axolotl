@@ -381,6 +381,15 @@ class AxolotlTrainer(
             # Store per-step trainable tokens for throughput calculation
             self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
+        # Gemma4 requires mm_token_type_ids during training (even for text-only).
+        # Inject zeros (= text token type) when not provided by the data collator.
+        if (
+            "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+            and getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
                 model,

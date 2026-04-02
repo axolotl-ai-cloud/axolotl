@@ -7,6 +7,7 @@ Different MoE architectures use different routing strategies:
 - glm_moe_dsa / deepseek_v3 / minimax_m2: sigmoid -> topk (with group-based expert selection)
 - ernie4_5_moe: softmax -> bias correction -> topk -> gather (softmax_bias_topk_routing)
 - hunyuan_v1_moe: softmax -> topk via gate.wg (softmax_topk_wg_routing)
+- gemma4_text: RMSNorm -> scale -> proj -> softmax -> topk -> renorm -> per_expert_scale (gemma4_routing)
 - gpt_oss: topk -> softmax (uses fused moe_TC_softmax_topk_layer, routing_fn=None) [NOT YET SUPPORTED]
 
 Each model type maps to a (routing_fn, activation_type, router_attr) triple.
@@ -66,6 +67,8 @@ def get_model_moe_config(model_type: str):
         return softmax_bias_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in ("hunyuan_v1_moe",):
         return softmax_topk_wg_routing, ActivationType.SWIGLU, "gate"
+    elif model_type in ("gemma4_text",):
+        return gemma4_routing, ActivationType.GEGLU, "router"
     # Fused topk -> softmax path (routing_fn=None):
     # elif model_type in ("gpt_oss",):
     #     # NOTE: gpt_oss has a router bias which moe_TC_softmax_topk_layer
@@ -488,6 +491,76 @@ def softmax_topk_wg_routing(
 
     # Always renormalize (HunYuan V1 has no norm_topk_prob flag)
     top_values = top_values / (top_values.sum(dim=-1, keepdim=True) + 1e-20)
+
+    # Flatten for moe_general_routing_inputs
+    token_indices = (
+        torch.arange(T, device=hidden_states.device, dtype=torch.int32)
+        .unsqueeze(1)
+        .expand(T, K)
+    )
+
+    flat_scores = top_values.to(torch.float32).reshape(-1)  # [T*K]
+    flat_token_idx = token_indices.reshape(-1)  # [T*K]
+    flat_expert_idx = top_indices.to(torch.int32).reshape(-1)  # [T*K]
+
+    return flat_scores, flat_token_idx, flat_expert_idx, router_logits
+
+
+def gemma4_routing(
+    hidden_states: torch.Tensor, moe_block
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Gemma4-style routing: RMSNorm → scale → proj → softmax → topk → renorm → per_expert_scale.
+
+    Gemma4's router (``Gemma4TextRouter``) has a unique structure:
+    1. RMSNorm (without learnable scale) on hidden states
+    2. Multiply by ``scale * hidden_size**-0.5``
+    3. Linear projection to expert scores
+    4. Softmax → topk
+    5. Normalize top-k weights to sum to 1
+    6. Multiply by per-expert learned scales
+
+    The router lives at ``moe_block.router`` (not ``moe_block.gate``).
+    LoRA on the router targets ``router.proj`` (nn.Linear).
+
+    Args:
+        hidden_states: [T, H] flattened token representations
+        moe_block: MoE block module (accesses moe_block.router)
+
+    Returns:
+        router_scores: [T*K] flattened scores (float32)
+        token_indices: [T*K] which token each entry belongs to (int32), sorted ascending
+        expert_indices: [T*K] which expert (int32)
+        router_logits: [T, E] original logits for aux loss
+    """
+    router = moe_block.router
+
+    # Unwrap PEFT LoRA on router.proj (the nn.Linear)
+    base_proj, proj_weight, proj_lora_delta = unwrap_gate_lora(router.proj)
+
+    T, H = hidden_states.shape
+    K = router.top_k if hasattr(router, "top_k") else router.config.top_k_experts
+
+    # Reproduce Gemma4TextRouter.forward:
+    # 1. RMSNorm (no scale) + scale param * hidden_size**-0.5
+    normed = router.norm(hidden_states)
+    scaled = normed * router.scale * router.scalar_root_size
+
+    # 2. Project to expert scores
+    router_logits = F.linear(scaled.float(), proj_weight.float())  # [T, E]
+    if proj_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            scaled.float(), proj_lora_delta.float()
+        )
+
+    # 3. Softmax → topk
+    router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
+    top_values, top_indices = torch.topk(router_probs, K, dim=-1)  # [T, K]
+
+    # 4. Normalize top-k weights
+    top_values = top_values / top_values.sum(dim=-1, keepdim=True)
+
+    # 5. Per-expert scale
+    top_values = top_values * router.per_expert_scale[top_indices]
 
     # Flatten for moe_general_routing_inputs
     token_indices = (
