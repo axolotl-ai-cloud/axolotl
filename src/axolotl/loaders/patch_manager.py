@@ -375,6 +375,17 @@ class PatchManager:
                 # False because the original block forward is not GC-safe.
                 NemotronHPreTrainedModel.supports_gradient_checkpointing = True
 
+        if self.cfg.model_config_type == "falcon_h1":
+            if self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.falcon_h1.modeling import (
+                    patch_falcon_h1_modeling_packing,
+                )
+
+                patch_falcon_h1_modeling_packing()
+                # FalconH1PreTrainedModel already sets supports_gradient_checkpointing=True
+                # (FalconH1DecoderLayer inherits GradientCheckpointingLayer), so no
+                # manual override is needed here.
+
         # Patches requiring CUDA
         if torch.cuda.is_available():
             if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:

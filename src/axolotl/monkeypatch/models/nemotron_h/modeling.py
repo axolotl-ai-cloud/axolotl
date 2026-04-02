@@ -10,27 +10,10 @@ import importlib
 
 import torch
 
+from axolotl.monkeypatch.models.mamba_utils import get_seq_idx  # noqa: F401
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-
-def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
-    """Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.
-
-    Example: position_ids [[0,1,2,3,0,1,2]] → seq_idx [[0,0,0,0,1,1,1]]
-
-    Under context parallelism a rank may receive a chunk that begins mid-sample
-    (position_ids[0] != 0), so the raw cumsum starts at 0 and subtracting 1
-    would yield -1 — an invalid value for the Mamba kernels.  Subtracting the
-    first element of the cumsum instead normalises every chunk to start at 0
-    while still correctly incrementing at every intra-chunk sample boundary.
-
-    Example (CP rank 1, chunk starts mid-sample):
-        position_ids [[3,4,5,0,1,2]] → seq_idx [[0,0,0,1,1,1]]
-    """
-    cumsum = torch.cumsum((position_ids == 0).int(), dim=-1)
-    return (cumsum - cumsum[..., :1]).to(torch.int32)
 
 
 def patch_nemotron_h_modeling_packing():
