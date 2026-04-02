@@ -1,0 +1,1725 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="A decision guide for choosing the right fine-tuning method, adapter, and hardware configuration in Axolotl.">
+
+<title>Which Fine-Tuning Method Should I Use? – Axolotl</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-f418161beb48e0141c760e455f12af2c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-880650c6ad5b2af23899fb63005ac339.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-9KYCVJBNMQ"></script>
+
+<script type="text/javascript">
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
+</script>
+
+
+<link rel="stylesheet" href="../styles.css">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-wide tools-end">
+    <a href="https://twitter.com/axolotl_ai" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter"></i></a>
+    <a href="https://github.com/axolotl-ai-cloud/axolotl/" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://discord.gg/7m9sfhzaf3" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-discord"></i></a>
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/choosing_method.html">Which Fine-Tuning Method Should I Use?</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Getting Started</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quickstart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference and Merging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Model Guides</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kimi Linear</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plano Orchestrator</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiMo</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">InternVL 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLMo 3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trinity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arcee AFM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Ministral3</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral 3 Thinking</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral 3 Vision</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Magistral</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral Thinking</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral Vision</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 3.1/3.2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Voxtral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Devstral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral 7B</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Llama 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Llama 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3 Next</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Apertus</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GPT-OSS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Seed-OSS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Phi</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">SmolVLM 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Granite 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Liquid Foundation Models 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hunyuan</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Jamba</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Orpheus</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Telemetry</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Formats</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pre-training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instruction Tuning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Conversation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stepwise Supervised Format</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template-Free</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Deployments</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Docker</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">EBFT Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vLLM Serving for GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Loading</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization Aware Training (QAT)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optimizations Guide</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Streaming Datasets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mixed Precision Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optimizers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FSDP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Parallelism</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">N-D Parallelism (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MoE Expert Quantization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Training Stability &amp; Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#sec-overview" id="toc-sec-overview" class="nav-link active" data-scroll-target="#sec-overview"><span class="header-section-number">1</span> Overview</a></li>
+  <li><a href="#sec-decision-tree" id="toc-sec-decision-tree" class="nav-link" data-scroll-target="#sec-decision-tree"><span class="header-section-number">2</span> Decision Tree</a>
+  <ul class="collapse">
+  <li><a href="#method-comparison-at-a-glance" id="toc-method-comparison-at-a-glance" class="nav-link" data-scroll-target="#method-comparison-at-a-glance"><span class="header-section-number">2.1</span> Method Comparison at a Glance</a></li>
+  </ul></li>
+  <li><a href="#sec-adapter-selection" id="toc-sec-adapter-selection" class="nav-link" data-scroll-target="#sec-adapter-selection"><span class="header-section-number">3</span> Adapter Selection</a>
+  <ul class="collapse">
+  <li><a href="#qlora" id="toc-qlora" class="nav-link" data-scroll-target="#qlora"><span class="header-section-number">3.1</span> QLoRA</a></li>
+  <li><a href="#lora" id="toc-lora" class="nav-link" data-scroll-target="#lora"><span class="header-section-number">3.2</span> LoRA</a></li>
+  <li><a href="#full-fine-tuning" id="toc-full-fine-tuning" class="nav-link" data-scroll-target="#full-fine-tuning"><span class="header-section-number">3.3</span> Full Fine-Tuning</a></li>
+  <li><a href="#quick-comparison" id="toc-quick-comparison" class="nav-link" data-scroll-target="#quick-comparison"><span class="header-section-number">3.4</span> Quick Comparison</a></li>
+  </ul></li>
+  <li><a href="#sec-hardware-mapping" id="toc-sec-hardware-mapping" class="nav-link" data-scroll-target="#sec-hardware-mapping"><span class="header-section-number">4</span> Hardware Mapping</a>
+  <ul class="collapse">
+  <li><a href="#sft-preference-learning" id="toc-sft-preference-learning" class="nav-link" data-scroll-target="#sft-preference-learning"><span class="header-section-number">4.1</span> SFT / Preference Learning</a></li>
+  <li><a href="#grpo-rl-training" id="toc-grpo-rl-training" class="nav-link" data-scroll-target="#grpo-rl-training"><span class="header-section-number">4.2</span> GRPO (RL Training)</a></li>
+  <li><a href="#multi-gpu-threshold" id="toc-multi-gpu-threshold" class="nav-link" data-scroll-target="#multi-gpu-threshold"><span class="header-section-number">4.3</span> Multi-GPU Threshold</a></li>
+  </ul></li>
+  <li><a href="#sec-quick-links" id="toc-sec-quick-links" class="nav-link" data-scroll-target="#sec-quick-links"><span class="header-section-number">5</span> Quick Links</a>
+  <ul class="collapse">
+  <li><a href="#related-guides" id="toc-related-guides" class="nav-link" data-scroll-target="#related-guides"><span class="header-section-number">5.1</span> Related Guides</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../docs/choosing_method.html">Which Fine-Tuning Method Should I Use?</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Which Fine-Tuning Method Should I Use?</h1>
+</div>
+
+<div>
+  <div class="description">
+    A decision guide for choosing the right fine-tuning method, adapter, and hardware configuration in Axolotl.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="sec-overview" class="level2" data-number="1">
+<h2 data-number="1" class="anchored" data-anchor-id="sec-overview"><span class="header-section-number">1</span> Overview</h2>
+<p>Axolotl supports four broad categories of fine-tuning, each suited to different data types, objectives, and resource constraints.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 22%">
+<col style="width: 36%">
+<col style="width: 41%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>What It Does</th>
+<th>Data You Need</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Supervised Fine-Tuning (SFT)</strong></td>
+<td>Teaches the model to produce specific outputs given inputs</td>
+<td>Input-output pairs (instructions, conversations, completions)</td>
+</tr>
+<tr class="even">
+<td><strong>Preference Learning (DPO/KTO/ORPO)</strong></td>
+<td>Steers the model toward preferred outputs and away from dispreferred ones</td>
+<td>Chosen/rejected response pairs (DPO, ORPO) or binary labels (KTO)</td>
+</tr>
+<tr class="odd">
+<td><strong>Reinforcement Learning (GRPO)</strong></td>
+<td>Optimizes the model against a reward signal through online generation</td>
+<td>A reward function (code or model-based) and a prompt dataset</td>
+</tr>
+<tr class="even">
+<td><strong>Reward Modeling</strong></td>
+<td>Trains a model to score responses, for use as a reward signal in RL</td>
+<td>Preference pairs ranked by quality</td>
+</tr>
+</tbody>
+</table>
+<p>Each method is configured through a YAML file with <code>rl: &lt;method&gt;</code> (or omitted for SFT). All methods support LoRA, QLoRA, and full fine-tuning unless otherwise noted.</p>
+</section>
+<section id="sec-decision-tree" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-decision-tree"><span class="header-section-number">2</span> Decision Tree</h2>
+<p>Use the following flowchart to choose your method. Start at the top and follow the path that matches your situation.</p>
+<pre><code>Do you have a reward function (code-based or model-based)?
+├── YES
+│   └── Use GRPO (rl: grpo)
+│       The model generates its own completions and learns from reward scores.
+│       Best for: math, code, reasoning, tasks with verifiable answers.
+│       See: rlhf.qmd#grpo
+│
+└── NO
+    │
+    Do you have preference pairs (chosen vs. rejected responses)?
+    ├── YES
+    │   │
+    │   Are they paired (same prompt, one chosen, one rejected)?
+    │   ├── YES → Use DPO (rl: dpo)
+    │   │         Direct optimization without a separate reward model.
+    │   │         See: rlhf.qmd#dpo
+    │   │
+    │   └── NO (only binary good/bad labels)
+    │       └── Use KTO (rl: kto)
+    │           Works with unpaired preference data.
+    │           See: rlhf.qmd#kto
+    │
+    └── NO
+        │
+        Do you have input-output examples?
+        ├── YES → Use SFT
+        │         The simplest and most common method.
+        │         See: getting-started.qmd
+        │
+        └── NO
+            └── You need to create training data first.
+                Consider generating preference pairs with an LLM judge,
+                or writing a reward function for GRPO.</code></pre>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong>When in doubt, start with SFT.</strong> It is the most straightforward method and works well for most tasks. You can always move to preference learning or RL later to further refine behavior.</p>
+</div>
+</div>
+<section id="method-comparison-at-a-glance" class="level3" data-number="2.1">
+<h3 data-number="2.1" class="anchored" data-anchor-id="method-comparison-at-a-glance"><span class="header-section-number">2.1</span> Method Comparison at a Glance</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 34%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 18%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Criterion</th>
+<th>SFT</th>
+<th>DPO</th>
+<th>KTO</th>
+<th>GRPO</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Data complexity</td>
+<td>Low (input-output pairs)</td>
+<td>Medium (preference pairs)</td>
+<td>Medium (binary labels)</td>
+<td>Low (prompts + reward code)</td>
+</tr>
+<tr class="even">
+<td>Compute cost</td>
+<td>Low</td>
+<td>Medium</td>
+<td>Medium</td>
+<td>High (requires vLLM server)</td>
+</tr>
+<tr class="odd">
+<td>Learning signal</td>
+<td>Supervised</td>
+<td>Contrastive</td>
+<td>Contrastive</td>
+<td>Online reward</td>
+</tr>
+<tr class="even">
+<td>Online generation</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td>Reward model needed</td>
+<td>No</td>
+<td>No</td>
+<td>No</td>
+<td>No (uses reward functions)</td>
+</tr>
+<tr class="even">
+<td>Best for</td>
+<td>Task adaptation, instruction following</td>
+<td>Safety, style alignment</td>
+<td>Unpaired preference data</td>
+<td>Reasoning, math, code</td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><strong>ORPO</strong> is an alternative to DPO that combines SFT and preference optimization in a single training stage, removing the need for a separate SFT step. Configure with <code>rl: orpo</code>. See <a href="../docs/rlhf.html">rlhf.qmd</a> for details.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="sec-adapter-selection" class="level2" data-number="3">
+<h2 data-number="3" class="anchored" data-anchor-id="sec-adapter-selection"><span class="header-section-number">3</span> Adapter Selection</h2>
+<p>Once you have chosen a method, decide how to apply the parameter updates. The three main options trade off VRAM usage against model quality.</p>
+<section id="qlora" class="level3" data-number="3.1">
+<h3 data-number="3.1" class="anchored" data-anchor-id="qlora"><span class="header-section-number">3.1</span> QLoRA</h3>
+<ul>
+<li><strong>How it works</strong>: The base model is loaded in 4-bit (NF4) quantization. Small low-rank adapter matrices are trained in higher precision on top.</li>
+<li><strong>VRAM savings</strong>: Roughly 4x reduction in model memory compared to full fine-tuning.</li>
+<li><strong>Quality</strong>: Slight degradation due to quantization noise, but often negligible for task-specific fine-tuning.</li>
+<li><strong>When to use</strong>: When your GPU cannot fit the model in full precision, or when you want fast experimentation.</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> qlora</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="lora" class="level3" data-number="3.2">
+<h3 data-number="3.2" class="anchored" data-anchor-id="lora"><span class="header-section-number">3.2</span> LoRA</h3>
+<ul>
+<li><strong>How it works</strong>: The base model is loaded at full precision (or 8-bit). Low-rank adapter matrices are trained alongside.</li>
+<li><strong>VRAM savings</strong>: Roughly 2-3x reduction compared to full fine-tuning (model weights are frozen, only adapters + optimizer states for adapters are stored).</li>
+<li><strong>Quality</strong>: Very close to full fine-tuning for most tasks, especially with higher rank values.</li>
+<li><strong>When to use</strong>: When you have enough VRAM for the base model but not for full optimizer states.</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> lora</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_r</span><span class="kw">:</span><span class="at"> </span><span class="dv">32</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_alpha</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_linear</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For GRPO training, LoRA is strongly recommended. The vLLM server needs to sync weights from the trainer, and LoRA sync (<code>trl.vllm_lora_sync: true</code>) is far more efficient than syncing full merged weights. See <a href="../docs/vllm_serving.html">vLLM Serving</a> for details.</p>
+</div>
+</div>
+</section>
+<section id="full-fine-tuning" class="level3" data-number="3.3">
+<h3 data-number="3.3" class="anchored" data-anchor-id="full-fine-tuning"><span class="header-section-number">3.3</span> Full Fine-Tuning</h3>
+<ul>
+<li><strong>How it works</strong>: All model parameters are updated during training. No adapters.</li>
+<li><strong>VRAM savings</strong>: None. Requires memory for model weights, gradients, and optimizer states (roughly 4x model size in bf16 with AdamW).</li>
+<li><strong>Quality</strong>: Highest potential quality, especially for large distribution shifts.</li>
+<li><strong>When to use</strong>: When you have ample GPU memory or multi-GPU setups, and need maximum performance. Also required for pre-training.</li>
+</ul>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># No adapter or load_in_* lines needed</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="quick-comparison" class="level3" data-number="3.4">
+<h3 data-number="3.4" class="anchored" data-anchor-id="quick-comparison"><span class="header-section-number">3.4</span> Quick Comparison</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>QLoRA</th>
+<th>LoRA</th>
+<th>Full</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Trainable params</td>
+<td>~0.1-1%</td>
+<td>~0.1-1%</td>
+<td>100%</td>
+</tr>
+<tr class="even">
+<td>Model memory</td>
+<td>~25% of full</td>
+<td>~50-100% of full</td>
+<td>100%</td>
+</tr>
+<tr class="odd">
+<td>Optimizer memory</td>
+<td>Tiny (adapters only)</td>
+<td>Tiny (adapters only)</td>
+<td>2x model size (AdamW)</td>
+</tr>
+<tr class="even">
+<td>Training speed</td>
+<td>Slower (dequantization overhead)</td>
+<td>Baseline</td>
+<td>Faster per-step (no adapter overhead)</td>
+</tr>
+<tr class="odd">
+<td>Inference</td>
+<td>Merge or serve with adapter</td>
+<td>Merge or serve with adapter</td>
+<td>Direct</td>
+</tr>
+<tr class="even">
+<td>Multi-GPU required?</td>
+<td>Rarely</td>
+<td>For 13B+ models</td>
+<td>For 7B+ models</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="sec-hardware-mapping" class="level2" data-number="4">
+<h2 data-number="4" class="anchored" data-anchor-id="sec-hardware-mapping"><span class="header-section-number">4</span> Hardware Mapping</h2>
+<p>The tables below provide approximate GPU memory requirements. Actual usage depends on context length, batch size, and optimizer choice.</p>
+<section id="sft-preference-learning" class="level3" data-number="4.1">
+<h3 data-number="4.1" class="anchored" data-anchor-id="sft-preference-learning"><span class="header-section-number">4.1</span> SFT / Preference Learning</h3>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Model Size</th>
+<th>QLoRA (4-bit)</th>
+<th>LoRA (bf16)</th>
+<th>Full (bf16 + AdamW)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1-3B</td>
+<td>6-8 GB</td>
+<td>8-12 GB</td>
+<td>24-32 GB</td>
+</tr>
+<tr class="even">
+<td>7-8B</td>
+<td>10-14 GB</td>
+<td>16-24 GB</td>
+<td>60-80 GB</td>
+</tr>
+<tr class="odd">
+<td>13-14B</td>
+<td>16-20 GB</td>
+<td>28-40 GB</td>
+<td>120+ GB</td>
+</tr>
+<tr class="even">
+<td>30-34B</td>
+<td>24-32 GB</td>
+<td>64-80 GB</td>
+<td>2-4x 80 GB</td>
+</tr>
+<tr class="odd">
+<td>70-72B</td>
+<td>40-48 GB</td>
+<td>2x 80 GB</td>
+<td>4-8x 80 GB</td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use <a href="../docs/gradient_checkpointing.html">gradient checkpointing</a> to reduce activation memory at the cost of ~30% slower training.</p>
+</div>
+</div>
+</section>
+<section id="grpo-rl-training" class="level3" data-number="4.2">
+<h3 data-number="4.2" class="anchored" data-anchor-id="grpo-rl-training"><span class="header-section-number">4.2</span> GRPO (RL Training)</h3>
+<p>GRPO requires additional GPU(s) for the vLLM generation server. Plan for at least two GPUs: one for training, one for vLLM.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 43%">
+<col style="width: 16%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model Size</th>
+<th>Training GPU (LoRA, bf16)</th>
+<th>vLLM GPU</th>
+<th>Total GPUs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0.5-3B</td>
+<td>1x 24 GB</td>
+<td>1x 24 GB</td>
+<td>2x 24 GB</td>
+</tr>
+<tr class="even">
+<td>7-8B</td>
+<td>1x 80 GB</td>
+<td>1x 80 GB</td>
+<td>2x 80 GB</td>
+</tr>
+<tr class="odd">
+<td>13-14B</td>
+<td>1-2x 80 GB</td>
+<td>1-2x 80 GB</td>
+<td>2-4x 80 GB</td>
+</tr>
+<tr class="even">
+<td>30-72B</td>
+<td>2-4x 80 GB (FSDP/DeepSpeed)</td>
+<td>2-4x 80 GB (tensor parallel)</td>
+<td>4-8x 80 GB</td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For single-GPU GRPO, use <code>vllm_mode: colocate</code> with <code>vllm_enable_sleep_mode: true</code>. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode.</p>
+</div>
+</div>
+</section>
+<section id="multi-gpu-threshold" class="level3" data-number="4.3">
+<h3 data-number="4.3" class="anchored" data-anchor-id="multi-gpu-threshold"><span class="header-section-number">4.3</span> Multi-GPU Threshold</h3>
+<p>You need multi-GPU training when:</p>
+<ul>
+<li><strong>Full fine-tuning</strong> of models 7B+ (use FSDP or DeepSpeed ZeRO)</li>
+<li><strong>LoRA</strong> of models 30B+ (or 13B+ with long contexts)</li>
+<li><strong>GRPO</strong> almost always (separate vLLM server), unless using colocate mode</li>
+</ul>
+<p>See <a href="../docs/multi-gpu.html">Multi-GPU Training</a> for FSDP and DeepSpeed configuration.</p>
+</section>
+</section>
+<section id="sec-quick-links" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-quick-links"><span class="header-section-number">5</span> Quick Links</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Config Key</th>
+<th>Documentation</th>
+<th>Example Config</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td><em>(default, no <code>rl:</code> key)</em></td>
+<td><a href="../docs/getting-started.html">Getting Started</a></td>
+<td><code>examples/llama-3/lora-1b.yml</code></td>
+</tr>
+<tr class="even">
+<td>DPO</td>
+<td><code>rl: dpo</code></td>
+<td><a href="../docs/rlhf.html#dpo">RLHF - DPO</a></td>
+<td>See rlhf.qmd</td>
+</tr>
+<tr class="odd">
+<td>KTO</td>
+<td><code>rl: kto</code></td>
+<td><a href="../docs/rlhf.html#kto">RLHF - KTO</a></td>
+<td>See rlhf.qmd</td>
+</tr>
+<tr class="even">
+<td>ORPO</td>
+<td><code>rl: orpo</code></td>
+<td><a href="../docs/rlhf.html#orpo">RLHF - ORPO</a></td>
+<td>See rlhf.qmd</td>
+</tr>
+<tr class="odd">
+<td>GRPO</td>
+<td><code>rl: grpo</code></td>
+<td><a href="../docs/rlhf.html#grpo">RLHF - GRPO</a>, <a href="../docs/vllm_serving.html">vLLM Serving</a></td>
+<td>See rlhf.qmd</td>
+</tr>
+<tr class="even">
+<td>Reward Modeling</td>
+<td><code>rl: reward_trainer</code></td>
+<td><a href="../docs/reward_modelling.html">Reward Modelling</a></td>
+<td>See reward_modelling.qmd</td>
+</tr>
+</tbody>
+</table>
+<section id="related-guides" class="level3" data-number="5.1">
+<h3 data-number="5.1" class="anchored" data-anchor-id="related-guides"><span class="header-section-number">5.1</span> Related Guides</h3>
+<ul>
+<li><a href="../docs/config-reference.html">Configuration Reference</a> – Full list of all config options</li>
+<li><a href="dataset-formats">Dataset Formats</a> – How to structure your training data</li>
+<li><a href="../docs/optimizations.html">Optimizations</a> – Flash attention, gradient checkpointing, mixed precision</li>
+<li><a href="../docs/multi-gpu.html">Multi-GPU Training</a> – FSDP and DeepSpeed setup</li>
+<li><a href="../docs/vllm_serving.html">vLLM Serving</a> – Setting up vLLM for GRPO training</li>
+</ul>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/docs\.axolotl\.ai");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

@@ -180,6 +180,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
@@ -564,6 +570,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">EBFT Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vLLM Serving for GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
@@ -735,6 +759,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Training Stability &amp; Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Debugging</span></a>
   </div>
@@ -869,11 +899,12 @@ feedback. Various methods include, but not limited to:</p>
 <li><a href="#ipo">Identity Preference Optimization (IPO)</a></li>
 <li><a href="#kto">Kahneman-Tversky Optimization (KTO)</a></li>
 <li><a href="#orpo">Odds Ratio Preference Optimization (ORPO)</a></li>
-<li><a href="#grpo">Group Relative Policy Optimization (GRPO)</a></li>
+<li><a href="#grpo">Group Relative Policy Optimization (GRPO)</a> — see also the <a href="../docs/grpo.html">GRPO deep dive</a> for async features, custom rewards, and scaling</li>
 <li><a href="#gdpo">Group Reward-Decoupled Policy Optimization (GDPO)</a></li>
-<li><a href="#ebft">Energy-Based Fine-Tuning (EBFT)</a></li>
+<li><a href="#ebft">Energy-Based Fine-Tuning (EBFT)</a> — see also the <a href="../docs/ebft.html">EBFT guide</a> for detailed mode comparisons and configuration</li>
 <li><a href="#nemo-gym-integration">NeMo Gym Integration</a></li>
 </ul>
+<p>For help choosing between these methods, see <a href="../docs/choosing_method.html">Choosing a Fine-Tuning Method</a>.</p>
 </section>
 <section id="rlhf-using-axolotl" class="level2">
 <h2 class="anchored" data-anchor-id="rlhf-using-axolotl">RLHF using Axolotl</h2>
@@ -1310,7 +1341,7 @@ Tip
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Check out our <a href="https://github.com/axolotl-ai-cloud/grpo_code">GRPO cookbook</a>.</p>
+<p>Check out our <a href="https://github.com/axolotl-ai-cloud/grpo_code">GRPO cookbook</a>. For a comprehensive guide covering async training, custom rewards, importance sampling, and scaling, see the <a href="../docs/grpo.html">GRPO deep dive</a>.</p>
 </div>
 </div>
 <p>In the latest GRPO implementation, <code>vLLM</code> is used to significantly speedup trajectory generation during training. In this example, we’re using 4 GPUs - 2 for training, and 2 for vLLM:</p>
@@ -1683,7 +1714,7 @@ Note
 <span id="cb58-2"><a href="#cb58-2" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0 <span class="ex">axolotl</span> vllm-serve config.yaml</span>
 <span id="cb58-3"><a href="#cb58-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb58-4"><a href="#cb58-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Terminal 2: Train on GPUs 0,1</span></span>
-<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0,1 <span class="ex">accelerate</span> launch <span class="at">--num_processes</span> 2 <span class="at">-m</span> axolotl.cli.train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb58-5"><a href="#cb58-5" aria-hidden="true" tabindex="-1"></a><span class="va">CUDA_VISIBLE_DEVICES</span><span class="op">=</span>0,1 <span class="ex">axolotl</span> train config.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-important callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -1823,6 +1854,19 @@ Tip
 </section>
 <section id="ebft" class="level3">
 <h3 class="anchored" data-anchor-id="ebft">EBFT</h3>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For a detailed guide on EBFT modes, feature extraction, and configuration, see the <a href="../docs/ebft.html">EBFT guide</a>.</p>
+</div>
+</div>
 <p>EBFT (Energy-Based Fine-Tuning) fine-tunes language models by optimizing a <strong>feature-matching loss</strong> rather than relying on external reward functions. A frozen copy of the model extracts embeddings from both generated and ground-truth completions, and the generator is updated via REINFORCE to match the ground-truth feature moments.</p>
 <p>Paper: <a href="https://arxiv.org/abs/2603.12248">“Matching Features, Not Tokens: Energy-Based Fine-Tuning of Language Models”</a> (Jelassi et al., 2026)</p>
 <p><strong>Key advantages:</strong></p>

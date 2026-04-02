@@ -1,0 +1,1838 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.36">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Guide to monitoring, debugging, and stabilizing training runs in axolotl">
+
+<title>Training Stability &amp; Debugging – Axolotl</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../favicon.jpg" rel="icon" type="image/jpeg">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-f418161beb48e0141c760e455f12af2c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-880650c6ad5b2af23899fb63005ac339.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script async="" src="https://www.googletagmanager.com/gtag/js?id=G-9KYCVJBNMQ"></script>
+
+<script type="text/javascript">
+
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
+</script>
+
+
+<link rel="stylesheet" href="../styles.css">
+</head>
+
+<body class="nav-sidebar docked nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo light-content">
+    <img src="../image/axolotl_logo_digital_white.svg" alt="" class="navbar-logo dark-content">
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-wide tools-end">
+    <a href="https://twitter.com/axolotl_ai" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-twitter"></i></a>
+    <a href="https://github.com/axolotl-ai-cloud/axolotl/" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-github"></i></a>
+    <a href="https://discord.gg/7m9sfhzaf3" title="" class="quarto-navigation-tool px-1" aria-label=""><i class="bi bi-discord"></i></a>
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/training_stability.html">Training Stability &amp; Debugging</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Home</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Getting Started</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quickstart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Installation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference and Merging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Model Guides</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth2 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/kimi-linear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Kimi Linear</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/plano.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Plano Orchestrator</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mimo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MiMo</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/internvl3_5.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">InternVL 3.5</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/olmo3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">OLMo 3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/trinity.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Trinity</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/arcee.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Arcee AFM</span></a>
+  </div>
+</li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Ministral3</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3/think.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral 3 Thinking</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral3/vision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral 3 Vision</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Magistral</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth3 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral/think.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral Thinking</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/magistral/vision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Magistral Vision</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/ministral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ministral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mistral-small.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral Small 3.1/3.2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/voxtral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Voxtral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/devstral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Devstral</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/mistral.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mistral 7B</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/llama-4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Llama 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/llama-2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Llama 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/qwen3-next.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3 Next</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/qwen3.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Qwen 3</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/gemma3n.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gemma 3n</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/apertus.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Apertus</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/gpt-oss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GPT-OSS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/seed-oss.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Seed-OSS</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/phi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Phi</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/smolvlm2.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">SmolVLM 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/granite4.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Granite 4</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/LiquidAI.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Liquid Foundation Models 2</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/hunyuan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hunyuan</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/jamba.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Jamba</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/models/orpheus.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Orpheus</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/cli.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Command Line Interface (CLI)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/telemetry.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Telemetry</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/config-reference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Config Reference</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/api" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">API Reference</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a href="../docs/dataset-formats/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Formats</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/pretraining.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pre-training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/inst_tune.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Instruction Tuning</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/conversation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Conversation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/stepwise_supervised.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Stepwise Supervised Format</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template-Free</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset-formats/tokenized.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Pre-Tokenized Dataset</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true">
+ <span class="menu-text">Deployments</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/docker.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Docker</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-GPU</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multi-node.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi Node</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ray-integration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Ray Train</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/amd_hpc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">AMD GPUs on HPC Systems</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mac.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mac M-series</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true">
+ <span class="menu-text">How To Guides</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multimodal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MultiModal / Vision Language Models (BETA)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/rlhf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">RLHF (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">EBFT Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vLLM Serving for GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Reward Modelling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lr_groups.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Learning Rate Groups</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/lora_optims.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">LoRA Optimizations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_loading.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Loading</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/qat.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization Aware Training (QAT)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/quantize.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Quantization with torchao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optimizations Guide</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true">
+ <span class="menu-text">Core Concepts</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/batch_vs_grad.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Batch size vs Gradient accumulation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/dataset_preprocessing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset Preprocessing</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/streaming.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Streaming Datasets</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/multipack.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multipack (Sample Packing)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/mixed_precision.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Mixed Precision Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/optimizers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Optimizers</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/attention.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Attention</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">Advanced Features</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/fsdp_qlora.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FSDP + QLoRA</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Unsloth</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">PyTorch ao</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/custom_integrations.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom Integrations</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/sequence_parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sequence Parallelism</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/gradient_checkpointing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Gradient Checkpointing, Activation Offloading, and Layer Offloading</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nd_parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">N-D Parallelism (Beta)</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/expert_quantization.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">MoE Expert Quantization</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true">
+ <span class="menu-text">Troubleshooting</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-10" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-10" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/faq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FAQ</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Training Stability &amp; Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/nccl.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">NCCL</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#monitoring-training" id="toc-monitoring-training" class="nav-link active" data-scroll-target="#monitoring-training">Monitoring Training</a>
+  <ul class="collapse">
+  <li><a href="#key-metrics-for-sft" id="toc-key-metrics-for-sft" class="nav-link" data-scroll-target="#key-metrics-for-sft">Key Metrics for SFT</a></li>
+  <li><a href="#key-metrics-for-rl-grpo" id="toc-key-metrics-for-rl-grpo" class="nav-link" data-scroll-target="#key-metrics-for-rl-grpo">Key Metrics for RL (GRPO)</a></li>
+  </ul></li>
+  <li><a href="#sft-stability" id="toc-sft-stability" class="nav-link" data-scroll-target="#sft-stability">SFT Stability</a>
+  <ul class="collapse">
+  <li><a href="#loss-plateau" id="toc-loss-plateau" class="nav-link" data-scroll-target="#loss-plateau">Loss Plateau</a></li>
+  <li><a href="#loss-spikes" id="toc-loss-spikes" class="nav-link" data-scroll-target="#loss-spikes">Loss Spikes</a></li>
+  <li><a href="#overfitting" id="toc-overfitting" class="nav-link" data-scroll-target="#overfitting">Overfitting</a></li>
+  </ul></li>
+  <li><a href="#rlgrpo-stability" id="toc-rlgrpo-stability" class="nav-link" data-scroll-target="#rlgrpo-stability">RL/GRPO Stability</a>
+  <ul class="collapse">
+  <li><a href="#reward-never-increases" id="toc-reward-never-increases" class="nav-link" data-scroll-target="#reward-never-increases">Reward Never Increases</a></li>
+  <li><a href="#entropy-collapse-mode-collapse" id="toc-entropy-collapse-mode-collapse" class="nav-link" data-scroll-target="#entropy-collapse-mode-collapse">Entropy Collapse (Mode Collapse)</a></li>
+  <li><a href="#is-ratio-divergence" id="toc-is-ratio-divergence" class="nav-link" data-scroll-target="#is-ratio-divergence">IS Ratio Divergence</a></li>
+  <li><a href="#gradient-norm-instability" id="toc-gradient-norm-instability" class="nav-link" data-scroll-target="#gradient-norm-instability">Gradient Norm Instability</a></li>
+  </ul></li>
+  <li><a href="#nan-and-inf-handling" id="toc-nan-and-inf-handling" class="nav-link" data-scroll-target="#nan-and-inf-handling">NaN and Inf Handling</a>
+  <ul class="collapse">
+  <li><a href="#common-causes" id="toc-common-causes" class="nav-link" data-scroll-target="#common-causes">Common Causes</a></li>
+  <li><a href="#fp8-specific-nan-issues" id="toc-fp8-specific-nan-issues" class="nav-link" data-scroll-target="#fp8-specific-nan-issues">FP8-Specific NaN Issues</a></li>
+  <li><a href="#general-nan-debugging-steps" id="toc-general-nan-debugging-steps" class="nav-link" data-scroll-target="#general-nan-debugging-steps">General NaN Debugging Steps</a></li>
+  </ul></li>
+  <li><a href="#oom-debugging" id="toc-oom-debugging" class="nav-link" data-scroll-target="#oom-debugging">OOM Debugging</a>
+  <ul class="collapse">
+  <li><a href="#step-1-reduce-batch-size" id="toc-step-1-reduce-batch-size" class="nav-link" data-scroll-target="#step-1-reduce-batch-size">Step 1: Reduce Batch Size</a></li>
+  <li><a href="#step-2-enable-gradient-checkpointing" id="toc-step-2-enable-gradient-checkpointing" class="nav-link" data-scroll-target="#step-2-enable-gradient-checkpointing">Step 2: Enable Gradient Checkpointing</a></li>
+  <li><a href="#step-3-use-quantization" id="toc-step-3-use-quantization" class="nav-link" data-scroll-target="#step-3-use-quantization">Step 3: Use Quantization</a></li>
+  <li><a href="#step-4-reduce-sequence-length" id="toc-step-4-reduce-sequence-length" class="nav-link" data-scroll-target="#step-4-reduce-sequence-length">Step 4: Reduce Sequence Length</a></li>
+  <li><a href="#step-5-use-flash-attention" id="toc-step-5-use-flash-attention" class="nav-link" data-scroll-target="#step-5-use-flash-attention">Step 5: Use Flash Attention</a></li>
+  <li><a href="#step-6-offload-with-deepspeed" id="toc-step-6-offload-with-deepspeed" class="nav-link" data-scroll-target="#step-6-offload-with-deepspeed">Step 6: Offload with DeepSpeed</a></li>
+  <li><a href="#diagnosing-the-specific-culprit" id="toc-diagnosing-the-specific-culprit" class="nav-link" data-scroll-target="#diagnosing-the-specific-culprit">Diagnosing the Specific Culprit</a></li>
+  </ul></li>
+  <li><a href="#common-errors" id="toc-common-errors" class="nav-link" data-scroll-target="#common-errors">Common Errors</a></li>
+  <li><a href="#profiling" id="toc-profiling" class="nav-link" data-scroll-target="#profiling">Profiling</a>
+  <ul class="collapse">
+  <li><a href="#pytorch-profiler" id="toc-pytorch-profiler" class="nav-link" data-scroll-target="#pytorch-profiler">PyTorch Profiler</a></li>
+  <li><a href="#cuda-memory-snapshots" id="toc-cuda-memory-snapshots" class="nav-link" data-scroll-target="#cuda-memory-snapshots">CUDA Memory Snapshots</a></li>
+  <li><a href="#quick-gpu-memory-check" id="toc-quick-gpu-memory-check" class="nav-link" data-scroll-target="#quick-gpu-memory-check">Quick GPU Memory Check</a></li>
+  </ul></li>
+  <li><a href="#wb-and-logging" id="toc-wb-and-logging" class="nav-link" data-scroll-target="#wb-and-logging">W&amp;B and Logging</a>
+  <ul class="collapse">
+  <li><a href="#enabling-logging" id="toc-enabling-logging" class="nav-link" data-scroll-target="#enabling-logging">Enabling Logging</a></li>
+  <li><a href="#debug-logging" id="toc-debug-logging" class="nav-link" data-scroll-target="#debug-logging">Debug Logging</a></li>
+  <li><a href="#what-axolotl-logs" id="toc-what-axolotl-logs" class="nav-link" data-scroll-target="#what-axolotl-logs">What Axolotl Logs</a></li>
+  <li><a href="#reading-wb-charts" id="toc-reading-wb-charts" class="nav-link" data-scroll-target="#reading-wb-charts">Reading W&amp;B Charts</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../docs/faq.html">Troubleshooting</a></li><li class="breadcrumb-item"><a href="../docs/training_stability.html">Training Stability &amp; Debugging</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Training Stability &amp; Debugging</h1>
+</div>
+
+<div>
+  <div class="description">
+    Guide to monitoring, debugging, and stabilizing training runs in axolotl
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This guide covers practical techniques for monitoring training health, diagnosing instability, and resolving common failures in both supervised fine-tuning (SFT) and reinforcement learning (GRPO/EBFT) workflows.</p>
+<section id="monitoring-training" class="level2">
+<h2 class="anchored" data-anchor-id="monitoring-training">Monitoring Training</h2>
+<section id="key-metrics-for-sft" class="level3">
+<h3 class="anchored" data-anchor-id="key-metrics-for-sft">Key Metrics for SFT</h3>
+<p>Every SFT run should be monitored through at least these four metrics:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 19%">
+<col style="width: 45%">
+<col style="width: 35%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>What It Tells You</th>
+<th>Healthy Range</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>train/loss</code></td>
+<td>How well the model fits training data</td>
+<td>Decreasing; typically 0.5–2.0 for chat fine-tuning</td>
+</tr>
+<tr class="even">
+<td><code>eval/loss</code></td>
+<td>Generalization performance</td>
+<td>Tracks train loss with small gap; divergence signals overfitting</td>
+</tr>
+<tr class="odd">
+<td><code>grad_norm</code></td>
+<td>Gradient magnitude</td>
+<td>0.1–10.0; spikes above 100 indicate instability</td>
+</tr>
+<tr class="even">
+<td><code>learning_rate</code></td>
+<td>Current LR from scheduler</td>
+<td>Should follow expected schedule (warmup then decay)</td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Set Up Logging Early
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Enable W&amp;B or TensorBoard from the start. Debugging a failed run without metrics is guesswork.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="co">   # optional, for resuming</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">logging_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</section>
+<section id="key-metrics-for-rl-grpo" class="level3">
+<h3 class="anchored" data-anchor-id="key-metrics-for-rl-grpo">Key Metrics for RL (GRPO)</h3>
+<p>GRPO training logs a richer set of metrics. These are the critical ones:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 24%">
+<col style="width: 45%">
+<col style="width: 30%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Healthy Range</th>
+<th>Red Flag</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>rewards/&lt;name&gt;/mean</code></td>
+<td>&gt; 0.15 within 20 steps</td>
+<td>Stays at 0 – reward function is broken or task is too hard</td>
+</tr>
+<tr class="even">
+<td><code>reward_std</code></td>
+<td>&gt; 0 on most steps</td>
+<td>Always 0 – no learning signal (all completions get the same reward)</td>
+</tr>
+<tr class="odd">
+<td><code>frac_reward_zero_std</code></td>
+<td>&lt; 0.8</td>
+<td>1.0 on every step – zero-advantage skip fires constantly, no gradient updates</td>
+</tr>
+<tr class="even">
+<td><code>grad_norm</code></td>
+<td>0.001–1.0</td>
+<td>0.0 is acceptable occasionally (zero-adv skip); &gt; 10.0 is unstable</td>
+</tr>
+<tr class="odd">
+<td><code>entropy</code></td>
+<td>0.05–0.5</td>
+<td>&lt; 0.01 suggests mode collapse; &gt; 1.0 suggests the model is not converging</td>
+</tr>
+<tr class="even">
+<td><code>kl</code></td>
+<td>0.0–0.5</td>
+<td>&gt; 2.0 suggests policy has diverged too far from reference</td>
+</tr>
+<tr class="odd">
+<td><code>sampling/sampling_logp_difference/mean</code></td>
+<td>&lt; 0.1</td>
+<td>&gt; 1.0 means policy has diverged far from vLLM server weights</td>
+</tr>
+<tr class="even">
+<td><code>sampling/importance_sampling_ratio/min</code></td>
+<td>&gt; 0.1</td>
+<td>Near 0 indicates stale off-policy data; increase <code>vllm_sync_interval</code></td>
+</tr>
+<tr class="odd">
+<td><code>clip_ratio/region_mean</code></td>
+<td>&lt; 0.1</td>
+<td>&gt; 0.3 means PPO clipping is too aggressive</td>
+</tr>
+<tr class="even">
+<td><code>completions/mean_length</code></td>
+<td>Task-dependent</td>
+<td>Monotonically increasing to max length suggests reward hacking</td>
+</tr>
+<tr class="odd">
+<td><code>completions/clipped_ratio</code></td>
+<td>&lt; 0.3</td>
+<td>&gt; 0.8 means most completions hit <code>max_completion_length</code> – increase it</td>
+</tr>
+</tbody>
+</table>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>EBFT-Specific Metrics
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For EBFT training, also monitor <code>ebft/alignment</code> (should trend upward, healthy 0.3–0.9), <code>ebft/diversity</code> (healthy 0.01–0.1; &gt; 1.0 indicates mode collapse), and <code>ebft/cfm_loss</code> (should trend downward, &lt; 10).</p>
+</div>
+</div>
+</section>
+</section>
+<section id="sft-stability" class="level2">
+<h2 class="anchored" data-anchor-id="sft-stability">SFT Stability</h2>
+<section id="loss-plateau" class="level3">
+<h3 class="anchored" data-anchor-id="loss-plateau">Loss Plateau</h3>
+<p><strong>Symptom</strong>: Loss stops decreasing early in training, well above expected values.</p>
+<p><strong>Causes and fixes</strong>:</p>
+<ul>
+<li><strong>Learning rate too low</strong>: Increase by 2–5x. Typical ranges: full fine-tune 1e-5 to 5e-5, LoRA 1e-4 to 3e-4.</li>
+<li><strong>Insufficient warmup</strong>: Set <code>warmup_steps</code> to 5–10% of total steps. Too-aggressive learning at the start can push the model into a flat region.</li>
+<li><strong>Data quality</strong>: Check that labels are correctly masked. Use <code>axolotl preprocess</code> and inspect tokenized samples to confirm only the target tokens are trainable.</li>
+<li><strong>Weight decay too high</strong>: Default 0.01 is usually fine. Values above 0.1 can suppress learning in LoRA.</li>
+</ul>
+</section>
+<section id="loss-spikes" class="level3">
+<h3 class="anchored" data-anchor-id="loss-spikes">Loss Spikes</h3>
+<p><strong>Symptom</strong>: Loss suddenly jumps by 2–10x then (possibly) recovers.</p>
+<p><strong>Causes and fixes</strong>:</p>
+<ul>
+<li><strong>Bad data samples</strong>: A single malformed or extremely long example can cause a spike. Enable <code>sample_packing: false</code> temporarily and check if spikes correlate with specific batches.</li>
+<li><strong>Learning rate too high</strong>: Reduce by 2–5x, or increase warmup.</li>
+<li><strong>Gradient accumulation mismatch</strong>: Effective batch size = <code>micro_batch_size * gradient_accumulation_steps * num_gpus</code>. Very large effective batch sizes amplify gradient noise.</li>
+<li><strong>Mixed precision issues</strong>: With <code>bf16: true</code>, some operations can lose precision. If spikes are severe, try <code>fp32</code> for diagnosis.</li>
+</ul>
+</section>
+<section id="overfitting" class="level3">
+<h3 class="anchored" data-anchor-id="overfitting">Overfitting</h3>
+<p><strong>Symptom</strong>: Train loss keeps decreasing but eval loss starts increasing.</p>
+<p><strong>Fixes</strong>:</p>
+<ul>
+<li>Increase <code>val_set_size</code> (e.g., 0.05) and monitor <code>eval/loss</code>.</li>
+<li>Reduce <code>num_epochs</code> or <code>max_steps</code>.</li>
+<li>Increase <code>weight_decay</code> (try 0.01–0.1).</li>
+<li>Use a smaller LoRA rank (<code>lora_r</code>). Typical values: 8–32.</li>
+<li>Increase dropout: <code>lora_dropout: 0.05</code>.</li>
+</ul>
+</section>
+</section>
+<section id="rlgrpo-stability" class="level2">
+<h2 class="anchored" data-anchor-id="rlgrpo-stability">RL/GRPO Stability</h2>
+<section id="reward-never-increases" class="level3">
+<h3 class="anchored" data-anchor-id="reward-never-increases">Reward Never Increases</h3>
+<p>If <code>rewards/*/mean</code> stays at 0 for more than 20 steps:</p>
+<ol type="1">
+<li><p><strong>Test reward function standalone</strong>: Run it outside training with known inputs to verify it returns nonzero values.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> experiments <span class="kw">&amp;&amp;</span> <span class="ex">python</span> <span class="at">-c</span> <span class="st">"import my_rewards; print(my_rewards.accuracy_reward(...))"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Check dataset columns</strong>: The reward function receives <code>**kwargs</code> containing dataset columns. Verify the columns it needs (e.g., <code>answer</code>) are not removed by the dataset transform.</p></li>
+<li><p><strong>Check completion content</strong>: Enable <code>log_completions: true</code> in the <code>trl:</code> config and inspect logged completions in W&amp;B. If completions are empty or incoherent, the model may be too weak for the task.</p></li>
+<li><p><strong>Verify vLLM is serving the right model</strong>: Hit the vLLM health endpoint and confirm the model name matches your config.</p></li>
+</ol>
+</section>
+<section id="entropy-collapse-mode-collapse" class="level3">
+<h3 class="anchored" data-anchor-id="entropy-collapse-mode-collapse">Entropy Collapse (Mode Collapse)</h3>
+<p><strong>Symptom</strong>: <code>entropy</code> drops below 0.01; all completions become nearly identical.</p>
+<p><strong>Fixes</strong>:</p>
+<ul>
+<li>Increase <code>temperature</code> in generation kwargs (try 0.8–1.0).</li>
+<li>Reduce learning rate.</li>
+<li>Add a KL penalty term (<code>beta</code> parameter in GRPO config).</li>
+<li>Check that <code>num_generations</code> is sufficient (16+ gives better advantage estimates).</li>
+</ul>
+</section>
+<section id="is-ratio-divergence" class="level3">
+<h3 class="anchored" data-anchor-id="is-ratio-divergence">IS Ratio Divergence</h3>
+<p><strong>Symptom</strong>: <code>sampling/importance_sampling_ratio/min</code> drops near 0, or <code>sampling/sampling_logp_difference/mean</code> exceeds 1.0.</p>
+<p>This means the policy has diverged significantly from the weights used by vLLM for generation. The importance sampling correction becomes unreliable.</p>
+<p><strong>Fixes</strong>:</p>
+<ul>
+<li>Decrease <code>vllm_sync_interval</code> (sync weights more often).</li>
+<li>Enable <code>off_policy_mask_threshold</code> (e.g., 0.5) to mask stale off-policy samples.</li>
+<li>Use <code>importance_sampling_level: token</code> for finer-grained correction.</li>
+</ul>
+</section>
+<section id="gradient-norm-instability" class="level3">
+<h3 class="anchored" data-anchor-id="gradient-norm-instability">Gradient Norm Instability</h3>
+<p><strong>Symptom</strong>: <code>grad_norm</code> oscillates wildly or exceeds 10.0 regularly.</p>
+<p><strong>Fixes</strong>:</p>
+<ul>
+<li>Enable gradient clipping: <code>max_grad_norm: 1.0</code> (default in most configs).</li>
+<li>Reduce learning rate.</li>
+<li>Increase <code>gradient_accumulation_steps</code> to smooth out noisy batches.</li>
+<li>Check for NaN issues (see next section).</li>
+</ul>
+</section>
+</section>
+<section id="nan-and-inf-handling" class="level2">
+<h2 class="anchored" data-anchor-id="nan-and-inf-handling">NaN and Inf Handling</h2>
+<section id="common-causes" class="level3">
+<h3 class="anchored" data-anchor-id="common-causes">Common Causes</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 51%">
+<col style="width: 29%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Cause</th>
+<th>Where It Manifests</th>
+<th>Detection</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP8 zero-scale division</td>
+<td>Forward pass logits</td>
+<td><code>grad_norm: nan</code>, loss becomes NaN immediately</td>
+</tr>
+<tr class="even">
+<td>Gradient explosion</td>
+<td>Backward pass</td>
+<td><code>grad_norm</code> spikes to inf, then loss goes NaN</td>
+</tr>
+<tr class="odd">
+<td>Bad data (empty sequences)</td>
+<td>Logprob computation</td>
+<td>NaN in specific batches only</td>
+</tr>
+<tr class="even">
+<td>Numerical overflow in log-softmax</td>
+<td>Loss computation</td>
+<td>Large negative logprobs cause exp() overflow</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="fp8-specific-nan-issues" class="level3">
+<h3 class="anchored" data-anchor-id="fp8-specific-nan-issues">FP8-Specific NaN Issues</h3>
+<p>FP8 quantization (<code>fp8: true</code>) can produce NaN when the activation quantization kernel divides by <code>max(abs(x)) / 448</code>. If the input tensor is all zeros (e.g., padding positions), the scale becomes 0, causing division by zero.</p>
+<p><strong>Fixes applied in axolotl</strong>:</p>
+<ul>
+<li>The <code>act_quant_kernel</code> has a zero-guard: <code>s = tl.where(s == 0, 1.0, s)</code>.</li>
+<li>A safety net <code>nan_to_num(logits, nan=0.0)</code> is applied in <code>_get_per_token_logps_and_entropies</code>.</li>
+<li>Embedding padding is zero-padded for FP8 compatibility.</li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Important</span>After Modifying Triton Kernels
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you patch any Triton JIT kernel (e.g., the FP8 quantization kernels in transformers), you must clear the Triton cache for changes to take effect:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> <span class="at">-rf</span> ~/.triton/cache</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</section>
+<section id="general-nan-debugging-steps" class="level3">
+<h3 class="anchored" data-anchor-id="general-nan-debugging-steps">General NaN Debugging Steps</h3>
+<ol type="1">
+<li><p><strong>Enable anomaly detection</strong> (slow, but pinpoints the source):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>torch.autograd.set_detect_anomaly(<span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p><strong>Check grad_norm</strong>: If it goes to NaN, the backward pass is the problem. If loss is NaN but grad_norm was fine on the previous step, the forward pass is the problem.</p></li>
+<li><p><strong>Reduce to single GPU, single batch</strong>: Eliminate distributed training variables.</p></li>
+<li><p><strong>Inspect data</strong>: Print the batch that triggers NaN. Look for empty sequences, extreme token IDs, or unexpected padding patterns.</p></li>
+</ol>
+</section>
+</section>
+<section id="oom-debugging" class="level2">
+<h2 class="anchored" data-anchor-id="oom-debugging">OOM Debugging</h2>
+<p>Out-of-memory errors are the most common training failure. Use this systematic approach, from least to most disruptive:</p>
+<section id="step-1-reduce-batch-size" class="level3">
+<h3 class="anchored" data-anchor-id="step-1-reduce-batch-size">Step 1: Reduce Batch Size</h3>
+<p>The single highest-impact change. VRAM scales roughly linearly with batch size.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">              # Start here</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">16</span><span class="co">  # Increase to maintain effective batch size</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For GRPO specifically, the logits tensor for policy logprob computation can be very large. <code>batch_size * num_generations * seq_len * vocab_size</code> in bf16. For example, with <code>num_generations: 16</code> and <code>micro_batch_size: 8</code>, the logits tensor alone is:</p>
+<pre><code>8 * 16 * 2048 * 151936 * 2 bytes = ~75 GB  (way too large)</code></pre>
+<p>Reduce <code>micro_batch_size</code> to 2–4 for GRPO.</p>
+</section>
+<section id="step-2-enable-gradient-checkpointing" class="level3">
+<h3 class="anchored" data-anchor-id="step-2-enable-gradient-checkpointing">Step 2: Enable Gradient Checkpointing</h3>
+<p>Trades compute for memory by recomputing activations during the backward pass instead of storing them.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">     # Recommended default</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>Reentrant Checkpointing Exceptions
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Some configurations require <code>use_reentrant: true</code>:</p>
+<ul>
+<li>DeepSpeed ZeRO-3 (non-reentrant causes <code>CheckpointError</code>)</li>
+<li>EBFT strided mode with flex_attention</li>
+</ul>
+</div>
+</div>
+</section>
+<section id="step-3-use-quantization" class="level3">
+<h3 class="anchored" data-anchor-id="step-3-use-quantization">Step 3: Use Quantization</h3>
+<p>Load the base model in reduced precision:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 4-bit QLoRA</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">adapter</span><span class="kw">:</span><span class="at"> qlora</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_4bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># 8-bit</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="fu">load_in_8bit</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="co"># FP8 (saves ~50% model VRAM, same compute speed as bf16)</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="fu">fp8</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="step-4-reduce-sequence-length" class="level3">
+<h3 class="anchored" data-anchor-id="step-4-reduce-sequence-length">Step 4: Reduce Sequence Length</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span><span class="co">     # Down from 2048 or 4096</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For GRPO, also reduce <code>max_completion_length</code>. Memory scales quadratically with sequence length when using standard attention.</p>
+</section>
+<section id="step-5-use-flash-attention" class="level3">
+<h3 class="anchored" data-anchor-id="step-5-use-flash-attention">Step 5: Use Flash Attention</h3>
+<p>Reduces attention memory from O(n^2) to O(n):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attention</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="step-6-offload-with-deepspeed" class="level3">
+<h3 class="anchored" data-anchor-id="step-6-offload-with-deepspeed">Step 6: Offload with DeepSpeed</h3>
+<p>For extreme cases, offload optimizer states or parameters to CPU:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">deepspeed</span><span class="kw">:</span><span class="at"> deepspeed_configs/zero3_bf16.json</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="diagnosing-the-specific-culprit" class="level3">
+<h3 class="anchored" data-anchor-id="diagnosing-the-specific-culprit">Diagnosing the Specific Culprit</h3>
+<p>Use the <code>profiler_steps</code> config option to capture GPU memory snapshots:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">profiler_steps</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="dv">1</span><span class="kw">,</span><span class="at"> </span><span class="dv">2</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This generates PyTorch profiler traces you can inspect to see exactly which tensor allocation caused the OOM.</p>
+</section>
+</section>
+<section id="common-errors" class="level2">
+<h2 class="anchored" data-anchor-id="common-errors">Common Errors</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Error Message</th>
+<th>Likely Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>exitcode: -9</code></td>
+<td>System RAM exhaustion</td>
+<td>Reduce dataset size, <code>dataset_num_proc</code>, or number of data workers</td>
+</tr>
+<tr class="even">
+<td><code>exitcode: -7</code> (DeepSpeed)</td>
+<td>DeepSpeed version issue</td>
+<td><code>pip install -U deepspeed</code></td>
+</tr>
+<tr class="odd">
+<td><code>CUDA out of memory</code></td>
+<td>GPU VRAM exhaustion</td>
+<td>Follow OOM debugging steps above</td>
+</tr>
+<tr class="even">
+<td><code>RuntimeError: NCCL communicator was aborted</code></td>
+<td>GPU communication failure</td>
+<td>See <a href="../docs/nccl.html">NCCL docs</a>; check <code>NCCL_DEBUG=INFO</code> output</td>
+</tr>
+<tr class="odd">
+<td><code>ValueError: Asking to pad but the tokenizer does not have a padding token</code></td>
+<td>Missing pad token</td>
+<td>Add <code>special_tokens: { pad_token: "&lt;\|endoftext\|&gt;" }</code> to config</td>
+</tr>
+<tr class="even">
+<td><code>'DummyOptim' object has no attribute 'step'</code></td>
+<td>DeepSpeed on single GPU</td>
+<td>Remove <code>deepspeed:</code> section from config</td>
+</tr>
+<tr class="odd">
+<td><code>unable to load strategy X</code> then <code>None is not callable</code></td>
+<td>Reward module not importable</td>
+<td>Run <code>cd experiments &amp;&amp; python -c "import my_rewards"</code> to check</td>
+</tr>
+<tr class="even">
+<td><code>generation_batch_size not divisible by num_generations</code></td>
+<td>micro_batch_size too small</td>
+<td>Set <code>micro_batch_size &gt;= num_generations</code> and make it divisible</td>
+</tr>
+<tr class="odd">
+<td><code>'weight' must be 2-D</code></td>
+<td>FSDP1 flattened parameters</td>
+<td>Use <code>fsdp_version: 2</code> or skip <code>unwrap_model</code> when FSDP is enabled</td>
+</tr>
+<tr class="even">
+<td><code>CheckpointError</code> (tensor count mismatch)</td>
+<td>Non-reentrant checkpointing + ZeRO-3 or flex_attention</td>
+<td>Set <code>use_reentrant: true</code> in <code>gradient_checkpointing_kwargs</code></td>
+</tr>
+<tr class="odd">
+<td><code>BFloat16</code> TypeError during weight sync</td>
+<td>NumPy does not support bf16</td>
+<td>Fixed in axolotl’s <code>weight_serde.py</code> (auto bf16 to fp16 conversion)</td>
+</tr>
+<tr class="even">
+<td><code>Content end boundary is before start boundary</code></td>
+<td>Chat template parsing issue</td>
+<td>Check <code>eos_token</code> matches template; file a GitHub issue if persistent</td>
+</tr>
+<tr class="odd">
+<td><code>CAS service error</code> during data processing</td>
+<td>HuggingFace XET issue</td>
+<td>Set <code>export HF_HUB_DISABLE_XET=1</code></td>
+</tr>
+<tr class="even">
+<td>Training hangs (multi-GPU)</td>
+<td>FSDP + async prefetch deadlock</td>
+<td>Set <code>async_prefetch: false</code> with FSDP</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="profiling" class="level2">
+<h2 class="anchored" data-anchor-id="profiling">Profiling</h2>
+<section id="pytorch-profiler" class="level3">
+<h3 class="anchored" data-anchor-id="pytorch-profiler">PyTorch Profiler</h3>
+<p>Axolotl supports PyTorch profiler integration via the config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">profiler_steps</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="dv">1</span><span class="kw">,</span><span class="at"> </span><span class="dv">2</span><span class="kw">,</span><span class="at"> </span><span class="dv">3</span><span class="kw">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>This captures profiler traces for the specified steps. View them in TensorBoard:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="ex">tensorboard</span> <span class="at">--logdir</span> output_dir/runs</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Or open the <code>.json</code> trace file in <code>chrome://tracing</code>.</p>
+</section>
+<section id="cuda-memory-snapshots" class="level3">
+<h3 class="anchored" data-anchor-id="cuda-memory-snapshots">CUDA Memory Snapshots</h3>
+<p>For detailed memory analysis, use PyTorch’s memory snapshot API. Add this to your training script or use it interactively:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable memory history tracking</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>torch.cuda.memory._record_memory_history()</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co"># ... run your training step ...</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Save snapshot</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>torch.cuda.memory._dump_snapshot(<span class="st">"memory_snapshot.pickle"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Visualize with PyTorch’s memory visualizer:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> torch.cuda.memory._viz memory_snapshot.pickle</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="quick-gpu-memory-check" class="level3">
+<h3 class="anchored" data-anchor-id="quick-gpu-memory-check">Quick GPU Memory Check</h3>
+<p>During training, monitor GPU utilization in a separate terminal:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">watch</span> <span class="at">-n</span> 1 nvidia-smi</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For programmatic access within axolotl, the logged metrics <code>memory/max_alloc</code> and <code>memory/max_reserved</code> come from <code>torch.cuda.max_memory_allocated()</code> and <code>torch.cuda.max_memory_reserved()</code>. Note these report PyTorch’s view of memory, which may differ from <code>nvidia-smi</code> (see <a href="../docs/faq.html">FAQ</a>).</p>
+</section>
+</section>
+<section id="wb-and-logging" class="level2">
+<h2 class="anchored" data-anchor-id="wb-and-logging">W&amp;B and Logging</h2>
+<section id="enabling-logging" class="level3">
+<h3 class="anchored" data-anchor-id="enabling-logging">Enabling Logging</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> my-project</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> my-team</span><span class="co">          # optional</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> run-123</span><span class="co">          # optional, for resuming</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> experiment-name</span><span class="co">    # optional</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="fu">logging_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">               # log every step (recommended for RL)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="debug-logging" class="level3">
+<h3 class="anchored" data-anchor-id="debug-logging">Debug Logging</h3>
+<p>For detailed axolotl-internal debug output:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="va">AXOLOTL_LOG_LEVEL</span><span class="op">=</span>DEBUG <span class="ex">axolotl</span> train config.yaml <span class="dv">2</span><span class="op">&gt;&amp;</span><span class="dv">1</span> <span class="kw">|</span> <span class="fu">tee</span> /tmp/training.log</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Always Log to a File
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Pipe training output to a log file so you can inspect it after the run:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train config.yaml <span class="dv">2</span><span class="op">&gt;&amp;</span><span class="dv">1</span> <span class="kw">|</span> <span class="fu">tee</span> /tmp/my_run.log</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</section>
+<section id="what-axolotl-logs" class="level3">
+<h3 class="anchored" data-anchor-id="what-axolotl-logs">What Axolotl Logs</h3>
+<p><strong>SFT metrics</strong> (logged every <code>logging_steps</code>):</p>
+<ul>
+<li><code>train/loss</code>, <code>eval/loss</code> – training and validation loss</li>
+<li><code>train/grad_norm</code> – gradient L2 norm (before clipping)</li>
+<li><code>train/learning_rate</code> – current learning rate</li>
+<li><code>memory/max_alloc</code>, <code>memory/max_reserved</code> – peak GPU memory</li>
+</ul>
+<p><strong>GRPO/RL metrics</strong> (logged every step):</p>
+<ul>
+<li><code>rewards/&lt;name&gt;/mean</code>, <code>rewards/&lt;name&gt;/std</code> – per-reward-function statistics</li>
+<li><code>reward</code>, <code>reward_std</code> – aggregated reward across all reward functions</li>
+<li><code>frac_reward_zero_std</code> – fraction of prompt groups where all completions got the same reward</li>
+<li><code>completions/mean_length</code>, <code>completions/min_length</code>, <code>completions/max_length</code> – completion token lengths</li>
+<li><code>completions/clipped_ratio</code> – fraction of completions that hit the max length</li>
+<li><code>completions/mean_terminated_length</code>, <code>completions/min_terminated_length</code>, <code>completions/max_terminated_length</code> – lengths of naturally terminated completions</li>
+<li><code>kl</code> – KL divergence between policy and reference</li>
+<li><code>entropy</code> – policy entropy (measure of output diversity)</li>
+<li><code>clip_ratio/region_mean</code>, <code>clip_ratio/low_mean</code>, <code>clip_ratio/high_mean</code> – PPO clipping statistics</li>
+<li><code>sampling/sampling_logp_difference/mean</code>, <code>sampling/sampling_logp_difference/max</code> – log-probability difference between policy and sampling distribution</li>
+<li><code>sampling/importance_sampling_ratio/min</code>, <code>sampling/importance_sampling_ratio/mean</code>, <code>sampling/importance_sampling_ratio/max</code> – IS ratio statistics for off-policy correction</li>
+<li><code>num_tokens</code> – total tokens processed</li>
+</ul>
+</section>
+<section id="reading-wb-charts" class="level3">
+<h3 class="anchored" data-anchor-id="reading-wb-charts">Reading W&amp;B Charts</h3>
+<p>For a healthy GRPO run, expect to see:</p>
+<ol type="1">
+<li><strong><code>reward/mean</code></strong>: Gradual upward trend. May start near 0 and reach 0.3–0.8 depending on task difficulty. Not monotonic – fluctuations are normal.</li>
+<li><strong><code>entropy</code></strong>: Gradual decrease from initial values (often 0.3–0.6) as the model becomes more confident. Should not collapse to near-zero.</li>
+<li><strong><code>grad_norm</code></strong>: Mostly in the 0.001–1.0 range. Occasional 0.0 values are fine (zero-advantage skip). Persistent values above 10.0 need investigation.</li>
+<li><strong><code>kl</code></strong>: Starts near 0 and grows slowly. If it shoots up rapidly, the policy is diverging from the reference.</li>
+<li><strong><code>completions/mean_length</code></strong>: Should reflect the task’s natural answer length. If it steadily increases to <code>max_completion_length</code>, the model may be reward-hacking by generating longer outputs.</li>
+</ol>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/docs\.axolotl\.ai");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

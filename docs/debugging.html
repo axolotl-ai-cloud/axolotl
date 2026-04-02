@@ -180,6 +180,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/choosing_method.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Which Fine-Tuning Method Should I Use?</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/installation.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Installation</span></a>
   </div>
@@ -564,6 +570,24 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/grpo.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/ebft.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">EBFT Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../docs/vllm_serving.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">vLLM Serving for GRPO Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/reward_modelling.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Reward Modelling</span></a>
   </div>
@@ -735,6 +759,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../docs/training_stability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Training Stability &amp; Debugging</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../docs/debugging.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Debugging</span></a>
   </div>
@@ -804,6 +834,19 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 <p>This document provides some tips and tricks for debugging Axolotl. It also provides an example configuration for debugging with VSCode. A good debugging setup is essential to understanding how Axolotl code works behind the scenes.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For training-specific debugging (loss spikes, NaN gradients, OOM errors, RL training stability), see <a href="../docs/training_stability.html">Training Stability &amp; Debugging</a>.</p>
+</div>
+</div>
 <section id="table-of-contents" class="level2">
 <h2 class="anchored" data-anchor-id="table-of-contents">Table of Contents</h2>
 <ul>
@@ -886,7 +929,7 @@ If you prefer to watch a video, rather than read, you can skip to the <a href="#
 <section id="configuration" class="level3">
 <h3 class="anchored" data-anchor-id="configuration">Configuration</h3>
 <p>The easiest way to get started is to modify the <a href="../.vscode/launch.json">.vscode/launch.json</a> file in this project. This is just an example configuration, so you may need to modify or copy it to suit your needs.</p>
-<p>For example, to mimic the command <code>cd devtools &amp;&amp; CUDA_VISIBLE_DEVICES=0 accelerate launch -m axolotl.cli.train dev_chat_template.yml</code>, you would use the below configuration<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to <code>devtools</code> and set the <code>env</code> variable <code>HF_HOME</code> to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.</p>
+<p>For example, to mimic the command <code>cd devtools &amp;&amp; CUDA_VISIBLE_DEVICES=0 axolotl train dev_chat_template.yml</code>, you would use the below configuration<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a>. Note that we add additional flags that override the axolotl config and incorporate the tips above (see the comments). We also set the working directory to <code>devtools</code> and set the <code>env</code> variable <code>HF_HOME</code> to a temporary folder that is later partially deleted. This is because we want to delete the HF dataset cache before each run in order to ensure that the data preprocessing code is run from scratch.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode json code-with-copy"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="er">//</span> <span class="er">.vscode/launch.json</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">"version"</span><span class="fu">:</span> <span class="st">"0.2.0"</span><span class="fu">,</span></span>
@@ -1026,7 +1069,7 @@ To understand which containers are available, see the <a href="../README.md#dock
 <div id="quarto-appendix" class="default"><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
 
 <ol>
-<li id="fn1"><p>The config actually mimics the command <code>CUDA_VISIBLE_DEVICES=0 python -m accelerate.commands.launch -m axolotl.cli.train devtools/chat_template.yml</code>, but this is the same thing.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn1"><p>The VSCode config uses <code>accelerate.commands.launch</code> as the Python module entry point, which is what <code>axolotl train</code> invokes under the hood.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 <li id="fn2"><p>Many of the below flags are recommended best practices by Nvidia when using nvidia-container-toolkit. You can read more about these flags <a href="https://docs.nvidia.com/deeplearning/frameworks/user-guide/index.html">here</a>.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section></div></main> <!-- /main -->
