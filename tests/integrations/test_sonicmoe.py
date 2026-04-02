@@ -493,7 +493,7 @@ class TestSoftmaxBiasTopkRouting:
     """Tests for Ernie 4.5 MoE routing (softmax_bias_topk_routing)."""
 
     def test_output_shapes(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -510,7 +510,7 @@ class TestSoftmaxBiasTopkRouting:
         assert logits.shape == (T, E)
 
     def test_scores_are_float32(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -521,7 +521,7 @@ class TestSoftmaxBiasTopkRouting:
         assert scores.dtype == torch.float32
 
     def test_token_indices_sorted_ascending(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -533,7 +533,7 @@ class TestSoftmaxBiasTopkRouting:
         assert (diffs >= 0).all()
 
     def test_expert_indices_in_range(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -545,7 +545,7 @@ class TestSoftmaxBiasTopkRouting:
         assert (expert_idx < E).all()
 
     def test_renormalized_scores_sum_to_one(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -558,7 +558,7 @@ class TestSoftmaxBiasTopkRouting:
 
     def test_bias_affects_expert_selection(self):
         """Large positive bias on expert 0 should make it always selected."""
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_bias_topk_routing,
         )
 
@@ -601,7 +601,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
     """Tests for DeepSeek V2 routing (softmax_group_limited_topk_routing)."""
 
     def test_output_shapes_group_limited(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -620,7 +620,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
         assert logits.shape == (T, E)
 
     def test_output_shapes_greedy(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -635,7 +635,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
         assert logits.shape == (T, E)
 
     def test_scores_are_float32(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -646,7 +646,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
         assert scores.dtype == torch.float32
 
     def test_token_indices_sorted_ascending(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -658,7 +658,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
         assert (diffs >= 0).all()
 
     def test_expert_indices_in_range(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -670,7 +670,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
         assert (expert_idx < E).all()
 
     def test_scaling_factor_applied(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -686,7 +686,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
 
     def test_group_selection_restricts_experts(self):
         """With num_group=4 and topk_group=1, experts should come from selected groups."""
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -705,7 +705,7 @@ class TestSoftmaxGroupLimitedTopkRouting:
             assert (groups == groups[0]).all()
 
     def test_unsupported_topk_method_raises(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_group_limited_topk_routing,
         )
 
@@ -737,7 +737,7 @@ class TestSoftmaxTopkWgRouting:
     """Tests for HunYuan V1 MoE routing (softmax_topk_wg_routing)."""
 
     def test_output_shapes(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 
@@ -754,7 +754,7 @@ class TestSoftmaxTopkWgRouting:
         assert logits.shape == (T, E)
 
     def test_scores_are_float32(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 
@@ -765,7 +765,7 @@ class TestSoftmaxTopkWgRouting:
         assert scores.dtype == torch.float32
 
     def test_token_indices_sorted_ascending(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 
@@ -777,7 +777,7 @@ class TestSoftmaxTopkWgRouting:
         assert (diffs >= 0).all()
 
     def test_expert_indices_in_range(self):
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 
@@ -790,7 +790,7 @@ class TestSoftmaxTopkWgRouting:
 
     def test_renormalized_scores_sum_to_one(self):
         """HunYuan V1 always renormalizes (no norm_topk_prob flag)."""
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 
@@ -803,7 +803,7 @@ class TestSoftmaxTopkWgRouting:
 
     def test_uses_gate_wg_weight(self):
         """Verify that modifying gate.wg.weight changes the routing output."""
-        from axolotl.integrations.kernels.sonicmoe.routing import (
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
             softmax_topk_wg_routing,
         )
 

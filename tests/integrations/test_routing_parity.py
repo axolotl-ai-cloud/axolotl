@@ -90,10 +90,11 @@ class TestSoftmaxRoutingParity:
 
     def test_weights_match(self):
         """2D weights from scattermoe == reshaped 1D weights from sonicmoe."""
-        from axolotl.integrations.kernels.sonicmoe.routing import softmax_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _softmax_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            softmax_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_softmax_block()
@@ -121,7 +122,9 @@ class TestSoftmaxRoutingParity:
 
     def test_logits_not_returned_by_scattermoe(self):
         """ScatterMoE doesn't return logits; SonicMoE does — verify SonicMoE logits shape."""
-        from axolotl.integrations.kernels.sonicmoe.routing import softmax_topk_routing
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            softmax_topk_routing,
+        )
 
         moe_block, gate, hidden, T, H, E, K = _make_softmax_block()
         _, _, _, logits = softmax_topk_routing(hidden, moe_block)
@@ -129,10 +132,11 @@ class TestSoftmaxRoutingParity:
 
     def test_no_renorm(self):
         """With norm_topk_prob=False, both should skip renormalization."""
-        from axolotl.integrations.kernels.sonicmoe.routing import softmax_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _softmax_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            softmax_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_softmax_block()
@@ -151,10 +155,11 @@ class TestSoftmaxRoutingParity:
 
     def test_various_expert_counts(self):
         """Parity across different E and K values."""
-        from axolotl.integrations.kernels.sonicmoe.routing import softmax_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _softmax_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            softmax_topk_routing,
         )
 
         for E, K in [(2, 1), (8, 2), (16, 4), (32, 8)]:
@@ -190,10 +195,11 @@ class TestSigmoidRoutingParity:
 
     def test_weights_match_with_groups(self):
         """Both implementations should produce identical weights with group selection."""
-        from axolotl.integrations.kernels.sonicmoe.routing import sigmoid_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _sigmoid_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            sigmoid_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_sigmoid_block(
@@ -227,10 +233,11 @@ class TestSigmoidRoutingParity:
 
     def test_weights_match_no_groups(self):
         """Both implementations match without group selection (n_group=1)."""
-        from axolotl.integrations.kernels.sonicmoe.routing import sigmoid_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _sigmoid_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            sigmoid_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_sigmoid_block(
@@ -256,10 +263,11 @@ class TestSigmoidRoutingParity:
 
     def test_bias_on_block_parity(self):
         """minimax_m2 style: bias on block, not gate."""
-        from axolotl.integrations.kernels.sonicmoe.routing import sigmoid_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _sigmoid_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            sigmoid_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_sigmoid_block(
@@ -284,10 +292,11 @@ class TestSigmoidRoutingParity:
 
     def test_scaling_factor_parity(self):
         """routed_scaling_factor applied identically by both."""
-        from axolotl.integrations.kernels.sonicmoe.routing import sigmoid_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _sigmoid_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            sigmoid_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_sigmoid_block(
@@ -313,10 +322,11 @@ class TestSigmoidRoutingParity:
 
     def test_no_renorm_parity(self):
         """norm_topk_prob=False produces same results in both."""
-        from axolotl.integrations.kernels.sonicmoe.routing import sigmoid_topk_routing
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _sigmoid_topk_route,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
+            sigmoid_topk_routing,
         )
 
         moe_block, gate, hidden, T, H, E, K = _make_sigmoid_block(
@@ -354,12 +364,11 @@ class TestSharedExpertParity:
         _require_triton()
 
     def _get_both_fns(self):
-        from axolotl.integrations.kernels.sonicmoe.patch import (
-            _compute_shared_expert as sonic_compute,
-        )
-
         from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
             _compute_shared_expert as scatter_compute,
+        )
+        from axolotl.integrations.kernels.libs.sonicmoe.patch import (
+            _compute_shared_expert as sonic_compute,
         )
 
         return scatter_compute, sonic_compute
