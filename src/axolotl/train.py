@@ -82,7 +82,7 @@ def setup_model_and_tokenizer(
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
-    if model.generation_config is not None:
+    if getattr(model, "generation_config", None) is not None:
         model.generation_config.do_sample = True
 
     model_properties = model.config.to_dict()
@@ -138,7 +138,11 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             reference_model: bool = True
-            if cfg.rl == RLType.GRPO and cfg.trl.beta == 0:
+            trl_cfg = getattr(cfg, "trl", None)
+            if (
+                cfg.rl in {RLType.GRPO, RLType.EBFT}
+                and getattr(trl_cfg, "beta", 0) == 0
+            ):
                 reference_model = False
             # load the model again for model_ref/baseline
             model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
@@ -206,7 +210,7 @@ def execute_training(
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl is RLType.GRPO,
+                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
                     device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )

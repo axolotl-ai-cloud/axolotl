@@ -1,0 +1,81 @@
+# EBFT: Energy-Based Fine-Tuning with Llama-3.2-1B on OpenCodeInstruct
+#
+# Paper: "Matching Features, Not Tokens" (Jelassi et al., 2026)
+# https://arxiv.org/abs/2603.12248
+#
+# Prerequisites:
+#   1. Start vLLM server on a separate GPU:
+#      CUDA_VISIBLE_DEVICES=1 python -m trl.scripts.vllm_serve \
+#          --model meta-llama/Llama-3.2-1B \
+#          --host 0.0.0.0 --port 8000 \
+#          --gpu-memory-utilization 0.4 --dtype bfloat16
+#
+#   2. Run training:
+#      CUDA_VISIBLE_DEVICES=0 axolotl train examples/ebft/llama-1b-ebft-opencode.yaml
+
+base_model: meta-llama/Llama-3.2-1B
+chat_template: llama3
+
+# --- Training method ---
+rl: ebft
+
+# --- EBFT configuration ---
+ebft:
+  feature_layers: [0.25, 0.5, 0.75]  # extract hidden states at 25%, 50%, 75% depth
+  embed_method: last_token            # pool to sequence embedding via last token
+  use_whitening: false                # SVD whitening (disable for speed in small runs)
+  alignment_coef: 1.0                 # cosine similarity with ground-truth features
+  diversity_coef: 1.0                 # pairwise similarity penalty
+  ce_coef: 0.0                        # cross-entropy on ground-truth (0 = pure feature matching)
+
+# --- Generation settings (via TRL/GRPO infrastructure) ---
+trl:
+  num_generations: 4                  # samples per prompt for RLOO
+  max_completion_length: 256          # max generated tokens
+  temperature: 1.0
+  use_vllm: true
+  scale_rewards: true
+  loss_type: grpo
+  epsilon: 0.2
+
+# --- Dataset ---
+datasets:
+  - path: nvidia/OpenCodeInstruct
+    type: ebft_opencode.transform
+    split: train[:1%]        # first 1% for validation runs
+
+# --- Training hyperparameters ---
+sequence_len: 1024
+micro_batch_size: 2
+gradient_accumulation_steps: 4
+num_epochs: 1
+max_steps: 50
+
+learning_rate: 1.0e-5
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+warmup_steps: 5
+weight_decay: 0.01
+
+# --- LoRA (recommended to reduce memory with frozen feature network) ---
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target_linear: true
+
+# --- Hardware ---
+bf16: auto
+flash_attention: true
+gradient_checkpointing: true
+
+special_tokens:
+  pad_token: "<|end_of_text|>"
+
+val_set_size: 0.0
+output_dir: ./outputs/ebft-llama-1b-opencode
+
+# --- Logging ---
+use_tensorboard: true
+logging_steps: 1
+save_steps: 25

@@ -235,6 +235,13 @@ class AxolotlTrainingMixins:
         metadata={"help": "Use activation offloading with CUDA streams for training."},
     )
 
+    layer_offloading: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Offload model layer parameters to CPU during forward, prefetch back during backward."
+        },
+    )
+
     # multi-modal section
 
     image_size: int | tuple[int, int] | None = field(

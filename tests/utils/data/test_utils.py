@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 from datasets import Dataset
 
-from axolotl.utils.data.utils import handle_long_seq_in_dataset
+from axolotl.utils.data.utils import handle_long_seq_in_dataset, remove_double_bos_token
 from axolotl.utils.dict import DictDefault
 
 
@@ -539,6 +539,34 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
         # Should behave like 'drop'
         self.assertEqual(len(result), 1)
         self.assertEqual(len(result[0]["input_ids"]), 3)
+
+
+class TestRemoveDoubleBOSToken(unittest.TestCase):
+    def test_no_remove_bos_token(self):
+        input_ids = [0, 1, 2]
+        labels = [1, 2, 3]
+
+        example = {
+            "input_ids": input_ids,
+            "labels": labels,
+        }
+
+        example = remove_double_bos_token(example, 0)
+        assert example["input_ids"] == input_ids
+        assert example["labels"] == labels
+
+    def test_remove_bos_token(self):
+        input_ids = [0, 0, 1]
+        labels = [0, 1, 2]
+
+        example = {
+            "input_ids": input_ids,
+            "labels": labels,
+        }
+
+        example = remove_double_bos_token(example, 0)
+        assert example["input_ids"] == [0, 1]
+        assert example["labels"] == [1, 2]
 
 
 if __name__ == "__main__":

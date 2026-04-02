@@ -1,4 +1,4 @@
-base_model: mistralai/Mistral-Small-4-119B-2603
+base_model: axolotl-ai-co/Mistral-Small-4-119B-2603-BF16
 processor_type: AutoProcessor
 
 plugins:

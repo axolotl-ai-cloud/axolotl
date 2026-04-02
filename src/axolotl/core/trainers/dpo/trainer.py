@@ -6,6 +6,7 @@ from typing import Any, Dict, Union
 
 import torch
 from torch import nn
+from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from trl import DPOTrainer
 
 from axolotl.core.trainers.mixins import (
@@ -18,6 +19,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
 )
+from axolotl.utils.data.utils import remove_double_bos_token
 
 
 class AxolotlDPOTrainer(
@@ -53,36 +55,31 @@ class AxolotlDPOTrainer(
 
         return super().push_to_hub(*args, **kwargs)
 
-    @staticmethod
-    def tokenize_row(
-        features,
-        processing_class,
-        max_prompt_length: int | None = None,
-        max_completion_length: int | None = None,
-        add_special_tokens: bool = True,
-        is_chat: bool = False,
-    ) -> Dict:
-        res = DPOTrainer.tokenize_row(
-            features,
-            processing_class,
-            max_prompt_length=max_prompt_length,
-            max_completion_length=max_completion_length,
-            add_special_tokens=add_special_tokens,
-            is_chat=is_chat,
+    def _tokenize(
+        self,
+        processing_class: PreTrainedTokenizerBase | ProcessorMixin,
+        input: str | list,
+        **kwargs,
+    ) -> dict[str, list]:
+        """
+        Override TRL's tokenization in DPO trainer to fix double bos_token bug (eg. llama).
+        """
+        result = super()._tokenize(
+            processing_class=processing_class, input=input, **kwargs
         )
-        # fix when the tokenizer doesn't have a bos_token_id, e.g. Qwen
-        if processing_class.bos_token is None and res["prompt_input_ids"][0] is None:
-            for key in res.keys():
-                res[key] = res[key][1:]
 
-        if processing_class.bos_token and processing_class.bos_token_id is not None:
-            # dpo trainer may incorrectly prepend the bos_token_id to the dpo outputs
-            if res["chosen_input_ids"][0] == processing_class.bos_token_id:
-                res["chosen_input_ids"] = res["chosen_input_ids"][1:]
-            if res["rejected_input_ids"][0] == processing_class.bos_token_id:
-                res["rejected_input_ids"] = res["rejected_input_ids"][1:]
+        # Handle multimodal models
+        tokenizer = (
+            getattr(processing_class, "tokenizer", None)
+            if isinstance(processing_class, ProcessorMixin)
+            else processing_class
+        )
 
-        return res
+        bos_token_id = getattr(tokenizer, "bos_token_id", None) if tokenizer else None
+        if bos_token_id is not None:
+            result = remove_double_bos_token(result, bos_token_id)
+
+        return result
 
     def training_step(
         self,
@@ -94,20 +91,3 @@ class AxolotlDPOTrainer(
         gc.collect()
         torch.cuda.empty_cache()
         return loss
-
-    def concatenated_forward(
-        self,
-        model: nn.Module,
-        batch: dict[str, Union[list, torch.LongTensor]],
-        is_ref_model: bool = False,
-    ) -> dict[str, torch.Tensor]:
-        if self.args.dpo_norm_loss:
-            # fmt: off
-            loss_type: list[str] = self.loss_type  # type: ignore[has-type]
-            # fmt: on
-            # concatenated_forward handles avg token logprob for ipo case already
-            self.loss_type = ["ipo"]
-            res = super().concatenated_forward(model, batch, is_ref_model=is_ref_model)
-            self.loss_type = loss_type
-            return res
-        return super().concatenated_forward(model, batch, is_ref_model=is_ref_model)

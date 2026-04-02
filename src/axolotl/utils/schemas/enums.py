@@ -35,6 +35,7 @@ class RLType(str, Enum):
     ORPO = "orpo"
     KTO = "kto"
     SIMPO = "simpo"
+    EBFT = "ebft"
 
 
 class ChatTemplate(str, Enum):
@@ -61,6 +62,7 @@ class ChatTemplate(str, Enum):
     qwen3 = "qwen3"
     qwen3_5 = "qwen3_5"
     falcon_h1 = "falcon_h1"
+    nemotron_h = "nemotron_h"
     tokenizer_default = "tokenizer_default"
     exaone = "exaone"
     exaone4 = "exaone4"
@@ -87,6 +89,11 @@ class CustomSupportedOptimizers(str, Enum):
     came_pytorch = "came_pytorch"
     muon = "muon"
     dion = "dion"
+    flash_adamw = "flash_adamw"
+    flash_adam = "flash_adam"
+    flash_sgd = "flash_sgd"
+    flash_sgdw = "flash_sgdw"
+    flash_lion = "flash_lion"
 
 
 class RingAttnFunc(str, Enum):

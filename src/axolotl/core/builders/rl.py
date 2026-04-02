@@ -54,8 +54,16 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
             trainer_cls = GRPOStrategy.get_trainer_class(
-                sequence_parallel=self.cfg.context_parallel_size > 1
+                sequence_parallel=self.cfg.context_parallel_size > 1,
+                async_grpo=async_grpo,
             )
             trainer_cls_args.extend(GRPOStrategy.set_trainer_args(self.cfg))
             trainer_kwargs.update(GRPOStrategy.set_trainer_kwargs(self.cfg))
@@ -70,6 +78,11 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_cls = AxolotlKTOTrainer
         elif self.cfg.rl is RLType.SIMPO:
             trainer_cls = AxolotlCPOTrainer
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            trainer_cls = EBFTStrategy.get_trainer_class(self.cfg)
+            trainer_kwargs.update(EBFTStrategy.set_trainer_kwargs(self.cfg))
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
@@ -114,9 +127,6 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             # trl does some odd mapping of alpha to beta to reuse the beta parameter ???
             training_args_kwargs["beta"] = self.cfg.orpo_alpha
 
-        if self.cfg.rpo_alpha is not None:
-            training_args_kwargs["rpo_alpha"] = self.cfg.rpo_alpha
-
         if self.cfg.use_wandb:
             training_args_kwargs["run_name"] = self.cfg.wandb_name
 
@@ -151,9 +161,34 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in {RLType.GRPO, RLType.GDPO}:
             from axolotl.core.trainers.grpo import GRPOStrategy
 
-            training_args_cls = GRPOStrategy.get_training_args_class()
+            async_grpo = bool(
+                self.cfg.trl
+                and (
+                    getattr(self.cfg.trl, "async_prefetch", False)
+                    or getattr(self.cfg.trl, "use_data_producer", False)
+                )
+            )
+            training_args_cls = GRPOStrategy.get_training_args_class(
+                async_grpo=async_grpo
+            )
             training_args_kwargs.update(GRPOStrategy.set_training_args_kwargs(self.cfg))
             blocklist_args_kwargs = GRPOStrategy.get_blocklist_args_kwargs()
+            if not async_grpo:
+                # Filter out async/fast-async-only fields not in standard GRPOConfig.
+                # These are defined in FastAsyncGRPOConfig and only used by
+                # AxolotlAsyncGRPOConfig. Standard GRPOConfig rejects them.
+                import dataclasses
+
+                from trl import GRPOConfig as _BaseGRPOConfig
+
+                from axolotl.core.trainers.grpo.fast_async_trainer import (
+                    FastAsyncGRPOConfig,
+                )
+
+                async_only_fields = {
+                    f.name for f in dataclasses.fields(FastAsyncGRPOConfig)
+                } - {f.name for f in dataclasses.fields(_BaseGRPOConfig)}
+                blocklist_args_kwargs.extend(list(async_only_fields))
             if self.cfg.rl is RLType.GDPO:
                 training_args_kwargs.setdefault(
                     "multi_objective_aggregation", "normalize_then_sum"
@@ -162,6 +197,13 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         elif self.cfg.rl in [RLType.DPO, RLType.IPO]:
             training_args_cls = AxolotlDPOConfig
             training_args_kwargs.update(DPOStrategy.set_training_args_kwargs(self.cfg))
+
+        elif self.cfg.rl is RLType.EBFT:
+            from axolotl.core.trainers.ebft import EBFTStrategy
+
+            training_args_cls = EBFTStrategy.get_training_args_class(self.cfg)
+            training_args_kwargs.update(EBFTStrategy.set_training_args_kwargs(self.cfg))
+            blocklist_args_kwargs = EBFTStrategy.get_blocklist_args_kwargs(self.cfg)
         else:
             raise ValueError(f"Unsupported RL: {self.cfg.rl}")
 
@@ -191,12 +233,12 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset
-        if self.cfg.adapter and self.peft_config and self.cfg.rl is not RLType.GRPO:
+        if (
+            self.cfg.adapter
+            and self.peft_config
+            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT)
+        ):
             trainer_kwargs["peft_config"] = self.peft_config
-        if self.cfg.precompute_ref_log_probs is not None:
-            trainer_kwargs["precompute_ref_log_probs"] = (
-                self.cfg.precompute_ref_log_probs
-            )
 
         trainer_cls, trainer_cls_args = self._get_trainer_cls(trainer_kwargs)
 
@@ -217,13 +259,36 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             trainer_kwargs, trainer_cls
         )
 
-        trainer = trainer_cls(
-            *trainer_cls_args,
-            args=training_args,
-            train_dataset=self.train_dataset,
-            callbacks=self.get_callbacks(),
-            **trainer_kwargs,
-        )
+        # Allow FP8-quantized models to be fine-tuned with LoRA adapters.
+        # transformers' validate_quantization_for_training blocks FP8 because
+        # hf_quantizer.is_trainable is False, but LoRA only trains the adapters
+        # (base weights stay frozen in FP8).
+        _orig_validate_quant = None
+        if (
+            self.cfg.adapter
+            and hasattr(self.model, "is_quantized")
+            and self.model.is_quantized
+        ):
+            import transformers.trainer as _trainer_module
+
+            _orig_validate_quant = _trainer_module.validate_quantization_for_training
+            _trainer_module.validate_quantization_for_training = lambda model: None
+
+        try:
+            trainer = trainer_cls(
+                *trainer_cls_args,
+                args=training_args,
+                train_dataset=self.train_dataset,
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
+        finally:
+            if _orig_validate_quant is not None:
+                import transformers.trainer as _trainer_module
+
+                _trainer_module.validate_quantization_for_training = (
+                    _orig_validate_quant
+                )
         if self.cfg.fsdp_config or self.cfg.fsdp:
             ensure_dtype(trainer.model, dtype=self.cfg.torch_dtype)
             if self.cfg.rl in [RLType.DPO, RLType.IPO] and trainer.ref_model:

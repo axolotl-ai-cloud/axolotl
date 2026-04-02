@@ -242,6 +242,30 @@ class BasePlugin:
         """
         return []
 
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Called after rollouts are scored during online RL (GRPO/PPO).
+
+        Provides access to the full scored rollout data for logging, trace
+        storage, or analysis. Called once per scoring step with all samples
+        from that step.
+
+        Args:
+            cfg: The axolotl configuration.
+            trainer: The trainer instance.
+            prompts: List of prompt texts (one per sample).
+            completions: List of completion texts (one per sample).
+            rewards: Dict mapping reward function name to list of reward values.
+            advantages: List of advantage values (one per sample).
+        """
+
     def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         """Performs actions after training is complete.
 
@@ -612,6 +636,36 @@ class PluginManager:
         """
         for plugin in self.plugins.values():
             plugin.post_train(cfg, model)
+
+    def on_rollouts_scored(
+        self,
+        cfg: DictDefault,
+        trainer,
+        prompts: list[str],
+        completions: list[str],
+        rewards: dict[str, list[float]],
+        advantages: list[float],
+    ):
+        """Calls the on_rollouts_scored method of all registered plugins.
+
+        Args:
+            cfg: The configuration for the plugins.
+            trainer: The trainer instance.
+            prompts: List of prompt texts.
+            completions: List of completion texts.
+            rewards: Dict mapping reward function name to list of rewards.
+            advantages: List of advantage values.
+        """
+        for plugin in self.plugins.values():
+            try:
+                plugin.on_rollouts_scored(
+                    cfg, trainer, prompts, completions, rewards, advantages
+                )
+            except Exception:
+                LOG.warning(
+                    f"Plugin {plugin.__class__.__name__}.on_rollouts_scored failed",
+                    exc_info=True,
+                )
 
     def post_train_unload(self, cfg: DictDefault):
         """Calls the post_train_unload method of all registered plugins.

@@ -1,9 +1,5 @@
 base_model: google/gemma-3-4b-it
 
-# Need to set else transformers tries to load vision too
-model_type: Gemma3ForCausalLM
-cls_model_config: Gemma3TextConfig
-
 load_in_4bit: true
 
 # gemma3 doesn't seem to play nice with ddp
@@ -23,6 +19,11 @@ datasets:
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.01
 output_dir: ./outputs/out
+
+# Freeze vision tower
+unfrozen_parameters:
+  - ^model\.language_model\..*
+  - ^lm_head\..*
 
 adapter: qlora
 lora_model_dir:

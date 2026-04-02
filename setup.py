@@ -81,16 +81,23 @@ def parse_requirements(extras_require_map):
                     f"https://download.pytorch.org/whl/{torch_cuda_version}"
                 )
 
-            if (major, minor) >= (2, 9):
+            if (major, minor) >= (2, 10):
+                extras_require_map.pop("fbgemm-gpu")
+                extras_require_map["fbgemm-gpu"] = [
+                    "fbgemm-gpu==1.5.0",
+                    "fbgemm-gpu-genai==1.5.0",
+                ]
+                if not install_xformers:
+                    _install_requires.pop(_install_requires.index(xformers_version))
+                extras_require_map["vllm"] = ["vllm>=0.17.1"]
+            elif (major, minor) >= (2, 9):
                 extras_require_map.pop("fbgemm-gpu")
                 extras_require_map["fbgemm-gpu"] = [
                     "fbgemm-gpu==1.4.0",
                     "fbgemm-gpu-genai==1.4.2",
                 ]
-                extras_require_map["vllm"] = ["vllm==0.11.1"]
                 if not install_xformers:
                     _install_requires.pop(_install_requires.index(xformers_version))
-                extras_require_map["vllm"] = ["vllm==0.13.0"]
                 if patch == 0:
                     extras_require_map["vllm"] = ["vllm==0.13.0"]
                 else:

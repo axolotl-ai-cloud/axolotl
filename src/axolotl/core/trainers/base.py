@@ -29,10 +29,12 @@ from transformers.utils import SAFE_WEIGHTS_NAME, is_peft_available
 from trl.experimental.utils import pad_to_length
 from typing_extensions import override
 
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.core.trainers.mixins import (
     ActivationOffloadingMixin,
     CheckpointSaveMixin,
     DistributedParallelMixin,
+    LayerOffloadingMixin,
     OptimizerMixin,
     PackingMixin,
     RngLoaderMixin,
@@ -51,8 +53,6 @@ from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
 LOG = get_logger(__name__)
 
-TOKENS_STATE_FILE = "tokens_state."
-
 REDUCTION_FNS = {
     "mean": torch.mean,
     "min": torch.min,
@@ -67,6 +67,7 @@ class AxolotlTrainer(
     OptimizerMixin,
     RngLoaderMixin,
     CheckpointSaveMixin,
+    LayerOffloadingMixin,
     ActivationOffloadingMixin,
     DistributedParallelMixin,
     Trainer,
@@ -404,15 +405,13 @@ class AxolotlTrainer(
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):
         concatenated_batch = {}
 
-        max_length = max(
-            inputs["input_ids"].shape[1], inputs["rejected_input_ids"].shape[1]
-        )
+        max_length = max(inputs["input_ids"].shape[1], inputs["rejected_ids"].shape[1])
         # Concatenate positive and negative inputs
         concatenated_batch["input_ids"] = pad_to_length(
             inputs["input_ids"], max_length, pad_token
         )
-        concatenated_batch["rejected_input_ids"] = pad_to_length(
-            inputs["rejected_input_ids"], max_length, pad_token
+        concatenated_batch["rejected_ids"] = pad_to_length(
+            inputs["rejected_ids"], max_length, pad_token
         )
         concatenated_batch["labels"] = pad_to_length(
             inputs["labels"], max_length, label_pad_token
@@ -431,7 +430,7 @@ class AxolotlTrainer(
         ).to(device=device)
 
         input_ids = torch.cat(
-            [concatenated_batch["input_ids"], concatenated_batch["rejected_input_ids"]],
+            [concatenated_batch["input_ids"], concatenated_batch["rejected_ids"]],
             dim=0,
         ).to(device=device)
         attention_mask = torch.cat(

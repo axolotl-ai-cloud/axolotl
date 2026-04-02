@@ -70,7 +70,7 @@ class TestMixtral(unittest.TestCase):
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
-            model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
+            model.base_model.model.model.layers[0].mlp.gate.weight.dtype
             == torch.float32
         )
         check_model_output_exists(temp_dir, cfg)
@@ -125,7 +125,7 @@ class TestMixtral(unittest.TestCase):
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
-            model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
+            model.base_model.model.model.layers[0].mlp.gate.weight.dtype
             == torch.float32
         )
         check_model_output_exists(temp_dir, cfg)
@@ -183,7 +183,7 @@ class TestMixtral(unittest.TestCase):
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
-            model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
+            model.base_model.model.model.layers[0].mlp.gate.weight.dtype
             == torch.float32
         )
         check_model_output_exists(temp_dir, cfg)
@@ -241,7 +241,7 @@ class TestMixtral(unittest.TestCase):
 
         model, _, _ = train(cfg=cfg, dataset_meta=dataset_meta)
         assert (
-            model.base_model.model.model.layers[0].block_sparse_moe.gate.weight.dtype
+            model.base_model.model.model.layers[0].mlp.gate.weight.dtype
             == torch.float32
         )
         check_model_output_exists(temp_dir, cfg)

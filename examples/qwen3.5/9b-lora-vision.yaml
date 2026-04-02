@@ -1,9 +1,5 @@
-base_model: Qwen/Qwen3.5-7B
+base_model: Qwen/Qwen3.5-9B
 processor_type: AutoProcessor
-
-# Qwen3.5-7B and above are early-fusion VLMs (Qwen3_5ForConditionalGeneration).
-# Vision and text tokens are processed together by the same transformer layers.
-# Note: Qwen3.5-2B is a text-only model — the smallest VLM is Qwen3.5-7B.
 
 # These 3 lines are required for vision/multimodal training
 skip_prepare_dataset: true
@@ -30,8 +26,6 @@ lora_r: 32
 lora_alpha: 16
 lora_dropout: 0.05
 # Targets the language model attention and MLP layers.
-# Qwen3.5 is early-fusion: all layers (including those seeing vision tokens) share
-# the same transformer stack, so standard attention targets work for both modalities.
 lora_target_modules:
   - q_proj
   - k_proj

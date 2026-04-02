@@ -38,4 +38,6 @@ class DiffusionPlugin(BasePlugin):
 
     def post_trainer_create(self, cfg: DictDefault, trainer: DiffusionTrainer):
         """Configure trainer after creation."""
-        trainer.set_config(cfg)
+        if hasattr(trainer, "axolotl_cfg"):
+            trainer.axolotl_cfg = cfg
+        trainer.post_set_axolotl_cfg()

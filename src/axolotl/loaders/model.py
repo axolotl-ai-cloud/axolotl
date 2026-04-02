@@ -215,6 +215,8 @@ class ModelLoader:
             self.model_kwargs["revision"] = self.cfg.revision_of_model
         if self.cfg.use_kernels:
             self.model_kwargs["use_kernels"] = self.cfg.use_kernels
+            if "allow_all_kernels" not in self.model_kwargs:
+                self.model_kwargs["allow_all_kernels"] = self.cfg.use_kernels
         self._set_quantization_config()
         self._set_attention_config()
         self._check_model_requirements()
@@ -503,6 +505,20 @@ class ModelLoader:
         elif not is_ds_zero3:
             self.model_kwargs["device_map"] = device_map
 
+            # quantize_moe_experts quantizes expert weights on-the-fly during loading,
+            # so the actual VRAM usage is much less than bf16 estimates.
+            # When device_map is "auto", accelerate's infer_auto_device_map computes
+            # the device map at bf16 size (before quantization), causing it to offload
+            # layers to CPU, which BnB then rejects. Force single-GPU placement to
+            # prevent this. Only applies to the non-FSDP, non-ZeRO3 path (DDP/single).
+            if getattr(self.cfg, "quantize_moe_experts", False) and device_map in (
+                "auto",
+                None,
+            ):
+                self.model_kwargs["device_map"] = {
+                    "": int(os.environ.get("LOCAL_RANK", 0))
+                }
+
             cur_device = get_device_type()
             if "mps" in str(cur_device):
                 self.model_kwargs["device_map"] = "mps:0"
@@ -574,9 +590,11 @@ class ModelLoader:
                 "bnb_4bit_quant_type": "nf4",
                 "bnb_4bit_quant_storage": torch.bfloat16,
             }
-            if self.cfg.model_config_type in ["jamba", "qwen2_moe"] and not (
-                self.cfg.deepspeed or self.is_fsdp_enabled
-            ):
+            if self.cfg.model_config_type in [
+                "jamba",
+                "qwen2_moe",
+                "nemotron_h",
+            ] and not (self.cfg.deepspeed or self.is_fsdp_enabled):
                 # for some reason, this causes the loss to be off by an order of magnitude
                 # but deepspeed needs this still in bfloat16
                 bnb_config["bnb_4bit_quant_storage"] = torch.float32

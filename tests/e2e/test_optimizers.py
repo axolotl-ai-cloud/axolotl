@@ -4,6 +4,8 @@ E2E tests for custom optimizers using Llama
 
 import unittest
 
+import pytest
+
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -282,3 +284,60 @@ class TestCustomOptimizers(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+
+
+@require_torch_2_7_0
+@pytest.mark.parametrize(
+    "optimizer_name,expected_class,learning_rate",
+    [
+        ("flash_adamw", "FlashAdamW", 0.00001),
+        ("flash_adam", "FlashAdam", 0.00001),
+        ("flash_sgd", "FlashSGD", 0.01),
+        ("flash_sgdw", "FlashSGDW", 0.01),
+        ("flash_lion", "FlashLion", 0.0001),
+    ],
+)
+def test_flash_optimizers(tmp_path, optimizer_name, expected_class, learning_rate):
+    pytest.importorskip("flashoptim")
+    temp_dir = str(tmp_path)
+    cfg = DictDefault(
+        {
+            "base_model": "HuggingFaceTB/SmolLM2-135M",
+            "model_type": "AutoModelForCausalLM",
+            "tokenizer_type": "AutoTokenizer",
+            "sequence_len": 1024,
+            "load_in_8bit": True,
+            "adapter": "lora",
+            "lora_r": 8,
+            "lora_alpha": 16,
+            "lora_dropout": 0.05,
+            "lora_target_linear": True,
+            "val_set_size": 0.02,
+            "special_tokens": {
+                "pad_token": "<|endoftext|>",
+            },
+            "datasets": [
+                {
+                    "path": "mhenrichsen/alpaca_2k_test",
+                    "type": "alpaca",
+                },
+            ],
+            "num_epochs": 1,
+            "micro_batch_size": 8,
+            "gradient_accumulation_steps": 1,
+            "output_dir": temp_dir,
+            "learning_rate": learning_rate,
+            "optimizer": optimizer_name,
+            "max_steps": 5,
+            "lr_scheduler": "cosine",
+            "save_first_step": False,
+        }
+    )
+
+    cfg = validate_config(cfg)
+    normalize_config(cfg)
+    dataset_meta = load_datasets(cfg=cfg)
+
+    _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
+    check_model_output_exists(temp_dir, cfg)
+    assert trainer.optimizer.optimizer.__class__.__name__ == expected_class

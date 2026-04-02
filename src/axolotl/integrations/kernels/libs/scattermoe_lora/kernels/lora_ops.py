@@ -195,6 +195,36 @@ def _estimate_smem_usage(
 _SMEM_SLACK = 10_000
 
 
+def _estimate_register_pressure(
+    num_warps: int,
+    *tile_sizes: tuple[int, int],
+) -> float:
+    """Rough estimate of per-thread register footprint from live tile sizes.
+
+    This is a heuristic, NOT an accurate register count.  Triton uses tensor
+    core MMA fragments that pack multiple elements per register, and can spill
+    to local memory when the hardware limit (255 regs/thread) is exceeded.
+
+    The estimate is used to prune only truly extreme configs that would cause
+    excessive spilling or compilation failures.  The threshold is set high
+    (``_MAX_REGS_SOFT_LIMIT``) because the heuristic overestimates — it
+    doesn't account for MMA fragment packing.  Configs like M=64,N=64,K=64
+    (est ~520) work fine in practice via spilling.
+
+    Returns estimated registers per thread.
+    """
+    # Each thread in a warp holds ~1/32 of the tile elements
+    tile_regs = sum(r * c for r, c in tile_sizes) / 32
+    scalar_overhead = 40
+    return tile_regs + scalar_overhead
+
+
+# Soft limit for register pressure pruning.  Only prune configs with extreme
+# tile products (e.g. M=128,K=256,N=256) that reliably crash on Blackwell.
+# Moderate configs (M=64,N=64,K=64, est ~520) work via register spilling.
+_MAX_REGS_SOFT_LIMIT = 1024
+
+
 # =============================================================================
 # Forward Kernel: scatter2scatter with fused LoRA
 # =============================================================================
@@ -313,12 +343,11 @@ def _compute_expert_block_lora(
         B_blk_ptrs, mask=N_mask[:, None] & R_mask[None, :], other=0.0
     )  # [BLOCK_N, BLOCK_R]
 
-    # Cast xa_acc and b to same dtype for tl.dot (required when input is bf16/fp16)
-    # Both operands must match; cast to float32 (accumulator type) for precision.
-    b_f32 = b.to(tl.float32)
+    # tl.dot requires non-float32 inputs (tensor cores); cast back to input dtype
+    b_inp = b.to(INPUT_DTYPE)
 
     # (X @ A^T) @ B^T: [M, R] @ [R, N] -> [M, N]
-    lora_out = tl.dot(xa_acc, tl.trans(b_f32), allow_tf32=allow_tf32)
+    lora_out = tl.dot(xa_acc.to(INPUT_DTYPE), tl.trans(b_inp), allow_tf32=allow_tf32)
 
     acc += scaling * lora_out
     return acc
@@ -327,28 +356,29 @@ def _compute_expert_block_lora(
 def _scatter2scatter_lora_configs():
     """Generate forward kernel autotune configs.
 
-    Search space includes smaller tile sizes and fewer pipeline stages to
-    support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
+    Search space includes BLOCK_M to allow trading token-tile size for
+    larger BLOCK_K/BLOCK_N tiles.  On GPUs with ~99KB SMEM, BLOCK_M=128
+    forces BLOCK_K=32 and BLOCK_N=32; BLOCK_M=64 allows BLOCK_K=128
+    (4× fewer inner-loop iterations).
 
     Search space:
-      BLOCK_N:    {32, 64, 128, 256}
+      BLOCK_M:    {32, 64, 128}
+      BLOCK_N:    {32, 64}
       BLOCK_K:    {32, 64, 128}
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
-
-    BLOCK_M is fixed at 128 (module-level constant, not autotuned in the
-    scatter2scatter pattern).
     """
     configs = []
-    for block_n, block_k, warps, stages in product(
-        [32, 64, 128, 256],  # BLOCK_N
+    for block_m, block_n, block_k, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
+        [32, 64],  # BLOCK_N
         [32, 64, 128],  # BLOCK_K
         [4, 8],  # num_warps
         [3, 4, 5],  # num_stages
     ):
         configs.append(
             triton.Config(
-                {"BLOCK_N": block_n, "BLOCK_K": block_k},
+                {"BLOCK_M": block_m, "BLOCK_N": block_n, "BLOCK_K": block_k},
                 num_stages=stages,
                 num_warps=warps,
             )
@@ -357,7 +387,7 @@ def _scatter2scatter_lora_configs():
 
 
 def _prune_fwd_configs(configs, named_args, **kwargs):
-    """Prune forward configs based on SMEM capacity.
+    """Prune forward configs based on SMEM capacity and register pressure.
 
     The forward kernel inner loop loads three tiles per pipeline stage:
       X[BLOCK_M, BLOCK_K], W[BLOCK_K, BLOCK_N], A[BLOCK_R, BLOCK_K].
@@ -373,23 +403,49 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
 
     scored = []
     for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
         block_n = config.kwargs["BLOCK_N"]
         block_k = config.kwargs["BLOCK_K"]
         # Base: stages * BLOCK_K * (BLOCK_M + BLOCK_N) + BLOCK_M * BLOCK_N
-        smem_base = _estimate_smem_usage(config.num_stages, BLOCK_M, block_n, block_k)
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
         # A tile [BLOCK_R, BLOCK_K] loaded per stage in the inner loop
         smem_lora_loop = config.num_stages * block_r * block_k * 2
         # B tile [BLOCK_N, BLOCK_R] loaded once in epilogue
         smem_lora_epilogue = block_n * block_r * 2
         smem = smem_base + smem_lora_loop + smem_lora_epilogue
+
+        # Register pressure: live tiles are acc[M,N], xa_acc[M,R],
+        # x[M,K], w[K,N], a[R,K], plus epilogue b[N,R]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_n),  # acc
+            (block_m, block_r),  # xa_acc
+            (block_m, block_k),  # x tile
+            (block_k, block_n),  # w tile
+            (block_r, block_k),  # a tile
+            (block_n, block_r),  # b tile (epilogue)
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
         scored.append((smem, config))
 
     pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
     if pruned:
         return pruned
-    # All configs exceed SMEM — return the one with smallest estimated usage
-    scored.sort(key=lambda x: x[0])
-    return [scored[0][1]]
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_N"] * c.kwargs["BLOCK_K"]
+            ),
+        )
+    ]
 
 
 @triton.autotune(
@@ -531,6 +587,89 @@ def _scatter2scatter_lora(
     tl.store(Y_blk_ptrs, acc, mask=M_boundary_mask[:, None] & N_mask[None, :])
 
 
+def _scatter2scatter_lora_split(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    sorted_expert_idxs: torch.Tensor,
+    sorted_scattered_idxs: torch.Tensor,
+    k: int,
+    lora_A: torch.Tensor,
+    lora_B: torch.Tensor,
+    scaling: float,
+    b: Optional[torch.Tensor] = None,
+    x_grouped: bool = False,
+    y_grouped: bool = False,
+    out: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Split base+LoRA forward: 3 scatter2scatter calls, no fused LoRA kernel.
+
+    Faster for models with few large experts (e.g. Mixtral E=8, I=14336)
+    because the base kernel runs at full speed without LoRA SMEM overhead,
+    and the LoRA matmuls (R=16) are tiny separate passes.
+
+    Y = scatter(X, W) + scaling * scatter(scatter(X, A^T), B^T)
+    """
+    from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import (
+        scatter2scatter,
+    )
+
+    E = W.size(0)
+    R = lora_A.size(0) // E
+    K = W.size(1)
+    N = W.size(2)
+
+    # 1. Base: Y_base = X @ W  (uses base kernel with optimal tile sizes)
+    output = scatter2scatter(
+        X=X,
+        W=W,
+        b=b,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=y_grouped,
+        out=out,
+    )
+
+    # 2. XA = X @ A^T  (tiny: output is [M*k, R])
+    # Reshape A: [R*E, K] → [E, K, R] (expert weights for scatter2scatter)
+    W_A = lora_A.reshape(E, R, K).permute(0, 2, 1).contiguous()
+    XA = scatter2scatter(
+        X=X,
+        W=W_A,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=k,
+        x_grouped=x_grouped,
+        y_grouped=True,
+    )
+
+    # 3. Y_lora = XA @ B^T  (R is tiny, so this is very fast)
+    # Reshape B: [N, R*E] → [E, R, N]
+    W_B = lora_B.T.reshape(E, R, N).contiguous()
+    Y_lora = scatter2scatter(
+        X=XA,
+        W=W_B,
+        sorted_expert_idxs=sorted_expert_idxs,
+        sorted_scattered_idxs=sorted_scattered_idxs,
+        k=1,
+        x_grouped=True,
+        y_grouped=y_grouped,
+    )
+
+    # 4. Y = Y_base + scaling * Y_lora
+    output.add_(Y_lora, alpha=scaling)
+    return output
+
+
+# Threshold for switching from fused to split LoRA forward.
+# Split wins when per-expert matmul is large (bandwidth-bound LoRA tile
+# loads dominate in the fused kernel's inner loop).
+# Empirically: split wins for E<=32 with K*N > 20M (e.g. Mixtral, Phi-MoE).
+_SPLIT_LORA_FWD_THRESHOLD = 20_000_000  # per-expert K*N
+_SPLIT_LORA_FWD_MAX_EXPERTS = 32
+
+
 def scatter2scatter_lora(
     X: torch.Tensor,
     W: torch.Tensor,
@@ -546,7 +685,13 @@ def scatter2scatter_lora(
     out: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """
-    Fused scatter2scatter with LoRA: Y[i] = X[i] @ W[e] + scaling * (X[i] @ A[e]^T) @ B[e]^T + b[e]
+    Scatter2scatter with LoRA: Y[i] = X[i] @ W[e] + scaling * (X[i] @ A[e]^T) @ B[e]^T + b[e]
+
+    Automatically selects between:
+    - Fused kernel: single Triton kernel with LoRA in the inner loop.
+      Best for many small experts (E>=64, small K*N).
+    - Split dispatch: 3 separate scatter2scatter calls (base + XA + lora).
+      Best for few large experts (E<=32, large K*N like Mixtral).
 
     Args:
         X: Input [M, K] or [M*k, K] if x_grouped
@@ -565,12 +710,30 @@ def scatter2scatter_lora(
     Returns:
         Y: Output [M*k, N]
     """
-    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
-    assert sorted_scattered_idxs.size(0) == X.size(0) * k
-
     E = W.size(0)
     K = W.size(1)
     N = W.size(2)
+
+    # Dispatch: split for few large experts, fused for many small experts
+    if E <= _SPLIT_LORA_FWD_MAX_EXPERTS and K * N >= _SPLIT_LORA_FWD_THRESHOLD:
+        return _scatter2scatter_lora_split(
+            X,
+            W,
+            sorted_expert_idxs,
+            sorted_scattered_idxs,
+            k,
+            lora_A,
+            lora_B,
+            scaling,
+            b,
+            x_grouped,
+            y_grouped,
+            out,
+        )
+
+    assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
+    assert sorted_scattered_idxs.size(0) == X.size(0) * k
+
     R = lora_A.size(0) // E
 
     # Pad R to power of 2 for Triton tile size
@@ -610,11 +773,9 @@ def scatter2scatter_lora(
         b_ptr,
         stride_be,
         stride_bn,
-        # A: [r*E, K] -> stride(0) is r*E dim stride, stride(1) is K dim stride
         lora_A,
         lora_A.stride(0),
         lora_A.stride(1),
-        # B: [N, r*E] -> stride(0) is N dim stride, stride(1) is r*E dim stride
         lora_B,
         lora_B.stride(0),
         lora_B.stride(1),
@@ -625,9 +786,8 @@ def scatter2scatter_lora(
         K=K,
         N=N,
         E=E,
-        ACTUAL_R=R,  # True LoRA rank for weight indexing
-        BLOCK_M=BLOCK_M,
-        BLOCK_R=BLOCK_R,  # Padded tile size >= max(R, 16)
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
         ACC_TYPE=tl.float32,
         scaling=scaling,
         allow_tf32=ALLOW_TF32,
@@ -761,13 +921,13 @@ def _compute_expert_block_lora_dX(
         + (A_expert_offset + R_block)[:, None] * stride_ar
         + K_block[None, :] * stride_ak
     )
-    a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0)
-
-    # Cast to float32 for precision
-    a_f32 = a_e.to(tl.float32)
+    a_e = tl.load(A_blk_ptrs, mask=R_mask[:, None] & K_mask[None, :], other=0.0).to(
+        INPUT_DTYPE
+    )
 
     # (DY @ B) @ A: [M, R] @ [R, K] -> [M, K]
-    lora_dx = tl.dot(dy_b_acc, a_f32, allow_tf32=allow_tf32)
+    # tl.dot requires non-float32 inputs (tensor cores); cast accumulator back to input dtype
+    lora_dx = tl.dot(dy_b_acc.to(INPUT_DTYPE), a_e, allow_tf32=allow_tf32)
 
     acc += scaling * lora_dx
     return acc
@@ -779,25 +939,26 @@ def _scatter2scatter_lora_dX_configs():
     The inner loop is over N (not K as in forward). The output dimension is K.
     So BLOCK_K tiles the output and BLOCK_N tiles the reduction.
 
-    Search space includes smaller tile sizes and fewer pipeline stages to
-    support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
+    BLOCK_M is now autotunable (was fixed at 128).
 
     Search space:
-      BLOCK_K:    {32, 64, 128, 256}   (output tile)
-      BLOCK_N:    {32, 64, 128, 256}   (reduction tile)
+      BLOCK_M:    {32, 64, 128}        (token tile)
+      BLOCK_K:    {32, 64, 128}   (output tile)
+      BLOCK_N:    {32, 64}   (reduction tile)
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
     """
     configs = []
-    for block_k, block_n, warps, stages in product(
-        [32, 64, 128, 256],  # BLOCK_K (output dimension)
-        [32, 64, 128, 256],  # BLOCK_N (reduction dimension)
+    for block_m, block_k, block_n, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M
+        [32, 64, 128],  # BLOCK_K (output dimension)
+        [32, 64],  # BLOCK_N (reduction dimension)
         [4, 8],  # num_warps
         [3, 4, 5],  # num_stages
     ):
         configs.append(
             triton.Config(
-                {"BLOCK_K": block_k, "BLOCK_N": block_n},
+                {"BLOCK_M": block_m, "BLOCK_K": block_k, "BLOCK_N": block_n},
                 num_stages=stages,
                 num_warps=warps,
             )
@@ -806,7 +967,7 @@ def _scatter2scatter_lora_dX_configs():
 
 
 def _prune_dX_configs(configs, named_args, **kwargs):
-    """Prune backward dX configs based on SMEM capacity.
+    """Prune backward dX configs based on SMEM capacity and register pressure.
 
     The dX kernel inner loop loads three tiles per pipeline stage:
       DY[BLOCK_M, BLOCK_N], W^T[BLOCK_N, BLOCK_K], B[BLOCK_N, BLOCK_R].
@@ -822,23 +983,49 @@ def _prune_dX_configs(configs, named_args, **kwargs):
 
     scored = []
     for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
         block_k = config.kwargs["BLOCK_K"]
         block_n = config.kwargs["BLOCK_N"]
         # Base: stages * BLOCK_N * (BLOCK_M + BLOCK_K) + BLOCK_M * BLOCK_K
-        smem_base = _estimate_smem_usage(config.num_stages, BLOCK_M, block_k, block_n)
+        smem_base = _estimate_smem_usage(config.num_stages, block_m, block_k, block_n)
         # B tile [BLOCK_N, BLOCK_R] loaded per stage in the inner loop
         smem_lora_loop = config.num_stages * block_n * block_r * 2
         # A tile [BLOCK_R, BLOCK_K] loaded once in epilogue
         smem_lora_epilogue = block_r * block_k * 2
         smem = smem_base + smem_lora_loop + smem_lora_epilogue
+
+        # Register pressure: live tiles are acc[M,K], dy_b_acc[M,R],
+        # dy[M,N], wt[N,K], b[N,R], plus epilogue a[R,K]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_m, block_k),  # acc
+            (block_m, block_r),  # dy_b_acc
+            (block_m, block_n),  # dy tile
+            (block_n, block_k),  # wt tile
+            (block_n, block_r),  # b tile
+            (block_r, block_k),  # a tile (epilogue)
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
         scored.append((smem, config))
 
     pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
     if pruned:
         return pruned
-    # All configs exceed SMEM — return the one with smallest estimated usage
-    scored.sort(key=lambda x: x[0])
-    return [scored[0][1]]
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_K"] * c.kwargs["BLOCK_N"]
+            ),
+        )
+    ]
 
 
 @triton.autotune(
@@ -1067,7 +1254,7 @@ def scatter2scatter_lora_dX(
         N=N,
         E=E,
         ACTUAL_R=R,
-        BLOCK_M=BLOCK_M,
+        # BLOCK_M is autotuned (injected by triton.autotune from Config kwargs)
         BLOCK_R=BLOCK_R,
         ACC_TYPE=tl.float32,
         scaling=scaling,
@@ -1091,9 +1278,9 @@ def _group_bwd_lora_configs():
     support GPUs with limited shared memory (e.g. ~99KB on some GPUs).
 
     Search space:
-      BLOCK_M:    {32, 64, 128, 256}   (token-loop tile)
-      BLOCK_K:    {32, 64, 128, 256}
-      BLOCK_N:    {32, 64, 128, 256}
+      BLOCK_M:    {32, 64, 128}   (token-loop tile)
+      BLOCK_K:    {32, 64, 128}
+      BLOCK_N:    {32, 64}
       num_warps:  {4, 8}
       num_stages: {3, 4, 5}
 
@@ -1102,9 +1289,9 @@ def _group_bwd_lora_configs():
     """
     configs = []
     for block_m, block_k, block_n, warps, stages in product(
-        [32, 64, 128, 256],  # BLOCK_M
-        [32, 64, 128, 256],  # BLOCK_K
-        [32, 64, 128, 256],  # BLOCK_N
+        [32, 64, 128],  # BLOCK_M
+        [32, 64, 128],  # BLOCK_K
+        [32, 64],  # BLOCK_N
         [4, 8],  # num_warps
         [3, 4, 5],  # num_stages
     ):
@@ -1119,7 +1306,7 @@ def _group_bwd_lora_configs():
 
 
 def _prune_bwd_lora_configs(configs, named_args, **kwargs):
-    """Prune backward configs based on SMEM capacity.
+    """Prune backward configs based on SMEM capacity and register pressure.
 
     The backward kernel loads X[BLOCK_M, BLOCK_K] and DY[BLOCK_M, BLOCK_N]
     in the inner loop, plus holds A[BLOCK_R, BLOCK_K] and B[BLOCK_N, BLOCK_R]
@@ -1138,14 +1325,40 @@ def _prune_bwd_lora_configs(configs, named_args, **kwargs):
         # A[BLOCK_R, BLOCK_K] and B[BLOCK_N, BLOCK_R] held for the full expert
         smem_lora = (block_r * block_k + block_n * block_r) * 2
         smem = smem_base + smem_lora
+
+        # Register pressure: dA_acc[R,K], dB_acc[N,R], x[M,K], dy[M,N],
+        # a[R,K], b[N,R], xa[M,R], dy_b[M,R]
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_r, block_k),  # dA_acc
+            (block_n, block_r),  # dB_acc
+            (block_m, block_k),  # x tile
+            (block_m, block_n),  # dy tile
+            (block_r, block_k),  # a tile
+            (block_n, block_r),  # b tile
+            (block_m, block_r),  # xa intermediate
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
         scored.append((smem, config))
 
     pruned = [c for s, c in scored if s <= smem_cap - _SMEM_SLACK]
     if pruned:
         return pruned
-    # All configs exceed SMEM — return the one with smallest estimated usage
-    scored.sort(key=lambda x: x[0])
-    return [scored[0][1]]
+    if scored:
+        # All surviving configs exceed SMEM — return the one with smallest usage
+        scored.sort(key=lambda x: x[0])
+        return [scored[0][1]]
+    # All configs pruned by register pressure — fall back to smallest tiles
+    return [
+        min(
+            configs,
+            key=lambda c: (
+                c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_K"] * c.kwargs["BLOCK_N"]
+            ),
+        )
+    ]
 
 
 @triton.autotune(
@@ -1330,6 +1543,279 @@ def _group_bwd_lora(
         )
 
 
+def _group_bwd_split_configs():
+    """Autotune configs for split dA/dB kernels."""
+    configs = []
+    for block_m, block_dim, warps, stages in product(
+        [32, 64, 128],  # BLOCK_M (token tile)
+        [32, 64, 128, 256],  # BLOCK_DIM (K for dA, N for dB — output tile)
+        [4, 8],  # num_warps
+        [3, 4, 5],  # num_stages
+    ):
+        configs.append(
+            triton.Config(
+                {"BLOCK_M": block_m, "BLOCK_DIM": block_dim},
+                num_stages=stages,
+                num_warps=warps,
+            )
+        )
+    return configs
+
+
+def _prune_split_configs(configs, named_args, **kwargs):
+    """Prune split kernel configs based on SMEM capacity and register pressure."""
+    smem_cap = _get_smem_capacity()
+    block_r = named_args.get("BLOCK_R", 64)
+
+    # Fixed inner tile for reduction dimension
+    BLOCK_INNER = 64
+
+    pruned = []
+    for config in configs:
+        block_m = config.kwargs["BLOCK_M"]
+        block_dim = config.kwargs["BLOCK_DIM"]
+        # Inner loop loads: input[M, INNER] and other[M, INNER_or_DIM]
+        smem = config.num_stages * BLOCK_INNER * (block_m + block_dim) * 2
+        # LoRA weights held in registers: [INNER, R] or [R, DIM]
+        smem += (block_r * max(block_dim, BLOCK_INNER)) * 2
+
+        # Register pressure check
+        est_regs = _estimate_register_pressure(
+            config.num_warps,
+            (block_r, block_dim),  # acc
+            (block_m, BLOCK_INNER),  # input tile
+            (block_m, block_dim),  # other tile
+            (block_r, BLOCK_INNER),  # lora weight
+        )
+        if est_regs > _MAX_REGS_SOFT_LIMIT:
+            continue
+
+        if smem <= smem_cap - _SMEM_SLACK:
+            pruned.append(config)
+
+    if pruned:
+        return pruned
+    configs.sort(key=lambda c: c.kwargs["BLOCK_M"] * c.kwargs["BLOCK_DIM"])
+    return [configs[0]]
+
+
+@triton.autotune(
+    configs=_group_bwd_split_configs(),
+    key=["M", "K", "N"],
+    prune_configs_by={"early_config_prune": _prune_split_configs},
+)
+@triton.heuristics(
+    {
+        "NO_DIM_MASK": lambda args: (
+            (args["K"] % args["BLOCK_DIM"]) == 0
+            if args["COMPUTE_DA"]
+            else (args["N"] % args["BLOCK_DIM"]) == 0
+        ),
+    }
+)
+@triton.jit
+def _group_bwd_lora_split(
+    # Data tensors (DY and X are always present)
+    DY_ptr,
+    stride_dym,
+    stride_dyn,
+    X_ptr,
+    stride_xm,
+    stride_xk,
+    # LoRA weight for the inner reduction (B for dA, A for dB)
+    LW_ptr,
+    stride_lw0,
+    stride_lw1,
+    # Output gradient tensor (dA or dB)
+    OUT_ptr,
+    stride_out0,
+    stride_out1,
+    # Expert offsets
+    expert_offsets_ptr,
+    # Dimensions
+    M,
+    K: tl.constexpr,
+    N: tl.constexpr,
+    ACTUAL_R: tl.constexpr,
+    BLOCK_R: tl.constexpr,
+    INNER_DIM: tl.constexpr,  # reduction dimension (N for dA, K for dB)
+    scaling,
+    # Mode flag
+    COMPUTE_DA: tl.constexpr,  # True = compute dA, False = compute dB
+    # Tile sizes
+    BLOCK_M: tl.constexpr,
+    BLOCK_DIM: tl.constexpr,
+    ACC_TYPE: tl.constexpr,
+    allow_tf32: tl.constexpr,
+    NO_DIM_MASK: tl.constexpr,
+):
+    """
+    Unified split kernel for LoRA gradient computation.
+
+    When COMPUTE_DA=True:
+      dA[e] = scaling * (dY @ B[e])^T @ X  →  [R, K]
+      Grid: (E, cdiv(K, BLOCK_DIM))
+      - outer_ptr/stride = X (read [M, K_block])
+      - inner reduction over N using DY and B
+      - output shape [BLOCK_R, BLOCK_DIM]
+
+    When COMPUTE_DA=False:
+      dB[e] = scaling * dY^T @ (X @ A[e]^T)  →  [N, R]
+      Grid: (E, cdiv(N, BLOCK_DIM))
+      - outer_ptr/stride = DY (read [M, N_block])
+      - inner reduction over K using X and A
+      - output shape [BLOCK_DIM, BLOCK_R]
+
+    No atomic adds — each (E, dim_block) pair is written by exactly one block.
+    """
+    E_idx = tl.program_id(0)
+    dim_block_id = tl.program_id(1)
+
+    if E_idx == 0:
+        start_idx = 0
+    else:
+        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+    num_tokens = end_idx - start_idx
+
+    # Output dimension tile (K for dA, N for dB)
+    if COMPUTE_DA:
+        OUT_DIM: tl.constexpr = K  # type: ignore[no-redef]
+    else:
+        OUT_DIM: tl.constexpr = N  # type: ignore[no-redef]
+    dim_block = dim_block_id * BLOCK_DIM + tl.arange(0, BLOCK_DIM)
+    dim_mask = dim_block < OUT_DIM
+    R_block = tl.arange(0, BLOCK_R)
+    R_mask = R_block < ACTUAL_R
+    lora_offset = E_idx * ACTUAL_R
+
+    # Output pointers — layout differs: dA is [R, K], dB is [N, R]
+    if COMPUTE_DA:
+        out_blk_ptrs = (
+            OUT_ptr
+            + (lora_offset + R_block)[:, None] * stride_out0
+            + dim_block[None, :] * stride_out1
+        )
+        out_mask = R_mask[:, None] & dim_mask[None, :]
+    else:
+        out_blk_ptrs = (
+            OUT_ptr
+            + dim_block[:, None] * stride_out0
+            + (lora_offset + R_block)[None, :] * stride_out1
+        )
+        out_mask = dim_mask[:, None] & R_mask[None, :]
+
+    if num_tokens > 0:
+        M_block = tl.arange(0, BLOCK_M)
+        INPUT_DTYPE = X_ptr.dtype.element_ty
+        BLOCK_INNER: tl.constexpr = 64
+        inner_iters = tl.cdiv(INNER_DIM, BLOCK_INNER)
+
+        if COMPUTE_DA:
+            acc = tl.zeros((BLOCK_R, BLOCK_DIM), dtype=ACC_TYPE)
+        else:
+            acc = tl.zeros((BLOCK_DIM, BLOCK_R), dtype=ACC_TYPE)
+
+        M_iters = tl.cdiv(num_tokens, BLOCK_M)
+        for i in range(M_iters):
+            M_idx = start_idx + i * BLOCK_M + M_block
+            M_mask = M_idx < end_idx
+
+            if COMPUTE_DA:
+                # Load X[M, K_block] (the "outer" tensor for dA)
+                outer = tl.load(
+                    X_ptr + M_idx[:, None] * stride_xm + dim_block[None, :] * stride_xk,
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
+                ).to(INPUT_DTYPE)
+
+                # Reduce DY[M, :] @ B[e][:, R] over N → [M, R]
+                reduced = tl.zeros((BLOCK_M, BLOCK_R), dtype=ACC_TYPE)
+                inner_range = tl.arange(0, BLOCK_INNER)
+                for j in range(inner_iters):
+                    inn_off = j * BLOCK_INNER + inner_range
+                    inn_mask = inn_off < N
+
+                    dy_tile = tl.load(
+                        DY_ptr
+                        + M_idx[:, None] * stride_dym
+                        + inn_off[None, :] * stride_dyn,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    # B layout: [N, r*E] → stride_lw0=N stride, stride_lw1=r*E stride
+                    lw_tile = tl.load(
+                        LW_ptr
+                        + inn_off[:, None] * stride_lw0
+                        + (lora_offset + R_block)[None, :] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    reduced += tl.dot(dy_tile, lw_tile, allow_tf32=allow_tf32)
+
+                # dA += (DY@B)^T @ X: [R, M] @ [M, K_block] → [R, K_block]
+                acc += tl.dot(
+                    tl.trans(reduced.to(INPUT_DTYPE)), outer, allow_tf32=allow_tf32
+                )
+            else:
+                # Load DY[M, N_block] (the "outer" tensor for dB)
+                outer = tl.load(
+                    DY_ptr
+                    + M_idx[:, None] * stride_dym
+                    + dim_block[None, :] * stride_dyn,
+                    mask=M_mask[:, None] & dim_mask[None, :],
+                    other=0.0,
+                ).to(INPUT_DTYPE)
+
+                # Reduce X[M, :] @ A[e][:, :].T over K → [M, R]
+                reduced = tl.zeros((BLOCK_M, BLOCK_R), dtype=ACC_TYPE)
+                inner_range = tl.arange(0, BLOCK_INNER)
+                for j in range(inner_iters):
+                    inn_off = j * BLOCK_INNER + inner_range
+                    inn_mask = inn_off < K
+
+                    x_tile = tl.load(
+                        X_ptr
+                        + M_idx[:, None] * stride_xm
+                        + inn_off[None, :] * stride_xk,
+                        mask=M_mask[:, None] & inn_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    # A layout: [r*E, K] → stride_lw0=r*E stride, stride_lw1=K stride
+                    # We want A[e]^T: [K, R], so load as [K_inner, R]
+                    lw_tile = tl.load(
+                        LW_ptr
+                        + (lora_offset + R_block)[None, :] * stride_lw0
+                        + inn_off[:, None] * stride_lw1,
+                        mask=inn_mask[:, None] & R_mask[None, :],
+                        other=0.0,
+                    ).to(INPUT_DTYPE)
+                    reduced += tl.dot(x_tile, lw_tile, allow_tf32=allow_tf32)
+
+                # dB += DY^T @ (X@A^T): [N_block, M] @ [M, R] → [N_block, R]
+                acc += tl.dot(
+                    tl.trans(outer), reduced.to(INPUT_DTYPE), allow_tf32=allow_tf32
+                )
+
+        tl.store(
+            out_blk_ptrs, (acc * scaling).to(OUT_ptr.dtype.element_ty), mask=out_mask
+        )
+    else:
+        # Zero out this expert's slice — needed because output uses empty_like
+        if COMPUTE_DA:
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_R, BLOCK_DIM), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
+        else:
+            tl.store(
+                out_blk_ptrs,
+                tl.zeros((BLOCK_DIM, BLOCK_R), dtype=OUT_ptr.dtype.element_ty),
+                mask=out_mask,
+            )
+
+
 def group_bwd_lora(
     DY: torch.Tensor,
     X: torch.Tensor,
@@ -1343,6 +1829,9 @@ def group_bwd_lora(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute LoRA gradients for A and B on expert-grouped data.
+
+    Uses split dA/dB kernels that eliminate atomic adds by giving each
+    (expert, output_block) pair its own thread block.
 
     Args:
         DY: Gradient w.r.t. output [M_total, N] (grouped by expert)
@@ -1361,19 +1850,46 @@ def group_bwd_lora(
     K = X.size(1)
     N = DY.size(1)
 
-    # Zero-init for atomic accumulation
-    dA = torch.zeros_like(lora_A)
-    dB = torch.zeros_like(lora_B)
+    # No zero-init needed: the split kernels write zeros for experts with
+    # zero routed tokens directly in the kernel (else branch).
+    dA = torch.empty_like(lora_A)
+    dB = torch.empty_like(lora_B)
 
     BLOCK_R = _block_r_for_rank(R)
 
-    def grid(META):
-        return (
-            E * triton.cdiv(K, META["BLOCK_K"]),
-            triton.cdiv(N, META["BLOCK_N"]),
-        )
+    def grid_dA(META):
+        return (E, triton.cdiv(K, META["BLOCK_DIM"]))
 
-    _group_bwd_lora[grid](
+    _group_bwd_lora_split[grid_dA](
+        DY,
+        DY.stride(0),
+        DY.stride(1),
+        X,
+        X.stride(0),
+        X.stride(1),
+        lora_B,
+        lora_B.stride(0),
+        lora_B.stride(1),
+        dA,
+        dA.stride(0),
+        dA.stride(1),
+        expert_offsets,
+        M=DY.size(0),
+        K=K,
+        N=N,
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        INNER_DIM=N,
+        scaling=scaling,
+        COMPUTE_DA=True,
+        ACC_TYPE=tl.float32,
+        allow_tf32=ALLOW_TF32,
+    )
+
+    def grid_dB(META):
+        return (E, triton.cdiv(N, META["BLOCK_DIM"]))
+
+    _group_bwd_lora_split[grid_dB](
         DY,
         DY.stride(0),
         DY.stride(1),
@@ -1383,12 +1899,6 @@ def group_bwd_lora(
         lora_A,
         lora_A.stride(0),
         lora_A.stride(1),
-        lora_B,
-        lora_B.stride(0),
-        lora_B.stride(1),
-        dA,
-        dA.stride(0),
-        dA.stride(1),
         dB,
         dB.stride(0),
         dB.stride(1),
@@ -1396,9 +1906,11 @@ def group_bwd_lora(
         M=DY.size(0),
         K=K,
         N=N,
-        ACTUAL_R=R,  # True LoRA rank
-        BLOCK_R=BLOCK_R,  # Padded tile size
+        ACTUAL_R=R,
+        BLOCK_R=BLOCK_R,
+        INNER_DIM=K,
         scaling=scaling,
+        COMPUTE_DA=False,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
     )

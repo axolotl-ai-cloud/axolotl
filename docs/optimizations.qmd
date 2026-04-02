@@ -54,6 +54,13 @@ These techniques save VRAM by changing how activations are handled.
 - Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.
 - Learn more: [Gradient Checkpointing and Offloading Docs](gradient_checkpointing.qmd)
 
+### Layer Offloading
+
+Offloads frozen (non-trainable) decoder layer parameters to CPU and streams them back to GPU one layer at a time during forward/backward passes using CUDA stream prefetching. Especially effective for LoRA/QLoRA where most parameters are frozen.
+
+- **Config:** `layer_offloading: true`
+- **Learn more:** [Layer Offloading Docs](gradient_checkpointing.qmd#enabling-layer-offloading)
+
 ### Cut Cross Entropy (CCE)
 
 Reduces VRAM usage by using an optimized cross-entropy loss calculation.

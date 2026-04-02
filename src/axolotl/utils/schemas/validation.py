@@ -255,6 +255,23 @@ class TrainingValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def set_reward_model_defaults(cls, data):
+        if data.get("reward_model"):
+            if data.get("num_labels") is None:
+                data["num_labels"] = 1
+            if not (data.get("type_of_model") or data.get("model_type")):
+                data["model_type"] = "AutoModelForSequenceClassification"
+
+        if data.get("process_reward_model"):
+            if data.get("num_labels") is None:
+                data["num_labels"] = 2
+            if not (data.get("type_of_model") or data.get("model_type")):
+                data["model_type"] = "AutoModelForTokenClassification"
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_gas_bsz(cls, data):
         if data.get("gradient_accumulation_steps") and data.get("batch_size"):
             raise ValueError(
@@ -664,29 +681,7 @@ class LoRAValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_lora_kernels_dora(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ) and data.get("peft_use_dora"):
-            raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
-                "compatible with DoRA at the moment."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_lora_kernels_rl(cls, data):
-        if (
-            data.get("lora_mlp_kernel")
-            or data.get("lora_qkv_kernel")
-            or data.get("lora_o_kernel")
-        ) and data.get("rl"):
-            raise ValueError(
-                "lora_mlp_kernel, lora_qkv_kernel, and lora_o_kernel are not "
-                "compatible with RL at the moment."
-            )
+        # DoRA is now supported by lora kernels
         return data
 
     @model_validator(mode="before")
@@ -787,6 +782,14 @@ class OptimizationValidationMixin:
             LOG.warning("adamw hyperparameters found, but no adamw optimizer set")
         return self
 
+    @staticmethod
+    def _resolve_fsdp_version(data):
+        """Resolve FSDP version from top-level fsdp_version or fsdp_config.fsdp_version."""
+        fsdp_version = data.get("fsdp_version")
+        if fsdp_version is None:
+            fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+        return fsdp_version
+
     @model_validator(mode="before")
     @classmethod
     def check_muon_deepspeed_fsdp(cls, data):
@@ -796,12 +799,29 @@ class OptimizationValidationMixin:
                     "Muon optimizer is currently incompatible with DeepSpeed"
                 )
             if data.get("fsdp") or data.get("fsdp_config"):
-                fsdp_version = data.get("fsdp_version")
-                if fsdp_version is None:
-                    fsdp_version = data.get("fsdp_config", {}).get("fsdp_version", 1)
+                fsdp_version = cls._resolve_fsdp_version(data)
                 if str(fsdp_version) != "2":
                     raise ValueError(
                         "Muon optimizer is only compatible with FSDP2. Set fsdp_version: 2 to use Muon with FSDP."
+                    )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_flashoptim_deepspeed_fsdp(cls, data):
+        optimizer = data.get("optimizer") or ""
+        if str(optimizer).startswith("flash_"):
+            if data.get("deepspeed"):
+                raise ValueError(
+                    f"{optimizer} optimizer is incompatible with DeepSpeed. "
+                    "Flash optimizers only support DDP and FSDP2."
+                )
+            if data.get("fsdp") or data.get("fsdp_config"):
+                fsdp_version = cls._resolve_fsdp_version(data)
+                if str(fsdp_version) != "2":
+                    raise ValueError(
+                        f"{optimizer} optimizer is only compatible with FSDP2. "
+                        "Set fsdp_version: 2 to use flash optimizers with FSDP."
                     )
         return data
 
@@ -816,6 +836,17 @@ class OptimizationValidationMixin:
                 raise ValueError("batch_flattening not compatible with sample_packing")
             if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
                 LOG.warning("batch_flattening has no effect with micro_batch_size == 1")
+
+            # Liger loss takes a separate code path (compute_liger_loss) that
+            # bypasses the flattened training forward pass. Batch flattening
+            # still applies to the scoring/deferred logprobs path.
+            trl_cfg = data.get("trl") or {}
+            if isinstance(trl_cfg, dict) and trl_cfg.get("use_liger_loss"):
+                LOG.warning(
+                    "batch_flattening with use_liger_loss: flattening will only "
+                    "apply to the scoring path (deferred logprobs). The training "
+                    "forward pass uses Liger's fused lm_head+loss kernel instead."
+                )
 
             if (
                 batch_flattening_auto
@@ -1228,6 +1259,21 @@ class ModelCompatibilityValidationMixin:
         return self
 
     @model_validator(mode="after")
+    def check_nemotron_h_gradient_checkpointing(self):
+        if (
+            self.base_model
+            and "nemotron-h" in self.base_model.lower()
+            and self.gradient_checkpointing
+            and not self.sample_packing
+        ):
+            raise ValueError(
+                "gradient_checkpointing for nemotron_h requires sample_packing: true. "
+                "The upstream model marks supports_gradient_checkpointing=False; "
+                "axolotl only enables it after applying the sample-packing patch."
+            )
+        return self
+
+    @model_validator(mode="after")
     def check_gradient_checkpointing_w_offload(self):
         if self.gradient_checkpointing == "offload":
             LOG.warning(
@@ -1462,6 +1508,124 @@ class DistributedValidationMixin:
         return self
 
 
+class EBFTValidationMixin:
+    """Validation for EBFT (Energy-Based Fine-Tuning) configuration."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_config_required(cls, data):
+        """rl: ebft requires an ebft config section."""
+        if data.get("rl") == "ebft" and not data.get("ebft"):
+            raise ValueError(
+                "`ebft` config section is required when `rl: ebft` is set. "
+                "Add an `ebft:` section with at least `mode: structured` or `mode: strided`."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_torch_compile(cls, data):
+        """torch_compile + flex_attention + gradient_checkpointing causes dynamo recompiles
+        and CheckpointErrors. The flex_attention kernel compiles itself internally —
+        whole-model torch.compile is not needed and actively harmful."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("torch_compile") is True
+            and data.get("ebft", {}).get("mode") == "strided"
+        ):
+            if data.get("gradient_checkpointing"):
+                raise ValueError(
+                    "EBFT strided mode: `torch_compile: true` with `gradient_checkpointing: true` "
+                    "causes CheckpointError (BlockMask metadata mismatch during recomputation). "
+                    "Remove `torch_compile` — the flex_attention kernel compiles itself internally."
+                )
+            LOG.warning(
+                "EBFT strided mode: `torch_compile: true` causes dynamo recompiles from "
+                "variable sequence lengths across steps. Consider removing it — "
+                "flex_attention compiles itself internally."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_gradient_checkpointing_reentrant(cls, data):
+        """flex_attention + non-reentrant gradient checkpointing causes CheckpointError."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("ebft", {}).get("mode") == "strided"
+            and data.get("flex_attention")
+            and data.get("gradient_checkpointing")
+        ):
+            gc_kwargs = data.get("gradient_checkpointing_kwargs") or {}
+            if not gc_kwargs.get("use_reentrant"):
+                LOG.warning(
+                    "EBFT strided mode with flex_attention: setting `use_reentrant: true` in "
+                    "gradient_checkpointing_kwargs (required for flex_attention compatibility). "
+                    "Non-reentrant checkpointing causes CheckpointError with BlockMask metadata."
+                )
+                if data.get("gradient_checkpointing_kwargs") is None:
+                    data["gradient_checkpointing_kwargs"] = {}
+                data["gradient_checkpointing_kwargs"]["use_reentrant"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_activation_offloading(cls, data):
+        """activation_offloading replaces gradient checkpointing with FSDP-style wrapping,
+        which conflicts with flex_attention's use_reentrant requirement."""
+        if (
+            data.get("rl") == "ebft"
+            and data.get("ebft", {}).get("mode") == "strided"
+            and data.get("activation_offloading") is True
+            and data.get("flex_attention")
+        ):
+            raise ValueError(
+                "EBFT strided mode: `activation_offloading: true` is incompatible with "
+                "`flex_attention: true`. Activation offloading replaces gradient checkpointing "
+                "with FSDP-style wrapping that conflicts with flex_attention's reentrant "
+                "checkpoint requirement. Remove `activation_offloading` — the strided trainer "
+                "uses micro-batched forward passes for memory efficiency instead."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_strided_sequence_len(cls, data):
+        """Warn if sequence_len is too large for single-GPU strided EBFT."""
+        if data.get("rl") != "ebft" or data.get("ebft", {}).get("mode") != "strided":
+            return data
+        ebft = data.get("ebft", {})
+        seq_len = data.get("sequence_len", 512)
+        n_samples = ebft.get("n_samples_per_prompt", 4)
+        gen_len = ebft.get("generate_max_len", 8)
+        stride = ebft.get("stride", 8)
+        ctx_len = ebft.get("context_length", 8)
+        max_blocks = (seq_len - gen_len - ctx_len) // stride + 1
+        full_seq = seq_len + max_blocks * gen_len
+        # Rough estimate: 8.7 GB per sample at S=3900 for 1B model
+        if full_seq * n_samples > 20000:
+            LOG.warning(
+                f"EBFT strided: full_seq_len={full_seq} * n_samples={n_samples} = "
+                f"{full_seq * n_samples} token-samples per step. This may require >24GB VRAM "
+                f"for a 1B+ model. Consider reducing sequence_len, n_samples_per_prompt, or stride."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_ebft_strided_dataset_split(cls, data):
+        """Warn about the common `train_on_split` mistake (silently ignored by schema)."""
+        datasets = data.get("datasets", [])
+        for ds in datasets or []:
+            if isinstance(ds, dict) and ds.get("train_on_split"):
+                LOG.warning(
+                    f"Dataset has `train_on_split: {ds['train_on_split']}` — this field "
+                    f"is not recognized and will be silently ignored. "
+                    f"Use `split: {ds['train_on_split']}` instead."
+                )
+        return data
+
+
 class GRPOVllmValidationMixin:
     """Validation mixin for vllm when using GRPO."""
 
@@ -1487,6 +1651,7 @@ class ValidationMixin(
     PretrainingValidationMixin,
     ModelCompatibilityValidationMixin,
     ComplexValidationMixin,
+    EBFTValidationMixin,
     GRPOVllmValidationMixin,
 ):
     """Full validation mixin for Axolotl configuration."""

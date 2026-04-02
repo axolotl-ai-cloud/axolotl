@@ -250,7 +250,7 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
-        training_args_kwargs["tf32"] = self.cfg.tf32
+        training_args_kwargs["tf32"] = True if self.cfg.tf32 is True else False
         if self.cfg.bf16 == "full":
             training_args_kwargs["bf16_full_eval"] = True
         else:
@@ -353,6 +353,30 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = (eps1, eps2)
 
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adamw":
+                from flashoptim import FlashAdamW
+
+                optimizer_cls = FlashAdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adam":
+                from flashoptim import FlashAdam
+
+                optimizer_cls = FlashAdam
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_sgd":
+                from flashoptim import FlashSGD
+
+                optimizer_cls = FlashSGD
+            elif self.cfg.optimizer == "flash_sgdw":
+                from flashoptim import FlashSGDW
+
+                optimizer_cls = FlashSGDW
+            elif self.cfg.optimizer == "flash_lion":
+                from flashoptim import FlashLion
+
+                optimizer_cls = FlashLion
+                if "betas" in adam_kwargs:
+                    optimizer_kwargs["betas"] = adam_kwargs["betas"]
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
@@ -484,6 +508,8 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
+        if self.cfg.layer_offloading:
+            training_args_kwargs["layer_offloading"] = True
         if self.cfg.activation_offloading is True:
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False

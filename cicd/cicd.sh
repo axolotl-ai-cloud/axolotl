@@ -3,11 +3,23 @@ set -e
 
 python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
 
-# curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/"  --use-compress-program unzstd --strip-components=1
-hf download "NousResearch/Meta-Llama-3-8B"
-hf download "NousResearch/Meta-Llama-3-8B-Instruct"
-hf download "microsoft/Phi-4-reasoning"
-hf download "microsoft/Phi-3.5-mini-instruct"
+set -o pipefail
+for i in 1 2 3; do
+  if curl --silent --show-error --fail -L \
+    https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
+    | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1; then
+    echo "HF cache extracted successfully"
+    break
+  fi
+  echo "Attempt $i failed, cleaning up and retrying in 15s..."
+  rm -rf "${HF_HOME}/hub/"*
+  sleep 15
+done
+# hf download "NousResearch/Meta-Llama-3-8B"
+# hf download "NousResearch/Meta-Llama-3-8B-Instruct"
+# hf download "microsoft/Phi-4-reasoning"
+# hf download "microsoft/Phi-3.5-mini-instruct"
+# hf download "microsoft/Phi-3-medium-128k-instruct"
 
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \

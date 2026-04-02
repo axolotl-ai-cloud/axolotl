@@ -8,6 +8,7 @@ import os
 from functools import cached_property
 
 import addict
+import torch
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
@@ -116,6 +117,8 @@ class PatchManager:
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
         self._apply_apertus_patches()
+        self._apply_trl_vllm_patches()
+        self._apply_trl_trainer_utils_patches()
 
     def apply_post_plugin_pre_model_load_patches(self):
         """Apply post plugin-pre_model_load load patches based on config."""
@@ -140,6 +143,12 @@ class PatchManager:
 
     def apply_post_model_build_patches(self, model: PreTrainedModel):
         """Apply patches right after model build, before post-load setup."""
+        if self.cfg.model_config_type == "nemotron_h":
+            # Must run after model build because NemotronHForCausalLM.__init__
+            # calls register_nemotron_h_conversion_mapping() with overwrite=True,
+            # which would clobber any earlier fix.
+            self._fix_nemotron_h_conversion_mapping()
+
         self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -250,44 +259,106 @@ class PatchManager:
 
             patch_llama4_linearized_modeling()
 
-        if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_next.modeling import (
-                patch_qwen3_next_modeling_packing,
-            )
-
-            patch_qwen3_next_modeling_packing()
-
-        if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_modeling_packing,
-            )
-
-            patch_qwen3_5_modeling_packing()
-
-        if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_moe_modeling_packing,
-            )
-
-            patch_qwen3_5_moe_modeling_packing()
-
-        if (
-            self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
-            and self.cfg.is_multimodal
-            and self.cfg.flash_attention
-        ):
-            from axolotl.monkeypatch.models.qwen3_5.modeling import (
-                patch_qwen3_5_vlm_flash_attention,
-            )
-
-            patch_qwen3_5_vlm_flash_attention()
-
         if self.cfg.model_config_type == "kimi_linear":
             from axolotl.monkeypatch.models.kimi_linear.patch_kimi_linear import (
                 patch_kimi_model,
             )
 
             patch_kimi_model()
+
+        if self.cfg.model_config_type == "nemotron_h":
+            if self.cfg.sample_packing:
+                from transformers.models.nemotron_h.modeling_nemotron_h import (
+                    NemotronHPreTrainedModel,
+                )
+
+                from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                    patch_nemotron_h_modeling_packing,
+                )
+
+                patch_nemotron_h_modeling_packing()
+                # supports_gradient_checkpointing is only enabled after
+                # patch_nemotron_h_modeling_packing() installs the GC-compatible
+                # NemotronHBlock.forward. Without the patch, upstream marks this
+                # False because the original block forward is not GC-safe.
+                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
+        # Patches requiring CUDA
+        if torch.cuda.is_available():
+            if self.cfg.model_config_type == "qwen3_next" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_next.modeling import (
+                    patch_qwen3_next_modeling_packing,
+                )
+
+                patch_qwen3_next_modeling_packing()
+
+            if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_modeling_packing,
+                )
+
+                patch_qwen3_5_modeling_packing()
+
+            if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_moe_modeling_packing,
+                )
+
+                patch_qwen3_5_moe_modeling_packing()
+
+            if (
+                self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
+                and self.cfg.is_multimodal
+                and self.cfg.flash_attention
+            ):
+                from axolotl.monkeypatch.models.qwen3_5.modeling import (
+                    patch_qwen3_5_vlm_flash_attention,
+                )
+
+                patch_qwen3_5_vlm_flash_attention()
+
+    @staticmethod
+    def _fix_nemotron_h_conversion_mapping():
+        """Remove the spurious embedding→embeddings WeightRenaming from the
+        nemotron_h checkpoint conversion mapping.
+
+        The nvidia Hub model registers:
+            WeightRenaming("embedding.weight", "embeddings.weight")
+        to handle a legacy checkpoint variant. Its reverse (applied on save)
+        converts ``embeddings`` back to ``embedding``, which silently renames
+        ``backbone.embeddings.weight`` → ``backbone.embedding.weight`` when
+        merging LoRA adapters back into the base model.
+        """
+        try:
+            from transformers.conversion_mapping import (
+                WeightRenaming,
+                get_checkpoint_conversion_mapping,
+                register_checkpoint_conversion_mapping,
+            )
+        except ImportError:
+            return
+
+        mapping = get_checkpoint_conversion_mapping("nemotron_h")
+        if mapping is None:
+            return
+
+        filtered = [
+            entry
+            for entry in mapping
+            if not (
+                isinstance(entry, WeightRenaming)
+                and entry.source_patterns == ["embedding.weight"]
+                and entry.target_patterns == ["embeddings.weight"]
+            )
+        ]
+        if len(filtered) != len(mapping):
+            register_checkpoint_conversion_mapping(
+                "nemotron_h", filtered, overwrite=True
+            )
+            LOG.info(
+                "Removed embedding→embeddings WeightRenaming from nemotron_h "
+                "checkpoint conversion mapping"
+            )
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
@@ -569,15 +640,6 @@ class PatchManager:
         LOG.info("Patching with xformers attention...")
         hijack_llama_attention()
 
-    def _patch_llama_sample_packing(self):
-        """Apply sample packing patches for LLaMA models."""
-        from axolotl.monkeypatch.llama_patch_multipack import (
-            hijack_llama_prepare_4d_mask,
-        )
-
-        LOG.info("Patching llama _prepare_4d_causal_attention_mask*...")
-        hijack_llama_prepare_4d_mask()
-
     def _patch_llama_derived_model(self):
         """Modify all llama derived models in one block."""
         if self.cfg.is_llama_derived_model and not (
@@ -589,8 +651,6 @@ class PatchManager:
                 self._patch_llama_flash_attention()
             elif self.cfg.xformers_attention:
                 self._patch_llama_xformers_attention()
-            elif self.cfg.sample_packing:
-                self._patch_llama_sample_packing()
             elif self.cfg.s2_attention:
                 raise NotImplementedError(
                     "Shifted-sparse attention not currently implemented without flash attention."
@@ -599,7 +659,8 @@ class PatchManager:
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
         if (
-            self.model_config.model_type in ["llama", "llama4"]
+            self.model_config.model_type
+            in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
             and self.cfg.flash_attention
@@ -666,6 +727,50 @@ class PatchManager:
             )
 
             patch_apertus_xielu_activation()
+
+    def _apply_trl_vllm_patches(self):
+        """Apply TRL vLLM patches for batched weight sync, NaN logprobs fix, and scalar handling."""
+        if (
+            self.cfg.rl
+            and getattr(self.cfg, "trl", None)
+            and getattr(self.cfg.trl, "use_vllm", False)
+        ):
+            from axolotl.monkeypatch.trainer.trl_vllm import patch_trl_vllm
+
+            patch_trl_vllm()
+
+    def _apply_trl_trainer_utils_patches(self):
+        """Replace trl.trainer.utils.{selective_log_softmax, entropy_from_logits} with Triton kernels."""
+        if not self.cfg.rl:
+            return
+
+        try:
+            from axolotl.monkeypatch.trainer.utils import (
+                entropy_from_logits,
+                selective_log_softmax,
+            )
+        except (ImportError, ModuleNotFoundError):
+            LOG.warning("Triton not available — skipping trl.trainer.utils patches")
+            return
+
+        import trl.trainer.utils
+
+        # Guard against repeated calls: only stash the original if trl still
+        # points at its own implementation (not our wrapper).
+        if trl.trainer.utils.selective_log_softmax is not selective_log_softmax:
+            from axolotl.monkeypatch.trainer import utils as _axolotl_trainer_utils
+
+            _axolotl_trainer_utils.selective_log_softmax_original = (
+                trl.trainer.utils.selective_log_softmax
+            )
+            trl.trainer.utils.selective_log_softmax = selective_log_softmax
+
+        if trl.trainer.utils.entropy_from_logits is not entropy_from_logits:
+            trl.trainer.utils.entropy_from_logits = entropy_from_logits
+
+        LOG.info(
+            "Patched trl.trainer.utils with Triton selective_log_softmax and entropy_from_logits"
+        )
 
     def _apply_scaling_softmax_patch(self, model: PreTrainedModel):
         """Apply Scaling Softmax (SSMax) patch.  Ref: https://arxiv.org/abs/2501.19399"""

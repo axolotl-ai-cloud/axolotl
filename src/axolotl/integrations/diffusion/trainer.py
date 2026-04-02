@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from torch import nn
 
 from axolotl.core.trainers.base import AxolotlTrainer
-from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 from .callbacks import DiffusionGenerationCallback
@@ -21,19 +20,17 @@ class DiffusionTrainer(AxolotlTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.cfg = None
         self._special_token_ids = None
 
-    def set_config(self, config: DictDefault):
+    def post_set_axolotl_cfg(self):
         """Set config for diffusion training."""
-        self.cfg = config
         self._cache_special_token_ids()
         self._resolve_mask_token_id()
 
-        token_id = int(getattr(self.cfg.diffusion, "mask_token_id", 0))
+        token_id = int(getattr(self.axolotl_cfg.diffusion, "mask_token_id", 0))
         LOG.info(f"Diffusion: using mask_token_id={token_id}")
 
-        if getattr(config.diffusion, "generate_samples", True):
+        if getattr(self.axolotl_cfg.diffusion, "generate_samples", True):
             generation_callback = DiffusionGenerationCallback(self)
             self.add_callback(generation_callback)
 
@@ -41,18 +38,20 @@ class DiffusionTrainer(AxolotlTrainer):
         """Ensure mask_token_id is valid for the current tokenizer."""
         from .utils import resolve_mask_token_id
 
+        assert self.axolotl_cfg is not None, "axolotl_cfg is not set yet"
+
         tokenizer = getattr(self, "processing_class", None)
         if tokenizer is None:
             return
 
         mid = resolve_mask_token_id(
             tokenizer,
-            self.cfg,
+            self.axolotl_cfg,
             allow_add=True,
             model=getattr(self, "model", None),
         )
         try:
-            self.cfg.diffusion.mask_token_id = int(mid)
+            self.axolotl_cfg.diffusion.mask_token_id = int(mid)
         except Exception:
             pass
 
@@ -150,7 +149,7 @@ class DiffusionTrainer(AxolotlTrainer):
             masked_indices = masked_indices & answer_mask
 
         # Create masked input
-        mask_token_id = int(self.cfg.diffusion.mask_token_id)
+        mask_token_id = int(self.axolotl_cfg.diffusion.mask_token_id)
         mask_value = torch.full_like(input_ids, mask_token_id)
         noisy_batch = torch.where(masked_indices, mask_value, input_ids)
 
@@ -194,12 +193,12 @@ class DiffusionTrainer(AxolotlTrainer):
 
         # Apply forward process
         noisy_batch, masked_indices, p_mask = self._forward_process(
-            input_ids, attention_mask, labels, self.cfg.diffusion.eps
+            input_ids, attention_mask, labels, self.axolotl_cfg.diffusion.eps
         )
 
         # Create bidirectional attention mask
         bidirectional_mask = create_bidirectional_attention_mask(
-            input_ids, attention_mask, sample_packing=self.cfg.sample_packing
+            input_ids, attention_mask, sample_packing=self.axolotl_cfg.sample_packing
         )
 
         # Forward pass
@@ -222,7 +221,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 masked_logits.float(), masked_targets, reduction="none"
             )
 
-            if self.cfg.diffusion.importance_weighting:
+            if self.axolotl_cfg.diffusion.importance_weighting:
                 masked_p_mask = masked_p_mask.float()
                 weighted_loss = token_loss / masked_p_mask
             else:
@@ -251,7 +250,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 # Non-SFT: when importance weighting is enabled, use unbiased estimator
                 # (sum(loss/p) / total_tokens). Otherwise, average over masked tokens
                 # for stable scaling across varying mask ratios.
-                if self.cfg.diffusion.importance_weighting:
+                if self.axolotl_cfg.diffusion.importance_weighting:
                     loss = weighted_loss.sum() / (
                         input_ids.shape[0] * input_ids.shape[1]
                     )
@@ -283,7 +282,7 @@ class DiffusionTrainer(AxolotlTrainer):
         }
 
         # If doing SFT training, log answer-specific metrics
-        if self.cfg.datasets is not None:
+        if self.axolotl_cfg.datasets is not None:
             with torch.no_grad():
                 answer_mask = labels != -100
                 answer_lengths = answer_mask.sum(dim=1).float()  # type: ignore
@@ -292,7 +291,7 @@ class DiffusionTrainer(AxolotlTrainer):
                 metrics["answer_ratio"] = total_answer_tokens / max(total_tokens, 1)
                 metrics["avg_answer_length"] = answer_lengths.mean().item()
 
-        if self.cfg.diffusion.importance_weighting:
+        if self.axolotl_cfg.diffusion.importance_weighting:
             metrics["importance_weight_avg"] = (1.0 / masked_p_mask).mean().item()
 
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"
