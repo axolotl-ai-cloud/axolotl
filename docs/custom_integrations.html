@@ -823,6 +823,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#how-it-works-1" id="toc-how-it-works-1" class="nav-link" data-scroll-target="#how-it-works-1">How It Works</a></li>
   <li><a href="#scattermoe" id="toc-scattermoe" class="nav-link" data-scroll-target="#scattermoe">ScatterMoE</a></li>
   <li><a href="#sonicmoe" id="toc-sonicmoe" class="nav-link" data-scroll-target="#sonicmoe">SonicMoE</a></li>
+  <li><a href="#model-support-matrix" id="toc-model-support-matrix" class="nav-link" data-scroll-target="#model-support-matrix">Model Support Matrix</a></li>
+  <li><a href="#routing-strategies" id="toc-routing-strategies" class="nav-link" data-scroll-target="#routing-strategies">Routing strategies</a></li>
+  <li><a href="#per-model-support" id="toc-per-model-support" class="nav-link" data-scroll-target="#per-model-support">Per-model support</a></li>
+  <li><a href="#feature-comparison" id="toc-feature-comparison" class="nav-link" data-scroll-target="#feature-comparison">Feature comparison</a></li>
+  <li><a href="#shared-expert-handling" id="toc-shared-expert-handling" class="nav-link" data-scroll-target="#shared-expert-handling">Shared Expert Handling</a></li>
   <li><a href="#limitations-1" id="toc-limitations-1" class="nav-link" data-scroll-target="#limitations-1">Limitations</a></li>
   <li><a href="#note-on-megablocks" id="toc-note-on-megablocks" class="nav-link" data-scroll-target="#note-on-megablocks">Note on MegaBlocks</a></li>
   </ul></li>
@@ -850,7 +855,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a>
   <ul class="collapse">
   <li><a href="#usage-6" id="toc-usage-6" class="nav-link" data-scroll-target="#usage-6">Usage</a></li>
-  <li><a href="#supported-models-3" id="toc-supported-models-3" class="nav-link" data-scroll-target="#supported-models-3">Supported Models</a></li>
+  <li><a href="#supported-models-2" id="toc-supported-models-2" class="nav-link" data-scroll-target="#supported-models-2">Supported Models</a></li>
   <li><a href="#citation-3" id="toc-citation-3" class="nav-link" data-scroll-target="#citation-3">Citation</a></li>
   </ul></li>
   <li><a href="#nemo-gym-integration-for-axolotl" id="toc-nemo-gym-integration-for-axolotl" class="nav-link" data-scroll-target="#nemo-gym-integration-for-axolotl">NeMo Gym Integration for Axolotl</a>
@@ -1324,27 +1329,349 @@ The quick brown fox jumps over the loud dog</code></pre>
 <h3 class="anchored" data-anchor-id="scattermoe">ScatterMoE</h3>
 <ol type="1">
 <li>Registers the ScatterMoE kernel from the local <code>libs/scattermoe_lora</code> package (includes fused LoRA support via Triton kernels).</li>
-<li>Patches the model’s <code>SparseMoeBlock</code> forward method with the optimized ScatterMoE implementation.</li>
+<li>Patches the model’s <code>SparseMoeBlock</code> forward method with the optimized ScatterMoE implementation via the HF <code>kernels</code> library.</li>
 </ol>
 </section>
 <section id="sonicmoe" class="level3">
 <h3 class="anchored" data-anchor-id="sonicmoe">SonicMoE</h3>
 <ol type="1">
 <li>Resolves the model’s MoE block class(es) from <code>constants.py</code>.</li>
-<li>Patches the forward method with SonicMoE’s optimized kernels and registers a weight converter for the interleaved gate/up projection format.</li>
-<li>Supports both softmax-&gt;topk and sigmoid-&gt;topk routing strategies.</li>
+<li>Patches the forward method with SonicMoE’s optimized CUTLASS kernels and registers a weight converter for the interleaved gate/up projection format.</li>
+<li>Supports pluggable routing strategies (see routing table below).</li>
 </ol>
 <p>Both paths use the shared <code>resolve_moe_block_classes</code> utility in <code>constants.py</code> for model-type-to-class resolution.</p>
-<section id="supported-models-2" class="level4">
-<h4 class="anchored" data-anchor-id="supported-models-2">Supported Models</h4>
-<p>See <code>constants.py</code> for the full list of supported model types (Qwen2-MoE, Qwen3-MoE, OLMoE, Mixtral, DeepSeek-V3, GLM-MoE, MiniMax, etc.).</p>
 </section>
+<section id="model-support-matrix" class="level3">
+<h3 class="anchored" data-anchor-id="model-support-matrix">Model Support Matrix</h3>
+<p>All models use the <strong>SwiGLU</strong> activation (<code>act_fn(gate) * up</code>). Neither kernel currently supports non-SwiGLU MoE architectures.</p>
+</section>
+<section id="routing-strategies" class="level3">
+<h3 class="anchored" data-anchor-id="routing-strategies">Routing strategies</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 18%">
+<col style="width: 31%">
+<col style="width: 31%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Routing Strategy</th>
+<th>Description</th>
+<th style="text-align: center;">ScatterMoE</th>
+<th style="text-align: center;">SonicMoE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>softmax → topk</td>
+<td>Softmax over experts, select top-K, optional renormalization</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="even">
+<td>softmax → group selection → topk</td>
+<td>Softmax, select top groups (sum of top-2 per group), topk from selected groups, renorm + scaling</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="odd">
+<td>sigmoid → topk (with groups)</td>
+<td>Sigmoid + bias correction, group-based masking, topk from masked scores, weights from original sigmoid</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="even">
+<td>sigmoid → topk (no groups)</td>
+<td>Sigmoid + bias correction, straight topk (n_group=1)</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="odd">
+<td>softmax → bias correction → topk</td>
+<td>Softmax, bias via <code>gate.moe_statics</code>, topk, gather from original probs, clamp-based renorm</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="even">
+<td>softmax → group_limited_greedy</td>
+<td>Softmax, group selection (max per group), topk, scale only (no renorm)</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="odd">
+<td>softmax → topk via gate.wg</td>
+<td>Softmax, gate weight at <code>gate.wg.weight</code> (not <code>gate.weight</code>), always renormalize</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="even">
+<td>fused topk → softmax</td>
+<td>Routing + expert computation fused in a single kernel</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Planned</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="per-model-support" class="level3">
+<h3 class="anchored" data-anchor-id="per-model-support">Per-model support</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 26%">
+<col style="width: 26%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model Type</th>
+<th>Architecture</th>
+<th>Routing</th>
+<th style="text-align: center;">ScatterMoE</th>
+<th style="text-align: center;">SonicMoE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>qwen2_moe</code></td>
+<td>Qwen2-MoE</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>qwen3_moe</code></td>
+<td>Qwen3-MoE</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>qwen3_5_moe</code></td>
+<td>Qwen3.5-MoE</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>qwen3_5_moe_text</code></td>
+<td>Qwen3.5-MoE (VLM text)</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>qwen3_next</code></td>
+<td>Qwen3-Next</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>qwen3_vl_moe</code></td>
+<td>Qwen3-VL-MoE</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>qwen3_omni_moe</code></td>
+<td>Qwen3-Omni (Thinker + Talker)</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>olmoe</code></td>
+<td>OLMoE</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>mixtral</code></td>
+<td>Mixtral</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>minimax</code></td>
+<td>MiniMax</td>
+<td>softmax → topk</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>mistral4</code></td>
+<td>Mistral 4</td>
+<td>softmax → group → topk</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>glm_moe_dsa</code></td>
+<td>GLM-MoE DSA (GLM 5)</td>
+<td>sigmoid → topk (groups)</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>deepseek_v3</code></td>
+<td>DeepSeek-V3</td>
+<td>sigmoid → topk (groups)</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>glm4_moe</code></td>
+<td>GLM4-MoE</td>
+<td>sigmoid → topk (groups)</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>glm4_moe_lite</code></td>
+<td>GLM4-MoE Lite (GLM 4.7 Flash)</td>
+<td>sigmoid → topk (groups)</td>
+<td style="text-align: center;"><strong>Yes</strong>*</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>glm4v_moe</code></td>
+<td>GLM4v-MoE</td>
+<td>sigmoid → topk (groups)</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>minimax_m2</code></td>
+<td>MiniMax M2</td>
+<td>sigmoid → topk (no groups)</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>ernie4_5_moe</code></td>
+<td>ERNIE 4.5 MoE</td>
+<td>softmax → bias → topk</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>deepseek_v2</code></td>
+<td>DeepSeek-V2</td>
+<td>softmax → group_limited_greedy</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td><code>hunyuan_v1_moe</code></td>
+<td>HunYuan V1 MoE</td>
+<td>softmax → topk (gate.wg)</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;"><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td><code>gpt_oss</code></td>
+<td>GPT-OSS</td>
+<td>fused topk → softmax</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Planned</td>
+</tr>
+</tbody>
+</table>
+<p>* <code>glm4_moe_lite</code> with ScatterMoE may have issues — see Limitations.</p>
+</section>
+<section id="feature-comparison" class="level3">
+<h3 class="anchored" data-anchor-id="feature-comparison">Feature comparison</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 23%">
+<col style="width: 38%">
+<col style="width: 38%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Feature</th>
+<th style="text-align: center;">ScatterMoE</th>
+<th style="text-align: center;">SonicMoE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Kernel backend</td>
+<td style="text-align: center;">Triton</td>
+<td style="text-align: center;">CUTLASS</td>
+</tr>
+<tr class="even">
+<td>GPU requirement</td>
+<td style="text-align: center;">Any CUDA</td>
+<td style="text-align: center;">Hopper (H100/H200) or Blackwell (B200+)</td>
+</tr>
+<tr class="odd">
+<td>LoRA approach</td>
+<td style="text-align: center;">Fused in Triton kernel</td>
+<td style="text-align: center;">Runtime materialization + custom autograd</td>
+</tr>
+<tr class="even">
+<td>LoRA overhead</td>
+<td style="text-align: center;">Lower (fused computation)</td>
+<td style="text-align: center;">Higher (per-forward materialization)</td>
+</tr>
+<tr class="odd">
+<td>Gate/router LoRA</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="even">
+<td>Expert LoRA</td>
+<td style="text-align: center;">Yes (fused)</td>
+<td style="text-align: center;">Yes (materialized)</td>
+</tr>
+<tr class="odd">
+<td>Shared expert LoRA</td>
+<td style="text-align: center;">Yes (standard PEFT)</td>
+<td style="text-align: center;">Yes (standard PEFT)</td>
+</tr>
+<tr class="even">
+<td>Selective expert dequantization</td>
+<td style="text-align: center;">Yes (~97% memory savings)</td>
+<td style="text-align: center;">No</td>
+</tr>
+<tr class="odd">
+<td>Weight format</td>
+<td style="text-align: center;">Transposed <code>[E, hidden, 2*inter]</code></td>
+<td style="text-align: center;">Interleaved gate/up <code>[2*I, H, E]</code></td>
+</tr>
+<tr class="even">
+<td>torch.compile routing</td>
+<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes (optional)</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="shared-expert-handling" class="level3">
+<h3 class="anchored" data-anchor-id="shared-expert-handling">Shared Expert Handling</h3>
+<p>Both kernels handle shared experts identically. Shared expert attribute names are detected in order of priority:</p>
+<ol type="1">
+<li><code>shared_expert</code> (Qwen2-MoE)</li>
+<li><code>shared_experts</code> (GLM-MoE, DeepSeek-V3)</li>
+<li><code>shared_mlp</code> (HunYuan V1 MoE)</li>
+</ol>
+<p>If <code>shared_expert_gate</code> exists, sigmoid gating is applied to the shared expert contribution before adding it to the routed output. PEFT wraps shared expert linear layers with standard LoRA — no special handling is needed.</p>
 </section>
 <section id="limitations-1" class="level3">
 <h3 class="anchored" data-anchor-id="limitations-1">Limitations</h3>
-<p>ScatterMoE uses a softmax -&gt; topk routing, so results may be different for some model architectures as baseline (GPT-OSS, etc). Incompatible with <code>GLM_MOE_DSA</code> (GLM 5) and <code>GLM4_MOE_LITE</code> (GLM 4.7 Flash) at the moment.</p>
-<p>SonicMoE supports both softmax-&gt;topk and sigmoid-&gt;topk routing, covering a wider range of architectures.</p>
-<p>ScatterMoE does not work for GLM4.7 Flash (glm4_moe_lite) atm.</p>
+<ul>
+<li><strong>ScatterMoE + GLM4-MoE Lite</strong>: ScatterMoE does not work reliably for GLM 4.7 Flash (<code>glm4_moe_lite</code>).</li>
+<li><strong>Non-SwiGLU activations</strong>: Neither kernel supports MoE architectures with non-SwiGLU expert activations (e.g., GPT-OSS uses a custom GLU variant).</li>
+<li><strong>GPT-OSS</strong>: Deferred — requires transposed weight layout <code>[E, H, 2*I]</code>, expert biases, and custom GLU activation. A dedicated forward path is needed.</li>
+<li><strong>FSDP + fused gate LoRA (SonicMoE)</strong>: The fused topk→softmax path materializes a local tensor when LoRA delta is present to avoid DTensor + Tensor mixing under FSDP.</li>
+</ul>
 </section>
 <section id="note-on-megablocks" class="level3">
 <h3 class="anchored" data-anchor-id="note-on-megablocks">Note on MegaBlocks</h3>
@@ -1552,8 +1879,8 @@ sparse model before inference for even greater performance benefits.:</p>
 <span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a><span class="fu">liger_use_token_scaling</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="supported-models-3" class="level3">
-<h3 class="anchored" data-anchor-id="supported-models-3">Supported Models</h3>
+<section id="supported-models-2" class="level3">
+<h3 class="anchored" data-anchor-id="supported-models-2">Supported Models</h3>
 <ul>
 <li>deepseek_v2</li>
 <li>gemma</li>
