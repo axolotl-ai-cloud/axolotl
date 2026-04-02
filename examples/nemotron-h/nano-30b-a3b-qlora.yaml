@@ -1,6 +1,16 @@
 # See examples/nemotron-h/README.md for architecture notes and requirements.
 base_model: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16
 
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.liger.LigerPlugin
+
+liger_layer_norm: true
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rms_norm_gated: true
+
 # LoRA kernel patches are incompatible with this architecture — see README.
 lora_mlp_kernel: false
 lora_qkv_kernel: false
@@ -23,8 +33,6 @@ dataset_prepared_path: last_run_prepared
 sequence_len: 4096
 sample_packing: true
 
-use_cut_cross_entropy: true
-
 load_in_4bit: true
 quantize_moe_experts: true
 adapter: qlora
@@ -36,11 +44,12 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
-  # To also train MoE expert weights, add them via lora_target_parameters
-  # (they are 3D nn.Parameter tensors, not nn.Linear — no gate_proj):
-  #   lora_target_parameters:
-  #     - up_proj
-  #     - down_proj
+
+# To also train MoE expert weights, add them via lora_target_parameters
+# (they are 3D nn.Parameter tensors, not nn.Linear — no gate_proj):
+# lora_target_parameters:
+#   - up_proj
+#   - down_proj
 
 wandb_project:
 wandb_entity:
