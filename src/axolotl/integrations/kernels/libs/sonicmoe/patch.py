@@ -146,6 +146,8 @@ def _make_general_forward(moe_cls, routing_fn, activation):
 
         # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
         gate_up_weight, down_weight = _get_expert_weights(self.experts)
+        gate_up_weight = gate_up_weight.to(hidden_states_flat.dtype)
+        down_weight = down_weight.to(hidden_states_flat.dtype)
         E = gate_up_weight.shape[-1]
 
         output, _ = moe_general_routing_inputs(
@@ -199,6 +201,8 @@ def _make_fused_forward(moe_cls, activation, router_attr):
 
         # Unwrap PEFT + optional LoRA materialization, then permute to SonicMoE layout
         gate_up_weight, down_weight = _get_expert_weights(self.experts)
+        gate_up_weight = gate_up_weight.to(hidden_states_flat.dtype)
+        down_weight = down_weight.to(hidden_states_flat.dtype)
 
         output, _router_logits, _expert_freq = moe_TC_softmax_topk_layer(
             hidden_states_flat,

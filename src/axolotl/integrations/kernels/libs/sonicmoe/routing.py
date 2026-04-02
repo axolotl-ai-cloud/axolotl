@@ -134,7 +134,7 @@ def softmax_group_topk_routing(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Mistral4-style routing: softmax -> group selection -> topk -> renorm -> scale."""
     base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
     E = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
@@ -214,7 +214,7 @@ def sigmoid_topk_routing(
         router_logits: [T, E] original logits for aux loss
     """
     base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
-    T, H = hidden_states.shape
+    T, _ = hidden_states.shape
     K = moe_block.top_k
     E = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
@@ -307,16 +307,20 @@ def softmax_bias_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
-    T, _ = hidden_states.shape
-    K = gate.top_k
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
+    T, H = hidden_states.shape
+    K = base_gate.top_k
 
     # Compute router logits and softmax (force float32 for numerical stability)
-    router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Bias-corrected scores for expert selection (via moe_statics module)
-    scores_for_choice = gate.moe_statics(router_probs)  # [T, E]
+    scores_for_choice = base_gate.moe_statics(router_probs)  # [T, E]
 
     # Select top-k experts using biased scores
     _, selected_experts = torch.topk(scores_for_choice, K, dim=-1)  # [T, K]
@@ -325,7 +329,7 @@ def softmax_bias_topk_routing(
     top_values = torch.gather(router_probs, dim=-1, index=selected_experts)  # [T, K]
 
     # Renormalize with clamp(min=norm_min) instead of sum+epsilon
-    norm_min = getattr(gate, "norm_min", 1e-20)
+    norm_min = getattr(base_gate, "norm_min", 1e-20)
     top_values = top_values / torch.clamp(
         top_values.sum(dim=-1, keepdim=True), min=norm_min
     )
@@ -369,15 +373,19 @@ def softmax_group_limited_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
-    T, _ = hidden_states.shape
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
+    T, H = hidden_states.shape
     K = moe_block.top_k
     num_group = getattr(moe_block, "num_group", 1)
-    num_experts = gate.weight.shape[0]
+    num_experts = gate_weight.shape[0]
     topk_method = getattr(moe_block, "topk_method", "greedy")
 
     # Compute logits in float32 and softmax
-    router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     if topk_method == "greedy" or num_group == 1:
@@ -456,12 +464,17 @@ def softmax_topk_wg_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, _ = hidden_states.shape
+    T, H = hidden_states.shape
     K = moe_block.top_k
 
     # Gate computes logits via gate.wg (nn.Linear, float32)
-    wg = gate.wg
-    router_logits = F.linear(hidden_states.float(), wg.weight.float())  # [T, E]
+    # Unwrap at gate.wg level since PEFT targets the wg Linear, not the gate container
+    base_wg, wg_weight, wg_lora_delta = unwrap_gate_lora(gate.wg)
+    router_logits = F.linear(hidden_states.float(), wg_weight.float())  # [T, E]
+    if wg_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), wg_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Select top-k experts
