@@ -17,15 +17,15 @@ quantized codes.  Three issues:
 
 Fix: propagate dtype in view.default (primary), clone in _to_copy, register view.dtype.
 
-Upstream issue: https://github.com/pytorch/ao/issues/XXXX
+Upstream fix: https://github.com/pytorch/ao/pull/4216
 """
-
-import logging
 
 import torch
 from torch.utils._python_dispatch import return_and_correct_aliasing
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 aten = torch.ops.aten
 
@@ -72,7 +72,7 @@ def patch_torchao_optim_state_8bit():
             x, dtype = args
             return OptimState8bit(x.codes, x.scale, x.qmap, x.signed, dtype=dtype)
 
-    logger.debug("Patched OptimState8bit for torch.compile compatibility")
+    LOG.debug("Patched OptimState8bit for torch.compile compatibility")
 
     try:
         from torchao.optim.subclass_4bit import OptimState4bit
@@ -119,7 +119,7 @@ def patch_torchao_optim_state_8bit():
                     x.codes, x.scale, x.qmap, x.signed, x.shape, dtype=dtype
                 )
 
-        logger.debug("Patched OptimState4bit for torch.compile compatibility")
+        LOG.debug("Patched OptimState4bit for torch.compile compatibility")
 
     try:
         from torchao.optim.subclass_fp8 import OptimStateFp8
@@ -151,4 +151,4 @@ def patch_torchao_optim_state_8bit():
                 x, dtype = args
                 return OptimStateFp8(x.codes, x.scale, dtype=dtype)
 
-        logger.debug("Patched OptimStateFp8 for torch.compile compatibility")
+        LOG.debug("Patched OptimStateFp8 for torch.compile compatibility")
