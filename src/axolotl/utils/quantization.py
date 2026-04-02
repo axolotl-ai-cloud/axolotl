@@ -6,6 +6,7 @@ import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
 from torchao.quantization import quantize_
+from torchao.quantization.granularity import PerGroup
 from torchao.quantization.qat import (
     QATConfig,
 )
@@ -14,30 +15,22 @@ from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
     Int4WeightOnlyConfig,
+    Int8DynamicActivationIntxWeightConfig,
 )
-
-try:
-    from torchao.quantization.quant_api import Int8DynamicActivationInt4WeightConfig
-except ImportError:
-    from torchao.quantization.quant_api import (
-        Int8DynamicActivationIntxWeightConfig as Int8DynamicActivationInt4WeightConfig,
-    )
 
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
-    Int8DynamicActivationInt4WeightConfig: "int8int4",
+    Int8DynamicActivationIntxWeightConfig: "int8int4",
     Float8DynamicActivationFloat8WeightConfig: "fp8fp8",
     Float8DynamicActivationInt4WeightConfig: "fp8int4",
 }
 
 if version.parse(torch.__version__) >= version.parse("2.8.0"):
     try:
-        from torchao.prototype.mx_formats import (
-            NVFP4WeightOnlyConfig as NVFP4InferenceConfig,
-        )
+        from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
-        quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
+        quantization_config_to_str[NVFP4WeightOnlyConfig] = "nvfp4"
     except (ImportError, RuntimeError):
         pass
 
@@ -108,10 +101,10 @@ def get_quantization_config(
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int4
     ):
+        kwargs = {"weight_dtype": torch.int4}
         if group_size is not None:
-            return Int8DynamicActivationInt4WeightConfig(group_size=group_size)
-        else:
-            return Int8DynamicActivationInt4WeightConfig()
+            kwargs["weight_granularity"] = PerGroup(group_size=group_size)
+        return Int8DynamicActivationIntxWeightConfig(**kwargs)
     if (
         activation_dtype == TorchAOQuantDType.float8_e4m3fn
         and weight_dtype == TorchAOQuantDType.float8_e4m3fn
@@ -123,13 +116,11 @@ def get_quantization_config(
     ):
         return Float8DynamicActivationInt4WeightConfig()
     if weight_dtype == TorchAOQuantDType.nvfp4:
-        from torchao.prototype.mx_formats import (
-            NVFP4WeightOnlyConfig as NVFP4InferenceConfig,
-        )
+        from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
-        return NVFP4InferenceConfig()
+        return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)

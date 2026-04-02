@@ -329,7 +329,7 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = AdamW
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
+                from torchao.optim.adam import AdamWFp8
 
                 optimizer_cls = AdamWFp8
                 optimizer_kwargs.update(adam_kwargs)
