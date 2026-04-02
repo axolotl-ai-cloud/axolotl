@@ -828,6 +828,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#per-model-support" id="toc-per-model-support" class="nav-link" data-scroll-target="#per-model-support">Per-model support</a></li>
   <li><a href="#feature-comparison" id="toc-feature-comparison" class="nav-link" data-scroll-target="#feature-comparison">Feature comparison</a></li>
   <li><a href="#shared-expert-handling" id="toc-shared-expert-handling" class="nav-link" data-scroll-target="#shared-expert-handling">Shared Expert Handling</a></li>
+  <li><a href="#gemma-4" id="toc-gemma-4" class="nav-link" data-scroll-target="#gemma-4">Gemma 4</a></li>
   <li><a href="#limitations-1" id="toc-limitations-1" class="nav-link" data-scroll-target="#limitations-1">Limitations</a></li>
   <li><a href="#note-on-megablocks" id="toc-note-on-megablocks" class="nav-link" data-scroll-target="#note-on-megablocks">Note on MegaBlocks</a></li>
   </ul></li>
@@ -1308,7 +1309,7 @@ The quick brown fox jumps over the loud dog</code></pre>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
 <span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="fu">use_sonicmoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p><strong>Important:</strong> Setting <code>experts_implementation</code> is incompatible with custom kernel options.</p>
+<p><strong>Important:</strong> Setting <code>experts_implementation</code> to <code>batched_mm</code> or <code>grouped_mm</code> is incompatible with custom kernel options. The exception is <code>experts_implementation: scattermoe</code>, which is used for models like Gemma 4 that embed MoE directly in the decoder layer (no SparseMoeBlock) and dispatch through the transformers <code>ExpertsInterface</code>.</p>
 </section>
 <section id="sonicmoe-installation" class="level3">
 <h3 class="anchored" data-anchor-id="sonicmoe-installation">SonicMoE installation</h3>
@@ -1343,7 +1344,7 @@ The quick brown fox jumps over the loud dog</code></pre>
 </section>
 <section id="model-support-matrix" class="level3">
 <h3 class="anchored" data-anchor-id="model-support-matrix">Model Support Matrix</h3>
-<p>All models use the <strong>SwiGLU</strong> activation (<code>act_fn(gate) * up</code>). Neither kernel currently supports non-SwiGLU MoE architectures.</p>
+<p>Most models use the <strong>SwiGLU</strong> activation (<code>silu(gate) * up</code>). Gemma 4 uses <strong>GEGLU</strong> (<code>gelu(gate) * up</code>). ScatterMoE supports any gated activation (activation is applied in Python between kernel calls). SonicMoE supports SwiGLU, GEGLU, and REGLU via its <code>ActivationType</code> enum.</p>
 </section>
 <section id="routing-strategies" class="level3">
 <h3 class="anchored" data-anchor-id="routing-strategies">Routing strategies</h3>
@@ -1406,6 +1407,12 @@ The quick brown fox jumps over the loud dog</code></pre>
 <td style="text-align: center;">Yes</td>
 </tr>
 <tr class="even">
+<td>softmax → topk + per_expert_scale</td>
+<td>RMSNorm → scale → proj → softmax → topk → renorm → per-expert learned scales</td>
+<td style="text-align: center;">Yes</td>
+<td style="text-align: center;">Yes</td>
+</tr>
+<tr class="odd">
 <td>fused topk → softmax</td>
 <td>Routing + expert computation fused in a single kernel</td>
 <td style="text-align: center;">No</td>
@@ -1575,6 +1582,13 @@ The quick brown fox jumps over the loud dog</code></pre>
 <td style="text-align: center;"><strong>Yes</strong></td>
 </tr>
 <tr class="odd">
+<td><code>gemma4_text</code></td>
+<td>Gemma 4 (26B-A4B)</td>
+<td>softmax → topk + per_expert_scale</td>
+<td style="text-align: center;"><strong>Yes</strong>**</td>
+<td style="text-align: center;"><strong>Yes</strong>**</td>
+</tr>
+<tr class="even">
 <td><code>gpt_oss</code></td>
 <td>GPT-OSS</td>
 <td>fused topk → softmax</td>
@@ -1584,6 +1598,7 @@ The quick brown fox jumps over the loud dog</code></pre>
 </tbody>
 </table>
 <p>* <code>glm4_moe_lite</code> with ScatterMoE may have issues — see Limitations.</p>
+<p>** Gemma 4 uses <code>experts_implementation: scattermoe</code> path (registered via <code>ExpertsInterface</code>) instead of SparseMoeBlock patching, since Gemma 4 embeds MoE directly in its decoder layer (no separate SparseMoeBlock). See the <a href="#gemma-4">Gemma 4 section</a> below.</p>
 </section>
 <section id="feature-comparison" class="level3">
 <h3 class="anchored" data-anchor-id="feature-comparison">Feature comparison</h3>
@@ -1663,6 +1678,20 @@ The quick brown fox jumps over the loud dog</code></pre>
 <li><code>shared_mlp</code> (HunYuan V1 MoE)</li>
 </ol>
 <p>If <code>shared_expert_gate</code> exists, sigmoid gating is applied to the shared expert contribution before adding it to the routed output. PEFT wraps shared expert linear layers with standard LoRA — no special handling is needed.</p>
+</section>
+<section id="gemma-4" class="level3">
+<h3 class="anchored" data-anchor-id="gemma-4">Gemma 4</h3>
+<p>Gemma 4 (e.g.&nbsp;<code>google/gemma-4-26B-A4B</code>) has a unique hybrid MoE architecture:</p>
+<ul>
+<li><strong>No SparseMoeBlock</strong>: MoE is embedded directly in the decoder layer alongside a dense MLP. Both run in parallel and their outputs are summed.</li>
+<li><strong>Custom router</strong> (<code>Gemma4TextRouter</code>): RMSNorm → learned scale → linear projection → softmax → top-k → renormalization → per-expert learned scales.</li>
+<li><strong>GEGLU activation</strong>: Uses <code>gelu_pytorch_tanh</code> (not SiLU/SwiGLU like most other MoE models).</li>
+<li><strong>128 experts, top-k=8</strong> for the 26B-A4B variant.</li>
+</ul>
+<p>Because there is no SparseMoeBlock class to patch, Gemma 4 uses a different integration path: we register <code>"scattermoe"</code> as a custom implementation in the transformers <code>ExpertsInterface</code>, and set <code>experts_implementation: scattermoe</code> in the config. The <code>@use_experts_implementation</code> decorator on <code>Gemma4TextExperts</code> then dispatches to our ScatterMoE kernel automatically. The router is untouched — it runs as-is.</p>
+<p><strong>Important limitations:</strong>
+- <strong>Flash Attention 2 is not supported</strong> — Gemma 4 uses <code>global_head_dim: 512</code> for full attention layers, which exceeds FA2’s maximum head dimension of 256. Use <code>sdp_attention: true</code> instead.
+- <strong>Multimodal model</strong>: Gemma 4 includes vision and audio encoders. For text-only SFT, use <code>lora_target_linear_modules</code> with a regex to restrict LoRA to the text backbone (e.g.&nbsp;<code>language_model\.model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj</code>).</p>
 </section>
 <section id="limitations-1" class="level3">
 <h3 class="anchored" data-anchor-id="limitations-1">Limitations</h3>

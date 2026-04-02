@@ -799,6 +799,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.monkeypatch.lora_kernels.get_layers" id="toc-axolotl.monkeypatch.lora_kernels.get_layers" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.get_layers">get_layers</a></li>
   <li><a href="#axolotl.monkeypatch.lora_kernels.original_apply_o" id="toc-axolotl.monkeypatch.lora_kernels.original_apply_o" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.original_apply_o">original_apply_o</a></li>
   <li><a href="#axolotl.monkeypatch.lora_kernels.original_apply_qkv" id="toc-axolotl.monkeypatch.lora_kernels.original_apply_qkv" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.original_apply_qkv">original_apply_qkv</a></li>
+  <li><a href="#axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v" id="toc-axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v">original_apply_qkv_optional_v</a></li>
   <li><a href="#axolotl.monkeypatch.lora_kernels.patch_self_attn_lora" id="toc-axolotl.monkeypatch.lora_kernels.patch_self_attn_lora" class="nav-link" data-scroll-target="#axolotl.monkeypatch.lora_kernels.patch_self_attn_lora">patch_self_attn_lora</a></li>
   </ul></li>
   </ul></li>
@@ -868,6 +869,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Original implementation of QKV projection without optimizations.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v">original_apply_qkv_optional_v</a></td>
+<td>QKV projection for models where v_proj may be None (e.g.&nbsp;Gemma4 attention_k_eq_v).</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.lora_kernels.patch_self_attn_lora">patch_self_attn_lora</a></td>
 <td>Given an <code>axolotl</code> config, this method patches the inferred attention class forward</td>
 </tr>
@@ -1228,9 +1233,15 @@ the standard transformers naming convention.</p>
 </table>
 </section>
 </section>
+<section id="axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.original_apply_qkv_optional_v">original_apply_qkv_optional_v</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.original_apply_qkv_optional_v(<span class="va">self</span>, hidden_states)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>QKV projection for models where v_proj may be None (e.g.&nbsp;Gemma4 attention_k_eq_v).</p>
+<p>When v_proj is None, key_states are reused as value_states.</p>
+</section>
 <section id="axolotl.monkeypatch.lora_kernels.patch_self_attn_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.lora_kernels.patch_self_attn_lora">patch_self_attn_lora</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.patch_self_attn_lora(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.lora_kernels.patch_self_attn_lora(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Given an <code>axolotl</code> config, this method patches the inferred attention class forward
 pass with optimized LoRA implementations.</p>
 <p>It modifies the attention class to use optimized QKV and output projections. The
