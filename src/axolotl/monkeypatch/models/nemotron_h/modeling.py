@@ -1,4 +1,4 @@
-"""Sample-packing patch for NemotronH (Mamba2/Attention/MoE hybrid).
+"""Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).
 
 Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
 packed-sequence boundaries reset SSM state. Upstream hard-codes seq_idx=None,
@@ -19,8 +19,18 @@ def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
     """Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.
 
     Example: position_ids [[0,1,2,3,0,1,2]] → seq_idx [[0,0,0,0,1,1,1]]
+
+    Under context parallelism a rank may receive a chunk that begins mid-sample
+    (position_ids[0] != 0), so the raw cumsum starts at 0 and subtracting 1
+    would yield -1 — an invalid value for the Mamba kernels.  Subtracting the
+    first element of the cumsum instead normalises every chunk to start at 0
+    while still correctly incrementing at every intra-chunk sample boundary.
+
+    Example (CP rank 1, chunk starts mid-sample):
+        position_ids [[3,4,5,0,1,2]] → seq_idx [[0,0,0,1,1,1]]
     """
-    return (torch.cumsum((position_ids == 0).int(), dim=-1) - 1).to(torch.int32)
+    cumsum = torch.cumsum((position_ids == 0).int(), dim=-1)
+    return (cumsum - cumsum[..., :1]).to(torch.int32)
 
 
 def patch_nemotron_h_modeling_packing():
