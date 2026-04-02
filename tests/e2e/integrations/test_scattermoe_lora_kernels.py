@@ -13,6 +13,7 @@ Tests verify correctness of:
 4. Various configurations: top-k, grouped_in/out, with/without bias
 5. Numerical stability: bf16/fp16 outputs within tolerance of fp32 reference
 6. HFScatterMoEGatedMLP with sigmoid routing (GLM/DeepSeek/MiniMax M2)
+7. Non-GLU MoE forward (Nemotron-H style: up_proj + relu2 + down_proj)
 
 Test strategy:
 - Reference implementation uses pure PyTorch ops (no Triton)
@@ -1858,3 +1859,286 @@ class TestHFScatterMoESigmoidWithSharedExperts:
         hidden = torch.randn(1, T, H, device="cuda")
         output = HFScatterMoEGatedMLP.forward(moe_block, hidden)
         assert output.shape == (1, T, H)
+
+
+# =============================================================================
+# Test: Non-GLU MoE forward (Nemotron-H style)
+# =============================================================================
+
+
+def _reference_non_glu_moe_forward(
+    hidden_states,
+    up_proj,
+    down_proj,
+    act_fn,
+    routing_weights,
+    selected_experts,
+    num_experts,
+):
+    """Pure PyTorch reference for a non-GLU MoE forward pass.
+
+    Non-GLU experts have up_proj [E, I, H] and down_proj [E, H, I] with
+    a direct activation (no gate/up split). Forward per expert:
+    output = down_proj(act_fn(up_proj(x)))
+
+    Args:
+        hidden_states: [T, H]
+        up_proj: [E, I, H]
+        down_proj: [E, H, I]
+        act_fn: activation function (e.g. relu2)
+        routing_weights: [T, K] routing weights
+        selected_experts: [T, K] expert indices
+        num_experts: int
+
+    Returns:
+        output: [T, H]
+    """
+    T, H = hidden_states.shape
+    K = selected_experts.shape[1]
+    output = torch.zeros(T, H, device=hidden_states.device, dtype=hidden_states.dtype)
+
+    for t in range(T):
+        for j in range(K):
+            e = selected_experts[t, j].item()
+            w = routing_weights[t, j].item()
+
+            # up projection: [I]
+            up_out = hidden_states[t] @ up_proj[e].T
+
+            # activation (no gating, just direct activation)
+            h = act_fn(up_out)
+
+            # Cast back to weight dtype (relu2 upcasts to fp32)
+            if h.dtype != down_proj.dtype:
+                h = h.to(down_proj.dtype)
+
+            # down projection: [H]
+            out = h @ down_proj[e].T
+
+            output[t] += w * out
+
+    return output
+
+
+class _ReLU2(torch.nn.Module):
+    """ReLU squared activation (relu2): relu(x)^2."""
+
+    def forward(self, x):
+        return torch.relu(x).square()
+
+
+def _make_mock_non_glu_moe_block(T=16, H=64, FF=32, E=8, K=2, n_group=2, topk_group=1):
+    """Create a mock non-GLU MoE block (Nemotron-H style) for GPU testing.
+
+    Non-GLU: experts have up_proj [E, I, H] and down_proj [E, H, I],
+    no gate_up_proj. Uses relu2 activation.
+    """
+    up_proj = torch.randn(E, FF, H, device="cuda") * 0.02
+    down_proj = torch.randn(E, H, FF, device="cuda") * 0.02
+    act_fn = _ReLU2()
+
+    experts = SimpleNamespace(
+        up_proj=up_proj,
+        down_proj=down_proj,
+        act_fn=act_fn,
+        num_experts=E,
+    )
+
+    gate = SimpleNamespace(
+        weight=torch.randn(E, H, device="cuda") * 0.1,
+        e_score_correction_bias=torch.zeros(E, device="cuda"),
+    )
+    moe_block = SimpleNamespace(
+        gate=gate,
+        experts=experts,
+        top_k=K,
+        n_routed_experts=E,
+        n_group=n_group,
+        topk_group=topk_group,
+        norm_topk_prob=True,
+        routed_scaling_factor=1.0,
+    )
+
+    return moe_block, T, H, FF, E, K
+
+
+@pytest.mark.slow
+class TestHFScatterMoENonGLU:
+    """Test HFScatterMoEGatedMLP forward with non-GLU experts (Nemotron-H style)."""
+
+    def test_forward_matches_reference(self):
+        """Non-GLU forward pass with sigmoid routing matches reference."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            HFScatterMoEGatedMLP,
+            _sigmoid_topk_route,
+        )
+
+        moe_block, T, H, FF, E, K = _make_mock_non_glu_moe_block(
+            T=16, H=64, FF=32, E=8, K=2, n_group=2, topk_group=1
+        )
+
+        hidden = torch.randn(1, T, H, device="cuda")
+
+        # Get routing for reference
+        gate = moe_block.gate
+        hidden_flat = hidden.view(-1, H)
+        routing_weights, selected_experts, _, _ = _sigmoid_topk_route(
+            moe_block, gate, hidden_flat, gate.weight, None
+        )
+
+        # Reference output (non-GLU)
+        ref_output = _reference_non_glu_moe_forward(
+            hidden_flat,
+            moe_block.experts.up_proj,
+            moe_block.experts.down_proj,
+            moe_block.experts.act_fn,
+            routing_weights,
+            selected_experts,
+            E,
+        )
+
+        # Kernel output
+        kernel_output = HFScatterMoEGatedMLP.forward(moe_block, hidden)
+        kernel_output_flat = kernel_output.view(-1, H)
+
+        torch.testing.assert_close(
+            kernel_output_flat.float(),
+            ref_output.float(),
+            atol=5e-2,
+            rtol=5e-2,
+        )
+
+    def test_forward_with_softmax_routing(self):
+        """Non-GLU forward with softmax routing (hypothetical non-GLU softmax model)."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            HFScatterMoEGatedMLP,
+            _softmax_topk_route,
+        )
+
+        T, H, FF, E, K = 16, 64, 32, 4, 2
+        up_proj = torch.randn(E, FF, H, device="cuda") * 0.02
+        down_proj = torch.randn(E, H, FF, device="cuda") * 0.02
+        act_fn = torch.nn.ReLU()
+
+        experts = SimpleNamespace(
+            up_proj=up_proj,
+            down_proj=down_proj,
+            act_fn=act_fn,
+            num_experts=E,
+        )
+        gate = SimpleNamespace(
+            weight=torch.randn(E, H, device="cuda") * 0.1,
+            top_k=K,
+            num_experts=E,
+            norm_topk_prob=True,
+        )
+        moe_block = SimpleNamespace(gate=gate, experts=experts)
+
+        hidden = torch.randn(1, T, H, device="cuda")
+        hidden_flat = hidden.view(-1, H)
+
+        routing_weights, selected_experts, _, _ = _softmax_topk_route(
+            moe_block, gate, hidden_flat, gate.weight, None
+        )
+
+        ref_output = _reference_non_glu_moe_forward(
+            hidden_flat,
+            up_proj,
+            down_proj,
+            act_fn,
+            routing_weights,
+            selected_experts,
+            E,
+        )
+
+        kernel_output = HFScatterMoEGatedMLP.forward(moe_block, hidden)
+        kernel_output_flat = kernel_output.view(-1, H)
+
+        torch.testing.assert_close(
+            kernel_output_flat.float(),
+            ref_output.float(),
+            atol=5e-2,
+            rtol=5e-2,
+        )
+
+    def test_relu2_dtype_cast(self):
+        """relu2 activation upcasts to fp32; verify output is still correct in bf16."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            HFScatterMoEGatedMLP,
+        )
+
+        T, H, FF, E, K = 8, 64, 32, 4, 2
+        up_proj = torch.randn(E, FF, H, device="cuda", dtype=torch.bfloat16) * 0.02
+        down_proj = torch.randn(E, H, FF, device="cuda", dtype=torch.bfloat16) * 0.02
+        act_fn = _ReLU2()
+
+        experts = SimpleNamespace(
+            up_proj=up_proj,
+            down_proj=down_proj,
+            act_fn=act_fn,
+            num_experts=E,
+        )
+        gate = SimpleNamespace(
+            weight=torch.randn(E, H, device="cuda", dtype=torch.bfloat16) * 0.1,
+            top_k=K,
+            num_experts=E,
+            norm_topk_prob=True,
+        )
+        moe_block = SimpleNamespace(gate=gate, experts=experts)
+
+        hidden = torch.randn(1, T, H, device="cuda", dtype=torch.bfloat16)
+
+        # Should not raise despite relu2 upcasting to fp32 internally
+        output = HFScatterMoEGatedMLP.forward(moe_block, hidden)
+        assert output.shape == (1, T, H)
+        assert torch.isfinite(output).all()
+
+    def test_forward_with_latent_projections(self):
+        """Non-GLU forward with fc1_latent_proj / fc2_latent_proj (Nemotron-H)."""
+        from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (
+            HFScatterMoEGatedMLP,
+        )
+
+        T, H, FF, E, K = 8, 64, 32, 4, 2
+        LATENT = 48  # intermediate latent dim
+
+        up_proj = torch.randn(E, FF, LATENT, device="cuda") * 0.02
+        down_proj = torch.randn(E, LATENT, FF, device="cuda") * 0.02
+        act_fn = _ReLU2()
+
+        experts = SimpleNamespace(
+            up_proj=up_proj,
+            down_proj=down_proj,
+            act_fn=act_fn,
+            num_experts=E,
+        )
+
+        # Latent projections: H -> LATENT before experts, LATENT -> H after
+        fc1_latent = torch.nn.Linear(H, LATENT, bias=False).cuda()
+        fc2_latent = torch.nn.Linear(LATENT, H, bias=False).cuda()
+
+        gate = SimpleNamespace(
+            weight=torch.randn(E, H, device="cuda") * 0.1,
+            top_k=K,
+            num_experts=E,
+            norm_topk_prob=True,
+        )
+        moe_block = SimpleNamespace(
+            gate=gate,
+            experts=experts,
+            fc1_latent_proj=fc1_latent,
+            fc2_latent_proj=fc2_latent,
+        )
+
+        hidden = torch.randn(1, T, H, device="cuda")
+
+        output = HFScatterMoEGatedMLP.forward(moe_block, hidden)
+        assert output.shape == (1, T, H)
+        assert torch.isfinite(output).all()
+
+    def test_non_glu_no_gate_up_proj_attribute(self):
+        """Verify non-GLU block does NOT have gate_up_proj on experts."""
+        moe_block, T, H, FF, E, K = _make_mock_non_glu_moe_block()
+        assert not hasattr(moe_block.experts, "gate_up_proj")
+        assert hasattr(moe_block.experts, "up_proj")
+        assert hasattr(moe_block.experts, "down_proj")

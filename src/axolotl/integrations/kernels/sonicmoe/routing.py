@@ -59,6 +59,13 @@ def get_model_moe_config(model_type: str):
         "minimax_m2",
     ):
         return sigmoid_topk_routing, ActivationType.SWIGLU, "gate"
+    # Non-GLU MoE (no gate_proj, experts use up_proj + down_proj only)
+    elif model_type in ("nemotron_h",):
+        return sigmoid_topk_routing, ActivationType.RELU_SQ, "gate"
+    # elif model_type in ("deepseek_v2",):
+    #     # Softmax→topk with group_limited_greedy. Different attr names: num_group
+    #     # (not n_group), gate is nn.Linear (not a router class).
+    #     return ..., ActivationType.SWIGLU, "gate"
     elif model_type in ("ernie4_5_moe",):
         return softmax_bias_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in ("hunyuan_v1_moe",):
