@@ -68,7 +68,9 @@ class TRLConfig(BaseModel):
     )
     generation_batch_size: int | None = Field(
         default=None,
-        json_schema_extra={"description": "Batch size for generation. Controls how many unique prompts are generated per step. Should be num_generations * data_parallel_size for full DP utilization."},
+        json_schema_extra={
+            "description": "Batch size for generation. Controls how many unique prompts are generated per step. Should be num_generations * data_parallel_size for full DP utilization."
+        },
     )
     num_generations: int | None = Field(
         default=None,
