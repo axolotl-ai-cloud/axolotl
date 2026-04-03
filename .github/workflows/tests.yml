@@ -220,6 +220,16 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Verify agent docs are discoverable
+        run: |
+          # Agent docs live in docs/agents/ (source of truth) and are resolved
+          # at runtime from the repo checkout or via `axolotl fetch docs`
+          axolotl agent-docs --list
+          axolotl agent-docs | grep -q "Fine-tuning framework"
+          axolotl agent-docs grpo | grep -q "GRPO"
+          axolotl agent-docs sft | grep -q "SFT"
+          python -c "from axolotl.cli.agent_docs import get_doc, list_topics; assert len(list_topics()) >= 5; assert 'GRPO' in get_doc('grpo')"
+
       - name: Show HF cache
         run: hf cache ls
 
