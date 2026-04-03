@@ -92,6 +92,7 @@ def patch_flash_attn_4(model_config=None):
         return (
             flash_attn_func,
             flash_attn_varlen_func,
+            None,
             fa_utils._pad_input,
             fa_utils._unpad_input,
         )
