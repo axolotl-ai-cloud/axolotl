@@ -15,6 +15,7 @@ This patch:
 import importlib
 
 from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
     get_seq_idx,  # noqa: F401
     is_cp_active,
     wrap_mamba_scan_for_cp,
@@ -35,6 +36,8 @@ def patch_granitemoehybrid_modeling_packing():
             "granitemoehybrid not found in transformers, skipping packing patches"
         )
         return
+
+    ensure_mamba_kernels_loaded(mod)
 
     GraniteMoeHybridModel = mod.GraniteMoeHybridModel
     GraniteMoeHybridMambaLayer = mod.GraniteMoeHybridMambaLayer
@@ -73,11 +76,14 @@ def patch_granitemoehybrid_modeling_packing():
         self,
         hidden_states,
         cache_params=None,
-        cache_position=None,
         attention_mask=None,
         seq_idx=None,
     ):
-        force_slow = is_cp_active() and self.training and cache_params is None
+        force_slow = (
+            (seq_idx is not None or is_cp_active())
+            and self.training
+            and cache_params is None
+        )
         if force_slow:
             self.training = False
         try:
@@ -85,7 +91,6 @@ def patch_granitemoehybrid_modeling_packing():
                 self,
                 hidden_states,
                 cache_params,
-                cache_position,
                 attention_mask,
                 seq_idx,
             )

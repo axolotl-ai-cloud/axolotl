@@ -164,6 +164,59 @@ def mamba2_cp_correction(
     return corrected_out, corrected_h_final
 
 
+def ensure_mamba_kernels_loaded(target_module):
+    """Eagerly resolve mamba-ssm and causal-conv1d globals on *target_module*.
+
+    Transformers >= 5.5 lazily loads these inside ``Mixer.__init__`` via
+    ``lazy_load_kernel``.  Our monkeypatches run *before* model instantiation,
+    so the module globals are still ``None``.  This helper triggers the kernel
+    resolution early so the patched ``cuda_kernels_forward`` (and
+    ``wrap_mamba_scan_for_cp``) can reference them.
+    """
+    if getattr(target_module, "mamba_chunk_scan_combined", None) is not None:
+        return
+
+    try:
+        from transformers.integrations.hub_kernels import lazy_load_kernel
+        from transformers.utils.import_utils import resolve_internal_import
+    except ImportError:
+        return
+
+    causal_conv1d = lazy_load_kernel("causal-conv1d")
+    if causal_conv1d is not None:
+        target_module.causal_conv1d_update = getattr(
+            causal_conv1d, "causal_conv1d_update", None
+        )
+        target_module.causal_conv1d_fn = getattr(
+            causal_conv1d, "causal_conv1d_fn", None
+        )
+
+    mamba_ssm = lazy_load_kernel("mamba-ssm")
+    if mamba_ssm is not None:
+        target_module.selective_state_update = resolve_internal_import(
+            mamba_ssm,
+            chained_path="ops.triton.selective_state_update.selective_state_update",
+        )
+        target_module.mamba_chunk_scan_combined = resolve_internal_import(
+            mamba_ssm,
+            chained_path="ops.triton.ssd_combined.mamba_chunk_scan_combined",
+        )
+        target_module.mamba_split_conv1d_scan_combined = resolve_internal_import(
+            mamba_ssm,
+            chained_path="ops.triton.ssd_combined.mamba_split_conv1d_scan_combined",
+        )
+
+    target_module.is_fast_path_available = all(
+        (
+            getattr(target_module, "selective_state_update", None),
+            getattr(target_module, "mamba_chunk_scan_combined", None),
+            getattr(target_module, "mamba_split_conv1d_scan_combined", None),
+            getattr(target_module, "causal_conv1d_fn", None),
+            getattr(target_module, "causal_conv1d_update", None),
+        )
+    )
+
+
 def wrap_mamba_scan_for_cp(target_module):
     """Wrap ``mamba_chunk_scan_combined`` in *target_module* to apply CP correction.
 
@@ -179,6 +232,8 @@ def wrap_mamba_scan_for_cp(target_module):
     local output and final states, states are passed via P2P, then outputs are
     corrected — no ring attention needed for SSM layers.
     """
+    ensure_mamba_kernels_loaded(target_module)
+
     original_scan = target_module.mamba_chunk_scan_combined
 
     @functools.wraps(original_scan)

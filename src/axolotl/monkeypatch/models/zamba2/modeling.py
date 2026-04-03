@@ -11,6 +11,7 @@ import torch
 from torch import nn
 
 from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
     get_seq_idx,  # noqa: F401
     wrap_mamba_scan_for_cp,
 )
@@ -26,6 +27,8 @@ def patch_zamba2_modeling_packing():
     except ImportError:
         LOG.warning("zamba2 not found in transformers, skipping packing patches")
         return
+
+    ensure_mamba_kernels_loaded(mod)
 
     Zamba2MambaMixer = mod.Zamba2MambaMixer
     Zamba2MambaDecoderLayer = mod.Zamba2MambaDecoderLayer
@@ -251,9 +254,7 @@ def patch_zamba2_modeling_packing():
         attention_mask=None,
         causal_mask=None,
         past_key_values=None,
-        output_attentions=False,
         use_cache=False,
-        cache_position=None,
         position_ids=None,
         transformer_hidden_states=None,
         **kwargs,
@@ -280,15 +281,9 @@ def patch_zamba2_modeling_packing():
             seq_idx=seq_idx,
         )
 
-        self_attn_weights = None
         hidden_states = residual + hidden_states
 
-        outputs = (hidden_states,)
-        if output_attentions:
-            outputs += (self_attn_weights,)
-        if use_cache:
-            outputs += (past_key_values,)
-        return outputs
+        return hidden_states
 
     Zamba2MambaDecoderLayer.forward = patched_mamba_decoder_forward
 

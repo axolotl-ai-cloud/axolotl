@@ -10,6 +10,7 @@ but the BambaDecoderLayer does not compute it from position_ids.  This patch:
 import importlib
 
 from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
     get_seq_idx,  # noqa: F401
     is_cp_active,
     wrap_mamba_scan_for_cp,
@@ -27,6 +28,8 @@ def patch_bamba_modeling_packing():
         LOG.warning("bamba not found in transformers, skipping packing patches")
         return
 
+    ensure_mamba_kernels_loaded(mod)
+
     BambaMixer = mod.BambaMixer
     BambaDecoderLayer = mod.BambaDecoderLayer
 
@@ -36,16 +39,18 @@ def patch_bamba_modeling_packing():
         self,
         hidden_states,
         cache_params=None,
-        cache_position=None,
         attention_mask=None,
         seq_idx=None,
     ):
-        # Upstream's fused path (mamba_split_conv1d_scan_combined) doesn't
-        # return SSM state, so CP correction can't run.  Temporarily clear
-        # self.training to make the upstream condition
-        # ``if self.training and cache_params is None`` fall through to the
-        # slow path which calls mamba_chunk_scan_combined (wrapped for CP).
-        force_slow = is_cp_active() and self.training and cache_params is None
+        # Upstream Bamba doesn't guard the fused path on ``seq_idx is None``,
+        # so both sample packing (seq_idx set) and CP (needs SSM state from
+        # slow path) require bypassing it.  Temporarily clear self.training so
+        # ``if self.training and cache_params is None`` falls through.
+        force_slow = (
+            (seq_idx is not None or is_cp_active())
+            and self.training
+            and cache_params is None
+        )
         if force_slow:
             self.training = False
         try:
@@ -53,7 +58,6 @@ def patch_bamba_modeling_packing():
                 self,
                 hidden_states,
                 cache_params,
-                cache_position,
                 attention_mask,
                 seq_idx,
             )
@@ -113,10 +117,7 @@ def patch_bamba_modeling_packing():
         hidden_states = self.feed_forward(hidden_states)
         hidden_states = residual + hidden_states
 
-        outputs = (hidden_states,)
-        if output_attentions:
-            outputs += (self_attn_weights,)
-        return outputs
+        return hidden_states, self_attn_weights
 
     BambaDecoderLayer.forward = patched_decoder_forward
 

@@ -14,6 +14,7 @@ import importlib
 import torch
 
 from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
     get_seq_idx,  # noqa: F401
     wrap_mamba_scan_for_cp,
 )
@@ -31,6 +32,8 @@ def patch_falcon_h1_modeling_packing():
     except ImportError:
         LOG.warning("falcon_h1 not found in transformers, skipping packing patches")
         return
+
+    ensure_mamba_kernels_loaded(mod)
 
     FalconH1Mixer = mod.FalconH1Mixer
     FalconH1DecoderLayer = mod.FalconH1DecoderLayer

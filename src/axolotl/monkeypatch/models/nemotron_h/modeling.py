@@ -15,6 +15,7 @@ import importlib
 import torch
 
 from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
     get_seq_idx,  # noqa: F401
     wrap_mamba_scan_for_cp,
 )
@@ -36,6 +37,8 @@ def patch_nemotron_h_modeling_packing():
     except ImportError:
         LOG.warning("nemotron_h not found in transformers, skipping packing patches")
         return
+
+    ensure_mamba_kernels_loaded(mod)
 
     NemotronHMamba2Mixer = mod.NemotronHMamba2Mixer
     NemotronHBlock = mod.NemotronHBlock
