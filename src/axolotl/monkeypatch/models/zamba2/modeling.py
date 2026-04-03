@@ -1,18 +1,14 @@
-"""Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).
+"""Sample-packing and context-parallelism patch for Zamba2 (Mamba2/Attention hybrid).
 
 Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
-packed-sequence boundaries reset SSM state. Upstream hard-codes seq_idx=None,
-which leaks hidden state across boundaries. Attention and MoE blocks need no
-changes — only the Mamba2 mixer is patched.
-
-CP correction (ring-shift of SSM state + additive output fix) is handled by
-``wrap_mamba_scan_for_cp`` from ``mamba_utils``, which wraps the
-``mamba_chunk_scan_combined`` call at the module level.
+packed-sequence boundaries reset SSM state.  Upstream hard-codes seq_idx=None.
+Zamba2 uses "hybrid" layers (shared attention + mamba) and pure mamba layers.
 """
 
 import importlib
 
 import torch
+from torch import nn
 
 from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,  # noqa: F401
@@ -23,26 +19,17 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def patch_nemotron_h_modeling_packing():
-    """Patch NemotronH for sample packing: seq_idx threading into Mamba2 SSM kernels.
-
-    _get_unpad_data is handled by SUPPORTED_MULTIPACK_MODEL_TYPES / patch_for_multipack().
-    This function only applies the seq_idx patches that are unique to nemotron_h.
-    """
+def patch_zamba2_modeling_packing():
+    """Patch Zamba2 for sample packing: seq_idx threading into Mamba2 SSM kernels."""
     try:
-        mod = importlib.import_module(
-            "transformers.models.nemotron_h.modeling_nemotron_h"
-        )
+        mod = importlib.import_module("transformers.models.zamba2.modeling_zamba2")
     except ImportError:
-        LOG.warning("nemotron_h not found in transformers, skipping packing patches")
+        LOG.warning("zamba2 not found in transformers, skipping packing patches")
         return
 
-    NemotronHMamba2Mixer = mod.NemotronHMamba2Mixer
-    NemotronHBlock = mod.NemotronHBlock
+    Zamba2MambaMixer = mod.Zamba2MambaMixer
+    Zamba2MambaDecoderLayer = mod.Zamba2MambaDecoderLayer
 
-    # Patch 1: cuda_kernels_forward — add seq_idx param and thread it to
-    # causal_conv1d_fn and mamba_chunk_scan_combined. Fused fast path is
-    # bypassed when seq_idx is set (requires causal_conv1d_cuda C extension).
     def patched_cuda_kernels_forward(
         self,
         hidden_states: torch.Tensor,
@@ -118,7 +105,6 @@ def patch_nemotron_h_modeling_packing():
             )
             hidden_states = self.norm(hidden_states, gate)
             out = self.out_proj(hidden_states)[:, None, ...]
-
         else:
             if attention_mask is not None and not torch.all(attention_mask == 1):
                 dtype = hidden_states.dtype
@@ -172,7 +158,7 @@ def patch_nemotron_h_modeling_packing():
 
                 if cache_params is not None:
                     hidden_states_B_C_t = hidden_states_B_C.transpose(1, 2)
-                    conv_state = torch.nn.functional.pad(
+                    conv_state = nn.functional.pad(
                         hidden_states_B_C_t,
                         (self.conv_kernel_size - hidden_states_B_C_t.shape[-1], 0),
                     )
@@ -205,7 +191,6 @@ def patch_nemotron_h_modeling_packing():
                     ],
                     dim=-1,
                 )
-
                 if attention_mask is not None and not torch.all(attention_mask == 1):
                     dtype = hidden_states.dtype
                     hidden_states = (hidden_states * attention_mask[:, :, None]).to(
@@ -234,13 +219,10 @@ def patch_nemotron_h_modeling_packing():
                 scan_output = scan_output.view(batch_size, seq_len, -1)
                 scan_output = self.norm(scan_output, gate)
                 out = self.out_proj(scan_output)
-
         return out
 
-    NemotronHMamba2Mixer.cuda_kernels_forward = patched_cuda_kernels_forward
+    Zamba2MambaMixer.cuda_kernels_forward = patched_cuda_kernels_forward
 
-    # Patch 2: Mamba2Mixer.forward — add seq_idx, guard on causal_conv1d_fn,
-    # restore the cuda stream context (matches upstream; avoids NaN on multi-GPU).
     def patched_mixer_forward(
         self,
         hidden_states,
@@ -250,70 +232,66 @@ def patch_nemotron_h_modeling_packing():
     ):
         if seq_idx is not None and mod.causal_conv1d_fn is None:
             raise RuntimeError(
-                "Nemotron-H sample packing requires causal_conv1d_fn. "
+                "Zamba2 sample packing requires causal_conv1d_fn. "
                 "Install with: pip install mamba-ssm causal-conv1d"
             )
-        if (
-            mod.is_fast_path_available
-            and "cuda" in self.in_proj.weight.device.type
-            and not mod.is_torchdynamo_compiling()
-        ):
-            with torch.cuda.stream(torch.cuda.default_stream(hidden_states.device)):
-                return self.cuda_kernels_forward(
-                    hidden_states, cache_params, attention_mask, seq_idx=seq_idx
-                )
+        if mod.is_fast_path_available and "cuda" in self.in_proj.weight.device.type:
+            return self.cuda_kernels_forward(
+                hidden_states, cache_params, attention_mask, seq_idx=seq_idx
+            )
         return self.torch_forward(hidden_states, cache_params, attention_mask)
 
-    NemotronHMamba2Mixer.forward = patched_mixer_forward
+    Zamba2MambaMixer.forward = patched_mixer_forward
 
-    # Patch 3: NemotronHBlock.forward — compute seq_idx from position_ids and
-    # pass it to the Mamba2 mixer. Skipped during decode (has_previous_state).
-    def patched_block_forward(
+    def patched_mamba_decoder_forward(
         self,
         hidden_states,
-        past_key_values=None,
-        cache_position=None,
+        original_hidden_states=None,
+        layer_idx=None,
         attention_mask=None,
-        position_ids=None,
+        causal_mask=None,
+        past_key_values=None,
+        output_attentions=False,
         use_cache=False,
+        cache_position=None,
+        position_ids=None,
+        transformer_hidden_states=None,
         **kwargs,
     ):
         residual = hidden_states
-        hidden_states = self.norm(hidden_states.to(dtype=self.norm.weight.dtype))
+        hidden_states = (
+            hidden_states + transformer_hidden_states
+            if transformer_hidden_states is not None
+            else hidden_states
+        )
+        hidden_states = self.input_layernorm(hidden_states)
 
-        if self.block_type == "mamba":
-            is_decoding = (
-                past_key_values is not None and past_key_values.has_previous_state
-            )
-            seq_idx = (
-                get_seq_idx(position_ids)
-                if position_ids is not None and not is_decoding
-                else None
-            )
-            hidden_states = self.mixer(
-                hidden_states,
-                cache_params=past_key_values,
-                attention_mask=attention_mask,
-                seq_idx=seq_idx,
-            )
-        elif self.block_type == "attention":
-            hidden_states, _ = self.mixer(
-                hidden_states=hidden_states,
-                past_key_values=past_key_values,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                user_cache=use_cache,
-                cache_position=cache_position,
-                **kwargs,
-            )
-        else:
-            hidden_states = self.mixer(hidden_states)
+        is_decoding = past_key_values is not None and past_key_values.has_previous_state
+        seq_idx = (
+            get_seq_idx(position_ids)
+            if position_ids is not None and not is_decoding
+            else None
+        )
 
+        hidden_states = self.mamba(
+            hidden_states=hidden_states,
+            cache_params=past_key_values,
+            attention_mask=attention_mask,
+            seq_idx=seq_idx,
+        )
+
+        self_attn_weights = None
         hidden_states = residual + hidden_states
-        return hidden_states
 
-    NemotronHBlock.forward = patched_block_forward
+        outputs = (hidden_states,)
+        if output_attentions:
+            outputs += (self_attn_weights,)
+        if use_cache:
+            outputs += (past_key_values,)
+        return outputs
+
+    Zamba2MambaDecoderLayer.forward = patched_mamba_decoder_forward
 
     wrap_mamba_scan_for_cp(mod)
 
-    LOG.info("Applied NemotronH sample packing patch (seq_idx threading into Mamba2)")
+    LOG.info("Applied Zamba2 sample packing patch (seq_idx threading into Mamba2)")

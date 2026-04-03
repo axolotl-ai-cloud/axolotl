@@ -1558,6 +1558,24 @@ class ComplexValidationMixin:
                 "for more details."
             )
 
+            _SSM_HYBRID_MODEL_TYPES = {
+                "nemotron_h",
+                "falcon_h1",
+                "bamba",
+                "zamba2",
+                "granitemoehybrid",
+            }
+            _model_config_type = getattr(self, "model_config_type", None) or ""
+            if _model_config_type in _SSM_HYBRID_MODEL_TYPES:
+                LOG.warning(
+                    f"context_parallel_size={self.context_parallel_size} with "
+                    f"model_type={_model_config_type}: SSM/Mamba layers use P2P "
+                    "hidden-state passing and additive output correction across "
+                    "CP ranks. Attention layers use ring attention. This is "
+                    "mathematically exact but has not been extensively validated "
+                    "end-to-end — verify loss curves match single-GPU baselines."
+                )
+
         return self
 
     @model_validator(mode="after")
