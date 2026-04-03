@@ -400,9 +400,12 @@ def config_schema(output_format: str, field: Optional[str]):
 
     try:
         schema = AxolotlInputConfig.model_json_schema()
-    except Exception:  # pylint: disable=broad-except
+    except (TypeError, ValueError, AttributeError) as exc:
         # Fallback: dump field names, types, and defaults when full schema
         # generation fails (e.g. torch.dtype not JSON-serializable)
+        LOG.warning(
+            "Full JSON schema generation failed, using simplified fallback: %s", exc
+        )
         fields = {}
         for name, field_info in AxolotlInputConfig.model_fields.items():
             entry = {}
@@ -433,7 +436,8 @@ def config_schema(output_format: str, field: Optional[str]):
             else:
                 raise click.BadParameter(
                     f"Unknown field: {field!r}. "
-                    f"Use --field without a value to see all fields."
+                    f"Omit --field to dump the full schema, "
+                    f"or pipe to jq: axolotl config-schema | jq '.properties | keys'"
                 )
         schema = {field: props[field]}
 

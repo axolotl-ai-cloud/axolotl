@@ -27,7 +27,7 @@ def _find_repo_root() -> Path | None:
     # In an editable install or repo checkout, walk up from
     # src/axolotl/cli/agent_docs/ to find the repo root
     current = Path(__file__).resolve().parent
-    for _ in range(10):
+    while current != current.parent:
         if (current / "AGENTS.md").exists() and (current / "docs" / "agents").is_dir():
             return current
         current = current.parent
