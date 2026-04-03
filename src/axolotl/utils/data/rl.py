@@ -180,6 +180,114 @@ def _drop_long_sequences(
     raise ValueError("Unknown RL type")
 
 
+def _raise_on_long_sequences(
+    sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
+) -> bool:
+    """Check sequence length and raise ValueError if exceeded.
+
+    Used as a filter function for ``excess_length_strategy: raise``.
+
+    Args:
+        sample: Dataset sample to check.
+        rl: Reinforcement learning type.
+        tokenizer: Tokenizer for length calculation.
+        sequence_len: Maximum allowed sequence length.
+
+    Returns:
+        Always True (raises before returning False).
+
+    Raises:
+        ValueError: If any sample exceeds the configured sequence length.
+    """
+    is_valid = _drop_long_sequences(sample, rl, tokenizer, sequence_len)
+    if not is_valid:
+        raise ValueError(
+            f"Sample exceeds configured sequence_len ({sequence_len}). "
+            "Set `excess_length_strategy: drop` or `excess_length_strategy: truncate` "
+            "to handle long sequences automatically."
+        )
+    return True
+
+
+def _truncate_long_sequences_rl(
+    sample: dict[str, Any], rl: RLType, tokenizer: Any, sequence_len: int
+) -> dict[str, Any]:
+    """Truncate RL samples that exceed maximum sequence length.
+
+    For preference datasets (DPO/IPO/ORPO/SIMPO), truncates chosen and rejected
+    responses to fit within ``sequence_len`` when combined with the prompt.
+    For KTO, truncates the completion similarly.
+    GRPO/GDPO/EBFT samples are returned unchanged.
+
+    Args:
+        sample: Dataset sample to potentially truncate.
+        rl: Reinforcement learning type.
+        tokenizer: Tokenizer for encoding/decoding.
+        sequence_len: Maximum allowed sequence length.
+
+    Returns:
+        The sample with text fields truncated to fit within sequence_len.
+    """
+    if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
+        if not (
+            sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
+        ):
+            raise ValueError(
+                "Prompt, chosen and rejected keys are required for DPO/ORPO datasets"
+            )
+
+        prompt_ids = tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
+        chosen_ids = tokenizer(sample["chosen"], add_special_tokens=False)["input_ids"]
+        rejected_ids = tokenizer(sample["rejected"], add_special_tokens=False)[
+            "input_ids"
+        ]
+
+        max_response_len = sequence_len - len(prompt_ids)
+        if max_response_len <= 0:
+            # Prompt alone exceeds limit; cannot meaningfully truncate
+            return sample
+
+        if len(chosen_ids) > max_response_len:
+            sample = {
+                **sample,
+                "chosen": tokenizer.decode(
+                    chosen_ids[:max_response_len], skip_special_tokens=False
+                ),
+            }
+
+        if len(rejected_ids) > max_response_len:
+            sample = {
+                **sample,
+                "rejected": tokenizer.decode(
+                    rejected_ids[:max_response_len], skip_special_tokens=False
+                ),
+            }
+
+    elif rl is RLType.KTO:
+        if not (sample.get("prompt") and sample.get("completion")):
+            raise ValueError("Prompt and completion keys are required for KTO datasets")
+
+        prompt_ids = tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
+        completion_ids = tokenizer(sample["completion"], add_special_tokens=False)[
+            "input_ids"
+        ]
+
+        max_completion_len = sequence_len - len(prompt_ids)
+        if max_completion_len <= 0:
+            return sample
+
+        if len(completion_ids) > max_completion_len:
+            sample = {
+                **sample,
+                "completion": tokenizer.decode(
+                    completion_ids[:max_completion_len], skip_special_tokens=False
+                ),
+            }
+
+    # GRPO/GDPO/EBFT: no truncation needed (responses generated at runtime)
+    return sample
+
+
 def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
     """Load and process dataset split for RL training.
 
@@ -243,23 +351,54 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             split_datasets[i] = dataset
 
         if not cfg.skip_prepare_dataset:
-            drop_long = partial(
-                _drop_long_sequences,
-                rl=cfg.rl,
-                tokenizer=tokenizer,
-                sequence_len=cfg.sequence_len,
-            )
+            excess_length_strategy = (cfg.excess_length_strategy or "drop").lower()
 
-            prior_len = len(split_datasets[i])
-            split_datasets[i] = split_datasets[i].filter(
-                drop_long,
-                num_proc=cfg.dataset_num_proc,
-                load_from_cache_file=not cfg.is_preprocess,
-                desc="Dropping Long Sequences",
-            )
-            dropped = prior_len - len(split_datasets[i])
-            if dropped:
-                LOG.warning(f"Dropped {dropped} long samples from dataset index {i}")
+            if excess_length_strategy == "truncate":
+                truncate_fn = partial(
+                    _truncate_long_sequences_rl,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                split_datasets[i] = split_datasets[i].map(
+                    truncate_fn,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Truncating Long Sequences",
+                )
+            elif excess_length_strategy == "raise":
+                raise_fn = partial(
+                    _raise_on_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                split_datasets[i] = split_datasets[i].filter(
+                    raise_fn,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Checking Sequence Lengths",
+                )
+            else:  # "drop" (default)
+                drop_long = partial(
+                    _drop_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+
+                prior_len = len(split_datasets[i])
+                split_datasets[i] = split_datasets[i].filter(
+                    drop_long,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Dropping Long Sequences",
+                )
+                dropped = prior_len - len(split_datasets[i])
+                if dropped:
+                    LOG.warning(
+                        f"Dropped {dropped} long samples from dataset index {i}"
+                    )
 
     # Merge datasets
     dataset = merge_datasets(split_datasets, cfg)
