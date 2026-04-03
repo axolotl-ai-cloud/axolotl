@@ -1,6 +1,7 @@
 # Gemma 4 26B-A4B MoE QLoRA with ScatterMoE kernels
 #
-# Validated: 50 steps on FineTome-100k, loss 7.4 -> 2.4, single RTX 5090 (32GB)
+# Validated: 50 steps on FineTome-100k, loss 8.8 -> 1.8, single RTX 5090 (32GB)
+# torch_compile=true: 21 GiB peak VRAM, ~230 tok/s, 336s total
 #
 # Key notes:
 # - Flash Attention 2 is NOT supported (global_head_dim=512 > FA2 max of 256).
@@ -12,8 +13,9 @@
 #   via the transformers ExpertsInterface.
 # - Expert LoRA targets are `experts.gate_up_proj` / `experts.down_proj`
 #   (no `mlp.` prefix, unlike Qwen/Mixtral).
-# - micro_batch_size: 1 fits 2048 seq_len on 32GB GPU with SDP attention.
-#   Use micro_batch_size: 4 with 1024 seq_len, or on 48GB+ GPUs.
+# - Max sequence length on 32GB GPU: 2048 (micro_batch_size=1, SDP attention).
+#   4096 seq_len OOMs due to head_dim=512 math SDP materializing full score matrix.
+#   Use 48GB+ GPUs for longer sequences or multi-GPU with FSDP.
 
 base_model: google/gemma-4-26B-A4B
 
@@ -24,7 +26,7 @@ plugins:
 use_kernels: true
 use_scattermoe: true
 experts_implementation: scattermoe
-torch_compile: false
+torch_compile: true
 liger_layer_norm: true
 liger_rope: true
 liger_rms_norm: true
