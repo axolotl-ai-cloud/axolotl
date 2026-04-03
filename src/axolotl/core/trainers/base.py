@@ -404,12 +404,26 @@ class AxolotlTrainer(
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
+        _model_type = getattr(getattr(model, "config", None), "model_type", None)
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+            and _model_type == "gemma4"
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
+        # Gemma4 (and Gemma3): transformers' masking_utils detects packed sequences
+        # from position_ids, but only when attention_mask is None.  When sample
+        # packing is active the collator provides an all-ones attention_mask that
+        # prevents this detection — remove it so the model builds the correct
+        # per-sequence causal masks.
+        if (
+            self.args.sample_packing
+            and _model_type in ("gemma4", "gemma3")
+            and "attention_mask" in inputs
+            and "position_ids" in inputs
+        ):
+            del inputs["attention_mask"]
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(
