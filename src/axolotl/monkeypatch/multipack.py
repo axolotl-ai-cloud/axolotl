@@ -63,7 +63,6 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "afmoe",
     "nemotron",
     "nemotron_h",
-    "falcon_h1",
 ]
 
 
