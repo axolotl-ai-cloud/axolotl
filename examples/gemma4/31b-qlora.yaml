@@ -1,29 +1,16 @@
-# Gemma 4 26B-A4B MoE QLoRA with ScatterMoE kernels
-#
-# Validated: 50 steps on FineTome-100k, loss 7.4 -> 2.4, single RTX 5090 (32GB)
+# Gemma 4 31B Dense QLoRA
 #
 # Key notes:
 # - Flash Attention 2 is NOT supported (global_head_dim=512 > FA2 max of 256).
 #   Use sdp_attention instead.
 # - Gemma 4 is multimodal (text+vision+audio). For text-only SFT, restrict
 #   LoRA to the text backbone via lora_target_modules regex.
-# - MoE experts use `experts_implementation: scattermoe` — Gemma 4 embeds MoE
-#   directly in the decoder layer (no SparseMoeBlock), so we register ScatterMoE
-#   via the transformers ExpertsInterface.
-# - Expert LoRA targets are `experts.gate_up_proj` / `experts.down_proj`
-#   (no `mlp.` prefix, unlike Qwen/Mixtral).
-# - micro_batch_size: 1 fits 2048 seq_len on 32GB GPU with SDP attention.
-#   Use micro_batch_size: 4 with 1024 seq_len, or on 48GB+ GPUs.
 
-base_model: google/gemma-4-26B-A4B
+base_model: google/gemma-4-31B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-  - axolotl.integrations.kernels.KernelsPlugin
   - axolotl.integrations.liger.LigerPlugin
-use_kernels: true
-use_scattermoe: true
-experts_implementation: scattermoe
 torch_compile: false
 liger_layer_norm: true
 liger_rope: true
@@ -42,13 +29,12 @@ datasets:
       role: from
       content: value
 val_set_size: 0.05
-output_dir: ./outputs/gemma4-26b-a4b-qlora
+output_dir: ./outputs/gemma4-31b-qlora
 
 sequence_len: 2048
 sample_packing: true
 
 load_in_4bit: true
-quantize_moe_experts: true
 adapter: qlora
 lora_r: 16
 lora_alpha: 32
@@ -58,15 +44,6 @@ lora_dropout: 0
 # using regex to match only the text decoder attention projections.
 lora_target_modules:
   - language_model\.model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj
-
-# MoE expert LoRA (3D Parameter tensors, not nn.Linear)
-lora_target_parameters:
-  - experts.gate_up_proj
-  - experts.down_proj
-
-lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
 
 bnb_config_kwargs:
   bnb_4bit_use_double_quant: true
