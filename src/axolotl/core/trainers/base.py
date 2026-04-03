@@ -100,6 +100,27 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
+
+        # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
+        # extra inputs like mm_token_type_ids.  HF Trainer interprets VAR_KEYWORD as
+        # "the model handles num_items_in_batch internally" and skips the loss ÷
+        # gradient_accumulation_steps normalisation, which inflates the *logged* loss
+        # (the gradient itself is still correct). Override to False when the model
+        # doesn't actually consume num_items_in_batch.
+        if self.model_accepts_loss_kwargs:
+            model_to_check = self.accelerator.unwrap_model(self.model)
+            if hasattr(model_to_check, "base_model"):  # PEFT wrapper
+                model_to_check = model_to_check.base_model
+            if hasattr(model_to_check, "model"):
+                model_to_check = model_to_check.model
+            fwd = getattr(model_to_check, "forward", None)
+            if fwd is not None:
+                import inspect
+
+                params = inspect.signature(fwd).parameters
+                if "num_items_in_batch" not in params:
+                    self.model_accepts_loss_kwargs = False
+
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
