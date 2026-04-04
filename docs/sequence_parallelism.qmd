@@ -58,6 +58,27 @@ To use sequence parallelism, you need:
 - Flash attention must be enabled for this to work (`flash_attention: true` in config YAML)
 - May have a small performance overhead due to communication between GPUs
 
+### Mamba/SSM Hybrid Models
+
+Context parallelism is supported for hybrid models that combine attention and Mamba2 SSM
+layers (Nemotron-H, Falcon-H1, Bamba, Granite MoE Hybrid, Zamba2). These models require
+special handling because:
+
+- **Attention layers** work correctly via ring flash attention (same as pure-attention models).
+- **SSM (Mamba2) layers** are recurrent and need cross-rank hidden-state propagation.
+
+Axolotl handles both aspects:
+
+1. **Sample packing boundaries** (`seq_idx`): When multiple sequences are packed into one
+   row, the SSM kernels need `seq_idx` to reset state at boundaries. Under CP, chunks may
+   start mid-sample, so `seq_idx` is derived from `position_ids` using a CP-safe cumsum
+   normalization (see `mamba_utils.get_seq_idx`).
+
+2. **Cross-rank SSM state passing**: After each SSM scan, the final hidden state is sent to
+   the next rank via P2P communication (`ring_shift_ssm_state`), and an additive correction
+   is applied to account for the missing initial state (`mamba2_cp_correction`). This uses
+   the linearity property of SSMs to avoid a second forward pass.
+
 ## Example
 
 ```yaml
