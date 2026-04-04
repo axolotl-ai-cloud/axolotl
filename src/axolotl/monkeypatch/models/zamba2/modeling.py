@@ -12,7 +12,7 @@ from torch import nn
 
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
-    get_seq_idx,  # noqa: F401
+    get_seq_idx,
     wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
@@ -241,6 +241,11 @@ def patch_zamba2_modeling_packing():
         if mod.is_fast_path_available and "cuda" in self.in_proj.weight.device.type:
             return self.cuda_kernels_forward(
                 hidden_states, cache_params, attention_mask, seq_idx=seq_idx
+            )
+        if seq_idx is not None:
+            raise RuntimeError(
+                "Zamba2 sample packing requires the CUDA fast path. "
+                "Ensure model is on CUDA and mamba-ssm/causal-conv1d are installed."
             )
         return self.torch_forward(hidden_states, cache_params, attention_mask)
 

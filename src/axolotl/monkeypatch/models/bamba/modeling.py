@@ -11,7 +11,7 @@ import importlib
 
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
-    get_seq_idx,  # noqa: F401
+    get_seq_idx,
     is_cp_active,
     wrap_mamba_scan_for_cp,
 )
@@ -42,10 +42,21 @@ def patch_bamba_modeling_packing():
         attention_mask=None,
         seq_idx=None,
     ):
-        # Upstream Bamba doesn't guard the fused path on ``seq_idx is None``,
-        # so both sample packing (seq_idx set) and CP (needs SSM state from
-        # slow path) require bypassing it.  Temporarily clear self.training so
-        # ``if self.training and cache_params is None`` falls through.
+        """Wrapper that forces the slow (non-fused) scan path for packing/CP.
+
+        Upstream Bamba doesn't guard the fused path on ``seq_idx is None``,
+        so both sample packing (seq_idx set) and CP (needs SSM state from
+        the slow path) require bypassing it.
+
+        We temporarily set ``self.training = False`` so the upstream guard
+        ``if self.training and cache_params is None`` falls through to the
+        slow path.  This is restored in a ``finally`` block.
+
+        Caveat: any sub-layer that checks ``module.training`` during this
+        call (e.g. Dropout, BatchNorm) will see training=False.  In
+        practice Mamba2 mixers don't contain such layers, but this should
+        be revisited if upstream adds them.
+        """
         force_slow = (
             (seq_idx is not None or is_cp_active())
             and self.training

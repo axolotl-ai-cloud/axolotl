@@ -15,7 +15,7 @@ import torch
 
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
-    get_seq_idx,  # noqa: F401
+    get_seq_idx,
     wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
@@ -277,6 +277,11 @@ def patch_falcon_h1_modeling_packing():
                 cache_position,
                 attention_mask,
                 seq_idx=seq_idx,
+            )
+        if seq_idx is not None:
+            raise RuntimeError(
+                "Falcon-H1 sample packing requires the CUDA fast path. "
+                "Ensure model is on CUDA and mamba-ssm/causal-conv1d are installed."
             )
         dtype = hidden_states.dtype
         if (

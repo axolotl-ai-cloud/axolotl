@@ -16,7 +16,7 @@ import importlib
 
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
-    get_seq_idx,  # noqa: F401
+    get_seq_idx,
     is_cp_active,
     wrap_mamba_scan_for_cp,
 )

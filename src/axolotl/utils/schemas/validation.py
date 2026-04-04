@@ -1573,7 +1573,9 @@ class ComplexValidationMixin:
                     "hidden-state passing and additive output correction across "
                     "CP ranks. Attention layers use ring attention. This is "
                     "mathematically exact but has not been extensively validated "
-                    "end-to-end — verify loss curves match single-GPU baselines."
+                    "end-to-end — verify loss curves match single-GPU baselines. "
+                    "Recommended: run a short training job and compare loss curves "
+                    "against a single-GPU baseline with the same data/seed."
                 )
 
         return self

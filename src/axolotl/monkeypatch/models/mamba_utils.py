@@ -38,7 +38,7 @@ def is_cp_active() -> bool:
 
         group = get_ring_attn_group()
         return group is not None and dist.get_world_size(group) > 1
-    except Exception:
+    except (ImportError, RuntimeError):
         return False
 
 
@@ -128,7 +128,7 @@ def mamba2_cp_correction(
         corrected_out:     out + Δy, shape [B, T, D].
         corrected_h_final: h_final + cumA_T * h_prev, shape [B, H, d, n].
     """
-    if h_prev.abs().max() == 0:
+    if not h_prev.any():
         return out, h_final
 
     B, T, _ = out.shape
@@ -232,6 +232,9 @@ def wrap_mamba_scan_for_cp(target_module):
     local output and final states, states are passed via P2P, then outputs are
     corrected — no ring attention needed for SSM layers.
     """
+    if getattr(target_module, "_cp_scan_wrapped", False):
+        return
+
     ensure_mamba_kernels_loaded(target_module)
 
     original_scan = target_module.mamba_chunk_scan_combined
@@ -254,10 +257,16 @@ def wrap_mamba_scan_for_cp(target_module):
 
         h_prev = ring_shift_ssm_state(ssm_state)
 
-        # args: x(0), dt(1), A(2), B(3), C(4) — positional in all callers
-        dt_arg = args[1]
-        A_arg = args[2]
-        C_arg = args[4]
+        # Signature: mamba_chunk_scan_combined(x, dt, A, B, C, ...)
+        # Extract from kwargs first, fall back to positional args.
+        dt_arg = kwargs.get("dt", args[1] if len(args) > 1 else None)
+        A_arg = kwargs.get("A", args[2] if len(args) > 2 else None)
+        C_arg = kwargs.get("C", args[4] if len(args) > 4 else None)
+        if dt_arg is None or A_arg is None or C_arg is None:
+            raise ValueError(
+                "wrap_mamba_scan_for_cp requires dt, A, C to be passed "
+                f"positionally (got {len(args)} positional args) or as kwargs."
+            )
         dt_bias = kwargs.get("dt_bias")
         dt_softplus = kwargs.get("dt_softplus", False)
 
@@ -291,3 +300,4 @@ def wrap_mamba_scan_for_cp(target_module):
         return scan_output, ssm_state
 
     target_module.mamba_chunk_scan_combined = _cp_scan_wrapper
+    target_module._cp_scan_wrapped = True

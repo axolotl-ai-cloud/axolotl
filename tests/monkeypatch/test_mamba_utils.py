@@ -300,3 +300,24 @@ class TestWrapMambaScanForCp:
             )
 
         assert captured_kwargs["return_final_states"] is True
+
+    def test_idempotency_guard(self):
+        """Calling wrap_mamba_scan_for_cp twice must not double-wrap."""
+        call_count = 0
+
+        def fake_scan(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            B, T, H, d, n = 1, 4, 2, 8, 4
+            return torch.zeros(B, T, H, d), torch.zeros(B, H, d, n)
+
+        mod = self._make_module_with_scan(fake_scan)
+
+        with patch(
+            "axolotl.monkeypatch.models.mamba_utils.is_cp_active", return_value=False
+        ):
+            wrap_mamba_scan_for_cp(mod)
+            first_fn = mod.mamba_chunk_scan_combined
+            wrap_mamba_scan_for_cp(mod)
+            assert mod.mamba_chunk_scan_combined is first_fn
+            assert getattr(mod, "_cp_scan_wrapped", False) is True
