@@ -65,47 +65,57 @@ def test_singleton_instance(telemetry_manager_class):
         assert telemetry_manager_class.get_instance() is first
 
 
-def test_telemetry_enabled_by_default(telemetry_manager_class):
-    """Test that telemetry is enabled by default (opt-out)"""
-    with (
-        patch.dict(os.environ, {"RANK": "0"}, clear=True),
-        patch("time.sleep"),
-        patch("logging.Logger.info"),
+class TestTelemetryOptOut:
+    """
+    Telemetry is opt-out: enabled by default, disabled by AXOLOTL_DO_NOT_TRACK
+    or DO_NOT_TRACK. Each env var is checked independently — setting either one
+    to a truthy value ("1" or "true") disables telemetry.
+
+    The parametrized table below is the source of truth for expected behavior.
+    """
+
+    # fmt: off
+    #                       AXOLOTL_DO_NOT_TRACK  DO_NOT_TRACK  expected
+    @pytest.mark.parametrize("axolotl_dnt, dnt, expected", [
+        # --- Neither var set: telemetry ON ---
+        (None,    None,    True),
+
+        # --- Only AXOLOTL_DO_NOT_TRACK set ---
+        ("0",     None,    True),    # explicit opt-in
+        ("false", None,    True),    # explicit opt-in
+        ("1",     None,    False),   # opt-out
+        ("true",  None,    False),   # opt-out
+        (" 1 ",   None,    False),   # whitespace-padded opt-out
+
+        # --- Only DO_NOT_TRACK set (was broken before fix) ---
+        (None,    "0",     True),    # explicit opt-in
+        (None,    "false", True),    # explicit opt-in
+        (None,    "1",     False),   # opt-out
+        (None,    "true",  False),   # opt-out
+
+        # --- Both set: either truthy → disabled ---
+        ("0",     "1",     False),   # DO_NOT_TRACK wins
+        ("1",     "0",     False),   # AXOLOTL_DO_NOT_TRACK wins
+        ("1",     "1",     False),   # both opt-out
+        ("0",     "0",     True),    # both opt-in
+    ])
+    # fmt: on
+    def test_do_not_track_env_vars(
+        self, telemetry_manager_class, axolotl_dnt, dnt, expected
     ):
-        manager = telemetry_manager_class()
-        assert manager.enabled
+        env = {"RANK": "0"}
+        if axolotl_dnt is not None:
+            env["AXOLOTL_DO_NOT_TRACK"] = axolotl_dnt
+        if dnt is not None:
+            env["DO_NOT_TRACK"] = dnt
 
-
-def test_telemetry_enabled_with_explicit_opt_in(telemetry_manager_class):
-    """Test that telemetry is enabled when AXOLOTL_DO_NOT_TRACK=0"""
-    with (
-        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "RANK": "0"}),
-        patch("time.sleep"),
-    ):
-        manager = telemetry_manager_class()
-        assert manager.enabled
-
-
-def test_telemetry_disabled_with_axolotl_do_not_track(telemetry_manager_class):
-    """Test that telemetry is disabled when AXOLOTL_DO_NOT_TRACK=1"""
-    with (
-        patch.dict(os.environ, {"AXOLOTL_DO_NOT_TRACK": "1", "RANK": "0"}),
-        patch("time.sleep"),
-    ):
-        manager = telemetry_manager_class()
-        assert not manager.enabled
-
-
-def test_telemetry_disabled_with_do_not_track(telemetry_manager_class):
-    """Test that telemetry is disabled when DO_NOT_TRACK=1"""
-    with (
-        patch.dict(
-            os.environ, {"AXOLOTL_DO_NOT_TRACK": "0", "DO_NOT_TRACK": "1", "RANK": "0"}
-        ),
-        patch("time.sleep"),
-    ):
-        manager = telemetry_manager_class()
-        assert not manager.enabled
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("time.sleep"),
+            patch("logging.Logger.info"),
+        ):
+            manager = telemetry_manager_class()
+            assert manager.enabled is expected
 
 
 def test_telemetry_disabled_for_non_main_process(telemetry_manager_class):
