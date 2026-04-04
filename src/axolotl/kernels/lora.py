@@ -1297,6 +1297,339 @@ def apply_lora_qkv(
     return Q, K, V
 
 
+class LoRA_QK(torch.autograd.Function):
+    """Optimized LoRA QK implementation for models where v_proj is None.
+
+    Used by models like Gemma4 with attention_k_eq_v=True, where key states are
+    reused as value states.  Only Q and K projections are fused; the caller
+    returns K a second time as V so that autograd accumulates key+value gradients
+    into a single dK.
+
+    Supports bias, dropout, and DoRA (Weight-Decomposed Low-Rank Adaptation).
+    """
+
+    @staticmethod
+    @torch_amp_custom_fwd
+    def forward(
+        ctx: torch.autograd.function.FunctionCtx,
+        X: torch.Tensor,
+        X_drop: torch.Tensor | None,
+        # Q params
+        q_weight: torch.Tensor,
+        q_bias: torch.Tensor | None,
+        q_quant: QuantState | None,
+        q_A: torch.Tensor | None,
+        q_B: torch.Tensor | None,
+        q_scale: float,
+        q_lora_bias: torch.Tensor | None,
+        q_magnitude: torch.Tensor | None,
+        # K params
+        k_weight: torch.Tensor,
+        k_bias: torch.Tensor | None,
+        k_quant: QuantState | None,
+        k_A: torch.Tensor | None,
+        k_B: torch.Tensor | None,
+        k_scale: float,
+        k_lora_bias: torch.Tensor | None,
+        k_magnitude: torch.Tensor | None,
+        # Flags
+        inplace: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        has_dropout = X_drop is not None
+        has_dora = q_magnitude is not None
+
+        if has_dora:
+            dtype = X.dtype
+            X_lora = X_drop if has_dropout else X
+
+            # Compute Q with DoRA
+            Q_base = matmul_lora(X, q_weight, None, q_quant, None, None, None)
+            Q_lora = _lora_only(X_lora, q_A, q_B, q_scale, q_lora_bias, dtype)
+            q_mag_scale = _compute_dora_scale(
+                q_weight, q_quant, q_A, q_B, q_scale, q_magnitude, dtype
+            )
+            Q = q_mag_scale.unsqueeze(0) * (Q_base + Q_lora)
+            if q_bias is not None:
+                Q = Q + q_bias
+
+            # Compute K with DoRA
+            K_base = matmul_lora(X, k_weight, None, k_quant, None, None, None)
+            K_lora = _lora_only(X_lora, k_A, k_B, k_scale, k_lora_bias, dtype)
+            k_mag_scale = _compute_dora_scale(
+                k_weight, k_quant, k_A, k_B, k_scale, k_magnitude, dtype
+            )
+            K = k_mag_scale.unsqueeze(0) * (K_base + K_lora)
+            if k_bias is not None:
+                K = K + k_bias
+
+            Q_combined = Q_base + Q_lora
+            K_combined = K_base + K_lora
+
+            ctx.save_for_backward(
+                X,
+                X_drop if has_dropout else X,
+                q_A.to(dtype) if q_A is not None else q_A,
+                q_B.to(dtype) if q_B is not None else q_B,
+                k_A.to(dtype) if k_A is not None else k_A,
+                k_B.to(dtype) if k_B is not None else k_B,
+                q_magnitude,
+                k_magnitude,
+                q_mag_scale,
+                k_mag_scale,
+                Q_combined,
+                K_combined,
+                q_lora_bias,
+                k_lora_bias,
+            )
+        else:
+            # Standard LoRA (with optional dropout and bias)
+            Q = matmul_lora(
+                X,
+                q_weight,
+                q_bias,
+                q_quant,
+                q_A,
+                q_B,
+                q_scale,
+                X_drop=X_drop,
+                lora_bias=q_lora_bias,
+            )
+            K = matmul_lora(
+                X,
+                k_weight,
+                k_bias,
+                k_quant,
+                k_A,
+                k_B,
+                k_scale,
+                X_drop=X_drop,
+                lora_bias=k_lora_bias,
+            )
+
+            dtype = X.dtype
+            ctx.save_for_backward(
+                X,
+                X_drop if has_dropout else X,
+                q_A.to(dtype) if q_A is not None else q_A,
+                q_B.to(dtype) if q_B is not None else q_B,
+                k_A.to(dtype) if k_A is not None else k_A,
+                k_B.to(dtype) if k_B is not None else k_B,
+                q_lora_bias,
+                k_lora_bias,
+            )
+
+        ctx.scales = (q_scale, k_scale)
+        ctx.quants = (q_quant, k_quant)
+        ctx.weights = (q_weight, k_weight)
+        ctx.inplace = inplace
+        ctx.has_dropout = has_dropout
+        ctx.has_dora = has_dora
+
+        return Q, K
+
+    @staticmethod
+    @torch_amp_custom_bwd
+    def backward(
+        ctx: torch.autograd.function.FunctionCtx,
+        q_grad: torch.Tensor,
+        k_grad: torch.Tensor,
+    ):
+        q_weight, k_weight = ctx.weights
+        q_quant, k_quant = ctx.quants
+        q_scale, k_scale = ctx.scales
+        has_dropout = ctx.has_dropout
+        has_dora = ctx.has_dora
+
+        if has_dora:
+            (
+                X,
+                X_lora,
+                A_q,
+                B_q,
+                A_k,
+                B_k,
+                q_magnitude,
+                k_magnitude,
+                q_mag_scale,
+                k_mag_scale,
+                Q_combined,
+                K_combined,
+                q_lora_bias,
+                k_lora_bias,
+            ) = ctx.saved_tensors
+        else:
+            (
+                X,
+                X_lora,
+                A_q,
+                B_q,
+                A_k,
+                B_k,
+                q_lora_bias,
+                k_lora_bias,
+            ) = ctx.saved_tensors
+            q_magnitude = k_magnitude = None
+            q_mag_scale = k_mag_scale = None
+            Q_combined = K_combined = None
+
+        batch, seq_len = X.shape[:2]
+        q_grad = q_grad.view(-1, q_grad.shape[-1])
+        k_grad = k_grad.reshape(-1, k_grad.shape[-1])
+        X = X.view(-1, X.shape[-1])
+        X_lora = X_lora.view(-1, X_lora.shape[-1])
+
+        d_q_mag = d_k_mag = None
+        d_q_lora_bias = d_k_lora_bias = None
+
+        if has_dora:
+            Q_combined = Q_combined.view(-1, Q_combined.shape[-1])
+            K_combined = K_combined.view(-1, K_combined.shape[-1])
+
+            d_q_mag = (q_grad * Q_combined).sum(dim=0) * q_mag_scale / q_magnitude
+            d_k_mag = (k_grad * K_combined).sum(dim=0) * k_mag_scale / k_magnitude
+
+            q_grad = q_grad * q_mag_scale.unsqueeze(0)
+            k_grad = k_grad * k_mag_scale.unsqueeze(0)
+
+        # LoRA bias gradients
+        if q_lora_bias is not None:
+            d_q_lora_bias = q_scale * q_grad.sum(dim=0)
+        if k_lora_bias is not None:
+            d_k_lora_bias = k_scale * k_grad.sum(dim=0)
+
+        X_lora_t = X_lora.t()
+
+        d_A_q = d_B_q = d_A_k = d_B_k = None
+        grad_B_q = grad_B_k = None
+
+        if A_q is not None and B_q is not None:
+            grad_B_q = q_grad @ B_q
+            d_A_q = torch.empty_like(A_q.t())
+            d_B_q = torch.empty_like(B_q.t())
+            d_A_q.addmm_(X_lora_t, grad_B_q, alpha=q_scale, beta=0)
+            d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
+
+        if A_k is not None and B_k is not None:
+            grad_B_k = k_grad @ B_k
+            d_A_k = torch.empty_like(A_k.t())
+            d_B_k = torch.empty_like(B_k.t())
+            d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
+            d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
+
+        # Base path input gradient
+        out_buffer = X if ctx.inplace else None
+
+        q_weight_t = dequantize(q_weight, q_quant)
+        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+        del q_weight_t
+
+        k_weight_t = dequantize(k_weight, k_quant)
+        grad_X.addmm_(k_grad, k_weight_t)
+        del k_weight_t
+
+        # LoRA path input gradient
+        if has_dropout:
+            grad_X_drop = torch.zeros_like(X_lora)
+            if grad_B_q is not None:
+                grad_X_drop.addmm_(grad_B_q, A_q, alpha=q_scale)
+            if grad_B_k is not None:
+                grad_X_drop.addmm_(grad_B_k, A_k, alpha=k_scale)
+        else:
+            grad_X_drop = None
+            if grad_B_q is not None:
+                grad_X.addmm_(grad_B_q, A_q, alpha=q_scale)
+            if grad_B_k is not None:
+                grad_X.addmm_(grad_B_k, A_k, alpha=k_scale)
+
+        if d_A_q is not None:
+            d_A_q = d_A_q.t()
+            d_B_q = d_B_q.t()  # type: ignore[union-attr]
+        if d_A_k is not None:
+            d_A_k = d_A_k.t()
+            d_B_k = d_B_k.t()  # type: ignore[union-attr]
+
+        grad_X = grad_X.view(batch, seq_len, -1)
+        if grad_X_drop is not None:
+            grad_X_drop = grad_X_drop.view(batch, seq_len, -1)
+
+        # Return gradients for all forward inputs:
+        # X, X_drop,
+        # q: weight, bias, quant, A, B, scale, lora_bias, magnitude
+        # k: weight, bias, quant, A, B, scale, lora_bias, magnitude
+        # inplace
+        return (
+            grad_X,
+            grad_X_drop,
+            # Q
+            None,
+            None,
+            None,
+            d_A_q,
+            d_B_q,
+            None,
+            d_q_lora_bias,
+            d_q_mag,
+            # K
+            None,
+            None,
+            None,
+            d_A_k,
+            d_B_k,
+            None,
+            d_k_lora_bias,
+            d_k_mag,
+            # inplace
+            None,
+        )
+
+
+def apply_lora_qk(
+    self, X: torch.Tensor, inplace: bool = True
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Applies LoRA to compute Query and Key projections for models where v_proj is None.
+
+    When v_proj is None (e.g. Gemma4 attention_k_eq_v), key states are reused as
+    value states.  Returns (Q, K, K) — the caller's patched forward will use K as V.
+    Because K is returned twice, autograd accumulates gradients from both the key and
+    value paths into dK before calling LoRA_QK.backward.
+
+    Supports bias, dropout, and DoRA.
+    """
+    QW, Qb, QW_quant, QA, QB, QS, Qlb, Qdrop, Qmag = get_lora_parameters(self.q_proj)
+    KW, Kb, KW_quant, KA, KB, KS, Klb, Kdrop, Kmag = get_lora_parameters(self.k_proj)
+
+    # Apply dropout outside autograd.Function (shared mask for Q, K)
+    X_drop = _apply_dropout(Qdrop, X, self.training)
+
+    Q, K = LoRA_QK.apply(
+        X,
+        X_drop,
+        # Q
+        QW,
+        Qb,
+        QW_quant,
+        QA,
+        QB,
+        QS,
+        Qlb,
+        Qmag,
+        # K
+        KW,
+        Kb,
+        KW_quant,
+        KA,
+        KB,
+        KS,
+        Klb,
+        Kmag,
+        # Flags
+        inplace,
+    )
+
+    return Q, K, K
+
+
 class LoRA_O(torch.autograd.Function):
     """Optimized LoRA implementation for output projection.
 
