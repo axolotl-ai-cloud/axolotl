@@ -362,6 +362,126 @@ class TestQuantization:
         assert isinstance(model.lm_head.weight, nn.Parameter)
 
 
+class TestMXQuantizeSaveLoad:
+    """Tests for MX format (mxfp4/mxfp8) quantize-save-load round-trip.
+
+    Uses small randomly initialized models on CPU so no specific GPU is required.
+    """
+
+    @require_torch_2_8_0
+    def test_mxfp4_quantize_save_load(self, tmp_path):
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+
+        from axolotl.utils.quantization import _register_mx_state_dict_hook
+
+        model = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.Linear(64, 32),
+        ).to(torch.bfloat16)
+        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
+
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+
+        for child in model.children():
+            if isinstance(child, nn.Linear):
+                assert isinstance(child.weight, MXTensor)
+
+        sd = model.state_dict()
+        for k, v in sd.items():
+            assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
+            assert v.dtype == torch.bfloat16
+
+        from safetensors.torch import save_file, load_file
+
+        save_path = str(tmp_path / "model.safetensors")
+        save_file(sd, save_path)
+
+        loaded = load_file(save_path)
+        for k, expected_shape in original_shapes.items():
+            assert k in loaded, f"Missing key {k}"
+            assert loaded[k].shape == expected_shape, (
+                f"{k}: shape mismatch {loaded[k].shape} vs {expected_shape}"
+            )
+
+    @require_torch_2_8_0
+    def test_mxfp8_quantize_save_load(self, tmp_path):
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        from torchao.quantization import quantize_
+
+        from axolotl.utils.quantization import _register_mx_state_dict_hook
+
+        model = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.Linear(64, 32),
+        ).to(torch.bfloat16)
+        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
+
+        cfg = MXDynamicActivationMXWeightConfig(
+            activation_dtype=torch.float8_e4m3fn,
+            weight_dtype=torch.float8_e4m3fn,
+            block_size=32,
+        )
+        quantize_(model, cfg)
+
+        for child in model.children():
+            if isinstance(child, nn.Linear):
+                assert isinstance(child.weight, MXTensor)
+
+        _register_mx_state_dict_hook(model)
+        sd = model.state_dict()
+        for k, v in sd.items():
+            assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
+
+        from safetensors.torch import save_file, load_file
+
+        save_path = str(tmp_path / "model.safetensors")
+        save_file(sd, save_path)
+
+        loaded = load_file(save_path)
+        for k, expected_shape in original_shapes.items():
+            assert k in loaded, f"Missing key {k}"
+            assert loaded[k].shape == expected_shape, (
+                f"{k}: shape mismatch {loaded[k].shape} vs {expected_shape}"
+            )
+
+    @require_torch_2_8_0
+    def test_mxfp4_qat_then_ptq_save_load(self, tmp_path):
+        """Full QAT -> PTQ -> save -> load round-trip for mxfp4."""
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        from torchao.prototype.qat import MXFakeQuantizedLinear
+
+        model = nn.Sequential(
+            nn.Linear(64, 64),
+            nn.Linear(64, 32),
+        ).to(torch.bfloat16)
+        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
+
+        prepare_model_for_qat(model, TorchAOQuantDType.mxfp4, 32)
+        for child in model.children():
+            if isinstance(child, nn.Linear):
+                assert isinstance(child, MXFakeQuantizedLinear)
+
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        for child in model.children():
+            if isinstance(child, nn.Linear):
+                assert isinstance(child.weight, MXTensor)
+
+        sd = model.state_dict()
+        for v in sd.values():
+            assert not isinstance(v, MXTensor)
+
+        from safetensors.torch import save_file, load_file
+
+        save_path = str(tmp_path / "model.safetensors")
+        save_file(sd, save_path)
+
+        loaded = load_file(save_path)
+        for k, expected_shape in original_shapes.items():
+            assert k in loaded, f"Missing key {k}"
+            assert loaded[k].shape == expected_shape
+
+
 class TestQuantizationCallback:
     """
     Test QATCallback

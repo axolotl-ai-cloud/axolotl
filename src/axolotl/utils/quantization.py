@@ -34,8 +34,6 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
     except (ImportError, RuntimeError):
         pass
 
-    # int4 weight config imports will fail on machines with fbgemm-gpu installed
-    # without a CUDA runtime available so we do this safely
     try:
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
@@ -123,14 +121,14 @@ def get_quantization_config(
         return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
         if block_size != 32:
             raise ValueError(
                 "MXFP4 quantization must use a block_size (group_size) of 32"
             )
-
-        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
 
         return MXDynamicActivationMXWeightConfig(
             activation_dtype=torch.float4_e2m1fn_x2,
@@ -143,26 +141,28 @@ def get_quantization_config(
     )
 
 
-def _attach_torchao_quantizer(
-    model, quantization_config, include_input_output_embeddings=False
-):
-    """Attach a TorchAoHfQuantizer to the model so save_pretrained uses
-    torchao's flatten_tensor_state_dict path, preserving quantized weights
-    (e.g. MXTensor qdata+scale) in the safetensors file.
+def _register_mx_state_dict_hook(model):
+    """Register a state_dict hook that dequantizes MXTensor subclasses for safe
+    serialization.
 
-    Without this, save_pretrained falls through to the default path which
-    calls safetensors storage_ptr() on tensor subclasses and crashes.
+    MXTensor (from torchao MX/MXFP4 quantization) doesn't expose a valid Python
+    storage, causing safetensors' storage_ptr() to fail during save_pretrained.
+    This hook converts MXTensor values to plain tensors via dequantize() so the
+    model can be saved normally and re-quantized at load time.
     """
-    from transformers import TorchAoConfig
-    from transformers.quantizers.quantizer_torchao import TorchAoHfQuantizer
 
-    ao_config = TorchAoConfig(
-        quant_type=quantization_config,
-        include_input_output_embeddings=include_input_output_embeddings,
-    )
-    model.config.quantization_config = ao_config
-    quantizer = TorchAoHfQuantizer(ao_config)
-    model.hf_quantizer = quantizer
+    def _dequantize_mx_tensors(module, state_dict, prefix, local_metadata):
+        try:
+            from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        except ImportError:
+            return state_dict
+
+        for key in list(state_dict.keys()):
+            if isinstance(state_dict[key], MXTensor):
+                state_dict[key] = state_dict[key].dequantize()
+        return state_dict
+
+    model._register_state_dict_hook(_dequantize_mx_tensors)
 
 
 def quantize_model(
@@ -202,11 +202,8 @@ def quantize_model(
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
 
-    _attach_torchao_quantizer(
-        model,
-        linear_ptq_config,
-        include_input_output_embeddings=bool(quantize_embedding),
-    )
+    if weight_dtype == TorchAOQuantDType.mxfp4:
+        _register_mx_state_dict_hook(model)
 
 
 def _make_qat_config(
