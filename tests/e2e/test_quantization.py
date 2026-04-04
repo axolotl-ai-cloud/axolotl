@@ -372,8 +372,6 @@ class TestMXQuantizeSaveLoad:
     def test_mxfp4_quantize_save_load(self, tmp_path):
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
 
-        from axolotl.utils.quantization import _register_mx_state_dict_hook
-
         model = nn.Sequential(
             nn.Linear(64, 64),
             nn.Linear(64, 32),
