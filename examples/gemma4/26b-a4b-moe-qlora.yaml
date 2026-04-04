@@ -4,15 +4,6 @@
 # torch_compile=true: 21 GiB peak VRAM, ~230 tok/s, 336s total
 #
 # Key notes:
-# - Flash Attention 2 is NOT supported (global_head_dim=512 > FA2 max of 256).
-#   Use sdp_attention instead.
-# - Gemma 4 is multimodal (text+vision+audio). For text-only SFT, restrict
-#   LoRA to the text backbone via lora_target_modules regex.
-# - MoE experts use `experts_implementation: scattermoe` — Gemma 4 embeds MoE
-#   directly in the decoder layer (no SparseMoeBlock), so we register ScatterMoE
-#   via the transformers ExpertsInterface.
-# - Expert LoRA targets are `experts.gate_up_proj` / `experts.down_proj`
-#   (no `mlp.` prefix, unlike Qwen/Mixtral).
 # - Max sequence length on 32GB GPU: 2048 (micro_batch_size=1, SDP attention).
 #   4096 seq_len OOMs due to head_dim=512 math SDP materializing full score matrix.
 #   Use 48GB+ GPUs for longer sequences or multi-GPU with FSDP.
@@ -58,8 +49,7 @@ lora_dropout: 0
 
 # Restrict LoRA to text backbone only (skip vision/audio encoders)
 # using regex to match only the text decoder attention projections.
-lora_target_modules:
-  - language_model\.model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 # MoE expert LoRA (3D Parameter tensors, not nn.Linear)
 lora_target_parameters:
@@ -93,8 +83,7 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA2 not supported — Gemma4 global_head_dim=512 exceeds FA2 max of 256
-flash_attention: false
+# FA2 not supported
 sdp_attention: true
 
 warmup_ratio: 0.1
