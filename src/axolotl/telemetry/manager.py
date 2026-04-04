@@ -148,28 +148,27 @@ class TelemetryManager:
         Check if telemetry is enabled based on environment variables. We also check
         whether this is the main process (for the distributed setting and to avoid
         sending duplicate PostHog events per GPU).
-    
+
         Note: This is enabled by default on an opt-out basis. Set
         `AXOLOTL_DO_NOT_TRACK=1` to disable telemetry. For more details, see
         https://axolotl-ai-cloud.github.io/axolotl/docs/telemetry.html.
-    
+
         Returns:
             Boolean denoting whether telemetry is enabled or not.
         """
         # Only rank 0 will send telemetry
         if not is_main_process():
             return False
-    
+
         def is_truthy_env(var_name: str) -> bool:
             value = os.getenv(var_name)
             if value is None:
                 return False
             return value.strip().lower() in ("1", "true")
-    
+
         # Telemetry is enabled by default unless either opt-out var is set
         return not (
-            is_truthy_env("AXOLOTL_DO_NOT_TRACK")
-            or is_truthy_env("DO_NOT_TRACK")
+            is_truthy_env("AXOLOTL_DO_NOT_TRACK") or is_truthy_env("DO_NOT_TRACK")
         )
 
     def _load_whitelist(self) -> dict:
