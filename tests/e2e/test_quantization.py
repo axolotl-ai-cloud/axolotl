@@ -389,7 +389,7 @@ class TestMXQuantizeSaveLoad:
             assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
             assert v.dtype == torch.bfloat16
 
-        from safetensors.torch import save_file, load_file
+        from safetensors.torch import load_file, save_file
 
         save_path = str(tmp_path / "model.safetensors")
         save_file(sd, save_path)
@@ -431,7 +431,7 @@ class TestMXQuantizeSaveLoad:
         for k, v in sd.items():
             assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
 
-        from safetensors.torch import save_file, load_file
+        from safetensors.torch import load_file, save_file
 
         save_path = str(tmp_path / "model.safetensors")
         save_file(sd, save_path)
@@ -469,7 +469,7 @@ class TestMXQuantizeSaveLoad:
         for v in sd.values():
             assert not isinstance(v, MXTensor)
 
-        from safetensors.torch import save_file, load_file
+        from safetensors.torch import load_file, save_file
 
         save_path = str(tmp_path / "model.safetensors")
         save_file(sd, save_path)
