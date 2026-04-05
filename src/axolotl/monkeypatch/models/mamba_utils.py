@@ -237,6 +237,9 @@ def wrap_mamba_scan_for_cp(target_module):
 
     ensure_mamba_kernels_loaded(target_module)
 
+    if getattr(target_module, "mamba_chunk_scan_combined", None) is None:
+        return
+
     original_scan = target_module.mamba_chunk_scan_combined
 
     @functools.wraps(original_scan)
