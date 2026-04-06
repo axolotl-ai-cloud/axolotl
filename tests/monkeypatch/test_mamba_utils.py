@@ -8,18 +8,67 @@ Tests cover get_seq_idx correctness under:
   - no-negative regression (CP rank > 0 must never produce -1)
   - mamba2_cp_correction mathematical correctness
   - wrap_mamba_scan_for_cp wrapper behaviour
+  - end-to-end CP split: full 2K scan == 2×1K split + correction
 """
 
 import types
 from unittest.mock import patch
 
 import torch
+import torch.nn.functional as F
 
 from axolotl.monkeypatch.models.mamba_utils import (
     get_seq_idx,
     mamba2_cp_correction,
     wrap_mamba_scan_for_cp,
 )
+
+
+def _reference_ssm_scan(x, dt, A, B, C, dt_bias=None, dt_softplus=False, h0=None):
+    """Pure-PyTorch step-by-step SSM scan (reference implementation).
+
+    Implements the Mamba2 discrete SSM recurrence:
+        Δ_t = softplus(dt_t + dt_bias)  or  dt_t
+        Ā_t = exp(A · Δ_t)
+        h_t = Ā_t · h_{t-1}  +  B_t ⊗ x_t
+        y_t = (C_t · h_t).sum(dim=n)
+
+    Args:
+        x:  [B, T, H, d]
+        dt: [B, T, H]
+        A:  [H]  (log-space, negative)
+        B:  [B, T, n_groups, n]
+        C:  [B, T, n_groups, n]
+        dt_bias:    [H] or None
+        dt_softplus: bool
+        h0: [B, H, d, n] initial state, or None → zeros
+
+    Returns:
+        out:     [B, T, H, d]
+        h_final: [B, H, d, n]
+    """
+    B_batch, T, H, d = x.shape
+    n_groups = B.shape[2]
+    n = B.shape[3]
+    heads_per_group = H // n_groups
+
+    dt_eff = dt + dt_bias[None, None, :] if dt_bias is not None else dt
+    if dt_softplus:
+        dt_eff = F.softplus(dt_eff)
+
+    h = torch.zeros(B_batch, H, d, n, dtype=x.dtype) if h0 is None else h0.clone()
+
+    outputs = []
+    for t in range(T):
+        A_bar = torch.exp(A[None, :] * dt_eff[:, t, :])  # [B, H]
+        B_t = B[:, t].repeat_interleave(heads_per_group, dim=1)  # [B, H, n]
+        C_t = C[:, t].repeat_interleave(heads_per_group, dim=1)  # [B, H, n]
+
+        h = A_bar[:, :, None, None] * h + B_t[:, :, None, :] * x[:, t, :, :, None]
+        y_t = (C_t[:, :, None, :] * h).sum(dim=-1)  # [B, H, d]
+        outputs.append(y_t)
+
+    return torch.stack(outputs, dim=1), h
 
 
 class TestGetSeqIdx:
@@ -217,6 +266,185 @@ class TestMamba2CpCorrection:
         # exp(0) * 2.0 = 2.0 for all elements
         expected = torch.ones(B, H, d, n) * 2.0
         torch.testing.assert_close(corrected_h, expected)
+
+
+class TestCpSplitMatchesFullScan:
+    """End-to-end: full sequence scan == split into chunks + CP correction.
+
+    Runs a reference SSM scan on a full 2K-token sequence, then simulates
+    2-rank CP by splitting into 2×1K, running each half with h₀=0, and
+    applying mamba2_cp_correction to rank 1 using rank 0's final state.
+    The concatenated result must match the single-rank reference.
+    """
+
+    def test_2k_vs_2x1k_output_matches(self):
+        """Full 2048-token scan output == two 1024-token chunks + CP correction."""
+        torch.manual_seed(42)
+        B, T, H, d, n = 1, 2048, 4, 16, 8
+        n_groups = 2
+        dt_bias = torch.randn(H) * 0.1
+
+        x = torch.randn(B, T, H, d)
+        dt = torch.randn(B, T, H) * 0.1
+        A = -torch.rand(H).abs() - 0.01
+        B_ssm = torch.randn(B, T, n_groups, n) * 0.1
+        C_ssm = torch.randn(B, T, n_groups, n) * 0.1
+
+        ref_out, ref_h = _reference_ssm_scan(
+            x, dt, A, B_ssm, C_ssm, dt_bias=dt_bias, dt_softplus=True
+        )
+
+        T2 = T // 2
+
+        out_0, h_final_0 = _reference_ssm_scan(
+            x[:, :T2],
+            dt[:, :T2],
+            A,
+            B_ssm[:, :T2],
+            C_ssm[:, :T2],
+            dt_bias=dt_bias,
+            dt_softplus=True,
+        )
+
+        out_1, h_final_1 = _reference_ssm_scan(
+            x[:, T2:],
+            dt[:, T2:],
+            A,
+            B_ssm[:, T2:],
+            C_ssm[:, T2:],
+            dt_bias=dt_bias,
+            dt_softplus=True,
+        )
+
+        dt_eff_1 = F.softplus(dt[:, T2:] + dt_bias[None, None, :])
+        cum_A_1 = torch.cumsum(A[None, None, :] * dt_eff_1, dim=1)
+
+        corrected_out_1, corrected_h_1 = mamba2_cp_correction(
+            out_1.view(B, T2, H * d),
+            h_final_1,
+            C_ssm[:, T2:],
+            cum_A_1,
+            h_final_0,
+            num_heads=H,
+            head_dim=d,
+        )
+        corrected_out_1 = corrected_out_1.view(B, T2, H, d)
+
+        reconstructed = torch.cat([out_0, corrected_out_1], dim=1)
+
+        torch.testing.assert_close(reconstructed, ref_out, rtol=1e-4, atol=1e-4)
+        torch.testing.assert_close(corrected_h_1, ref_h, rtol=1e-4, atol=1e-4)
+
+    def test_2k_vs_2x1k_with_batch(self):
+        """Same split test with batch_size > 1."""
+        torch.manual_seed(123)
+        B, T, H, d, n = 3, 512, 2, 8, 4
+        n_groups = 1
+        dt_bias = torch.randn(H) * 0.05
+
+        x = torch.randn(B, T, H, d)
+        dt = torch.randn(B, T, H) * 0.1
+        A = -torch.rand(H).abs() - 0.01
+        B_ssm = torch.randn(B, T, n_groups, n) * 0.1
+        C_ssm = torch.randn(B, T, n_groups, n) * 0.1
+
+        ref_out, ref_h = _reference_ssm_scan(
+            x, dt, A, B_ssm, C_ssm, dt_bias=dt_bias, dt_softplus=True
+        )
+
+        T2 = T // 2
+
+        out_0, h_0 = _reference_ssm_scan(
+            x[:, :T2],
+            dt[:, :T2],
+            A,
+            B_ssm[:, :T2],
+            C_ssm[:, :T2],
+            dt_bias=dt_bias,
+            dt_softplus=True,
+        )
+        out_1, h_1 = _reference_ssm_scan(
+            x[:, T2:],
+            dt[:, T2:],
+            A,
+            B_ssm[:, T2:],
+            C_ssm[:, T2:],
+            dt_bias=dt_bias,
+            dt_softplus=True,
+        )
+
+        dt_eff_1 = F.softplus(dt[:, T2:] + dt_bias[None, None, :])
+        cum_A_1 = torch.cumsum(A[None, None, :] * dt_eff_1, dim=1)
+
+        corrected_out_1, corrected_h_1 = mamba2_cp_correction(
+            out_1.view(B, T2, H * d),
+            h_1,
+            C_ssm[:, T2:],
+            cum_A_1,
+            h_0,
+            num_heads=H,
+            head_dim=d,
+        )
+
+        reconstructed = torch.cat([out_0, corrected_out_1.view(B, T2, H, d)], dim=1)
+
+        torch.testing.assert_close(reconstructed, ref_out, rtol=1e-4, atol=1e-4)
+        torch.testing.assert_close(corrected_h_1, ref_h, rtol=1e-4, atol=1e-4)
+
+    def test_4_way_split(self):
+        """4-rank CP: split 1024 tokens into 4×256 chunks with sequential correction."""
+        torch.manual_seed(99)
+        B, T, H, d, n = 1, 1024, 2, 8, 4
+        n_groups = 1
+        n_ranks = 4
+        chunk = T // n_ranks
+        dt_bias = torch.randn(H) * 0.05
+
+        x = torch.randn(B, T, H, d)
+        dt = torch.randn(B, T, H) * 0.1
+        A = -torch.rand(H).abs() - 0.01
+        B_ssm = torch.randn(B, T, n_groups, n) * 0.1
+        C_ssm = torch.randn(B, T, n_groups, n) * 0.1
+
+        ref_out, ref_h = _reference_ssm_scan(
+            x, dt, A, B_ssm, C_ssm, dt_bias=dt_bias, dt_softplus=True
+        )
+
+        all_outs = []
+        h_prev = torch.zeros(B, H, d, n)
+
+        for rank in range(n_ranks):
+            s, e = rank * chunk, (rank + 1) * chunk
+            out_r, h_r = _reference_ssm_scan(
+                x[:, s:e],
+                dt[:, s:e],
+                A,
+                B_ssm[:, s:e],
+                C_ssm[:, s:e],
+                dt_bias=dt_bias,
+                dt_softplus=True,
+            )
+
+            dt_eff_r = F.softplus(dt[:, s:e] + dt_bias[None, None, :])
+            cum_A_r = torch.cumsum(A[None, None, :] * dt_eff_r, dim=1)
+
+            corrected_out_r, corrected_h_r = mamba2_cp_correction(
+                out_r.view(B, chunk, H * d),
+                h_r,
+                C_ssm[:, s:e],
+                cum_A_r,
+                h_prev,
+                num_heads=H,
+                head_dim=d,
+            )
+
+            all_outs.append(corrected_out_r.view(B, chunk, H, d))
+            h_prev = corrected_h_r
+
+        reconstructed = torch.cat(all_outs, dim=1)
+
+        torch.testing.assert_close(reconstructed, ref_out, rtol=1e-3, atol=1e-3)
+        torch.testing.assert_close(h_prev, ref_h, rtol=1e-3, atol=1e-3)
 
 
 class TestWrapMambaScanForCp:
