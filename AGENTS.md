@@ -16,6 +16,9 @@ axolotl inference config.yaml          # Interactive inference
 axolotl merge-lora config.yaml         # Merge LoRA adapter into base model
 axolotl vllm-serve config.yaml         # Start vLLM server for GRPO/EBFT training
 axolotl fetch examples                 # Download example configs
+axolotl agent-docs                     # Show agent-optimized docs (bundled with pip package)
+axolotl agent-docs grpo                # Topic-specific agent reference
+axolotl config-schema                  # Dump config JSON schema
 ```
 
 ## Training Methods

@@ -294,7 +294,9 @@ def merge_lora(config: str, **kwargs):
 
 
 @cli.command()
-@click.argument("directory", type=click.Choice(["examples", "deepspeed_configs"]))
+@click.argument(
+    "directory", type=click.Choice(["examples", "deepspeed_configs", "docs"])
+)
 @click.option("--dest", help="Destination directory")
 def fetch(directory: str, dest: Optional[str]):
     """
@@ -303,9 +305,10 @@ def fetch(directory: str, dest: Optional[str]):
     Available directories:
     - examples: Example configuration files
     - deepspeed_configs: DeepSpeed configuration files
+    - docs: Full documentation (Quarto markdown files)
 
     Args:
-        directory: One of `examples`, `deepspeed_configs`.
+        directory: One of `examples`, `deepspeed_configs`, `docs`.
         dest: Optional destination directory.
     """
     fetch_from_github(f"{directory}/", dest)
@@ -338,6 +341,112 @@ def delinearize_llama4(model: str, output: str):
     from axolotl.cli.delinearize_llama4 import do_cli as do_delinearize_llama4
 
     do_delinearize_llama4(model, output)
+
+
+@cli.command("agent-docs")
+@click.argument("topic", required=False, default=None)
+@click.option("--list", "list_topics", is_flag=True, help="List available topics")
+def agent_docs(topic: Optional[str], list_topics: bool):
+    """Show agent-optimized documentation.
+
+    Prints reference docs designed for AI coding agents.
+    These docs are bundled with the package — no network access needed.
+
+    \b
+    Examples:
+        axolotl agent-docs              # overview (start here)
+        axolotl agent-docs grpo         # GRPO reference
+        axolotl agent-docs sft          # SFT reference
+        axolotl agent-docs --list       # list all topics
+    """
+    from axolotl.cli.agent_docs import get_doc, list_topics as _list_topics
+
+    if list_topics:
+        for name, title in _list_topics().items():
+            click.echo(f"  {name:25s} {title}")
+        return
+
+    if topic is None:
+        topic = "overview"
+
+    try:
+        click.echo(get_doc(topic))
+    except FileNotFoundError as exc:
+        raise click.BadParameter(str(exc)) from exc
+
+
+@cli.command("config-schema")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["json", "yaml"]),
+    default="json",
+    help="Output format (default: json)",
+)
+@click.option("--field", help="Show schema for a specific field only")
+def config_schema(output_format: str, field: Optional[str]):
+    """Dump the full config JSON schema.
+
+    Useful for AI agents and tooling to discover all available config options,
+    their types, defaults, and descriptions.
+
+    \b
+    Examples:
+        axolotl config-schema                    # full JSON schema
+        axolotl config-schema --format yaml      # YAML format
+        axolotl config-schema --field adapter     # single field
+    """
+    import json
+
+    try:
+        schema = AxolotlInputConfig.model_json_schema()
+    except (TypeError, ValueError, AttributeError) as exc:
+        # Fallback: dump field names, types, and defaults when full schema
+        # generation fails (e.g. torch.dtype not JSON-serializable)
+        LOG.warning(
+            "Full JSON schema generation failed, using simplified fallback: %s", exc
+        )
+        fields = {}
+        for name, field_info in AxolotlInputConfig.model_fields.items():
+            entry = {}
+            if field_info.description:
+                entry["description"] = field_info.description
+            if field_info.default is not None:
+                try:
+                    json.dumps(field_info.default)
+                    entry["default"] = field_info.default
+                except (TypeError, ValueError):
+                    entry["default"] = str(field_info.default)
+            annotation = field_info.annotation
+            if annotation is not None:
+                entry["type"] = str(annotation)
+            fields[name] = entry
+        schema = {
+            "properties": fields,
+            "_note": "simplified schema (full generation failed)",
+        }
+
+    if field:
+        props = schema.get("properties", {})
+        if field not in props:
+            # Try case-insensitive match
+            matches = [k for k in props if k.lower() == field.lower()]
+            if matches:
+                field = matches[0]
+            else:
+                raise click.BadParameter(
+                    f"Unknown field: {field!r}. "
+                    f"Omit --field to dump the full schema, "
+                    f"or pipe to jq: axolotl config-schema | jq '.properties | keys'"
+                )
+        schema = {field: props[field]}
+
+    if output_format == "yaml":
+        import yaml  # pylint: disable=import-outside-toplevel
+
+        click.echo(yaml.dump(schema, default_flow_style=False, sort_keys=False))
+    else:
+        click.echo(json.dumps(schema, indent=2))
 
 
 cli.add_command(lm_eval)
