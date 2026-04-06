@@ -1025,7 +1025,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>If you are installing from pip</li>
 </ul>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@63b15e6"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> cut-cross-entropy <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install <span class="st">"cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@fec1a88"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="usage" class="level3">
 <h3 class="anchored" data-anchor-id="usage">Usage</h3>
@@ -1048,6 +1048,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>gemma3_text</li>
 <li>gemma3n</li>
 <li>gemma3n_text</li>
+<li>gemma4</li>
 <li>glm</li>
 <li>glm4</li>
 <li>glm4_moe</li>
@@ -1689,9 +1690,6 @@ The quick brown fox jumps over the loud dog</code></pre>
 <li><strong>128 experts, top-k=8</strong> for the 26B-A4B variant.</li>
 </ul>
 <p>Because there is no SparseMoeBlock class to patch, Gemma 4 uses a different integration path: we register <code>"scattermoe"</code> as a custom implementation in the transformers <code>ExpertsInterface</code>, and set <code>experts_implementation: scattermoe</code> in the config. The <code>@use_experts_implementation</code> decorator on <code>Gemma4TextExperts</code> then dispatches to our ScatterMoE kernel automatically. The router is untouched — it runs as-is.</p>
-<p><strong>Important limitations:</strong>
-- <strong>Flash Attention 2 is not supported</strong> — Gemma 4 uses <code>global_head_dim: 512</code> for full attention layers, which exceeds FA2’s maximum head dimension of 256. Use <code>sdp_attention: true</code> instead.
-- <strong>Multimodal model</strong>: Gemma 4 includes vision and audio encoders. For text-only SFT, use <code>lora_target_linear_modules</code> with a regex to restrict LoRA to the text backbone (e.g.&nbsp;<code>language_model\.model\.layers\.\d+\.self_attn\.(q|k|v|o)_proj</code>).</p>
 </section>
 <section id="limitations-1" class="level3">
 <h3 class="anchored" data-anchor-id="limitations-1">Limitations</h3>

@@ -793,6 +793,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.kernels.lora.LoRA_Embedding" id="toc-axolotl.kernels.lora.LoRA_Embedding" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_Embedding">LoRA_Embedding</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_MLP" id="toc-axolotl.kernels.lora.LoRA_MLP" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_MLP">LoRA_MLP</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_O" id="toc-axolotl.kernels.lora.LoRA_O" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_O">LoRA_O</a></li>
+  <li><a href="#axolotl.kernels.lora.LoRA_QK" id="toc-axolotl.kernels.lora.LoRA_QK" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_QK">LoRA_QK</a></li>
   <li><a href="#axolotl.kernels.lora.LoRA_QKV" id="toc-axolotl.kernels.lora.LoRA_QKV" class="nav-link" data-scroll-target="#axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
@@ -801,6 +802,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.kernels.lora.apply_lora_mlp_geglu" id="toc-axolotl.kernels.lora.apply_lora_mlp_geglu" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_mlp_geglu">apply_lora_mlp_geglu</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_mlp_swiglu" id="toc-axolotl.kernels.lora.apply_lora_mlp_swiglu" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_mlp_swiglu">apply_lora_mlp_swiglu</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_o" id="toc-axolotl.kernels.lora.apply_lora_o" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_o">apply_lora_o</a></li>
+  <li><a href="#axolotl.kernels.lora.apply_lora_qk" id="toc-axolotl.kernels.lora.apply_lora_qk" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_qk">apply_lora_qk</a></li>
   <li><a href="#axolotl.kernels.lora.apply_lora_qkv" id="toc-axolotl.kernels.lora.apply_lora_qkv" class="nav-link" data-scroll-target="#axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</a></li>
   <li><a href="#axolotl.kernels.lora.get_embedding_lora_parameters" id="toc-axolotl.kernels.lora.get_embedding_lora_parameters" class="nav-link" data-scroll-target="#axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</a></li>
   <li><a href="#axolotl.kernels.lora.get_lora_parameters" id="toc-axolotl.kernels.lora.get_lora_parameters" class="nav-link" data-scroll-target="#axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</a></li>
@@ -848,6 +850,10 @@ See “DoRA: Weight-Decomposed Low-Rank Adaptation” (https://arxiv.org/abs/240
 <td>Optimized LoRA implementation for output projection.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.kernels.lora.LoRA_QK">LoRA_QK</a></td>
+<td>Optimized LoRA QK implementation for models where v_proj is None.</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</a></td>
 <td>Optimized LoRA QKV implementation with quantization support.</td>
 </tr>
@@ -873,9 +879,19 @@ as input, so dropout is not applied there.</p>
 <p>Optimized LoRA implementation for output projection.</p>
 <p>Supports bias, dropout, and DoRA.</p>
 </section>
+<section id="axolotl.kernels.lora.LoRA_QK" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_QK">LoRA_QK</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QK()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Optimized LoRA QK implementation for models where v_proj is None.</p>
+<p>Used by models like Gemma4 with attention_k_eq_v=True, where key states are
+reused as value states. Only Q and K projections are fused; the caller
+returns K a second time as V so that autograd accumulates key+value gradients
+into a single dK.</p>
+<p>Supports bias, dropout, and DoRA (Weight-Decomposed Low-Rank Adaptation).</p>
+</section>
 <section id="axolotl.kernels.lora.LoRA_QKV" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.LoRA_QKV">LoRA_QKV</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.LoRA_QKV()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Optimized LoRA QKV implementation with quantization support.</p>
 <p>Supports bias, dropout, and DoRA (Weight-Decomposed Low-Rank Adaptation).
 Dropout is applied outside this Function so autograd handles its backward.</p>
@@ -908,18 +924,22 @@ Dropout is applied outside this Function so autograd handles its backward.</p>
 <td>Applies LoRA to output projection layer.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.kernels.lora.apply_lora_qk">apply_lora_qk</a></td>
+<td>Applies LoRA to compute Query and Key projections for models where v_proj is None.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</a></td>
 <td>Applies LoRA to compute Query, Key, Value projections.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</a></td>
 <td>Extract LoRA parameters from a PEFT Embedding module.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</a></td>
 <td>Gets LoRA parameters from a projection module.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.kernels.lora.matmul_lora">matmul_lora</a></td>
 <td>Efficient fused matmul + LoRA computation.</td>
 </tr>
@@ -927,30 +947,40 @@ Dropout is applied outside this Function so autograd handles its backward.</p>
 </table>
 <section id="axolotl.kernels.lora.apply_lora_embedding" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_embedding">apply_lora_embedding</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_embedding(<span class="va">self</span>, x)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_embedding(<span class="va">self</span>, x)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to embedding layer.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_mlp_geglu" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_mlp_geglu">apply_lora_mlp_geglu</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_geglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_geglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to MLP layer with GEGLU activation.</p>
 <p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_mlp_swiglu" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_mlp_swiglu">apply_lora_mlp_swiglu</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_swiglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_mlp_swiglu(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to MLP layer with SwiGLU activation.</p>
 <p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_o" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_o">apply_lora_o</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_o(<span class="va">self</span>, X)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_o(<span class="va">self</span>, X)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to output projection layer.</p>
+<p>Supports bias, dropout, and DoRA.</p>
+</section>
+<section id="axolotl.kernels.lora.apply_lora_qk" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_qk">apply_lora_qk</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_qk(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Applies LoRA to compute Query and Key projections for models where v_proj is None.</p>
+<p>When v_proj is None (e.g.&nbsp;Gemma4 attention_k_eq_v), key states are reused as
+value states. Returns (Q, K, K) — the caller’s patched forward will use K as V.
+Because K is returned twice, autograd accumulates gradients from both the key and
+value paths into dK before calling LoRA_QK.backward.</p>
 <p>Supports bias, dropout, and DoRA.</p>
 </section>
 <section id="axolotl.kernels.lora.apply_lora_qkv" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.apply_lora_qkv">apply_lora_qkv</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_qkv(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.apply_lora_qkv(<span class="va">self</span>, X, inplace<span class="op">=</span><span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Applies LoRA to compute Query, Key, Value projections.</p>
 <p>Supports bias, dropout, and DoRA. Dropout is applied outside the autograd
 Function so PyTorch handles its backward automatically. A single shared
@@ -958,12 +988,12 @@ dropout mask is used across Q, K, V projections for memory efficiency.</p>
 </section>
 <section id="axolotl.kernels.lora.get_embedding_lora_parameters" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.get_embedding_lora_parameters">get_embedding_lora_parameters</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_embedding_lora_parameters(embed)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_embedding_lora_parameters(embed)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Extract LoRA parameters from a PEFT Embedding module.</p>
 </section>
 <section id="axolotl.kernels.lora.get_lora_parameters" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.get_lora_parameters">get_lora_parameters</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_lora_parameters(proj)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.get_lora_parameters(proj)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Gets LoRA parameters from a projection module.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
@@ -1064,18 +1094,18 @@ dropout mask is used across Q, K, V projections for memory efficiency.</p>
 </section>
 <section id="axolotl.kernels.lora.matmul_lora" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.lora.matmul_lora">matmul_lora</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(</span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    X,</span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    W,</span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    b,</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    W_quant,</span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>    s,</span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>    out<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    X_drop<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    lora_bias<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>kernels.lora.matmul_lora(</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    X,</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    W,</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    b,</span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    W_quant,</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    A,</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    B,</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    s,</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>    out<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    X_drop<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>    lora_bias<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Efficient fused matmul + LoRA computation.</p>
 <section id="parameters-1" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>

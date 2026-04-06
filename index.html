@@ -795,6 +795,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#your-first-fine-tune" id="toc-your-first-fine-tune" class="nav-link" data-scroll-target="#your-first-fine-tune">Your First Fine-tune</a></li>
   </ul></li>
   <li><a href="#documentation" id="toc-documentation" class="nav-link" data-scroll-target="#documentation">📚 Documentation</a></li>
+  <li><a href="#ai-agent-support" id="toc-ai-agent-support" class="nav-link" data-scroll-target="#ai-agent-support">AI Agent Support</a></li>
   <li><a href="#getting-help" id="toc-getting-help" class="nav-link" data-scroll-target="#getting-help">🤝 Getting Help</a></li>
   <li><a href="#contributing" id="toc-contributing" class="nav-link" data-scroll-target="#contributing">🌟 Contributing</a></li>
   <li><a href="#telemetry" id="toc-telemetry" class="nav-link" data-scroll-target="#telemetry">📈 Telemetry</a></li>
@@ -976,6 +977,25 @@ Expand older updates
 <li><a href="https://docs.axolotl.ai/docs/faq.html">FAQ</a> - Frequently asked questions</li>
 </ul>
 </section>
+<section id="ai-agent-support" class="level2">
+<h2 class="anchored" data-anchor-id="ai-agent-support">AI Agent Support</h2>
+<p>Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package — no repo clone needed.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Show overview and available training methods</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Topic-specific references</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs sft                 <span class="co"># supervised fine-tuning</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs grpo                <span class="co"># GRPO online RL</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs preference_tuning   <span class="co"># DPO, KTO, ORPO, SimPO</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs reward_modelling    <span class="co"># outcome and process reward models</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs pretraining         <span class="co"># continual pretraining</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> agent-docs <span class="at">--list</span>              <span class="co"># list all topics</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Dump config schema for programmatic use</span></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> config-schema</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> config-schema <span class="at">--field</span> adapter</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>If you’re working with the source repo, agent docs are also available at <code>docs/agents/</code> and the project overview is in <code>AGENTS.md</code>.</p>
+</section>
 <section id="getting-help" class="level2">
 <h2 class="anchored" data-anchor-id="getting-help">🤝 Getting Help</h2>
 <ul>
@@ -1003,13 +1023,13 @@ disable it, set AXOLOTL_DO_NOT_TRACK=1. For more details, see our <a href="https
 <section id="citing-axolotl" class="level2">
 <h2 class="anchored" data-anchor-id="citing-axolotl">📝 Citing Axolotl</h2>
 <p>If you use Axolotl in your research or projects, please cite it as follows:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">@software{axolotl,</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">  title = {Axolotl: Open Source LLM Post-Training},</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">  author = {{Axolotl maintainers and contributors}},</span></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">  url = {https://github.com/axolotl-ai-cloud/axolotl},</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">  license = {Apache-2.0},</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">  year = {2023}</span></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">@software{axolotl,</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">  title = {Axolotl: Open Source LLM Post-Training},</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">  author = {{Axolotl maintainers and contributors}},</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">  url = {https://github.com/axolotl-ai-cloud/axolotl},</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">  license = {Apache-2.0},</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">  year = {2023}</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="license" class="level2">
 <h2 class="anchored" data-anchor-id="license">📜 License</h2>
