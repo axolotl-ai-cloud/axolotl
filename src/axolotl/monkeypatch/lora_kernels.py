@@ -16,6 +16,7 @@ from axolotl.kernels.lora import (
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
+    apply_lora_qk,
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.utils import detab_code
@@ -483,18 +484,24 @@ def apply_lora_kernel_patches(
             if cfg.lora_qkv_kernel:
                 # Query, key, value patching
                 # Filter out None projections (e.g. Gemma4 v_proj when attention_k_eq_v=True)
-                proj_names = ["q_proj", "k_proj", "v_proj"]
-                layer_modules = [
-                    getattr(self_attn, name)
-                    for name in proj_names
-                    if getattr(self_attn, name, None) is not None
-                ]
+                has_v_proj = getattr(self_attn, "v_proj", None) is not None
+                proj_names = (
+                    ["q_proj", "k_proj", "v_proj"]
+                    if has_v_proj
+                    else ["q_proj", "k_proj"]
+                )
+                layer_modules = [getattr(self_attn, name) for name in proj_names]
                 can_patch_qkv = all(
                     hasattr(module, "lora_A") for module in layer_modules
                 )
 
                 if can_patch_qkv:
-                    self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
+                    if has_v_proj:
+                        self_attn.apply_qkv = types.MethodType(
+                            apply_lora_qkv, self_attn
+                        )
+                    else:
+                        self_attn.apply_qkv = types.MethodType(apply_lora_qk, self_attn)
                 else:
                     LOG.warning_once(
                         "Cannot patch some attention QKV projections - requires LoRA adapters"

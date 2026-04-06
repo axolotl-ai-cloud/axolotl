@@ -86,12 +86,19 @@ def patch_flash_attn_4(model_config=None):
     if getattr(fa_utils._lazy_imports, "_axolotl_patched", False):
         return
 
+    try:
+        # flash-attn-4>=4.0.0b7
+        from flash_attn.cute import flash_attn_with_kvcache
+    except ImportError:
+        flash_attn_with_kvcache = None
+
     def _patched_lazy_imports(
         implementation, attention_wrapper=None, allow_all_kernels=False
     ):
         return (
             flash_attn_func,
             flash_attn_varlen_func,
+            flash_attn_with_kvcache,
             fa_utils._pad_input,
             fa_utils._unpad_input,
         )

@@ -1,22 +1,8 @@
-# Gemma 4 26B-A4B MoE QLoRA with ScatterMoE kernels
-#
-# Validated: 50 steps on FineTome-100k, loss 8.8 -> 1.8, single RTX 5090 (32GB)
-# torch_compile=true: 21 GiB peak VRAM, ~230 tok/s, 336s total
-#
-# Key notes:
-# - Max sequence length on 32GB GPU: 2048 (micro_batch_size=1, SDP attention).
-#   4096 seq_len OOMs due to head_dim=512 math SDP materializing full score matrix.
-#   Use 48GB+ GPUs for longer sequences or multi-GPU with FSDP.
-
-base_model: google/gemma-4-26B-A4B
+base_model: google/gemma-4-31B
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
-  - axolotl.integrations.kernels.KernelsPlugin
   - axolotl.integrations.liger.LigerPlugin
-use_kernels: true
-use_scattermoe: true
-experts_implementation: scattermoe
 torch_compile: true
 liger_layer_norm: true
 liger_rope: true
@@ -35,26 +21,19 @@ datasets:
       role: from
       content: value
 val_set_size: 0.05
-output_dir: ./outputs/gemma4-26b-a4b-qlora
+output_dir: ./outputs/gemma4-31b-qlora-flex
 
 sequence_len: 2048
 sample_packing: true
 
 load_in_4bit: true
-quantize_moe_experts: true
 adapter: qlora
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
 
 # Restrict LoRA to text backbone only (skip vision/audio encoders)
-# using regex to match only the text decoder attention projections.
 lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
-
-# MoE expert LoRA (3D Parameter tensors, not nn.Linear)
-lora_target_parameters:
-  - experts.gate_up_proj
-  - experts.down_proj
 
 lora_mlp_kernel: false
 lora_qkv_kernel: false
@@ -71,7 +50,6 @@ wandb_log_model:
 
 gradient_accumulation_steps: 4
 micro_batch_size: 1
-num_epochs: 1
 optimizer: adamw_torch_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
@@ -83,8 +61,8 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA2 not supported
-sdp_attention: true
+# FA not supported
+flex_attention: true
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

@@ -100,6 +100,27 @@ class AxolotlTrainer(
         self._signature_columns = None  # workaround for pylint
 
         super().__init__(*_args, **kwargs)
+
+        # Gemma4 (and similar multimodal models) declare **kwargs in forward() for
+        # extra inputs like mm_token_type_ids.  HF Trainer interprets VAR_KEYWORD as
+        # "the model handles num_items_in_batch internally" and skips the loss ÷
+        # gradient_accumulation_steps normalisation, which inflates the *logged* loss
+        # (the gradient itself is still correct). Override to False when the model
+        # doesn't actually consume num_items_in_batch.
+        if self.model_accepts_loss_kwargs:
+            model_to_check = self.accelerator.unwrap_model(self.model)
+            if hasattr(model_to_check, "base_model"):  # PEFT wrapper
+                model_to_check = model_to_check.base_model
+            if hasattr(model_to_check, "model"):
+                model_to_check = model_to_check.model
+            fwd = getattr(model_to_check, "forward", None)
+            if fwd is not None:
+                import inspect
+
+                params = inspect.signature(fwd).parameters
+                if "num_items_in_batch" not in params:
+                    self.model_accepts_loss_kwargs = False
+
         self.train_data_collator = self.data_collator
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
@@ -383,12 +404,26 @@ class AxolotlTrainer(
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
+        _model_type = getattr(getattr(model, "config", None), "model_type", None)
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+            and _model_type == "gemma4"
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+
+        # Gemma4 (and Gemma3): transformers' masking_utils detects packed sequences
+        # from position_ids, but only when attention_mask is None.  When sample
+        # packing is active the collator provides an all-ones attention_mask that
+        # prevents this detection — remove it so the model builds the correct
+        # per-sequence causal masks.
+        if (
+            self.args.sample_packing
+            and _model_type in ("gemma4", "gemma3")
+            and "attention_mask" in inputs
+            and "position_ids" in inputs
+        ):
+            del inputs["attention_mask"]
 
         if self.args.orpo_alpha:
             return self.orpo_compute_loss(

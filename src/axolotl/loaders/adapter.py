@@ -67,12 +67,70 @@ def find_all_linear_names(model):
     return list(lora_module_names)
 
 
+def _patch_peft_clippable_linear():
+    """Patch PEFT to handle Gemma4ClippableLinear which wraps nn.Linear.
+
+    Gemma4's vision tower uses ClippableLinear (a thin wrapper around nn.Linear
+    that clips activations). PEFT doesn't recognise it as a supported layer type,
+    so we redirect LoRA injection to the inner ``.linear`` child instead.
+    """
+    try:
+        from transformers.models.gemma4.modeling_gemma4 import (
+            Gemma4ClippableLinear as _cls,
+        )
+    except ImportError:
+        return
+
+    from peft.tuners.lora.model import LoraModel
+
+    if getattr(LoraModel, "_axolotl_clippable_patched", False):
+        return
+    _orig = LoraModel._create_and_replace
+
+    def _patched(
+        self,
+        peft_config,
+        adapter_name,
+        target,
+        target_name,
+        parent,
+        current_key=None,
+        **kw,
+    ):
+        if isinstance(target, _cls):
+            # Redirect to the inner nn.Linear so PEFT can wrap it normally.
+            return _orig(
+                self,
+                peft_config,
+                adapter_name,
+                target.linear,
+                "linear",
+                target,
+                current_key=current_key,
+                **kw,
+            )
+        return _orig(
+            self,
+            peft_config,
+            adapter_name,
+            target,
+            target_name,
+            parent,
+            current_key=current_key,
+            **kw,
+        )
+
+    LoraModel._create_and_replace = _patched
+    LoraModel._axolotl_clippable_patched = True
+
+
 def load_lora(
     model: PreTrainedModel,
     cfg: DictDefault,
     inference: bool = False,
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
+    _patch_peft_clippable_linear()
     lora_target_modules = cfg.lora_target_modules or []
     lora_target_parameters = cfg.lora_target_parameters or []
 
@@ -124,6 +182,7 @@ def load_lora(
         lora_dropout=cfg.lora_dropout,
         fan_in_fan_out=cfg.lora_fan_in_fan_out,
         modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
+        exclude_modules=getattr(cfg, "lora_exclude_modules", None) or None,
         bias="none",
         task_type=task_type,
         **lora_config_kwargs,
