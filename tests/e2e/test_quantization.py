@@ -363,111 +363,117 @@ class TestQuantization:
 
 
 class TestMXQuantizeSaveLoad:
-    """Tests for MX format (mxfp4/mxfp8) quantize-save-load round-trip.
+    """Tests for MX format (mxfp4) quantize-save-load round-trip via save_pretrained.
 
-    Uses small randomly initialized models on CPU so no specific GPU is required.
+    Uses a tiny HF model built from config (no download) so tests exercise the
+    real save_pretrained / from_pretrained code path — the same one the CLI uses.
+    MX format models are saved with safe_serialization=False (torch.save) because
+    MXTensor does not yet support safetensors serialization.
     """
 
+    @staticmethod
+    def _make_tiny_model():
+        """Build a minimal HF causal-LM that can be quantized on CPU."""
+        from transformers import Qwen2Config
+
+        config = Qwen2Config(
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            vocab_size=256,
+            max_position_embeddings=64,
+            torch_dtype="bfloat16",
+        )
+        model = AutoModelForCausalLM.from_config(config).to(torch.bfloat16)
+        return model
+
     @require_torch_2_8_0
-    def test_mxfp4_quantize_save_load(self, tmp_path):
+    def test_mxfp4_quantize_save_pretrained(self, tmp_path):
+        """quantize_model(mxfp4) -> save_pretrained -> from_pretrained round-trip."""
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
 
-        model = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.Linear(64, 32),
-        ).to(torch.bfloat16)
-        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
 
         quantize_model(model, TorchAOQuantDType.mxfp4, 32)
 
-        for child in model.children():
-            if isinstance(child, nn.Linear):
-                assert isinstance(child.weight, MXTensor)
+        # Weights should be MXTensor after quantization
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
 
-        for v in model.state_dict().values():
-            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
+        # Model should be flagged for MX-style save
+        assert getattr(model, "_is_mx_quantized", False)
 
-        from safetensors.torch import load_file, save_model
+        # save_pretrained with safe_serialization=False (torch.save path)
+        save_dir = str(tmp_path / "mxfp4_model")
+        model.save_pretrained(save_dir, safe_serialization=False)
 
-        save_path = str(tmp_path / "model.safetensors")
-        save_model(model, save_path)
+        # Verify checkpoint files were written
+        import glob
 
-        loaded = load_file(save_path)
-        for k, expected_shape in original_shapes.items():
-            assert loaded[k].shape == expected_shape
+        assert glob.glob(f"{save_dir}/*.bin") or glob.glob(f"{save_dir}/**/*.bin")
 
-    @require_torch_2_8_0
-    def test_mxfp8_quantize_save_load(self, tmp_path):
-        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
-        from torchao.prototype.mx_formats.mx_tensor import MXTensor
-        from torchao.quantization import quantize_
-
-        from axolotl.utils.quantization import _register_mx_state_dict_hook
-
-        model = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.Linear(64, 32),
-        ).to(torch.bfloat16)
-        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
-
-        cfg = MXDynamicActivationMXWeightConfig(
-            activation_dtype=torch.float8_e4m3fn,
-            weight_dtype=torch.float8_e4m3fn,
-            block_size=32,
+        # from_pretrained should load without error
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
         )
-        quantize_(model, cfg)
-
-        for child in model.children():
-            if isinstance(child, nn.Linear):
-                assert isinstance(child.weight, MXTensor)
-
-        _register_mx_state_dict_hook(model)
-        for v in model.state_dict().values():
-            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
-
-        from safetensors.torch import load_file, save_model
-
-        save_path = str(tmp_path / "model.safetensors")
-        save_model(model, save_path)
-
-        loaded = load_file(save_path)
-        for k, expected_shape in original_shapes.items():
-            assert loaded[k].shape == expected_shape
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys, (
+            f"Key mismatch: missing={original_keys - loaded_keys}, "
+            f"extra={loaded_keys - original_keys}"
+        )
 
     @require_torch_2_8_0
-    def test_mxfp4_qat_then_ptq_save_load(self, tmp_path):
-        """Full QAT -> PTQ -> save -> load round-trip for mxfp4."""
+    def test_mxfp4_is_mx_flag_set(self):
+        """quantize_model sets _is_mx_quantized for MX configs."""
+        model = self._make_tiny_model()
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        assert getattr(model, "_is_mx_quantized", False)
+
+    @require_torch_2_8_0
+    def test_non_mx_uses_torchao_quantizer(self):
+        """Non-MX quantization attaches TorchAoHfQuantizer, not _is_mx_quantized."""
+        model = self._make_tiny_model()
+        quantize_model(model, TorchAOQuantDType.int4, group_size=32)
+        assert not getattr(model, "_is_mx_quantized", False)
+        assert hasattr(model, "hf_quantizer")
+
+    @require_torch_2_8_0
+    def test_mxfp4_qat_then_ptq_save_pretrained(self, tmp_path):
+        """Full QAT -> convert -> PTQ -> save_pretrained -> from_pretrained."""
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
         from torchao.prototype.qat import MXFakeQuantizedLinear
 
-        model = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.Linear(64, 32),
-        ).to(torch.bfloat16)
-        original_shapes = {k: v.shape for k, v in model.state_dict().items()}
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
 
+        # QAT preparation
         prepare_model_for_qat(model, TorchAOQuantDType.mxfp4, 32)
-        for child in model.children():
-            if isinstance(child, nn.Linear):
-                assert isinstance(child, MXFakeQuantizedLinear)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module, MXFakeQuantizedLinear)
 
+        # Convert QAT back to normal linear
         convert_qat_model(model)
+
+        # PTQ quantize
         quantize_model(model, TorchAOQuantDType.mxfp4, 32)
-        for child in model.children():
-            if isinstance(child, nn.Linear):
-                assert isinstance(child.weight, MXTensor)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
 
-        for v in model.state_dict().values():
-            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
+        # save_pretrained round-trip
+        save_dir = str(tmp_path / "mxfp4_qat_model")
+        model.save_pretrained(save_dir, safe_serialization=False)
 
-        from safetensors.torch import load_file, save_model
-
-        save_path = str(tmp_path / "model.safetensors")
-        save_model(model, save_path)
-
-        loaded = load_file(save_path)
-        for k, expected_shape in original_shapes.items():
-            assert loaded[k].shape == expected_shape
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
+        )
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys
 
 
 class TestQuantizationCallback:

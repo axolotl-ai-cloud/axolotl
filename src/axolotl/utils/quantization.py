@@ -141,28 +141,27 @@ def get_quantization_config(
     )
 
 
-def _register_mx_state_dict_hook(model):
-    """Register a state_dict hook that dequantizes MXTensor subclasses for safe
-    serialization.
+def _attach_torchao_quantizer(
+    model, quantization_config, include_input_output_embeddings=False
+):
+    """Attach a TorchAoHfQuantizer to the model so save_pretrained uses
+    torchao's flatten_tensor_state_dict path, preserving quantized weights
+    in the safetensors file.
 
-    MXTensor (from torchao MX/MXFP4 quantization) doesn't expose a valid Python
-    storage, causing safetensors' storage_ptr() to fail during save_pretrained.
-    This hook converts MXTensor values to plain tensors via dequantize() so the
-    model can be saved normally and re-quantized at load time.
+    Note: This does NOT work for MX formats (MXTensor) because MXTensor
+    lacks the ``tensor_data_names`` attribute that flatten_tensor_state_dict
+    requires.  MX formats use ``safe_serialization=False`` instead.
     """
+    from transformers import TorchAoConfig
+    from transformers.quantizers.quantizer_torchao import TorchAoHfQuantizer
 
-    def _dequantize_mx_tensors(module, state_dict, prefix, local_metadata):
-        try:
-            from torchao.prototype.mx_formats.mx_tensor import MXTensor
-        except ImportError:
-            return state_dict
-
-        for key in list(state_dict.keys()):
-            if isinstance(state_dict[key], MXTensor):
-                state_dict[key] = state_dict[key].dequantize()
-        return state_dict
-
-    model._register_state_dict_hook(_dequantize_mx_tensors)
+    ao_config = TorchAoConfig(
+        quant_type=quantization_config,
+        include_input_output_embeddings=include_input_output_embeddings,
+    )
+    model.config.quantization_config = ao_config
+    quantizer = TorchAoHfQuantizer(ao_config)
+    model.hf_quantizer = quantizer
 
 
 def quantize_model(
@@ -202,13 +201,25 @@ def quantize_model(
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
 
+    is_mx = False
     try:
         from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
 
-        if isinstance(linear_ptq_config, MXDynamicActivationMXWeightConfig):
-            _register_mx_state_dict_hook(model)
+        is_mx = isinstance(linear_ptq_config, MXDynamicActivationMXWeightConfig)
     except ImportError:
         pass
+
+    if is_mx:
+        # MXTensor lacks tensor_data_names so flatten_tensor_state_dict (safetensors)
+        # cannot serialize it.  Mark the model so the caller can use
+        # safe_serialization=False (torch.save) which supports __tensor_flatten__.
+        model._is_mx_quantized = True
+    else:
+        _attach_torchao_quantizer(
+            model,
+            linear_ptq_config,
+            include_input_output_embeddings=bool(quantize_embedding),
+        )
 
 
 def _make_qat_config(

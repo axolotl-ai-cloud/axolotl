@@ -93,10 +93,19 @@ def do_quantize(
         weight_dtype, activation_dtype, group_size
     )
 
-    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
+    save_path = str(Path(output_dir) / "quantized")
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if is_mx:
+        LOG.info(
+            f"Saving MX-quantized model to: {save_path} "
+            "(using torch.save — MXTensor does not support safetensors yet)."
+        )
+    else:
+        LOG.info(f"Saving quantized model to: {save_path}.")
     model.save_pretrained(
-        str(Path(output_dir) / "quantized"),
+        save_path,
         progressbar=True,
+        safe_serialization=not is_mx,
     )
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
