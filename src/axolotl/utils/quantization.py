@@ -222,6 +222,36 @@ def quantize_model(
         )
 
 
+def save_quantized_model(model, save_dir, **kwargs):
+    """Save a quantized model, handling MXTensor serialization.
+
+    MXTensor does not have a valid storage pointer, which causes
+    ``save_pretrained`` to crash (both in ``remove_tied_weights_from_state_dict``
+    via ``id_tensor_storage``, and in safetensors serialization).
+    Transformers >=5.5 removed the ``safe_serialization`` parameter entirely.
+
+    For MX-quantized models we save the config/generation_config via
+    ``save_pretrained`` machinery and the weights via ``torch.save``.
+    """
+    import os
+
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if not is_mx:
+        model.save_pretrained(save_dir, **kwargs)
+        return
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save config, generation_config, etc.
+    model.config.save_pretrained(save_dir)
+    if hasattr(model, "generation_config") and model.generation_config is not None:
+        model.generation_config.save_pretrained(save_dir)
+
+    # Save weights via torch.save (supports __tensor_flatten__)
+    weights_path = os.path.join(save_dir, "pytorch_model.bin")
+    torch.save(model.state_dict(), weights_path)
+
+
 def _make_qat_config(
     base_config: AOBaseConfig,
     weight_dtype: TorchAOQuantDType,

@@ -23,6 +23,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     prepare_model_for_qat,
     quantize_model,
+    save_quantized_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
@@ -409,7 +410,7 @@ class TestMXQuantizeSaveLoad:
 
         # save_pretrained with safe_serialization=False (torch.save path)
         save_dir = str(tmp_path / "mxfp4_model")
-        model.save_pretrained(save_dir, safe_serialization=False)
+        save_quantized_model(model, save_dir)
 
         # Verify checkpoint files were written
         import glob
@@ -434,10 +435,14 @@ class TestMXQuantizeSaveLoad:
         assert getattr(model, "_is_mx_quantized", False)
 
     @require_torch_2_8_0
+    @requires_cuda_ge_8_9
     def test_non_mx_uses_torchao_quantizer(self):
         """Non-MX quantization attaches TorchAoHfQuantizer, not _is_mx_quantized."""
         model = self._make_tiny_model()
-        quantize_model(model, TorchAOQuantDType.int4, group_size=32)
+        try:
+            quantize_model(model, TorchAOQuantDType.int4, group_size=32)
+        except ImportError:
+            pytest.skip("int4 quantization requires mslk >= 1.0.0")
         assert not getattr(model, "_is_mx_quantized", False)
         assert hasattr(model, "hf_quantizer")
 
@@ -467,7 +472,7 @@ class TestMXQuantizeSaveLoad:
 
         # save_pretrained round-trip
         save_dir = str(tmp_path / "mxfp4_qat_model")
-        model.save_pretrained(save_dir, safe_serialization=False)
+        save_quantized_model(model, save_dir)
 
         loaded = AutoModelForCausalLM.from_pretrained(
             save_dir, torch_dtype=torch.bfloat16

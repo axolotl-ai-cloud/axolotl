@@ -15,6 +15,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     quantization_config_to_str,
     quantize_model,
+    save_quantized_model,
 )
 
 LOG = get_logger(__name__)
@@ -102,11 +103,7 @@ def do_quantize(
         )
     else:
         LOG.info(f"Saving quantized model to: {save_path}.")
-    model.save_pretrained(
-        save_path,
-        progressbar=True,
-        safe_serialization=not is_mx,
-    )
+    save_quantized_model(model, save_path, progressbar=True)
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         progressbar=True,
