@@ -16,6 +16,7 @@ import torch
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
     get_seq_idx,
+    is_cp_active,
     wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
@@ -140,7 +141,7 @@ def patch_falcon_h1_modeling_packing():
                 else {"dt_limit": self.time_step_limit}
             )
 
-            if self.training and cache_params is None and seq_idx is None:
+            if self.training and cache_params is None and not is_cp_active():
                 out = mod.mamba_split_conv1d_scan_combined(
                     projected_states,
                     self.conv1d.weight.squeeze(1),

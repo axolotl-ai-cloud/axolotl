@@ -17,6 +17,7 @@ import torch
 from axolotl.monkeypatch.models.mamba_utils import (
     ensure_mamba_kernels_loaded,
     get_seq_idx,
+    is_cp_active,
     wrap_mamba_scan_for_cp,
 )
 from axolotl.utils.logging import get_logger
@@ -144,7 +145,7 @@ def patch_nemotron_h_modeling_packing():
                 and self.training
                 and cache_params is None
                 and input_not_masked
-                and seq_idx is None
+                and not is_cp_active()
             ):
                 out, ssm_state = mod.mamba_split_conv1d_scan_combined(
                     projected_states,
