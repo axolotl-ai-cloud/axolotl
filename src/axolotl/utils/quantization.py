@@ -202,8 +202,13 @@ def quantize_model(
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
 
-    if weight_dtype == TorchAOQuantDType.mxfp4:
-        _register_mx_state_dict_hook(model)
+    try:
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
+        if isinstance(linear_ptq_config, MXDynamicActivationMXWeightConfig):
+            _register_mx_state_dict_hook(model)
+    except ImportError:
+        pass
 
 
 def _make_qat_config(

@@ -94,21 +94,10 @@ def do_quantize(
     )
 
     LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
-    try:
-        model.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            progressbar=True,
-        )
-    except (NotImplementedError, ValueError):
-        LOG.warning(
-            "Standard save failed (likely MX format tensor subclass), "
-            "retrying with save_original_format=False"
-        )
-        model.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            progressbar=True,
-            save_original_format=False,
-        )
+    model.save_pretrained(
+        str(Path(output_dir) / "quantized"),
+        progressbar=True,
+    )
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         progressbar=True,

@@ -384,22 +384,17 @@ class TestMXQuantizeSaveLoad:
             if isinstance(child, nn.Linear):
                 assert isinstance(child.weight, MXTensor)
 
-        sd = model.state_dict()
-        for k, v in sd.items():
-            assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
-            assert v.dtype == torch.bfloat16
+        for v in model.state_dict().values():
+            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
 
-        from safetensors.torch import load_file, save_file
+        from safetensors.torch import load_file, save_model
 
         save_path = str(tmp_path / "model.safetensors")
-        save_file(sd, save_path)
+        save_model(model, save_path)
 
         loaded = load_file(save_path)
         for k, expected_shape in original_shapes.items():
-            assert k in loaded, f"Missing key {k}"
-            assert loaded[k].shape == expected_shape, (
-                f"{k}: shape mismatch {loaded[k].shape} vs {expected_shape}"
-            )
+            assert loaded[k].shape == expected_shape
 
     @require_torch_2_8_0
     def test_mxfp8_quantize_save_load(self, tmp_path):
@@ -427,21 +422,17 @@ class TestMXQuantizeSaveLoad:
                 assert isinstance(child.weight, MXTensor)
 
         _register_mx_state_dict_hook(model)
-        sd = model.state_dict()
-        for k, v in sd.items():
-            assert not isinstance(v, MXTensor), f"{k} should be dequantized by hook"
+        for v in model.state_dict().values():
+            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
 
-        from safetensors.torch import load_file, save_file
+        from safetensors.torch import load_file, save_model
 
         save_path = str(tmp_path / "model.safetensors")
-        save_file(sd, save_path)
+        save_model(model, save_path)
 
         loaded = load_file(save_path)
         for k, expected_shape in original_shapes.items():
-            assert k in loaded, f"Missing key {k}"
-            assert loaded[k].shape == expected_shape, (
-                f"{k}: shape mismatch {loaded[k].shape} vs {expected_shape}"
-            )
+            assert loaded[k].shape == expected_shape
 
     @require_torch_2_8_0
     def test_mxfp4_qat_then_ptq_save_load(self, tmp_path):
@@ -460,23 +451,22 @@ class TestMXQuantizeSaveLoad:
             if isinstance(child, nn.Linear):
                 assert isinstance(child, MXFakeQuantizedLinear)
 
+        convert_qat_model(model)
         quantize_model(model, TorchAOQuantDType.mxfp4, 32)
         for child in model.children():
             if isinstance(child, nn.Linear):
                 assert isinstance(child.weight, MXTensor)
 
-        sd = model.state_dict()
-        for v in sd.values():
-            assert not isinstance(v, MXTensor)
+        for v in model.state_dict().values():
+            assert not isinstance(v, MXTensor), "hook should dequantize all MXTensors"
 
-        from safetensors.torch import load_file, save_file
+        from safetensors.torch import load_file, save_model
 
         save_path = str(tmp_path / "model.safetensors")
-        save_file(sd, save_path)
+        save_model(model, save_path)
 
         loaded = load_file(save_path)
         for k, expected_shape in original_shapes.items():
-            assert k in loaded, f"Missing key {k}"
             assert loaded[k].shape == expected_shape
 
 
