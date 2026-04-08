@@ -282,10 +282,10 @@ def normalize_config(cfg):
                     "in distributed training. Setting use_reentrant=False."
                 )
                 cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
-        if cfg.ddp and cfg.ddp_find_unused_parameters is None:
+        if cfg.ddp and cfg.ddp_find_unused_parameters is not True:
             LOG.warning(
                 "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
-                "Auto-enabling."
+                "Overriding to True."
             )
             cfg.ddp_find_unused_parameters = True
 

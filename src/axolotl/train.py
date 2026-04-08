@@ -105,10 +105,6 @@ def setup_model_and_tokenizer(
             event_type="peft-config-load", properties=peft_config.to_dict()
         )
 
-    # Freeze multimodal modules for text-only training of multimodal models
-    if cfg.freeze_mm_modules:
-        freeze_mm_modules(model)
-
     # Apply freezing if specified
     if cfg.unfrozen_parameters:
         freeze_layers_except(model, cfg.unfrozen_parameters)
@@ -117,6 +113,10 @@ def setup_model_and_tokenizer(
             for param in cfg.unfrozen_parameters
         ):
             model.enable_input_require_grads()
+
+    # Freeze multimodal modules for text-only training of multimodal models
+    if cfg.freeze_mm_modules:
+        freeze_mm_modules(model)
 
     return model, tokenizer, peft_config, processor
 
