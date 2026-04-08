@@ -99,6 +99,7 @@ def mamba2_cp_correction(
     h_prev: torch.Tensor,
     num_heads: int,
     head_dim: int,
+    seq_idx: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply CP correction to SSM output using the received state from rank-1.
 
@@ -112,6 +113,16 @@ def mamba2_cp_correction(
     The corrected final state for this rank is:
         h_final_corrected = h_final + cumA_T * h_prev
 
+    Sample packing correctness (seq_idx):
+        When sample packing is active, a CP rank may hold multiple packed
+        sequences. Only the first sequence (seq_idx == 0) is a continuation
+        of the previous rank's chunk — subsequent sequences are brand-new and
+        should receive zero correction from h_prev.
+
+        Passing seq_idx masks delta_y to zero for all tokens where
+        seq_idx > 0, preventing h_prev state from leaking into unrelated
+        packed sequences.
+
     Args:
         out:       SSM scan output from this rank, shape [B, T, D] where D = H*d.
         h_final:   Final SSM state from this rank, shape [B, H, d, n].
@@ -123,6 +134,9 @@ def mamba2_cp_correction(
                    Shape [B, H, d, n].
         num_heads: Number of SSM heads (H).
         head_dim:  Dimension per head (d).
+        seq_idx:   Optional sequence index tensor, shape [B, T] int32.
+                   When provided, correction is zeroed for tokens where
+                   seq_idx > 0 (i.e. sequences that start fresh on this rank).
 
     Returns:
         corrected_out:     out + Δy, shape [B, T, D].
@@ -139,27 +153,36 @@ def mamba2_cp_correction(
     decay = torch.exp(cum_A).float()  # [B, T, H]
 
     # Propagate h_prev through cumulative transitions: [B, T, H, d, n]
-    # decay[:, :, :, None, None] * h_prev[:, None, :, :, :]
     prop_state = decay[:, :, :, None, None] * h_prev[:, None, :, :, :].float()
 
     # C: [B, T, n_groups, n] → expand to heads: [B, T, H, n]
     C_expanded = C.float().repeat_interleave(heads_per_group, dim=2)  # [B, T, H, n]
 
-    # Δy_t = sum_n(C_t_h_n * prop_state_t_h_d_n) for each d
-    # C_expanded: [B, T, H, n] → [B, T, H, 1, n]
-    # prop_state: [B, T, H, d, n]
-    # contract over n → [B, T, H, d]
+    # Δy_t = sum_n(C_t * prop_state_t) → [B, T, H, d]
     delta_y = torch.einsum("bthn,bthdn->bthd", C_expanded, prop_state)
+
+    # Mask out correction for tokens belonging to new sequences on this rank.
+    # seq_idx == 0 → continuation of the sequence that crossed the CP boundary
+    # seq_idx  > 0 → brand-new packed sequence, h_prev is irrelevant to it
+    if seq_idx is not None:
+        # mask: [B, T, 1, 1] — broadcast over H and d
+        mask = (seq_idx == 0).to(delta_y.dtype).unsqueeze(-1).unsqueeze(-1)
+        delta_y = delta_y * mask
 
     # Reshape to [B, T, D] where D = H * d
     delta_y = delta_y.reshape(B, T, num_heads * head_dim).to(out.dtype)
 
     corrected_out = out + delta_y
 
-    # Correct final state: h_final + cumA_T * h_prev
-    # Use the last timestep's cumulative decay
-    decay_final = decay[:, -1, :, None, None]  # [B, H, 1, 1]
-    corrected_h_final = h_final + (decay_final * h_prev.float()).to(h_final.dtype)
+    # Correct final state using last-timestep decay.
+    # If the last token is in a new sequence (seq_idx > 0 at T-1), h_prev
+    # should not propagate into h_final either.
+    if seq_idx is not None and seq_idx[:, -1].any():
+        # last token belongs to a new sequence — don't corrupt h_final
+        corrected_h_final = h_final
+    else:
+        decay_final = decay[:, -1, :, None, None]  # [B, H, 1, 1]
+        corrected_h_final = h_final + (decay_final * h_prev.float()).to(h_final.dtype)
 
     return corrected_out, corrected_h_final
 
@@ -272,6 +295,7 @@ def wrap_mamba_scan_for_cp(target_module):
             )
         dt_bias = kwargs.get("dt_bias")
         dt_softplus = kwargs.get("dt_softplus", False)
+        seq_idx = kwargs.get("seq_idx")
 
         if dt_softplus:
             dt_eff = torch.nn.functional.softplus(
@@ -297,6 +321,7 @@ def wrap_mamba_scan_for_cp(target_module):
             h_prev,
             num_heads=num_heads,
             head_dim=head_dim,
+            seq_idx=seq_idx,
         )
         scan_output = scan_flat.view(scan_output.shape)
 
