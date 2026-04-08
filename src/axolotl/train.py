@@ -294,11 +294,17 @@ def save_trained_model(
                 )
                 trainer.accelerator.wait_for_everyone()
                 if trainer.accelerator.is_main_process:
-                    # move all files in merged_path to cfg.output_dir
+                    is_peft = cfg.adapter and not cfg.relora
                     for merged_file in Path(merged_path).iterdir():
-                        if (Path(cfg.output_dir) / merged_file.name).exists():
-                            (Path(cfg.output_dir) / merged_file.name).unlink()
-                        shutil.move(str(merged_file), cfg.output_dir)
+                        dest_name = merged_file.name
+                        if is_peft:
+                            # Rename merged adapter
+                            dest_name = dest_name.replace(
+                                "model.safetensors", "adapter_model.safetensors"
+                            )
+                        if (Path(cfg.output_dir) / dest_name).exists():
+                            (Path(cfg.output_dir) / dest_name).unlink()
+                        shutil.move(str(merged_file), Path(cfg.output_dir) / dest_name)
                     shutil.rmtree(merged_path)  # remove what should be an empty dir
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
