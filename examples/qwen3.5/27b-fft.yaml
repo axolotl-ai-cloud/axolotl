@@ -26,8 +26,8 @@ sample_packing: true
 
 # Freeze vision encoder
 unfrozen_parameters:
-  - model\.language_model\..*
-  - lm_head\..*
+  - model.language_model.*
+  - lm_head.*
 
 wandb_project:
 wandb_entity:

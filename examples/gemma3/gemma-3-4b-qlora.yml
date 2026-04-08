@@ -22,8 +22,8 @@ output_dir: ./outputs/out
 
 # Freeze vision tower
 unfrozen_parameters:
-  - ^model\.language_model\..*
-  - ^lm_head\..*
+  - ^model.language_model.*
+  - ^lm_head.*
 
 adapter: qlora
 lora_model_dir:
