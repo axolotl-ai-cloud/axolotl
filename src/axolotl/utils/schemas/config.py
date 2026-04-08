@@ -578,6 +578,17 @@ class AxolotlInputConfig(
         },
     )
 
+    freeze_mm_modules: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Freeze multimodal encoder parameters (vision, audio, etc.) for "
+            "text-only training of multimodal models. When True, parameters belonging to "
+            "vision towers, audio towers, multimodal projectors, and similar non-language "
+            "modules are frozen (requires_grad=False). This allows DDP training without "
+            "ddp_find_unused_parameters=True."
+        },
+    )
+
     unfrozen_parameters: list[str] | None = Field(
         default=None,
         json_schema_extra={

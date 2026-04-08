@@ -268,6 +268,27 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
+    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms cause
+    # "marked ready twice" errors with reentrant checkpointing) and
+    # ddp_find_unused_parameters=True (per_layer_projection LoRA params may not
+    # receive gradients on every step).
+    if cfg.model_config_type == "gemma4":
+        if cfg.gradient_checkpointing:
+            if cfg.gradient_checkpointing_kwargs is None:
+                cfg.gradient_checkpointing_kwargs = {}
+            if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+                LOG.warning(
+                    "Gemma4 requires use_reentrant=False for gradient checkpointing "
+                    "in distributed training. Setting use_reentrant=False."
+                )
+                cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+        if cfg.ddp and cfg.ddp_find_unused_parameters is None:
+            LOG.warning(
+                "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
+                "Auto-enabling."
+            )
+            cfg.ddp_find_unused_parameters = True
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
