@@ -71,10 +71,10 @@ jobs:
       - name: Install PyTorch
         run: |
           uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
       - name: Install dependencies
         run: |
-          echo "torch==${{ matrix.pytorch_version }}" > /tmp/torch-pin.txt
           uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
           python scripts/cutcrossentropy_install.py --uv | sh
           uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
