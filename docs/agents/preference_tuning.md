@@ -38,7 +38,7 @@ No vLLM server needed (unlike GRPO). Offline RL with pre-collected preference da
 
 1. Paired preference data (chosen + rejected)?
    - Default → `rl: dpo`
-   - Overfitting → `rl: ipo`
+   - Overfitting → `rl: dpo, dpo_loss_type: ["ipo"]`
    - VRAM-limited → `rl: orpo` (no ref model)
    - Length-sensitive → `rl: simpo` (no ref model)
 2. Only binary labels (good/bad)? → `rl: kto`

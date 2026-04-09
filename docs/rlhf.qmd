@@ -320,8 +320,10 @@ The input format is a simple JSON input with customizable fields based on the ab
 As IPO is just DPO with a different loss function, all supported dataset formats for [DPO](#dpo) are also supported for IPO.
 
 ```yaml
-rl: ipo
+rl: dpo
+dpo_loss_type: ["ipo"]
 ```
+*Note:* Passing `rl: ipo` directly is still supported, but will soon be deprecated.
 
 ### ORPO
 
