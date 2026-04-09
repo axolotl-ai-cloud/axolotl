@@ -166,7 +166,8 @@ def fixture_ipo_cfg(base_cfg):
     cfg = base_cfg.copy()
     cfg.update(
         {
-            "rl": RLType.IPO,
+            "rl": RLType.DPO,
+            "dpo_loss_type": ["ipo"],
             "dpo_label_smoothing": 0,
             "beta": 0.1,
         }

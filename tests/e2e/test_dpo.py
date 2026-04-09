@@ -233,7 +233,8 @@ class TestDPOLlamaLora(unittest.TestCase):
                 "special_tokens": {
                     "pad_token": "<|endoftext|>",
                 },
-                "rl": "ipo",
+                "rl": "dpo",
+                "dpo_loss_type": ["ipo"],
                 "datasets": [
                     {
                         "path": "arcee-ai/distilabel-intel-orca-dpo-pairs-binarized",

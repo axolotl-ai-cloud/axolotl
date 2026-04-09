@@ -3,6 +3,7 @@
 import json
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 from pydantic import (
@@ -766,6 +767,13 @@ class RLValidationMixin:
         dpo_loss_type = data.get("dpo_loss_type")
         dpo_loss_weights = data.get("dpo_loss_weights")
         rl = data.get("rl")
+
+        if rl == "ipo":
+            warnings.warn(
+                "rl: ipo will soon be deprecated. Use `rl: dpo` with `dpo_loss_type: ['ipo']` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if rl == "dpo":
             if (
