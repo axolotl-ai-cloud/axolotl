@@ -17,7 +17,7 @@ dependencies = [
     "huggingface_hub>=1.1.7",
     "peft>=0.18.1",
     "tokenizers>=0.22.1",
-    "transformers==5.3.0",
+    "transformers==5.5.0",
     "accelerate==1.13.0",
     "datasets==4.5.0",
     "trl==0.29.0",
@@ -59,7 +59,7 @@ dependencies = [
     "fastcore",
 
     # lm eval harness
-    "lm_eval==0.4.7",
+    "lm_eval==0.4.11",
     "langdetect==1.0.9",
     "immutabledict==4.2.0",
     "antlr4-python3-runtime==4.13.2",
@@ -74,14 +74,14 @@ dependencies = [
     # Telemetry
     "posthog==6.7.11",
 
-    "mistral-common==1.10.0",
+    "mistral-common==1.11.0",
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.49.1 ; sys_platform != 'darwin'",
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.23.post1 ; sys_platform != 'darwin'",
     "liger-kernel==0.7.0 ; sys_platform != 'darwin'",
-    "torchao==0.16.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
+    "torchao==0.17.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
     "fla-core==0.4.1 ; platform_machine != 'aarch64'",
@@ -125,7 +125,7 @@ ray = [
     "ray[train]>=2.52.1",
 ]
 vllm = [
-    "vllm>=0.10.0",
+    "vllm>=0.15.0",
 ]
 llmcompressor = [
     "llmcompressor>=0.10.0",
