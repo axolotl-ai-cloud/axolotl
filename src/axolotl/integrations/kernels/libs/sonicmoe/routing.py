@@ -7,6 +7,7 @@ Different MoE architectures use different routing strategies:
 - glm_moe_dsa / deepseek_v3 / minimax_m2: sigmoid -> topk (with group-based expert selection)
 - ernie4_5_moe: softmax -> bias correction -> topk -> gather (softmax_bias_topk_routing)
 - hunyuan_v1_moe: softmax -> topk via gate.wg (softmax_topk_wg_routing)
+- gemma4_text: RMSNorm -> scale -> proj -> softmax -> topk -> renorm -> per_expert_scale (gemma4_routing)
 - gpt_oss: topk -> softmax (uses fused moe_TC_softmax_topk_layer, routing_fn=None) [NOT YET SUPPORTED]
 
 Each model type maps to a (routing_fn, activation_type, router_attr) triple.
@@ -15,6 +16,8 @@ When routing_fn is None, the fused moe_TC_softmax_topk_layer path is used.
 
 import torch
 import torch.nn.functional as F
+
+from .lora import unwrap_gate_lora
 
 
 def get_model_moe_config(model_type: str):
@@ -40,6 +43,7 @@ def get_model_moe_config(model_type: str):
         "qwen2_moe",
         "qwen3_moe",
         "qwen3_5_moe",
+        "qwen3_5_moe_text",
         "qwen3_next",
         "qwen3_vl_moe",
         "qwen3_omni_moe",
@@ -63,6 +67,8 @@ def get_model_moe_config(model_type: str):
         return softmax_bias_topk_routing, ActivationType.SWIGLU, "gate"
     elif model_type in ("hunyuan_v1_moe",):
         return softmax_topk_wg_routing, ActivationType.SWIGLU, "gate"
+    elif model_type in ("gemma4_text",):
+        return gemma4_routing, ActivationType.GEGLU, "router"
     # Fused topk -> softmax path (routing_fn=None):
     # elif model_type in ("gpt_oss",):
     #     # NOTE: gpt_oss has a router bias which moe_TC_softmax_topk_layer
@@ -88,12 +94,18 @@ def softmax_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
-    T, _ = hidden_states.shape
-    K = gate.top_k
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
+    T, H = hidden_states.shape
+    K = base_gate.top_k
 
-    # Compute router logits and softmax over all experts
-    router_logits = F.linear(hidden_states, gate.weight)  # [T, E]
+    # Compute router logits and softmax over all experts.
+    # Two F.linear calls avoid mixing DTensor (gate_weight) + Tensor (delta) under FSDP.
+    # Cast to float32 to match LoRA delta dtype (PEFT computes in fp32).
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Select top-k experts per token
@@ -101,7 +113,7 @@ def softmax_topk_routing(
 
     # Renormalize if configured (default True for models without the attribute,
     # e.g. Mixtral/MiniMax which always normalize)
-    if getattr(gate, "norm_topk_prob", True):
+    if getattr(base_gate, "norm_topk_prob", True):
         top_values = top_values / top_values.sum(dim=-1, keepdim=True)
 
     # no-op: matches transformers which casts to softmax output dtype (float32).
@@ -128,13 +140,17 @@ def softmax_group_topk_routing(
     hidden_states: torch.Tensor, moe_block
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Mistral4-style routing: softmax -> group selection -> topk -> renorm -> scale."""
-    gate = moe_block.gate
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
     T, _ = hidden_states.shape
     K = moe_block.top_k
-    E = getattr(moe_block, "n_routed_experts", gate.weight.shape[0])
+    E = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
 
-    router_logits = F.linear(hidden_states, gate.weight)  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     scores_for_choice = router_probs
@@ -206,25 +222,29 @@ def sigmoid_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
     T, _ = hidden_states.shape
     K = moe_block.top_k
-    E = getattr(moe_block, "n_routed_experts", gate.weight.shape[0])
+    E = getattr(moe_block, "n_routed_experts", gate_weight.shape[0])
     n_group = getattr(moe_block, "n_group", 1)
 
     # Compute router logits and sigmoid probabilities
-    router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = router_logits.sigmoid()  # [T, E]
 
     # Bias-corrected scores for expert selection (not used for final weights).
     # glm_moe_dsa/deepseek_v3 store the bias on gate; minimax_m2 stores it on the block.
-    e_score_correction_bias = getattr(gate, "e_score_correction_bias", None)
+    e_score_correction_bias = getattr(base_gate, "e_score_correction_bias", None)
     if e_score_correction_bias is None:
         e_score_correction_bias = getattr(moe_block, "e_score_correction_bias", None)
     if e_score_correction_bias is None:
         raise AttributeError(
             f"sigmoid_topk_routing requires e_score_correction_bias on "
-            f"gate ({type(gate)}) or moe_block ({type(moe_block)}), but neither has it"
+            f"gate ({type(base_gate)}) or moe_block ({type(moe_block)}), but neither has it"
         )
     scores_for_choice = router_probs + e_score_correction_bias
 
@@ -296,16 +316,20 @@ def softmax_bias_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
-    T, _ = hidden_states.shape
-    K = gate.top_k
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
+    T, H = hidden_states.shape
+    K = base_gate.top_k
 
     # Compute router logits and softmax (force float32 for numerical stability)
-    router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Bias-corrected scores for expert selection (via moe_statics module)
-    scores_for_choice = gate.moe_statics(router_probs)  # [T, E]
+    scores_for_choice = base_gate.moe_statics(router_probs)  # [T, E]
 
     # Select top-k experts using biased scores
     _, selected_experts = torch.topk(scores_for_choice, K, dim=-1)  # [T, K]
@@ -314,7 +338,7 @@ def softmax_bias_topk_routing(
     top_values = torch.gather(router_probs, dim=-1, index=selected_experts)  # [T, K]
 
     # Renormalize with clamp(min=norm_min) instead of sum+epsilon
-    norm_min = getattr(gate, "norm_min", 1e-20)
+    norm_min = getattr(base_gate, "norm_min", 1e-20)
     top_values = top_values / torch.clamp(
         top_values.sum(dim=-1, keepdim=True), min=norm_min
     )
@@ -358,15 +382,19 @@ def softmax_group_limited_topk_routing(
         expert_indices: [T*K] which expert (int32)
         router_logits: [T, E] original logits for aux loss
     """
-    gate = moe_block.gate
-    T, _ = hidden_states.shape
+    base_gate, gate_weight, gate_lora_delta = unwrap_gate_lora(moe_block.gate)
+    T, H = hidden_states.shape
     K = moe_block.top_k
     num_group = getattr(moe_block, "num_group", 1)
-    num_experts = gate.weight.shape[0]
+    num_experts = gate_weight.shape[0]
     topk_method = getattr(moe_block, "topk_method", "greedy")
 
     # Compute logits in float32 and softmax
-    router_logits = F.linear(hidden_states.float(), gate.weight.float())  # [T, E]
+    router_logits = F.linear(hidden_states.float(), gate_weight.float())  # [T, E]
+    if gate_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), gate_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     if topk_method == "greedy" or num_group == 1:
@@ -445,12 +473,17 @@ def softmax_topk_wg_routing(
         router_logits: [T, E] original logits for aux loss
     """
     gate = moe_block.gate
-    T, _ = hidden_states.shape
+    T, H = hidden_states.shape
     K = moe_block.top_k
 
     # Gate computes logits via gate.wg (nn.Linear, float32)
-    wg = gate.wg
-    router_logits = F.linear(hidden_states.float(), wg.weight.float())  # [T, E]
+    # Unwrap at gate.wg level since PEFT targets the wg Linear, not the gate container
+    base_wg, wg_weight, wg_lora_delta = unwrap_gate_lora(gate.wg)
+    router_logits = F.linear(hidden_states.float(), wg_weight.float())  # [T, E]
+    if wg_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            hidden_states.float(), wg_lora_delta.float()
+        )
     router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
 
     # Select top-k experts
@@ -458,6 +491,76 @@ def softmax_topk_wg_routing(
 
     # Always renormalize (HunYuan V1 has no norm_topk_prob flag)
     top_values = top_values / (top_values.sum(dim=-1, keepdim=True) + 1e-20)
+
+    # Flatten for moe_general_routing_inputs
+    token_indices = (
+        torch.arange(T, device=hidden_states.device, dtype=torch.int32)
+        .unsqueeze(1)
+        .expand(T, K)
+    )
+
+    flat_scores = top_values.to(torch.float32).reshape(-1)  # [T*K]
+    flat_token_idx = token_indices.reshape(-1)  # [T*K]
+    flat_expert_idx = top_indices.to(torch.int32).reshape(-1)  # [T*K]
+
+    return flat_scores, flat_token_idx, flat_expert_idx, router_logits
+
+
+def gemma4_routing(
+    hidden_states: torch.Tensor, moe_block
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Gemma4-style routing: RMSNorm → scale → proj → softmax → topk → renorm → per_expert_scale.
+
+    Gemma4's router (``Gemma4TextRouter``) has a unique structure:
+    1. RMSNorm (without learnable scale) on hidden states
+    2. Multiply by ``scale * hidden_size**-0.5``
+    3. Linear projection to expert scores
+    4. Softmax → topk
+    5. Normalize top-k weights to sum to 1
+    6. Multiply by per-expert learned scales
+
+    The router lives at ``moe_block.router`` (not ``moe_block.gate``).
+    LoRA on the router targets ``router.proj`` (nn.Linear).
+
+    Args:
+        hidden_states: [T, H] flattened token representations
+        moe_block: MoE block module (accesses moe_block.router)
+
+    Returns:
+        router_scores: [T*K] flattened scores (float32)
+        token_indices: [T*K] which token each entry belongs to (int32), sorted ascending
+        expert_indices: [T*K] which expert (int32)
+        router_logits: [T, E] original logits for aux loss
+    """
+    router = moe_block.router
+
+    # Unwrap PEFT LoRA on router.proj (the nn.Linear)
+    _, proj_weight, proj_lora_delta = unwrap_gate_lora(router.proj)
+
+    T, _ = hidden_states.shape
+    K = router.top_k if hasattr(router, "top_k") else router.config.top_k_experts
+
+    # Reproduce Gemma4TextRouter.forward:
+    # 1. RMSNorm (no scale) + scale param * hidden_size**-0.5
+    normed = router.norm(hidden_states)
+    scaled = normed * router.scale * router.scalar_root_size
+
+    # 2. Project to expert scores
+    router_logits = F.linear(scaled.float(), proj_weight.float())  # [T, E]
+    if proj_lora_delta is not None:
+        router_logits = router_logits + F.linear(
+            scaled.float(), proj_lora_delta.float()
+        )
+
+    # 3. Softmax → topk
+    router_probs = F.softmax(router_logits, dim=-1, dtype=torch.float32)  # [T, E]
+    top_values, top_indices = torch.topk(router_probs, K, dim=-1)  # [T, K]
+
+    # 4. Normalize top-k weights
+    top_values = top_values / top_values.sum(dim=-1, keepdim=True)
+
+    # 5. Per-expert scale
+    top_values = top_values * router.per_expert_scale[top_indices]
 
     # Flatten for moe_general_routing_inputs
     token_indices = (

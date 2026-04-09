@@ -61,20 +61,31 @@ class KernelsPlugin(BasePlugin):
         return "axolotl.integrations.kernels.KernelsArgs"
 
     def pre_model_load(self, cfg):
-        from axolotl.integrations.kernels.constants import SPARSE_MOE_BLOCK
+        from axolotl.integrations.kernels.constants import (
+            SPARSE_MOE_BLOCK,
+            is_experts_only_model,
+        )
 
         # Prefer text backbone type for VLMs, but fall back to base type
         # when the text type isn't in the supported mapping (e.g. qwen3_5_moe_text)
         moe_model_type = cfg.model_config_type_text or cfg.model_config_type
         if (
             moe_model_type not in SPARSE_MOE_BLOCK
+            and not is_experts_only_model(moe_model_type)
             and cfg.model_config_type in SPARSE_MOE_BLOCK
         ):
             moe_model_type = cfg.model_config_type
 
         if cfg.use_scattermoe:
             self._register_kernels()
-            self._kernelize_model(moe_model_type)
+            if is_experts_only_model(moe_model_type):
+                # Models like Gemma4 where MoE is embedded in the decoder layer
+                # — register ScatterMoE in the ExpertsInterface so that
+                # @use_experts_implementation dispatches to it.
+                self._register_experts_interface()
+                cfg.experts_implementation = "scattermoe"
+            else:
+                self._kernelize_model(moe_model_type)
         elif cfg.use_sonicmoe:
             if not importlib.util.find_spec("sonicmoe"):
                 raise RuntimeError(
@@ -84,13 +95,24 @@ class KernelsPlugin(BasePlugin):
 
             _check_sonicmoe_gpu_compat()
 
-            from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
+            if is_experts_only_model(moe_model_type):
+                from axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts import (
+                    patch_gemma4_sonicmoe,
+                )
 
-            LOG.info(f"Applying SonicMoE patches for model type: {moe_model_type}")
-            patch_sonicmoe(
-                moe_model_type,
-                torch_compile=bool(getattr(cfg, "torch_compile", False)),
-            )
+                LOG.info(
+                    f"Applying SonicMoE experts-level patch for model type: {moe_model_type}"
+                )
+                patch_gemma4_sonicmoe()
+            else:
+                from axolotl.integrations.kernels.libs.sonicmoe import patch_sonicmoe
+
+                LOG.info(f"Applying SonicMoE patches for model type: {moe_model_type}")
+                patch_sonicmoe(
+                    moe_model_type,
+                    torch_compile=bool(getattr(cfg, "torch_compile", False)),
+                    base_model_type=cfg.model_config_type,
+                )
 
     def _register_kernels(self):
         from kernels import (
@@ -138,3 +160,16 @@ class KernelsPlugin(BasePlugin):
             replace_kernel_forward_from_hub(
                 model_moe_cls, "HFScatterMoEParallelExperts"
             )
+
+    def _register_experts_interface(self):
+        """Register ScatterMoE in the transformers ExpertsInterface.
+
+        This allows @use_experts_implementation-decorated Experts classes
+        to dispatch to ScatterMoE when config._experts_implementation == "scattermoe".
+        """
+        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+            register_scattermoe_experts,
+        )
+
+        register_scattermoe_experts()
+        LOG.info("Registered 'scattermoe' in transformers ExpertsInterface")

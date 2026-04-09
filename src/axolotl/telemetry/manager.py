@@ -160,29 +160,16 @@ class TelemetryManager:
         if not is_main_process():
             return False
 
-        # Parse relevant env vars
-        axolotl_do_not_track = os.getenv("AXOLOTL_DO_NOT_TRACK")
-        do_not_track = os.getenv("DO_NOT_TRACK")
+        def is_truthy_env(var_name: str) -> bool:
+            value = os.getenv(var_name)
+            if value is None:
+                return False
+            return value.strip().lower() in ("1", "true")
 
-        # Default to enabled (opt-out model)
-        if axolotl_do_not_track is None or axolotl_do_not_track.lower() not in (
-            "0",
-            "1",
-            "false",
-            "true",
-        ):
-            return True
-
-        if do_not_track is None:
-            do_not_track = "0"
-
-        # Respect AXOLOTL_DO_NOT_TRACK, DO_NOT_TRACK if enabled
-        enabled = axolotl_do_not_track.lower() not in (
-            "1",
-            "true",
-        ) and do_not_track.lower() not in ("1", "true")
-
-        return enabled
+        # Telemetry is enabled by default unless either opt-out var is set
+        return not (
+            is_truthy_env("AXOLOTL_DO_NOT_TRACK") or is_truthy_env("DO_NOT_TRACK")
+        )
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""

@@ -65,6 +65,11 @@ class ScatterMoELoRA(torch.autograd.Function):
         use_fused_dX: bool = False,
         use_fused_gather: bool = False,
     ):
+        # Cast weights to match input dtype (e.g. 8-bit LoRA)
+        if expert_weights.dtype != x.dtype:
+            expert_weights = expert_weights.to(x.dtype)
+        if expert_biases is not None and expert_biases.dtype != x.dtype:
+            expert_biases = expert_biases.to(x.dtype)
         with torch.device(x.device):
             # Fused forward: Y = X @ W + scaling * (X @ A^T) @ B^T
             output = scatter2scatter_lora(

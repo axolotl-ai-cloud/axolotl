@@ -22,89 +22,46 @@ For `pretraining_dataset:` specifically, please refer to the [Pre-training secti
 
 ## Pre-training
 
-When aiming to train on large corpora of text datasets, pre-training is your go-to choice. Due to the size of these datasets, downloading the entire-datasets before beginning training would be prohibitively time-consuming. Axolotl supports [streaming](https://huggingface.co/docs/datasets/en/stream) to only load batches into memory at a time.
-
-A sample format for a pre-training dataset is as follows:
+Pre-training trains on raw text corpora with no input masking. The dataset format is simple:
 
 ```json
 {"text": "first row"}
 {"text": "second row"}
-...
 ```
 
-It is typically recommended to save your dataset as `.jsonl` due to its flexibility and simplicity.
+Axolotl supports two approaches:
 
-Axolotl supports loading from a Hugging Face hub repo or from local files.
+### Streaming (large datasets)
 
-### Pre-training from Hugging Face hub datasets
-
-As an example, to train using a Hugging Face dataset `hf_org/name`, you can pass the following config:
-
-```yaml
-pretraining_dataset: hf_org/name
-```
-
-### Pre-training from local dataset files
-
-Given a few corpus files: `A.jsonl`, `B.jsonl`, and `C.jsonl`, your config will look like the below:
+For large corpora that don't fit in memory, use `pretraining_dataset` with [streaming](../streaming.qmd). Data is tokenized on-demand during training.
 
 ```yaml
 pretraining_dataset:
-  - path: json
-    data_files:
-      - A.jsonl
-      - B.jsonl
-      - C.jsonl
-```
-
-While we recommend `.jsonl`, you can also use the other formats (`csv`, `parquet`, `arrow`, `SQL`, `Webdataset`) that are supported by [`Dataset.load_dataset`](https://huggingface.co/docs/datasets/loading#local-and-remote-files)
-
-### Pre-training without streaming
-
-In the case that the dataset is small and can be loaded entirely into memory, another approach to running pre-training is to use the `completion` format. This would mean that the entire dataset is pre-tokenized instead of on-demand in streaming.
-
-One benefit of this is that the tokenization can be performed separately on a CPU-only machine, and then transferred to a GPU machine for training to save costs.
-
-From Hugging Face:
-
-```yaml
-datasets:
-  - path: hf_org/name
-    type: completion
-```
-
-From local files:
-
-```yaml
-datasets:
-  - path: A.jsonl
-    type: completion
-
-  - path: B.jsonl
-    type: completion
+  - path: HuggingFaceFW/fineweb-edu
+    type: pretrain
+    text_column: text
+    split: train
 ```
 
 ::: {.callout-important}
-For `completion` only, Axolotl would split texts if it exceeds the context length into multiple smaller prompts. If you are interested in having this for `pretraining_dataset` too, please let us know or help make a PR!
+Streaming requires `max_steps` in your config — Axolotl cannot infer the dataset size. One step = `sequence_len * micro_batch_size * gradient_accumulation_steps * num_gpus` tokens.
 :::
 
-### Pre-training dataset configuration tips
+See [Streaming Datasets](../streaming.qmd) for full configuration details.
 
-#### Setting max_steps
+### Non-streaming (smaller datasets)
 
-When using streaming for large datasets, Axolotl does not know in advance how large the dataset is and does not know when to stop.
+For datasets that fit in memory, use `type: completion` under `datasets:`. The entire dataset is pre-tokenized before training, which can be done on a CPU-only machine.
 
-Therefore, it is necessary to set `max_steps: int` in your config for pre-training to run, so that Axolotl knows when to stop training.
+```yaml
+datasets:
+  - path: my_corpus
+    type: completion
+```
 
-One step is equal to `sequence_len * micro_batch_size * gradient_accumulation_steps * total_num_gpus` tokens.
-
-#### Group_by_length
-
-It is recommended to leave this off if downloading from Hugging Face hub as it would download the entire dataset which can be very large.
-
-### Reference
-
-Please see docs [here](pretraining.qmd).
+::: {.callout-note}
+With `completion`, texts exceeding `sequence_len` are split into multiple samples automatically.
+:::
 
 ## Supervised fine-tuning (SFT)
 

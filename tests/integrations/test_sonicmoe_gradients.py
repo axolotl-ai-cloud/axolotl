@@ -7,7 +7,7 @@ code path where routing happens in float32.
 
 import torch
 
-from axolotl.integrations.kernels.sonicmoe.routing import (
+from axolotl.integrations.kernels.libs.sonicmoe.routing import (
     sigmoid_topk_routing,
     softmax_topk_routing,
 )

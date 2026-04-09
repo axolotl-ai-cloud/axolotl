@@ -161,6 +161,29 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 - [API Reference](https://docs.axolotl.ai/docs/api/) - Auto-generated code documentation
 - [FAQ](https://docs.axolotl.ai/docs/faq.html) - Frequently asked questions
 
+## AI Agent Support
+
+Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package — no repo clone needed.
+
+```bash
+# Show overview and available training methods
+axolotl agent-docs
+
+# Topic-specific references
+axolotl agent-docs sft                 # supervised fine-tuning
+axolotl agent-docs grpo                # GRPO online RL
+axolotl agent-docs preference_tuning   # DPO, KTO, ORPO, SimPO
+axolotl agent-docs reward_modelling    # outcome and process reward models
+axolotl agent-docs pretraining         # continual pretraining
+axolotl agent-docs --list              # list all topics
+
+# Dump config schema for programmatic use
+axolotl config-schema
+axolotl config-schema --field adapter
+```
+
+If you're working with the source repo, agent docs are also available at `docs/agents/` and the project overview is in `AGENTS.md`.
+
 ## 🤝 Getting Help
 
 - Join our [Discord community](https://discord.gg/HhrNrHJPRb) for support

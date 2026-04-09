@@ -71,3 +71,10 @@ class VllmConfig(BaseModel):
             "for native LoRA support, or leave None for default TRL serve."
         },
     )
+    worker_extension_cls: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "vLLM worker extension class for weight synchronization. "
+            "Defaults to 'trl.scripts.vllm_serve.WeightSyncWorkerExtension'."
+        },
+    )

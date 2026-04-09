@@ -58,6 +58,14 @@ datasets:
 - **LoRA kernels**: Incompatible with this model. Must be explicitly disabled (`lora_*_kernel: false`).
 - Read more on how to load your own dataset at [docs](https://docs.axolotl.ai/docs/dataset_loading.html).
 
+### GGUF / llama.cpp loading error (missing tensors)
+
+If you see `missing tensor 'blk.X.attn_norm.weight'` when loading a GLM-4 / GLM4-MoE model in llama.cpp, this is likely
+caused by `num_nextn_predict_layers` being set to `1` in `config.json` while the MTP weights were not exported (possible
+after PEFT/QLoRA training).
+
+**Fix:** Set `"num_nextn_predict_layers": 0` in your `config.json` before converting to GGUF.
+
 ## Optimization Guides
 
 Please check the [Optimizations doc](https://docs.axolotl.ai/docs/optimizations.html).

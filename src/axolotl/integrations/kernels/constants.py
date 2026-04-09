@@ -11,6 +11,7 @@ Models with custom routing (see sonicmoe/routing.py for implementations):
 - ernie4_5_moe: softmax→bias correction→topk (softmax_bias_topk_routing)
 - deepseek_v2: softmax→group_limited_greedy (softmax_group_limited_topk_routing)
 - hunyuan_v1_moe: softmax→topk via gate.wg (softmax_topk_wg_routing)
+- gemma4_text: RMSNorm→scale→proj→softmax→topk→renorm→per_expert_scale (experts-level patch)
 """
 
 import importlib
@@ -51,6 +52,49 @@ SPARSE_MOE_BLOCK = {
     # and custom GLU activation require a dedicated forward path in patch.py.
     # "gpt_oss": "GptOssMLP",
 }
+
+
+# Models where MoE is NOT in a separate SparseMoeBlock but embedded in the
+# decoder layer.  For these, we patch the Experts class forward directly
+# (same signature: hidden_states, top_k_index, top_k_weights -> Tensor).
+# Routing stays untouched — the original model router runs as-is.
+EXPERTS_ONLY_BLOCK = {
+    # gemma4: hybrid MLP+MoE in decoder layer, custom Gemma4TextRouter,
+    # no SparseMoeBlock.  Experts use @use_experts_implementation with
+    # standard 3D param layout (gate_up_proj [E, 2*I, H], down_proj [E, H, I]).
+    "gemma4_text": "Gemma4TextExperts",
+}
+
+
+def resolve_experts_class(model_type: str):
+    """Resolve the Experts class for models that need experts-level patching.
+
+    Returns the class, or None if the model uses SparseMoeBlock-level patching.
+    """
+    entry = EXPERTS_ONLY_BLOCK.get(model_type)
+    if entry is None:
+        return None
+
+    module_path = f"transformers.models.{model_type}.modeling_{model_type}"
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError:
+        if model_type.endswith("_text"):
+            parent_type = model_type.removesuffix("_text")
+            module_path = f"transformers.models.{parent_type}.modeling_{parent_type}"
+            module = importlib.import_module(module_path)
+        else:
+            raise
+
+    cls = getattr(module, entry, None)
+    if cls is None:
+        raise ValueError(f"Could not find class '{entry}' in '{module_path}'")
+    return cls
+
+
+def is_experts_only_model(model_type: str) -> bool:
+    """Check if a model type requires experts-level (not block-level) patching."""
+    return model_type in EXPERTS_ONLY_BLOCK
 
 
 def resolve_moe_block_classes(model_type: str):

@@ -16,10 +16,12 @@ feedback. Various methods include, but not limited to:
 - [Identity Preference Optimization (IPO)](#ipo)
 - [Kahneman-Tversky Optimization (KTO)](#kto)
 - [Odds Ratio Preference Optimization (ORPO)](#orpo)
-- [Group Relative Policy Optimization (GRPO)](#grpo)
+- [Group Relative Policy Optimization (GRPO)](#grpo) — see also the [GRPO deep dive](grpo.qmd) for async features, custom rewards, and scaling
 - [Group Reward-Decoupled Policy Optimization (GDPO)](#gdpo)
-- [Energy-Based Fine-Tuning (EBFT)](#ebft)
+- [Energy-Based Fine-Tuning (EBFT)](#ebft) — see also the [EBFT guide](ebft.qmd) for detailed mode comparisons and configuration
 - [NeMo Gym Integration](#nemo-gym-integration)
+
+For help choosing between these methods, see [Choosing a Fine-Tuning Method](choosing_method.qmd).
 
 
 ## RLHF using Axolotl
@@ -515,7 +517,7 @@ The input format is a simple JSON input with customizable fields based on the ab
 ### GRPO
 
 ::: {.callout-tip}
-Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/grpo_code).
+Check out our [GRPO cookbook](https://github.com/axolotl-ai-cloud/grpo_code). For a comprehensive guide covering async training, custom rewards, importance sampling, and scaling, see the [GRPO deep dive](grpo.qmd).
 :::
 
 In the latest GRPO implementation, `vLLM` is used to significantly speedup trajectory generation during training. In this example, we're using 4 GPUs - 2 for training, and 2 for vLLM:
@@ -923,7 +925,7 @@ gradient_checkpointing_kwargs:
 CUDA_VISIBLE_DEVICES=0 axolotl vllm-serve config.yaml
 
 # Terminal 2: Train on GPUs 0,1
-CUDA_VISIBLE_DEVICES=0,1 accelerate launch --num_processes 2 -m axolotl.cli.train config.yaml
+CUDA_VISIBLE_DEVICES=0,1 axolotl train config.yaml
 ```
 
 ::: {.callout-important}
@@ -1039,7 +1041,11 @@ simpo_gamma: 0.5  # default in CPOTrainer
 
 This method uses the same dataset format as [DPO](#dpo).
 
-### EBFT
+### EBFT {#ebft}
+
+::: {.callout-tip}
+For a detailed guide on EBFT modes, feature extraction, and configuration, see the [EBFT guide](ebft.qmd).
+:::
 
 EBFT (Energy-Based Fine-Tuning) fine-tunes language models by optimizing a **feature-matching loss** rather than relying on external reward functions. A frozen copy of the model extracts embeddings from both generated and ground-truth completions, and the generator is updated via REINFORCE to match the ground-truth feature moments.
 
