@@ -38,6 +38,7 @@ from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
 from axolotl.utils.freeze import freeze_layers_except
 from axolotl.utils.logging import get_logger
+from axolotl.utils.normalize_weights import normalize_weight_scales
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
 from axolotl.utils.trainer import setup_trainer
@@ -104,6 +105,10 @@ def setup_model_and_tokenizer(
         TELEMETRY_MANAGER.send_event(
             event_type="peft-config-load", properties=peft_config.to_dict()
         )
+
+    # Normalize weight scales for MoE/hybrid models with drifted expert weights
+    if cfg.normalize_weight_scales:
+        normalize_weight_scales(model, cfg.normalize_weight_scales)
 
     # Apply freezing if specified
     if cfg.unfrozen_parameters:

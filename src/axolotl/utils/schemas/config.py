@@ -578,6 +578,19 @@ class AxolotlInputConfig(
         },
     )
 
+    normalize_weight_scales: list[dict] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Detect and rescale outlier weight tensors caused by AdamW + rare "
+            "MoE expert drift. Each entry is a rule with: "
+            "'name_pattern' (regex matching parameter names to group), "
+            "'threshold' (float, default 1.5 — flag tensors whose std deviates from the "
+            "group median by more than this factor), "
+            "'dry_run' (bool, default false — log anomalies without modifying weights). "
+            "Example: [{name_pattern: 'linear_attn\\.conv1d\\.weight', threshold: 1.3}]"
+        },
+    )
+
     unfrozen_parameters: list[str] | None = Field(
         default=None,
         json_schema_extra={
