@@ -763,15 +763,26 @@ class RLValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_dpo(cls, data):
-        if data.get("rl") == "dpo":
-            loss_types = data.get("dpo_loss_type")
-            loss_weights = data.get("dpo_loss_weights")
+        dpo_loss_type = data.get("dpo_loss_type")
+        dpo_loss_weights = data.get("dpo_loss_weights")
+        rl = data.get("rl")
 
-            if loss_types and loss_weights and len(loss_types) != len(loss_weights):
+        if rl == "dpo":
+            if (
+                dpo_loss_type
+                and dpo_loss_weights
+                and len(dpo_loss_type) != len(dpo_loss_weights)
+            ):
                 raise ValueError(
-                    f"`dpo_loss_type` and `dpo_loss_weights` must be the same length, "
-                    f"but got {len(loss_types)} losses and {len(loss_weights)} weights"
+                    f"`dpo_loss_type` and `dpo_dpo_loss_weights` must be the same length, "
+                    f"but got {len(dpo_loss_type)} losses and {len(dpo_loss_weights)} weights"
                 )
+        elif dpo_loss_type or dpo_loss_weights:
+            raise ValueError(
+                f"`dpo_loss_type` and `dpo_loss_weights` are for DPO only,"
+                f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"
+            )
+
         return data
 
     @model_validator(mode="before")
