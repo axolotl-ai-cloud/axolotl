@@ -249,7 +249,6 @@ conflicts = [
 ]
 
 [tool.uv.extra-build-dependencies]
-axolotl = ["huggingface_hub"]
 mamba-ssm = [{ requirement = "torch", match-runtime = true }]
 causal-conv1d = [{ requirement = "torch", match-runtime = true }]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
