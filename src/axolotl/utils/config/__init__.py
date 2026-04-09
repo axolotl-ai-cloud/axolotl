@@ -282,12 +282,22 @@ def normalize_config(cfg):
                     "in distributed training. Setting use_reentrant=False."
                 )
                 cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
-        if cfg.ddp and cfg.ddp_find_unused_parameters is not True:
-            LOG.warning(
-                "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
-                "Overriding to True."
-            )
-            cfg.ddp_find_unused_parameters = True
+        if cfg.ddp and cfg.ddp_find_unused_parameters is None:
+            if cfg.activation_offloading is True:
+                # activation_offloading uses checkpoint wrappers that conflict
+                # with find_unused_parameters (causes "marked ready twice").
+                # Use freeze_mm_modules instead to eliminate unused params.
+                LOG.info(
+                    "Gemma4 + DDP + activation_offloading: skipping "
+                    "ddp_find_unused_parameters (use freeze_mm_modules to "
+                    "handle unused vision/audio params)."
+                )
+            else:
+                LOG.warning(
+                    "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
+                    "Auto-enabling."
+                )
+                cfg.ddp_find_unused_parameters = True
 
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
