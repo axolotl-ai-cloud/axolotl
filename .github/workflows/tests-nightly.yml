@@ -103,8 +103,6 @@ jobs:
           pytest -v --durations=10 tests/patched/
           pytest -v --durations=10 tests/cli/
 
-      - name: cleanup uv cache
-        run: uv cache clean
 
   docker-e2e-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
