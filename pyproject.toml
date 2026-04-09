@@ -250,8 +250,8 @@ conflicts = [
 
 [tool.uv.extra-build-dependencies]
 axolotl = ["huggingface_hub"]
-mamba-ssm = ["torch"]
-causal-conv1d = ["torch"]
-flash-attn = ["torch"]
-deepspeed = ["torch"]
-auto-gptq = ["torch"]
+mamba-ssm = [{ requirement = "torch", match-runtime = true }]
+causal-conv1d = [{ requirement = "torch", match-runtime = true }]
+flash-attn = [{ requirement = "torch", match-runtime = true }]
+deepspeed = [{ requirement = "torch", match-runtime = true }]
+auto-gptq = [{ requirement = "torch", match-runtime = true }]
