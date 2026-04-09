@@ -776,16 +776,20 @@ class RLValidationMixin:
             )
 
         if rl == "dpo":
+            if dpo_loss_weights is not None and dpo_loss_type is None:
+                raise ValueError(
+                    "`dpo_loss_weights` requires `dpo_loss_type` to be set"
+                )
             if (
-                dpo_loss_type
-                and dpo_loss_weights
+                dpo_loss_type is not None
+                and dpo_loss_weights is not None
                 and len(dpo_loss_type) != len(dpo_loss_weights)
             ):
                 raise ValueError(
-                    f"`dpo_loss_type` and `dpo_dpo_loss_weights` must be the same length, "
+                    f"`dpo_loss_type` and `dpo_loss_weights` must be the same length, "
                     f"but got {len(dpo_loss_type)} losses and {len(dpo_loss_weights)} weights"
                 )
-        elif dpo_loss_type or dpo_loss_weights:
+        elif dpo_loss_type is not None or dpo_loss_weights is not None:
             raise ValueError(
                 f"`dpo_loss_type` and `dpo_loss_weights` are for DPO only,"
                 f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"

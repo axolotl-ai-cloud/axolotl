@@ -309,12 +309,12 @@ class AxolotlInputConfig(
 
     dpo_padding_free: bool | None = None
 
-    dpo_loss_type: list[str] | None = Field(
+    dpo_loss_type: Annotated[list[str], MinLen(1)] | None = Field(
         default=None,
         json_schema_extra={"description": "List of DPO losses to use."},
     )
 
-    dpo_loss_weights: list[float] | None = Field(
+    dpo_loss_weights: Annotated[list[float], MinLen(1)] | None = Field(
         default=None,
         json_schema_extra={"description": "Weights for each DPO loss."},
     )
