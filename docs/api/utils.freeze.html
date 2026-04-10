@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.36">
+<meta name="generator" content="quarto-1.9.37">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -74,10 +74,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-f418161beb48e0141c760e455f12af2c.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-d0ae9245876894da5ac7e18953ecc5cc.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-880650c6ad5b2af23899fb63005ac339.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-ab6ebd6eb475c4578b58908bc314f719.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -824,6 +824,7 @@ window.Quarto = {
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.utils.freeze.freeze_layers_except" id="toc-axolotl.utils.freeze.freeze_layers_except" class="nav-link" data-scroll-target="#axolotl.utils.freeze.freeze_layers_except">freeze_layers_except</a></li>
+  <li><a href="#axolotl.utils.freeze.freeze_mm_modules" id="toc-axolotl.utils.freeze.freeze_mm_modules" class="nav-link" data-scroll-target="#axolotl.utils.freeze.freeze_mm_modules">freeze_mm_modules</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -901,6 +902,10 @@ window.Quarto = {
 <td><a href="#axolotl.utils.freeze.freeze_layers_except">freeze_layers_except</a></td>
 <td>Freezes all layers of the given model except for the layers that match given regex patterns.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.utils.freeze.freeze_mm_modules">freeze_mm_modules</a></td>
+<td>Freeze all vision/audio/multimodal-projector parameters.</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.freeze.freeze_layers_except" class="level3">
@@ -917,6 +922,15 @@ Also, to match the entire layer name, the pattern should start with “^” and 
 E.g., [“^model.embed_tokens.weight<span class="math inline">\([:32000]", "layers.2[0-9]+.block_sparse_moe.gate.[a-z]+\)</span>”]</p>
 <p>Returns:
 None; the model is modified in place.</p>
+</section>
+<section id="axolotl.utils.freeze.freeze_mm_modules" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.freeze.freeze_mm_modules">freeze_mm_modules</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.freeze.freeze_mm_modules(model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Freeze all vision/audio/multimodal-projector parameters.</p>
+<p>Iterates over <code>model.named_parameters()</code> and sets <code>requires_grad = False</code>
+for any parameter whose name contains a known vision/audio module prefix.
+This is useful when fine-tuning only the language backbone of a multimodal
+model and avoids the need for <code>ddp_find_unused_parameters=True</code>.</p>
 
 
 </section>

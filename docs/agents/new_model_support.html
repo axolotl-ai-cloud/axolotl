@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Construct prompts without a template.">
 
-<title>Template-Free – Axolotl</title>
+<title>new_model_support – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -145,7 +144,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/template_free.html">Template-Free</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -488,7 +487,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
@@ -787,303 +786,382 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#sec-background" id="toc-sec-background" class="nav-link active" data-scroll-target="#sec-background">Background</a>
+  <li><a href="#new-model-support-agent-reference" id="toc-new-model-support-agent-reference" class="nav-link active" data-scroll-target="#new-model-support-agent-reference">New Model Support — Agent Reference</a>
   <ul class="collapse">
-  <li><a href="#masking-inputs" id="toc-masking-inputs" class="nav-link" data-scroll-target="#masking-inputs">Masking Inputs</a></li>
-  <li><a href="#sec-you-may-not-want-prompt-templates" id="toc-sec-you-may-not-want-prompt-templates" class="nav-link" data-scroll-target="#sec-you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-  <li><a href="#sec-the-inputoutput-format" id="toc-sec-the-inputoutput-format" class="nav-link" data-scroll-target="#sec-the-inputoutput-format">The <code>input_output</code> format</a></li>
+  <li><a href="#quick-validation-checklist" id="toc-quick-validation-checklist" class="nav-link" data-scroll-target="#quick-validation-checklist">Quick Validation Checklist</a></li>
+  <li><a href="#loss-debugging" id="toc-loss-debugging" class="nav-link" data-scroll-target="#loss-debugging">Loss Debugging</a>
+  <ul class="collapse">
+  <li><a href="#expected-initial-loss" id="toc-expected-initial-loss" class="nav-link" data-scroll-target="#expected-initial-loss">Expected initial loss</a></li>
+  <li><a href="#direct-comparison-technique" id="toc-direct-comparison-technique" class="nav-link" data-scroll-target="#direct-comparison-technique">Direct comparison technique</a></li>
+  <li><a href="#model_accepts_loss_kwargs-inflation" id="toc-model_accepts_loss_kwargs-inflation" class="nav-link" data-scroll-target="#model_accepts_loss_kwargs-inflation"><code>model_accepts_loss_kwargs</code> inflation</a></li>
   </ul></li>
-  <li><a href="#sec-usage" id="toc-sec-usage" class="nav-link" data-scroll-target="#sec-usage">Usage</a>
+  <li><a href="#multimodal-models-forconditionalgeneration" id="toc-multimodal-models-forconditionalgeneration" class="nav-link" data-scroll-target="#multimodal-models-forconditionalgeneration">Multimodal Models (ForConditionalGeneration)</a>
   <ul class="collapse">
-  <li><a href="#sec-1-prepare-data" id="toc-sec-1-prepare-data" class="nav-link" data-scroll-target="#sec-1-prepare-data">1. Prepare Data</a></li>
-  <li><a href="#sec-2-use-type-inputoutput" id="toc-sec-2-use-type-inputoutput" class="nav-link" data-scroll-target="#sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></a></li>
-  <li><a href="#sec-3-check-the-prompts" id="toc-sec-3-check-the-prompts" class="nav-link" data-scroll-target="#sec-3-check-the-prompts">3. Check the prompts</a></li>
+  <li><a href="#why-this-matters" id="toc-why-this-matters" class="nav-link" data-scroll-target="#why-this-matters">Why this matters</a></li>
+  <li><a href="#required-extra-inputs" id="toc-required-extra-inputs" class="nav-link" data-scroll-target="#required-extra-inputs">Required extra inputs</a></li>
+  <li><a href="#custom-layer-types-and-peft" id="toc-custom-layer-types-and-peft" class="nav-link" data-scroll-target="#custom-layer-types-and-peft">Custom layer types and PEFT</a></li>
+  </ul></li>
+  <li><a href="#sample-packing" id="toc-sample-packing" class="nav-link" data-scroll-target="#sample-packing">Sample Packing</a>
+  <ul class="collapse">
+  <li><a href="#how-packed-sequence-detection-works-transformers-5.x" id="toc-how-packed-sequence-detection-works-transformers-5.x" class="nav-link" data-scroll-target="#how-packed-sequence-detection-works-transformers-5.x">How packed sequence detection works (transformers ≥ 5.x)</a></li>
+  <li><a href="#fix-for-models-using-create_causal_mask_mapping" id="toc-fix-for-models-using-create_causal_mask_mapping" class="nav-link" data-scroll-target="#fix-for-models-using-create_causal_mask_mapping">Fix for models using <code>create_causal_mask_mapping</code></a></li>
+  <li><a href="#models-that-dont-need-this-fix" id="toc-models-that-dont-need-this-fix" class="nav-link" data-scroll-target="#models-that-dont-need-this-fix">Models that DON’T need this fix</a></li>
+  </ul></li>
+  <li><a href="#attention-backend-selection" id="toc-attention-backend-selection" class="nav-link" data-scroll-target="#attention-backend-selection">Attention Backend Selection</a></li>
+  <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a>
+  <ul class="collapse">
+  <li><a href="#how-cce-patches-work" id="toc-how-cce-patches-work" class="nav-link" data-scroll-target="#how-cce-patches-work">How CCE patches work</a></li>
+  <li><a href="#adding-cce-for-a-new-model" id="toc-adding-cce-for-a-new-model" class="nav-link" data-scroll-target="#adding-cce-for-a-new-model">Adding CCE for a new model</a></li>
+  <li><a href="#common-cce-pitfall" id="toc-common-cce-pitfall" class="nav-link" data-scroll-target="#common-cce-pitfall">Common CCE pitfall</a></li>
+  </ul></li>
+  <li><a href="#moe-models" id="toc-moe-models" class="nav-link" data-scroll-target="#moe-models">MoE Models</a>
+  <ul class="collapse">
+  <li><a href="#dense-mlp-vs-moe-experts" id="toc-dense-mlp-vs-moe-experts" class="nav-link" data-scroll-target="#dense-mlp-vs-moe-experts">Dense MLP vs MoE experts</a></li>
+  <li><a href="#scattermoe-kernels" id="toc-scattermoe-kernels" class="nav-link" data-scroll-target="#scattermoe-kernels">ScatterMoE kernels</a></li>
+  </ul></li>
+  <li><a href="#where-to-add-model-specific-fixes" id="toc-where-to-add-model-specific-fixes" class="nav-link" data-scroll-target="#where-to-add-model-specific-fixes">Where to Add Model-Specific Fixes</a></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
-
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/template_free.html">Template-Free</a></li></ol></nav>
-<div class="quarto-title">
-<h1 class="title">Template-Free</h1>
-</div>
-
-<div>
-  <div class="description">
-    Construct prompts without a template.
-  </div>
-</div>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
 
 
-<div class="quarto-title-meta">
-
-    
-  
-    
-  </div>
-  
 
 
-</header>
-
-
-<section id="sec-background" class="level2">
-<h2 class="anchored" data-anchor-id="sec-background">Background</h2>
-<section id="masking-inputs" class="level3">
-<h3 class="anchored" data-anchor-id="masking-inputs">Masking Inputs</h3>
-<p>One of the most popular features of
-<a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is
-setting the following configuration value:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a>
-such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input
-(i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input
-labels so that your model can focus on predicting the outputs only.</p>
+<section id="new-model-support-agent-reference" class="level1">
+<h1>New Model Support — Agent Reference</h1>
+<p>Guide for debugging and adding support for new model architectures in axolotl. Based on lessons learned from Gemma4, Gemma3, Qwen2-VL, and other multimodal/MoE models.</p>
+<section id="quick-validation-checklist" class="level2">
+<h2 class="anchored" data-anchor-id="quick-validation-checklist">Quick Validation Checklist</h2>
+<p>When testing a new model, run through these checks in order:</p>
+<ol type="1">
+<li><strong>Does the model load?</strong> <code>axolotl preprocess config.yaml</code> — catches config schema errors</li>
+<li><strong>Does LoRA apply?</strong> Check for “Unsupported layer type” warnings from PEFT</li>
+<li><strong>Is the initial loss sane?</strong> First-step loss for a pretrained model should be 0.5–2.0 for SFT</li>
+<li><strong>Does sample packing work?</strong> Compare loss with <code>sample_packing: true</code> vs <code>false</code> — should be similar</li>
+<li><strong>Is CCE active?</strong> Check for “Applying Cut Cross Entropy” log and verify peak VRAM is lower</li>
+</ol>
 </section>
-<section id="sec-you-may-not-want-prompt-templates" class="level3">
-<h3 class="anchored" data-anchor-id="sec-you-may-not-want-prompt-templates">You may not want prompt templates</h3>
-<p>However, there are many situations where you don’t want to use one of
-these formats or templates. This is because they can:</p>
-<ul>
-<li>Add unnecessary boilerplate to your prompts.</li>
-<li>Create artifacts like special delimiters <code>&lt;|im_start|&gt;</code> that can
-quickly become footguns if you don’t include them correctly at
-inference time.</li>
-<li>Enforce a <em>chat</em> interface when you do not want one. Sometimes you
-just want to fine-tune a model to a very specific task and do NOT
-want multi-turn conversations, roles, etc.</li>
-<li>Limit you to only certain roles that the template allows.</li>
-</ul>
+<section id="loss-debugging" class="level2">
+<h2 class="anchored" data-anchor-id="loss-debugging">Loss Debugging</h2>
+<section id="expected-initial-loss" class="level3">
+<h3 class="anchored" data-anchor-id="expected-initial-loss">Expected initial loss</h3>
+<p>A pretrained model doing SFT should start with loss roughly in the 0.5–2.0 range. If loss starts above 3.0, something is wrong. If it’s near <code>log(vocab_size)</code> (≈ 12 for 262K vocab), the model is predicting at random — attention masking or model weights are broken.</p>
 </section>
-<section id="sec-the-inputoutput-format" class="level3">
-<h3 class="anchored" data-anchor-id="sec-the-inputoutput-format">The <code>input_output</code> format</h3>
-<p>You can construct your prompts without a template by using the
-<code>input_output</code> format, by setting <code>type: input_output</code> in your
-configuration file like this:</p>
-<p><strong>config.yml</strong></p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Unlike <code>type: completion</code>, which is also template-free,
-<code>type: input_output</code> allows you to mask segments of your text. More
-details on how this works are described below.</p>
+<section id="direct-comparison-technique" class="level3">
+<h3 class="anchored" data-anchor-id="direct-comparison-technique">Direct comparison technique</h3>
+<p>The fastest way to isolate a loss issue — bypass the trainer entirely:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load model via axolotl's pipeline (applies all patches)</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.cli.config <span class="im">import</span> load_cfg</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.utils.config <span class="im">import</span> normalize_config, prepare_plugins</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.loaders.tokenizer <span class="im">import</span> load_tokenizer</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> axolotl.loaders.model <span class="im">import</span> ModelLoader</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>cfg <span class="op">=</span> load_cfg(<span class="st">"your_config.yaml"</span>)</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>normalize_config(cfg)</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>prepare_plugins(cfg)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>tokenizer <span class="op">=</span> load_tokenizer(cfg)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>model, _ <span class="op">=</span> ModelLoader(cfg, tokenizer).load()</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Forward pass on preprocessed data</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>model.train()</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>out <span class="op">=</span> model(input_ids, labels<span class="op">=</span>labels)</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f"Direct loss: </span><span class="sc">{</span>out<span class="sc">.</span>loss<span class="sc">.</span>item()<span class="sc">}</span><span class="ss">"</span>)  <span class="co"># Compare to trainer's reported loss</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>If direct loss is correct (~1.0) but trainer reports 3–4x higher, check <code>model_accepts_loss_kwargs</code> (see below).</p>
+</section>
+<section id="model_accepts_loss_kwargs-inflation" class="level3">
+<h3 class="anchored" data-anchor-id="model_accepts_loss_kwargs-inflation"><code>model_accepts_loss_kwargs</code> inflation</h3>
+<p>HF Trainer checks if the model’s <code>forward()</code> has <code>**kwargs</code> and sets <code>model_accepts_loss_kwargs=True</code>. This changes loss normalization: the trainer does NOT divide loss by <code>gradient_accumulation_steps</code> before logging. The gradient is correct — only the logged loss is inflated.</p>
+<p><strong>Symptom</strong>: Logged loss ≈ actual_loss × gradient_accumulation_steps.</p>
+<p><strong>Which models are affected</strong>: Any model with <code>**kwargs</code> in forward (common in multimodal models for extra inputs like <code>mm_token_type_ids</code>, <code>pixel_values</code>, etc.).</p>
+<p><strong>Fix location</strong>: <code>src/axolotl/core/trainers/base.py</code> <code>__init__()</code> — after <code>super().__init__()</code>, check if the unwrapped model actually has <code>num_items_in_batch</code> in its forward signature. If not, set <code>self.model_accepts_loss_kwargs = False</code>.</p>
 </section>
 </section>
-<section id="sec-usage" class="level2">
-<h2 class="anchored" data-anchor-id="sec-usage">Usage</h2>
-<p>This is how you can use the <code>input_output</code> format:</p>
-<section id="sec-1-prepare-data" class="level3">
-<h3 class="anchored" data-anchor-id="sec-1-prepare-data">1. Prepare Data</h3>
-<p>To use the <code>input_output</code> format, collect your data in the following
-format into a jsonl file (below is the first row from the file
-<code>output</code>.jsonl` pretty printed):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
-<p>Set <code>label:false</code> when you want to mask a segment of text so that the
-model isn’t trained on it. Some things to keep in mind:</p>
-<blockquote class="blockquote">
-<p>[!IMPORTANT]
-1. <strong>EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl
-concatenates all the segments as-is.</strong> The tokenizer doesn’t add
-anything additional. Notice how I added spaces, newlines, <code>&lt;s&gt;</code>
-(BOS), and <code>&lt;/s&gt;</code> (EOS) myself.
-2. Make sure you check the materialized output to validate that the
-prompt is getting assembled how you like.</p>
-</blockquote>
-</section>
-<section id="sec-2-use-type-inputoutput" class="level3">
-<h3 class="anchored" data-anchor-id="sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></h3>
-<p>Let’s materialize data with our <code>output.jsonl</code> file by setting
-<code>type: input_output</code> in our axolotl config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">896</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0002</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>You can use the following command to materialize your data. The
-<code>--debug</code> flag will print the tokens, along with the labels so you can
-verify that the correct items are being ignored:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess training_config.yaml <span class="at">--debug</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example,
-<code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the
-token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for
-training.</p>
-</section>
-<section id="sec-3-check-the-prompts" class="level3">
-<h3 class="anchored" data-anchor-id="sec-3-check-the-prompts">3. Check the prompts</h3>
-<p>Here is another way to check the materialized output:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="op">!</span>ls last_run_prepared<span class="op">/</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(<span class="st">'training_config.yaml'</span>, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>We can check that the right tokens are ignored by comparing the labels
-to each token:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="multimodal-models-forconditionalgeneration" class="level2">
+<h2 class="anchored" data-anchor-id="multimodal-models-forconditionalgeneration">Multimodal Models (ForConditionalGeneration)</h2>
+<p>Many recent models use <code>ForConditionalGeneration</code> as the top-level class, not <code>ForCausalLM</code>:
+- Gemma3 → <code>Gemma3ForConditionalGeneration</code>
+- Gemma4 → <code>Gemma4ForConditionalGeneration</code>
+- Qwen2-VL → <code>Qwen2VLForConditionalGeneration</code>
+- LLaVA → <code>LlavaForConditionalGeneration</code></p>
+<section id="why-this-matters" class="level3">
+<h3 class="anchored" data-anchor-id="why-this-matters">Why this matters</h3>
 <table class="caption-top table">
 <thead>
 <tr class="header">
-<th>token</th>
-<th>label</th>
-<th>id</th>
+<th>Component</th>
+<th>Targets <code>ForCausalLM</code></th>
+<th>Needs <code>ForConditionalGeneration</code></th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>0</td>
-<td>&lt;s&gt;</td>
-<td>1</td>
+<td>CCE patches</td>
+<td>✅ (default)</td>
+<td>❌ silently inactive if not patched</td>
 </tr>
 <tr class="even">
-<td>1</td>
-<td>Hello</td>
-<td>22557</td>
+<td>PEFT LoRA</td>
+<td>✅</td>
+<td>May fail on custom layer types</td>
 </tr>
 <tr class="odd">
-<td>2</td>
-<td>\n</td>
-<td>13</td>
-</tr>
-<tr class="even">
-<td>3</td>
-<td>hi</td>
-<td>12014</td>
-</tr>
-<tr class="odd">
-<td>4</td>
-<td>there</td>
-<td>736</td>
-</tr>
-<tr class="even">
-<td>5</td>
-<td>!</td>
-<td>28808</td>
-</tr>
-<tr class="odd">
-<td>6</td>
-<td>.</td>
-<td>28723</td>
-</tr>
-<tr class="even">
-<td>7</td>
-<td></td>
-<td>28705</td>
-</tr>
-<tr class="odd">
-<td>8</td>
-<td>good</td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>9</td>
-<td>bye</td>
-<td>-100</td>
-</tr>
-<tr class="odd">
-<td>10</td>
-<td></td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>11</td>
-<td>fare</td>
-<td>19111</td>
-</tr>
-<tr class="odd">
-<td>12</td>
-<td>well</td>
-<td>5458</td>
-</tr>
-<tr class="even">
-<td>13</td>
-<td>&lt;/s&gt;</td>
-<td>2</td>
+<td>HF Trainer label handling</td>
+<td>✅</td>
+<td>May need extra inputs</td>
 </tr>
 </tbody>
 </table>
-<p>If we look at the input data, the above table seems correct! (The jsonl
-version is repeated below for reference):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
+</section>
+<section id="required-extra-inputs" class="level3">
+<h3 class="anchored" data-anchor-id="required-extra-inputs">Required extra inputs</h3>
+<p>Multimodal models require special inputs during training even for text-only data:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Required Input</th>
+<th>Value for Text-Only</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gemma4</td>
+<td><code>mm_token_type_ids</code></td>
+<td><code>torch.zeros_like(input_ids)</code></td>
+</tr>
+<tr class="even">
+<td>Gemma3</td>
+<td><code>token_type_ids</code></td>
+<td><code>torch.zeros_like(input_ids)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Auto-inject in <code>compute_loss()</code> when not provided by the data collator. See <code>core/trainers/base.py</code>.</p>
+</section>
+<section id="custom-layer-types-and-peft" class="level3">
+<h3 class="anchored" data-anchor-id="custom-layer-types-and-peft">Custom layer types and PEFT</h3>
+<p>Vision towers often use custom module wrappers that PEFT doesn’t support:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 21%">
+<col style="width: 40%">
+<col style="width: 21%">
+<col style="width: 15%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model</th>
+<th>Custom Layer</th>
+<th>Wraps</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gemma4</td>
+<td><code>Gemma4ClippableLinear</code></td>
+<td><code>nn.Linear</code></td>
+<td>Redirect to <code>.linear</code> child</td>
+</tr>
+</tbody>
+</table>
+<p>Fix location: <code>src/axolotl/loaders/adapter.py</code> <code>_patch_peft_clippable_linear()</code>.</p>
+</section>
+</section>
+<section id="sample-packing" class="level2">
+<h2 class="anchored" data-anchor-id="sample-packing">Sample Packing</h2>
+<section id="how-packed-sequence-detection-works-transformers-5.x" class="level3">
+<h3 class="anchored" data-anchor-id="how-packed-sequence-detection-works-transformers-5.x">How packed sequence detection works (transformers ≥ 5.x)</h3>
+<p><code>transformers.masking_utils._preprocess_mask_arguments()</code> detects packed sequences from <code>position_ids</code> resets. But <strong>only when <code>attention_mask is None</code></strong>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># From masking_utils.py:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> position_ids <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span> <span class="kw">and</span> attention_mask <span class="kw">is</span> <span class="va">None</span> <span class="kw">and</span> past_key_values <span class="kw">is</span> <span class="va">None</span>:</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    packed_sequence_mask <span class="op">=</span> find_packed_sequence_indices(position_ids)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>If the collator provides an all-ones <code>attention_mask</code>, packing detection is <strong>skipped</strong> and the model builds a single causal mask spanning all packed sequences → cross-sequence attention leakage → very high loss.</p>
+</section>
+<section id="fix-for-models-using-create_causal_mask_mapping" class="level3">
+<h3 class="anchored" data-anchor-id="fix-for-models-using-create_causal_mask_mapping">Fix for models using <code>create_causal_mask_mapping</code></h3>
+<p>For Gemma3, Gemma4, and similar models that use the new transformers masking system, remove <code>attention_mask</code> from inputs when sample packing is active:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># In compute_loss():</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>.args.sample_packing</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> model_type <span class="kw">in</span> (<span class="st">"gemma4"</span>, <span class="st">"gemma3"</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"attention_mask"</span> <span class="kw">in</span> inputs</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="kw">and</span> <span class="st">"position_ids"</span> <span class="kw">in</span> inputs</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>):</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>    <span class="kw">del</span> inputs[<span class="st">"attention_mask"</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Fix location: <code>src/axolotl/core/trainers/base.py</code> <code>compute_loss()</code>.</p>
+</section>
+<section id="models-that-dont-need-this-fix" class="level3">
+<h3 class="anchored" data-anchor-id="models-that-dont-need-this-fix">Models that DON’T need this fix</h3>
+<p>Older models that use <code>_prepare_4d_causal_attention_mask</code> (Llama, Mistral, Qwen2, etc.) handle sample packing via axolotl’s multipack attention monkeypatch instead. Only models using the new <code>create_causal_mask_mapping</code> / <code>create_causal_mask</code> masking system need the <code>attention_mask</code> removal.</p>
+</section>
+</section>
+<section id="attention-backend-selection" class="level2">
+<h2 class="anchored" data-anchor-id="attention-backend-selection">Attention Backend Selection</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 14%">
+<col style="width: 27%">
+<col style="width: 27%">
+<col style="width: 12%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Backend</th>
+<th>Config</th>
+<th>head_dim limit</th>
+<th>torch_compile</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FA2</td>
+<td><code>flash_attention: true</code></td>
+<td>256</td>
+<td>✅</td>
+<td>Fastest when supported</td>
+</tr>
+<tr class="even">
+<td>FA4</td>
+<td>auto with <code>flash_attention: true</code></td>
+<td>256 (SM90+)</td>
+<td>✅</td>
+<td>Auto-detected on H100+</td>
+</tr>
+<tr class="odd">
+<td>SDPA</td>
+<td><code>sdp_attention: true</code></td>
+<td>None</td>
+<td>✅</td>
+<td>Universal fallback</td>
+</tr>
+<tr class="even">
+<td>flex</td>
+<td><code>flex_attention: true</code></td>
+<td>None</td>
+<td>⚠️ Triton OOM for large head_dim</td>
+<td>Good for variable head dims</td>
+</tr>
+<tr class="odd">
+<td>eager</td>
+<td>neither set</td>
+<td>None</td>
+<td>✅</td>
+<td>Slowest, always works</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Check model support</strong>: Look at <code>_supports_flash_attn_2</code>, <code>_supports_flex_attn</code>, <code>_supports_sdpa</code> attributes on the model class.</p>
+<p><strong>head_dim gotcha</strong>: The 256 limit is specific to flash-attn CUDA kernels, NOT PyTorch-level. SDPA and flex_attention both handle arbitrary head_dim. Models with <code>global_head_dim &gt; 256</code> (Gemma4: 512) must use SDPA or flex.</p>
+<p><strong>flex + compile gotcha</strong>: <code>torch_compile</code> with flex_attention can hit Triton shared memory OOM for large head_dim. Falls back to eager per-function (not a crash, but slower). Unsloth disables flex for Gemma4 for this reason.</p>
+</section>
+<section id="cut-cross-entropy-cce" class="level2">
+<h2 class="anchored" data-anchor-id="cut-cross-entropy-cce">Cut Cross Entropy (CCE)</h2>
+<section id="how-cce-patches-work" class="level3">
+<h3 class="anchored" data-anchor-id="how-cce-patches-work">How CCE patches work</h3>
+<p>CCE replaces the model’s <code>forward()</code> with a fused version that computes loss from hidden states + lm_head weight without materializing the full logits tensor. This saves ~<code>batch × seq_len × vocab_size × dtype_bytes</code> of VRAM.</p>
+</section>
+<section id="adding-cce-for-a-new-model" class="level3">
+<h3 class="anchored" data-anchor-id="adding-cce-for-a-new-model">Adding CCE for a new model</h3>
+<ol type="1">
+<li>Check if the model type is in <code>cut_cross_entropy.transformers.patch.PATCH_FNS</code></li>
+<li>If not, axolotl’s generic fallback (<code>integrations/cut_cross_entropy/__init__.py</code> <code>patch_llama_like()</code>) patches <code>{Prefix}ForCausalLM.forward</code> with <code>cce_forward</code></li>
+<li>For multimodal models (<code>ForConditionalGeneration</code>), a model-specific patch is needed in <code>ml-cross-entropy</code> repo</li>
+<li>The multimodal <code>cce_forward</code> must accept all extra kwargs (pixel_values, mm_token_type_ids, etc.) and pop any that would conflict before calling <code>self.model()</code></li>
+</ol>
+</section>
+<section id="common-cce-pitfall" class="level3">
+<h3 class="anchored" data-anchor-id="common-cce-pitfall">Common CCE pitfall</h3>
+<p>If CCE appears active (log says “Applying Cut Cross Entropy”) but peak VRAM doesn’t decrease, check which class was patched. If the model loads as <code>ForConditionalGeneration</code> but CCE patched <code>ForCausalLM</code>, the patch is silently inactive.</p>
+</section>
+</section>
+<section id="moe-models" class="level2">
+<h2 class="anchored" data-anchor-id="moe-models">MoE Models</h2>
+<section id="dense-mlp-vs-moe-experts" class="level3">
+<h3 class="anchored" data-anchor-id="dense-mlp-vs-moe-experts">Dense MLP vs MoE experts</h3>
+<p>Some MoE models (e.g., Gemma4) have BOTH dense MLP layers and MoE expert layers at every decoder layer:
+- <code>gate_proj/up_proj/down_proj</code> → targets the <strong>dense MLP</strong> (<code>Gemma4TextMLP</code>)
+- <code>experts.gate_up_proj/experts.down_proj</code> → targets the <strong>MoE experts</strong> (<code>Gemma4TextExperts</code>)</p>
+<p>LoRA on the dense MLP works normally. Expert LoRA via <code>lora_target_parameters</code> requires PEFT support for the specific expert module type (may warn “Unsupported layer type”).</p>
+</section>
+<section id="scattermoe-kernels" class="level3">
+<h3 class="anchored" data-anchor-id="scattermoe-kernels">ScatterMoE kernels</h3>
+<p><code>use_scattermoe: true</code> with <code>experts_implementation: scattermoe</code> registers fused expert kernels via transformers’ <code>ExpertsInterface</code>. Significant speedup for MoE models. Requires the kernels plugin:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.kernels.KernelsPlugin</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_kernels</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">experts_implementation</span><span class="kw">:</span><span class="at"> scattermoe</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</section>
+<section id="where-to-add-model-specific-fixes" class="level2">
+<h2 class="anchored" data-anchor-id="where-to-add-model-specific-fixes">Where to Add Model-Specific Fixes</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 27%">
+<col style="width: 31%">
+<col style="width: 40%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>What</th>
+<th>Where</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Missing forward inputs</td>
+<td><code>core/trainers/base.py</code> <code>compute_loss()</code></td>
+<td>mm_token_type_ids injection</td>
+</tr>
+<tr class="even">
+<td>Attention mask fixes</td>
+<td><code>core/trainers/base.py</code> <code>compute_loss()</code></td>
+<td>Sample packing mask removal</td>
+</tr>
+<tr class="odd">
+<td>Loss logging fixes</td>
+<td><code>core/trainers/base.py</code> <code>__init__()</code></td>
+<td>model_accepts_loss_kwargs override</td>
+</tr>
+<tr class="even">
+<td>PEFT/LoRA patches</td>
+<td><code>loaders/adapter.py</code></td>
+<td>ClippableLinear redirect</td>
+</tr>
+<tr class="odd">
+<td>Attention patches</td>
+<td><code>monkeypatch/attention/</code></td>
+<td>FA4 tuple fix</td>
+</tr>
+<tr class="even">
+<td>Model-specific patches</td>
+<td><code>loaders/patch_manager.py</code> <code>_apply_model_specific_patches()</code></td>
+<td>Llama4, Kimi, NemotronH</td>
+</tr>
+<tr class="odd">
+<td>CCE patches</td>
+<td><code>ml-cross-entropy</code> repo <code>transformers/</code></td>
+<td>Per-model cce_forward</td>
+</tr>
+<tr class="even">
+<td>Example configs</td>
+<td><code>examples/&lt;model&gt;/</code></td>
+<td>Validated YAML</td>
+</tr>
+<tr class="odd">
+<td>Config validation</td>
+<td><code>utils/schemas/validation.py</code></td>
+<td>Compatibility checks</td>
+</tr>
+</tbody>
+</table>
 
 
 </section>

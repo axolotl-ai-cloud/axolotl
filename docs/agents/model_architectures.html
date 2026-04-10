@@ -6,9 +6,8 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="description" content="Construct prompts without a template.">
 
-<title>Template-Free – Axolotl</title>
+<title>model_architectures – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -145,7 +144,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/template_free.html">Template-Free</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -488,7 +487,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../docs/dataset-formats/template_free.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Template-Free</span></a>
   </div>
 </li>
@@ -787,303 +786,201 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#sec-background" id="toc-sec-background" class="nav-link active" data-scroll-target="#sec-background">Background</a>
+  <li><a href="#model-architectures-agent-reference" id="toc-model-architectures-agent-reference" class="nav-link active" data-scroll-target="#model-architectures-agent-reference">Model Architectures — Agent Reference</a>
   <ul class="collapse">
-  <li><a href="#masking-inputs" id="toc-masking-inputs" class="nav-link" data-scroll-target="#masking-inputs">Masking Inputs</a></li>
-  <li><a href="#sec-you-may-not-want-prompt-templates" id="toc-sec-you-may-not-want-prompt-templates" class="nav-link" data-scroll-target="#sec-you-may-not-want-prompt-templates">You may not want prompt templates</a></li>
-  <li><a href="#sec-the-inputoutput-format" id="toc-sec-the-inputoutput-format" class="nav-link" data-scroll-target="#sec-the-inputoutput-format">The <code>input_output</code> format</a></li>
+  <li><a href="#gemma-4" id="toc-gemma-4" class="nav-link" data-scroll-target="#gemma-4">Gemma 4</a>
+  <ul class="collapse">
+  <li><a href="#required-settings" id="toc-required-settings" class="nav-link" data-scroll-target="#required-settings">Required settings</a></li>
+  <li><a href="#auto-detection" id="toc-auto-detection" class="nav-link" data-scroll-target="#auto-detection">Auto-detection</a></li>
+  <li><a href="#multi-gpu" id="toc-multi-gpu" class="nav-link" data-scroll-target="#multi-gpu">Multi-GPU</a></li>
+  <li><a href="#moe-26b-a4b" id="toc-moe-26b-a4b" class="nav-link" data-scroll-target="#moe-26b-a4b">MoE (26B-A4B)</a></li>
+  <li><a href="#common-issues" id="toc-common-issues" class="nav-link" data-scroll-target="#common-issues">Common issues</a></li>
+  <li><a href="#e2be4b-dense-models" id="toc-e2be4b-dense-models" class="nav-link" data-scroll-target="#e2be4b-dense-models">E2B/E4B dense models</a></li>
   </ul></li>
-  <li><a href="#sec-usage" id="toc-sec-usage" class="nav-link" data-scroll-target="#sec-usage">Usage</a>
-  <ul class="collapse">
-  <li><a href="#sec-1-prepare-data" id="toc-sec-1-prepare-data" class="nav-link" data-scroll-target="#sec-1-prepare-data">1. Prepare Data</a></li>
-  <li><a href="#sec-2-use-type-inputoutput" id="toc-sec-2-use-type-inputoutput" class="nav-link" data-scroll-target="#sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></a></li>
-  <li><a href="#sec-3-check-the-prompts" id="toc-sec-3-check-the-prompts" class="nav-link" data-scroll-target="#sec-3-check-the-prompts">3. Check the prompts</a></li>
+  <li><a href="#gemma-3" id="toc-gemma-3" class="nav-link" data-scroll-target="#gemma-3">Gemma 3</a></li>
+  <li><a href="#qwen-3.5-moe" id="toc-qwen-3.5-moe" class="nav-link" data-scroll-target="#qwen-3.5-moe">Qwen 3.5 MoE</a></li>
+  <li><a href="#general-moe-notes" id="toc-general-moe-notes" class="nav-link" data-scroll-target="#general-moe-notes">General MoE Notes</a></li>
   </ul></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
-
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/dataset-formats/index.html">Dataset Formats</a></li><li class="breadcrumb-item"><a href="../../docs/dataset-formats/template_free.html">Template-Free</a></li></ol></nav>
-<div class="quarto-title">
-<h1 class="title">Template-Free</h1>
-</div>
-
-<div>
-  <div class="description">
-    Construct prompts without a template.
-  </div>
-</div>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block"></header>
 
 
-<div class="quarto-title-meta">
-
-    
-  
-    
-  </div>
-  
 
 
-</header>
-
-
-<section id="sec-background" class="level2">
-<h2 class="anchored" data-anchor-id="sec-background">Background</h2>
-<section id="masking-inputs" class="level3">
-<h3 class="anchored" data-anchor-id="masking-inputs">Masking Inputs</h3>
-<p>One of the most popular features of
-<a href="https://github.com/axolotl-ai-cloud/axolotl">axolotl</a> is
-setting the following configuration value:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>If you declare a <a href="https://github.com/axolotl-ai-cloud/axolotl?tab=readme-ov-file#dataset">dataset formats</a>
-such as <code>alpaca</code> or <code>chatml</code>, axolotl knows what is an input
-(i.e.&nbsp;human) vs.&nbsp;an output (i.e.&nbsp;the assistant) and masks the input
-labels so that your model can focus on predicting the outputs only.</p>
+<section id="model-architectures-agent-reference" class="level1">
+<h1>Model Architectures — Agent Reference</h1>
+<p>Model-specific quirks, required settings, and known issues. Check this before debugging training failures on specific model families.</p>
+<section id="gemma-4" class="level2">
+<h2 class="anchored" data-anchor-id="gemma-4">Gemma 4</h2>
+<p><strong>Models</strong>: <code>google/gemma-4-26B-A4B</code> (MoE), <code>google/gemma-4-31B</code> (dense), <code>google/gemma-4-E2B</code>, <code>google/gemma-4-E4B</code></p>
+<p><strong>Architecture</strong>: Multimodal wrapper (<code>Gemma4ForConditionalGeneration</code>) over a text backbone (<code>Gemma4TextModel</code>), with optional vision/audio encoders. All Gemma4 HF repos have <code>model_type: "gemma4"</code> — even text-only variants load as multimodal with a vision tower.</p>
+<section id="required-settings" class="level3">
+<h3 class="anchored" data-anchor-id="required-settings">Required settings</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Always needed for Gemma4:</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">freeze_mm_modules</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">          # Freeze vision/audio encoders for text-only training</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_checkpointing_kwargs</span><span class="kw">:</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">use_reentrant</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co">           # Shared per-layer norms cause "marked ready twice" with reentrant</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># LoRA target — restrict to language model only (DO NOT use lora_target_linear: true):</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_modules</span><span class="kw">:</span><span class="at"> </span><span class="st">'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sec-you-may-not-want-prompt-templates" class="level3">
-<h3 class="anchored" data-anchor-id="sec-you-may-not-want-prompt-templates">You may not want prompt templates</h3>
-<p>However, there are many situations where you don’t want to use one of
-these formats or templates. This is because they can:</p>
-<ul>
-<li>Add unnecessary boilerplate to your prompts.</li>
-<li>Create artifacts like special delimiters <code>&lt;|im_start|&gt;</code> that can
-quickly become footguns if you don’t include them correctly at
-inference time.</li>
-<li>Enforce a <em>chat</em> interface when you do not want one. Sometimes you
-just want to fine-tune a model to a very specific task and do NOT
-want multi-turn conversations, roles, etc.</li>
-<li>Limit you to only certain roles that the template allows.</li>
-</ul>
+<section id="auto-detection" class="level3">
+<h3 class="anchored" data-anchor-id="auto-detection">Auto-detection</h3>
+<p>Axolotl auto-detects Gemma4 and applies:
+- <code>use_reentrant: false</code> for gradient checkpointing
+- <code>ddp_find_unused_parameters: true</code> for DDP (skipped when <code>activation_offloading: true</code>)</p>
 </section>
-<section id="sec-the-inputoutput-format" class="level3">
-<h3 class="anchored" data-anchor-id="sec-the-inputoutput-format">The <code>input_output</code> format</h3>
-<p>You can construct your prompts without a template by using the
-<code>input_output</code> format, by setting <code>type: input_output</code> in your
-configuration file like this:</p>
-<p><strong>config.yml</strong></p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span><span class="co"> # Mask segments of your data</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span><span class="co">  # use template free prompt construction</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Unlike <code>type: completion</code>, which is also template-free,
-<code>type: input_output</code> allows you to mask segments of your text. More
-details on how this works are described below.</p>
-</section>
-</section>
-<section id="sec-usage" class="level2">
-<h2 class="anchored" data-anchor-id="sec-usage">Usage</h2>
-<p>This is how you can use the <code>input_output</code> format:</p>
-<section id="sec-1-prepare-data" class="level3">
-<h3 class="anchored" data-anchor-id="sec-1-prepare-data">1. Prepare Data</h3>
-<p>To use the <code>input_output</code> format, collect your data in the following
-format into a jsonl file (below is the first row from the file
-<code>output</code>.jsonl` pretty printed):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
-<p>Set <code>label:false</code> when you want to mask a segment of text so that the
-model isn’t trained on it. Some things to keep in mind:</p>
-<blockquote class="blockquote">
-<p>[!IMPORTANT]
-1. <strong>EOS, BOS, spaces, newlines etc. are entirely up to you. Axolotl
-concatenates all the segments as-is.</strong> The tokenizer doesn’t add
-anything additional. Notice how I added spaces, newlines, <code>&lt;s&gt;</code>
-(BOS), and <code>&lt;/s&gt;</code> (EOS) myself.
-2. Make sure you check the materialized output to validate that the
-prompt is getting assembled how you like.</p>
-</blockquote>
-</section>
-<section id="sec-2-use-type-inputoutput" class="level3">
-<h3 class="anchored" data-anchor-id="sec-2-use-type-inputoutput">2. Use <code>type: input_output</code></h3>
-<p>Let’s materialize data with our <code>output.jsonl</code> file by setting
-<code>type: input_output</code> in our axolotl config:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># training_config.yaml</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">base_model</span><span class="kw">:</span><span class="at"> mistralai/Mistral-7B-v0.1</span></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">data_seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">seed</span><span class="kw">:</span><span class="at"> </span><span class="dv">49</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> output.jsonl</span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> input_output</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="fu">val_set_size</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.1</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="fu">sequence_len</span><span class="kw">:</span><span class="at"> </span><span class="dv">896</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">sample_packing</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="fu">micro_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gradient_accumulation_steps</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_batch_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.0002</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="fu">train_on_inputs</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="fu">special_tokens</span><span class="kw">:</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">bos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;s&gt;"</span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">eos_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;/s&gt;"</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">unk_token</span><span class="kw">:</span><span class="at"> </span><span class="st">"&lt;unk&gt;"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>You can use the following command to materialize your data. The
-<code>--debug</code> flag will print the tokens, along with the labels so you can
-verify that the correct items are being ignored:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> preprocess training_config.yaml <span class="at">--debug</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">[2024-03-05</span> 23:36:46,969] <span class="pp">[</span><span class="ss">INFO</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">axolotl.check_example_labels:35</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">PID:607731</span><span class="pp">]</span> <span class="pp">[</span><span class="ss">RANK:0</span><span class="pp">]</span> <span class="op">&lt;</span>s<span class="op">&gt;(</span><span class="ex">1,</span> 1<span class="op">)</span> Hello<span class="er">(</span><span class="ex">22557,</span> 22557<span class="kw">)</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="ex">13,</span> 13<span class="kw">)</span> <span class="ex">hi</span><span class="er">(</span><span class="ex">12014,</span> 12014<span class="kw">)</span> <span class="ex">there</span><span class="er">(</span><span class="ex">736,</span> 736<span class="kw">)</span> <span class="ex">!</span><span class="er">(</span><span class="ex">28808,</span> 28808<span class="kw">)</span> <span class="bu">.</span><span class="er">(</span><span class="ex">28723,</span> 28723<span class="kw">)</span> <span class="kw">(</span><span class="ex">28705,</span> 28705<span class="kw">)</span> <span class="ex">good</span><span class="er">(</span><span class="ex">-100,</span> 1179<span class="kw">)</span> <span class="ex">bye</span><span class="er">(</span><span class="ex">-100,</span> 17664<span class="kw">)</span> <span class="kw">(</span><span class="ex">-100,</span> 28705<span class="kw">)</span> <span class="ex">fare</span><span class="er">(</span><span class="ex">19111,</span> 19111<span class="kw">)</span> <span class="ex">well</span><span class="er">(</span><span class="ex">5458,</span> 5458<span class="kw">)</span> <span class="op">&lt;</span>/s<span class="op">&gt;(</span><span class="ex">2,</span> 2<span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>The format is <code>decoded_token</code>(<code>label</code>, <code>token_id</code>), for example,
-<code>&lt;s&gt;(1, 1)</code> means that the token is <code>&lt;s&gt;</code>, the label is <code>1</code> and the
-token_id is <code>1</code>. When the label is <code>-100</code> then that token is ignored for
-training.</p>
-</section>
-<section id="sec-3-check-the-prompts" class="level3">
-<h3 class="anchored" data-anchor-id="sec-3-check-the-prompts">3. Check the prompts</h3>
-<p>Here is another way to check the materialized output:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> transformers <span class="im">import</span> AutoTokenizer</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> datasets <span class="im">import</span> load_from_disk</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> yaml</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="op">!</span>ls last_run_prepared<span class="op">/</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> <span class="bu">open</span>(<span class="st">'training_config.yaml'</span>, <span class="st">'r'</span>) <span class="im">as</span> f:</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    cfg <span class="op">=</span> yaml.safe_load(f)</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>model_id <span class="op">=</span> cfg[<span class="st">'base_model'</span>]</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>tok <span class="op">=</span> AutoTokenizer.from_pretrained(model_id)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>ds <span class="op">=</span> load_from_disk(<span class="ss">f'last_run_prepared/</span><span class="sc">{</span>directory[<span class="dv">0</span>]<span class="sc">}</span><span class="ss">/'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> row <span class="op">=</span> ds[<span class="dv">0</span>]</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="bu">print</span>(tok.decode(row[<span class="st">'input_ids'</span>]))</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&lt;</span>s<span class="op">&gt;</span> Hello</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>    hi there<span class="op">!</span>.  goodbye  farewell<span class="op">&lt;/</span>s<span class="op">&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>We can check that the right tokens are ignored by comparing the labels
-to each token:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pandas <span class="im">as</span> pd</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>pd.DataFrame([{<span class="st">'token'</span>: tok.decode(i), <span class="st">'label'</span>: l, <span class="st">'id'</span>:i} <span class="cf">for</span> i,l <span class="kw">in</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>              <span class="bu">zip</span>(row[<span class="st">'input_ids'</span>], row[<span class="st">'labels'</span>])])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="multi-gpu" class="level3">
+<h3 class="anchored" data-anchor-id="multi-gpu">Multi-GPU</h3>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 40%">
+<col style="width: 32%">
+<col style="width: 28%">
+</colgroup>
 <thead>
 <tr class="header">
-<th>token</th>
-<th>label</th>
-<th>id</th>
+<th>Strategy</th>
+<th>Works?</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td>0</td>
-<td>&lt;s&gt;</td>
-<td>1</td>
+<td>DDP</td>
+<td>Yes</td>
+<td>Auto-sets <code>ddp_find_unused_parameters=True</code></td>
 </tr>
 <tr class="even">
-<td>1</td>
-<td>Hello</td>
-<td>22557</td>
+<td>DDP + activation_offloading</td>
+<td>Yes</td>
+<td><code>find_unused_parameters</code> is skipped (conflicts with checkpoint wrappers)</td>
 </tr>
 <tr class="odd">
-<td>2</td>
-<td>\n</td>
-<td>13</td>
+<td>FSDP1</td>
+<td>No</td>
+<td>OOM during dequantization/sharding with QLoRA</td>
 </tr>
 <tr class="even">
-<td>3</td>
-<td>hi</td>
-<td>12014</td>
+<td>FSDP2</td>
+<td>Yes</td>
+<td>Use <code>Gemma4TextDecoderLayer</code> (not <code>Gemma4DecoderLayer</code>) as wrap class</td>
 </tr>
 <tr class="odd">
-<td>4</td>
-<td>there</td>
-<td>736</td>
-</tr>
-<tr class="even">
-<td>5</td>
-<td>!</td>
-<td>28808</td>
-</tr>
-<tr class="odd">
-<td>6</td>
-<td>.</td>
-<td>28723</td>
-</tr>
-<tr class="even">
-<td>7</td>
-<td></td>
-<td>28705</td>
-</tr>
-<tr class="odd">
-<td>8</td>
-<td>good</td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>9</td>
-<td>bye</td>
-<td>-100</td>
-</tr>
-<tr class="odd">
-<td>10</td>
-<td></td>
-<td>-100</td>
-</tr>
-<tr class="even">
-<td>11</td>
-<td>fare</td>
-<td>19111</td>
-</tr>
-<tr class="odd">
-<td>12</td>
-<td>well</td>
-<td>5458</td>
-</tr>
-<tr class="even">
-<td>13</td>
-<td>&lt;/s&gt;</td>
-<td>2</td>
+<td>FSDP2 + activation_offloading</td>
+<td>Yes</td>
+<td>Lowest VRAM (~26 GiB/GPU for 26B-A4B)</td>
 </tr>
 </tbody>
 </table>
-<p>If we look at the input data, the above table seems correct! (The jsonl
-version is repeated below for reference):</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">$</span> head <span class="at">-n1</span> output.jsonl <span class="kw">|</span> <span class="ex">python</span> <span class="at">-m</span> json.tool</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>{
-    "segments": [
-        {
-            "label": true,
-            "text": "&lt;s&gt;Hello\n"
-        },
-        {
-            "label": true,
-            "text": "hi there!. "
-        },
-        {
-            "label": false,
-            "text": "goodbye "
-        },
-        {
-            "label": true,
-            "text": "farewell&lt;/s&gt;"
-        }
-    ]
-}</code></pre>
-</div>
+<p>FSDP2 config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> full_shard</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> auto_wrap</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="fu">fsdp_config</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_version</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_auto_wrap_policy</span><span class="kw">:</span><span class="at"> TRANSFORMER_BASED_WRAP</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">fsdp_transformer_layer_cls_to_wrap</span><span class="kw">:</span><span class="at"> Gemma4TextDecoderLayer</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+<section id="moe-26b-a4b" class="level3">
+<h3 class="anchored" data-anchor-id="moe-26b-a4b">MoE (26B-A4B)</h3>
+<ul>
+<li><p><code>enable_moe_block: true</code>, 256 experts, top-k routing</p></li>
+<li><p>No separate <code>SparseMoeBlock</code> — MoE is embedded in each decoder layer</p></li>
+<li><p>Expert LoRA targets 3D parameter tensors:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">lora_target_parameters</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> experts.gate_up_proj</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> experts.down_proj</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>ScatterMoE kernel acceleration:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plugins</span><span class="kw">:</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> axolotl.integrations.kernels.KernelsPlugin</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">use_kernels</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">use_scattermoe</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="fu">experts_implementation</span><span class="kw">:</span><span class="at"> scattermoe</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ul>
+</section>
+<section id="common-issues" class="level3">
+<h3 class="anchored" data-anchor-id="common-issues">Common issues</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 42%">
+<col style="width: 33%">
+<col style="width: 23%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Symptom</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>mm_token_type_ids is required</code> in DDP</td>
+<td><code>model.config</code> not accessible through DDP wrapper</td>
+<td>Already fixed — <code>unwrap_model()</code> in <code>compute_loss</code> and <code>prediction_step</code></td>
+</tr>
+<tr class="even">
+<td><code>marked a variable ready twice</code> in DDP</td>
+<td><code>ddp_find_unused_parameters=True</code> + activation_offloading checkpoint wrappers</td>
+<td>Auto-handled — <code>find_unused_parameters</code> is skipped when <code>activation_offloading: true</code></td>
+</tr>
+<tr class="odd">
+<td>Loss ~12 instead of ~0.5</td>
+<td>Using <code>lora_target_linear: true</code> (applies LoRA to vision/audio modules)</td>
+<td>Use the regex <code>lora_target_modules</code> pattern instead</td>
+</tr>
+<tr class="even">
+<td>FSDP2 <code>Could not find Gemma4AudioLayer</code></td>
+<td>Auto-wrap detects <code>_no_split_modules</code> including audio layers that don’t exist</td>
+<td>Explicitly set <code>fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer</code></td>
+</tr>
+<tr class="odd">
+<td><code>Gemma4ClippableLinear not supported</code> by PEFT</td>
+<td>Vision tower uses a non-standard linear wrapper</td>
+<td>Axolotl patches this automatically via <code>_patch_peft_clippable_linear()</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="e2be4b-dense-models" class="level3">
+<h3 class="anchored" data-anchor-id="e2be4b-dense-models">E2B/E4B dense models</h3>
+<p>These have <code>hidden_size_per_layer_input: 256</code> (per-layer input embeddings) and <code>attention_k_eq_v: False</code>. Known issue: loss starts higher than expected (~12 vs ~0.5 for 26B). Root cause under investigation — may be related to the per-layer input mechanism or the <code>Gemma4ForConditionalGeneration</code> loss computation.</p>
+</section>
+</section>
+<section id="gemma-3" class="level2">
+<h2 class="anchored" data-anchor-id="gemma-3">Gemma 3</h2>
+<p><strong>Models</strong>: <code>google/gemma-3-*</code></p>
+<ul>
+<li><code>ddp_find_unused_parameters: true</code> needed (multimodal unused params)</li>
+<li><code>use_reentrant: false</code> recommended</li>
+<li>Attention mask must be dropped for sample packing (handled automatically)</li>
+<li>Multi-GPU test currently skipped (<code>tests/e2e/multigpu/test_gemma3.py</code>)</li>
+</ul>
+</section>
+<section id="qwen-3.5-moe" class="level2">
+<h2 class="anchored" data-anchor-id="qwen-3.5-moe">Qwen 3.5 MoE</h2>
+<p><strong>Models</strong>: <code>Qwen/Qwen3.5-35B-A3B</code></p>
+<ul>
+<li><p>Hybrid architecture: DeltaNet linear attention (30 layers) + full attention (10 layers)</p></li>
+<li><p>256 experts, 8 active per token</p></li>
+<li><p>Known weight scale drift in late DeltaNet layers (36-38) due to AdamW + rare expert interaction</p></li>
+<li><p>Fix: <code>normalize_weight_scales</code> config to detect and rescale outliers:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">normalize_weight_scales</span><span class="kw">:</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name_pattern</span><span class="kw">:</span><span class="at"> </span><span class="st">'linear_attn\.conv1d\.weight'</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">1.3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+</ul>
+</section>
+<section id="general-moe-notes" class="level2">
+<h2 class="anchored" data-anchor-id="general-moe-notes">General MoE Notes</h2>
+<ul>
+<li><code>lora_target_linear: true</code> with multimodal MoE models will apply LoRA to ALL linear modules including vision/audio encoders — use regex <code>lora_target_modules</code> to restrict to language model only</li>
+<li>Rare experts get larger effective learning rate from AdamW (small second-moment estimates) — can cause weight drift in recurrent/SSM components. Use <code>normalize_weight_scales</code> with <code>dry_run: true</code> to detect.</li>
+<li>For ScatterMoE kernel support, set <code>experts_implementation: scattermoe</code> and add the KernelsPlugin</li>
+</ul>
 
 
 </section>
