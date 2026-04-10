@@ -86,7 +86,7 @@ Features:
 **Requirements**:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
-- Python 3.11
+- Python >=3.11 (3.12 recommended)
 - PyTorch ≥2.9.1
 
 ### Google Colab

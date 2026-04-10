@@ -13,7 +13,7 @@ sample_packing: false
 ```
 
 Decision tree for VLM config:
-```
+```text
 Is the model multimodal (has vision/audio encoder)?
   ├─ YES: Add `freeze_mm_modules: true` if training text only
   │       Add `chat_template: <model_template>` (e.g. gemma4, qwen3_5, gemma3)
@@ -139,7 +139,7 @@ remove_unused_columns: false
 sample_packing: false
 ```
 
-Starting VLM loss of ~8-15 is **expected** (not a bug). The model converges to <1.0 within 30-50 steps.
+A starting VLM loss of ~8-15 is typical. In most runs, loss converges below 1.0 within ~30-50 steps, though results may vary across configurations.
 
 For the 26B-A4B MoE variant with ScatterMoE + expert LoRA + CCE, add:
 ```yaml

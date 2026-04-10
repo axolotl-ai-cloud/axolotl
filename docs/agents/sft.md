@@ -106,7 +106,7 @@ View the Chrome trace at `chrome://tracing`.
 
 To programmatically inspect the trace:
 ```bash
-python scripts/analyze_profile.py output_dir/profiler_trace.json
+python scripts/analyze_profile.py output_dir/
 ```
 
 The trace shows per-kernel CUDA times, memory allocations, and operator-level breakdown. Look for:

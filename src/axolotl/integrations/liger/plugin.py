@@ -263,6 +263,10 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma4.nn.LayerNorm = LigerLayerNorm
             if cfg.liger_cross_entropy:
                 modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not compatible with Gemma4. Skipping."
+                )
             LOG.info(
                 f"Applied Liger kernels for gemma4: "
                 f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "

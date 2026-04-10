@@ -161,6 +161,26 @@ def load_trace(path, quick=False):
 # ---- Trace analysis -------------------------------------------------------
 
 
+def _estimate_n_steps(cuda_events):
+    """Estimate the number of training steps from CUDA event timestamps.
+
+    Detects step boundaries by looking for large gaps (>2x median gap) in the
+    sorted timestamp sequence of CUDA kernels.
+    """
+    if len(cuda_events) < 100:
+        return 1
+    timestamps = sorted(float(ev.get("ts", 0)) for ev in cuda_events)
+    # Compute gaps between consecutive events
+    gaps = [timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)]
+    if not gaps:
+        return 1
+    median_gap = sorted(gaps)[len(gaps) // 2]
+    # A step boundary has a gap much larger than the median inter-kernel gap
+    threshold = max(median_gap * 50, 100_000)  # at least 100ms
+    n_boundaries = sum(1 for g in gaps if g > threshold)
+    return max(n_boundaries + 1, 1)
+
+
 def analyze_trace(events, skip_warmup=True):
     cuda_events = [
         ev
@@ -171,7 +191,7 @@ def analyze_trace(events, skip_warmup=True):
         print("  No CUDA kernel events found!")
         return None
 
-    n_steps_profiled = 3  # typical profiler_steps value
+    cutoff_ts = None
 
     if skip_warmup and len(cuda_events) > 1000:
         timestamps = sorted(set(float(ev.get("ts", 0)) for ev in cuda_events))
@@ -184,8 +204,9 @@ def analyze_trace(events, skip_warmup=True):
         cutoff_ts = min_ts + total_span * 0.45
         before = len(cuda_events)
         cuda_events = [ev for ev in cuda_events if float(ev.get("ts", 0)) > cutoff_ts]
-        n_steps_profiled -= 1  # now analyzing steps 1+
         print(f"  Excluding step 0 (warmup): {before:,} -> {len(cuda_events):,} events")
+
+    n_steps_profiled = _estimate_n_steps(cuda_events)
 
     # Aggregate by kernel (cast to float to handle ijson Decimal values)
     kernel_stats = defaultdict(lambda: {"total_us": 0.0, "count": 0, "max_us": 0.0})
@@ -220,12 +241,14 @@ def analyze_trace(events, skip_warmup=True):
         fill_by_size[input_dims]["total_us"] += dur
         fill_by_size[input_dims]["count"] += 1
 
-    # CPU op analysis for wall-clock estimation
+    # CPU op analysis for wall-clock estimation (apply same warmup cutoff)
     cpu_ops = [
         ev
         for ev in events
         if ev.get("ph") == "X" and ev.get("cat") in ("cpu_op", "python_function")
     ]
+    if cutoff_ts is not None:
+        cpu_ops = [ev for ev in cpu_ops if float(ev.get("ts", 0)) > cutoff_ts]
     wall_clock_us = 0
     if cpu_ops:
         ts_sorted = sorted(cpu_ops, key=lambda e: float(e.get("ts", 0)))
@@ -734,6 +757,12 @@ def print_cpu_overhead(result, n_steps=2, label=""):
 
 
 def load_snapshot(path):
+    """Load a PyTorch CUDA memory snapshot from a pickle file.
+
+    WARNING: This uses pickle.load() which can execute arbitrary code.
+    Only load snapshot files that you generated yourself from trusted
+    training runs. Never load snapshots from untrusted sources.
+    """
     snap_file = Path(path) / "snapshot.pickle" if Path(path).is_dir() else Path(path)
     if not snap_file.exists():
         return None
@@ -1315,9 +1344,15 @@ def main():
     parser.add_argument(
         "path",
         help="Path to output directory (containing profiler_trace.json and/or "
-        "snapshot.pickle) or directly to a trace file",
+        "snapshot.pickle) or directly to a trace file. "
+        "Security note: snapshot.pickle uses pickle deserialization — "
+        "only use files from your own trusted training runs.",
     )
-    parser.add_argument("--compare", help="Path to second run for A/B comparison")
+    parser.add_argument(
+        "--compare",
+        help="Path to second run for A/B comparison. "
+        "Same security note as path: only use trusted snapshot files.",
+    )
     parser.add_argument(
         "--include-warmup",
         action="store_true",

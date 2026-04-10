@@ -1,6 +1,6 @@
 # Gemma 4 E2B Vision LoRA
 #
-# Vision fine-tuning of the multimodal Gemma4 model.
+# Fine-tuning LM LoRA adapters on multimodal Gemma4 with vision/multimodal modules frozen.
 # Uses the base ProcessingStrategy (auto-detects image_token from processor).
 
 base_model: google/gemma-4-E2B-it
