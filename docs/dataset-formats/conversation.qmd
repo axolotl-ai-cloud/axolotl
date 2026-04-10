@@ -108,6 +108,14 @@ datasets:
     type: chat_template
 ```
 
+::: {.callout-tip}
+`chat_template_jinja` also accepts a file path to a `.jinja2` file instead of an inline string:
+
+```yaml
+chat_template_jinja: ./path/to/my_template.jinja2
+```
+:::
+
 ::: {.callout-important}
 Please make sure that your `tokenizer.eos_token` is same as EOS (End-of-Sequence) token in template. Otherwise, set `eos_token` under `special_tokens: `.
 :::
