@@ -435,6 +435,23 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
+        # Gemma4ForConditionalGeneration computes loss with a manual
+        # nn.CrossEntropyLoss() that bypasses proper num_items_in_batch
+        # normalization and does redundant attention_mask filtering.
+        # Compute loss externally using the standard loss_function instead.
+        if _model_type == "gemma4" and "labels" in inputs:
+            labels = inputs.pop("labels")
+            outputs = model(**inputs)
+            logits = outputs.logits
+            unwrapped = self.accelerator.unwrap_model(model)
+            vocab_size = unwrapped.config.get_text_config().vocab_size
+            loss = unwrapped.loss_function(
+                logits, labels, vocab_size, num_items_in_batch=num_items_in_batch
+            )
+            if return_outputs:
+                return loss, outputs
+            return loss
+
         return super().compute_loss(
             model,
             inputs,

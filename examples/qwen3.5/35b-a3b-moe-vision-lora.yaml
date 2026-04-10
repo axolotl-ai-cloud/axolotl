@@ -1,0 +1,62 @@
+# Qwen 3.5 35B-A3B MoE Vision LoRA
+#
+# Vision fine-tuning of the hybrid DeltaNet + Attention MoE model.
+# 256 experts, 8 active per token, with early-fusion vision support.
+
+base_model: Qwen/Qwen3.5-35B-A3B
+processor_type: AutoProcessor
+
+# Required for vision/multimodal training
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: qwen3_5
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:100]
+
+val_set_size: 0
+output_dir: ./outputs/qwen35-35b-a3b-vision-lora
+
+adapter: lora
+sequence_len: 4096
+pad_to_sequence_len: false
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - down_proj
+  - up_proj
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+max_steps: 10
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:

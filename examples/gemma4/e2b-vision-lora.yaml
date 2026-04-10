@@ -1,0 +1,62 @@
+# Gemma 4 E2B Vision LoRA
+#
+# Fine-tuning LM LoRA adapters on multimodal Gemma4 with vision/multimodal modules frozen.
+# Uses the base ProcessingStrategy (auto-detects image_token from processor).
+
+base_model: google/gemma-4-E2B-it
+processor_type: AutoProcessor
+freeze_mm_modules: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+strict: false
+
+# Required for vision/multimodal training
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: gemma4
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:100]
+
+val_set_size: 0
+output_dir: ./outputs/gemma4-e2b-vision-lora
+
+adapter: lora
+sequence_len: 2048
+pad_to_sequence_len: false
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# Target language model only — vision encoder is frozen via freeze_mm_modules
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+max_steps: 10
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+sdp_attention: true
+
+warmup_ratio: 0.1
+weight_decay: 0.0
+
+wandb_project:
+wandb_entity:
+wandb_watch:
+wandb_name:
+wandb_log_model:

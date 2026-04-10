@@ -8,6 +8,7 @@ format:
 
 ## Supported Models
 
+- [Gemma-4](#sec-gemma-4) *(NEW)*
 - [Mllama](#sec-mllama)
 - [Llama4](#sec-llama4)
 - [Pixtral](#sec-pixtral)
@@ -137,6 +138,40 @@ base_model: mistralai/Voxtral-Mini-3B-2507
 
 processor_type: VoxtralProcessor
 ```
+
+### Gemma-4 {#sec-gemma-4}
+
+All Gemma 4 variants (E2B, E4B, 26B-A4B, 31B) load as multimodal models even for text-only training.
+
+```yaml
+base_model: google/gemma-4-E2B-it  # or E4B-it, 26B-A4B, 31B
+
+chat_template: gemma4
+freeze_mm_modules: true  # freeze vision/audio encoders for text-only or vision LoRA
+
+# For the 26B-A4B MoE model, enable ScatterMoE and expert LoRA:
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+# MoE expert LoRA (3D tensors, not nn.Linear) — only for 26B-A4B:
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+```
+
+::: {.callout-warning}
+Gemma 4 VLM training starts with high loss (~8-15). This is expected — see the [training stability guide](training_stability.qmd) for details.
+:::
+
+::: {.callout-tip}
+For DDP training, axolotl auto-detects Gemma4 and sets `use_reentrant=False` and `ddp_find_unused_parameters=True`. However, when `activation_offloading: true`, `ddp_find_unused_parameters` is skipped (checkpoint wrappers conflict with it); use `freeze_mm_modules: true` instead to handle unused vision/audio params. For FSDP2, use `fsdp_transformer_layer_cls_to_wrap: Gemma4TextDecoderLayer`.
+:::
 
 ### Gemma-3 {#sec-gemma-3}
 
