@@ -404,7 +404,9 @@ class AxolotlTrainer(
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
-        _model_type = getattr(getattr(model, "config", None), "model_type", None)
+        # Use unwrap_model to handle DDP/FSDP wrappers that don't proxy .config.
+        _unwrapped = self.accelerator.unwrap_model(model)
+        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
@@ -444,6 +446,21 @@ class AxolotlTrainer(
     def evaluate(self, *args, **kwargs):
         LOG.info("Running evaluation step...")
         return super().evaluate(*args, **kwargs)
+
+    @override
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        # Gemma4 requires mm_token_type_ids even during evaluation.
+        _unwrapped = self.accelerator.unwrap_model(model)
+        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
+        if (
+            "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+            and _model_type == "gemma4"
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        return super().prediction_step(
+            model, inputs, prediction_loss_only, ignore_keys=ignore_keys
+        )
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):

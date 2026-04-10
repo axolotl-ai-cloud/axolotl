@@ -19,6 +19,8 @@ TOPICS = {
     "preference_tuning": "docs/agents/preference_tuning.md",
     "reward_modelling": "docs/agents/reward_modelling.md",
     "pretraining": "docs/agents/pretraining.md",
+    "model_architectures": "docs/agents/model_architectures.md",
+    "new_model_support": "docs/agents/new_model_support.md",
 }
 
 
