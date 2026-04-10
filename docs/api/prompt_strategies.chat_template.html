@@ -988,8 +988,43 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    turns,</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    turn_idx,</span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    tools<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    content_only<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    reasoning_only<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Locate the starting and ending indices of the specified turn in a conversation.</p>
+<section id="parameters-1" class="level6 doc-section doc-section-parameters">
+<h6 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h6>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 5%">
+<col style="width: 2%">
+<col style="width: 88%">
+<col style="width: 3%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>content_only</td>
+<td>bool</td>
+<td>If True and the turn has reasoning_content (template_thinking_key), preserve reasoning_content in the dummy turn so the diff only captures the content field boundaries. This is needed for correct training_detail alignment when reasoning_content is present.</td>
+<td><code>False</code></td>
+</tr>
+<tr class="even">
+<td>reasoning_only</td>
+<td>bool</td>
+<td>If True, preserve content in the dummy turn and replace reasoning_content with a dummy, so the diff only captures the reasoning_content field boundaries.</td>
+<td><code>False</code></td>
+</tr>
+</tbody>
+</table>
+</section>
 </section>
 <section id="axolotl.prompt_strategies.chat_template.ChatTemplateStrategy.tokenize_prompt" class="level5">
 <h5 class="anchored" data-anchor-id="axolotl.prompt_strategies.chat_template.ChatTemplateStrategy.tokenize_prompt">tokenize_prompt</h5>
