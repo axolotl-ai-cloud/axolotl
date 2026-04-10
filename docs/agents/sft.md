@@ -91,6 +91,30 @@ Watch for: loss never decreasing (check `train_on_inputs`, dataset, LR), loss go
 | FSDP save hangs | Use `fsdp_state_dict_type: FULL_STATE_DICT` |
 | DeepSpeed CheckpointError | Set `use_reentrant: true` in `gradient_checkpointing_kwargs` |
 
+## Profiling
+
+To profile training and identify optimization opportunities:
+
+```yaml
+# Profile steps 3-7 (after warmup/autotuning settles)
+profiler_steps_start: 3
+profiler_steps: 5
+```
+
+This produces `profiler_trace.json` (Chrome trace) and `snapshot.pickle` (memory snapshot) in `output_dir`.
+View the Chrome trace at `chrome://tracing`.
+
+To programmatically inspect the trace:
+```bash
+python scripts/analyze_profile.py output_dir/profiler_trace.json
+```
+
+The trace shows per-kernel CUDA times, memory allocations, and operator-level breakdown. Look for:
+- **Large matmul kernels**: candidates for fusion or quantization
+- **Memory copies (H2D/D2H)**: unnecessary data movement
+- **Small frequent kernels**: candidates for kernel fusion
+- **Gaps between kernels**: pipeline bubbles from CPU overhead
+
 Full troubleshooting: [training_stability.qmd](../training_stability.qmd), [debugging.qmd](../debugging.qmd)
 
 ## File Map

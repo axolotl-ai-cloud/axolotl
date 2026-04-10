@@ -167,6 +167,10 @@ extras_require = {
         "flash-attn==2.8.3",
         "ring-flash-attn>=0.1.7",
     ],
+    "flash-linear": [
+        "flash-linear-attention",
+        "causal-conv1d",
+    ],
     "deepspeed": [
         "deepspeed==0.18.2",
         "deepspeed-kernels",
