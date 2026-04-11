@@ -17,6 +17,89 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _build_layer_type_map(base_model_path: Path) -> dict[str, str]:
+    """Build a map of module_name -> layer_type using a meta-device model.
+
+    Instantiates the model architecture on the meta device (zero memory)
+    to inspect which modules are Linear vs Conv1d/Conv2d/Conv3d.
+    This avoids relying on weight tensor ndim heuristics.
+    """
+    import json as _json
+
+    import torch.nn as nn
+    from transformers import AutoConfig
+
+    config_path = base_model_path / "config.json"
+    if not config_path.exists():
+        return {}
+
+    try:
+        with open(config_path) as f:
+            model_config = _json.load(f)
+    except (OSError, _json.JSONDecodeError):
+        return {}
+
+    architectures = model_config.get("architectures", [])
+    if not architectures:
+        return {}
+
+    try:
+        config = AutoConfig.from_pretrained(
+            str(base_model_path), trust_remote_code=True
+        )
+    except Exception:
+        LOG.debug("Could not load config for layer type introspection")
+        return {}
+
+    # Determine the right Auto class from architectures
+    from transformers import (
+        AutoModel,
+        AutoModelForCausalLM,
+    )
+
+    auto_classes = [AutoModelForCausalLM, AutoModel]
+    try:
+        from transformers import AutoModelForImageTextToText
+
+        auto_classes.insert(0, AutoModelForImageTextToText)
+    except ImportError:
+        pass
+
+    model = None
+    for auto_cls in auto_classes:
+        try:
+            with torch.device("meta"):
+                model = auto_cls.from_config(config, trust_remote_code=True)
+            break
+        except Exception:  # noqa: BLE001
+            LOG.debug(
+                "Could not instantiate meta model with %s, trying next",
+                auto_cls.__name__,
+            )
+
+    if model is None:
+        LOG.debug("Could not instantiate meta model for layer type introspection")
+        return {}
+
+    layer_types = {}
+    for name, module in model.named_modules():
+        if isinstance(module, nn.Conv3d):
+            layer_types[name] = "Conv3d"
+        elif isinstance(module, nn.Conv2d):
+            layer_types[name] = "Conv2d"
+        elif isinstance(module, nn.Conv1d):
+            layer_types[name] = "Conv1d"
+        elif isinstance(module, nn.Linear):
+            layer_types[name] = "Linear"
+
+    del model
+    LOG.debug(
+        f"Layer type map: {len(layer_types)} modules "
+        f"({sum(1 for v in layer_types.values() if 'Conv' in v)} conv layers)"
+    )
+    return layer_types
+
+
 def _simulate_nf4_roundtrip(
     tensor: torch.Tensor,
     blocksize: Optional[int] = None,
@@ -191,6 +274,7 @@ def _build_peft_layer_and_get_delta(
     adapter_name: str = "default",
     is_param_wrapper: bool = False,
     magnitude: Optional[torch.Tensor] = None,
+    layer_type: Optional[str] = None,
 ) -> torch.Tensor:
     """
     Use PEFT's own layer classes to compute the LoRA delta weight.
@@ -211,7 +295,7 @@ def _build_peft_layer_and_get_delta(
     out_features = lora_b.shape[0]
     lora_alpha = lora_config_dict.get("lora_alpha", lora_config_dict.get("r", 1))
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
-    use_dora = bool(lora_config_dict.get("use_dora", False)) and magnitude is not None
+    use_dora = bool(lora_config_dict.get("use_dora", False))
 
     if is_param_wrapper:
         from peft.tuners.lora.layer import ParamWrapper
@@ -239,6 +323,71 @@ def _build_peft_layer_and_get_delta(
             )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
+        return layer.get_delta_weight(adapter_name)
+    elif (
+        layer_type and "Conv" in layer_type or (layer_type is None and lora_a.ndim > 2)
+    ):
+        # Conv layer detected via model introspection (or ndim fallback)
+
+        from peft.tuners.lora import layer as peft_lora_layer
+
+        # Determine conv type from layer_type map or fall back to ndim
+        if layer_type and "Conv" in layer_type:
+            conv_type: str = layer_type
+        else:
+            ndim = lora_a.ndim
+            _conv_map = {3: "Conv1d", 4: "Conv2d", 5: "Conv3d"}
+            if ndim not in _conv_map:
+                raise ValueError(
+                    f"Unsupported LoRA weight dimensionality {ndim} for conv layer"
+                )
+            conv_type = _conv_map[ndim]
+            LOG.warning(
+                f"Using ndim-based fallback for conv detection (ndim={ndim}). "
+                f"Consider providing layer_type from meta-device introspection."
+            )
+
+        conv_cls_map = {"Conv1d": nn.Conv1d, "Conv2d": nn.Conv2d, "Conv3d": nn.Conv3d}
+        ConvCls = conv_cls_map[conv_type]
+        PeftConvCls = getattr(peft_lora_layer, conv_type)
+
+        # Reconstruct conv parameters from base tensor and lora_a shapes
+        # base_tensor: [out_channels, in_channels/groups, *kernel_size]
+        # lora_a:      [r, in_channels/groups, *kernel_size]
+        # lora_b:      [out_channels, r, *ones]
+        out_channels = base_tensor.shape[0]
+        in_channels = base_tensor.shape[1]
+        kernel_size = tuple(base_tensor.shape[2:])
+        stride = (1,) * (base_tensor.ndim - 2)
+        padding = (0,) * (base_tensor.ndim - 2)
+
+        base_layer = ConvCls(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=False,
+        )
+        base_layer.weight.data = base_tensor.clone()
+
+        layer = PeftConvCls(
+            base_layer,
+            adapter_name=adapter_name,
+            r=r_total,
+            lora_alpha=lora_alpha,
+            use_rslora=use_rslora,
+            use_dora=use_dora,
+        )
+        layer.lora_A[adapter_name].weight.data = lora_a
+        layer.lora_B[adapter_name].weight.data = lora_b
+
+        if use_dora:
+            mag_layer = layer.lora_magnitude_vector[adapter_name]
+            mag_layer.weight = nn.Parameter(magnitude)
+            layer.merge(adapter_names=[adapter_name])
+            return base_layer.weight.data - base_tensor
+
         return layer.get_delta_weight(adapter_name)
     else:
         from peft.tuners.lora.layer import Linear as LoraLinear
@@ -382,6 +531,7 @@ def _merge_tensor_with_lora(
     nf4_double_quant: bool = True,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
+    layer_type_map: Optional[Dict[str, str]] = None,
 ) -> tuple[torch.Tensor, bool]:
     """
     Helper function to merge a single tensor with its corresponding LoRA weights.
@@ -426,12 +576,30 @@ def _merge_tensor_with_lora(
             if use_dora
             else None
         )
+
+        # Look up layer type from meta-device model introspection
+        _layer_type = None
+        if layer_type_map:
+            mod_path = key.rsplit(".weight", 1)[0] if key.endswith(".weight") else key
+            _layer_type = layer_type_map.get(mod_path)
+            # Try common prefix variations (e.g. with/without "model." prefix)
+            if _layer_type is None:
+                for prefix in [
+                    "model.",
+                    "model.language_model.",
+                    "model.language_model.model.",
+                ]:
+                    _layer_type = layer_type_map.get(prefix + mod_path)
+                    if _layer_type:
+                        break
+
         delta = _build_peft_layer_and_get_delta(
             lora_a.to(device),
             lora_b.to(device),
             lora_config_dict,
             tensor.to(device),
             magnitude=magnitude.to(device) if magnitude is not None else None,
+            layer_type=_layer_type,
         )
         merged_tensor = (
             (tensor.to(device).to(torch.float32) + delta.to(torch.float32))
@@ -780,6 +948,8 @@ def merge_lora_sharded_efficient(
 
     use_dora = bool(lora_config_dict.get("use_dora", False))
 
+    # Build layer type map via meta-device model introspection
+    layer_type_map = _build_layer_type_map(base_model_path)
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -926,6 +1096,7 @@ def merge_lora_sharded_efficient(
                 nf4_double_quant=nf4_double_quant,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
+                layer_type_map=layer_type_map,
             )
             merged_tensors[key] = merged_tensor
             if was_merged:
