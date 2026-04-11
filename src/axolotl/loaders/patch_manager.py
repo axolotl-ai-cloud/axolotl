@@ -156,6 +156,7 @@ class PatchManager:
             # which would clobber any earlier fix.
             self._fix_nemotron_h_conversion_mapping()
 
+        self._apply_gemma_hybrid_attention(model)
         self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -164,6 +165,72 @@ class PatchManager:
         self._apply_unsloth_patches(model)
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
+
+    def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
+        """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
+
+        Gemma 4 has global (full_attention) layers with head_dim=512
+        which exceeds flash attention's supported size. This patch loads the model
+        with flash_attention_2 for the sliding window layers (head_dim=256), then
+        gives each global layer a shallow-copied config with _attn_implementation="sdpa".
+        """
+        if not self.cfg.gemma4_hybrid_attn_impl:
+            return
+
+        import copy
+
+        # Navigate to the module that has 'layers' - varies by model structure:
+        # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
+        # Gemma4ForCausalLM -> .model (Gemma4TextModel) -> .layers
+        layers = None
+        config_source = None
+        for candidate in [model, getattr(model, "model", None)]:
+            if candidate is None:
+                continue
+            # Check direct layers
+            if hasattr(candidate, "layers"):
+                layers = candidate.layers
+                config_source = candidate
+                break
+            # Check language_model.layers (multimodal wrapper)
+            lang_model = getattr(candidate, "language_model", None)
+            if lang_model is not None and hasattr(lang_model, "layers"):
+                layers = lang_model.layers
+                config_source = lang_model
+                break
+
+        if layers is None:
+            LOG.warning(
+                "gemma4_hybrid_attn_impl: could not find decoder layers in model, skipping"
+            )
+            return
+
+        config = getattr(config_source, "config", self.model_config)
+        layer_types = getattr(config, "layer_types", None)
+        if layer_types is None:
+            LOG.warning(
+                "gemma4_hybrid_attn_impl: model config has no 'layer_types', skipping. "
+                "This feature requires a model with mixed sliding/global attention layers."
+            )
+            return
+
+        patched_count = 0
+        for layer_idx, layer in enumerate(layers):
+            if layer_types[layer_idx] != "sliding_attention":
+                # Global / full_attention layer - use SDPA instead of FA2
+                attn_module = getattr(layer, "self_attn", None)
+                if attn_module is not None and hasattr(attn_module, "config"):
+                    sdpa_config = copy.copy(attn_module.config)
+                    sdpa_config._attn_implementation = "sdpa"
+                    attn_module.config = sdpa_config
+                    patched_count += 1
+
+        LOG.info(
+            "gemma4_hybrid_attn_impl: patched %d global layers to use SDPA "
+            "(remaining %d sliding layers use flash_attention_2)",
+            patched_count,
+            len(layers) - patched_count,
+        )
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
@@ -323,6 +390,13 @@ class PatchManager:
                 )
 
                 patch_qwen3_5_vlm_flash_attention()
+
+            if self.cfg.model_config_type in ("gemma4", "gemma4_text"):
+                from axolotl.monkeypatch.models.gemma4.fused_attn import (
+                    patch_gemma4_fused_attn,
+                )
+
+                patch_gemma4_fused_attn()
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():

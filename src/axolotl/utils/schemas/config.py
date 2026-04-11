@@ -777,6 +777,15 @@ class AxolotlInputConfig(
         },
     )
 
+    gemma4_hybrid_attn_impl: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers "
+            "and sdpa for global (full_attention) layers. Global layers have head_dim=512 which "
+            "exceeds flash attention's supported size."
+        },
+    )
+
     experts_implementation: str | None = Field(
         default=None,
         json_schema_extra={
