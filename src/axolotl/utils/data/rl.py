@@ -219,6 +219,10 @@ def _truncate_long_sequences_rl(
     For KTO, truncates the completion similarly.
     GRPO/GDPO/EBFT samples are returned unchanged.
 
+    Samples where the prompt alone exceeds ``sequence_len`` cannot be
+    meaningfully truncated and are returned unchanged.  The caller should
+    follow up with a drop filter to remove them.
+
     Args:
         sample: Dataset sample to potentially truncate.
         rl: Reinforcement learning type.
@@ -228,6 +232,10 @@ def _truncate_long_sequences_rl(
     Returns:
         The sample with text fields truncated to fit within sequence_len.
     """
+    # Fast path: if sample already fits, return unchanged (avoids decode overhead)
+    if _drop_long_sequences(sample, rl, tokenizer, sequence_len):
+        return sample
+
     if rl in {RLType.DPO, RLType.IPO, RLType.ORPO, RLType.SIMPO}:
         if not (
             sample.get("prompt") and sample.get("chosen") and sample.get("rejected")
@@ -244,24 +252,21 @@ def _truncate_long_sequences_rl(
 
         max_response_len = sequence_len - len(prompt_ids)
         if max_response_len <= 0:
-            # Prompt alone exceeds limit; cannot meaningfully truncate
+            # Prompt alone exceeds limit; cannot meaningfully truncate.
+            # Returned unchanged — the follow-up drop filter will remove it.
             return sample
 
+        updates: dict[str, Any] = {}
         if len(chosen_ids) > max_response_len:
-            sample = {
-                **sample,
-                "chosen": tokenizer.decode(
-                    chosen_ids[:max_response_len], skip_special_tokens=False
-                ),
-            }
-
+            updates["chosen"] = tokenizer.decode(
+                chosen_ids[:max_response_len], skip_special_tokens=False
+            )
         if len(rejected_ids) > max_response_len:
-            sample = {
-                **sample,
-                "rejected": tokenizer.decode(
-                    rejected_ids[:max_response_len], skip_special_tokens=False
-                ),
-            }
+            updates["rejected"] = tokenizer.decode(
+                rejected_ids[:max_response_len], skip_special_tokens=False
+            )
+        if updates:
+            sample = {**sample, **updates}
 
     elif rl is RLType.KTO:
         if not (sample.get("prompt") and sample.get("completion")):
@@ -360,12 +365,35 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
                     tokenizer=tokenizer,
                     sequence_len=cfg.sequence_len,
                 )
+                prior_len = len(split_datasets[i])
                 split_datasets[i] = split_datasets[i].map(
                     truncate_fn,
                     num_proc=cfg.dataset_num_proc,
                     load_from_cache_file=not cfg.is_preprocess,
                     desc="Truncating Long Sequences",
                 )
+
+                # Drop samples that could not be truncated (e.g. prompt
+                # alone exceeds sequence_len)
+                drop_long = partial(
+                    _drop_long_sequences,
+                    rl=cfg.rl,
+                    tokenizer=tokenizer,
+                    sequence_len=cfg.sequence_len,
+                )
+                split_datasets[i] = split_datasets[i].filter(
+                    drop_long,
+                    num_proc=cfg.dataset_num_proc,
+                    load_from_cache_file=not cfg.is_preprocess,
+                    desc="Dropping Un-truncatable Sequences",
+                )
+                dropped = prior_len - len(split_datasets[i])
+                if dropped:
+                    LOG.warning(
+                        f"Dropped {dropped} samples from dataset index {i} "
+                        f"that could not be truncated to fit sequence_len "
+                        f"(prompt alone exceeds limit)"
+                    )
             elif excess_length_strategy == "raise":
                 raise_fn = partial(
                     _raise_on_long_sequences,
