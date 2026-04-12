@@ -1,7 +1,19 @@
 {%- if tools %}
     {{- '<|im_start|>system\n' }}
     {%- if messages[0].role == 'system' %}
-        {{- messages[0].content + '\n\n' }}
+        {%- if messages[0].content is string %}
+            {{- messages[0].content + '\n\n' }}
+        {%- else %}
+            {%- for part in messages[0].content %}
+                {%- if part is mapping %}
+                    {%- set system_text = part.get('text') or part.get('content') or part.get('value') %}
+                    {%- if system_text %}{{- system_text }}{%- endif %}
+                {%- elif part is string %}
+                    {{- part }}
+                {%- endif %}
+            {%- endfor %}
+            {{- '\n\n' }}
+        {%- endif %}
     {%- endif %}
     {{- "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
     {%- for tool in tools %}
@@ -11,7 +23,20 @@
     {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
 {%- else %}
     {%- if messages[0].role == 'system' %}
-        {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+        {%- if messages[0].content is string %}
+            {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+        {%- else %}
+            {{- '<|im_start|>system\n' }}
+            {%- for part in messages[0].content %}
+                {%- if part is mapping %}
+                    {%- set system_text = part.get('text') or part.get('content') or part.get('value') %}
+                    {%- if system_text %}{{- system_text }}{%- endif %}
+                {%- elif part is string %}
+                    {{- part }}
+                {%- endif %}
+            {%- endfor %}
+            {{- '<|im_end|>\n' }}
+        {%- endif %}
     {%- endif %}
 {%- endif %}
 {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
