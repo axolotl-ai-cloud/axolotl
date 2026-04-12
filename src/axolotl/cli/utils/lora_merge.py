@@ -17,7 +17,9 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def _build_layer_type_map(base_model_path: Path) -> dict[str, str]:
+def _build_layer_type_map(
+    base_model_path: Path, trust_remote_code: bool = False
+) -> dict[str, str]:
     """Build a map of module_name -> layer_type using a meta-device model.
 
     Instantiates the model architecture on the meta device (zero memory)
@@ -45,7 +47,7 @@ def _build_layer_type_map(base_model_path: Path) -> dict[str, str]:
 
     try:
         config = AutoConfig.from_pretrained(
-            str(base_model_path), trust_remote_code=True
+            str(base_model_path), trust_remote_code=trust_remote_code
         )
     except Exception:
         LOG.debug("Could not load config for layer type introspection")
@@ -69,7 +71,9 @@ def _build_layer_type_map(base_model_path: Path) -> dict[str, str]:
     for auto_cls in auto_classes:
         try:
             with torch.device("meta"):
-                model = auto_cls.from_config(config, trust_remote_code=True)
+                model = auto_cls.from_config(
+                    config, trust_remote_code=trust_remote_code
+                )
             break
         except Exception:  # noqa: BLE001
             LOG.debug(
@@ -383,6 +387,12 @@ def _build_peft_layer_and_get_delta(
         layer.lora_B[adapter_name].weight.data = lora_b
 
         if use_dora:
+            if magnitude is None:
+                raise ValueError(
+                    f"DoRA merge requires a magnitude vector but none was found "
+                    f"for conv layer (adapter={adapter_name}). Check that the "
+                    f"adapter checkpoint contains lora_magnitude_vector weights."
+                )
             mag_layer = layer.lora_magnitude_vector[adapter_name]
             mag_layer.weight = nn.Parameter(magnitude)
             layer.merge(adapter_names=[adapter_name])
@@ -416,6 +426,12 @@ def _build_peft_layer_and_get_delta(
             # DoRA merges magnitude normalization into the weight directly.
             # Use PEFT's merge() which handles DoRA internally, then
             # compute the delta as merged_weight - original_weight.
+            if magnitude is None:
+                raise ValueError(
+                    f"DoRA merge requires a magnitude vector but none was found "
+                    f"for linear layer (adapter={adapter_name}). Check that the "
+                    f"adapter checkpoint contains lora_magnitude_vector weights."
+                )
             mag_layer = layer.lora_magnitude_vector[adapter_name]
             mag_layer.weight = nn.Parameter(magnitude)
             layer.merge(adapter_names=[adapter_name])
@@ -724,6 +740,7 @@ def _fuse_and_unfuse_with_merge(
     nf4_double_quant: bool = True,
     use_dora: bool = False,
     weight_renamings: Optional[Dict[str, str]] = None,
+    layer_type_map: Optional[Dict[str, str]] = None,
 ) -> tuple[Dict[str, torch.Tensor], int, set]:
     """
     For tensors matching WeightConverter patterns (MoE expert weights):
@@ -864,12 +881,32 @@ def _fuse_and_unfuse_with_merge(
                     if use_dora
                     else None
                 )
+                # Look up layer type for the fused key
+                _layer_type = None
+                if layer_type_map:
+                    mod_path = (
+                        fused_key.rsplit(".weight", 1)[0]
+                        if fused_key.endswith(".weight")
+                        else fused_key
+                    )
+                    _layer_type = layer_type_map.get(mod_path)
+                    if _layer_type is None:
+                        for prefix in [
+                            "model.",
+                            "model.language_model.",
+                            "model.language_model.model.",
+                        ]:
+                            _layer_type = layer_type_map.get(prefix + mod_path)
+                            if _layer_type:
+                                break
+
                 delta = _build_peft_layer_and_get_delta(
                     lora_a.to(device),
                     lora_b.to(device),
                     lora_config_dict,
                     fused_tensor.to(device),
                     magnitude=magnitude.to(device) if magnitude is not None else None,
+                    layer_type=_layer_type,
                 )
                 fused_tensor = (
                     (
@@ -908,6 +945,7 @@ def merge_lora_sharded_efficient(
     simulate_nf4_experts: bool = False,
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
+    trust_remote_code: bool = False,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
@@ -918,6 +956,8 @@ def merge_lora_sharded_efficient(
         simulate_nf4_experts: Apply NF4 roundtrip only to MoE expert tensors
             (for quantize_moe_experts). Expert tensors are identified by having
             "expert" in the key name and ndim >= 3.
+        trust_remote_code: Whether to trust remote code when loading model
+            config for layer-type introspection. Defaults to False for safety.
     """
     base_model_path = Path(base_model_path)
     lora_adapter_path = Path(lora_adapter_path)
@@ -949,7 +989,9 @@ def merge_lora_sharded_efficient(
     use_dora = bool(lora_config_dict.get("use_dora", False))
 
     # Build layer type map via meta-device model introspection
-    layer_type_map = _build_layer_type_map(base_model_path)
+    layer_type_map = _build_layer_type_map(
+        base_model_path, trust_remote_code=trust_remote_code
+    )
     unsupported_methods = []
 
     # Check for AdaLoRA (Adaptive LoRA)
@@ -1074,6 +1116,7 @@ def merge_lora_sharded_efficient(
                 nf4_double_quant=nf4_double_quant,
                 use_dora=use_dora,
                 weight_renamings=weight_renamings,
+                layer_type_map=layer_type_map,
             )
             merged_count += fused_merged
 
