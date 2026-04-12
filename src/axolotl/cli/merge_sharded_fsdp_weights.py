@@ -38,7 +38,7 @@ class BFloat16CastPlanner(_EmptyStateDictLoadPlanner):
 def _distributed_checkpoint_to_merged_weights(
     checkpoint_dir: Union[str, Path],
     save_path: str,
-    max_shard_size: str = "50GB",
+    max_shard_size: str = "5GB",
 ) -> Path:
     """
     Passthrough to `torch.distributed.checkpoint.format_utils.dcp_to_torch_save`. Will

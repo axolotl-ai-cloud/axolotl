@@ -231,9 +231,7 @@ def _rename_fsdp_merged_to_adapter(merged_dir: Path):
     Also rewrites the index JSON weight_map if sharded output was produced.
     """
     for file in sorted(merged_dir.iterdir()):
-        if file.name.startswith("model") and file.name != file.name.replace(
-            "model", "adapter_model", 1
-        ):
+        if file.name.startswith("model") and ".safetensors" in file.name:
             file.rename(merged_dir / file.name.replace("model", "adapter_model", 1))
 
     index = merged_dir / "adapter_model.safetensors.index.json"
