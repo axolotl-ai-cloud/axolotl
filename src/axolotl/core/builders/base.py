@@ -119,7 +119,8 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
-        callbacks.append(SkipEvalOnResumeCallback())
+        if self.cfg.resume_from_checkpoint:
+            callbacks.append(SkipEvalOnResumeCallback())
 
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
