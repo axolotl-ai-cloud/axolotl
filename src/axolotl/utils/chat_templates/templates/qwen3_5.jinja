@@ -5,7 +5,12 @@
             {{- messages[0].content + '\n\n' }}
         {%- else %}
             {%- for part in messages[0].content %}
-                {%- if 'text' in part %}{{- part['text'] }}{%- endif %}
+                {%- if part is mapping %}
+                    {%- set system_text = part.get('text') or part.get('content') or part.get('value') %}
+                    {%- if system_text %}{{- system_text }}{%- endif %}
+                {%- elif part is string %}
+                    {{- part }}
+                {%- endif %}
             {%- endfor %}
             {{- '\n\n' }}
         {%- endif %}
@@ -23,7 +28,12 @@
         {%- else %}
             {{- '<|im_start|>system\n' }}
             {%- for part in messages[0].content %}
-                {%- if 'text' in part %}{{- part['text'] }}{%- endif %}
+                {%- if part is mapping %}
+                    {%- set system_text = part.get('text') or part.get('content') or part.get('value') %}
+                    {%- if system_text %}{{- system_text }}{%- endif %}
+                {%- elif part is string %}
+                    {{- part }}
+                {%- endif %}
             {%- endfor %}
             {{- '<|im_end|>\n' }}
         {%- endif %}
