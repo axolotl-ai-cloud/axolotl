@@ -462,7 +462,7 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
                 f"total_num_tokens: {cfg.total_num_tokens:_}, total_num_steps: {total_num_steps:_}"
             )
         else:
-            if cfg.flash_attention and not cfg.multipack_real_batches:
+            if cfg.attn_supports_packing and not cfg.multipack_real_batches:
                 sampler_batch_size = 1
                 batch_max_len = cfg.micro_batch_size * cfg.sequence_len
             else:

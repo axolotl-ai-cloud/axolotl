@@ -110,6 +110,19 @@ class AttnImplementation(str, Enum):
     fp8 = "fp8"  # pylint: disable=invalid-name
 
 
+# Backends that require the flash_attn library (Dao-AILab/flash-attention)
+# for axolotl's own monkeypatches (FA4 auto-apply, LLaMA flash hijack, etc.)
+FLASH_ATTN_LIB_IMPLS = frozenset({"flash", "s2"})
+
+# Known backends that do NOT support varlen sample packing via position_ids.
+# Used as an exclusion list: unknown strings (e.g., HF hub kernels like
+# "kernels-community/flash-attn3") default to packing-capable.
+_NON_PACKING_ATTN_IMPLS = frozenset({"eager", "sdpa", "s2", "fp8"})
+
+# Known backends that do NOT need embedding dtype cast.
+_NO_DTYPE_CAST_ATTN_IMPLS = frozenset({"eager", "sdpa"})
+
+
 class RingAttnFunc(str, Enum):
     """Enum class for supported `ring-flash-attn` implementations"""
 

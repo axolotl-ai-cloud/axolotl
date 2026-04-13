@@ -343,12 +343,7 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (
-                    needs_fa2_dtype
-                    or self.cfg.flash_attention
-                    or self.cfg.flex_attention
-                    or self.cfg.sage_attention
-                )
+                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -656,32 +651,12 @@ class ModelLoader:
             # global layers will be patched to sdpa post-load.
             self.model_kwargs["attn_implementation"] = "flash_attention_2"
             self.model_config._attn_implementation = "flash_attention_2"
-            # Set flash_attention so multipack/sample_packing patches activate
-            self.cfg.flash_attention = True
         elif self.cfg.attn_implementation:
             hf_impl = _ATTN_IMPL_TO_HF.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation
             )
             self.model_kwargs["attn_implementation"] = hf_impl
             self.model_config._attn_implementation = hf_impl
-        elif self.cfg.flex_attention:
-            self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = "flex_attention"
-        elif self.cfg.flash_attention:
-            if not self.cfg.sample_packing and self.cfg.s2_attention:
-                pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = "sdpa"
-        elif self.cfg.sage_attention:
-            # sets FA2 attention to re-use same internal handling like masking
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = "eager"
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True

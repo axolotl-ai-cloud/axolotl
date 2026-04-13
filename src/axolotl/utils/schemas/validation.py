@@ -12,7 +12,12 @@ from pydantic import (
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.logging import get_logger
-from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.enums import (
+    _NON_PACKING_ATTN_IMPLS,
+    ChatTemplate,
+    RingAttnFunc,
+    RLType,
+)
 
 LOG = get_logger(__name__)
 
@@ -182,6 +187,10 @@ class AttentionValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_attention_fields(cls, data):
+        # If attn_implementation is set, the enum handles mutual exclusivity.
+        # This validator catches legacy configs with multiple boolean flags.
+        if data.get("attn_implementation"):
+            return data
         fields = (
             "xformers_attention",
             "sdp_attention",
@@ -436,7 +445,7 @@ class TrainingValidationMixin:
             not (self.bf16 or self.bfloat16)
             and (self.fp16 or self.float16)
             and not self.adapter
-            and not self.flash_attention
+            and not self.attn_uses_flash_lib
             and self.sample_packing
         ):
             LOG.warning(
@@ -946,8 +955,16 @@ class OptimizationValidationMixin:
     def check_batch_flattening_fa(cls, data):
         if data.get("batch_flattening"):
             batch_flattening_auto = data.get("batch_flattening") == "auto"
-            if not data.get("flash_attention") and not batch_flattening_auto:
-                raise ValueError("batch_flattening requires flash attention")
+            has_varlen_attn = (
+                data.get("attn_implementation") not in _NON_PACKING_ATTN_IMPLS
+                if data.get("attn_implementation")
+                else data.get("flash_attention")
+            )
+            if not has_varlen_attn and not batch_flattening_auto:
+                raise ValueError(
+                    "batch_flattening requires a varlen-capable attention backend "
+                    "(e.g., attn_implementation: flash)"
+                )
             if data.get("sample_packing") and not batch_flattening_auto:
                 raise ValueError("batch_flattening not compatible with sample_packing")
             if data.get("micro_batch_size") == 1 and not batch_flattening_auto:
@@ -966,7 +983,7 @@ class OptimizationValidationMixin:
 
             if (
                 batch_flattening_auto
-                and data.get("flash_attention")
+                and has_varlen_attn
                 and not data.get("sample_packing")
                 and data.get("micro_batch_size") > 1
             ):
@@ -1211,6 +1228,12 @@ class SystemValidationMixin:
     def check_npu_config(cls, data):
         if is_torch_npu_available():
             # check attention config
+            unsupported_npu_impls = {"flash", "sdpa", "s2"}
+            attn_impl = data.get("attn_implementation")
+            if attn_impl and attn_impl in unsupported_npu_impls:
+                raise NotImplementedError(
+                    f"attn_implementation={attn_impl!r} is currently not supported on Ascend NPU."
+                )
             attn_list = ["flash_attention", "sdp_attention", "s2_attention"]
             for attn in attn_list:
                 if data.get(attn):
@@ -1519,9 +1542,10 @@ class ComplexValidationMixin:
         if not self.context_parallel_size:
             self.context_parallel_size = 1
         elif self.context_parallel_size > 1:
-            if not self.flash_attention:
+            if not self.attn_uses_flash_lib:
                 raise ValueError(
-                    "flash_attention: true must be set with context_parallel_size > 1"
+                    "context_parallel_size > 1 requires flash attention "
+                    "(attn_implementation: flash or s2)."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1658,7 +1682,9 @@ class EBFTValidationMixin:
         if (
             data.get("rl") == "ebft"
             and data.get("ebft", {}).get("mode") == "strided"
-            and data.get("flex_attention")
+            and (
+                data.get("flex_attention") or data.get("attn_implementation") == "flex"
+            )
             and data.get("gradient_checkpointing")
         ):
             gc_kwargs = data.get("gradient_checkpointing_kwargs") or {}
