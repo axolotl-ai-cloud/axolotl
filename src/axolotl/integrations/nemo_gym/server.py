@@ -130,21 +130,41 @@ def start_servers(
     )
 
 
-def get_server_configs(head_port: int = 11000) -> dict:
+def get_server_configs(head_port: int = 11000, timeout: float = 30.0) -> dict:
     """Fetch the global config from the NeMo Gym head server.
+
+    Retries up to 3 times with exponential backoff. The default per-attempt
+    timeout is 30s (raised from the original 5s) because head servers can
+    be slow to respond when they're concurrently serving rollouts from a
+    prior training run. A 5s timeout was empirically too tight to survive
+    a kill-and-relaunch cycle.
 
     Returns:
         Dict mapping server_name -> server config.
     """
-    response = requests.get(
-        f"http://127.0.0.1:{head_port}/global_config_dict_yaml", timeout=5
+    url = f"http://127.0.0.1:{head_port}/global_config_dict_yaml"
+    last_exc: Exception | None = None
+    for attempt in (1, 2, 3):
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            result = yaml.safe_load(response.text)
+            # NeMo Gym head server double-encodes: YAML string inside a YAML string
+            if isinstance(result, str):
+                result = yaml.safe_load(result)
+            return result
+        except (requests.exceptions.RequestException, OSError) as exc:
+            last_exc = exc
+            LOG.warning(
+                "NeMo Gym head probe attempt %d/3 failed: %s. Retrying...",
+                attempt,
+                type(exc).__name__,
+            )
+            if attempt < 3:
+                time.sleep(2.0 * attempt)
+    raise RuntimeError(
+        f"NeMo Gym head server at {url} did not respond after 3 attempts: {last_exc}"
     )
-    response.raise_for_status()
-    result = yaml.safe_load(response.text)
-    # NeMo Gym head server double-encodes: YAML string inside a YAML string
-    if isinstance(result, str):
-        result = yaml.safe_load(result)
-    return result
 
 
 def get_agent_servers(
