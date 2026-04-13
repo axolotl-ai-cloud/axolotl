@@ -769,9 +769,7 @@ class RLValidationMixin:
 
         if rl == "ipo":
             LOG.warning(
-                "rl: ipo will soon be deprecated. Use `rl: dpo` with `dpo_loss_type: ['ipo']` instead.",
-                DeprecationWarning,
-                stacklevel=2,
+                "rl: ipo will soon be deprecated. Use `rl: dpo` with `dpo_loss_type: ['ipo']` instead."
             )
 
         if rl == "dpo":
