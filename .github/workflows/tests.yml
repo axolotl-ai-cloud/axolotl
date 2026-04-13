@@ -111,7 +111,7 @@ jobs:
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
         run: |
@@ -200,7 +200,7 @@ jobs:
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
         run: |
