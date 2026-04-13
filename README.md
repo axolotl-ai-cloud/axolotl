@@ -96,11 +96,10 @@ Features:
 ### Installation
 
 ```bash
-# install uv if you don't already have it installed
+# install uv if you don't already have it installed (restart shell after)
 curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
 
-# CUDA 12.8.1 tends to have better package compatibility
+# change depending on system
 export UV_TORCH_BACKEND=cu128
 
 # create a new virtual environment
@@ -109,9 +108,6 @@ source .venv/bin/activate
 
 uv pip install torch==2.10.0 torchvision
 uv pip install --no-build-isolation axolotl[deepspeed]
-
-# (optional) - prefetch flash-attn2 and causal-conv1d kernels
-uv run --python 3.12 python -c "from kernels import get_kernel; get_kernel('kernels-community/flash-attn2'); get_kernel('kernels-community/causal-conv1d')"
 
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples
