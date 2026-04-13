@@ -404,7 +404,9 @@ class AxolotlTrainer(
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
-        _model_type = getattr(getattr(model, "config", None), "model_type", None)
+        # Use unwrap_model to handle DDP/FSDP wrappers that don't proxy .config.
+        _unwrapped = self.accelerator.unwrap_model(model)
+        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
@@ -433,6 +435,23 @@ class AxolotlTrainer(
                 num_items_in_batch=num_items_in_batch,
             )
 
+        # Gemma4ForConditionalGeneration computes loss with a manual
+        # nn.CrossEntropyLoss() that bypasses proper num_items_in_batch
+        # normalization and does redundant attention_mask filtering.
+        # Compute loss externally using the standard loss_function instead.
+        if _model_type == "gemma4" and "labels" in inputs:
+            labels = inputs.pop("labels")
+            outputs = model(**inputs)
+            logits = outputs.logits
+            unwrapped = self.accelerator.unwrap_model(model)
+            vocab_size = unwrapped.config.get_text_config().vocab_size
+            loss = unwrapped.loss_function(
+                logits, labels, vocab_size, num_items_in_batch=num_items_in_batch
+            )
+            if return_outputs:
+                return loss, outputs
+            return loss
+
         return super().compute_loss(
             model,
             inputs,
@@ -444,6 +463,21 @@ class AxolotlTrainer(
     def evaluate(self, *args, **kwargs):
         LOG.info("Running evaluation step...")
         return super().evaluate(*args, **kwargs)
+
+    @override
+    def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+        # Gemma4 requires mm_token_type_ids even during evaluation.
+        _unwrapped = self.accelerator.unwrap_model(model)
+        _model_type = getattr(getattr(_unwrapped, "config", None), "model_type", None)
+        if (
+            "mm_token_type_ids" not in inputs
+            and "input_ids" in inputs
+            and _model_type == "gemma4"
+        ):
+            inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
+        return super().prediction_step(
+            model, inputs, prediction_loss_only, ignore_keys=ignore_keys
+        )
 
     @staticmethod
     def orpo_concatenate_inputs(inputs, label_pad_token=-100, pad_token=0, device=None):

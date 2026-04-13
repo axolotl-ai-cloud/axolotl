@@ -547,6 +547,16 @@ class ModelLoader:
                 mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
 
+        if self.cfg.model_quantization_config == "FineGrainedFP8Config":
+            from transformers import FineGrainedFP8Config
+
+            fp8_kwargs = {}
+            if self.cfg.model_quantization_config_kwargs:
+                fp8_kwargs = self.cfg.model_quantization_config_kwargs
+            self.model_kwargs["quantization_config"] = FineGrainedFP8Config(
+                **fp8_kwargs
+            )
+
         if self.cfg.gptq:
             if not hasattr(self.model_config, "quantization_config"):
                 LOG.warning(
@@ -624,7 +634,14 @@ class ModelLoader:
 
     def _set_attention_config(self):
         """Sample packing uses custom FA2 patch"""
-        if self.cfg.attn_implementation:
+        if self.cfg.gemma4_hybrid_attn_impl:
+            # Load model with flash_attention_2 for sliding window layers;
+            # global layers will be patched to sdpa post-load.
+            self.model_kwargs["attn_implementation"] = "flash_attention_2"
+            self.model_config._attn_implementation = "flash_attention_2"
+            # Set flash_attention so multipack/sample_packing patches activate
+            self.cfg.flash_attention = True
+        elif self.cfg.attn_implementation:
             self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
         elif self.cfg.flex_attention:
             self.model_kwargs["attn_implementation"] = "flex_attention"

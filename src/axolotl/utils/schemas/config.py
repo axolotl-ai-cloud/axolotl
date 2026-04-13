@@ -578,6 +578,17 @@ class AxolotlInputConfig(
         },
     )
 
+    freeze_mm_modules: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Freeze multimodal encoder parameters (vision, audio, etc.) for "
+            "text-only training of multimodal models. When True, parameters belonging to "
+            "vision towers, audio towers, multimodal projectors, and similar non-language "
+            "modules are frozen (requires_grad=False). This allows DDP training without "
+            "ddp_find_unused_parameters=True."
+        },
+    )
+
     unfrozen_parameters: list[str] | None = Field(
         default=None,
         json_schema_extra={
@@ -763,6 +774,15 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Specify a custom attention implementation, used mostly for kernels."
+        },
+    )
+
+    gemma4_hybrid_attn_impl: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers "
+            "and sdpa for global (full_attention) layers. Global layers have head_dim=512 which "
+            "exceeds flash attention's supported size."
         },
     )
 

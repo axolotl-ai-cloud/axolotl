@@ -221,14 +221,6 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
             if getattr(tokenizer, attr_name) is None:
                 setattr(tokenizer, attr_name, "<|endoftext|>")
 
-    # Generic fallback: if tokenizer still has no pad_token, use eos_token
-    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
-        tokenizer.pad_token = tokenizer.eos_token
-        LOG.warning(
-            "Tokenizer does not have a pad_token, falling back to eos_token: %s",
-            tokenizer.eos_token,
-        )
-
     additional_special_tokens = None
     if cfg.special_tokens:
         special_tokens = cfg.special_tokens.to_dict()
@@ -301,6 +293,14 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     if additional_special_tokens is not None:
         tokenizer.add_special_tokens(
             {"additional_special_tokens": additional_special_tokens}
+        )
+
+    # Generic fallback: if tokenizer still has no pad_token, use eos_token
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+        LOG.warning(
+            "Tokenizer does not have a pad_token, falling back to eos_token: %s",
+            tokenizer.eos_token,
         )
 
     if is_main_process():

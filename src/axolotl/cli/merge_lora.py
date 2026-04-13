@@ -115,6 +115,7 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         simulate_nf4_experts=simulate_nf4_experts,
         nf4_blocksize=nf4_blocksize,
         nf4_double_quant=nf4_double_quant,
+        trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")

@@ -10,6 +10,44 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+# Top-level module name prefixes that belong to vision/audio/multimodal encoders
+# rather than the language backbone.  These are matched against the first component
+# of each ``named_parameter`` path (e.g. "model.vision_tower." -> "vision_tower").
+_MM_MODULE_PREFIXES = (
+    "vision_tower",
+    "vision_model",
+    "vision_encoder",
+    "embed_vision",
+    "multi_modal_projector",
+    "visual",
+    "audio_tower",
+    "audio_model",
+    "embed_audio",
+)
+
+
+def freeze_mm_modules(model):
+    """Freeze all vision/audio/multimodal-projector parameters.
+
+    Iterates over ``model.named_parameters()`` and sets ``requires_grad = False``
+    for any parameter whose name contains a known vision/audio module prefix.
+    This is useful when fine-tuning only the language backbone of a multimodal
+    model and avoids the need for ``ddp_find_unused_parameters=True``.
+    """
+    frozen_count = 0
+    for name, param in model.named_parameters():
+        # Check if any path component matches a vision/audio prefix
+        parts = name.split(".")
+        if any(part in _MM_MODULE_PREFIXES for part in parts):
+            if param.requires_grad:
+                param.requires_grad = False
+                frozen_count += 1
+                if is_main_process():
+                    LOG.debug(f"freeze_mm_modules: froze {name}")
+
+    if is_main_process():
+        LOG.info(f"freeze_mm_modules: froze {frozen_count} vision/audio parameters")
+
 
 def freeze_layers_except(model, regex_patterns):
     """
