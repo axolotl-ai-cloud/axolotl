@@ -1768,7 +1768,9 @@ class TestGCStepsMigration(BaseValidation):
 
         new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
 
+        # New options take precedence; gc_steps migration is skipped
         assert new_cfg.torch_empty_cache_steps == 5
+        assert new_cfg.gc_collect_steps is None
 
     def test_torch_empty_cache_steps_standalone(self, minimal_cfg):
         cfg = DictDefault({**minimal_cfg, "torch_empty_cache_steps": 8})

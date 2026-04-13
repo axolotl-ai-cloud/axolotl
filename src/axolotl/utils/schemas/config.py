@@ -532,7 +532,7 @@ class AxolotlInputConfig(
             "description": (
                 "Number of steps between Python `gc.collect()` calls. "
                 "-1 will run on epoch end and before evaluations only. "
-                "Default is 0 (disabled). "
+                "None means disabled (no periodic Python GC). "
                 "This is separate from `torch_empty_cache_steps` as `gc.collect()` "
                 "reclaims Python-level memory which the native Trainer cache clearing does not do."
             )
