@@ -118,7 +118,7 @@ axolotl fetch deepspeed_configs  # OPTIONAL
 
 Installing with Docker can be less error prone than installing in your own environment.
 ```bash
-docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
+docker run --gpus '"all"' --ipc=host --rm -it axolotlai/axolotl:main-latest
 ```
 
 Other installation approaches are described [here](https://docs.axolotl.ai/docs/installation.html).
