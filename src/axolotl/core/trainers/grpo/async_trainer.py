@@ -1103,11 +1103,22 @@ class AsyncGRPOTrainer(GRPOTrainer):
         - vllm_lora_sync: saves adapter to filesystem, vLLM loads natively
         - PEFT no-merge: computes merged weights as new tensors, NCCL broadcast
         - Non-PEFT: stock sync_weights via merge_adapter + NCCL
+
+        This is the canonical sync trigger and runs in BOTH async and
+        synchronous modes from ``_prepare_inputs_with_data_producer`` /
+        ``_prepare_inputs_legacy_async``. The ``_generate_single_turn``
+        patch is a parallel backup for non-data-producer paths (vanilla
+        GRPO without NeMo Gym), where the data producer is bypassed
+        entirely and TRL's stock generate-then-sync flow is used instead.
         """
-        if not (self.use_vllm and self.args.async_prefetch):
+        if not self.use_vllm:
             return
         step = self.state.global_step
-        interval = self.args.vllm_sync_interval
+        # Default to syncing every step when no interval is configured —
+        # otherwise ``step % None`` would TypeError, and the previous
+        # behavior of crashing on the first sync was strictly worse than
+        # the standard "sync every optimizer step".
+        interval = self.args.vllm_sync_interval or 1
         if step != self._last_synced_step and step % interval == 0:
             if step == 0:
                 logger.info("Skipping vLLM weight sync at step 0 (no training yet)")
@@ -1202,13 +1213,42 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
         # Permanently replace vllm_generation.sync_weights with our custom
         # sync to avoid merge_adapter (fails on FP8 / races with training).
-        # For LoRA sync mode, make it a no-op here since _maybe_sync_vllm_weights
-        # handles the sync with proper interval tracking.
+        #
+        # The design has two modes that have to be threaded carefully:
+        #
+        #   - Async prefetch ON: BG generation thread can't safely call
+        #     sync_weights mid-rollout (it races with the trainer's optimizer
+        #     step and can corrupt weights). We no-op the stock sync hook and
+        #     drive sync ourselves from ``_maybe_sync_vllm_weights`` after the
+        #     optimizer step on the main thread.
+        #
+        #   - Async prefetch OFF (synchronous mode): TRL's stock
+        #     ``_generate_single_turn`` calls ``sync_weights`` once per step
+        #     boundary. There's no BG thread to race with, and
+        #     ``_maybe_sync_vllm_weights`` short-circuits with
+        #     ``if not async_prefetch: return``, so we MUST wire the stock
+        #     hook directly to our LoRA sync helper — otherwise nothing ever
+        #     pushes weights to vLLM and the trainer becomes a no-op (vLLM
+        #     keeps serving the base model, every rollout in every group
+        #     produces identical outputs, advantages are zero, optimizer
+        #     step gets skipped, repeat).
         if not getattr(self, "_patched_sync_weights", False):
             if self.use_vllm and hasattr(self, "vllm_generation"):
                 if getattr(self.args, "vllm_lora_sync", False):
-                    # No-op: LoRA sync is driven by _maybe_sync_vllm_weights
-                    self.vllm_generation.sync_weights = lambda: None
+                    if getattr(self.args, "async_prefetch", False):
+                        # Async: drive sync from main thread via
+                        # _maybe_sync_vllm_weights instead.
+                        self.vllm_generation.sync_weights = lambda: None
+                    else:
+                        # Sync mode: TRL's _generate_single_turn already
+                        # calls sync_weights once per step boundary. Wire
+                        # it directly to our LoRA filesystem sync helper.
+                        sync_helper = self._sync_lora_adapter
+
+                        def _lora_filesystem_sync():
+                            sync_helper()
+
+                        self.vllm_generation.sync_weights = _lora_filesystem_sync
                     self._patched_sync_weights = True
                 else:
                     from accelerate.utils import is_peft_model
