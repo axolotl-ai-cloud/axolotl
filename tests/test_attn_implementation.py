@@ -1,11 +1,17 @@
 """
-Tests for attn_implementation normalization, registry registration, and
-backwards compatibility with legacy boolean attention flags.
+Tests for attn_implementation normalization, registry registration,
+capability properties, and backwards compatibility with legacy boolean
+attention flags.
 """
 
 import pytest
 
 from axolotl.utils.schemas.config import AxolotlInputConfig
+from axolotl.utils.schemas.enums import (
+    _NO_DTYPE_CAST_ATTN_IMPLS,
+    _NON_PACKING_ATTN_IMPLS,
+    FLASH_ATTN_LIB_IMPLS,
+)
 
 
 class TestAttnImplementationNormalizer:
@@ -18,22 +24,31 @@ class TestAttnImplementationNormalizer:
     # --- Forward mapping: attn_implementation -> legacy flags ---
 
     @pytest.mark.parametrize(
-        "impl,expected_flags",
+        "impl,expected_flag",
         [
-            ("eager", {"eager_attention": True}),
-            ("flash", {"flash_attention": True}),
-            ("sdpa", {"sdp_attention": True}),
-            ("flex", {"flex_attention": True}),
-            ("xformers", {"xformers_attention": True, "flash_attention": True}),
-            ("sage", {"sage_attention": True, "flash_attention": True}),
-            ("s2", {"s2_attention": True, "flash_attention": True}),
+            ("eager", "eager_attention"),
+            ("flash", "flash_attention"),
+            ("sdpa", "sdp_attention"),
+            ("flex", "flex_attention"),
+            ("xformers", "xformers_attention"),
+            ("sage", "sage_attention"),
+            ("s2", "s2_attention"),
         ],
     )
-    def test_attn_impl_sets_legacy_flags(self, impl, expected_flags):
+    def test_attn_impl_sets_primary_legacy_flag(self, impl, expected_flag):
         data = {"attn_implementation": impl}
         result = AxolotlInputConfig.normalize_attn_implementation(data)
-        for flag, val in expected_flags.items():
-            assert result.get(flag) == val, f"{impl}: expected {flag}={val}"
+        assert result.get(expected_flag) is True, (
+            f"{impl}: expected {expected_flag}=True"
+        )
+
+    @pytest.mark.parametrize("impl", ["xformers", "sage", "s2"])
+    def test_attn_impl_does_not_set_flash_for_non_flash(self, impl):
+        """xformers, sage, s2 should NOT set flash_attention=True anymore."""
+        result = self._normalize({"attn_implementation": impl})
+        assert not result.get("flash_attention"), (
+            f"{impl} should not set flash_attention"
+        )
 
     def test_fp8_sets_no_legacy_flags(self):
         result = self._normalize({"attn_implementation": "fp8"})
@@ -87,26 +102,12 @@ class TestAttnImplementationNormalizer:
         assert result["attn_implementation"] == "flash"
         assert result["flash_attention"] is True
 
-    def test_consistent_xformers_with_extra_flags(self):
-        """xformers needs flash_attention=True, so both flags with attn_impl should be OK."""
+    def test_consistent_xformers_with_own_flag(self):
+        """xformers + xformers_attention should be OK."""
         result = self._normalize(
-            {
-                "attn_implementation": "xformers",
-                "xformers_attention": True,
-                "flash_attention": True,
-            }
+            {"attn_implementation": "xformers", "xformers_attention": True}
         )
         assert result["attn_implementation"] == "xformers"
-
-    def test_consistent_s2_with_flash(self):
-        result = self._normalize(
-            {
-                "attn_implementation": "s2",
-                "s2_attention": True,
-                "flash_attention": True,
-            }
-        )
-        assert result["attn_implementation"] == "s2"
 
     # --- Conflict detection ---
 
@@ -117,6 +118,28 @@ class TestAttnImplementationNormalizer:
     def test_conflicting_xformers_impl_with_sdp_flag(self):
         with pytest.raises(ValueError, match="conflicts with"):
             self._normalize({"attn_implementation": "xformers", "sdp_attention": True})
+
+    def test_xformers_with_flash_flag_conflicts(self):
+        """After normalizer change, xformers no longer expects flash_attention."""
+        with pytest.raises(ValueError, match="conflicts with"):
+            self._normalize(
+                {
+                    "attn_implementation": "xformers",
+                    "xformers_attention": True,
+                    "flash_attention": True,
+                }
+            )
+
+    def test_s2_with_flash_flag_conflicts(self):
+        """After normalizer change, s2 no longer expects flash_attention."""
+        with pytest.raises(ValueError, match="conflicts with"):
+            self._normalize(
+                {
+                    "attn_implementation": "s2",
+                    "s2_attention": True,
+                    "flash_attention": True,
+                }
+            )
 
     # --- Hub kernel strings pass through ---
 
@@ -144,15 +167,68 @@ class TestAttnImplementationNormalizer:
         result = self._normalize({"some_other_config": True})
         assert result.get("attn_implementation") is None
 
-    # --- Sample packing interactions ---
+    # --- Gemma4 hybrid ---
 
-    def test_xformers_with_sample_packing_sets_flash(self):
-        """xformers + sample_packing needs flash_attention=True for the patch chain."""
-        result = self._normalize(
-            {"attn_implementation": "xformers", "sample_packing": True}
-        )
-        assert result["xformers_attention"] is True
+    def test_gemma4_hybrid_sets_flash(self):
+        """gemma4_hybrid_attn_impl should default attn_implementation to flash."""
+        result = self._normalize({"gemma4_hybrid_attn_impl": True})
+        assert result["attn_implementation"] == "flash"
         assert result["flash_attention"] is True
+
+    def test_gemma4_hybrid_does_not_override_explicit(self):
+        """If attn_implementation is already set, gemma4 should not override it."""
+        result = self._normalize(
+            {"gemma4_hybrid_attn_impl": True, "attn_implementation": "sdpa"}
+        )
+        assert result["attn_implementation"] == "sdpa"
+
+
+class TestAttnCapabilityProperties:
+    """Test the capability properties on the normalizer data.
+
+    Since these are @property on AxolotlInputConfig (a Pydantic model),
+    we test the underlying logic directly using the constant sets.
+    """
+
+    # --- attn_supports_packing ---
+
+    @pytest.mark.parametrize("impl", ["flash", "flex", "xformers", "sage"])
+    def test_supports_packing_true(self, impl):
+        assert impl not in _NON_PACKING_ATTN_IMPLS
+
+    @pytest.mark.parametrize("impl", ["eager", "sdpa", "s2", "fp8"])
+    def test_supports_packing_false(self, impl):
+        assert impl in _NON_PACKING_ATTN_IMPLS
+
+    def test_hub_kernel_supports_packing(self):
+        """Unknown hub kernels should default to packing-capable."""
+        assert "kernels-community/flash-attn3" not in _NON_PACKING_ATTN_IMPLS
+
+    # --- attn_uses_flash_lib ---
+
+    @pytest.mark.parametrize("impl", ["flash", "s2"])
+    def test_uses_flash_lib_true(self, impl):
+        assert impl in FLASH_ATTN_LIB_IMPLS
+
+    @pytest.mark.parametrize(
+        "impl", ["eager", "sdpa", "xformers", "flex", "sage", "fp8"]
+    )
+    def test_uses_flash_lib_false(self, impl):
+        assert impl not in FLASH_ATTN_LIB_IMPLS
+
+    def test_hub_kernel_not_flash_lib(self):
+        """Hub kernels are HF-managed, not axolotl monkeypatch targets."""
+        assert "kernels-community/flash-attn3" not in FLASH_ATTN_LIB_IMPLS
+
+    # --- attn_needs_dtype_cast ---
+
+    @pytest.mark.parametrize("impl", ["eager", "sdpa"])
+    def test_no_dtype_cast(self, impl):
+        assert impl in _NO_DTYPE_CAST_ATTN_IMPLS
+
+    @pytest.mark.parametrize("impl", ["flash", "flex", "sage", "xformers", "s2", "fp8"])
+    def test_needs_dtype_cast(self, impl):
+        assert impl not in _NO_DTYPE_CAST_ATTN_IMPLS
 
 
 class TestAttnImplToHFMapping:

@@ -253,7 +253,7 @@ class PatchManager:
 
     def _apply_flash_attention_patches(self):
         """Apply patches related to Flash Attention."""
-        if self.cfg.xformers_attention:
+        if self.cfg.attn_implementation == "xformers":
             from axolotl.monkeypatch.attention import register_xformers_attn
 
             register_xformers_attn()
@@ -263,9 +263,8 @@ class PatchManager:
                 from axolotl.monkeypatch.attention import patch_xformers_attn_over_fa2
 
                 patch_xformers_attn_over_fa2()
-                self.cfg.flash_attention = True
 
-        if self.cfg.sage_attention:
+        if self.cfg.attn_implementation == "sage":
             from axolotl.monkeypatch.attention import register_sage_attn
 
             register_sage_attn()
@@ -334,7 +333,7 @@ class PatchManager:
 
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
-        if self.cfg.flex_attention:
+        if self.cfg.attn_implementation == "flex":
             from axolotl.monkeypatch.attention.flex_attn import (
                 patch_flex_wrapper,
             )
@@ -344,14 +343,14 @@ class PatchManager:
 
     def _apply_sageattn_patches(self):
         """Apply patches for SageAttention."""
-        if self.cfg.sage_attention:
+        if self.cfg.attn_implementation == "sage":
             from axolotl.monkeypatch.attention.sage_attn import patch_sageattn
 
             patch_sageattn()
 
     def _apply_flash_attn_4_patches(self):
         """Auto-apply FA4 when flash_attention is enabled and FA4 is available on SM90+."""
-        if not self.cfg.flash_attention:
+        if not self.cfg.attn_uses_flash_lib:
             return
 
         from axolotl.monkeypatch.attention.flash_attn_4 import patch_flash_attn_4
@@ -420,7 +419,7 @@ class PatchManager:
             if (
                 self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
                 and self.cfg.is_multimodal
-                and self.cfg.flash_attention
+                and self.cfg.attn_uses_flash_lib
             ):
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_vlm_flash_attention,
@@ -572,7 +571,7 @@ class PatchManager:
         """Apply multipack patches if necessary."""
         if (
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-            and (self.cfg.flash_attention or self.cfg.flex_attention)
+            and self.cfg.attn_supports_packing
             and self.cfg.sample_packing
         ):
             # Get automap config if it exists
@@ -693,7 +692,9 @@ class PatchManager:
 
     def _patch_attention(self):
         """Apply attention-specific patches based on model type."""
-        if not (self.cfg.flash_attention and hasattr(self.model_config, "model_type")):
+        if not (
+            self.cfg.attn_uses_flash_lib and hasattr(self.model_config, "model_type")
+        ):
             return
 
         if self.model_config.model_type == "btlm":
@@ -739,7 +740,7 @@ class PatchManager:
             replace_llama_attn_with_flash_attn,
         )
 
-        if self.cfg.s2_attention:
+        if self.cfg.attn_implementation == "s2":
             LOG.info("patching w/ flash-enabled, shifted-sparse attention")
             replace_llama_attn_with_flash_attn(
                 cross_entropy=self.cfg.flash_attn_cross_entropy,
@@ -765,14 +766,14 @@ class PatchManager:
         """Modify all llama derived models in one block."""
         if self.cfg.is_llama_derived_model and not (
             self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-            and (self.cfg.flash_attention or self.cfg.flex_attention)
+            and self.cfg.attn_supports_packing
             and self.cfg.sample_packing
         ):
-            if self.cfg.flash_attention:
+            if self.cfg.attn_uses_flash_lib:
                 self._patch_llama_flash_attention()
-            elif self.cfg.xformers_attention:
+            elif self.cfg.attn_implementation == "xformers":
                 self._patch_llama_xformers_attention()
-            elif self.cfg.s2_attention:
+            elif self.cfg.attn_implementation == "s2":
                 raise NotImplementedError(
                     "Shifted-sparse attention not currently implemented without flash attention."
                 )
@@ -784,7 +785,7 @@ class PatchManager:
             in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
             and not self.cfg.trust_remote_code
             and not self.cfg.gptq
-            and self.cfg.flash_attention
+            and self.cfg.attn_uses_flash_lib
             and is_flash_attn_available()
             and not self.inference
         ):

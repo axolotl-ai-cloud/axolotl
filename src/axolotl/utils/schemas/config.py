@@ -28,6 +28,9 @@ from axolotl.utils.schemas.datasets import (
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import (
+    _NO_DTYPE_CAST_ATTN_IMPLS,
+    _NON_PACKING_ATTN_IMPLS,
+    FLASH_ATTN_LIB_IMPLS,
     AttnImplementation,
     ChatTemplate,
     RingAttnFunc,
@@ -1332,6 +1335,40 @@ class AxolotlInputConfig(
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
+    # --- Attention capability properties ---
+
+    @property
+    def attn_supports_packing(self) -> bool:
+        """True if attention supports varlen sample packing via position_ids.
+
+        Known varlen backends: flash, flex, xformers, sage.
+        Unknown strings (e.g., hub kernels like 'kernels-community/flash-attn3')
+        default to True since they generally support varlen.
+        """
+        if not self.attn_implementation:
+            return False
+        return self.attn_implementation not in _NON_PACKING_ATTN_IMPLS
+
+    @property
+    def attn_uses_flash_lib(self) -> bool:
+        """True if the backend uses axolotl's flash_attn monkeypatches.
+
+        Only for axolotl-managed FA setup (flash, s2). Hub kernels are
+        HF-managed and don't need these patches.
+        """
+        return self.attn_implementation in FLASH_ATTN_LIB_IMPLS
+
+    @property
+    def attn_needs_dtype_cast(self) -> bool:
+        """True if attention needs embedding dtype cast to fp16/bf16.
+
+        Unknown backends (hub kernels) default to True (safe -- harmless
+        if unnecessary, but missing cast causes errors).
+        """
+        if not self.attn_implementation:
+            return False
+        return self.attn_implementation not in _NO_DTYPE_CAST_ATTN_IMPLS
+
     @model_validator(mode="before")
     @classmethod
     def warn_peft_trainable_token_to_fix_untrained(cls, data):
@@ -1358,16 +1395,22 @@ class AxolotlInputConfig(
         """Normalize attention config: map between attn_implementation enum and legacy boolean flags."""
         attn_impl = data.get("attn_implementation")
 
-        # Mapping: attn_implementation value -> (primary flag, extra flags to set)
-        impl_to_flags = {
-            "eager": (("eager_attention",), ()),
-            "flash": (("flash_attention",), ()),
-            "sdpa": (("sdp_attention",), ()),
-            "xformers": (("xformers_attention",), ("flash_attention",)),
-            "flex": (("flex_attention",), ()),
-            "sage": (("sage_attention",), ("flash_attention",)),
-            "s2": (("s2_attention",), ("flash_attention",)),
-            "fp8": ((), ()),  # new, no legacy flags
+        # If gemma4_hybrid_attn_impl is set but no attn_implementation, default
+        # to flash (the sliding-window layers use FA2, and packing should be enabled).
+        if data.get("gemma4_hybrid_attn_impl") and not attn_impl:
+            data["attn_implementation"] = "flash"
+            attn_impl = "flash"
+
+        # Mapping: attn_implementation value -> primary legacy flag to set
+        impl_to_flag = {
+            "eager": "eager_attention",
+            "flash": "flash_attention",
+            "sdpa": "sdp_attention",
+            "xformers": "xformers_attention",
+            "flex": "flex_attention",
+            "sage": "sage_attention",
+            "s2": "s2_attention",
+            "fp8": None,  # new, no legacy flag
         }
 
         # Reverse mapping: legacy flag -> attn_implementation value
@@ -1386,26 +1429,21 @@ class AxolotlInputConfig(
 
         if attn_impl and set_flags:
             # Both set — check consistency
-            if attn_impl in impl_to_flags:
-                expected_primary, expected_extra = impl_to_flags[attn_impl]
-                expected_flags = set(expected_primary) | set(expected_extra)
-                for flag in set_flags:
-                    if flag not in expected_flags:
-                        raise ValueError(
-                            f"attn_implementation={attn_impl!r} conflicts with {flag}=true. "
-                            f"Use only attn_implementation or the legacy flag, not both."
-                        )
+            expected_flag = impl_to_flag.get(attn_impl)
+            for flag in set_flags:
+                if flag != expected_flag:
+                    raise ValueError(
+                        f"attn_implementation={attn_impl!r} conflicts with {flag}=true. "
+                        f"Use only attn_implementation or the legacy flag, not both."
+                    )
         elif attn_impl and not set_flags:
-            # attn_implementation set, no legacy flags — set them for backwards compat
-            if attn_impl in impl_to_flags:
-                primary, extra = impl_to_flags[attn_impl]
-                for flag in (*primary, *extra):
-                    data[flag] = True
+            # attn_implementation set, no legacy flags — set primary for backwards compat
+            flag = impl_to_flag.get(attn_impl)
+            if flag:
+                data[flag] = True
         elif not attn_impl and set_flags:
             # Legacy flags set, no attn_implementation — map to enum, warn
             # Priority: specific backends first, then generic flash/sdp/eager
-            # s2 and sage require flash_attention internally, so they must be
-            # checked before flash_attention to avoid masking
             priority = [
                 "xformers_attention",
                 "s2_attention",
@@ -1430,7 +1468,10 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_sageattn_wo_sample_packing(cls, data):
-        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
+        is_sage = (
+            data.get("sage_attention") or data.get("attn_implementation") == "sage"
+        )
+        if (not data.get("sample_packing", False)) and is_sage:
             if not data.get("pad_to_sequence_len", False):
                 LOG.warning(
                     "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
@@ -1441,7 +1482,10 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def check_sageattn_fft(cls, data):
-        if (not data.get("adapter", False)) and data.get("sage_attention"):
+        is_sage = (
+            data.get("sage_attention") or data.get("attn_implementation") == "sage"
+        )
+        if (not data.get("adapter", False)) and is_sage:
             LOG.warning(
                 "We found loss to drop to 0 with SageAttention full finetuning."
                 "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
@@ -1531,7 +1575,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         )
         if (
             data.get("sample_packing")
-            and data.get("sdp_attention")
+            and (data.get("sdp_attention") or data.get("attn_implementation") == "sdpa")
             and (data.get("bfloat16") or data.get("bf16"))
             and not is_sm_90
         ):
@@ -1546,8 +1590,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_compute_capability_w_sageattn(cls, data):
+        is_sage = (
+            data.get("sage_attention") or data.get("attn_implementation") == "sage"
+        )
         if (
-            data.get("sage_attention")
+            is_sage
             and data.get("capabilities")
             and data.get("capabilities").get("compute_capability")
             not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
@@ -1715,7 +1762,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_flex_torch_version(cls, data):
-        if (data.get("flex_attention") is not None) and (data.get("flex_attention")):
+        if data.get("flex_attention") or data.get("attn_implementation") == "flex":
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
 

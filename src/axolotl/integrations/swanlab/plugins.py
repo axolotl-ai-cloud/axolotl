@@ -383,7 +383,9 @@ class SwanLabPlugin(BasePlugin):
                 "seed": safe_convert(getattr(cfg, "seed", None)),
                 "bf16": safe_convert(getattr(cfg, "bf16", None)),
                 "tf32": safe_convert(getattr(cfg, "tf32", None)),
-                "flash_attention": safe_convert(getattr(cfg, "flash_attention", None)),
+                "attn_implementation": safe_convert(
+                    getattr(cfg, "attn_implementation", None)
+                ),
                 "sample_packing": safe_convert(getattr(cfg, "sample_packing", None)),
             }
 

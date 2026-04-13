@@ -205,7 +205,11 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # Mistral's official FA implementation requires left padding
-    if cfg.is_mistral_derived_model and cfg.flash_attention and not cfg.sample_packing:
+    if (
+        cfg.is_mistral_derived_model
+        and cfg.attn_implementation == "flash"
+        and not cfg.sample_packing
+    ):
         tokenizer.padding_side = "left"
 
     # Qwen base only has single token, so we need to set the special tokens
