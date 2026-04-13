@@ -255,9 +255,10 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
             f"Using AxolotlDPODataCollatorWithPadding with pad_to_multiple_of="
             f"{pad_to_multiple_of}"
         )
+        is_enc_dec = getattr(self.model.config, "is_encoder_decoder", False)
         return AxolotlDPODataCollatorWithPadding(
             pad_token_id=self.tokenizer.pad_token_id,
-            is_encoder_decoder=False,
+            is_encoder_decoder=is_enc_dec,
             pad_to_multiple_of=pad_to_multiple_of,
             **kwargs,
         )

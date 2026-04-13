@@ -43,7 +43,12 @@ class AxolotlDPODataCollatorWithPadding(DPODataCollatorWithPadding):
                 ("_input_ids", "_attention_mask", "_labels", "_pixel_values")
             ):
                 if self.is_encoder_decoder:
-                    to_pad = [torch.LongTensor(ex[k]) for ex in features]
+                    if k.endswith("_pixel_values"):
+                        to_pad = [
+                            torch.tensor(ex[k], dtype=torch.float32) for ex in features
+                        ]
+                    else:
+                        to_pad = [torch.LongTensor(ex[k]) for ex in features]
 
                     if k.startswith("prompt") and k.endswith("input_ids"):
                         if self.pad_token_id is None:
@@ -52,6 +57,8 @@ class AxolotlDPODataCollatorWithPadding(DPODataCollatorWithPadding):
                             )
                         padding_value = self.pad_token_id
                     elif k.endswith("_attention_mask"):
+                        padding_value = 0
+                    elif k.endswith("_pixel_values"):
                         padding_value = 0
                     elif (
                         k.startswith(("chosen", "rejected", "completion"))
