@@ -5,6 +5,8 @@ Covers:
   - save_strategy: 'best' requires metric_for_best_model
   - streaming=True with val_set_size > 0 is rejected
   - lora_target_modules with invalid regex patterns is rejected
+  - GRPO: generation batch size must be divisible by num_generations,
+    num_generations >= 2, and effective_gbs >= num_generations * world_size
 """
 
 import pytest
@@ -117,3 +119,136 @@ class TestLoraTargetModulesRegexValidator:
         )
         with pytest.raises(ValueError, match="invalid regex pattern"):
             validate_config(cfg)
+
+
+class TestGRPOBatchSizeValidator:
+    """GRPO requires (mb*GA) % num_generations == 0 and num_generations >= 2.
+
+    These call the @model_validator(mode="before") classmethod directly on a
+    plain dict — same input shape it receives during full Pydantic validation,
+    just without dragging in unrelated fields (datasets / model loading / etc.)
+    that aren't relevant to what's under test. The validator is registered on
+    ``RLValidationMixin`` (which ``AxolotlInputConfig`` inherits) so this is the
+    same code path ``axolotl train`` exercises.
+    """
+
+    @staticmethod
+    def _check(data):
+        from axolotl.utils.schemas.validation import RLValidationMixin
+
+        return RLValidationMixin.check_grpo_batch_size_divisibility(data)
+
+    def test_divisible_passes(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 4,
+            "trl": {"num_generations": 4},
+        }
+        # Should return data unchanged (no exception)
+        out = self._check(data)
+        assert out["trl"]["num_generations"] == 4
+
+    def test_non_divisible_raises(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 2,
+            "trl": {"num_generations": 4},
+        }
+        with pytest.raises(ValueError, match="num_generations"):
+            self._check(data)
+
+    def test_non_divisible_error_includes_fix_hint(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 3,
+            "trl": {"num_generations": 4},
+        }
+        with pytest.raises(ValueError, match="gradient_accumulation_steps: 4"):
+            self._check(data)
+
+    def test_num_generations_one_raises(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 4,
+            "trl": {"num_generations": 1},
+        }
+        with pytest.raises(ValueError, match=r"num_generations >= 2"):
+            self._check(data)
+
+    def test_explicit_generation_batch_size_divisible_passes(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "trl": {"num_generations": 4, "generation_batch_size": 8},
+        }
+        out = self._check(data)
+        assert out["trl"]["generation_batch_size"] == 8
+
+    def test_explicit_generation_batch_size_non_divisible_raises(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "trl": {"num_generations": 4, "generation_batch_size": 6},
+        }
+        with pytest.raises(ValueError, match="trl.generation_batch_size"):
+            self._check(data)
+
+    def test_non_grpo_skips_check(self):
+        # Anything other than rl=grpo should pass through untouched, even
+        # with non-divisible batch sizes — they're irrelevant to other RL
+        # methods that don't use group-relative advantages.
+        data = {
+            "rl": "dpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 3,
+            "trl": {"num_generations": 4},
+        }
+        assert self._check(data) is data
+
+    def test_no_rl_set_skips_check(self):
+        data = {
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 3,
+        }
+        assert self._check(data) is data
+
+    def test_grpo_without_num_generations_skips_check(self):
+        # If num_generations isn't set, TRL uses its own default — we don't
+        # have enough info to validate, so the validator must short-circuit
+        # rather than guess.
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 3,
+            "trl": {},
+        }
+        out = self._check(data)
+        assert out["rl"] == "grpo"
+
+    def test_multi_rank_group_size_check(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 4,  # gbs=4
+            "world_size": 2,  # need gbs >= 4*2 = 8
+            "trl": {"num_generations": 4},
+        }
+        with pytest.raises(ValueError, match=r"world_size=2"):
+            self._check(data)
+
+    def test_multi_rank_group_size_satisfied(self):
+        data = {
+            "rl": "grpo",
+            "micro_batch_size": 1,
+            "gradient_accumulation_steps": 8,  # gbs=8 >= 4*2
+            "world_size": 2,
+            "trl": {"num_generations": 4},
+        }
+        out = self._check(data)
+        assert out["gradient_accumulation_steps"] == 8
