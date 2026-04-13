@@ -61,8 +61,7 @@ To use sequence parallelism, you need:
 ### Mamba/SSM Hybrid Models
 
 Context parallelism is supported for hybrid models that combine attention and Mamba2 SSM
-layers (Nemotron-H, Falcon-H1, Bamba, Granite MoE Hybrid, Zamba2). These models require
-special handling because:
+layers. These models require special handling because:
 
 - **Attention layers** work correctly via ring flash attention (same as pure-attention models).
 - **SSM (Mamba2) layers** are recurrent and need cross-rank hidden-state propagation.
@@ -78,6 +77,16 @@ Axolotl handles both aspects:
    the next rank via P2P communication (`ring_shift_ssm_state`), and an additive correction
    is applied to account for the missing initial state (`mamba2_cp_correction`). This uses
    the linearity property of SSMs to avoid a second forward pass.
+
+#### Supported Architectures
+
+| Model family | `model_config_type` | Architecture notes |
+|---|---|---|
+| Nemotron-H | `nemotron_h` | Mamba2 / Attention / MoE hybrid; block type selected per layer |
+| Falcon-H1 | `falcon_h1` | Mamba2 and Attention run **in parallel** in every layer |
+| Bamba | `bamba` | Mamba2 / Attention hybrid |
+| Zamba2 | `zamba2` | Mamba2 / Attention hybrid with shared attention layers |
+| Granite MoE Hybrid | `granitemoehybrid` | Mamba2 / Attention / MoE hybrid |
 
 ## Example
 
