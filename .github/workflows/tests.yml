@@ -10,7 +10,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
-      - "cicd/Dockerfile.jinja"
+      - "cicd/Dockerfile-uv.jinja"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -18,7 +18,7 @@ on:
       - "pyproject.toml"
       - ".github/workflows/*.yml"
       - "cicd/cicd.sh"
-      - "cicd/Dockerfile.jinja"
+      - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
