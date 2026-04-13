@@ -760,6 +760,88 @@ class RLValidationMixin:
             )
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def check_grpo_batch_size_divisibility(cls, data):
+        """Surface GRPO batch-shape mismatches at config-parse time.
+
+        TRL's GRPOTrainer requires that the per-step generation batch size be
+        evenly divisible by ``num_generations`` so that every prompt can be
+        replicated exactly ``num_generations`` times. The runtime check inside
+        ``GRPOTrainer.__init__`` only fires after the model has been loaded —
+        too late and too cryptic for the user. We replicate the check here so
+        the failure is immediate and actionable.
+
+        Also enforces:
+          - ``num_generations >= 2`` (group-relative advantage needs variance)
+          - ``effective_gbs >= num_generations * world_size`` when capabilities
+            indicate multiple ranks (each rank needs at least one full group)
+        """
+        if data.get("rl") != "grpo":
+            return data
+
+        trl_cfg = data.get("trl") or {}
+        num_gen = trl_cfg.get("num_generations")
+        if num_gen is None:
+            # TRL's own default is 8 — but if the user didn't set it, we
+            # don't have enough info to validate anything. Let TRL's own
+            # init handle the default-vs-batch interaction.
+            return data
+        if num_gen < 2:
+            raise ValueError(
+                f"GRPO requires `trl.num_generations >= 2` (got {num_gen}). "
+                "With num_generations=1, every group has zero advantage and "
+                "the policy never updates."
+            )
+
+        explicit_gbs = trl_cfg.get("generation_batch_size")
+        if explicit_gbs is not None:
+            effective_gbs = int(explicit_gbs)
+            gbs_source = "trl.generation_batch_size"
+        else:
+            mb = data.get("micro_batch_size") or 1
+            ga = data.get("gradient_accumulation_steps") or 1
+            effective_gbs = int(mb) * int(ga)
+            gbs_source = f"micro_batch_size ({mb}) * gradient_accumulation_steps ({ga})"
+
+        if effective_gbs % num_gen != 0:
+            # Suggest the smallest GA bump that fixes it for the common case
+            # where the user hasn't set generation_batch_size explicitly.
+            hint = ""
+            if explicit_gbs is None:
+                from math import gcd
+
+                mb_val = int(data.get("micro_batch_size") or 1)
+                # smallest GA such that mb*GA is a multiple of num_gen
+                lcm = num_gen * mb_val // gcd(num_gen, mb_val)
+                suggested_ga = lcm // mb_val
+                hint = (
+                    f" Smallest fix: set `gradient_accumulation_steps: "
+                    f"{suggested_ga}` (so micro_batch_size * GA = "
+                    f"{mb_val * suggested_ga} is a multiple of {num_gen})."
+                )
+            raise ValueError(
+                f"GRPO: generation batch size must be divisible by "
+                f"`trl.num_generations`. Got effective_gbs={effective_gbs} "
+                f"(from {gbs_source}) and num_generations={num_gen}.{hint}"
+            )
+
+        # Multi-rank check: each rank must receive at least one full group
+        # per step. Without `capabilities` populated yet (mode='before'), we
+        # fall back to user-set distributed fields.
+        world_size = (
+            (data.get("capabilities") or {}).get("n_gpu") or data.get("world_size") or 1
+        )
+        if world_size and world_size > 1 and effective_gbs < num_gen * world_size:
+            raise ValueError(
+                f"GRPO with world_size={world_size} requires effective_gbs "
+                f">= num_generations * world_size = {num_gen * world_size}, "
+                f"got {effective_gbs}. Increase gradient_accumulation_steps "
+                f"or micro_batch_size."
+            )
+
+        return data
+
 
 class OptimizationValidationMixin:
     """Validation methods related to optimization and performance."""
