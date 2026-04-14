@@ -315,15 +315,27 @@ def _build_peft_layer_and_get_delta(
             "weight", nn.Parameter(base_tensor.clone(), requires_grad=False)
         )
 
+        # ParamWrapper rejects dropout/fan_in_fan_out/lora_bias/use_dora, so
+        # build a minimal config with only the fields it accepts.
+        pw_config = LoraConfig(
+            r=r,
+            lora_alpha=lora_alpha,
+            lora_dropout=0.0,
+            fan_in_fan_out=False,
+            use_rslora=use_rslora,
+            use_dora=False,
+            lora_bias=False,
+        )
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             layer = ParamWrapper(
                 fake,
                 adapter_name=adapter_name,
                 parameter_name="weight",
+                config=pw_config,
                 r=r,
                 lora_alpha=lora_alpha,
-                use_rslora=use_rslora,
             )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
@@ -375,13 +387,18 @@ def _build_peft_layer_and_get_delta(
         )
         base_layer.weight.data = base_tensor.clone()
 
-        layer = PeftConvCls(
-            base_layer,
-            adapter_name=adapter_name,
+        conv_config = LoraConfig(
             r=r_total,
             lora_alpha=lora_alpha,
             use_rslora=use_rslora,
             use_dora=use_dora,
+        )
+        layer = PeftConvCls(
+            base_layer,
+            adapter_name=adapter_name,
+            config=conv_config,
+            r=r_total,
+            lora_alpha=lora_alpha,
         )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
@@ -410,14 +427,19 @@ def _build_peft_layer_and_get_delta(
             or lora_config_dict.get("lora_fan_in_fan_out", False)
         )
 
-        layer = LoraLinear(
-            base_layer,
-            adapter_name=adapter_name,
+        linear_config = LoraConfig(
             r=r_total,
             lora_alpha=lora_alpha,
             fan_in_fan_out=fan_in_fan_out,
             use_rslora=use_rslora,
             use_dora=use_dora,
+        )
+        layer = LoraLinear(
+            base_layer,
+            adapter_name=adapter_name,
+            config=linear_config,
+            r=r_total,
+            lora_alpha=lora_alpha,
         )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
