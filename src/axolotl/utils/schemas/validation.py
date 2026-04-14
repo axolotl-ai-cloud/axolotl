@@ -1541,6 +1541,13 @@ class ComplexValidationMixin:
                 sys.modules[
                     "transformers.modeling_flash_attention_utils"
                 ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                if not hasattr(
+                    transformers.modeling_flash_attention_utils,
+                    "is_flash_attn_greater_or_equal_2_10",
+                ):
+                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
+                        "2.10"
+                    )
                 import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
