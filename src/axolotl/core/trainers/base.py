@@ -460,6 +460,26 @@ class AxolotlTrainer(
         )
 
     @override
+    def _prepare_context_parallel_inputs(self, model, inputs):
+        """Disable HF Trainer's built-in CP sequence splitting.
+
+        Axolotl handles CP sequence splitting via SequenceParallelContextManager
+        (registered as a pre-forward hook in train.py). If HF Trainer's
+        _prepare_context_parallel_inputs also runs, it causes a double split:
+        sequences end up at seq_len / CP_size² instead of seq_len / CP_size.
+
+        When Axolotl's ring_attn group is active, return a nullcontext so the
+        HF trainer path is a no-op and Axolotl's hook handles all splitting.
+        """
+        import contextlib
+
+        from axolotl.monkeypatch.models.mamba_utils import is_cp_active
+
+        if is_cp_active():
+            return contextlib.nullcontext, inputs
+        return super()._prepare_context_parallel_inputs(model, inputs)
+
+    @override
     def evaluate(self, *args, **kwargs):
         LOG.info("Running evaluation step...")
         return super().evaluate(*args, **kwargs)
