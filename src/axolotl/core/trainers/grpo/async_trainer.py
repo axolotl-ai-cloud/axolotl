@@ -242,6 +242,87 @@ class ProducerConfig:
             )
 
 
+class _GroupShardedSampler:
+    """Rank-aware shard of a ``RepeatSampler`` that preserves GRPO groups.
+
+    ``RepeatSampler`` yields ``num_generations`` consecutive copies of
+    each prompt, forming a GRPO group. For distributed training each
+    rank must see a disjoint slice of prompts (otherwise every rank
+    dogpiles on the first 1/world_size of the batch) while keeping each
+    group intact on a single rank so advantage normalization sees all
+    peer generations.
+
+    ``accelerator.prepare(DataLoader)`` does not handle this correctly
+    for custom samplers with ``split_batches=False`` (the default): it
+    leaves the sampler alone and every rank replays identical indices.
+    This wrapper fixes that by consuming the inner sampler's full
+    output, chunking it into ``num_generations``-sized groups, and
+    round-robining whole groups across ranks.
+
+    Intended to be used ONLY when distributed training is active
+    (``num_replicas > 1``); for single-rank it is a no-op but still
+    correct.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        num_generations: int,
+        rank: int,
+        num_replicas: int,
+    ):
+        if num_generations < 1:
+            raise ValueError(f"num_generations must be >= 1, got {num_generations}")
+        if num_replicas < 1:
+            raise ValueError(f"num_replicas must be >= 1, got {num_replicas}")
+        if not (0 <= rank < num_replicas):
+            raise ValueError(
+                f"rank must be in [0, {num_replicas}), got {rank}"
+            )
+        self.inner = inner
+        self.num_generations = num_generations
+        self.rank = rank
+        self.num_replicas = num_replicas
+
+    def __iter__(self):
+        all_indices = list(self.inner)
+        if len(all_indices) % self.num_generations != 0:
+            raise ValueError(
+                f"inner sampler yielded {len(all_indices)} indices, "
+                f"not a multiple of num_generations={self.num_generations}"
+            )
+        # Chunk the flat index sequence into groups of num_generations
+        # consecutive indices. ``RepeatSampler`` guarantees that each
+        # group contains num_generations copies of the same prompt id.
+        groups = [
+            all_indices[i : i + self.num_generations]
+            for i in range(0, len(all_indices), self.num_generations)
+        ]
+        # Round-robin whole groups across ranks. Round-robin (vs.
+        # contiguous chunking) preserves approximate shuffled order on
+        # each rank even when the group count is small relative to the
+        # world size.
+        for group in groups[self.rank :: self.num_replicas]:
+            yield from group
+
+    def __len__(self):
+        try:
+            inner_len = len(self.inner)
+        except TypeError:
+            # Non-sized inner sampler — we can't know the per-rank
+            # length without materializing. Return 0 as a hint that the
+            # DataLoader should fall back to iteration.
+            return 0
+        total_groups = inner_len // self.num_generations
+        # Ceiling division for the trailing groups that don't divide
+        # evenly — extra groups go to the first ``total_groups %
+        # num_replicas`` ranks, matching the round-robin above.
+        my_groups = (
+            total_groups + self.num_replicas - self.rank - 1
+        ) // self.num_replicas
+        return my_groups * self.num_generations
+
+
 class DataProducer(ABC):
     """Abstract base class for online data producers.
 
@@ -556,6 +637,34 @@ class GRPODataProducer(BaseDataProducer):
             seed=self._seed,
         )
 
+        # Shard the sampler across distributed ranks so each rank sees
+        # a disjoint slice of prompts. ``RepeatSampler`` groups each
+        # prompt with ``num_generations`` consecutive copies — our
+        # wrapper round-robins WHOLE groups across ranks so all
+        # generations of a given prompt stay on the same rank (needed
+        # for GRPO advantage normalization within a group).
+        #
+        # Without this, ``accelerator.prepare(dl)`` with the default
+        # ``split_batches=False`` leaves the custom sampler alone, so
+        # every rank iterates the identical index sequence and the
+        # cluster dogpiles on the first 1/world_size of the prompts.
+        num_replicas = max(1, trainer.accelerator.num_processes)
+        if num_replicas > 1:
+            sampler = _GroupShardedSampler(
+                inner=sampler,
+                num_generations=self._num_generations,
+                rank=trainer.accelerator.process_index,
+                num_replicas=num_replicas,
+            )
+            logger.info(
+                "[RANK:%d] _GroupShardedSampler active "
+                "(num_replicas=%d, num_generations=%d, gen_batch=%d)",
+                trainer.accelerator.process_index,
+                num_replicas,
+                self._num_generations,
+                self._generation_batch_size,
+            )
+
         # Use identity collator (same as stock GRPOTrainer)
         def _identity(x):
             return x
@@ -574,12 +683,11 @@ class GRPODataProducer(BaseDataProducer):
                 rank=trainer.args.process_index,
             ),
         )
-        self._prompt_dl = trainer.accelerator.prepare(dl)
-
-        # Don't let accelerator track this dataloader
-        acc_dls = trainer.accelerator._dataloaders
-        if self._prompt_dl in acc_dls:
-            acc_dls.remove(self._prompt_dl)
+        # Skip accelerator.prepare — we're handling per-rank sharding
+        # ourselves via ``_GroupShardedSampler``. ``prepare()`` would
+        # otherwise try to wrap the DataLoader with its own sharding
+        # logic which does not understand our group structure.
+        self._prompt_dl = dl
 
         self._prompt_iter = iter(self._prompt_dl)
 
