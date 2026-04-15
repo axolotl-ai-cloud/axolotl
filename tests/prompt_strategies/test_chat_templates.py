@@ -227,6 +227,63 @@ class TestAssistantChatTemplateLlama3:
         )
 
 
+    def test_llama3_train_on_last_assistant_only(self, llama3_tokenizer, assistant_dataset):
+        LOG.info("Testing llama-3 with train_on_last_assistant_only=True")
+        strategy = ChatTemplateStrategy(
+            ChatTemplatePrompter(
+                llama3_tokenizer,
+                chat_template=get_chat_template("llama3"),
+                message_property_mappings={
+                    "role": "role",
+                    "content": "content",
+                },
+                roles={
+                    "user": ["user"],
+                    "assistant": ["assistant"],
+                    "system": ["system"],
+                },
+            ),
+            tokenizer=llama3_tokenizer,
+            train_on_inputs=False,
+            sequence_len=512,
+            roles_to_train=["assistant"],
+            train_on_last_assistant_only=True,
+        )
+
+        res = strategy.tokenize_prompt(assistant_dataset[0])
+        input_ids = res["input_ids"]
+        labels = res["labels"]
+        # fmt: off
+        expected_input_ids = [
+            128000,  # bos
+            128006, 882, 128007,  # user header
+            271, 15339, 128009,  # user prompt eot
+            128006, 78191, 128007,  # assistant header
+            271, 15339, 128009,   # assistant response eot
+            128006, 882, 128007,
+            271, 19045, 29474, 128009,
+            128006, 78191, 128007,
+            271, 19045, 29474, 128009,
+        ]
+        expected_labels = [
+            IGNORE_TOKEN_ID,  # bos
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # user prompt eot
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,  # assistant header
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,   # assistant response eot NOT trained because of train_on_last_assistant_only
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,
+            IGNORE_TOKEN_ID, IGNORE_TOKEN_ID, IGNORE_TOKEN_ID,
+            IGNORE_TOKEN_ID, 19045, 29474, IGNORE_TOKEN_ID, # ONLY THIS ASSISTANT TRAINED
+        ]
+        # fmt: on
+        LOG.debug(f"Expected labels: {expected_labels}")
+        LOG.debug(f"Actual labels: {labels}")
+        assert labels == expected_labels, (
+            f"Labels mismatch: {labels} != {expected_labels}"
+        )
+
+
 class TestSharegptChatTemplateLlama3:
     """
     Test class for ShareGPT style datasets with llama-3 prompts using the chat_template strategy.

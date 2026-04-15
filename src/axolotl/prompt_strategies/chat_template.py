@@ -280,9 +280,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         train_on_eot: str | None = None,
         eot_tokens: list[str] | None = None,
         split_thinking: bool | None = False,
+        train_on_last_assistant_only: bool = False,
     ):
         super().__init__(prompter, tokenizer, train_on_inputs, sequence_len)
         self.prompter: ChatTemplatePrompter = prompter
+        self.train_on_last_assistant_only = train_on_last_assistant_only
 
         self.roles_to_train = []
         if roles_to_train:
@@ -491,6 +493,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 should_train = bool(train_detail) or bool(reasoning_train_detail)
             else:
                 should_train = self.train_on_inputs or role in self.roles_to_train
+
+            if getattr(self, "train_on_last_assistant_only", False) and should_train and role == "assistant":
+                is_last_assistant = True
+                for t in turns[index+1:]:
+                    if t.get("role") == "assistant":
+                        is_last_assistant = False
+                        break
+                if not is_last_assistant:
+                    should_train = False
 
             LOG.debug(f"Should train: {should_train}")
 
@@ -1135,6 +1146,7 @@ class StrategyLoader:
     def _get_strategy_params(self, cfg, ds_cfg: Dict[str, Any]):
         return {
             "train_on_inputs": cfg.train_on_inputs,
+            "train_on_last_assistant_only": ds_cfg.get("train_on_last_assistant_only", getattr(cfg, "train_on_last_assistant_only", False)),
             "sequence_len": cfg.sequence_len,
             "roles_to_train": ds_cfg.get("roles_to_train", ["assistant"]),
             "train_on_eos": ds_cfg.get("train_on_eos", "turn"),

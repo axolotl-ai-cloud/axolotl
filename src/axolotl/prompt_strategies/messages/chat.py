@@ -78,10 +78,13 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
 
     if chat_template == "chatml":
         from axolotl.core.chat.format.chatml import format_message  # noqa F811
-    if chat_template.startswith("llama3"):
+    if chat_template and chat_template.startswith("llama3"):
         from axolotl.core.chat.format.llama3x import format_message  # noqa F811
     message_transform: Callable = chat_message_transform_builder(
         train_on_inputs=ds_cfg.get("train_on_inputs", False),
+        train_on_last_assistant_only=ds_cfg.get(
+            "train_on_last_assistant_only", cfg.get("train_on_last_assistant_only", False)
+        ),
         **builder_kwargs,
     )
     strategy = ChatMessageDatasetWrappingStrategy(
