@@ -156,6 +156,14 @@ class PatchManager:
             # which would clobber any earlier fix.
             self._fix_nemotron_h_conversion_mapping()
 
+        # Gemma 4 hybrid attention runs here in post-build (NOT post-load):
+        # the per-layer ``self_attn.config._attn_implementation="sdpa"``
+        # override needs to walk the raw model tree, which is broken by
+        # the post-load PEFT wrapping. The accompanying
+        # ``patch_gemma4_hybrid_mask`` monkey-patch is module-level and
+        # installation-time-independent, so both halves of the fix live
+        # cleanly in the same call even though one is instance-scoped
+        # and the other is module-scoped.
         self._apply_gemma_hybrid_attention(model)
         self._finalize_moe_expert_quantization(model)
 
@@ -173,11 +181,22 @@ class PatchManager:
         which exceeds flash attention's supported size. This patch loads the model
         with flash_attention_2 for the sliding window layers (head_dim=256), then
         gives each global layer a shallow-copied config with _attn_implementation="sdpa".
+
+        We also install :func:`axolotl.monkeypatch.gemma4_hybrid_mask.patch_gemma4_hybrid_mask`
+        which fixes the corresponding mask construction inside
+        ``Gemma4TextModel.forward``. Without it, the per-layer SDPA config
+        override is not enough — the forward still builds a 2D FA2-format mask
+        at the model level and the SDPA layers crash at long context lengths
+        with ``RuntimeError: The expanded size of the tensor ... must match``.
         """
         if not self.cfg.gemma4_hybrid_attn_impl:
             return
 
         import copy
+
+        from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+
+        patch_gemma4_hybrid_mask()
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -392,6 +411,14 @@ class PatchManager:
                 patch_qwen3_5_vlm_flash_attention()
 
             if self.cfg.model_config_type in ("gemma4", "gemma4_text"):
+                # The fused attn path is now compatible with
+                # ``gemma4_hybrid_attn_impl``: the kernel handles partial
+                # rotary (cos.shape[-1] < head_dim) and the fused forward
+                # mirrors the current ``Gemma4TextAttention.forward`` API
+                # for shared kv (read from / write to
+                # ``past_key_values.shared_layers``). See
+                # ``src/axolotl/kernels/GEMMA4_FUSED_ROPE_HYBRID_ATTN_BUG.md``
+                # for the history.
                 from axolotl.monkeypatch.models.gemma4.fused_attn import (
                     patch_gemma4_fused_attn,
                 )

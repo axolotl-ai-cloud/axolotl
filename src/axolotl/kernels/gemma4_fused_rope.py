@@ -53,6 +53,7 @@ def _rms_norm_rope_forward_kernel(
     RSTD_ptr,
     RSTD_row_stride,
     n_cols,
+    n_rot,
     n_heads,
     eps,
     HAS_WEIGHT: tl.constexpr,
@@ -60,28 +61,35 @@ def _rms_norm_rope_forward_kernel(
 ):
     """
     Fused forward:
-      x_norm = x / rms(x) [* weight]   (RMSNorm)
-      y = x_norm * cos + rotate_half(x_norm) * sin  (RoPE)
+      x_norm = x / rms(x) [* weight]   (RMSNorm, full n_cols)
+      y[..., :n_rot]  = rope(x_norm[..., :n_rot])
+      y[..., n_rot:]  = x_norm[..., n_rot:]   (pass-through for partial rotary)
 
-    rotate_half swaps first/second halves and negates the first:
-      rotate_half([a, b]) = [-b, a]
+    rotate_half swaps first/second halves and negates the first, restricted
+    to the rotary span [0, n_rot):
+      rotate_half([a, b]) = [-b, a]   where len(a) = len(b) = n_rot/2
+
+    For the partial-rotary pass-through region we load cos with default 1.0
+    and sin with default 0.0 outside [0, n_rot), so the same formula
+    `Y = X_norm * cos + X_rot_norm * sin` collapses to `Y = X_norm`.
 
     cos/sin are indexed by row_idx // n_heads to handle per-head broadcast
-    (cos/sin have shape (B*S, D) while X has shape (B*S*H, D)).
+    (cos/sin have shape (B*S, n_rot) while X has shape (B*S*H, n_cols)).
     """
     row_idx = tl.program_id(0).to(tl.int64)
-    # cos/sin row: divide by n_heads since cos/sin are (B*S, D)
+    # cos/sin row: divide by n_heads since cos/sin are (B*S, n_rot)
     cs_row_idx = row_idx // n_heads
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
-    half_dim = n_cols // 2
+    rot_mask_col = col_offsets < n_rot
+    half_rot = n_rot // 2
 
     # Load input row
     X_row = tl.load(X_ptr + row_idx * X_row_stride + col_offsets, mask=mask, other=0)
     X_dtype = X_row.dtype
     X_fp32 = X_row.to(tl.float32)
 
-    # RMSNorm: compute 1/rms
+    # RMSNorm: compute 1/rms over the full row (rotary + pass-through)
     mean_sq = tl.sum(X_fp32 * X_fp32, axis=0) / n_cols
     rstd = rsqrt(mean_sq + eps)
     tl.store(RSTD_ptr + row_idx * RSTD_row_stride, rstd)
@@ -94,33 +102,38 @@ def _rms_norm_rope_forward_kernel(
         W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
         X_norm = X_norm * W_row
 
-    # RoPE: load cos/sin (broadcast across heads)
+    # RoPE: load cos/sin (broadcast across heads). For col >= n_rot we get
+    # cos=1, sin=0 so the formula leaves X_norm untouched.
     cos_row = tl.load(
-        COS_ptr + cs_row_idx * COS_row_stride + col_offsets, mask=mask, other=0
+        COS_ptr + cs_row_idx * COS_row_stride + col_offsets,
+        mask=rot_mask_col,
+        other=1.0,
     ).to(tl.float32)
     sin_row = tl.load(
-        SIN_ptr + cs_row_idx * SIN_row_stride + col_offsets, mask=mask, other=0
+        SIN_ptr + cs_row_idx * SIN_row_stride + col_offsets,
+        mask=rot_mask_col,
+        other=0.0,
     ).to(tl.float32)
 
-    # rotate_half: for col < half_dim, take -X_norm[col + half_dim]
-    #              for col >= half_dim, take  X_norm[col - half_dim]
+    # rotate_half within [0, n_rot):
+    #   for col < half_rot:  take -X_norm[col + half_rot]
+    #   for col in [half_rot, n_rot): take  X_norm[col - half_rot]
+    # For col >= n_rot the rotation is irrelevant (sin = 0 zeros it out).
     rot_offsets = tl.where(
-        col_offsets < half_dim, col_offsets + half_dim, col_offsets - half_dim
+        col_offsets < half_rot, col_offsets + half_rot, col_offsets - half_rot
     )
-    rot_mask = rot_offsets < n_cols
+    rot_load_mask = (rot_offsets < n_cols) & rot_mask_col
     X_rot = tl.load(
-        X_ptr + row_idx * X_row_stride + rot_offsets, mask=rot_mask & mask, other=0
+        X_ptr + row_idx * X_row_stride + rot_offsets, mask=rot_load_mask, other=0
     ).to(tl.float32)
     # Re-normalize the rotated values
     X_rot_norm = X_rot * rstd
     if HAS_WEIGHT:
-        W_rot = tl.load(W_ptr + rot_offsets, mask=rot_mask & mask, other=0).to(
-            tl.float32
-        )
+        W_rot = tl.load(W_ptr + rot_offsets, mask=rot_load_mask, other=0).to(tl.float32)
         X_rot_norm = X_rot_norm * W_rot
 
     # Negate the first half (rotate_half negates x2, which becomes the first half)
-    sign = tl.where(col_offsets < half_dim, -1.0, 1.0)
+    sign = tl.where(col_offsets < half_rot, -1.0, 1.0)
     X_rot_norm = X_rot_norm * sign
 
     # Final RoPE: y = x_norm * cos + rotate_half(x_norm) * sin
@@ -153,13 +166,21 @@ def _rms_norm_rope_backward_kernel(
     dW_row_stride,
     n_rows,
     n_cols,
+    n_rot,
     n_heads,
     rows_per_program,
     HAS_WEIGHT: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
-    Backward for Y = RoPE(RMSNorm(X, W))
+    Backward for Y = RoPE(RMSNorm(X, W)) with optional partial rotary
+    (`n_rot <= n_cols`).
+
+    For col < n_rot the standard RoPE adjoint applies. For col >= n_rot the
+    output is just the normalized row, so dN[col] = dY[col] (achieved by
+    loading cos with default 1.0 and forcing the rotate-half contribution
+    to zero outside the rotary span).
+
     cos/sin indexed by row_idx // n_heads for per-head broadcast.
     """
     row_block_id = tl.program_id(0).to(tl.int64)
@@ -167,7 +188,8 @@ def _rms_norm_rope_backward_kernel(
     row_end = min((row_block_id + 1) * rows_per_program, n_rows)
     col_offsets = tl.arange(0, BLOCK_SIZE)
     mask = col_offsets < n_cols
-    half_dim = n_cols // 2
+    rot_mask_col = col_offsets < n_rot
+    half_rot = n_rot // 2
 
     dW_acc = tl.zeros((BLOCK_SIZE,), dtype=tl.float32)
 
@@ -186,33 +208,37 @@ def _rms_norm_rope_backward_kernel(
         rstd = tl.load(RSTD_ptr + row_idx * RSTD_row_stride)
 
         cos_row = tl.load(
-            COS_ptr + cs_row_idx * COS_row_stride + col_offsets, mask=mask, other=0
+            COS_ptr + cs_row_idx * COS_row_stride + col_offsets,
+            mask=rot_mask_col,
+            other=1.0,
         ).to(tl.float32)
 
-        # dN = dY * cos + rotate_half^T(dY * sin)
+        # dN = dY * cos + rotate_half^T(dY * sin)   (within the rotary span)
         # rotate_half^T([a, b]) = [b, -a]  (adjoint of rotate_half)
         #
-        # Compute rotate_half_transpose(dY * sin) by loading dY and sin at
-        # rotated offsets directly:  dY[rot] * sin[rot] * adj_sign
-        # This is equivalent to rotating (dY * sin) because the rotation
-        # just permutes which elements are multiplied.
+        # For col >= n_rot the formula must collapse to dN = dY (since the
+        # forward is just a pass-through). cos defaults to 1.0 above; the
+        # rotate-half contribution is masked to zero below.
         rot_offsets = tl.where(
-            col_offsets < half_dim, col_offsets + half_dim, col_offsets - half_dim
+            col_offsets < half_rot, col_offsets + half_rot, col_offsets - half_rot
         )
-        rot_mask = rot_offsets < n_cols
+        rot_load_mask = (rot_offsets < n_cols) & rot_mask_col
         dY_rot = tl.load(
             dY_ptr + row_idx * dY_row_stride + rot_offsets,
-            mask=rot_mask & mask,
+            mask=rot_load_mask,
             other=0,
         ).to(tl.float32)
         sin_rot = tl.load(
             SIN_ptr + cs_row_idx * SIN_row_stride + rot_offsets,
-            mask=rot_mask & mask,
+            mask=rot_load_mask,
             other=0,
         ).to(tl.float32)
 
-        adj_sign = tl.where(col_offsets < half_dim, 1.0, -1.0)
-        dN = dY_row * cos_row + dY_rot * sin_rot * adj_sign
+        adj_sign = tl.where(col_offsets < half_rot, 1.0, -1.0)
+        rotate_term = dY_rot * sin_rot * adj_sign
+        # Zero out rotate-half contribution outside the rotary span.
+        rotate_term = tl.where(rot_mask_col, rotate_term, 0.0)
+        dN = dY_row * cos_row + rotate_term
 
         # Pre-weight normalized: n = rstd * x
         n = X_row * rstd
@@ -241,15 +267,17 @@ def _rms_norm_rope_backward_kernel(
         )
 
 
-def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads):
+def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads, n_rot):
     """
     Args:
         X:   (B*S*H, head_dim) — contiguous, flattened from (B, S, H, D)
         W:   (head_dim,) or None — RMSNorm weight
-        cos: (B*S, head_dim) — position embeddings (broadcast across heads)
-        sin: (B*S, head_dim) — position embeddings (broadcast across heads)
+        cos: (B*S, n_rot) — position embeddings (broadcast across heads)
+        sin: (B*S, n_rot) — position embeddings (broadcast across heads)
         eps: float
         n_heads: int — number of attention heads (for cos/sin indexing)
+        n_rot: int — rotary dim (== head_dim for full rotary, < head_dim for
+            partial rotary). Must be even and ``<= head_dim``.
     Returns:
         Y, X_saved, RSTD, BLOCK_SIZE, num_warps
     """
@@ -273,6 +301,7 @@ def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads):
         RSTD,
         RSTD.stride(0),
         n_cols,
+        n_rot,
         n_heads,
         eps,
         HAS_WEIGHT=has_weight,
@@ -282,7 +311,9 @@ def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads):
     return Y, X, RSTD, BLOCK_SIZE, num_warps
 
 
-def rms_norm_rope_backward(dY, X, W, cos, sin, RSTD, n_heads, BLOCK_SIZE, num_warps):
+def rms_norm_rope_backward(
+    dY, X, W, cos, sin, RSTD, n_heads, n_rot, BLOCK_SIZE, num_warps
+):
     n_rows, n_cols = dY.shape
     has_weight = W is not None
 
@@ -315,6 +346,7 @@ def rms_norm_rope_backward(dY, X, W, cos, sin, RSTD, n_heads, BLOCK_SIZE, num_wa
         _dW.stride(0),
         n_rows,
         n_cols,
+        n_rot,
         n_heads,
         rows_per_program,
         HAS_WEIGHT=has_weight,
@@ -329,13 +361,14 @@ def rms_norm_rope_backward(dY, X, W, cos, sin, RSTD, n_heads, BLOCK_SIZE, num_wa
 class FusedRMSNormRoPEFunction(torch.autograd.Function):
     @staticmethod
     @ensure_contiguous
-    def forward(ctx, X, W, cos, sin, eps, n_heads):
+    def forward(ctx, X, W, cos, sin, eps, n_heads, n_rot):
         """
-        X:   (B*S*H, head_dim)
-        W:   (head_dim,) or None
-        cos: (B*S, head_dim) — broadcast across heads
-        sin: (B*S, head_dim) — broadcast across heads
+        X:    (B*S*H, head_dim)
+        W:    (head_dim,) or None
+        cos:  (B*S, n_rot) — broadcast across heads
+        sin:  (B*S, n_rot) — broadcast across heads
         n_heads: int
+        n_rot:   int — rotary dim (<= head_dim)
         """
         Y, X_saved, RSTD, BLOCK_SIZE, num_warps = rms_norm_rope_forward(
             X,
@@ -344,11 +377,13 @@ class FusedRMSNormRoPEFunction(torch.autograd.Function):
             sin,
             eps,
             n_heads,
+            n_rot,
         )
         ctx.eps = eps
         ctx.BLOCK_SIZE = BLOCK_SIZE
         ctx.num_warps = num_warps
         ctx.n_heads = n_heads
+        ctx.n_rot = n_rot
         ctx.has_weight = W is not None
         ctx.save_for_backward(X_saved, W, cos, sin, RSTD)
         return Y
@@ -365,21 +400,26 @@ class FusedRMSNormRoPEFunction(torch.autograd.Function):
             sin,
             RSTD,
             ctx.n_heads,
+            ctx.n_rot,
             ctx.BLOCK_SIZE,
             ctx.num_warps,
         )
-        return dX, dW, None, None, None, None
+        return dX, dW, None, None, None, None, None
 
 
 def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6):
     """
-    Apply fused RMSNorm + RoPE.
+    Apply fused RMSNorm + (partial) RoPE.
 
     Args:
         x:      (batch, seq_len, num_heads, head_dim) — after projection + view
         weight: (head_dim,) — RMSNorm weight, or None for no-scale norm
-        cos:    (batch, seq_len, head_dim) — from RotaryEmbedding
-        sin:    (batch, seq_len, head_dim) — from RotaryEmbedding
+        cos:    (batch, seq_len, n_rot) — from RotaryEmbedding. ``n_rot``
+                must be even and ``<= head_dim``. When ``n_rot < head_dim``
+                the trailing ``head_dim - n_rot`` columns are RMSNorm-only
+                (partial-rotary pass-through), matching stock Gemma 4 with
+                ``partial_rotary_factor < 1.0``.
+        sin:    (batch, seq_len, n_rot) — same shape as ``cos``
         eps:    float — RMSNorm epsilon
 
     Returns:
@@ -387,14 +427,38 @@ def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6):
     """
     shape = x.shape  # (B, S, H, D)
     B, S, H, D = shape
+    n_rot = cos.shape[-1]
+    if sin.shape[-1] != n_rot:
+        raise ValueError(
+            f"cos and sin must have the same last dim, got cos={cos.shape[-1]} "
+            f"sin={sin.shape[-1]}"
+        )
+    if n_rot > D:
+        raise ValueError(f"rotary dim ({n_rot}) cannot exceed head_dim ({D})")
+    if n_rot % 2 != 0:
+        raise ValueError(f"rotary dim must be even, got {n_rot}")
+
     # Flatten to 2D: (B*S*H, D)
     x_flat = x.reshape(-1, D).contiguous()
-    # Flatten cos/sin to (B*S, D) — the kernel will handle per-head broadcast
-    # by dividing the row_idx by H to get the cos/sin row
-    cos_flat = cos.reshape(B * S, D).contiguous()
-    sin_flat = sin.reshape(B * S, D).contiguous()
+    # cos/sin may broadcast over the batch dim (e.g. (1, S, n_rot) when
+    # all sequences share the same rotary positions). The kernel needs a
+    # dense (B*S, n_rot) buffer so that row_idx // n_heads maps cleanly
+    # onto a single (b, s) pair, so expand-then-contiguous to materialize
+    # the per-batch broadcast. Expand is a no-op when B == cos.shape[0].
+    if cos.shape[0] != B:
+        if cos.shape[0] != 1:
+            raise ValueError(
+                f"cos/sin batch dim ({cos.shape[0]}) must be 1 or equal "
+                f"to x batch dim ({B})"
+            )
+        cos = cos.expand(B, S, n_rot)
+        sin = sin.expand(B, S, n_rot)
+    cos_flat = cos.reshape(B * S, n_rot).contiguous()
+    sin_flat = sin.reshape(B * S, n_rot).contiguous()
 
-    y_flat = FusedRMSNormRoPEFunction.apply(x_flat, weight, cos_flat, sin_flat, eps, H)
+    y_flat = FusedRMSNormRoPEFunction.apply(
+        x_flat, weight, cos_flat, sin_flat, eps, H, n_rot
+    )
     return y_flat.view(shape)
 
 

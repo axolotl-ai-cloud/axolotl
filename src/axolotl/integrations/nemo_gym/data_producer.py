@@ -110,11 +110,35 @@ class NemoGymDataProducer(GRPODataProducer):
                 item["agent_ref"] = full_item["agent_ref"]
             dataset_items.append(item)
 
-        # Expand by num_generations (agent produces one rollout per call)
-        expanded_items = []
-        for item in dataset_items:
-            for _ in range(self._num_generations):
-                expanded_items.append(item)
+        # NOTE: do NOT re-expand by num_generations here.
+        # ``RepeatSampler(mini_repeat_count=num_generations)`` already
+        # yields ``num_generations`` consecutive copies of each unique
+        # prompt, so ``inputs`` is a list of ``(unique_prompts_per_rank *
+        # num_generations)`` items — one entry per rollout. Expanding
+        # again here would fire ``num_generations^2`` rollouts per
+        # prompt per rank and make every step dogpile on a handful of
+        # tasks.
+        expanded_items = dataset_items
+
+        # Diagnostic: log what this rank is about to fire.
+        try:
+            import collections
+            iid_counts = collections.Counter()
+            for it in dataset_items:
+                iid_counts[
+                    (it.get("responses_create_params", {}).get("metadata") or {}).get(
+                        "instance_id"
+                    )
+                ] += 1
+            LOG.info(
+                "[RANK:%d] produce(): firing %d agent /run calls covering %d unique prompts: %s",
+                trainer.accelerator.process_index,
+                len(dataset_items),
+                len(iid_counts),
+                list(iid_counts.most_common(5)),
+            )
+        except Exception:
+            pass
 
         # Call NeMo Gym agents
         loop = asyncio.new_event_loop()
@@ -140,6 +164,7 @@ class NemoGymDataProducer(GRPODataProducer):
         logprobs_list = []
         rewards_list = []
 
+        num_turns_list: list[int] = []
         for resp in responses:
             parsed = _parse_agent_response(resp, eos_token_id)
             prompt_ids_list.append(parsed["prompt_ids"])
@@ -147,6 +172,7 @@ class NemoGymDataProducer(GRPODataProducer):
             env_mask_list.append(parsed["env_mask"])
             logprobs_list.append(parsed["logprobs"])
             rewards_list.append(parsed["reward"])
+            num_turns_list.append(parsed.get("num_turns", 0))
 
         # Pad to tensors
         prompt_ids = [torch.tensor(ids, device=device) for ids in prompt_ids_list]
@@ -179,22 +205,49 @@ class NemoGymDataProducer(GRPODataProducer):
         tool_mask = [torch.tensor(m, device=device) for m in env_mask_list]
         tool_mask = pad(tool_mask, padding_value=1, padding_side="right")
 
-        # Inject rewards into inputs so _compute_deferred_scores can use them
-        # The deferred scoring path calls _calculate_rewards which reads reward_funcs.
-        # Our passthrough reward_fn reads "env_reward" from kwargs.
+        # Inject per-rollout reward + num_turns into each input. Since
+        # ``RepeatSampler`` already yields ``num_generations`` copies of
+        # each prompt, ``inputs`` has ONE entry per rollout (matching
+        # ``rewards_list`` 1:1). No per-prompt grouping happens here —
+        # GRPO advantage normalization is the trainer's job downstream.
+        assert len(inputs) == len(rewards_list), (
+            f"rewards/inputs length mismatch: "
+            f"{len(rewards_list)} rewards vs {len(inputs)} inputs"
+        )
         for i, inp in enumerate(inputs):
-            # Each input gets rewards for its num_generations rollouts
-            start = i * self._num_generations
-            end = start + self._num_generations
-            inp["env_reward"] = rewards_list[start:end]
+            inp["env_reward"] = rewards_list[i]
+            inp["num_turns"] = num_turns_list[i]
 
-        # Expand inputs to match expanded rollouts (num_generations copies)
-        expanded_inputs = []
-        for inp in inputs:
-            for g in range(self._num_generations):
-                expanded_inp = dict(inp)
-                expanded_inp["env_reward"] = inp["env_reward"][g]
-                expanded_inputs.append(expanded_inp)
+        # One expanded_input per rollout (already correct count because
+        # inputs has num_generations copies baked in by the sampler).
+        expanded_inputs = [dict(inp) for inp in inputs]
+
+        # Log rollout-level stats to wandb from rank 0. These are the
+        # true agent-side metrics (not the tokenized TRL view) — so
+        # num_turns reflects how many /run iterations each rollout
+        # actually took before finishing or hitting max_turns.
+        if is_main and num_turns_list:
+            try:
+                import wandb
+
+                if wandb.run is not None:
+                    import statistics as _stats
+
+                    nonzero = sum(1 for r in rewards_list if r > 0)
+                    log_payload = {
+                        "rollout/num_turns/mean": float(_stats.mean(num_turns_list)),
+                        "rollout/num_turns/min": float(min(num_turns_list)),
+                        "rollout/num_turns/max": float(max(num_turns_list)),
+                        "rollout/reward/mean": float(_stats.mean(rewards_list)),
+                        "rollout/reward/nonzero_frac": (
+                            nonzero / len(rewards_list) if rewards_list else 0.0
+                        ),
+                        "rollout/n_samples": float(len(rewards_list)),
+                    }
+                    wandb.log(log_payload, commit=False)
+            except Exception as exc:  # never let metric logging break training
+                LOG.warning("rollout wandb log failed: %s", exc)
+
 
         # Decode completions for reward functions
         completions = trainer.processing_class.batch_decode(
