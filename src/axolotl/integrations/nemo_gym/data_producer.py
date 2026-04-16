@@ -123,6 +123,7 @@ class NemoGymDataProducer(GRPODataProducer):
         # Diagnostic: log what this rank is about to fire.
         try:
             import collections
+
             iid_counts = collections.Counter()
             for it in dataset_items:
                 iid_counts[
@@ -247,7 +248,6 @@ class NemoGymDataProducer(GRPODataProducer):
                     wandb.log(log_payload, commit=False)
             except Exception as exc:  # never let metric logging break training
                 LOG.warning("rollout wandb log failed: %s", exc)
-
 
         # Decode completions for reward functions
         completions = trainer.processing_class.batch_decode(

@@ -276,9 +276,7 @@ class _GroupShardedSampler:
         if num_replicas < 1:
             raise ValueError(f"num_replicas must be >= 1, got {num_replicas}")
         if not (0 <= rank < num_replicas):
-            raise ValueError(
-                f"rank must be in [0, {num_replicas}), got {rank}"
-            )
+            raise ValueError(f"rank must be in [0, {num_replicas}), got {rank}")
         self.inner = inner
         self.num_generations = num_generations
         self.rank = rank
