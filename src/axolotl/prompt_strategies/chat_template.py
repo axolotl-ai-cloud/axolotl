@@ -1004,7 +1004,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if tools is None:
             return None
 
-
         # Some datasets have tools set to str
         if isinstance(tools, str):
             tools = json.loads(tools)
@@ -1041,11 +1040,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         if isinstance(messages, str):
             messages = json.loads(messages)
-            assert isinstance(messages, list), f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
+            assert isinstance(messages, list), (
+                f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
+            )
 
             # Extra check here to make sure decoded json is a list of dicts.
             for i, message in enumerate(messages):
-                assert isinstance(message, dict), f"For SFT datasets that are stored in `str` format, each turns must be saved in a dictionary, got {type(message)} for the turn {i}"
+                assert isinstance(message, dict), (
+                    f"For SFT datasets that are stored in `str` format, each turns must be saved in a dictionary, got {type(message)} for the turn {i}"
+                )
 
         if isinstance(messages, list):
             return messages
