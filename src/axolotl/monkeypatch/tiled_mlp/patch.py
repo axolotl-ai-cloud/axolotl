@@ -24,7 +24,15 @@ def patch_tiled_mlp(model_type, use_original_mlp=True, cfg_num_shards=None):
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
         model_cls_prefix, _ = get_causal_lm_model_cls_prefix(model_type)
         module = __import__(module_path, fromlist=[f"{model_cls_prefix}MLP"])
-        mlp_cls = getattr(module, f"{model_cls_prefix}MLP")
+        # Some multimodal wrappers (e.g. Gemma 4) name the MLP class
+        # ``{prefix}TextMLP`` rather than ``{prefix}MLP`` because the
+        # language-side module is separated from the vision tower. Try
+        # both names before giving up.
+        mlp_cls = getattr(
+            module,
+            f"{model_cls_prefix}MLP",
+            None,
+        ) or getattr(module, f"{model_cls_prefix}TextMLP")
 
         if use_original_mlp:
             mlp_forward = mlp_cls.forward
