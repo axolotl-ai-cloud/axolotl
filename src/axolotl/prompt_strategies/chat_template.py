@@ -1004,6 +1004,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if tools is None:
             return None
 
+
+        # Some datasets have tools set to str
+        if isinstance(tools, str):
+            tools = json.loads(tools)
+
         if isinstance(tools, list):
             # Process each tool to handle JSON string parameters
             for tool in tools:
