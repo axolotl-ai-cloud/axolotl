@@ -124,6 +124,101 @@ def _patch_peft_clippable_linear():
     LoraModel._axolotl_clippable_patched = True
 
 
+def _peft_will_auto_convert_target_params(model, lora_config) -> bool:
+    """Check whether PEFT will auto-populate target_parameters for this model.
+
+    PEFT 0.19's ``convert_peft_config_for_transformers`` rewrites old MoE
+    ``target_modules`` (e.g. ``w1``/``w2``/``w3`` on Mixtral) into
+    ``target_parameters`` (``gate_up_proj``/``down_proj``) because
+    transformers v5 fused those expert linears into 3D ``nn.Parameter``
+    tensors. PEFT wraps the resulting 3D params with ``ParamWrapper``,
+    which rejects ``lora_dropout != 0``. This probe runs the conversion on
+    a copy of the config so we can detect the situation before
+    ``get_peft_model`` blows up.
+    """
+    if getattr(lora_config, "target_parameters", None):
+        return False
+
+    try:
+        from peft.utils.transformers_weight_conversion import (
+            convert_peft_config_for_transformers,
+            get_model_conversion_mapping,
+        )
+    except ImportError:
+        return False
+
+    import copy
+
+    probe_cfg = copy.deepcopy(lora_config)
+    try:
+        convert_peft_config_for_transformers(
+            probe_cfg,
+            model=model,
+            conversions=get_model_conversion_mapping(model),
+        )
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+    return bool(getattr(probe_cfg, "target_parameters", None))
+
+
+def _patch_peft_param_wrapper_dropout():
+    """Let PEFT's ``ParamWrapper`` silently accept ``lora_dropout != 0``.
+
+    ``ParamWrapper`` wraps 3D expert ``nn.Parameter`` tensors and rejects
+    non-zero dropout because dropout can't be factored out of
+    ``lora_B(lora_A(dropout(x)))`` when the inner op is an expert-indexed
+    matmul. For mixed configs (attention + MoE experts) this is too
+    aggressive — the non-expert ``Linear`` LoRA layers *can* apply dropout
+    and that's usually what the user intended. We pass a copy of the
+    ``LoraConfig`` with ``lora_dropout=0`` only to ``ParamWrapper.__init__``
+    so it builds with ``nn.Identity`` for its internal dropout slot while
+    every other layer type still receives the real dropout value.
+    """
+    from peft.tuners.lora.layer import ParamWrapper
+
+    if getattr(ParamWrapper, "_axolotl_dropout_patched", False):
+        return
+
+    _orig_init = ParamWrapper.__init__
+
+    def _patched_init(
+        self,
+        base_layer,
+        adapter_name,
+        parameter_name,
+        config,
+        *args,
+        **kwargs,
+    ):
+        if getattr(config, "lora_dropout", 0):
+            import copy as _copy
+
+            patched_config = _copy.copy(config)
+            patched_config.lora_dropout = 0.0
+            return _orig_init(
+                self,
+                base_layer,
+                adapter_name,
+                parameter_name,
+                patched_config,
+                *args,
+                **kwargs,
+            )
+        return _orig_init(
+            self,
+            base_layer,
+            adapter_name,
+            parameter_name,
+            config,
+            *args,
+            **kwargs,
+        )
+
+    ParamWrapper.__init__ = _patched_init
+    ParamWrapper._axolotl_dropout_patched = True
+
+
 def load_lora(
     model: PreTrainedModel,
     cfg: DictDefault,
@@ -190,6 +285,20 @@ def load_lora(
 
     if config_only:
         return None, lora_config
+
+    if getattr(
+        lora_config, "lora_dropout", 0
+    ) and _peft_will_auto_convert_target_params(model, lora_config):
+        LOG.warning(
+            "lora_dropout=%s requested but PEFT will wrap this model's fused "
+            "MoE expert parameters with ParamWrapper, which cannot apply "
+            "dropout (the 3D einsum can't factor dropout out of "
+            "lora_B(lora_A(dropout(x)))). Dropout will still be applied to "
+            "non-expert LoRA layers (e.g. attention), and expert LoRA layers "
+            "will use nn.Identity for the dropout slot.",
+            lora_config.lora_dropout,
+        )
+        _patch_peft_param_wrapper_dropout()
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
