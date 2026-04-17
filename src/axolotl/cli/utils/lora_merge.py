@@ -301,8 +301,6 @@ def _build_peft_layer_and_get_delta(
     use_rslora = bool(lora_config_dict.get("use_rslora", False))
     use_dora = bool(lora_config_dict.get("use_dora", False))
 
-    from peft.tuners.lora.layer import Linear as LoraLinear
-
     if is_param_wrapper:
         from peft.tuners.lora.layer import ParamWrapper
 
@@ -419,6 +417,8 @@ def _build_peft_layer_and_get_delta(
 
         return layer.get_delta_weight(adapter_name)
     else:
+        from peft.tuners.lora.layer import Linear as LoraLinear
+
         base_layer = nn.Linear(in_features, out_features, bias=False)
         base_layer.weight.data = base_tensor.clone()
 
