@@ -260,8 +260,8 @@ def _find_param_wrapper_lora(
             if not (
                 lora_a.shape[0] == lora_b.shape[1]
                 and lora_a.shape[0] % num_experts == 0
-                and lora_a.shape[1] == tensor_shape[1]
-                and lora_b.shape[0] == tensor_shape[2]
+                and lora_a.shape[1] == tensor_shape[2]
+                and lora_b.shape[0] == tensor_shape[1]
             ):
                 continue  # Dimensions don't match, try next nesting level
 

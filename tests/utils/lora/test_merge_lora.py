@@ -491,7 +491,8 @@ class TestEfficientMerge:
         out_features = 4
         alpha = 4
 
-        base = torch.randn(num_experts, in_features, out_features)
+        # peft 0.19.1+ uses (E, out_features, in_features) for 3D expert params
+        base = torch.randn(num_experts, out_features, in_features)
         lora_a = torch.randn(r * num_experts, in_features)
         lora_b = torch.randn(out_features, r * num_experts)
 
@@ -507,7 +508,7 @@ class TestEfficientMerge:
         scale = alpha / r
         wa = lora_a.reshape(num_experts, r, in_features)
         wb = lora_b.reshape(out_features, r, num_experts)
-        manual_delta = torch.einsum("o r e, e r i -> e i o", wb, wa) * scale
+        manual_delta = torch.einsum("o r e, e r i -> e o i", wb, wa) * scale
         for e in range(num_experts):
             assert torch.allclose(merged[e], base[e] + manual_delta[e], atol=1e-5), (
                 f"Expert {e} mismatch"
@@ -535,16 +536,16 @@ class TestEfficientMerge:
             ),
         }
 
-        # gate_up_proj shape [4, 8, 16] — should match outer LoRA
+        # gate_up_proj shape [4, 16, 8] (E, out=16, in=8) — should match outer LoRA
         a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.gate_up_proj", tensor_shape=(4, 8, 16)
+            lora_state, "mod.experts.gate_up_proj", tensor_shape=(4, 16, 8)
         )
         assert a is not None and name == "gate_up_proj"
         assert a.shape == (r * num_experts, 8)  # outer
 
-        # down_proj shape [4, 16, 8] — outer dims don't match, should find inner
+        # down_proj shape [4, 8, 16] (E, out=8, in=16) — outer dims don't match, should find inner
         a, b, name = _find_param_wrapper_lora(
-            lora_state, "mod.experts.down_proj", tensor_shape=(4, 16, 8)
+            lora_state, "mod.experts.down_proj", tensor_shape=(4, 8, 16)
         )
         assert a is not None and name == "down_proj"
         assert a.shape == (r * num_experts, 16)  # inner (base_layer)
