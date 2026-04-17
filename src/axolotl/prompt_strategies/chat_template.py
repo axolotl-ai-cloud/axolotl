@@ -1009,10 +1009,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             try:
                 tools = json.loads(tools)
             except json.JSONDecodeError as e:
-                LOG.error(
-                    f"Error parsing tool parameters as JSON. "
-                    f"Error: {e}"
-                )
+                LOG.error(f"Error parsing tool parameters as JSON. Error: {e}")
                 raise
         if isinstance(tools, list):
             # Process each tool to handle JSON string parameters
@@ -1048,10 +1045,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             try:
                 messages = json.loads(messages)
             except json.JSONDecodeError as e:
-                LOG.error(
-                    f"Error parsing messages as JSON. "
-                    f"Error: {e}"
-                )
+                LOG.error(f"Error parsing messages as JSON. Error: {e}")
                 raise
             assert isinstance(messages, list), (
                 f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
