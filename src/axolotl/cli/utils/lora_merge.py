@@ -253,16 +253,22 @@ def _find_param_wrapper_lora(
         if lora_a is None or lora_b is None:
             continue
 
-        # When tensor_shape is given, verify dimensions match before returning.
-        # This prevents returning a mismatched LoRA from a different nesting level.
+        # Verify LoRA dimensions match target tensor shape.
+        # Check both dim orientations (peft swaps in/out for 3D since 0.19.1).
         if tensor_shape is not None and len(tensor_shape) >= 3:
             num_experts = tensor_shape[0]
-            if not (
+            rank_ok = (
                 lora_a.shape[0] == lora_b.shape[1]
                 and lora_a.shape[0] % num_experts == 0
-                and lora_a.shape[1] == tensor_shape[2]
+            )
+            dims_ok = (
+                lora_a.shape[1] == tensor_shape[1]
+                and lora_b.shape[0] == tensor_shape[2]
+            ) or (
+                lora_a.shape[1] == tensor_shape[2]
                 and lora_b.shape[0] == tensor_shape[1]
-            ):
+            )
+            if not (rank_ok and dims_ok):
                 continue  # Dimensions don't match, try next nesting level
 
         return lora_a, lora_b, param_name
@@ -339,7 +345,11 @@ def _build_peft_layer_and_get_delta(
             )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
-        return layer.get_delta_weight(adapter_name)
+        delta = layer.get_delta_weight(adapter_name)
+        # peft >=0.19.1 may return delta with transposed dims for 3D params
+        if delta.shape != base_tensor.shape and delta.ndim == 3:
+            delta = delta.transpose(1, 2).contiguous()
+        return delta
     elif (
         layer_type and "Conv" in layer_type or (layer_type is None and lora_a.ndim > 2)
     ):
