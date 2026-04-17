@@ -1006,8 +1006,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         # Some datasets have tools set to str
         if isinstance(tools, str):
-            tools = json.loads(tools)
-
+            try:
+                tools = json.loads(tools)
+            except json.JSONDecodeError as e:
+                LOG.error(
+                    f"Error parsing tool parameters as JSON. "
+                    f"Error: {e}"
+                )
+                raise
         if isinstance(tools, list):
             # Process each tool to handle JSON string parameters
             for tool in tools:
@@ -1039,7 +1045,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             raise ValueError("Messages is null. Please check `field_messages`.")
 
         if isinstance(messages, str):
-            messages = json.loads(messages)
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError as e:
+                LOG.error(
+                    f"Error parsing messages as JSON. "
+                    f"Error: {e}"
+                )
+                raise
             assert isinstance(messages, list), (
                 f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
             )
