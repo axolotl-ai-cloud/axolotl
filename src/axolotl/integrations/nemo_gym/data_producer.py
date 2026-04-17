@@ -124,7 +124,7 @@ class NemoGymDataProducer(GRPODataProducer):
         try:
             import collections
 
-            iid_counts = collections.Counter()
+            iid_counts: collections.Counter[str | None] = collections.Counter()
             for it in dataset_items:
                 iid_counts[
                     (it.get("responses_create_params", {}).get("metadata") or {}).get(
