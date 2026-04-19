@@ -177,8 +177,11 @@ def _patch_decoder_layer_call():
 
     def patched_call(self, *args, **kwargs):
         shared_kv = kwargs.pop("shared_kv_states", None)
-        if shared_kv is not None:
-            _set_shared_kv_states(shared_kv)
+        # Overwrite TLS unconditionally (including with None) so a previous
+        # step's dict cannot leak into a later call that doesn't pass
+        # `shared_kv_states`. The fallback branch in fused_forward relies on
+        # TLS being None to defer to the kwarg path.
+        _set_shared_kv_states(shared_kv)
         return original_call(self, *args, **kwargs)
 
     Gemma4TextDecoderLayer.__call__ = patched_call
