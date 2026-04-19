@@ -64,6 +64,26 @@ class ModelInputConfig(BaseModel):
     processor_type: str | None = Field(
         default=None, json_schema_extra={"description": "transformers processor class"}
     )
+    processor_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Extra kwargs forwarded to the processor's from_pretrained(), overriding "
+                "fields in the processor's on-disk config (e.g. image_seq_length, "
+                "max_soft_tokens for image processors; min_pixels, max_pixels for "
+                "Qwen-VL). Useful when you want to tune per-processor-field values "
+                "without editing processor_config.json on disk.\n\n"
+                "Note: despite the name, this is distinct from transformers' own "
+                "`processor_kwargs` dict argument to ProcessorMixin.__call__ (which "
+                "controls per-sub-processor call-time kwargs). This field only "
+                "affects from_pretrained load-time kwargs.\n\n"
+                "Do not set `revision` or `trust_remote_code` here -- use the "
+                "top-level `revision_of_model` / `trust_remote_code` keys instead. "
+                "Setting them inside `processor_kwargs` has inconsistent precedence "
+                "across axolotl's loader branches."
+            )
+        },
+    )
     tokenizer_save_jinja_files: bool | None = Field(
         default=True,  # match the default behavior from transformers
         json_schema_extra={
