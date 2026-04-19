@@ -10,7 +10,6 @@ Usage:
 """
 
 import logging
-import threading
 from typing import Callable
 
 import torch
@@ -18,7 +17,7 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-# Thread-local side channel for the shared-KV dict. We route the dict through
+# Module-level side channel for the shared-KV dict. We route the dict through
 # this instead of a kwarg on the decoder-layer forward so that when HF's
 # GradientCheckpointingLayer forms `partial(super().__call__, **kwargs)` and
 # axolotl's CPU_Offloaded_Gradient_Checkpointer captures that partial in
@@ -27,15 +26,28 @@ logger = logging.getLogger(__name__)
 # pinned across the full backward pass (and, via Python ref-cycle delays in
 # torch's caching allocator, bleed across training steps), causing VRAM to
 # climb ~0.47 GiB/step under the hybrid FA2+SDPA path.
-_GEMMA4_SHARED_KV_TLS = threading.local()
+#
+# NOTE: originally `threading.local()`, but PyTorch's C++ autograd engine
+# (`_engine_run_backward`) spawns per-device worker threads to dispatch
+# backward. When HF-Trainer gradient_checkpointing (`torch.utils.checkpoint`,
+# non-reentrant / saved-tensor-hooks) fires `unpack_hook` -> `recompute_fn`
+# during backward, it runs on the autograd worker thread -- whose
+# `threading.local()` is empty, so the dict set on the main thread during
+# forward is invisible and `_get_shared_kv_states()` returns None, crashing
+# the consumer-layer lookup (`shared_kv_states[self.kv_shared_layer_index]`)
+# with `'NoneType' object is not subscriptable`. A plain module-level dict is
+# shared across all threads and works for both paths. The container is
+# overwritten each forward, so the previous step's dict is released promptly
+# -- same lifecycle guarantee the TLS variant gave.
+_GEMMA4_SHARED_KV_STORE: dict = {"store": None}
 
 
 def _set_shared_kv_states(store):
-    _GEMMA4_SHARED_KV_TLS.store = store
+    _GEMMA4_SHARED_KV_STORE["store"] = store
 
 
 def _get_shared_kv_states():
-    return getattr(_GEMMA4_SHARED_KV_TLS, "store", None)
+    return _GEMMA4_SHARED_KV_STORE["store"]
 
 
 def _make_fused_forward(original_forward):
@@ -170,7 +182,7 @@ def _patch_decoder_layer_call():
     """
     from transformers.models.gemma4.modeling_gemma4 import Gemma4TextDecoderLayer
 
-    if getattr(Gemma4TextDecoderLayer, "_axolotl_shared_kv_tls_patched", False):
+    if getattr(Gemma4TextDecoderLayer, "_axolotl_shared_kv_patched", False):
         return
 
     original_call = Gemma4TextDecoderLayer.__call__
@@ -185,7 +197,7 @@ def _patch_decoder_layer_call():
         return original_call(self, *args, **kwargs)
 
     Gemma4TextDecoderLayer.__call__ = patched_call
-    Gemma4TextDecoderLayer._axolotl_shared_kv_tls_patched = True
+    Gemma4TextDecoderLayer._axolotl_shared_kv_patched = True
 
 
 def patch_gemma4_fused_attn():
