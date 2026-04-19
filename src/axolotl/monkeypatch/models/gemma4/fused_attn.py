@@ -10,11 +10,32 @@ Usage:
 """
 
 import logging
+import threading
 from typing import Callable
 
 import torch
 
 logger = logging.getLogger(__name__)
+
+
+# Thread-local side channel for the shared-KV dict. We route the dict through
+# this instead of a kwarg on the decoder-layer forward so that when HF's
+# GradientCheckpointingLayer forms `partial(super().__call__, **kwargs)` and
+# axolotl's CPU_Offloaded_Gradient_Checkpointer captures that partial in
+# `ctx.forward_function`, the ctx does not hold a reference to the dict --
+# otherwise the K/V tensors stored in the dict for the producer layers stay
+# pinned across the full backward pass (and, via Python ref-cycle delays in
+# torch's caching allocator, bleed across training steps), causing VRAM to
+# climb ~0.47 GiB/step under the hybrid FA2+SDPA path.
+_GEMMA4_SHARED_KV_TLS = threading.local()
+
+
+def _set_shared_kv_states(store):
+    _GEMMA4_SHARED_KV_TLS.store = store
+
+
+def _get_shared_kv_states():
+    return getattr(_GEMMA4_SHARED_KV_TLS, "store", None)
 
 
 def _make_fused_forward(original_forward):
@@ -30,7 +51,7 @@ def _make_fused_forward(original_forward):
         hidden_states: torch.Tensor,
         position_embeddings: torch.Tensor,
         attention_mask: torch.Tensor | None,
-        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]] | None = None,
         past_key_values=None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -38,6 +59,12 @@ def _make_fused_forward(original_forward):
         from transformers.models.gemma4.modeling_gemma4 import (
             eager_attention_forward,
         )
+
+        # Prefer the thread-local store (populated by the patched decoder-layer
+        # __call__) so the dict is not captured by the checkpoint partial.
+        tls_store = _get_shared_kv_states()
+        if tls_store is not None:
+            shared_kv_states = tls_store
 
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
@@ -133,14 +160,43 @@ def _make_fused_forward(original_forward):
     return fused_forward
 
 
+def _patch_decoder_layer_call():
+    """Strip `shared_kv_states` from the decoder-layer kwargs and route it via
+    thread-local storage instead. This breaks the capture chain
+    `ctx.forward_function -> partial -> kwargs -> shared_kv_states dict` inside
+    the CPU-offload activation checkpointer, so the dict (and the K/V tensors
+    it holds for the producer layers) is not pinned for the duration of the
+    backward pass.
+    """
+    from transformers.models.gemma4.modeling_gemma4 import Gemma4TextDecoderLayer
+
+    if getattr(Gemma4TextDecoderLayer, "_axolotl_shared_kv_tls_patched", False):
+        return
+
+    original_call = Gemma4TextDecoderLayer.__call__
+
+    def patched_call(self, *args, **kwargs):
+        shared_kv = kwargs.pop("shared_kv_states", None)
+        if shared_kv is not None:
+            _set_shared_kv_states(shared_kv)
+        return original_call(self, *args, **kwargs)
+
+    Gemma4TextDecoderLayer.__call__ = patched_call
+    Gemma4TextDecoderLayer._axolotl_shared_kv_tls_patched = True
+
+
 def patch_gemma4_fused_attn():
     """
-    Monkeypatch Gemma4TextAttention.forward to use fused RMSNorm+RoPE kernels.
+    Monkeypatch Gemma4TextAttention.forward to use fused RMSNorm+RoPE kernels,
+    and route `shared_kv_states` via thread-local storage to avoid a VRAM leak
+    under activation checkpointing.
     """
     from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
 
     original_forward = Gemma4TextAttention.forward
     Gemma4TextAttention.forward = _make_fused_forward(original_forward)
+
+    _patch_decoder_layer_call()
 
     logger.info(
         "Patched Gemma4TextAttention.forward with fused RMSNorm+RoPE Triton kernels"
