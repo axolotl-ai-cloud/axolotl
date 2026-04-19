@@ -79,8 +79,8 @@ class ModelInputConfig(BaseModel):
                 "affects from_pretrained load-time kwargs.\n\n"
                 "Do not set `revision` or `trust_remote_code` here -- use the "
                 "top-level `revision_of_model` / `trust_remote_code` keys instead. "
-                "Setting them inside `processor_kwargs` has inconsistent precedence "
-                "across axolotl's loader branches."
+                "Setting either inside `processor_kwargs` will be rejected by the "
+                "schema validator with a ValueError at config parse time."
             )
         },
     )
@@ -126,6 +126,22 @@ class ModelInputConfig(BaseModel):
                 "`trust_remote_code` is set to true. Please make sure that you reviewed the remote code/model."
             )
         return trust_remote_code
+
+    @field_validator("processor_kwargs")
+    @classmethod
+    def reject_reserved_processor_kwargs(cls, processor_kwargs):
+        if not processor_kwargs:
+            return processor_kwargs
+        reserved = {"revision", "trust_remote_code"}
+        conflicts = reserved.intersection(processor_kwargs)
+        if conflicts:
+            raise ValueError(
+                "Do not set reserved keys "
+                f"{sorted(conflicts)} inside `processor_kwargs`; "
+                "use the top-level `revision_of_model` / `trust_remote_code` "
+                "config keys instead."
+            )
+        return processor_kwargs
 
 
 class ModelOutputConfig(BaseModel):

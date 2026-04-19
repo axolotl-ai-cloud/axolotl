@@ -183,3 +183,41 @@ class TestRevisionParameter:
         call_kwargs = mock_auto_processor.from_pretrained.call_args
         assert "image_seq_length" not in call_kwargs.kwargs
         assert "max_soft_tokens" not in call_kwargs.kwargs
+
+    def test_processor_kwargs_schema_rejects_revision(self):
+        import pytest
+        from axolotl.utils.schemas.model import ModelInputConfig
+
+        with pytest.raises(ValueError, match="revision"):
+            ModelInputConfig(
+                base_model="some-model",
+                processor_kwargs={"revision": "abc123"},
+            )
+
+    def test_processor_kwargs_schema_rejects_trust_remote_code(self):
+        import pytest
+        from axolotl.utils.schemas.model import ModelInputConfig
+
+        with pytest.raises(ValueError, match="trust_remote_code"):
+            ModelInputConfig(
+                base_model="some-model",
+                processor_kwargs={"trust_remote_code": True},
+            )
+
+    def test_processor_kwargs_schema_accepts_valid_keys(self):
+        from axolotl.utils.schemas.model import ModelInputConfig
+
+        cfg = ModelInputConfig(
+            base_model="some-model",
+            processor_kwargs={"image_seq_length": 1120, "max_soft_tokens": 1120},
+        )
+        assert cfg.processor_kwargs == {
+            "image_seq_length": 1120,
+            "max_soft_tokens": 1120,
+        }
+
+    def test_processor_kwargs_schema_accepts_none_and_empty(self):
+        from axolotl.utils.schemas.model import ModelInputConfig
+
+        assert ModelInputConfig(base_model="x").processor_kwargs is None
+        assert ModelInputConfig(base_model="x", processor_kwargs={}).processor_kwargs == {}
