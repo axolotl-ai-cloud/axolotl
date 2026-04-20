@@ -253,22 +253,16 @@ def _find_param_wrapper_lora(
         if lora_a is None or lora_b is None:
             continue
 
-        # Verify LoRA dimensions match target tensor shape.
-        # Check both dim orientations (peft swaps in/out for 3D since 0.19.1).
+        # When tensor_shape is given, verify dimensions match before returning.
+        # This prevents returning a mismatched LoRA from a different nesting level.
         if tensor_shape is not None and len(tensor_shape) >= 3:
             num_experts = tensor_shape[0]
-            rank_ok = (
+            if not (
                 lora_a.shape[0] == lora_b.shape[1]
                 and lora_a.shape[0] % num_experts == 0
-            )
-            dims_ok = (
-                lora_a.shape[1] == tensor_shape[1]
+                and lora_a.shape[1] == tensor_shape[1]
                 and lora_b.shape[0] == tensor_shape[2]
-            ) or (
-                lora_a.shape[1] == tensor_shape[2]
-                and lora_b.shape[0] == tensor_shape[1]
-            )
-            if not (rank_ok and dims_ok):
+            ):
                 continue  # Dimensions don't match, try next nesting level
 
         return lora_a, lora_b, param_name
