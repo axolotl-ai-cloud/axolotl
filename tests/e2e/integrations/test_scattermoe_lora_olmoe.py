@@ -306,12 +306,14 @@ class TestLoRABLayoutConversion:
         hidden, inter = 32, 16
         scaling = 2.0
 
-        peft_A = torch.randn(E * r, hidden)
-        peft_B = torch.randn(inter, E * r)
+        # peft >=0.19.1 for down_proj [E, hidden, inter]:
+        # swaps in/out, lora_A [r*E, inter], lora_B [hidden, r*E]
+        peft_A = torch.randn(E * r, inter)
+        peft_B = torch.randn(hidden, E * r)
 
-        A_r = peft_A.reshape(E, r, hidden)
-        B_r = peft_B.reshape(inter, r, E)
-        delta_peft = torch.einsum("o r e, e r i -> e i o", B_r, A_r) * scaling
+        A_r = peft_A.reshape(E, r, inter)
+        B_r = peft_B.reshape(hidden, r, E)
+        delta_peft = torch.einsum("o r e, e r i -> e o i", B_r, A_r) * scaling
 
         smoe_A, smoe_B = peft_lora_to_scattermoe(peft_A, peft_B, E, r)
         for e in range(E):
