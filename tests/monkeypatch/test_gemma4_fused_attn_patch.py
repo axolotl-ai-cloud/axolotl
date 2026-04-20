@@ -80,6 +80,33 @@ class TestPatchedDecoderLayerCall:
 
         assert fused_attn._get_shared_kv_states() is None
 
+    def test_store_visible_across_threads(self):
+        """Regression for commit e3669b2c: the store must be readable from
+        threads other than the one that set it. `threading.local()` failed
+        this invariant, crashing with 'NoneType' object is not subscriptable'
+        on MoE Gemma4 variants when autograd worker threads ran backward
+        recompute under HF-Trainer gradient_checkpointing."""
+        import threading
+
+        from axolotl.monkeypatch.models.gemma4 import fused_attn
+
+        sentinel = {"layer_0": ("k", "v")}
+        try:
+            fused_attn._set_shared_kv_states(sentinel)
+
+            seen = {}
+
+            def worker():
+                seen["value"] = fused_attn._get_shared_kv_states()
+
+            t = threading.Thread(target=worker)
+            t.start()
+            t.join()
+
+            assert seen["value"] is sentinel
+        finally:
+            fused_attn._set_shared_kv_states(None)
+
 
 @pytest.fixture
 def clean_entry_point_patch_slate():
