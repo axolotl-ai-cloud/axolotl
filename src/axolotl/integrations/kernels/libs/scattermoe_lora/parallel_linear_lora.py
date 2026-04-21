@@ -34,6 +34,7 @@ from .kernels.lora_ops import (
     scatter2scatter_lora,
     scatter2scatter_lora_dX,
 )
+from .lora_layout import validate_scattermoe_lora_shapes
 
 
 class ScatterMoELoRA(torch.autograd.Function):
@@ -422,11 +423,6 @@ def get_lora_params_from_wrapper(module) -> tuple:
     return lora_A, lora_B, scaling
 
 
-# =============================================================================
-# Drop-in replacement for parallel_linear
-# =============================================================================
-
-
 def parallel_linear_lora(
     inputs: torch.Tensor,
     expert_weights: torch.Tensor,
@@ -451,6 +447,7 @@ def parallel_linear_lora(
     Otherwise falls back to standard scatter2scatter.
     """
     if lora_A is not None and lora_B is not None:
+        validate_scattermoe_lora_shapes(expert_weights, lora_A, lora_B)
         return ScatterMoELoRA.apply(
             inputs,
             expert_weights,
