@@ -1,0 +1,47 @@
+# RL (GRPO): hendrycks_math Level 1 via Tinker with Qwen3-8B
+#
+# Prep:
+#   python src/axolotl/integrations/hatchery/examples/prep_math_rl.py
+#
+# Run:
+#   export TINKER_API_KEY="your-key"
+#   axolotl train src/axolotl/integrations/hatchery/examples/tinker_rl.yaml
+
+base_model: Qwen/Qwen3-8B
+
+plugins:
+  - axolotl.integrations.hatchery.HatcheryPlugin
+
+hatchery:
+  backend: tinker
+  lora_rank: 16
+  loss_fn: importance_sampling
+  max_sample_tokens: 2048
+  sample_temperature: 0.7
+  num_samples: 4
+  pipeline: true
+  save_steps: 5
+  reward_funcs:
+    - axolotl.integrations.hatchery.rewards.math_reward.math_reward
+
+datasets:
+  - path: ./data/math_rl_level2
+    ds_type: arrow
+    type: completion
+
+sequence_len: 2048
+
+learning_rate: 5.0e-5
+optimizer: adamw_torch
+adam_beta1: 0.9
+adam_beta2: 0.95
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+max_steps: 10
+num_epochs: 1
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+logging_steps: 1
+
+output_dir: ./outputs/tinker-rl-math

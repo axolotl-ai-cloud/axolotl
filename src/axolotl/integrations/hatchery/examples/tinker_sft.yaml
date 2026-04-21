@@ -1,0 +1,42 @@
+# SFT: KIMI-K2 thinking data via Tinker remote API with Qwen3-8B
+#
+# Usage:
+#   export TINKER_API_KEY="your-key"
+#   axolotl train src/axolotl/integrations/hatchery/examples/tinker_sft.yaml
+
+base_model: Qwen/Qwen3-8B
+
+plugins:
+  - axolotl.integrations.hatchery.HatcheryPlugin
+
+hatchery:
+  backend: tinker
+  lora_rank: 16
+  loss_fn: cross_entropy
+  pipeline: true
+  save_steps: 10
+
+datasets:
+  - path: TeichAI/kimi-k2-thinking-1000x
+    split: train[:50]
+    type: chat_template
+    chat_template: qwen3
+    split_thinking: true
+
+chat_template: qwen3
+sequence_len: 2048
+
+learning_rate: 3.0e-4
+optimizer: adamw_torch
+adam_beta1: 0.9
+adam_beta2: 0.95
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+num_epochs: 1
+max_steps: 20
+micro_batch_size: 2
+gradient_accumulation_steps: 1
+logging_steps: 1
+
+output_dir: ./outputs/tinker-sft
