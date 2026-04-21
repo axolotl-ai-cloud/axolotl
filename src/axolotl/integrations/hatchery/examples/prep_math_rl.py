@@ -64,17 +64,21 @@ def main():
         )
         prompt_ids = tokenizer.encode(text, add_special_tokens=False)
 
-        rows.append({
-            "input_ids": prompt_ids,
-            "labels": [-100] * len(prompt_ids),
-            "attention_mask": [1] * len(prompt_ids),
-        })
+        rows.append(
+            {
+                "input_ids": prompt_ids,
+                "labels": [-100] * len(prompt_ids),
+                "attention_mask": [1] * len(prompt_ids),
+            }
+        )
 
     out = Dataset.from_list(rows)
     out_dir = f"./data/math_rl_{level.lower().replace(' ', '')}"
     out.save_to_disk(out_dir)
     print(f"Saved {len(out)} examples to {out_dir}")
-    print(f"Prompt length range: {min(len(r['input_ids']) for r in rows)}-{max(len(r['input_ids']) for r in rows)}")
+    print(
+        f"Prompt length range: {min(len(r['input_ids']) for r in rows)}-{max(len(r['input_ids']) for r in rows)}"
+    )
 
 
 if __name__ == "__main__":

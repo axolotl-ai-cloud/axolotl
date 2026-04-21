@@ -63,9 +63,7 @@ def _create_training_client(args: HatcheryConfig, base_model: str):
 
     from hatchery.core.client import TinkerClient
 
-    base_url = args.base_url or os.environ.get(
-        "HATCHERY_URL", "http://127.0.0.1:8420"
-    )
+    base_url = args.base_url or os.environ.get("HATCHERY_URL", "http://127.0.0.1:8420")
     token = args.api_key or os.environ.get("HATCHERY_API_KEY", "dev")
 
     client = TinkerClient(base_url=base_url, token=token, timeout=args.future_timeout)
@@ -131,12 +129,14 @@ class HatcheryTrainer(AxolotlTrainer):
         datums = batch_to_datums_sft(input_ids, labels, attention_mask)
 
         tc = self._get_training_client()
+        args = self.hatchery_args
+        assert args is not None  # validated by _get_training_client
         send_datums = datums_to_tinker(datums)
 
         future = tc.forward_backward(
             send_datums,
-            loss_fn=self.hatchery_args.loss_fn,
-            loss_fn_config=self.hatchery_args.loss_fn_config,
+            loss_fn=args.loss_fn,
+            loss_fn_config=args.loss_fn_config,
         )
         return future, n_active
 
@@ -183,7 +183,9 @@ class HatcheryTrainer(AxolotlTrainer):
         self.state.is_world_process_zero = True
 
         self.control = self.callback_handler.on_train_begin(
-            self.args, self.state, self.control
+            self.args,
+            self.state,
+            self.control,  # type: ignore[has-type]
         )
 
         global_step = 0
@@ -226,7 +228,8 @@ class HatcheryTrainer(AxolotlTrainer):
                         optim_future.result(timeout=args.future_timeout)
 
                     step_loss = (
-                        step_loss_sum / step_active if step_active > 0
+                        step_loss_sum / step_active
+                        if step_active > 0
                         else step_loss_sum
                     )
 
@@ -243,13 +246,15 @@ class HatcheryTrainer(AxolotlTrainer):
                             f"[step {global_step}/{max_steps}] "
                             f"loss/tok={step_loss:.4f} avg={avg_loss:.4f} "
                             f"active={step_active} "
-                            f"{elapsed/global_step:.2f}s/step"
+                            f"{elapsed / global_step:.2f}s/step"
                         )
-                        self.log({
-                            "loss": step_loss,
-                            "learning_rate": self._optim_params["learning_rate"],
-                            "epoch": self.state.epoch,
-                        })
+                        self.log(
+                            {
+                                "loss": step_loss,
+                                "learning_rate": self._optim_params["learning_rate"],
+                                "epoch": self.state.epoch,
+                            }
+                        )
 
                     if args.save_steps and global_step % args.save_steps == 0:
                         self._save_remote_checkpoint(global_step)
@@ -278,7 +283,7 @@ class HatcheryTrainer(AxolotlTrainer):
 
         LOG.info(
             f"Training complete: {global_step} steps, {elapsed:.1f}s total, "
-            f"{elapsed/max(global_step,1):.2f}s/step, avg_loss={avg_loss:.4f}"
+            f"{elapsed / max(global_step, 1):.2f}s/step, avg_loss={avg_loss:.4f}"
         )
 
         self.control = self.callback_handler.on_train_end(
@@ -294,10 +299,12 @@ class HatcheryTrainer(AxolotlTrainer):
     def _save_remote_checkpoint(self, step: int, name: Optional[str] = None):
         """Save a checkpoint on the remote service."""
         tc = self._get_training_client()
-        ckpt_name = name or f"{self.hatchery_args.save_name_prefix}-{step:06d}"
+        args = self.hatchery_args
+        assert args is not None  # validated by _get_training_client
+        ckpt_name = name or f"{args.save_name_prefix}-{step:06d}"
         try:
             future = tc.save_state(ckpt_name)
-            future.result(timeout=self.hatchery_args.future_timeout)
+            future.result(timeout=args.future_timeout)
             LOG.info(f"Remote checkpoint saved: {ckpt_name}")
         except Exception as e:
             LOG.warning(f"Failed to save checkpoint {ckpt_name}: {e}")

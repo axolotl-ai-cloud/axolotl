@@ -40,9 +40,7 @@ def _load_reward_func(fqn: str) -> Callable:
     mod = importlib.import_module(module_path)
     func = getattr(mod, func_name)
     if len(inspect.signature(func).parameters) < 2:
-        raise ValueError(
-            f"Reward function {fqn} must accept (prompts, completions)"
-        )
+        raise ValueError(f"Reward function {fqn} must accept (prompts, completions)")
     return func
 
 
@@ -89,6 +87,7 @@ class HatcheryRLTrainer(AxolotlTrainer):
 
         tc = self._get_training_client()
         args = self.hatchery_args
+        assert args is not None  # validated by _get_training_client
         results = []
 
         for prompt_ids in prompt_ids_list:
@@ -124,14 +123,24 @@ class HatcheryRLTrainer(AxolotlTrainer):
                 else sample_result.get("sequences", [])
             )
             for seq in sequences:
-                tokens = list(seq.tokens) if hasattr(seq, "tokens") else seq.get("tokens", [])
-                logprobs = list(seq.logprobs) if hasattr(seq, "logprobs") and seq.logprobs else seq.get("logprobs", [])
-                results.append({
-                    "tokens": list(prompt_ids) + tokens,
-                    "completion_tokens": tokens,
-                    "logprobs": logprobs,
-                    "prompt_len": len(prompt_ids),
-                })
+                tokens = (
+                    list(seq.tokens)
+                    if hasattr(seq, "tokens")
+                    else seq.get("tokens", [])
+                )
+                logprobs = (
+                    list(seq.logprobs)
+                    if hasattr(seq, "logprobs") and seq.logprobs
+                    else seq.get("logprobs", [])
+                )
+                results.append(
+                    {
+                        "tokens": list(prompt_ids) + tokens,
+                        "completion_tokens": tokens,
+                        "logprobs": logprobs,
+                        "prompt_len": len(prompt_ids),
+                    }
+                )
 
         return results
 
@@ -146,9 +155,7 @@ class HatcheryRLTrainer(AxolotlTrainer):
         return total_rewards
 
     @staticmethod
-    def _compute_advantages(
-        rewards: list[float], group_size: int
-    ) -> list[float]:
+    def _compute_advantages(rewards: list[float], group_size: int) -> list[float]:
         advantages = []
         for i in range(0, len(rewards), group_size):
             group = rewards[i : i + group_size]
@@ -192,7 +199,9 @@ class HatcheryRLTrainer(AxolotlTrainer):
         self.state.is_world_process_zero = True
 
         self.control = self.callback_handler.on_train_begin(
-            self.args, self.state, self.control
+            self.args,
+            self.state,
+            self.control,  # type: ignore[has-type]
         )
 
         tokenizer = self.processing_class
@@ -258,8 +267,8 @@ class HatcheryRLTrainer(AxolotlTrainer):
                     logprobs_t = torch.zeros(1, seq_len)
                     if sample["logprobs"]:
                         lp = sample["logprobs"][: seq_len - prompt_len]
-                        logprobs_t[0, prompt_len : prompt_len + len(lp)] = (
-                            torch.tensor(lp)
+                        logprobs_t[0, prompt_len : prompt_len + len(lp)] = torch.tensor(
+                            lp
                         )
 
                     adv_t = torch.zeros(1, seq_len)
@@ -309,15 +318,17 @@ class HatcheryRLTrainer(AxolotlTrainer):
                         f"acc={accuracy:.2f} reward={mean_reward:.3f} "
                         f"|adv|={mean_adv:.3f} loss:sum={step_loss:.1f} "
                         f"sample={t_sample:.1f}s train={t_train:.1f}s "
-                        f"{elapsed/global_step:.1f}s/step"
+                        f"{elapsed / global_step:.1f}s/step"
                     )
-                    self.log({
-                        "loss": step_loss,
-                        "reward": mean_reward,
-                        "accuracy": accuracy,
-                        "mean_abs_advantage": mean_adv,
-                        "learning_rate": self._optim_params["learning_rate"],
-                    })
+                    self.log(
+                        {
+                            "loss": step_loss,
+                            "reward": mean_reward,
+                            "accuracy": accuracy,
+                            "mean_abs_advantage": mean_adv,
+                            "learning_rate": self._optim_params["learning_rate"],
+                        }
+                    )
 
                 if args.save_steps and global_step % args.save_steps == 0:
                     self._save_remote_checkpoint(global_step)
@@ -359,10 +370,12 @@ class HatcheryRLTrainer(AxolotlTrainer):
 
     def _save_remote_checkpoint(self, step: int, name: Optional[str] = None):
         tc = self._get_training_client()
-        ckpt_name = name or f"{self.hatchery_args.save_name_prefix}-{step:06d}"
+        args = self.hatchery_args
+        assert args is not None  # validated by _get_training_client
+        ckpt_name = name or f"{args.save_name_prefix}-{step:06d}"
         try:
             future = tc.save_state(ckpt_name)
-            future.result(timeout=self.hatchery_args.future_timeout)
+            future.result(timeout=args.future_timeout)
             LOG.info(f"Remote checkpoint saved: {ckpt_name}")
         except Exception as e:
             LOG.warning(f"Failed to save checkpoint {ckpt_name}: {e}")

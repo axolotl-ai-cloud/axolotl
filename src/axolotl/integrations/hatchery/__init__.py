@@ -24,4 +24,3 @@ __all__ = ["HatcheryArgs", "HatcheryConfig", "HatcheryPlugin"]
 #     learning_rate: 1e-4
 #     loss_fn: cross_entropy  # SFT
 #     # loss_fn: ppo         # RL (auto-selects HatcheryRLTrainer)
-

@@ -48,8 +48,7 @@ def _make_datum(
             "chunks": [{"type": "encoded_text", "tokens": tokens}],
         },
         "loss_fn_inputs": {
-            key: _tensor_to_wire(tensor)
-            for key, tensor in loss_fn_inputs.items()
+            key: _tensor_to_wire(tensor) for key, tensor in loss_fn_inputs.items()
         },
     }
 
@@ -105,10 +104,15 @@ def batch_to_datums_sft(
         weights = (shifted_labels != -100).float()
         target_tokens[target_tokens == -100] = 0
 
-        datums.append(_make_datum(model_tokens, {
-            "target_tokens": target_tokens,
-            "weights": weights,
-        }))
+        datums.append(
+            _make_datum(
+                model_tokens,
+                {
+                    "target_tokens": target_tokens,
+                    "weights": weights,
+                },
+            )
+        )
 
     return datums
 
@@ -142,10 +146,15 @@ def batch_to_datums_rl(
         target_tokens = lbl[1:].clone()
         target_tokens[target_tokens == -100] = 0
 
-        datums.append(_make_datum(model_tokens, {
-            "target_tokens": target_tokens,
-            "logprobs": lp[1:],
-            "advantages": adv[1:],
-        }))
+        datums.append(
+            _make_datum(
+                model_tokens,
+                {
+                    "target_tokens": target_tokens,
+                    "logprobs": lp[1:],
+                    "advantages": adv[1:],
+                },
+            )
+        )
 
     return datums

@@ -44,7 +44,11 @@ class HatcheryPlugin(BasePlugin):
     def pre_model_load(self, cfg: DictDefault):
         """Replace model loading with a tiny stub."""
         hcfg = cfg.hatchery or {}
-        backend = hcfg.get("backend", "tinker") if isinstance(hcfg, dict) else getattr(hcfg, "backend", "tinker")
+        backend = (
+            hcfg.get("backend", "tinker")
+            if isinstance(hcfg, dict)
+            else getattr(hcfg, "backend", "tinker")
+        )
         LOG.info(
             f"Hatchery plugin active: training dispatched to remote "
             f"{backend} API. Skipping local model weight loading."
@@ -58,14 +62,12 @@ class HatcheryPlugin(BasePlugin):
 
             config = AutoConfig.from_pretrained(
                 base_model,
-                trust_remote_code=loader_self.cfg.get(
-                    "trust_remote_code", False
-                ),
+                trust_remote_code=loader_self.cfg.get("trust_remote_code", False),
             )
 
             class _Stub(PreTrainedModel):
                 config_class = type(config)
-                _no_split_modules = []
+                _no_split_modules: list[str] = []
                 supports_gradient_checkpointing = False
 
                 def __init__(self, cfg):
@@ -85,7 +87,7 @@ class HatcheryPlugin(BasePlugin):
             loader_self.model = _Stub(config)
             return True
 
-        ModelLoader._build_model = _stub_build_model
+        ModelLoader._build_model = _stub_build_model  # type: ignore[method-assign,assignment]
 
     def get_trainer_cls(self, cfg: DictDefault) -> type[Trainer] | None:
         """Return the appropriate remote trainer class."""
@@ -101,14 +103,10 @@ class HatcheryPlugin(BasePlugin):
 
         return HatcheryTrainer
 
-    def post_model_load(
-        self, cfg: DictDefault, model: PreTrainedModel | PeftModel
-    ):
+    def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         model._hatchery_remote = True
 
-    def post_train(
-        self, cfg: DictDefault, model: PreTrainedModel | PeftModel
-    ):
+    def post_train(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         LOG.info(
             "Hatchery: skipping local model save (weights are on remote API). "
             "Use `tinker checkpoint download` or hatchery CLI to retrieve."

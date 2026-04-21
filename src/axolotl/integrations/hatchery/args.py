@@ -32,9 +32,9 @@ class HatcheryConfig(BaseModel):
     train_unembed: bool = True
 
     # Loss function
-    loss_fn: Literal[
-        "cross_entropy", "importance_sampling", "ppo", "cispo", "dro"
-    ] = "cross_entropy"
+    loss_fn: Literal["cross_entropy", "importance_sampling", "ppo", "cispo", "dro"] = (
+        "cross_entropy"
+    )
     loss_fn_config: Optional[dict[str, Any]] = None
 
     # Pipelining: submit next batch before awaiting previous result
