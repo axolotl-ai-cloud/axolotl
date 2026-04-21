@@ -422,22 +422,22 @@ class TestPeftLoRAWeightExtraction:
         )
 
         # gate_up_proj [E, 2*inter, hidden]
-        # peft: in_features=2*inter (dim 1), out_features=hidden (dim 2)
+        # peft: in_features=hidden (last dim), out_features=2*inter (middle dim)
         assert trainable[
             "base_model.model.moe.experts.base_layer.lora_A.default.weight"
-        ].shape == (E * r, 2 * config.intermediate_size)
-        assert trainable[
-            "base_model.model.moe.experts.base_layer.lora_B.default.weight"
-        ].shape == (config.hidden_size, E * r)
-
-        # down_proj [E, hidden, inter]
-        # peft: in_features=hidden (dim 1), out_features=inter (dim 2)
-        assert trainable[
-            "base_model.model.moe.experts.lora_A.default.weight"
         ].shape == (E * r, config.hidden_size)
         assert trainable[
+            "base_model.model.moe.experts.base_layer.lora_B.default.weight"
+        ].shape == (2 * config.intermediate_size, E * r)
+
+        # down_proj [E, hidden, inter]
+        # peft: in_features=inter (last dim), out_features=hidden (middle dim)
+        assert trainable[
+            "base_model.model.moe.experts.lora_A.default.weight"
+        ].shape == (E * r, config.intermediate_size)
+        assert trainable[
             "base_model.model.moe.experts.lora_B.default.weight"
-        ].shape == (config.intermediate_size, E * r)
+        ].shape == (config.hidden_size, E * r)
 
     @requires_cuda
     def test_peft_forward_runs(self):
@@ -489,26 +489,28 @@ class TestPeftLoRAWeightExtraction:
         assert down_lora is not None, "down_proj LoRA not detected"
 
         # Check shapes (after peft->scattermoe conversion with A<->B swap)
-        # gate_up_proj W = param.T = [E, hidden, 2*inter], K=hidden, N=2*inter
+        # gate_up_proj: peft A [E*r, hidden] / B [2*inter, E*r]
+        # After swap: smoe_A [E*r, 2*inter], smoe_B [hidden, E*r]
         E, r = config.num_experts, 4
         gup_A, gup_B, gup_s = gup_lora
-        assert gup_A.shape == (E * r, config.hidden_size), (
-            f"gate_up_proj smoe_A: expected [r*E, K=hidden]={(E * r, config.hidden_size)}, "
+        assert gup_A.shape == (E * r, 2 * config.intermediate_size), (
+            f"gate_up_proj smoe_A: expected [r*E, 2*inter]={(E * r, 2 * config.intermediate_size)}, "
             f"got {gup_A.shape}"
         )
-        assert gup_B.shape == (2 * config.intermediate_size, E * r), (
-            f"gate_up_proj smoe_B: expected [N=2*inter, r*E]="
-            f"{(2 * config.intermediate_size, E * r)}, got {gup_B.shape}"
+        assert gup_B.shape == (config.hidden_size, E * r), (
+            f"gate_up_proj smoe_B: expected [hidden, r*E]="
+            f"{(config.hidden_size, E * r)}, got {gup_B.shape}"
         )
 
-        # down_proj W = param.T = [E, inter, hidden], K=inter, N=hidden
+        # down_proj: peft A [E*r, inter] / B [hidden, E*r]
+        # After swap: smoe_A [E*r, hidden], smoe_B [inter, E*r]
         down_A, down_B, down_s = down_lora
-        assert down_A.shape == (E * r, config.intermediate_size), (
-            f"down_proj smoe_A: expected [r*E, K=inter]={(E * r, config.intermediate_size)}, "
+        assert down_A.shape == (E * r, config.hidden_size), (
+            f"down_proj smoe_A: expected [r*E, hidden]={(E * r, config.hidden_size)}, "
             f"got {down_A.shape}"
         )
-        assert down_B.shape == (config.hidden_size, E * r), (
-            f"down_proj smoe_B: expected [N=hidden, r*E]={(config.hidden_size, E * r)}, "
+        assert down_B.shape == (config.intermediate_size, E * r), (
+            f"down_proj smoe_B: expected [inter, r*E]={(config.intermediate_size, E * r)}, "
             f"got {down_B.shape}"
         )
 
