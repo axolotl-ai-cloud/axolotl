@@ -5,12 +5,16 @@
 """Math reward function for hendrycks_math GRPO training.
 
 Uses math_verify for robust answer comparison. Falls back to
-exact string match of \\boxed{} content.
+exact string match of \\boxed{} content only when math_verify
+is unavailable.
 """
 
 from __future__ import annotations
 
+import logging
 import re
+
+LOG = logging.getLogger(__name__)
 
 
 def extract_boxed(text: str) -> str | None:
@@ -51,18 +55,19 @@ def math_reward(prompts: list[str], completions: list[str], **kwargs) -> list[fl
             rewards.append(0.0)
             continue
 
+        verified = None
         try:
             from math_verify import parse, verify
 
             gold_parsed = parse(gold_answer)
             pred_parsed = parse(pred_answer)
-            if verify(gold_parsed, pred_parsed):
-                rewards.append(1.0)
-                continue
+            verified = verify(gold_parsed, pred_parsed)
         except Exception:
-            pass
+            LOG.debug("math_verify unavailable or failed, using string fallback", exc_info=True)
 
-        if pred_answer.strip() == gold_answer.strip():
+        if verified is not None:
+            rewards.append(1.0 if verified else 0.0)
+        elif pred_answer.strip() == gold_answer.strip():
             rewards.append(1.0)
         else:
             rewards.append(0.0)

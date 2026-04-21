@@ -25,7 +25,7 @@ hatchery:
     - axolotl.integrations.hatchery.rewards.math_reward.math_reward
 
 datasets:
-  - path: ./data/math_rl_level2
+  - path: ./data/math_rl_level1
     ds_type: arrow
     type: completion
 

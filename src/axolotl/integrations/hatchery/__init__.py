@@ -21,6 +21,8 @@ __all__ = ["HatcheryArgs", "HatcheryConfig", "HatcheryPlugin"]
 #   hatchery:
 #     backend: tinker  # or "hatchery"
 #     lora_rank: 32
-#     learning_rate: 1e-4
 #     loss_fn: cross_entropy  # SFT
 #     # loss_fn: ppo         # RL (auto-selects HatcheryRLTrainer)
+#
+#   learning_rate: 1e-4  # top-level, not under hatchery:
+

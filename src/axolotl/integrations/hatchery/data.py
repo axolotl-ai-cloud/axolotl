@@ -122,6 +122,7 @@ def batch_to_datums_rl(
     labels: torch.Tensor,
     logprobs: torch.Tensor,
     advantages: torch.Tensor,
+    attention_mask: torch.Tensor | None = None,
 ) -> list[dict[str, Any]]:
     """Convert an RL batch to importance_sampling/ppo Datum dicts with causal shift."""
     batch_size = input_ids.size(0)
@@ -131,9 +132,8 @@ def batch_to_datums_rl(
         ids = input_ids[i]
         lbl = labels[i]
 
-        nonzero = ids.nonzero()
-        if nonzero.numel() > 0:
-            seq_len = nonzero[-1].item() + 1
+        if attention_mask is not None:
+            seq_len = int(attention_mask[i].sum().item())
         else:
             seq_len = ids.size(0)
         ids = ids[:seq_len]

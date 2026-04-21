@@ -38,12 +38,12 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B", trust_remote_code=True)
 
     ds = load_dataset("EleutherAI/hendrycks_math", "algebra", split="test")
-    level = os.environ.get("MATH_LEVEL", "Level 2")
-    level1 = [x for x in ds if x["level"] == level]
-    print(f"{level} algebra: {len(level1)} problems")
+    level = os.environ.get("MATH_LEVEL", "Level 1")
+    filtered_rows = [x for x in ds if x["level"] == level]
+    print(f"{level} algebra: {len(filtered_rows)} problems")
 
     rows = []
-    for prob in level1:
+    for prob in filtered_rows:
         gold = extract_boxed(prob["solution"])
         if not gold:
             continue
@@ -76,9 +76,11 @@ def main():
     out_dir = f"./data/math_rl_{level.lower().replace(' ', '')}"
     out.save_to_disk(out_dir)
     print(f"Saved {len(out)} examples to {out_dir}")
-    print(
-        f"Prompt length range: {min(len(r['input_ids']) for r in rows)}-{max(len(r['input_ids']) for r in rows)}"
-    )
+    if rows:
+        print(
+            f"Prompt length range: {min(len(r['input_ids']) for r in rows)}"
+            f"-{max(len(r['input_ids']) for r in rows)}"
+        )
 
 
 if __name__ == "__main__":

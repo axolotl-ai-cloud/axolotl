@@ -61,12 +61,12 @@ def _create_training_client(args: HatcheryConfig, base_model: str):
             train_unembed=args.train_unembed,
         )
 
-    from hatchery.core.client import TinkerClient
+    from hatchery.core.client import HatcheryClient
 
     base_url = args.base_url or os.environ.get("HATCHERY_URL", "http://127.0.0.1:8420")
     token = args.api_key or os.environ.get("HATCHERY_API_KEY", "dev")
 
-    client = TinkerClient(base_url=base_url, token=token, timeout=args.future_timeout)
+    client = HatcheryClient(base_url=base_url, token=token, timeout=args.future_timeout)
     return client.create_lora_training_client(
         base_model=base_model,
         rank=args.lora_rank,
@@ -84,12 +84,15 @@ class HatcheryTrainer(AxolotlTrainer):
     chat templates, packing, etc.) but offloads compute to remote GPUs.
     """
 
-    hatchery_args: Optional[HatcheryConfig] = None
-    _base_model_name: Optional[str] = None
-    _training_client: Any = None
+    hatchery_args: Optional[HatcheryConfig]
+    _base_model_name: Optional[str]
+    _training_client: Any
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.hatchery_args = None
+        self._base_model_name = None
+        self._training_client = None
 
     def _get_training_client(self):
         """Lazily create the remote training session."""
@@ -306,12 +309,17 @@ class HatcheryTrainer(AxolotlTrainer):
             future = tc.save_state(ckpt_name)
             future.result(timeout=args.future_timeout)
             LOG.info(f"Remote checkpoint saved: {ckpt_name}")
-        except Exception as e:
-            LOG.warning(f"Failed to save checkpoint {ckpt_name}: {e}")
+        except Exception:
+            LOG.exception(f"Failed to save checkpoint {ckpt_name}")
+            if name == "final":
+                raise
 
     def save_model(self, output_dir=None, _internal_call=False):
-        """No-op — model weights live on the remote API."""
-        LOG.info("Hatchery: save_model skipped (weights are remote)")
+        """Delegate to remote checkpoint save so HF callbacks create checkpoints."""
+        self._save_remote_checkpoint(
+            step=self.state.global_step,
+            name=output_dir or "hf-save",
+        )
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         raise NotImplementedError(

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import re
 import time
 from typing import Any, Callable, Optional
 
@@ -47,13 +48,17 @@ def _load_reward_func(fqn: str) -> Callable:
 class HatcheryRLTrainer(AxolotlTrainer):
     """Remote RL trainer using Tinker/Hatchery for sampling and training."""
 
-    hatchery_args: Optional[HatcheryConfig] = None
-    _base_model_name: Optional[str] = None
-    _training_client: Any = None
-    _reward_functions: list[Callable] = []
+    hatchery_args: Optional[HatcheryConfig]
+    _base_model_name: Optional[str]
+    _training_client: Any
+    _reward_functions: list[Callable]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.hatchery_args = None
+        self._base_model_name = None
+        self._training_client = None
+        self._reward_functions = []
 
     def _ensure_reward_functions(self):
         if self._reward_functions:
@@ -90,12 +95,10 @@ class HatcheryRLTrainer(AxolotlTrainer):
         assert args is not None  # validated by _get_training_client
         results = []
 
-        for prompt_ids in prompt_ids_list:
-            sc = tc.save_weights_and_get_sampling_client()
+        sc = tc.save_weights_and_get_sampling_client()
 
-            # Use the appropriate sample API based on what the client supports
+        for prompt_ids in prompt_ids_list:
             if hasattr(sc, "sampling_session_id"):
-                # Hatchery SamplingClient: positional prompt_tokens
                 sample_result = sc.sample(
                     prompt_ids,
                     max_tokens=args.max_sample_tokens,
@@ -103,7 +106,6 @@ class HatcheryRLTrainer(AxolotlTrainer):
                     n=args.num_samples,
                 ).result(timeout=args.future_timeout)
             else:
-                # Tinker SamplingClient: prompt=ModelInput, sampling_params
                 mi = tt.ModelInput.from_ints(prompt_ids)
                 sp = tt.SamplingParams(
                     max_tokens=args.max_sample_tokens,
@@ -223,19 +225,32 @@ class HatcheryRLTrainer(AxolotlTrainer):
                 )
 
                 prompt_ids_batch = batch["input_ids"]
+                # Full prompt text (with gold tag) for reward scoring
                 prompt_texts = tokenizer.batch_decode(
                     prompt_ids_batch, skip_special_tokens=False
                 )
-                prompts_list = [ids.tolist() for ids in prompt_ids_batch]
 
-                # 1. Sample completions
+                # Strip <|gold|>...<|/gold|> from token ids before
+                # sending to the model for sampling — the gold answer
+                # must only be visible to the local reward function.
+                sampling_prompts = []
+                for prompt_text in prompt_texts:
+                    clean = re.sub(r"<\|gold\|>.*?<\|/gold\|>", "", prompt_text)
+                    clean_ids = tokenizer.encode(clean, add_special_tokens=False)
+                    sampling_prompts.append(clean_ids)
+
+                # 1. Sample completions (without gold answer)
                 t0 = time.time()
-                samples = self._sample_completions(prompts_list)
+                samples = self._sample_completions(sampling_prompts)
                 t_sample = time.time() - t0
 
                 if not samples:
                     LOG.warning("No samples generated, skipping step")
                     continue
+                LOG.info(
+                    f"Sampled {len(samples)} completions, "
+                    f"avg_len={sum(len(s['completion_tokens']) for s in samples)/len(samples):.0f}tok"
+                )
 
                 # 2. Decode and score
                 completion_texts = [
@@ -377,11 +392,16 @@ class HatcheryRLTrainer(AxolotlTrainer):
             future = tc.save_state(ckpt_name)
             future.result(timeout=args.future_timeout)
             LOG.info(f"Remote checkpoint saved: {ckpt_name}")
-        except Exception as e:
-            LOG.warning(f"Failed to save checkpoint {ckpt_name}: {e}")
+        except Exception:
+            LOG.exception(f"Failed to save checkpoint {ckpt_name}")
+            if name == "final":
+                raise
 
     def save_model(self, output_dir=None, _internal_call=False):
-        LOG.info("Hatchery: save_model skipped (weights are remote)")
+        self._save_remote_checkpoint(
+            step=self.state.global_step,
+            name=output_dir or "hf-save",
+        )
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         raise NotImplementedError(
