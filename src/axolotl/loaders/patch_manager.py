@@ -395,7 +395,16 @@ class PatchManager:
                     patch_gemma4_fused_attn,
                 )
 
-                patch_gemma4_fused_attn()
+                # Shared-KV side channel when activation checkpointing (PR #3611).
+                fsdp_cfg = self.cfg.fsdp_config
+                needs_shared_kv_workaround = (not self.inference) and bool(
+                    self.cfg.gradient_checkpointing
+                    or self.cfg.activation_offloading
+                    or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
+                )
+                patch_gemma4_fused_attn(
+                    install_shared_kv_workaround=needs_shared_kv_workaround
+                )
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():

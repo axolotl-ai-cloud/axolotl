@@ -6,15 +6,29 @@ kernels, eliminating intermediate tensor allocations from rotate_half / apply_ro
 
 Usage:
     from axolotl.monkeypatch.models.gemma4.fused_attn import patch_gemma4_fused_attn
-    patch_gemma4_fused_attn()
+    # Pass install_shared_kv_workaround=True when activation checkpointing is enabled.
+    patch_gemma4_fused_attn(install_shared_kv_workaround=True)
 """
 
-import logging
 from typing import Callable
 
 import torch
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+# Module-level dict used as a side channel for shared KV states avoiding kwarg and TLS
+# to prevent memory leak on gradient checkpoint enabled training (PR #3611)
+_GEMMA4_SHARED_KV_STORE: dict = {"store": None}
+
+
+def _set_shared_kv_states(store):
+    _GEMMA4_SHARED_KV_STORE["store"] = store
+
+
+def _get_shared_kv_states():
+    return _GEMMA4_SHARED_KV_STORE["store"]
 
 
 def _make_fused_forward(original_forward):
@@ -30,7 +44,7 @@ def _make_fused_forward(original_forward):
         hidden_states: torch.Tensor,
         position_embeddings: torch.Tensor,
         attention_mask: torch.Tensor | None,
-        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]],
+        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]] | None = None,
         past_key_values=None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -38,6 +52,10 @@ def _make_fused_forward(original_forward):
         from transformers.models.gemma4.modeling_gemma4 import (
             eager_attention_forward,
         )
+
+        store = _get_shared_kv_states()
+        if store is not None:
+            shared_kv_states = store
 
         input_shape = hidden_states.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
@@ -133,15 +151,44 @@ def _make_fused_forward(original_forward):
     return fused_forward
 
 
-def patch_gemma4_fused_attn():
+def _patch_decoder_layer_call():
+    """Strip `shared_kv_states` from decoder-layer kwargs and route via the
+    module-level side channel so the checkpoint partial cannot pin it (PR #3611).
     """
-    Monkeypatch Gemma4TextAttention.forward to use fused RMSNorm+RoPE kernels.
+    from transformers.models.gemma4.modeling_gemma4 import Gemma4TextDecoderLayer
+
+    if getattr(Gemma4TextDecoderLayer, "_axolotl_shared_kv_patched", False):
+        return
+
+    original_call = Gemma4TextDecoderLayer.__call__
+
+    def patched_call(self, *args, **kwargs):
+        shared_kv = kwargs.pop("shared_kv_states", None)
+        # Overwrite unconditionally (including with None) so a previous step's
+        # dict cannot leak into a later call without shared_kv_states (PR #3611).
+        _set_shared_kv_states(shared_kv)
+        return original_call(self, *args, **kwargs)
+
+    Gemma4TextDecoderLayer.__call__ = patched_call
+    Gemma4TextDecoderLayer._axolotl_shared_kv_patched = True
+
+
+def patch_gemma4_fused_attn(install_shared_kv_workaround: bool = False):
+    """
+    Monkeypatch Gemma4TextAttention.forward to use fused RMSNorm+RoPE kernels,
+    and optionally route `shared_kv_states` via a module-level side channel to
+    avoid a VRAM leak under activation checkpointing (PR #3611).
     """
     from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
 
     original_forward = Gemma4TextAttention.forward
     Gemma4TextAttention.forward = _make_fused_forward(original_forward)
 
+    if install_shared_kv_workaround:
+        _patch_decoder_layer_call()
+
     logger.info(
         "Patched Gemma4TextAttention.forward with fused RMSNorm+RoPE Triton kernels"
     )
+    if install_shared_kv_workaround:
+        logger.info("Installed Gemma4 shared_kv_states side channel (PR #3611)")
