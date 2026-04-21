@@ -6,21 +6,19 @@ on:
     branches:
       - "main"
     paths:
-      - '**.py'
-      - 'requirements.txt'
-      - '.github/workflows/*.yml'
-      - 'requirements-tests.txt'
-      - 'cicd/cicd.sh'
-      - 'cicd/Dockerfile.jinja'
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/Dockerfile-uv.jinja"
   pull_request:
-      types: [opened, synchronize, reopened, ready_for_review]
-      paths:
-       - '**.py'
-       - 'requirements.txt'
-       - '.github/workflows/*.yml'
-       - 'requirements-tests.txt'
-       - 'cicd/cicd.sh'
-       - 'cicd/Dockerfile.jinja'
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - ".github/workflows/*.yml"
+      - "cicd/cicd.sh"
+      - "cicd/Dockerfile-uv.jinja"
   workflow_dispatch:
 
 # Cancel jobs on the same ref if a new one is triggered
@@ -33,6 +31,7 @@ permissions:
 
 env:
   TRANSFORMERS_IS_CI: "yes"
+  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   pre-commit:
@@ -44,7 +43,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip' # caching pip dependencies
+          cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
@@ -94,32 +93,25 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 wheel
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install --no-cache-dir --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
         run: |
@@ -188,33 +180,27 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==75.8.0 setuptools_scm build wheel psutil
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install --no-cache-dir torch==${{ matrix.pytorch_version }} torchvision
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
       - name: Install dependencies
         run: |
-          pip3 show torch
+          uv pip install packaging setuptools_scm build wheel psutil
           python -m build --no-isolation --sdist
-          pip3 install --no-cache-dir --no-build-isolation dist/axolotl*.tar.gz
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
-
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
+          uv pip install --no-build-isolation dist/axolotl*.tar.gz --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
         run: |
@@ -291,7 +277,6 @@ jobs:
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
-            dockerfile: "Dockerfile-uv.jinja"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -312,7 +297,7 @@ jobs:
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -374,7 +359,7 @@ jobs:
           echo "MODAL_IMAGE_BUILDER_VERSION=2024.10" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
           echo "GPU_TYPE=${{ matrix.gpu_type || 'L40S'}}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

@@ -31,7 +31,10 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-pip3 install -r requirements-dev.txt -r requirements-tests.txt
+# Install axolotl + dev and test dependencies from lockfile
+export UV_TORCH_BACKEND=cu128  # or cu130
+uv sync --extra flash-attn --extra deepspeed --group dev --group test
+source .venv/bin/activate
 pre-commit install
 
 # test

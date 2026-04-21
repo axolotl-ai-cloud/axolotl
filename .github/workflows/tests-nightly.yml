@@ -2,14 +2,17 @@ name: Tests Nightly against upstream main
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'  # Runs at 00:00 UTC every day
+    - cron: "0 0 * * *" # Runs at 00:00 UTC every day
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - '.github/workflows/tests-nightly.yml'
+      - ".github/workflows/tests-nightly.yml"
 
 permissions:
   contents: read
+
+env:
+  UV_SYSTEM_PYTHON: "1"
 
 jobs:
   pre-commit:
@@ -20,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: 'pip' # caching pip dependencies
+          cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
           SKIP: no-commit-to-branch
@@ -43,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python_version: ["3.12"]  # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
+        python_version: ["3.12"] # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
         pytorch_version: ["2.9.1", "2.10.0"]
     timeout-minutes: 20
 
@@ -61,36 +64,34 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python_version }}
-          cache: 'pip' # caching pip dependencies
 
-      - name: upgrade pip
-        run: |
-          pip3 install --upgrade pip
-          pip3 install --upgrade packaging==26.0 setuptools==78.1.1 wheel
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
 
       - name: Install PyTorch
         run: |
-          pip3 install torch==${{ matrix.pytorch_version }} torchvision
-
-      - name: Update requirements.txt
-        run: |
-          sed -i 's#^transformers.*#transformers @ git+https://github.com/huggingface/transformers.git@main#' requirements.txt
-          sed -i 's#^peft.*#peft @ git+https://github.com/huggingface/peft.git@main#' requirements.txt
-          sed -i 's#^accelerate.*#accelerate @ git+https://github.com/huggingface/accelerate.git@main#' requirements.txt
-          sed -i 's#^trl.*#trl @ git+https://github.com/huggingface/trl.git@main#' requirements.txt
-          sed -i 's#^datasets.*#datasets @ git+https://github.com/huggingface/datasets.git@main#' requirements.txt
+          uv pip install torch==${{ matrix.pytorch_version }} torchvision
+          uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt
 
       - name: Install dependencies
         run: |
-          pip3 show torch
-          pip3 install --no-build-isolation -U -e .
-          python scripts/unsloth_install.py | sh
-          python scripts/cutcrossentropy_install.py | sh
-          pip3 install -r requirements-dev.txt -r requirements-tests.txt
+          uv pip install --no-build-isolation -e . --override /tmp/torch-pin.txt
+          python scripts/cutcrossentropy_install.py --uv | sh
+          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
+            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
+
+      - name: Override with nightly HF packages
+        run: |
+          uv pip install --no-deps \
+            "transformers @ git+https://github.com/huggingface/transformers.git@main" \
+            "peft @ git+https://github.com/huggingface/peft.git@main" \
+            "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
+            "trl @ git+https://github.com/huggingface/trl.git@main" \
+            "datasets @ git+https://github.com/huggingface/datasets.git@main"
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
-          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__"
+          python -c "import torch; assert '${{ matrix.pytorch_version }}' in torch.__version__, f'Expected torch ${{ matrix.pytorch_version }} but got {torch.__version__}'"
 
       - name: Ensure axolotl CLI was installed
         run: |
@@ -102,9 +103,6 @@ jobs:
           pytest -v --durations=10 tests/patched/
           pytest -v --durations=10 tests/cli/
 
-      - name: cleanup pip cache
-        run: |
-          find "$(pip cache dir)/http-v2" -type f -mtime +14 -exec rm {} \;
 
   docker-e2e-tests:
     if: github.repository_owner == 'axolotl-ai-cloud'
@@ -136,7 +134,6 @@ jobs:
             pytorch: 2.9.1
             num_gpus: 1
             axolotl_extras:
-            dockerfile: "Dockerfile-uv.jinja"
             nightly_build: "true"
     steps:
       - name: Checkout
@@ -157,7 +154,7 @@ jobs:
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
-          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile.jinja'}}" >> $GITHUB_ENV
+          echo "E2E_DOCKERFILE=${{ matrix.dockerfile || 'Dockerfile-uv.jinja'}}" >> $GITHUB_ENV
           echo "NIGHTLY_BUILD=${{ matrix.nightly_build }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         env:

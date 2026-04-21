@@ -13,14 +13,13 @@ This guide shows how to fine-tune SmolVLM2 models with Axolotl.
     Here is an example of how to install from pip:
     ```bash
     # Ensure you have a compatible version of Pytorch installed
-    pip3 install packaging setuptools wheel ninja
-    pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
     ```
 
 2. Install an extra dependency:
 
     ```bash
-    pip3 install num2words==0.5.14
+    uv pip install num2words==0.5.14
     ```
 
 3.  Run the finetuning example:

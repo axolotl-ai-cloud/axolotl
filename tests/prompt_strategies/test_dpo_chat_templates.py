@@ -111,7 +111,7 @@ def fixture_argilla_chat_dataset():
 @pytest.fixture(name="phi3_tokenizer")
 @enable_hf_offline
 def fixture_phi3_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-medium-128k-instruct")
+    tokenizer = AutoTokenizer.from_pretrained("microsoft/Phi-3-mini-4k-instruct")
 
     return tokenizer
 
@@ -214,8 +214,8 @@ class TestAssistantDPOChatTemplatePhi3:
             + "<|user|>\ngoodbye<|end|>\n"
             + "<|assistant|>\n"
         )
-        assert result["chosen"] == "goodbye<|end|>"
-        assert result["rejected"] == "party on<|end|>"
+        assert result["chosen"] == "goodbye<|end|>\n<|endoftext|>"
+        assert result["rejected"] == "party on<|end|>\n<|endoftext|>"
 
 
 class TestAssistantDPOChatTemplateGemma:
@@ -290,8 +290,8 @@ class TestArgillaChatDPOChatTemplate:
         )
         result = transform_fn(argilla_chat_dataset[0], tokenizer=phi3_tokenizer)
         assert result["prompt"] == "<|user|>\nhello<|end|>\n" + "<|assistant|>\n"
-        assert result["chosen"] == "goodbye<|end|>"
-        assert result["rejected"] == "party on<|end|>"
+        assert result["chosen"] == "goodbye<|end|>\n<|endoftext|>"
+        assert result["rejected"] == "party on<|end|>\n<|endoftext|>"
 
 
 class TestDPOChatTemplateToolRole:

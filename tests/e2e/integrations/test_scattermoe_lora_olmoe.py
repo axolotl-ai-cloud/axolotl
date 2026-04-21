@@ -54,24 +54,8 @@ except (ImportError, ModuleNotFoundError):
         )
 
     def peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
-        peft_B_em = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
-        K_inter, N_hidden = peft_B.shape[0], peft_A.shape[1]
-        smoe_A = torch.zeros(
-            rank * num_experts,
-            K_inter,
-            device=peft_A.device,
-            dtype=peft_A.dtype,
-        )
-        smoe_B = torch.zeros(
-            N_hidden,
-            rank * num_experts,
-            device=peft_A.device,
-            dtype=peft_A.dtype,
-        )
-        for e in range(num_experts):
-            s = e * rank
-            smoe_A[s : s + rank, :] = peft_B_em[:, s : s + rank].T
-            smoe_B[:, s : s + rank] = peft_A[s : s + rank, :].T
+        smoe_A = peft_A
+        smoe_B = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
         return smoe_A, smoe_B
 
     def _unwrap_experts_lora(experts_module):
@@ -322,12 +306,14 @@ class TestLoRABLayoutConversion:
         hidden, inter = 32, 16
         scaling = 2.0
 
-        peft_A = torch.randn(E * r, hidden)
-        peft_B = torch.randn(inter, E * r)
+        # peft >=0.19.1 for down_proj [E, hidden, inter]:
+        # swaps in/out, lora_A [r*E, inter], lora_B [hidden, r*E]
+        peft_A = torch.randn(E * r, inter)
+        peft_B = torch.randn(hidden, E * r)
 
-        A_r = peft_A.reshape(E, r, hidden)
-        B_r = peft_B.reshape(inter, r, E)
-        delta_peft = torch.einsum("o r e, e r i -> e i o", B_r, A_r) * scaling
+        A_r = peft_A.reshape(E, r, inter)
+        B_r = peft_B.reshape(hidden, r, E)
+        delta_peft = torch.einsum("o r e, e r i -> e o i", B_r, A_r) * scaling
 
         smoe_A, smoe_B = peft_lora_to_scattermoe(peft_A, peft_B, E, r)
         for e in range(E):
@@ -339,31 +325,22 @@ class TestLoRABLayoutConversion:
             )
 
     def test_gate_up_proj_conversion(self):
-        """Verify gate_up_proj LoRA conversion with non-square dims (Qwen3-like).
+        """Verify gate_up_proj LoRA conversion with non-square dims.
 
         gate_up_proj param: [E, 2*inter, hidden].
-        peft: in_features=2*inter, out_features=hidden.
-        peft lora_A: [r*E, 2*inter], lora_B: [hidden, r*E].
-
-        scattermoe W = param.T = [E, hidden, 2*inter], K=hidden, N=2*inter.
+        peft swaps in/out for 3D: lora_A [r*E, hidden], lora_B [2*inter, r*E].
         scattermoe needs: lora_A [r*E, K=hidden], lora_B [N=2*inter, r*E].
-
-        Uses non-square dims (hidden=32 != 2*inter=24) to catch A<->B swap bugs.
         """
         E, r = 4, 2
         hidden, inter = 32, 12  # 2*inter=24 != hidden=32
         scaling = 2.0
 
-        # peft assigns: in_features=2*inter, out_features=hidden
-        peft_A = torch.randn(E * r, 2 * inter)  # [r*E, in_features=2*inter]
-        peft_B = torch.randn(hidden, E * r)  # [out_features=hidden, r*E]
+        peft_A = torch.randn(E * r, hidden)  # [r*E, in=hidden]
+        peft_B = torch.randn(2 * inter, E * r)  # [out=2*inter, r*E]
 
-        # peft delta via einsum: "o r e, e r i -> e i o"
-        A_r = peft_A.reshape(E, r, 2 * inter)
-        B_r = peft_B.reshape(hidden, r, E)
-        delta_peft = torch.einsum("o r e, e r i -> e i o", B_r, A_r) * scaling
-        # delta_peft[e] has shape [in_features, out_features] = [2*inter, hidden]
-        # = param[e] shape [2*inter, hidden]
+        A_r = peft_A.reshape(E, r, hidden)
+        B_r = peft_B.reshape(2 * inter, r, E)
+        delta_peft = torch.einsum("o r e, e r i -> e o i", B_r, A_r) * scaling
 
         smoe_A, smoe_B = peft_gate_up_lora_to_scattermoe(peft_A, peft_B, E, r)
         # smoe_A should be [r*E, K=hidden], smoe_B should be [N=2*inter, r*E]
@@ -421,23 +398,21 @@ class TestPeftLoRAWeightExtraction:
             r,
         )
 
-        # gate_up_proj [E, 2*inter, hidden]
-        # peft: in_features=2*inter (dim 1), out_features=hidden (dim 2)
+        # gate_up_proj [E, 2*inter, hidden] — peft swaps in/out for 3D
         assert trainable[
             "base_model.model.moe.experts.base_layer.lora_A.default.weight"
-        ].shape == (E * r, 2 * config.intermediate_size)
-        assert trainable[
-            "base_model.model.moe.experts.base_layer.lora_B.default.weight"
-        ].shape == (config.hidden_size, E * r)
-
-        # down_proj [E, hidden, inter]
-        # peft: in_features=hidden (dim 1), out_features=inter (dim 2)
-        assert trainable[
-            "base_model.model.moe.experts.lora_A.default.weight"
         ].shape == (E * r, config.hidden_size)
         assert trainable[
+            "base_model.model.moe.experts.base_layer.lora_B.default.weight"
+        ].shape == (2 * config.intermediate_size, E * r)
+
+        # down_proj [E, hidden, inter] — peft swaps in/out for 3D
+        assert trainable[
+            "base_model.model.moe.experts.lora_A.default.weight"
+        ].shape == (E * r, config.intermediate_size)
+        assert trainable[
             "base_model.model.moe.experts.lora_B.default.weight"
-        ].shape == (config.intermediate_size, E * r)
+        ].shape == (config.hidden_size, E * r)
 
     @requires_cuda
     def test_peft_forward_runs(self):
@@ -488,8 +463,7 @@ class TestPeftLoRAWeightExtraction:
         assert gup_lora is not None, "gate_up_proj LoRA not detected"
         assert down_lora is not None, "down_proj LoRA not detected"
 
-        # Check shapes (after peft->scattermoe conversion with A<->B swap)
-        # gate_up_proj W = param.T = [E, hidden, 2*inter], K=hidden, N=2*inter
+        # gate_up_proj: K=hidden, N=2*inter
         E, r = config.num_experts, 4
         gup_A, gup_B, gup_s = gup_lora
         assert gup_A.shape == (E * r, config.hidden_size), (
@@ -501,7 +475,7 @@ class TestPeftLoRAWeightExtraction:
             f"{(2 * config.intermediate_size, E * r)}, got {gup_B.shape}"
         )
 
-        # down_proj W = param.T = [E, inter, hidden], K=inter, N=hidden
+        # down_proj: K=inter, N=hidden
         down_A, down_B, down_s = down_lora
         assert down_A.shape == (E * r, config.intermediate_size), (
             f"down_proj smoe_A: expected [r*E, K=inter]={(E * r, config.intermediate_size)}, "

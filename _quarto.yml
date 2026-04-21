@@ -134,7 +134,6 @@ quartodoc:
         - monkeypatch.stablelm_attn_hijack_flash
         - monkeypatch.trainer_fsdp_optim
         - monkeypatch.transformers_fa_utils
-        - monkeypatch.unsloth_
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
         - monkeypatch.gradient_checkpointing.offload_cpu
@@ -327,7 +326,6 @@ website:
         - section: "Advanced Features"
           contents:
             - docs/fsdp_qlora.qmd
-            - docs/unsloth.qmd
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd

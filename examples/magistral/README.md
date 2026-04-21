@@ -14,8 +14,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for these 
 
 ```bash
 # Ensure you have Pytorch installed (Pytorch 2.7.0 min)
-pip3 install packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
 ```
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage

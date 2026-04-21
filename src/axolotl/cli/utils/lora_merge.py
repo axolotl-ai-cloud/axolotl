@@ -339,7 +339,11 @@ def _build_peft_layer_and_get_delta(
             )
         layer.lora_A[adapter_name].weight.data = lora_a
         layer.lora_B[adapter_name].weight.data = lora_b
-        return layer.get_delta_weight(adapter_name)
+        delta = layer.get_delta_weight(adapter_name)
+        # peft >=0.19.1 may return delta with transposed dims for 3D params
+        if delta.shape != base_tensor.shape and delta.ndim == 3:
+            delta = delta.transpose(1, 2).contiguous()
+        return delta
     elif (
         layer_type and "Conv" in layer_type or (layer_type is None and lora_a.ndim > 2)
     ):

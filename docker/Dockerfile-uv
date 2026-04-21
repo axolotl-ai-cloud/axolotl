@@ -33,7 +33,6 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     else \
         uv pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
     fi && \
-    python scripts/unsloth_install.py --uv | sh && \
     python scripts/cutcrossentropy_install.py --uv | sh && \
     uv pip install pytest && \
     uv cache clean

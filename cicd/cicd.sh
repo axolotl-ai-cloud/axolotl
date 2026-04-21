@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
+python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
 set -o pipefail
 for i in 1 2 3; do

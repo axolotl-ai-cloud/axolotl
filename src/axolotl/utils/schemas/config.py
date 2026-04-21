@@ -823,13 +823,6 @@ class AxolotlInputConfig(
         },
     )
 
-    unsloth_cross_entropy_loss: bool | None = None
-    unsloth_lora_mlp: bool | None = None
-    unsloth_lora_qkv: bool | None = None
-    unsloth_lora_o: bool | None = None
-    unsloth_rms_norm: bool | None = None
-    unsloth_rope: bool | None = None
-
     lora_mlp_kernel: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1471,21 +1464,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
 
     @model_validator(mode="before")
     @classmethod
-    def check_multigpu_unsloth(cls, data):
-        if (
-            data.get("unsloth_lora_mlp")
-            or data.get("unsloth_lora_qkv")
-            or data.get("unsloth_lora_o")
-        ):
-            capabilities = data.get("capabilities")
-            if capabilities and capabilities.get("n_gpu", 0) > 1:
-                raise ValueError(
-                    "unsloth_lora_mlp, unsloth_lora_qkv, and unsloth_lora_o are not compatible with multi-GPU training."
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_multigpu_lora_kernels(cls, data):
         if (
             data.get("lora_mlp_kernel")
@@ -1537,8 +1515,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             # RL trainers not tested so don't enable kernels by default
             return data
         if data.get("adapter") in ["lora", "qlora"]:
-            # Skip if already set, using unsloth optimizations, or using 8-bit
-            unsloth_fields = ["unsloth_lora_mlp", "unsloth_lora_qkv", "unsloth_lora_o"]
+            # Skip if already set or using 8-bit
             kernel_fields = [
                 "lora_mlp_kernel",
                 "lora_qkv_kernel",
@@ -1547,7 +1524,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             ]
             if (
                 any(data.get(k) is not None for k in kernel_fields)
-                or any(data.get(k) for k in unsloth_fields)
                 or data.get("adapter") == "lora"
                 and data.get("load_in_8bit")
             ):

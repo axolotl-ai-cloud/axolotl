@@ -60,49 +60,14 @@ def peft_lora_B_to_scattermoe(peft_B, num_experts, rank):
 
 
 def peft_lora_to_scattermoe(peft_A, peft_B, num_experts, rank):
-    """Convert peft LoRA weights to scattermoe layout (with A<->B swap).
+    """Convert peft LoRA weights to scattermoe layout.
 
-    peft operates on the parameter in its native storage layout ``[E, dim1, dim2]``
-    where ``in_features=dim1, out_features=dim2``.  ScatterMoE transposes the
-    parameter (``W = param.transpose(2, 1)``) giving ``[E, dim2, dim1]`` with
-    ``K=dim2, N=dim1``.  Because of this transposition, peft's A and B roles
-    are swapped relative to scattermoe's convention.
-
-    peft gives:
-        lora_A ``[r*E, dim1]``, lora_B ``[dim2, r*E]``
-
-    scattermoe needs:
-        lora_A ``[r*E, K=dim2]``, lora_B ``[N=dim1, r*E]``
-
-    This function swaps A<->B and converts B from rank-major to expert-major.
-    Uses vectorized tensor operations (no Python loop over experts).
-
-    Works for **both** gate_up_proj and down_proj since the transposition
-    issue is the same for any parameter.
+    peft >=0.19.1 assigns in/out features for 3D params such that
+    A and B already align with scattermoe's convention (no A<->B swap).
+    Only B needs rank-major → expert-major layout conversion.
     """
-    peft_B_em = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
-
-    dim1 = peft_A.shape[1]  # peft in_features -> scattermoe N
-    dim2 = peft_B_em.shape[0]  # peft out_features -> scattermoe K
-
-    # smoe_A: per expert, transpose B_e [dim2, r] -> [r, dim2]
-    # [dim2, E*r] -> [dim2, E, r] -> [E, r, dim2] -> [E*r, dim2]
-    smoe_A = (
-        peft_B_em.reshape(dim2, num_experts, rank)
-        .permute(1, 2, 0)
-        .contiguous()
-        .reshape(rank * num_experts, dim2)
-    )
-
-    # smoe_B: per expert, transpose A_e [r, dim1] -> [dim1, r]
-    # [E*r, dim1] -> [E, r, dim1] -> [dim1, E, r] -> [dim1, E*r]
-    smoe_B = (
-        peft_A.reshape(num_experts, rank, dim1)
-        .permute(2, 0, 1)
-        .contiguous()
-        .reshape(dim1, num_experts * rank)
-    )
-
+    smoe_A = peft_A
+    smoe_B = peft_lora_B_to_scattermoe(peft_B, num_experts, rank)
     return smoe_A, smoe_B
 
 

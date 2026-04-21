@@ -16,7 +16,7 @@ template_loader = jinja2.FileSystemLoader(searchpath=cicd_path)
 template_env = jinja2.Environment(
     loader=template_loader, autoescape=select_autoescape()
 )
-dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile.jinja")
+dockerfile = os.environ.get("E2E_DOCKERFILE", "Dockerfile-uv.jinja")
 df_template = template_env.get_template(dockerfile)
 
 df_args = {
