@@ -134,10 +134,14 @@ class HatcheryPlugin(BasePlugin):
         # Pull standard training params from axolotl config so they
         # don't need to be duplicated under hatchery:
         trainer._optim_params = {
-            "learning_rate": cfg.learning_rate if cfg.learning_rate is not None else 1e-4,
+            "learning_rate": cfg.learning_rate
+            if cfg.learning_rate is not None
+            else 1e-4,
             "beta1": cfg.adam_beta1 if cfg.adam_beta1 is not None else 0.9,
             "beta2": cfg.adam_beta2 if cfg.adam_beta2 is not None else 0.95,
             "eps": cfg.adam_epsilon if cfg.adam_epsilon is not None else 1e-12,
             "weight_decay": cfg.weight_decay if cfg.weight_decay is not None else 0.0,
-            "grad_clip_norm": cfg.max_grad_norm if cfg.max_grad_norm is not None else 0.0,
+            "grad_clip_norm": cfg.max_grad_norm
+            if cfg.max_grad_norm is not None
+            else 0.0,
         }

@@ -25,4 +25,3 @@ __all__ = ["HatcheryArgs", "HatcheryConfig", "HatcheryPlugin"]
 #     # loss_fn: ppo         # RL (auto-selects HatcheryRLTrainer)
 #
 #   learning_rate: 1e-4  # top-level, not under hatchery:
-

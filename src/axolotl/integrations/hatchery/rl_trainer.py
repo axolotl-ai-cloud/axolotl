@@ -249,7 +249,7 @@ class HatcheryRLTrainer(AxolotlTrainer):
                     continue
                 LOG.info(
                     f"Sampled {len(samples)} completions, "
-                    f"avg_len={sum(len(s['completion_tokens']) for s in samples)/len(samples):.0f}tok"
+                    f"avg_len={sum(len(s['completion_tokens']) for s in samples) / len(samples):.0f}tok"
                 )
 
                 # 2. Decode and score

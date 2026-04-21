@@ -63,7 +63,10 @@ def math_reward(prompts: list[str], completions: list[str], **kwargs) -> list[fl
             pred_parsed = parse(pred_answer)
             verified = verify(gold_parsed, pred_parsed)
         except Exception:
-            LOG.debug("math_verify unavailable or failed, using string fallback", exc_info=True)
+            LOG.debug(
+                "math_verify unavailable or failed, using string fallback",
+                exc_info=True,
+            )
 
         if verified is not None:
             rewards.append(1.0 if verified else 0.0)
