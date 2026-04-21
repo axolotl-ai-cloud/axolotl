@@ -10,12 +10,13 @@ Usage:
     patch_gemma4_fused_attn(install_shared_kv_workaround=True)
 """
 
-import logging
 from typing import Callable
 
 import torch
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Module-level dict used as a side channel for shared KV states avoiding kwarg and TLS
 # to prevent memory leak on gradient checkpoint enabled training (PR #3611)
