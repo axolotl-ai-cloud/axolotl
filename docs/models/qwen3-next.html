@@ -699,12 +699,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
   <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
@@ -826,7 +820,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
 <li><p>Install FLA for improved performance</p></li>
 </ol>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> uninstall <span class="at">-y</span> causal-conv1d <span class="kw">&amp;&amp;</span> <span class="ex">pip3</span> install flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip uninstall causal-conv1d <span class="kw">&amp;&amp;</span> <span class="ex">uv</span> pip install flash-linear-attention==0.4.1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ol start="4" type="1">
 <li>Run the finetuning example:</li>
 </ol>

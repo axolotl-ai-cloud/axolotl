@@ -699,12 +699,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
   <a href="../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
@@ -787,12 +781,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
    
   <ul>
   <li><a href="#sec-requirements" id="toc-sec-requirements" class="nav-link active" data-scroll-target="#sec-requirements"><span class="header-section-number">1</span> Requirements</a></li>
-  <li><a href="#sec-installation-methods" id="toc-sec-installation-methods" class="nav-link" data-scroll-target="#sec-installation-methods"><span class="header-section-number">2</span> Installation Methods</a>
+  <li><a href="#sec-installation" id="toc-sec-installation" class="nav-link" data-scroll-target="#sec-installation"><span class="header-section-number">2</span> Installation</a>
   <ul class="collapse">
-  <li><a href="#sec-pypi" id="toc-sec-pypi" class="nav-link" data-scroll-target="#sec-pypi"><span class="header-section-number">2.1</span> PyPI Installation (Recommended)</a></li>
-  <li><a href="#sec-uv" id="toc-sec-uv" class="nav-link" data-scroll-target="#sec-uv"><span class="header-section-number">2.2</span> uv Installation</a></li>
-  <li><a href="#sec-edge-build" id="toc-sec-edge-build" class="nav-link" data-scroll-target="#sec-edge-build"><span class="header-section-number">2.3</span> Edge/Development Build</a></li>
-  <li><a href="#sec-docker" id="toc-sec-docker" class="nav-link" data-scroll-target="#sec-docker"><span class="header-section-number">2.4</span> Docker</a></li>
+  <li><a href="#sec-uv" id="toc-sec-uv" class="nav-link" data-scroll-target="#sec-uv"><span class="header-section-number">2.1</span> Quick Install</a></li>
+  <li><a href="#sec-edge-build" id="toc-sec-edge-build" class="nav-link" data-scroll-target="#sec-edge-build"><span class="header-section-number">2.2</span> Edge/Development Build</a></li>
+  <li><a href="#sec-docker" id="toc-sec-docker" class="nav-link" data-scroll-target="#sec-docker"><span class="header-section-number">2.3</span> Docker</a></li>
   </ul></li>
   <li><a href="#sec-cloud" id="toc-sec-cloud" class="nav-link" data-scroll-target="#sec-cloud"><span class="header-section-number">3</span> Cloud Environments</a>
   <ul class="collapse">
@@ -804,11 +797,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#sec-macos" id="toc-sec-macos" class="nav-link" data-scroll-target="#sec-macos"><span class="header-section-number">4.1</span> macOS</a></li>
   <li><a href="#sec-windows" id="toc-sec-windows" class="nav-link" data-scroll-target="#sec-windows"><span class="header-section-number">4.2</span> Windows</a></li>
   </ul></li>
-  <li><a href="#sec-env-managers" id="toc-sec-env-managers" class="nav-link" data-scroll-target="#sec-env-managers"><span class="header-section-number">5</span> Environment Managers</a>
-  <ul class="collapse">
-  <li><a href="#sec-conda" id="toc-sec-conda" class="nav-link" data-scroll-target="#sec-conda"><span class="header-section-number">5.1</span> Conda/Pip venv</a></li>
-  </ul></li>
-  <li><a href="#sec-troubleshooting" id="toc-sec-troubleshooting" class="nav-link" data-scroll-target="#sec-troubleshooting"><span class="header-section-number">6</span> Troubleshooting</a></li>
+  <li><a href="#sec-migrating" id="toc-sec-migrating" class="nav-link" data-scroll-target="#sec-migrating"><span class="header-section-number">5</span> Migrating from pip to uv</a></li>
+  <li><a href="#sec-pip" id="toc-sec-pip" class="nav-link" data-scroll-target="#sec-pip"><span class="header-section-number">6</span> Using pip (Alternative)</a></li>
+  <li><a href="#sec-troubleshooting" id="toc-sec-troubleshooting" class="nav-link" data-scroll-target="#sec-troubleshooting"><span class="header-section-number">7</span> Troubleshooting</a></li>
   </ul>
 </nav>
     </div>
@@ -840,25 +831,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>NVIDIA GPU (Ampere architecture or newer for <code>bf16</code> and Flash Attention) or AMD GPU</li>
 <li>Python ≥3.11</li>
-<li>PyTorch ≥2.6.0</li>
+<li>PyTorch ≥2.9.0</li>
 </ul>
 </section>
-<section id="sec-installation-methods" class="level2" data-number="2">
-<h2 data-number="2" class="anchored" data-anchor-id="sec-installation-methods"><span class="header-section-number">2</span> Installation Methods</h2>
-<div class="callout callout-style-default callout-important callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Important
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Please make sure to have Pytorch installed before installing Axolotl in your local environment.</p>
-<p>Follow the instructions at: <a href="https://pytorch.org/get-started/locally/">https://pytorch.org/get-started/locally/</a></p>
-</div>
-</div>
+<section id="sec-installation" class="level2" data-number="2">
+<h2 data-number="2" class="anchored" data-anchor-id="sec-installation"><span class="header-section-number">2</span> Installation</h2>
 <div class="callout callout-style-default callout-important callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -872,50 +849,33 @@ Important
 <p>For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 12.8.</p>
 </div>
 </div>
-<section id="sec-pypi" class="level3" data-number="2.1">
-<h3 data-number="2.1" class="anchored" data-anchor-id="sec-pypi"><span class="header-section-number">2.1</span> PyPI Installation (Recommended)</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">flash</span><span class="pp">-</span><span class="ss">attn,deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>We use <code>--no-build-isolation</code> in order to detect the installed PyTorch version (if
-installed) in order not to clobber it, and so that we set the correct version of
-dependencies that are specific to the PyTorch version or other installed
-co-dependencies.</p>
+<section id="sec-uv" class="level3" data-number="2.1">
+<h3 data-number="2.1" class="anchored" data-anchor-id="sec-uv"><span class="header-section-number">2.1</span> Quick Install</h3>
+<p>Axolotl uses <a href="https://docs.astral.sh/uv/">uv</a> as its package manager. uv is a fast, reliable Python package installer and resolver built in Rust.</p>
+<p>Install uv if not already installed:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-LsSf</span> https://astral.sh/uv/install.sh <span class="kw">|</span> <span class="fu">sh</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="va">$HOME</span>/.local/bin/env</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Choose your CUDA version (e.g.&nbsp;<code>cu128</code>, <code>cu130</code>), create a venv, and install:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--no-project</span> <span class="at">--relocatable</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">flash</span><span class="pp">-</span><span class="ss">attn,deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sec-uv" class="level3" data-number="2.2">
-<h3 data-number="2.2" class="anchored" data-anchor-id="sec-uv"><span class="header-section-number">2.2</span> uv Installation</h3>
-<p>uv is a fast, reliable Python package installer and resolver built in Rust. It offers significant performance improvements over pip and provides better dependency resolution, making it an excellent choice for complex environments.</p>
-<p>Install uv if not already installed</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-LsSf</span> https://astral.sh/uv/install.sh <span class="kw">|</span> <span class="fu">sh</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="va">$HOME</span>/.local/bin/env</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Choose your CUDA version to use with PyTorch; e.g.&nbsp;<code>cu124</code>, <code>cu126</code>, <code>cu128</code>,
-then create the venv and activate</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu126</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--no-project</span> <span class="at">--relocatable</span></span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Install PyTorch
-- PyTorch 2.6.0 recommended</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install packaging setuptools wheel</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install torch==2.6.0</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install awscli pydantic</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Install axolotl from PyPi</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">deepspeed,flash</span><span class="pp">-</span><span class="ss">attn</span><span class="pp">]</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co"># optionally install with vLLM if you're using torch==2.6.0 and want to train w/ GRPO</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">deepspeed,flash</span><span class="pp">-</span><span class="ss">attn,vllm</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</section>
-<section id="sec-edge-build" class="level3" data-number="2.3">
-<h3 data-number="2.3" class="anchored" data-anchor-id="sec-edge-build"><span class="header-section-number">2.3</span> Edge/Development Build</h3>
+<section id="sec-edge-build" class="level3" data-number="2.2">
+<h3 data-number="2.2" class="anchored" data-anchor-id="sec-edge-build"><span class="header-section-number">2.2</span> Edge/Development Build</h3>
 <p>For the latest features between releases:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl.git</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl.git</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> sync <span class="at">--extra</span> flash-attn <span class="at">--extra</span> deepspeed</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>uv sync</code> creates a <code>.venv</code>, installs exact pinned versions from <code>uv.lock</code>, and sets up an editable install automatically.</p>
 </section>
-<section id="sec-docker" class="level3" data-number="2.4">
-<h3 data-number="2.4" class="anchored" data-anchor-id="sec-docker"><span class="header-section-number">2.4</span> Docker</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> axolotlai/axolotl:main-latest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="sec-docker" class="level3" data-number="2.3">
+<h3 data-number="2.3" class="anchored" data-anchor-id="sec-docker"><span class="header-section-number">2.3</span> Docker</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--rm</span> <span class="at">-it</span> <span class="at">--ipc</span><span class="op">=</span>host axolotlai/axolotl-uv:main-latest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>For development with Docker:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> compose up <span class="at">-d</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -926,12 +886,12 @@ then create the venv and activate</p>
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="dt">\</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="dt">\</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="dt">\</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="dt">\</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface <span class="dt">\</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl:main-latest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--privileged</span> <span class="at">--gpus</span> <span class="st">'"all"'</span> <span class="at">--shm-size</span> 10g <span class="at">--rm</span> <span class="at">-it</span> <span class="dt">\</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">--name</span> axolotl <span class="at">--ipc</span><span class="op">=</span>host <span class="dt">\</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">--ulimit</span> memlock=-1 <span class="at">--ulimit</span> stack=67108864 <span class="dt">\</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">--mount</span> type=bind,src=<span class="st">"</span><span class="va">${PWD}</span><span class="st">"</span>,target=/workspace/axolotl <span class="dt">\</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">-v</span> <span class="va">${HOME}</span>/.cache/huggingface:/root/.cache/huggingface <span class="dt">\</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  axolotlai/axolotl-uv:main-latest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 <div class="callout callout-style-default callout-important callout-titled">
@@ -944,7 +904,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For Blackwell GPUs, please use <code>axolotlai/axolotl:main-py3.11-cu128-2.9.1</code> or the cloud variant <code>axolotlai/axolotl-cloud:main-py3.11-cu128-2.9.1</code>.</p>
+<p>For Blackwell GPUs, please use <code>axolotlai/axolotl-uv:main-py3.11-cu128-2.9.1</code> or the cloud variant <code>axolotlai/axolotl-cloud-uv:main-py3.11-cu128-2.9.1</code>.</p>
 </div>
 </div>
 <p>Please refer to the <a href="../docs/docker.html">Docker documentation</a> for more information on the different Docker images that are available.</p>
@@ -956,7 +916,7 @@ Important
 <h3 data-number="3.1" class="anchored" data-anchor-id="sec-cloud-gpu"><span class="header-section-number">3.1</span> Cloud GPU Providers</h3>
 <p>For providers supporting Docker:</p>
 <ul>
-<li>Use <code>axolotlai/axolotl-cloud:main-latest</code></li>
+<li>Use <code>axolotlai/axolotl-cloud-uv:main-latest</code></li>
 <li>Available on:
 <ul>
 <li><a href="https://runpod.io/gsc?template=v2ickqhz9s&amp;ref=6i7fkpdz">RunPod</a></li>
@@ -978,8 +938,8 @@ Important
 <h2 data-number="4" class="anchored" data-anchor-id="sec-platform-specific"><span class="header-section-number">4</span> Platform-Specific Instructions</h2>
 <section id="sec-macos" class="level3" data-number="4.1">
 <h3 data-number="4.1" class="anchored" data-anchor-id="sec-macos"><span class="header-section-number">4.1</span> macOS</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>See <a href="#sec-troubleshooting" class="quarto-xref">Section&nbsp;6</a> for Mac-specific issues.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>See <a href="#sec-troubleshooting" class="quarto-xref">Section&nbsp;7</a> for Mac-specific issues.</p>
 </section>
 <section id="sec-windows" class="level3" data-number="4.2">
 <h3 data-number="4.2" class="anchored" data-anchor-id="sec-windows"><span class="header-section-number">4.2</span> Windows</h3>
@@ -998,23 +958,46 @@ Important
 </div>
 </section>
 </section>
-<section id="sec-env-managers" class="level2" data-number="5">
-<h2 data-number="5" class="anchored" data-anchor-id="sec-env-managers"><span class="header-section-number">5</span> Environment Managers</h2>
-<section id="sec-conda" class="level3" data-number="5.1">
-<h3 data-number="5.1" class="anchored" data-anchor-id="sec-conda"><span class="header-section-number">5.1</span> Conda/Pip venv</h3>
-<ol type="1">
-<li><p>Install Python ≥3.11</p></li>
-<li><p>Install PyTorch: https://pytorch.org/get-started/locally/</p></li>
-<li><p>Install Axolotl:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
-<li><p>(Optional) Login to Hugging Face:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="ex">hf</span> auth login</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
-</ol>
+<section id="sec-migrating" class="level2" data-number="5">
+<h2 data-number="5" class="anchored" data-anchor-id="sec-migrating"><span class="header-section-number">5</span> Migrating from pip to uv</h2>
+<p>If you have an existing pip-based Axolotl installation, you can migrate to uv:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Install uv</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-LsSf</span> https://astral.sh/uv/install.sh <span class="kw">|</span> <span class="fu">sh</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="va">$HOME</span>/.local/bin/env</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a fresh venv (recommended for a clean start)</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--no-project</span> <span class="at">--relocatable</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Reinstall axolotl</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">flash</span><span class="pp">-</span><span class="ss">attn,deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="sec-pip" class="level2" data-number="6">
+<h2 data-number="6" class="anchored" data-anchor-id="sec-pip"><span class="header-section-number">6</span> Using pip (Alternative)</h2>
+<p>If you are unable to install uv, you can still use pip directly.</p>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Please make sure to have PyTorch installed before installing Axolotl with pip.</p>
+<p>Follow the instructions at: <a href="https://pytorch.org/get-started/locally/">https://pytorch.org/get-started/locally/</a></p>
+</div>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">flash</span><span class="pp">-</span><span class="ss">attn,deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>For editable/development installs:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">-U</span> packaging setuptools wheel ninja</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[flash-attn,deepspeed]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
-<section id="sec-troubleshooting" class="level2" data-number="6">
-<h2 data-number="6" class="anchored" data-anchor-id="sec-troubleshooting"><span class="header-section-number">6</span> Troubleshooting</h2>
+<section id="sec-troubleshooting" class="level2" data-number="7">
+<h2 data-number="7" class="anchored" data-anchor-id="sec-troubleshooting"><span class="header-section-number">7</span> Troubleshooting</h2>
 <p>If you encounter installation issues, see our <a href="../docs/faq.html">FAQ</a> and <a href="../docs/debugging.html">Debugging Guide</a>.</p>
 
 

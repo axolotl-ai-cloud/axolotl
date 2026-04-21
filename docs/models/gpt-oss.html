@@ -699,12 +699,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/unsloth.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Unsloth</span></a>
-  </div>
-</li>
-          <li class="sidebar-item">
-  <div class="sidebar-item-container"> 
   <a href="../../docs/torchao.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">PyTorch ao</span></a>
   </div>
@@ -832,8 +826,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Here is an example of how to install from pip:</p></li>
 </ol>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Ensure you have Pytorch installed (Pytorch 2.6.0 min)</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install packaging==26.0 setuptools==75.8.0 wheel ninja</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip3</span> install <span class="at">--no-build-isolation</span> <span class="st">'axolotl[flash-attn]&gt;=0.12.0'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="st">'axolotl[flash-attn]&gt;=0.12.0'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <ol start="2" type="1">
 <li>Choose one of the following configs below for training the 20B model. (for 120B, see <a href="#training-120b">below</a>)</li>
 </ol>
@@ -881,7 +874,7 @@ weights to <code>{output_dir}/merged</code>.</p>
 <p>GPT-OSS support in vLLM does not exist in a stable release yet. See https://x.com/MaziyarPanahi/status/1955741905515323425
 for more information about using a special vllm-openai docker image for inferencing with vLLM.</p>
 <p>Optionally, vLLM can be installed from nightly:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">--no-build-isolation</span> <span class="at">--pre</span> <span class="at">-U</span> vllm <span class="at">--extra-index-url</span> https://wheels.vllm.ai/nightly</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">--pre</span> <span class="at">-U</span> vllm <span class="at">--extra-index-url</span> https://wheels.vllm.ai/nightly</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>and the vLLM server can be started with the following command (modify <code>--tensor-parallel-size 8</code> to match your environment):</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">vllm</span> serve ./outputs/gpt-oss-out/ <span class="at">--served-model-name</span> axolotl/gpt-oss-20b <span class="at">--host</span> 0.0.0.0 <span class="at">--port</span> 8888  <span class="at">--tensor-parallel-size</span> 8</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
