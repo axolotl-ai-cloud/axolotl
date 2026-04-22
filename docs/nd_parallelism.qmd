@@ -39,7 +39,7 @@ Context Parallelism, also called [Sequence Parallelism](sequence_parallelism.qmd
 - How it works: If you have a sequence of 8192 tokens and a `context_parallel_size` of 4, each GPU will only handle a chunk of 2048 tokens.
 - The Challenge: Attention is not local; every token needs to "attend to" every other token. Splitting the sequence breaks this.
 - The Solution (`ring-flash-attention`): An efficient communication protocol is used. To compute attention for its local sequence chunk, each GPU passes its Key-Value (KV) cache to its neighbor in a "ring." After `N-1` steps, every GPU has seen the KV-cache from all other GPUs, allowing it to compute the correct attention values for its chunk. This is implemented using the highly optimized `flash-attention` kernel at each step.
-- **Mamba/SSM Hybrid Models**: For hybrid architectures (Nemotron-H, Falcon-H1, Bamba, Granite MoE Hybrid, Zamba2), attention layers use ring attention as above, while SSM (Mamba2) layers use P2P state passing across ranks with an additive output correction. See [Sequence Parallelism](sequence_parallelism.qmd) for details.
+- **Mamba/SSM Hybrid Models**: For hybrid architectures (Nemotron-H, Falcon-H1, Granite MoE Hybrid), attention layers use ring attention as above, while SSM (Mamba2) layers use P2P state passing across ranks with an additive output correction. See [Sequence Parallelism](sequence_parallelism.qmd) for details.
 
 ### Hybrid Sharding Data Parallel (HSDP) {#sec-hsdp}
 

@@ -1568,8 +1568,6 @@ class ComplexValidationMixin:
             _SSM_HYBRID_MODEL_TYPES = {
                 "nemotron_h",
                 "falcon_h1",
-                "bamba",
-                "zamba2",
                 "granitemoehybrid",
             }
             _model_config_type = getattr(self, "model_config_type", None) or ""

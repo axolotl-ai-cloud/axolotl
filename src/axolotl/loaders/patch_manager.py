@@ -385,20 +385,6 @@ class PatchManager:
 
             patch_falcon_h1_modeling_packing()
 
-        if self.cfg.model_config_type == "bamba" and ssm_hybrid_patch_needed:
-            from axolotl.monkeypatch.models.bamba.modeling import (
-                patch_bamba_modeling_packing,
-            )
-
-            patch_bamba_modeling_packing()
-
-        if self.cfg.model_config_type == "zamba2" and ssm_hybrid_patch_needed:
-            from axolotl.monkeypatch.models.zamba2.modeling import (
-                patch_zamba2_modeling_packing,
-            )
-
-            patch_zamba2_modeling_packing()
-
         if self.cfg.model_config_type == "granitemoehybrid" and ssm_hybrid_patch_needed:
             from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
                 patch_granitemoehybrid_modeling_packing,

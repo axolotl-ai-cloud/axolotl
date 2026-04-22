@@ -84,8 +84,6 @@ Axolotl handles both aspects:
 |---|---|---|
 | Nemotron-H | `nemotron_h` | Mamba2 / Attention / MoE hybrid; block type selected per layer |
 | Falcon-H1 | `falcon_h1` | Mamba2 and Attention run **in parallel** in every layer |
-| Bamba | `bamba` | Mamba2 / Attention hybrid |
-| Zamba2 | `zamba2` | Mamba2 / Attention hybrid with shared attention layers |
 | Granite MoE Hybrid | `granitemoehybrid` | Mamba2 / Attention / MoE hybrid |
 
 ## Example

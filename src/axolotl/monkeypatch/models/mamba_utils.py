@@ -1,6 +1,6 @@
 """Shared utilities for Mamba2 SSM sample-packing and context-parallelism patches.
 
-Used by: nemotron_h, falcon_h1, bamba, granite_moe_hybrid, zamba2
+Used by: nemotron_h, falcon_h1, granite_moe_hybrid
 """
 
 import functools

@@ -64,8 +64,6 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "nemotron",
     "nemotron_h",
     "falcon_h1",
-    "bamba",
-    "zamba2",
 ]
 
 
