@@ -930,8 +930,7 @@ class GCCallback(TrainerCallback):
             # also GC on the start of the next step after the eval
             self.next_gc_on_begin_step = state.global_step + 1
         elif (
-            self.gc_collect_steps > 0
-            and state.global_step % self.gc_collect_steps == 0
+            self.gc_collect_steps > 0 and state.global_step % self.gc_collect_steps == 0
         ):
             self._gc()
         elif (

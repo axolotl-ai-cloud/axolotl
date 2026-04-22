@@ -1762,9 +1762,7 @@ class TestGCStepsMigration(BaseValidation):
         assert new_cfg.gc_collect_steps == -1
 
     def test_new_options_take_precedence(self, minimal_cfg):
-        cfg = DictDefault(
-            {**minimal_cfg, "gc_steps": 10, "torch_empty_cache_steps": 5}
-        )
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10, "torch_empty_cache_steps": 5})
 
         new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
 
