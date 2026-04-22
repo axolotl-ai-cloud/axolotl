@@ -225,3 +225,16 @@ class TestRevisionParameter:
         assert (
             ModelInputConfig(base_model="x", processor_kwargs={}).processor_kwargs == {}
         )
+
+    def test_processor_kwargs_incompatible_with_mistral_common(self, min_base_cfg):
+        import pytest
+
+        from axolotl.utils.config import validate_config
+        from axolotl.utils.dict import DictDefault
+
+        cfg = min_base_cfg | DictDefault(
+            tokenizer_use_mistral_common=True,
+            processor_kwargs={"image_seq_length": 1120},
+        )
+        with pytest.raises(ValueError, match="processor_kwargs"):
+            validate_config(cfg)
