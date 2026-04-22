@@ -313,6 +313,13 @@ class PatchManager:
 
             patch_peft_prep_code()
 
+        if self.cfg.adapter:
+            from axolotl.monkeypatch.peft_modules_to_save import (
+                patch_peft_modules_to_save_kwargs,
+            )
+
+            patch_peft_modules_to_save_kwargs()
+
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
         if self.cfg.flex_attention:
