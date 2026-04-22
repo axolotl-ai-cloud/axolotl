@@ -186,6 +186,7 @@ class TestRevisionParameter:
 
     def test_processor_kwargs_schema_rejects_revision(self):
         import pytest
+
         from axolotl.utils.schemas.model import ModelInputConfig
 
         with pytest.raises(ValueError, match="revision"):
@@ -196,6 +197,7 @@ class TestRevisionParameter:
 
     def test_processor_kwargs_schema_rejects_trust_remote_code(self):
         import pytest
+
         from axolotl.utils.schemas.model import ModelInputConfig
 
         with pytest.raises(ValueError, match="trust_remote_code"):
@@ -220,4 +222,6 @@ class TestRevisionParameter:
         from axolotl.utils.schemas.model import ModelInputConfig
 
         assert ModelInputConfig(base_model="x").processor_kwargs is None
-        assert ModelInputConfig(base_model="x", processor_kwargs={}).processor_kwargs == {}
+        assert (
+            ModelInputConfig(base_model="x", processor_kwargs={}).processor_kwargs == {}
+        )
