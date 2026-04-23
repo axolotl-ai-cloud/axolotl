@@ -762,6 +762,40 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_dpo(cls, data):
+        dpo_loss_type = data.get("dpo_loss_type")
+        dpo_loss_weights = data.get("dpo_loss_weights")
+        rl = data.get("rl")
+
+        if rl == "ipo":
+            LOG.warning(
+                "rl: ipo will soon be deprecated. Use `rl: dpo` with `dpo_loss_type: ['ipo']` instead."
+            )
+
+        if rl == "dpo":
+            if dpo_loss_weights is not None and dpo_loss_type is None:
+                raise ValueError(
+                    "`dpo_loss_weights` requires `dpo_loss_type` to be set"
+                )
+            if (
+                dpo_loss_type is not None
+                and dpo_loss_weights is not None
+                and len(dpo_loss_type) != len(dpo_loss_weights)
+            ):
+                raise ValueError(
+                    f"`dpo_loss_type` and `dpo_loss_weights` must be the same length, "
+                    f"but got {len(dpo_loss_type)} losses and {len(dpo_loss_weights)} weights"
+                )
+        elif dpo_loss_type is not None or dpo_loss_weights is not None:
+            raise ValueError(
+                f"`dpo_loss_type` and `dpo_loss_weights` are for DPO only,"
+                f"but got {rl=}, {dpo_loss_type=} and {dpo_loss_weights=}"
+            )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_grpo_batch_size_divisibility(cls, data):
         """Surface GRPO batch-shape mismatches at config-parse time.
 

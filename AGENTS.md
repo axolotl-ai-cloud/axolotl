@@ -26,7 +26,7 @@ axolotl config-schema                  # Dump config JSON schema
 | Method | Config Key | When to Use |
 |--------|-----------|-------------|
 | SFT | *(default)* | Input-output pairs, instruction tuning |
-| DPO/IPO | `rl: dpo` / `rl: ipo` | Paired preference data (chosen vs rejected) |
+| DPO/IPO | `rl: dpo` / `rl: dpo, dpo_loss_type: ["ipo"]` | Paired preference data (chosen vs rejected) |
 | KTO | `rl: kto` | Unpaired binary preference labels |
 | ORPO | `rl: orpo` | Single-stage alignment, no ref model |
 | GRPO | `rl: grpo` | RL with verifiable reward functions (math, code) |
