@@ -207,9 +207,10 @@ def check_tensorboard_loss_decreased(
     min_delta: float | None = None,
     max_initial: float | None = None,
     max_final: float | None = None,
-    max_loss_ratio: float = 1.10,
+    max_loss_ratio: float = 0.95,
 ) -> None:
-    """Check that training didn't regress — loss stayed in a sensible range.
+    """Check that training actually learned — loss went down and stayed in
+    a sensible range.
 
     Used with the tiny ``axolotl-ai-co/tiny-*`` CI models, where pretraining
     was brief enough that final loss won't clear the absolute thresholds used
@@ -228,14 +229,17 @@ def check_tensorboard_loss_decreased(
        known-good run. Both are optional but strongly encouraged — loss
        going *down* from a bad starting scale still looks like "learning."
 
-    2. **Training diverged.** ``max_loss_ratio`` (default 1.10) requires
-       ``final <= initial * ratio``. Allows small noise in flat-loss cases
-       (common with tiny pretrained models that start near optimum), but
-       a final loss 10%+ above initial flags instability / NaNs / drift.
+    2. **Loss didn't go down enough.** ``max_loss_ratio`` (default 0.95)
+       requires ``final <= initial * ratio``. A default below 1.0 means the
+       final window mean must sit at least 5% below the initial window mean
+       — real learning, not noise that happened to land below start. Only
+       raise this for configs where a smaller drop is expected *and*
+       documented (e.g. DPO with near-trivial pairs); in that case you are
+       intentionally weakening the test.
 
     ``min_delta`` is optional; when set, additionally requires
     ``final + min_delta <= initial`` — use for configs with enough signal
-    to demand a strict decrease.
+    to demand a specific minimum absolute drop.
     """
     tb_log_path = most_recent_subdir(temp_run_dir)
     event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
@@ -270,10 +274,11 @@ def check_tensorboard_loss_decreased(
     )
     assert final > 1e-5, "Expected loss to be greater than zero"
     assert final <= initial * max_loss_ratio, (
-        f"Loss regressed for {chosen_tag}: "
+        f"Loss did not decrease for {chosen_tag}: "
         f"initial(mean of first {initial_window})={initial:.4f}, "
         f"final(mean of last {final_window})={final:.4f}, "
-        f"ratio={final / initial:.4f} (max allowed {max_loss_ratio})"
+        f"ratio={final / initial:.4f} (max allowed {max_loss_ratio}). "
+        f"Expected final <= initial — training did not learn."
     )
     if min_delta is not None:
         assert final + min_delta <= initial, (

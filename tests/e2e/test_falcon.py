@@ -57,12 +57,14 @@ class TestFalcon(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 50,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "save_steps": 50,
                 "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -120,12 +122,14 @@ class TestFalcon(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 50,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "save_steps": 50,
                 "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -169,12 +173,14 @@ class TestFalcon(unittest.TestCase):
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "max_steps": 50,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "save_steps": 50,
                 "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 

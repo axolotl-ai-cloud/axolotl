@@ -53,12 +53,14 @@ class TestPhi(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "max_steps": 50,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "save_steps": 50,
                 "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
@@ -111,12 +113,14 @@ class TestPhi(unittest.TestCase):
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
                 "max_steps": 50,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "save_steps": 50,
                 "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)

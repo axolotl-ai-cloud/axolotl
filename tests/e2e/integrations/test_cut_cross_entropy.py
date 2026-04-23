@@ -38,14 +38,16 @@ def min_cfg(temp_dir):
         "num_epochs": 1,
         "micro_batch_size": 8,
         "gradient_accumulation_steps": 1,
-        "learning_rate": 0.00001,
+        "learning_rate": 5e-4,
         "optimizer": "adamw_torch_fused",
         "output_dir": temp_dir,
         "lr_scheduler": "cosine",
-        "max_steps": 10,
+        "max_steps": 40,
+        "warmup_steps": 5,
         "bf16": "auto",
         "save_first_step": False,
         "use_tensorboard": True,
+        "seed": 42,
     }
 
 
@@ -72,8 +74,8 @@ class TestCutCrossEntropyIntegration:
                 temp_dir + "/runs",
                 initial_window=5,
                 final_window=5,
-                max_initial=5.0,
-                max_final=4.7,
+                max_initial=2.2,
+                max_final=2.0,
             )
 
     def test_qwen2_w_cce(self, temp_dir):
@@ -106,6 +108,7 @@ class TestCutCrossEntropyIntegration:
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
@@ -159,6 +162,6 @@ class TestCutCrossEntropyIntegration:
                 temp_dir + "/runs",
                 initial_window=5,
                 final_window=5,
-                max_initial=5.0,
-                max_final=4.7,
+                max_initial=2.2,
+                max_final=2.0,
             )
