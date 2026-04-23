@@ -333,7 +333,7 @@ class PatchManager:
 
     def _apply_flex_attention_patches(self):
         """Apply patches for flexible attention."""
-        if self.cfg.attn_implementation == "flex":
+        if self.cfg.attn_implementation == "flex_attention":
             from axolotl.monkeypatch.attention.flex_attn import (
                 patch_flex_wrapper,
             )

@@ -207,7 +207,7 @@ def load_tokenizer(cfg: DictDefault) -> PreTrainedTokenizer:
     # Mistral's official FA implementation requires left padding
     if (
         cfg.is_mistral_derived_model
-        and cfg.attn_implementation == "flash"
+        and cfg.attn_implementation == "flash_attention_2"
         and not cfg.sample_packing
     ):
         tokenizer.padding_side = "left"

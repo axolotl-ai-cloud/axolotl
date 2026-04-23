@@ -502,11 +502,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
             if (
-                self.cfg.attn_implementation == "flex"
+                self.cfg.attn_implementation == "flex_attention"
                 or self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
                 or (
                     self.cfg.model_config_type in ["llama"]
-                    and self.cfg.attn_implementation != "flash"
+                    and self.cfg.attn_implementation != "flash_attention_2"
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq

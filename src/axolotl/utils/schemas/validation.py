@@ -13,7 +13,7 @@ from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import (
-    _NON_PACKING_ATTN_IMPLS,
+    ATTN_IMPLS_SUPPORTING_PACKING,
     ChatTemplate,
     RingAttnFunc,
     RLType,
@@ -184,26 +184,8 @@ class DatasetValidationMixin:
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_attention_fields(cls, data):
-        # If attn_implementation is set, the enum handles mutual exclusivity.
-        # This validator catches legacy configs with multiple boolean flags.
-        if data.get("attn_implementation"):
-            return data
-        fields = (
-            "xformers_attention",
-            "sdp_attention",
-            # "s2_attention",  # requires both FA and this to be enabled
-            "flash_attention",
-            "flex_attention",
-            "sage_attention",
-        )
-        non_empty_count = sum(1 for field in fields if data.get(field))
-
-        if non_empty_count > 1:
-            raise ValueError(f"Only one of {', '.join(fields)} must be set")
-        return data
+    # `check_attention_fields` was removed — `AxolotlInputConfig.normalize_attn_implementation`
+    # is now the single entry point for attention-input mapping and conflict detection.
 
     @model_validator(mode="before")
     @classmethod
@@ -238,7 +220,8 @@ class AttentionValidationMixin:
     @classmethod
     def check_scaling_softmax_requires_flex(cls, data):
         if data.get("scaling_softmax") and not (
-            data.get("flex_attention") or data.get("attn_implementation") == "flex"
+            data.get("flex_attention")
+            or data.get("attn_implementation") == "flex_attention"
         ):
             raise ValueError(
                 "scaling_softmax requires flex attention.\n"
@@ -956,7 +939,7 @@ class OptimizationValidationMixin:
         if data.get("batch_flattening"):
             batch_flattening_auto = data.get("batch_flattening") == "auto"
             has_varlen_attn = (
-                data.get("attn_implementation") not in _NON_PACKING_ATTN_IMPLS
+                data.get("attn_implementation") in ATTN_IMPLS_SUPPORTING_PACKING
                 if data.get("attn_implementation")
                 else data.get("flash_attention")
             )
@@ -1683,7 +1666,8 @@ class EBFTValidationMixin:
             data.get("rl") == "ebft"
             and data.get("ebft", {}).get("mode") == "strided"
             and (
-                data.get("flex_attention") or data.get("attn_implementation") == "flex"
+                data.get("flex_attention")
+                or data.get("attn_implementation") == "flex_attention"
             )
             and data.get("gradient_checkpointing")
         ):
