@@ -92,6 +92,11 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
 
 def ray_train_func(kwargs: dict):
+    """Ray Train entrypoint executed on each GPU worker.
+
+    Re-validates the config against worker-local GPU capabilities (deferred from
+    the driver), then runs the standard training pipeline.
+    """
     # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
     # also renormalize the config now that TorchTrainer has spawned distributed workers
     cfg = DictDefault(kwargs["cfg"])

@@ -22,6 +22,7 @@ special_tokens:
 
 
 def _write_cfg(tmp_path: Path, extra: str = "") -> Path:
+    """Write the base test config (plus any extra YAML lines) to a temp file."""
     path = tmp_path / "config.yml"
     path.write_text(_BASE_CONFIG + extra)
     return path
