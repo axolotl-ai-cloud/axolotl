@@ -1,24 +1,23 @@
 """Test module for FSDP1 multi-GPU functionality."""
 
-import os
 from pathlib import Path
 
 import pytest
-import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
-from tbparse import SummaryReader
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import most_recent_subdir
+from tests.e2e.utils import check_tensorboard_loss_decreased
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def verify_training_success(temp_dir):
-    """Verify that training completed successfully by checking artifacts and loss."""
+    """Verify that training completed successfully — artifacts, no-NaN, loss
+    stayed in qwen2-pretraining scale (tiny-qwen2-129m final pretrain CE ~3.92).
+    """
     output_path = Path(temp_dir)
 
     model_files = list(output_path.glob("*.bin")) + list(
@@ -31,33 +30,13 @@ def verify_training_success(temp_dir):
         "No checkpoint files found - training may have failed"
     )
 
-    tb_log_path = most_recent_subdir(temp_dir + "/runs")
-    if tb_log_path:
-        event_files = sorted(os.listdir(tb_log_path))
-        if event_files:
-            event_file = os.path.join(tb_log_path, event_files[0])
-            reader = SummaryReader(event_file)
-            df = reader.scalars
-            train_loss_df = df[df.tag == "train/loss"]
-            if len(train_loss_df) == 0:
-                train_loss_df = df[df.tag == "train/train_loss"]
-            if len(train_loss_df) > 0:
-                values = train_loss_df.value.values
-                final_loss = values[-1]
-                assert not torch.isnan(torch.tensor(final_loss)), (
-                    f"Training loss is NaN: {final_loss}"
-                )
-                if len(values) >= 2:
-                    initial_loss = float(values[0])
-                    assert float(final_loss) <= initial_loss * 1.10, (
-                        f"Training loss regressed: initial={initial_loss:.4f}, "
-                        f"final={final_loss:.4f} — likely silent bug (e.g. "
-                        "bad label masking) pushed loss scale up."
-                    )
-                    assert float(final_loss) <= 10.0, (
-                        f"Final loss {final_loss:.4f} above sanity bound 10.0 "
-                        "— absolute scale wrong."
-                    )
+    check_tensorboard_loss_decreased(
+        temp_dir + "/runs",
+        initial_window=3,
+        final_window=3,
+        max_initial=5.0,
+        max_final=4.7,
+    )
 
 
 class TestFSDP1:
@@ -81,11 +60,11 @@ class TestFSDP1:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -157,11 +136,11 @@ class TestFSDP1:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -217,11 +196,11 @@ class TestFSDP1:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -295,11 +274,11 @@ class TestFSDP1:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
