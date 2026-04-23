@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from axolotl.cli.config import load_cfg
 
-
 _BASE_CONFIG = """
 base_model: HuggingFaceTB/SmolLM2-135M
 datasets:
