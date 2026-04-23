@@ -154,7 +154,7 @@ lr_scheduler: cosine
 warmup_steps: 10
 
 bf16: true
-flash_attention: true
+attn_implementation: flash_attention_2
 gradient_checkpointing: true
 
 special_tokens:

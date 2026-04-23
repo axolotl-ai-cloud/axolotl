@@ -129,7 +129,7 @@ gradient_accumulation_steps: 4
 max_steps: 20
 learning_rate: 5.0e-6
 bf16: auto
-flash_attention: true
+attn_implementation: flash_attention_2
 gradient_checkpointing: true
 output_dir: ./outputs/ebft-quickstart
 ```
@@ -304,7 +304,7 @@ lora_alpha: 32
 lora_target_linear: true
 
 bf16: auto
-flex_attention: true
+attn_implementation: flex_attention
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: true          # Required with flex_attention

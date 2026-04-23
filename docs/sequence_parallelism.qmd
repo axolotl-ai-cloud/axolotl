@@ -55,7 +55,7 @@ To use sequence parallelism, you need:
 
 ## Limitations
 
-- Flash attention must be enabled for this to work (`flash_attention: true` in config YAML)
+- Flash attention must be enabled for this to work (`attn_implementation: flash_attention_2` in config YAML)
 - May have a small performance overhead due to communication between GPUs
 
 ## Example
