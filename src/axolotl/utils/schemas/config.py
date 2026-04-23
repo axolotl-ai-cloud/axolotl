@@ -10,7 +10,9 @@ from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
+    computed_field,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
@@ -28,10 +30,12 @@ from axolotl.utils.schemas.datasets import (
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
 from axolotl.utils.schemas.enums import (
-    _NO_DTYPE_CAST_ATTN_IMPLS,
-    _NON_PACKING_ATTN_IMPLS,
-    FLASH_ATTN_LIB_IMPLS,
-    AttnImplementation,
+    ATTN_IMPLS_SUPPORTING_PACKING,
+    ATTN_IMPLS_USING_FLASH_LIB,
+    ATTN_IMPLS_WITHOUT_DTYPE_CAST,
+    CANONICAL_ATTN_IMPLS,
+    LEGACY_ATTN_FLAG_TO_IMPL,
+    SHORT_FORM_ALIAS_TO_CANONICAL,
     ChatTemplate,
     RingAttnFunc,
     RLType,
@@ -739,28 +743,35 @@ class AxolotlInputConfig(
 
     xformers_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: xformers` instead.",
         json_schema_extra={
-            "description": "Whether to use xformers attention patch https://github.com/facebookresearch/xformers"
+            "description": "[DEPRECATED] Use `attn_implementation: xformers`. https://github.com/facebookresearch/xformers"
         },
     )
     sdp_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: sdpa` instead.",
         json_schema_extra={
-            "description": "Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html"
+            "description": "[DEPRECATED] Use `attn_implementation: sdpa`."
         },
     )
     s2_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: s2` instead.",
         json_schema_extra={
-            "description": "Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf"
+            "description": "[DEPRECATED] Use `attn_implementation: s2`. Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf"
         },
     )
-    flex_attention: bool | None = None
+    flex_attention: bool | None = Field(
+        default=None,
+        deprecated="Use `attn_implementation: flex_attention` instead.",
+    )
     flex_attn_compile_kwargs: dict[str, Any] | None = None
     flash_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: flash_attention_2` instead.",
         json_schema_extra={
-            "description": "Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention"
+            "description": "[DEPRECATED] Use `attn_implementation: flash_attention_2`. https://github.com/Dao-AILab/flash-attention"
         },
     )
     flash_attn_cross_entropy: bool | None = Field(
@@ -787,17 +798,26 @@ class AxolotlInputConfig(
     )
     sage_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: sage` instead.",
         json_schema_extra={
-            "description": "Whether to use SageAttention https://github.com/thu-ml/SageAttention"
+            "description": "[DEPRECATED] Use `attn_implementation: sage`. https://github.com/thu-ml/SageAttention"
         },
     )
 
-    eager_attention: bool | None = None
+    eager_attention: bool | None = Field(
+        default=None,
+        deprecated="Use `attn_implementation: eager` instead.",
+    )
 
-    attn_implementation: AttnImplementation | str | None = Field(
+    attn_implementation: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Attention backend: eager, flash, sdpa, xformers, flex, sage, s2, fp8, or a custom string for kernels."
+            "description": (
+                "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
+                "flash_attention_3, flex_attention, xformers, sage, s2, fp8. Hub-kernel "
+                "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
+                "through to transformers."
+            )
         },
     )
 
@@ -1335,29 +1355,24 @@ class AxolotlInputConfig(
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
-    # --- Attention capability flags (computed by normalize_attn_implementation) ---
+    # --- Attention capability flags (derived from attn_implementation) ---
 
-    attn_supports_packing: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether the attention backend supports varlen sample packing. "
-            "Computed automatically from attn_implementation."
-        },
-    )
-    attn_uses_flash_lib: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether the attention backend requires axolotl's flash_attn "
-            "monkeypatches. Computed automatically from attn_implementation."
-        },
-    )
-    attn_needs_dtype_cast: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether the attention backend needs embedding dtype cast to "
-            "fp16/bf16. Computed automatically from attn_implementation."
-        },
-    )
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_supports_packing(self) -> bool:
+        return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_uses_flash_lib(self) -> bool:
+        return self.attn_implementation in ATTN_IMPLS_USING_FLASH_LIB
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_needs_dtype_cast(self) -> bool:
+        if self.attn_implementation is None:
+            return False
+        return self.attn_implementation not in ATTN_IMPLS_WITHOUT_DTYPE_CAST
 
     @model_validator(mode="before")
     @classmethod
@@ -1382,89 +1397,82 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def normalize_attn_implementation(cls, data):
-        """Normalize attention config: map between attn_implementation enum and legacy boolean flags."""
+        """Map legacy boolean attention flags to the canonical `attn_implementation`.
+
+        `attn_implementation` is the single source of truth on the validated
+        config. Legacy booleans (`flash_attention: true`, …) are input-only
+        aliases; this validator warns, maps them to their canonical value, and
+        strips them from `data` so they cannot be read downstream.
+
+        Raises if a canonical `attn_implementation` is set alongside any legacy
+        boolean — users must pick one.
+        """
+        if not isinstance(data, dict):
+            return data
+
         attn_impl = data.get("attn_implementation")
+        set_flags = [f for f in LEGACY_ATTN_FLAG_TO_IMPL if data.get(f)]
 
-        # If gemma4_hybrid_attn_impl is set but no attn_implementation, default
-        # to flash (the sliding-window layers use FA2, and packing should be enabled).
-        if data.get("gemma4_hybrid_attn_impl") and not attn_impl:
-            data["attn_implementation"] = "flash"
-            attn_impl = "flash"
-
-        # Mapping: attn_implementation value -> primary legacy flag to set
-        impl_to_flag = {
-            "eager": "eager_attention",
-            "flash": "flash_attention",
-            "sdpa": "sdp_attention",
-            "xformers": "xformers_attention",
-            "flex": "flex_attention",
-            "sage": "sage_attention",
-            "s2": "s2_attention",
-            "fp8": None,  # new, no legacy flag
-        }
-
-        # Reverse mapping: legacy flag -> attn_implementation value
-        flag_to_impl = {
-            "eager_attention": "eager",
-            "flash_attention": "flash",
-            "sdp_attention": "sdpa",
-            "xformers_attention": "xformers",
-            "flex_attention": "flex",
-            "sage_attention": "sage",
-            "s2_attention": "s2",
-        }
-
-        # Find which legacy flags are set
-        set_flags = [f for f, impl in flag_to_impl.items() if data.get(f)]
+        # gemma4_hybrid defaults to flash_attention_2 when user didn't pick a
+        # backend. The sliding-window layers run under FA2; post-load patching
+        # swaps global layers to sdpa (see `_apply_gemma_hybrid_attention`).
+        if data.get("gemma4_hybrid_attn_impl") and not attn_impl and not set_flags:
+            data["attn_implementation"] = "flash_attention_2"
+            attn_impl = "flash_attention_2"
 
         if attn_impl and set_flags:
-            # Both set — check consistency
-            expected_flag = impl_to_flag.get(attn_impl)
-            for flag in set_flags:
-                if flag != expected_flag:
-                    raise ValueError(
-                        f"attn_implementation={attn_impl!r} conflicts with {flag}=true. "
-                        f"Use only attn_implementation or the legacy flag, not both."
-                    )
-        elif attn_impl and not set_flags:
-            # attn_implementation set, no legacy flags — set primary for backwards compat
-            flag = impl_to_flag.get(attn_impl)
-            if flag:
-                data[flag] = True
-        elif not attn_impl and set_flags:
-            # Legacy flags set, no attn_implementation — map to enum, warn
-            # Priority: specific backends first, then generic flash/sdp/eager
-            priority = [
-                "xformers_attention",
-                "s2_attention",
-                "sage_attention",
-                "flex_attention",
-                "flash_attention",
-                "sdp_attention",
-                "eager_attention",
-            ]
-            for flag in priority:
+            raise ValueError(
+                f"attn_implementation={attn_impl!r} cannot be combined with legacy "
+                f"attention flags ({', '.join(sorted(set_flags))}). The legacy "
+                f"flags are deprecated — set only `attn_implementation`."
+            )
+
+        if not attn_impl and set_flags:
+            # Priority: specific backends beat generic flash/sdp/eager fallbacks.
+            for flag in LEGACY_ATTN_FLAG_TO_IMPL:
                 if flag in set_flags:
-                    data["attn_implementation"] = flag_to_impl[flag]
+                    canonical = LEGACY_ATTN_FLAG_TO_IMPL[flag]
+                    data["attn_implementation"] = canonical
                     LOG.warning(
-                        "`%s: true` is deprecated. Use `attn_implementation: %s` instead.",
+                        "`%s: true` is deprecated and will be removed in a future "
+                        "release. Use `attn_implementation: %s` instead.",
                         flag,
-                        flag_to_impl[flag],
+                        canonical,
                     )
                     break
 
-        # Compute capability flags from the final attn_implementation value
-        impl = data.get("attn_implementation")
-        if impl:
-            data["attn_supports_packing"] = impl not in _NON_PACKING_ATTN_IMPLS
-            data["attn_uses_flash_lib"] = impl in FLASH_ATTN_LIB_IMPLS
-            data["attn_needs_dtype_cast"] = impl not in _NO_DTYPE_CAST_ATTN_IMPLS
-        else:
-            data["attn_supports_packing"] = False
-            data["attn_uses_flash_lib"] = False
-            data["attn_needs_dtype_cast"] = False
+        # Strip legacy flags from validated data — canonical field is authoritative.
+        for flag in LEGACY_ATTN_FLAG_TO_IMPL:
+            data.pop(flag, None)
 
         return data
+
+    @field_validator("attn_implementation", mode="before")
+    @classmethod
+    def validate_attn_implementation(cls, value):
+        """Accept canonical names and hub-kernel paths; reject short-form aliases."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError(
+                f"attn_implementation must be a string, got {type(value).__name__}"
+            )
+        if value in CANONICAL_ATTN_IMPLS:
+            return value
+        if "/" in value:
+            # Hub-kernel path, e.g. "kernels-community/flash-attn3". Pass through.
+            return value
+        if value in SHORT_FORM_ALIAS_TO_CANONICAL:
+            canonical = SHORT_FORM_ALIAS_TO_CANONICAL[value]
+            raise ValueError(
+                f"attn_implementation={value!r} is not accepted. "
+                f"Use the canonical name {canonical!r} instead."
+            )
+        raise ValueError(
+            f"attn_implementation={value!r} is not a recognized backend. "
+            f"Expected one of: {sorted(CANONICAL_ATTN_IMPLS)}, or a hub-kernel "
+            f"path containing '/'."
+        )
 
     @model_validator(mode="before")
     @classmethod
@@ -1763,7 +1771,10 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
     @model_validator(mode="before")
     @classmethod
     def check_flex_torch_version(cls, data):
-        if data.get("flex_attention") or data.get("attn_implementation") == "flex":
+        if (
+            data.get("flex_attention")
+            or data.get("attn_implementation") == "flex_attention"
+        ):
             env_capabilities = data.get("env_capabilities", {})
             torch_version = env_capabilities.get("torch_version")
 

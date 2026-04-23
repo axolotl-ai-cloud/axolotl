@@ -97,30 +97,75 @@ class CustomSupportedOptimizers(str, Enum):
     flash_lion = "flash_lion"
 
 
-class AttnImplementation(str, Enum):
-    """Attention backend implementations"""
+# Canonical values accepted for `attn_implementation`. These are passed to HF
+# verbatim via `model.config._attn_implementation`. HF-native backends use HF's
+# own names (`flash_attention_2`, `flex_attention`, ...); axolotl-owned backends
+# (`xformers`, `sage`, `s2`, `fp8`) register into `ALL_ATTENTION_FUNCTIONS` under
+# these exact names. Hub-kernel paths (e.g. `kernels-community/flash-attn3`) are
+# not in this set — they pass through the validator via the "/" check.
+CANONICAL_ATTN_IMPLS = frozenset(
+    {
+        "eager",
+        "sdpa",
+        "flash_attention_2",
+        "flash_attention_3",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "s2",
+        "fp8",
+    }
+)
 
-    eager = "eager"  # pylint: disable=invalid-name
-    flash = "flash"  # pylint: disable=invalid-name
-    sdpa = "sdpa"  # pylint: disable=invalid-name
-    xformers = "xformers"  # pylint: disable=invalid-name
-    flex = "flex"  # pylint: disable=invalid-name
-    sage = "sage"  # pylint: disable=invalid-name
-    s2 = "s2"  # pylint: disable=invalid-name
-    fp8 = "fp8"  # pylint: disable=invalid-name
+# Legacy boolean attention flags → canonical `attn_implementation`. Kept for
+# backwards compatibility; the normalizer warns and strips these from the
+# validated config. Priority order (first match wins) matches the old priority:
+# specific backends beat the generic flash/sdp/eager fallbacks.
+LEGACY_ATTN_FLAG_TO_IMPL = {
+    "xformers_attention": "xformers",
+    "s2_attention": "s2",
+    "sage_attention": "sage",
+    "flex_attention": "flex_attention",
+    "flash_attention": "flash_attention_2",
+    "sdp_attention": "sdpa",
+    "eager_attention": "eager",
+}
 
+# Short-form aliases that were accepted by the in-progress branch but are
+# rejected going forward. Mapped to canonical names only to produce a helpful
+# error message pointing users at the right value.
+SHORT_FORM_ALIAS_TO_CANONICAL = {
+    "flash": "flash_attention_2",
+    "flex": "flex_attention",
+    "sdp": "sdpa",
+}
 
-# Backends that require the flash_attn library (Dao-AILab/flash-attention)
-# for axolotl's own monkeypatches (FA4 auto-apply, LLaMA flash hijack, etc.)
-FLASH_ATTN_LIB_IMPLS = frozenset({"flash", "s2"})
+# Backends that support varlen sample packing via `position_ids`.
+ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "kernels-community/flash-attn3",
+        "kernels-community/sage-attention",
+    }
+)
 
-# Known backends that do NOT support varlen sample packing via position_ids.
-# Used as an exclusion list: unknown strings (e.g., HF hub kernels like
-# "kernels-community/flash-attn3") default to packing-capable.
-_NON_PACKING_ATTN_IMPLS = frozenset({"eager", "sdpa", "s2", "fp8"})
+# Backends that require the flash_attn library (Dao-AILab/flash-attention) for
+# axolotl's own monkeypatches (FA4 auto-apply, LLaMA flash hijack, ring-FA, ...).
+ATTN_IMPLS_USING_FLASH_LIB = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "s2",
+        "kernels-community/flash-attn3",
+    }
+)
 
-# Known backends that do NOT need embedding dtype cast.
-_NO_DTYPE_CAST_ATTN_IMPLS = frozenset({"eager", "sdpa"})
+# Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
+ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
 
 
 class RingAttnFunc(str, Enum):

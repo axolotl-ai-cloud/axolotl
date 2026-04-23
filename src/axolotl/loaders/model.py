@@ -628,33 +628,25 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        """Sample packing uses custom FA2 patch"""
-        # Map attn_implementation enum values to HF attn_implementation strings.
-        # xformers/sage are registered in ALL_ATTENTION_FUNCTIONS and
-        # ALL_MASK_ATTENTION_FUNCTIONS under their own names with FA2 mask
-        # behavior, so they no longer need to masquerade as flash_attention_2.
-        # s2 still uses flash_attention_2 because it modifies FA2 internals.
-        # Hub kernel strings (e.g. "kernels-community/flash-attn3") fall
-        # through the .get() and are passed to HF unchanged.
-        _ATTN_IMPL_TO_HF = {
-            "eager": "eager",
-            "flash": "flash_attention_2",
-            "sdpa": "sdpa",
-            "xformers": "xformers",
-            "flex": "flex_attention",
-            "sage": "sage",
-            "s2": "flash_attention_2",
-            "fp8": "sdpa",
-        }
+        # s2 and fp8 need a different HF backend at load time than their
+        # canonical name: s2 patches FA2 internals, so load under FA2; fp8
+        # replaces F.scaled_dot_product_attention post-load, so load under sdpa.
+        # Every other canonical name (and hub-kernel paths) is passed through
+        # verbatim — xformers/sage/flash_attention_* are registered under their
+        # own names in ALL_ATTENTION_FUNCTIONS before model load.
+        _LOAD_TIME_OVERRIDE = {"s2": "flash_attention_2", "fp8": "sdpa"}
         if self.cfg.gemma4_hybrid_attn_impl:
-            # Load model with flash_attention_2 for sliding window layers;
-            # global layers will be patched to sdpa post-load.
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
+            # Load with flash_attention_2 for sliding-window layers; global
+            # layers are swapped to sdpa post-load.
+            hf_impl = "flash_attention_2"
         elif self.cfg.attn_implementation:
-            hf_impl = _ATTN_IMPL_TO_HF.get(
+            hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation
             )
+        else:
+            hf_impl = None
+
+        if hf_impl is not None:
             self.model_kwargs["attn_implementation"] = hf_impl
             self.model_config._attn_implementation = hf_impl
 
