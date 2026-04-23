@@ -224,6 +224,22 @@ jobs:
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
+          - cuda: "128"
+            cuda_version: 12.8.1
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.11.0
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.11.0
+            torch_cuda_arch_list: "9.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
