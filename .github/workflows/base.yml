@@ -229,7 +229,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.11.0
-            torch_cuda_arch_list: "9.0+PTX"
+            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
