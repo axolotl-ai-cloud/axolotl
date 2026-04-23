@@ -394,8 +394,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
         try:
-            return all(isinstance(v, list) for v in prompt.values()) and all(
-                isinstance(v, list) for v in prompt[self.prompter.field_messages]
+            return all(isinstance(v, (str, list)) for v in prompt.values()) and all(
+                isinstance(v, (str, list)) for v in prompt[self.prompter.field_messages]
             )
         except KeyError:
             return False
@@ -1004,6 +1004,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if tools is None:
             return None
 
+        # Some datasets have tools set to str
+        if isinstance(tools, str):
+            try:
+                tools = json.loads(tools)
+            except json.JSONDecodeError as e:
+                LOG.error(f"Error parsing tool parameters as JSON. Error: {e}")
+                raise
         if isinstance(tools, list):
             # Process each tool to handle JSON string parameters
             for tool in tools:
@@ -1033,6 +1040,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         messages = prompt.get(self.prompter.field_messages, None)
         if messages is None:
             raise ValueError("Messages is null. Please check `field_messages`.")
+
+        if isinstance(messages, str):
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError as e:
+                LOG.error(f"Error parsing messages as JSON. Error: {e}")
+                raise
+            assert isinstance(messages, list), (
+                f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
+            )
+
+            # Extra check here to make sure decoded json is a list of dicts.
+            for i, message in enumerate(messages):
+                assert isinstance(message, dict), (
+                    f"For SFT datasets that are stored in `str` format, each turns must be saved in a dictionary, got {type(message)} for the turn {i}"
+                )
 
         if isinstance(messages, list):
             return messages
