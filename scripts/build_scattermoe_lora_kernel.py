@@ -24,6 +24,7 @@ PACKAGE_NAME = "scattermoe_lora"
 BUILD_VARIANT = "torch-universal"
 DEFAULT_REPO_ID = "kernels-community/scattermoe-lora"
 HF_REPO_TYPE = "kernel"
+HF_KERNEL_URL_PREFIX = "https://hf.co/kernels"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_DIR = (
@@ -350,30 +351,49 @@ def upload_package(args: argparse.Namespace, output_dir: Path) -> None:
             "manually with the Hugging Face CLI."
         ) from exc
 
+    try:
+        hub_version = metadata.version("huggingface_hub")
+    except metadata.PackageNotFoundError:
+        hub_version = "unknown"
+
     accepted_repo_types = getattr(
         hf_constants,
         "REPO_TYPES_WITH_KERNEL",
         getattr(hf_constants, "REPO_TYPES", ()),
     )
     if HF_REPO_TYPE not in accepted_repo_types:
-        try:
-            hub_version = metadata.version("huggingface_hub")
-        except metadata.PackageNotFoundError:
-            hub_version = "unknown"
         raise RuntimeError(
             "Your huggingface_hub installation does not support "
             f"repo_type={HF_REPO_TYPE!r} (found huggingface_hub {hub_version}). "
-            "Upgrade with: python -m pip install --upgrade "
+            f"Upgrade this interpreter with: {sys.executable} -m pip install --upgrade "
             "'huggingface_hub>=1.10.0'"
         )
 
+    # huggingface_hub 1.11.0 has partial kernel support: create_repo accepts
+    # "kernel", but upload_folder/create_commit still validate against the
+    # older REPO_TYPES list. Extend it in-process so those helpers use the
+    # /api/kernels/... endpoints until upstream broadens that check.
+    if HF_REPO_TYPE not in hf_constants.REPO_TYPES:
+        hf_constants.REPO_TYPES.append(HF_REPO_TYPE)
+
     api = HfApi()
-    repo_id = api.create_repo(
-        repo_id=args.repo_id,
-        repo_type=HF_REPO_TYPE,
-        private=args.private,
-        exist_ok=True,
-    ).repo_id
+    try:
+        repo_id = api.create_repo(
+            repo_id=args.repo_id,
+            repo_type=HF_REPO_TYPE,
+            private=args.private,
+            exist_ok=True,
+        ).repo_id
+    except ValueError as exc:
+        if "Invalid repo type" in str(exc):
+            raise RuntimeError(
+                "huggingface_hub rejected repo_type='kernel'. "
+                f"This usually means the command is running with an older Hub "
+                f"client than expected (found huggingface_hub {hub_version} at "
+                f"{sys.executable}). Upgrade with: {sys.executable} -m pip "
+                "install --upgrade 'huggingface_hub>=1.10.0'"
+            ) from exc
+        raise
 
     delete_patterns = [
         "build/**",
@@ -391,7 +411,7 @@ def upload_package(args: argparse.Namespace, output_dir: Path) -> None:
         delete_patterns=delete_patterns,
         commit_message="Upload ScatterMoE LoRA universal kernel",
     )
-    print(f"Uploaded main branch: https://hf.co/{repo_id}")
+    print(f"Uploaded main branch: {HF_KERNEL_URL_PREFIX}/{repo_id}")
 
     if args.skip_version_branch:
         return
@@ -412,7 +432,10 @@ def upload_package(args: argparse.Namespace, output_dir: Path) -> None:
         delete_patterns=delete_patterns,
         commit_message=f"Upload ScatterMoE LoRA universal kernel {version_branch}",
     )
-    print(f"Uploaded version branch: https://hf.co/{repo_id}/tree/{version_branch}")
+    print(
+        f"Uploaded version branch: "
+        f"{HF_KERNEL_URL_PREFIX}/{repo_id}/tree/{version_branch}"
+    )
 
 
 def main() -> int:
