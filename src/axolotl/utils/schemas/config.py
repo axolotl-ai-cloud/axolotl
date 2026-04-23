@@ -1474,32 +1474,27 @@ class AxolotlInputConfig(
             f"path containing '/'."
         )
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_sageattn_wo_sample_packing(cls, data):
-        is_sage = (
-            data.get("sage_attention") or data.get("attn_implementation") == "sage"
-        )
-        if (not data.get("sample_packing", False)) and is_sage:
-            if not data.get("pad_to_sequence_len", False):
-                LOG.warning(
-                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
-                    "This is because there has been signs that the loss explodes after a few steps."
-                )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_sageattn_fft(cls, data):
-        is_sage = (
-            data.get("sage_attention") or data.get("attn_implementation") == "sage"
-        )
-        if (not data.get("adapter", False)) and is_sage:
+    @model_validator(mode="after")
+    def check_sageattn_wo_sample_packing(self):
+        if (
+            self.attn_implementation == "sage"
+            and not self.sample_packing
+            and not self.pad_to_sequence_len
+        ):
             LOG.warning(
-                "We found loss to drop to 0 with SageAttention full finetuning."
-                "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
+                "We recommend turning on `pad_to_sequence_len` for SageAttention "
+                "without packing. The loss has been observed to explode otherwise."
             )
-        return data
+        return self
+
+    @model_validator(mode="after")
+    def check_sageattn_fft(self):
+        if self.attn_implementation == "sage" and not self.adapter:
+            LOG.warning(
+                "SageAttention full finetuning has been observed to drop loss to 0. "
+                "Monitor the loss, or switch to LoRA/QLoRA or another attention method."
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -1575,17 +1570,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return self
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_w_sdpa_bf16(cls, data):
-        is_sm_90: bool = (
-            data["capabilities"]
-            and data["capabilities"].get("compute_capability") == "sm_90"
-        )
+    @model_validator(mode="after")
+    def check_sample_packing_w_sdpa_bf16(self):
+        is_sm_90 = self.capabilities and self.capabilities.compute_capability == "sm_90"
         if (
-            data.get("sample_packing")
-            and (data.get("sdp_attention") or data.get("attn_implementation") == "sdpa")
-            and (data.get("bfloat16") or data.get("bf16"))
+            self.sample_packing
+            and self.attn_implementation == "sdpa"
+            and (self.bfloat16 or self.bf16)
             and not is_sm_90
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
@@ -1593,26 +1584,51 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
                 "This may work on H100s."
             )
+        return self
 
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_compute_capability_w_sageattn(cls, data):
-        is_sage = (
-            data.get("sage_attention") or data.get("attn_implementation") == "sage"
-        )
+    @model_validator(mode="after")
+    def check_compute_capability_w_sageattn(self):
         if (
-            is_sage
-            and data.get("capabilities")
-            and data.get("capabilities").get("compute_capability")
+            self.attn_implementation == "sage"
+            and self.capabilities
+            and self.capabilities.compute_capability
             not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
         ):
             raise ValueError(
                 "SageAttention supports compute capability between sm_80 and sm_120. "
                 "Please use a different attention implementation."
             )
-        return data
+        return self
+
+    @model_validator(mode="after")
+    def check_fp8_attention_preflight(self):
+        """fp8 attention requires SM90+ and torch >= 2.11 (torchao >= 0.17 is pinned)."""
+        if self.attn_implementation != "fp8":
+            return self
+
+        if self.capabilities and self.capabilities.compute_capability:
+            cc = self.capabilities.compute_capability
+            # Accept sm_90 (H100/H200), sm_100 (B100/B200), sm_120 (B300-class).
+            if not cc.startswith("sm_") or int(cc.split("_", 1)[1]) < 90:
+                raise ValueError(
+                    f"attn_implementation=fp8 requires compute capability sm_90 or "
+                    f"higher (Hopper+). Detected {cc!r}."
+                )
+
+        torch_version = (
+            self.env_capabilities.torch_version if self.env_capabilities else None
+        )
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+        if version.parse(torch_version) < version.parse("2.11.0"):
+            raise ValueError(
+                f"attn_implementation=fp8 requires PyTorch >= 2.11.0. "
+                f"Detected {torch_version}."
+            )
+
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -1768,16 +1784,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_flex_torch_version(cls, data):
-        if (
-            data.get("flex_attention")
-            or data.get("attn_implementation") == "flex_attention"
-        ):
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-
+    @model_validator(mode="after")
+    def check_flex_torch_version(self):
+        if self.attn_implementation == "flex_attention":
+            torch_version = (
+                self.env_capabilities.torch_version if self.env_capabilities else None
+            )
             if torch_version is None:
                 import torch
 
@@ -1787,7 +1799,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "Flex attention is not supported on torch version < 2.6.0"
                 )
-        return data
+        return self
 
     @model_validator(mode="before")
     @classmethod
