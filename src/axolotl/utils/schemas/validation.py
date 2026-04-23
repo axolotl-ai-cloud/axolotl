@@ -578,6 +578,11 @@ class TrainingValidationMixin:
                 "Setting chat_template is not supported with mistral-common tokenizer"
             )
 
+        if data.get("processor_kwargs"):
+            raise ValueError(
+                "processor_kwargs is not supported with mistral-common tokenizer"
+            )
+
         return data
 
     @model_validator(mode="before")
