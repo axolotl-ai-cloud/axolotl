@@ -1413,12 +1413,20 @@ class AxolotlInputConfig(
         attn_impl = data.get("attn_implementation")
         set_flags = [f for f in LEGACY_ATTN_FLAG_TO_IMPL if data.get(f)]
 
-        # gemma4_hybrid defaults to flash_attention_2 when user didn't pick a
-        # backend. The sliding-window layers run under FA2; post-load patching
-        # swaps global layers to sdpa (see `_apply_gemma_hybrid_attention`).
-        if data.get("gemma4_hybrid_attn_impl") and not attn_impl and not set_flags:
-            data["attn_implementation"] = "flash_attention_2"
-            attn_impl = "flash_attention_2"
+        # gemma4_hybrid requires flash_attention_2 for the sliding-window layers;
+        # post-load patching swaps global layers to sdpa (see
+        # `_apply_gemma_hybrid_attention`). Default it in when the user didn't
+        # pick a backend; reject any incompatible explicit choice.
+        if data.get("gemma4_hybrid_attn_impl"):
+            if not attn_impl and not set_flags:
+                data["attn_implementation"] = "flash_attention_2"
+                attn_impl = "flash_attention_2"
+            elif attn_impl and attn_impl != "flash_attention_2":
+                raise ValueError(
+                    f"gemma4_hybrid_attn_impl requires attn_implementation="
+                    f"flash_attention_2 (sliding-window layers run under FA2); "
+                    f"got {attn_impl!r}."
+                )
 
         if attn_impl and set_flags:
             raise ValueError(

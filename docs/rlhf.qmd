@@ -1147,8 +1147,7 @@ datasets:
     type: ebft_strided_structured.transform
     split: train[:1%]
 
-flash_attention: false
-flex_attention: true     # Strided mode uses flex_attention
+attn_implementation: flex_attention   # Strided mode uses flex_attention
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: true    # Required for flex_attention
