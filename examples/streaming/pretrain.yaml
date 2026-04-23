@@ -20,7 +20,7 @@ output_dir: ./outputs/smollm2-135m-pretrain-streaming
 sequence_len: 1024
 sample_packing: true
 pretrain_multipack_attn: true  # Prevent cross-attention between packed sequences
-flash_attention: true
+attn_implementation: flash_attention_2
 
 # Batch size settings
 gradient_accumulation_steps: 8

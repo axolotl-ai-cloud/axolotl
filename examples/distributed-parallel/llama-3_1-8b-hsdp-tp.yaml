@@ -29,7 +29,7 @@ output_dir: ./outputs/ndp-out/
 
 sequence_len: 2048
 sample_packing: true
-flash_attention: true
+attn_implementation: flash_attention_2
 
 gradient_accumulation_steps: 1
 micro_batch_size: 1

@@ -47,8 +47,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 bf16: auto
-flash_attention: false  # strided EBFT overrides to flex_attention (or eager fallback) at runtime
-flex_attention: true    # fused flex_attention kernel compiles itself; don't set torch_compile: true
+attn_implementation: flex_attention
                         # (full-model compile conflicts with gradient checkpointing + flex_attention)
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
