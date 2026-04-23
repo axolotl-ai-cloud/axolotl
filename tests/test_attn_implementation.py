@@ -5,10 +5,14 @@ Covers the Phase 1 contract:
 - Legacy boolean flags are mapped to the canonical value, warned on, and stripped.
 - Canonical `attn_implementation` + legacy flag raises.
 - Capability flags are computed from `attn_implementation`.
+
+Plus Phase 2 gap fixes and full-model validation behaviour.
 """
 
 import pytest
 
+from axolotl.utils.config import validate_config
+from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.config import AxolotlInputConfig
 from axolotl.utils.schemas.enums import (
     ATTN_IMPLS_SUPPORTING_PACKING,
@@ -267,3 +271,138 @@ class TestAttentionRegistration:
         register_sage_attn()
 
         assert ALL_ATTENTION_FUNCTIONS["flash_attention_2"] is original_fa2
+
+
+class TestValidatedConfig:
+    """Exercise the full validator chain on `AxolotlInputConfig(**data)`.
+
+    Classmethod tests above cover the normalizer in isolation. These tests
+    verify that `model_validator(mode="before")` ordering works under the real
+    MRO chain — specifically that legacy flags are stripped, the computed
+    capability fields are readable on the validated instance, and
+    `attn_supports_packing`/`attn_uses_flash_lib` aren't overridable from YAML.
+    """
+
+    def test_legacy_flag_stripped_on_validated_cfg(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(flash_attention=True)
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "flash_attention_2"
+        # Legacy flag must not survive to the validated DictDefault
+        # (normalizer pops it, model_dump excludes Nones).
+        assert "flash_attention" not in dict(validated)
+
+    def test_canonical_name_passes_through(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash_attention_3")
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "flash_attention_3"
+        assert validated.attn_uses_flash_lib is True
+        assert validated.attn_supports_packing is True
+
+    def test_computed_capability_flags_readable(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(attn_implementation="sdpa")
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "sdpa"
+        assert validated.attn_supports_packing is False
+        assert validated.attn_uses_flash_lib is False
+        assert validated.attn_needs_dtype_cast is False
+
+    def test_capability_flags_not_overridable_from_yaml(self, min_base_cfg):
+        """YAML attempts to override a computed field must not win."""
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="eager", attn_uses_flash_lib=True
+        )
+        validated = validate_config(cfg)
+        # The computed field reflects the backend, not the YAML input.
+        assert validated.attn_uses_flash_lib is False
+
+    def test_short_form_alias_rejected_on_full_validation(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(attn_implementation="flash")
+        with pytest.raises(ValueError, match="is not accepted"):
+            validate_config(cfg)
+
+    def test_canonical_plus_legacy_rejected_on_full_validation(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="flash_attention_2", flash_attention=True
+        )
+        with pytest.raises(ValueError, match="cannot be combined with legacy"):
+            validate_config(cfg)
+
+    def test_s2_plus_flash_maps_to_s2_on_full_validation(self, min_base_cfg):
+        """The inherited `check_attention_fields` mixin used to raise here;
+        after Phase 1 it's removed and the normalizer owns the priority."""
+        cfg = min_base_cfg | DictDefault(s2_attention=True, flash_attention=True)
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "s2"
+
+    def test_hub_kernel_on_full_validation(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="kernels-community/flash-attn3"
+        )
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "kernels-community/flash-attn3"
+        assert validated.attn_uses_flash_lib is True
+        assert validated.attn_supports_packing is True
+
+
+class TestPhase2GapFixes:
+    """Regression tests for the validator gaps closed in Phase 2."""
+
+    def test_sample_packing_with_eager_warns(self, min_base_cfg, caplog):
+        import logging
+
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="eager", sample_packing=True
+        )
+        with caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+        assert any(
+            "does not handle cross-sample decontamination" in r.message
+            for r in caplog.records
+        )
+
+    def test_sample_packing_with_sdpa_warns(self, min_base_cfg, caplog):
+        import logging
+
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="sdpa", sample_packing=True
+        )
+        with caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+        assert any(
+            "does not handle cross-sample decontamination" in r.message
+            for r in caplog.records
+        )
+
+    def test_sample_packing_with_flash_does_not_warn(self, min_base_cfg, caplog):
+        import logging
+
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="flash_attention_2", sample_packing=True
+        )
+        with caplog.at_level(logging.WARNING):
+            validate_config(cfg)
+        assert not any(
+            "does not handle cross-sample decontamination" in r.message
+            for r in caplog.records
+        )
+
+    def test_sample_packing_with_s2_raises(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(attn_implementation="s2", sample_packing=True)
+        with pytest.raises(
+            ValueError, match="shifted-sparse attention does not currently support"
+        ):
+            validate_config(cfg)
+
+    def test_scaling_softmax_without_flex_raises(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="flash_attention_2", scaling_softmax=True
+        )
+        with pytest.raises(ValueError, match="scaling_softmax requires flex"):
+            validate_config(cfg)
+
+    def test_scaling_softmax_with_flex_passes(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="flex_attention", scaling_softmax=True
+        )
+        validated = validate_config(cfg)
+        assert validated.attn_implementation == "flex_attention"
