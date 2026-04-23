@@ -13,6 +13,7 @@ from axolotl.utils.dict import DictDefault
 
 from .utils import (
     check_model_output_exists,
+    check_tensorboard_loss_decreased,
     require_torch_2_5_1,
     require_torch_2_6_0,
     require_torch_2_7_0,
@@ -243,8 +244,8 @@ class TestCustomOptimizers(unittest.TestCase):
     def test_came_pytorch(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "JackFram/llama-68m",
-                "tokenizer_type": "LlamaTokenizer",
+                "base_model": "axolotl-ai-co/tiny-llama-50m",
+                "tokenizer_type": "AutoTokenizer",
                 "sequence_len": 1024,
                 "load_in_8bit": True,
                 "adapter": "lora",
@@ -254,9 +255,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "special_tokens": {
-                    "unk_token": "<unk>",
-                    "bos_token": "<s>",
-                    "eos_token": "</s>",
+                    "pad_token": "<|endoftext|>",
                 },
                 "datasets": [
                     {
@@ -268,13 +267,15 @@ class TestCustomOptimizers(unittest.TestCase):
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "came_pytorch",
                 "adam_beta3": 0.9999,
                 "adam_epsilon2": 1e-16,
-                "max_steps": 5,
+                "max_steps": 50,
+                "logging_steps": 1,
                 "lr_scheduler": "cosine",
                 "save_first_step": False,
+                "use_tensorboard": True,
             }
         )
 
@@ -284,6 +285,13 @@ class TestCustomOptimizers(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=4.5,
+            max_final=4.3,
+        )
 
 
 @require_torch_2_7_0

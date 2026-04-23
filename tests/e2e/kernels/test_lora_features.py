@@ -24,7 +24,7 @@ from axolotl.monkeypatch.lora_kernels import (
 )
 from axolotl.utils.dict import DictDefault
 
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = "axolotl-ai-co/tiny-qwen3-129m"
 DEVICE = "cuda"
 DTYPE = torch.bfloat16
 

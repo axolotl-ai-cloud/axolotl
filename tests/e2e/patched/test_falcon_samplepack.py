@@ -4,14 +4,16 @@ E2E tests for falcon
 
 import unittest
 
-import pytest
-
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from ..utils import check_model_output_exists, with_temp_dir
+from ..utils import (
+    check_model_output_exists,
+    check_tensorboard_loss_decreased,
+    with_temp_dir,
+)
 
 
 class TestFalconPatched(unittest.TestCase):
@@ -19,13 +21,12 @@ class TestFalconPatched(unittest.TestCase):
     Test case for Falcon models
     """
 
-    @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_qlora(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "illuin/tiny-random-FalconForCausalLM",
-                "flash_attention": True,
+                "base_model": "axolotl-ai-co/tiny-falcon-42m",
+                "flash_attention": False,
                 "sample_packing": True,
                 "sequence_len": 2048,
                 "load_in_4bit": True,
@@ -47,17 +48,19 @@ class TestFalconPatched(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
+                "use_tensorboard": True,
             }
         )
         cfg = validate_config(cfg)
@@ -66,14 +69,20 @@ class TestFalconPatched(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=6.0,
+            max_final=4.7,
+        )
 
-    @pytest.mark.skip(reason="no tiny models for testing with safetensors")
     @with_temp_dir
     def test_ft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "illuin/tiny-random-FalconForCausalLM",
-                "flash_attention": True,
+                "base_model": "axolotl-ai-co/tiny-falcon-42m",
+                "flash_attention": False,
                 "sample_packing": True,
                 "sequence_len": 2048,
                 "val_set_size": 0.05,
@@ -88,17 +97,19 @@ class TestFalconPatched(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 2,
-                "micro_batch_size": 2,
+                "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 20,
-                "save_steps": 10,
-                "eval_steps": 10,
+                "max_steps": 50,
+                "logging_steps": 1,
+                "save_steps": 50,
+                "eval_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
+                "use_tensorboard": True,
             }
         )
         cfg = validate_config(cfg)
@@ -107,3 +118,10 @@ class TestFalconPatched(unittest.TestCase):
 
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
+        check_tensorboard_loss_decreased(
+            temp_dir + "/runs",
+            initial_window=5,
+            final_window=5,
+            max_initial=6.0,
+            max_final=4.7,
+        )

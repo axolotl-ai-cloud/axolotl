@@ -38,12 +38,26 @@ def verify_training_success(temp_dir):
             event_file = os.path.join(tb_log_path, event_files[0])
             reader = SummaryReader(event_file)
             df = reader.scalars
-            train_loss_df = df[df.tag == "train/train_loss"]
+            train_loss_df = df[df.tag == "train/loss"]
+            if len(train_loss_df) == 0:
+                train_loss_df = df[df.tag == "train/train_loss"]
             if len(train_loss_df) > 0:
-                final_loss = train_loss_df.value.values[-1]
+                values = train_loss_df.value.values
+                final_loss = values[-1]
                 assert not torch.isnan(torch.tensor(final_loss)), (
                     f"Training loss is NaN: {final_loss}"
                 )
+                if len(values) >= 2:
+                    initial_loss = float(values[0])
+                    assert float(final_loss) <= initial_loss * 1.10, (
+                        f"Training loss regressed: initial={initial_loss:.4f}, "
+                        f"final={final_loss:.4f} — likely silent bug (e.g. "
+                        "bad label masking) pushed loss scale up."
+                    )
+                    assert float(final_loss) <= 10.0, (
+                        f"Final loss {final_loss:.4f} above sanity bound 10.0 "
+                        "— absolute scale wrong."
+                    )
 
 
 class TestFSDP1:
@@ -56,7 +70,7 @@ class TestFSDP1:
     def test_fft_sft(self, temp_dir, fsdp_cpu_ram_efficient_loading):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -126,7 +140,7 @@ class TestFSDP1:
     def test_lora_sft(self, temp_dir, adapter_config):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -190,7 +204,7 @@ class TestFSDP1:
     def test_dpo_fft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "rl": "dpo",
@@ -262,7 +276,7 @@ class TestFSDP1:
     def test_dpo_lora(self, temp_dir, adapter_config):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "load_in_4bit": adapter_config["load_in_4bit"],
                 "rl": "dpo",
                 "chat_template": "chatml",

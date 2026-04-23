@@ -199,6 +199,101 @@ def check_tensorboard(
         assert df.value.values[-1] > 1e-5, "Expected loss to be greater than zero"
 
 
+def check_tensorboard_loss_decreased(
+    temp_run_dir: str,
+    tag: str | None = None,
+    initial_window: int = 1,
+    final_window: int = 1,
+    min_delta: float | None = None,
+    max_initial: float | None = None,
+    max_final: float | None = None,
+    max_loss_ratio: float = 1.10,
+) -> None:
+    """Check that training didn't regress — loss stayed in a sensible range.
+
+    Used with the tiny ``axolotl-ai-co/tiny-*`` CI models, where pretraining
+    was brief enough that final loss won't clear the absolute thresholds used
+    for 135M+ models — but the training pipeline should still behave.
+
+    ``train/train_loss`` is only logged once (end-of-training aggregate). The
+    per-step tag is ``train/loss`` for SFT/LM trainers and may vary across
+    trainers (e.g. DPO). When ``tag`` is None we try common per-step tags in
+    order and use the first with enough samples.
+
+    Two kinds of regression we guard against:
+
+    1. **Loss blew up.** A silent bug (e.g. broken label masking) can start
+       training at an absurdly high loss. ``max_initial`` / ``max_final``
+       assert the measured means stay at-or-below bounds measured from a
+       known-good run. Both are optional but strongly encouraged — loss
+       going *down* from a bad starting scale still looks like "learning."
+
+    2. **Training diverged.** ``max_loss_ratio`` (default 1.10) requires
+       ``final <= initial * ratio``. Allows small noise in flat-loss cases
+       (common with tiny pretrained models that start near optimum), but
+       a final loss 10%+ above initial flags instability / NaNs / drift.
+
+    ``min_delta`` is optional; when set, additionally requires
+    ``final + min_delta <= initial`` — use for configs with enough signal
+    to demand a strict decrease.
+    """
+    tb_log_path = most_recent_subdir(temp_run_dir)
+    event_file = os.path.join(tb_log_path, sorted(os.listdir(tb_log_path))[0])
+    reader = SummaryReader(event_file)
+    df = reader.scalars
+
+    if tag is None:
+        candidates = ["train/loss", "train/train_loss"]
+    else:
+        candidates = [tag]
+
+    required = initial_window + final_window
+    chosen_tag, values = None, None
+    for candidate in candidates:
+        sub = df[df.tag == candidate]
+        if len(sub) >= required:
+            chosen_tag = candidate
+            values = sub.value.values
+            break
+
+    available = sorted({t for t in df.tag.unique() if "loss" in t.lower()})
+    assert values is not None, (
+        f"None of the tags {candidates} had ≥{required} logged steps. "
+        f"Loss tags present: {available}"
+    )
+
+    initial = float(values[:initial_window].mean())
+    final = float(values[-final_window:].mean())
+    print(
+        f"[check_tensorboard_loss_decreased] tag={chosen_tag} n={len(values)} "
+        f"initial_mean{initial_window}={initial:.4f} final_mean{final_window}={final:.4f}"
+    )
+    assert final > 1e-5, "Expected loss to be greater than zero"
+    assert final <= initial * max_loss_ratio, (
+        f"Loss regressed for {chosen_tag}: "
+        f"initial(mean of first {initial_window})={initial:.4f}, "
+        f"final(mean of last {final_window})={final:.4f}, "
+        f"ratio={final / initial:.4f} (max allowed {max_loss_ratio})"
+    )
+    if min_delta is not None:
+        assert final + min_delta <= initial, (
+            f"Expected loss to decrease by at least {min_delta} for {chosen_tag}: "
+            f"initial={initial:.4f}, final={final:.4f}, delta={initial - final:.4f}"
+        )
+    if max_initial is not None:
+        assert initial <= max_initial, (
+            f"Initial loss {initial:.4f} is above the expected max {max_initial}. "
+            f"Absolute scale is wrong — probably a silent regression "
+            f"(e.g. bad label masking) that bumped the starting point."
+        )
+    if max_final is not None:
+        assert final <= max_final, (
+            f"Final loss {final:.4f} is above the expected max {max_final}. "
+            f"Absolute scale is wrong — probably a silent regression "
+            f"(e.g. bad label masking) that bumped the endpoint."
+        )
+
+
 def check_model_output_exists(temp_dir: str, cfg: DictDefault) -> None:
     """
     helper function to check if a model output file exists after training
