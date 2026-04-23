@@ -673,6 +673,12 @@ class AxolotlInputConfig(
             "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to True if `sample_packing` enabled"
         },
     )
+    pad_to_multiple_of: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": ("Pad each batch to a multiple of this value.")
+        },
+    )
     curriculum_sampling: bool | None = Field(
         default=None,
         json_schema_extra={

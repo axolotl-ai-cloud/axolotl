@@ -228,8 +228,46 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
 
         return training_args, trainer_kwargs
 
+    def build_collator(self, **kwargs):
+        """Build a data collator for preference-tuning trainers.
+
+        Returns None for RL types that provide their own collator (e.g. GRPO,
+        KTO), letting the trainer construct its default. For DPO/IPO/ORPO/SIMPO
+        returns an ``AxolotlDPODataCollatorWithPadding`` when
+        ``pad_to_multiple_of`` is set, otherwise None (so the trainer
+        falls back to the TRL default).
+        """
+        if self.cfg.rl not in (
+            RLType.DPO,
+            RLType.IPO,
+            RLType.ORPO,
+            RLType.SIMPO,
+        ):
+            return None
+
+        pad_to_multiple_of = getattr(self.cfg, "pad_to_multiple_of", None)
+        if not pad_to_multiple_of:
+            return None
+
+        from axolotl.utils.collators.dpo import AxolotlDPODataCollatorWithPadding
+
+        LOG.info(
+            f"Using AxolotlDPODataCollatorWithPadding with pad_to_multiple_of="
+            f"{pad_to_multiple_of}"
+        )
+        is_enc_dec = getattr(self.model.config, "is_encoder_decoder", False)
+        return AxolotlDPODataCollatorWithPadding(
+            pad_token_id=self.tokenizer.pad_token_id,
+            is_encoder_decoder=is_enc_dec,
+            pad_to_multiple_of=pad_to_multiple_of,
+            **kwargs,
+        )
+
     def build(self, total_num_steps):
         training_args, trainer_kwargs = self._build_training_arguments(total_num_steps)
+
+        if (data_collator := self.build_collator()) is not None:
+            trainer_kwargs["data_collator"] = data_collator
 
         if self.eval_dataset:
             trainer_kwargs["eval_dataset"] = self.eval_dataset

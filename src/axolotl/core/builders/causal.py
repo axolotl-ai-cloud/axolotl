@@ -370,7 +370,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
         }
-        multiple = 64
+        multiple = getattr(self.cfg, "pad_to_multiple_of", None) or 64
         if self.cfg.pad_to_sequence_len:
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 self.cfg.sequence_len / multiple
