@@ -299,7 +299,7 @@ def load_cfg(
 
     prepare_plugins(cfg)
 
-    if cfg.get("use_ray"):
+    if cfg.use_ray:
         # Ray drivers typically have no GPU; defer capability checks to the worker.
         capabilities, env_capabilities = None, None
     else:
