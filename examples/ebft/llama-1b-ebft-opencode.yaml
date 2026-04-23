@@ -66,7 +66,7 @@ lora_target_linear: true
 
 # --- Hardware ---
 bf16: auto
-flash_attention: true
+attn_implementation: flash_attention_2
 gradient_checkpointing: true
 
 special_tokens:

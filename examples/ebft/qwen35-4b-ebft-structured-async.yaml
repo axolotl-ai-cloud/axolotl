@@ -72,7 +72,7 @@ lora_dropout: 0.0
 lora_target_modules: ".*\\.layers\\.(3|7|11|15|19|23|27|31)\\.self_attn\\.(q|k|v|o)_proj|.*\\.mlp\\.(gate|up|down)_proj"
 
 bf16: auto
-flash_attention: true
+attn_implementation: flash_attention_2
 gradient_checkpointing: true
 
 special_tokens:

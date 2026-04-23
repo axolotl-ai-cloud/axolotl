@@ -46,7 +46,6 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 bf16: auto
-flash_attention: false  # strided EBFT overrides to flex_attention (or eager fallback) at runtime
 gradient_checkpointing: true
 
 special_tokens:
