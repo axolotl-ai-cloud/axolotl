@@ -13,8 +13,8 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     Here is an example of how to install from pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
+uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.16.1'
 ```
 
 2. Choose one of the following configs below for training the 20B model. (for 120B, see [below](#training-120b))

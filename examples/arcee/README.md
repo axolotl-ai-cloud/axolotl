@@ -13,7 +13,7 @@ Thanks to the team at Arcee.ai for using Axolotl in supervised fine-tuning the A
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 

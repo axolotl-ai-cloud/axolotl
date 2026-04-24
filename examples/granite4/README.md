@@ -11,7 +11,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.7.1 min)
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 

@@ -11,8 +11,8 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
     Here is an example of how to install from pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
-uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
+uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.16.1'
 ```
 
 2. Please install the below.
