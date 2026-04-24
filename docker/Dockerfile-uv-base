@@ -38,20 +38,3 @@ RUN uv pip install packaging setuptools wheel psutil \
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         MAMBA_SKIP_CUDA_BUILD=TRUE CAUSAL_CONV1D_SKIP_CUDA_BUILD=TRUE uv pip install --no-build-isolation mamba_ssm causal_conv1d; \
     fi
-
-# Map Python version (e.g., 3.12 -> cp312)
-RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
-    # Map PyTorch version (e.g., 2.9.1 -> torch2.9, 2.10.0 -> torch2.10)
-    TORCH_TAG="torch$(echo $PYTORCH_VERSION | grep -oP '^\d+\.\d+')" && \
-    LINUX_TAG="manylinux_" && \
-    # Map architecture
-    case "$TARGETARCH" in \
-        amd64) ARCH_TAG="2_24_x86_64.manylinux_2_28_x86_64" ;; \
-        arm64) ARCH_TAG="2_34_aarch64" ;; \
-        *) echo "Unsupported architecture: $TARGETARCH"; exit 1 ;; \
-    esac && \
-    WHL_VERSION="v0.7.16" && \
-    WHL_FILE="flash_attn-2.8.3+cu${CUDA}${TORCH_TAG}-${PYTHON_CP}-${PYTHON_CP}-${LINUX_TAG}${ARCH_TAG}.whl" && \
-    wget -nv "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}" && \
-    uv pip install --no-cache-dir "${WHL_FILE}" && \
-    rm "${WHL_FILE}"
