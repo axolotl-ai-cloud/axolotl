@@ -26,7 +26,6 @@ lora_model_dir:
 sequence_len: 2048
 sample_packing: true
 
-
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0
@@ -52,7 +51,7 @@ gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
-scaling_softmax: true
+# scaling_softmax: true  # needs flex_attention
 
 loss_watchdog_threshold: 5.0
 loss_watchdog_patience: 3
