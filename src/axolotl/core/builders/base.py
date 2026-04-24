@@ -384,10 +384,10 @@ class TrainerBuilderBase(abc.ABC):
             elif self.cfg.optimizer == "scao":
                 try:
                     from scao.optimizer import SCAO
-                except ImportError:
+                except ImportError as err:
                     raise ImportError(
                         "SCAO optimizer not found. Please install it with 'pip install scao'"
-                    )
+                    ) from err
                 optimizer_cls = SCAO
                 beta1 = training_args_kwargs.get("adam_beta1", 0.9)
                 beta2 = training_args_kwargs.get("adam_beta2", 0.999)
