@@ -1,6 +1,6 @@
 # Multimodal assistant-only loss masking
 
-### Correct placement
+## Correct placement
 
 ```yaml
 # Top-level: only train_on_inputs lives here.
@@ -22,11 +22,11 @@ test_datasets:
     train_on_eos: turn
 ```
 
-### How to verify at runtime
+## How to verify at runtime
 
 `build_collator` logs the resolved knobs at INFO:
 
-```
+```text
 MM collator: train_on_inputs=False roles_to_train=['assistant'] train_on_eos=turn role_boundaries_override=none
 ```
 

@@ -547,10 +547,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 if self.cfg.role_boundaries:
                     role_boundaries_override = list(self.cfg.role_boundaries)
 
-                # HFCausalTrainerBuilder.build() calls build_collator twice
-                # (once is_eval=True, once for training); log only on the
-                # training pass so users see a single authoritative line
-                # instead of two identical banners during startup diagnosis.
+                # build() calls build_collator twice (eval + train); log once.
                 if not is_eval:
                     LOG.info(
                         "MM collator: train_on_inputs=%s roles_to_train=%s "

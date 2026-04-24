@@ -128,14 +128,7 @@ def test_scanner_train_on_eos_all_keeps_non_assistant_end_marker():
 
 
 def test_scanner_train_on_eos_all_with_non_trainable_include_end_false():
-    """Non-trainable role with ``include_end=False`` must NOT leak its end
-    marker into loss under ``train_on_eos="all"``. Scanner-level lock-in for
-    the Pixtral / Mistral V7 Tekken shared-token case: the trainable branch
-    already gates on ``include_end``; the non-trainable branch must mirror it.
-
-    Regression for the bug where ``[/INST]`` (user-end with include_end=False,
-    shared with assistant-start) leaked into loss on ``train_on_eos="all"``.
-    """
+    """Non-trainable + include_end=False must not leak end marker on 'all'."""
     boundaries = [
         RoleBoundary(
             role="user",
@@ -237,11 +230,7 @@ def test_strategy_accepts_all_supported_train_on_eos_values():
 
 
 def test_empty_role_boundaries_override_falls_back_to_builtin():
-    """``role_boundaries`` is opt-in: an empty list must be treated as unset.
-
-    Rationale lives in ProcessingStrategy.__init__. Locking this in because the
-    doc promises "non-empty list replaces built-ins; empty / unset keeps them."
-    """
+    """Empty override must fall through to built-ins (opt-in semantics)."""
     vocab = {
         "<|im_start|>assistant\n": [101, 102, 103],
         "<|im_start|>user\n": [101, 106, 103],
@@ -260,12 +249,7 @@ def test_empty_role_boundaries_override_falls_back_to_builtin():
 
 
 def test_sft_dataset_schema_accepts_all_supported_train_on_eos_values():
-    """SFTDataset.train_on_eos must accept every value the scanner honors.
-
-    Regression: schema previously declared ``Literal["all", "turn", "last"]``,
-    so ``train_on_eos: none`` raised a pydantic ValidationError at config-load
-    time and users could never reach the scanner's documented ``"none"`` branch.
-    """
+    """SFTDataset.train_on_eos accepts every value the scanner honors."""
     from axolotl.utils.schemas.datasets import SFTDataset
 
     for val in ("all", "turn", "last", "none"):
@@ -425,9 +409,7 @@ def _gemma_tokenizer():
         "<start_of_image>": [50],  # boi_token for Gemma3
     }
     tok = _Tokenizer(vocab, pad_id=0)
-    # Real Gemma3 tokenizers expose boi_token as a direct attribute (set from
-    # tokenizer_config.json init_kwargs), not via special_tokens_map. Mirror
-    # that shape here so the test exercises the production code path.
+    # boi_token is a direct tokenizer attribute on real Gemma3.
     tok.boi_token = "<start_of_image>"
     return tok
 
@@ -651,13 +633,7 @@ def test_mistral_v7_tekken_system_user_assistant():
 
 
 def test_pixtral_train_on_eos_all_respects_user_include_end_false():
-    """Regression: non-trainable role's end marker must respect include_end=False.
-
-    [/INST] is shared between user-end (include_end=False so it can be re-matched
-    as assistant-start) and assistant-start. Without gating the non-trainable
-    branch on include_end, train_on_eos='all' leaks [/INST] into loss via the
-    user branch — contradicting the boundary's own "don't include end" flag.
-    """
+    """Pixtral [/INST] (user-end include_end=False) stays masked on 'all'."""
     vocab = {"[INST]": [50], "[/INST]": [51]}
     tok = _Tokenizer(vocab, pad_id=0, eos_id=99)
     strategy = PixtralProcessingStrategy(_Processor(tok), train_on_eos="all")
@@ -669,14 +645,7 @@ def test_pixtral_train_on_eos_all_respects_user_include_end_false():
 
 
 def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
-    """Same asymmetry as the Pixtral case, with system + user + assistant.
-
-    System end marker [/SYSTEM_PROMPT] has include_end=True (default) so it
-    *should* be unmasked under train_on_eos='all'. The user's [/INST] must
-    NOT be unmasked despite also being an end marker, because user declares
-    include_end=False so the scanner can rewind and re-match it as
-    assistant-start.
-    """
+    """System end (include_end=True) unmasked on 'all'; [/INST] stays masked."""
     vocab = {
         "[SYSTEM_PROMPT]": [40],
         "[/SYSTEM_PROMPT]": [41],
@@ -774,12 +743,7 @@ def test_dispatch_unknown_falls_back_to_base():
 
 
 def _glm_vision_processor(cls_path):
-    """Build a spec'd MagicMock so isinstance(mock, cls) passes offline.
-
-    The dispatcher does ``isinstance(processor, <HF class>)``; we don't want
-    to instantiate a real HF processor (needs image_processor + tokenizer
-    files on disk), so mock the class with ``spec=``.
-    """
+    """Spec'd MagicMock so isinstance(mock, cls) passes without real HF files."""
     from importlib import import_module
     from unittest.mock import MagicMock
 
@@ -797,18 +761,13 @@ def _glm_vision_processor(cls_path):
     tok = _Tokenizer(vocab, pad_id=0)
     proc = MagicMock(spec=cls)
     proc.tokenizer = tok
-    # Base ProcessingStrategy.__init__ probes ``processor.image_token``; the
-    # Glm4v strategy reads tokenizer attributes directly, so drop the attribute
-    # on the mock to skip the base-class path.
+    # Drop processor.image_token so base class skips its probe.
     del proc.image_token
     return proc
 
 
 def test_dispatch_glm4v_via_Glm4vProcessor():
-    """Regression: Glm4vProcessor (GLM-4V / GLM-4.1V) must route to
-    Glm4vProcessingStrategy. Previously only Glm46VProcessor was registered,
-    so genuine GLM-4V processors fell through to the base ProcessingStrategy.
-    """
+    """Glm4vProcessor (GLM-4V) routes to Glm4vProcessingStrategy."""
     pytest.importorskip("transformers.models.glm4v.processing_glm4v")
     from axolotl.processing_strategies import Glm4vProcessingStrategy
 
@@ -820,9 +779,7 @@ def test_dispatch_glm4v_via_Glm4vProcessor():
 
 
 def test_dispatch_glm4v_via_Glm46VProcessor():
-    """Glm46VProcessor (GLM-4.6V / GLM-4.7V) also routes to the shared
-    Glm4vProcessingStrategy — same media-token markers as GLM-4V.
-    """
+    """Glm46VProcessor (GLM-4.6V) also routes to Glm4vProcessingStrategy."""
     pytest.importorskip("transformers.models.glm46v.processing_glm46v")
     from axolotl.processing_strategies import Glm4vProcessingStrategy
 

@@ -91,13 +91,9 @@ class ProcessingStrategy:
 
         built_in = self._build_role_boundaries()
 
-        # Truthiness (not ``is not None``) — an empty list is treated the same
-        # as an unset field: fall back to the strategy's built-in boundaries.
-        # Rationale: ``role_boundaries`` is an opt-in user escape hatch for
-        # unsupported / custom templates; writing ``role_boundaries: []`` in
-        # YAML is almost always a typo or leftover, and honoring it literally
-        # would produce all-masked labels (zero gradient). Users who truly
-        # want "no role masking" should omit the field entirely.
+        # Truthiness check: empty list == unset (opt-in escape hatch), so
+        # `role_boundaries: []` in YAML falls through to built-ins instead of
+        # producing all-masked labels.
         if role_boundaries_override:
             overridden = _resolve_role_boundary_override(
                 role_boundaries_override, self.processor.tokenizer
@@ -354,13 +350,15 @@ def _apply_role_boundaries(
     # unmask only the final one after the scan finishes.
     last_trainable_end_span: list[Optional[tuple[int, int]]] = [None] * labels.shape[0]
 
-    def _match_prefix(label: Tensor, start_pos: int, tok_seq: list[int]) -> bool:
+    # Work on a Python list per row — avoids O(n*boundaries) Tensor→list
+    # conversions in the hot prefix-match loop.
+    def _match_prefix(label: list[int], start_pos: int, tok_seq: list[int]) -> bool:
         if not tok_seq or start_pos + len(tok_seq) > len(label):
             return False
-        return label[start_pos : start_pos + len(tok_seq)].tolist() == tok_seq
+        return label[start_pos : start_pos + len(tok_seq)] == tok_seq
 
     def _find_end(
-        label: Tensor, start_pos: int, end_tok: list[int]
+        label: list[int], start_pos: int, end_tok: list[int]
     ) -> tuple[int, bool]:
         # Empty end_tok means run to end-of-sequence.
         if not end_tok:
@@ -373,7 +371,7 @@ def _apply_role_boundaries(
         return k, False
 
     for i in range(labels.shape[0]):
-        label = labels[i]
+        label = labels[i].tolist()
         j = 0
         n = len(label)
         while j < n:
@@ -413,11 +411,8 @@ def _apply_role_boundaries(
                 if found_end and best_match.include_end and train_on_eos == "last":
                     last_trainable_end_span[i] = (content_end, end_after)
             else:
-                # Non-trainable role: only the end marker can contribute, and only on train_on_eos="all".
-                # Gate on include_end to mirror the trainable branch: a boundary
-                # that declares include_end=False (e.g. Pixtral / Mistral V7
-                # Tekken user, whose [/INST] end is shared with assistant-start)
-                # must not leak its end marker into loss via the "all" path.
+                # Non-trainable role on train_on_eos="all": gate on include_end
+                # so Pixtral / Mistral V7 Tekken shared [/INST] doesn't leak.
                 if found_end and best_match.include_end and train_on_eos == "all":
                     content_end = end_after - len(best_match.end_tokens)
                     mask[i][content_end:end_after] = 1
@@ -647,13 +642,8 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
         )
-        # Gemma3 uses boi_token as the image placeholder. Real Gemma3
-        # tokenizers expose it as a direct attribute (set from
-        # tokenizer_config.json init_kwargs), not as a key in
-        # ``special_tokens_map`` — that dict only holds HF's standard slots
-        # (bos/eos/pad/unk/...). Verified against transformers
-        # ``models/gemma3/processing_gemma3.py`` which reads ``tokenizer.boi_token``
-        # directly.
+        # Real Gemma3 tokenizers expose boi_token as a direct attribute, not
+        # via special_tokens_map (which only holds HF's standard slots).
         boi = getattr(processor.tokenizer, "boi_token", None)
         if boi is not None:
             self.image_token = boi
@@ -661,12 +651,8 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
 
     def process_labels(self, input_ids):
         labels = super().process_labels(input_ids)
-        # Gemma3 soft image token. Resolve via tokenizer for robustness against
-        # vocab shifts (custom fine-tunes, added specials, upstream retokenization).
-        # Falls back to the known default id if the token isn't in vocab, so the
-        # strategy still does the right thing on a stock checkpoint where the
-        # string lookup returns unk. Mirrors Gemma4's convert_tokens_to_ids +
-        # unk-id guard pattern.
+        # Resolve <image_soft_token> via tokenizer; fall back to default id
+        # if not in vocab. Matches Gemma4's pattern.
         tok = self.processor.tokenizer
         soft_id = tok.convert_tokens_to_ids("<image_soft_token>")
         unk_id = getattr(tok, "unk_token_id", None)
@@ -1062,18 +1048,10 @@ class InternVLProcessingStrategy(ProcessingStrategy):
 
 
 class Glm4vProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for the GLM-4V family — covers both
-    ``Glm4vProcessor`` (GLM-4V / GLM-4.1V) and ``Glm46VProcessor``
-    (GLM-4.6V / GLM-4.7V). Both ship identical media-token markers
-    (``<|image|>``, ``<|video|>``, ``<|begin_of_image|>``,
-    ``<|end_of_image|>``, ``<|begin_of_video|>``, ``<|end_of_video|>``);
-    the only upstream difference is the video-timestamp string format,
-    which doesn't affect masking.
+    """Shared strategy for Glm4vProcessor (GLM-4V / GLM-4.1V) and
+    Glm46VProcessor (GLM-4.6V / GLM-4.7V) — identical media-token markers.
 
-    Role boundaries NOT declared — GLM-4V role markers
-    (``<|assistant|>`` / ``<|user|>``) are unverified against a real
-    checkpoint. Users who need assistant-only masking should set
-    ``cfg.role_boundaries`` in YAML.
+    Role boundaries unverified; use cfg.role_boundaries to enable masking.
     """
 
     def __init__(
@@ -1208,23 +1186,15 @@ def get_processing_strategy(
             exc,
         )
 
-    # Register BOTH Glm4vProcessor (GLM-4V / GLM-4.1V) and Glm46VProcessor
-    # (GLM-4.6V / GLM-4.7V) — they ship the same image/video markers, so one
-    # strategy class covers both. Missing either registration would route a
-    # genuine processor to the base fallback (pad + media-only masking with
-    # a one-shot warning). Imports are independent try/except blocks so a
-    # missing module on an older transformers build doesn't disable the other.
+    # Both Glm4vProcessor and Glm46VProcessor share markers; route to the same
+    # strategy. Independent try/except so either can be absent.
     try:
         from transformers.models.glm4v.processing_glm4v import Glm4vProcessor
 
         if isinstance(processor, Glm4vProcessor):
             return Glm4vProcessingStrategy(**processing_kwargs)
     except (ImportError, ModuleNotFoundError) as exc:
-        LOG.debug(
-            "Glm4vProcessor import failed; Glm4v strategy will be unavailable "
-            "for GLM-4V / GLM-4.1V: %r",
-            exc,
-        )
+        LOG.debug("Glm4vProcessor import failed: %r", exc)
 
     try:
         from transformers.models.glm46v.processing_glm46v import Glm46VProcessor
@@ -1232,11 +1202,7 @@ def get_processing_strategy(
         if isinstance(processor, Glm46VProcessor):
             return Glm4vProcessingStrategy(**processing_kwargs)
     except (ImportError, ModuleNotFoundError) as exc:
-        LOG.debug(
-            "Glm46VProcessor import failed; Glm4v strategy will be unavailable "
-            "for GLM-4.6V / GLM-4.7V: %r",
-            exc,
-        )
+        LOG.debug("Glm46VProcessor import failed: %r", exc)
 
     if isinstance(processor, InternVLProcessor):
         return InternVLProcessingStrategy(**processing_kwargs)

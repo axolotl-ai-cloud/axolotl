@@ -169,7 +169,7 @@ class SFTDataset(BaseModel):
     train_on_eos: Literal["all", "turn", "last", "none"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation, none: never train on EOS tokens (the multimodal mask scanner honors this; see docs/multimodal_assistant_mask.md)"
+            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation, none: never train on EOS tokens"
         },
     )
     roles: dict[str, list[str]] | None = Field(

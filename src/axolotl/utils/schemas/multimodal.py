@@ -81,14 +81,9 @@ class MultiModalConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": (
-                "Opt-in override for the multimodal assistant-mask scanner's "
-                "per-role boundary markers. A non-empty list replaces the "
-                "strategy's built-in boundaries wholesale; leaving the field "
-                "unset (or setting it to an empty list) falls back to the "
-                "built-ins. Useful for enabling role masking on 'unverified' "
-                "strategies (Voxtral / SmolVLM2 / Mistral3 / InternVL / GLM4V) "
-                "without subclassing, or for fine-tuning the existing markers "
-                "for a custom chat template. See "
+                "Opt-in override for the MM mask scanner's per-role boundary "
+                "markers. Non-empty list replaces built-ins wholesale; unset "
+                "or empty falls back to built-ins. See "
                 "docs/multimodal_assistant_mask.md."
             )
         },
