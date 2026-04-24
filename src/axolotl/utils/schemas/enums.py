@@ -95,6 +95,7 @@ class CustomSupportedOptimizers(str, Enum):
     flash_sgd = "flash_sgd"
     flash_sgdw = "flash_sgdw"
     flash_lion = "flash_lion"
+    scao = "scao" 
 
 
 class RingAttnFunc(str, Enum):
