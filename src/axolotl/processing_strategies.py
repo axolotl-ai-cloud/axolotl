@@ -344,12 +344,14 @@ def _apply_role_boundaries(
     # unmask only the final one after the scan finishes.
     last_trainable_end_span: list[Optional[tuple[int, int]]] = [None] * labels.shape[0]
 
-    def _match_prefix(label, start_pos, tok_seq):
+    def _match_prefix(label: Tensor, start_pos: int, tok_seq: list[int]) -> bool:
         if not tok_seq or start_pos + len(tok_seq) > len(label):
             return False
         return label[start_pos : start_pos + len(tok_seq)].tolist() == tok_seq
 
-    def _find_end(label, start_pos, end_tok):
+    def _find_end(
+        label: Tensor, start_pos: int, end_tok: list[int]
+    ) -> tuple[int, bool]:
         # Empty end_tok means run to end-of-sequence.
         if not end_tok:
             return len(label), False

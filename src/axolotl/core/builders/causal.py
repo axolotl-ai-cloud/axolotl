@@ -522,6 +522,8 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
                 # Mirror ChatTemplateStrategy: per-dataset masking knobs from first MM dataset, else global cfg.
+                # NOTE: Multi-dataset configs use the first dataset's masking knobs for all datasets;
+                # heterogeneous per-dataset overrides are not supported in the MM path today.
                 ds_entries = self.cfg.datasets or []
                 ds_cfg = ds_entries[0] if ds_entries else None
 

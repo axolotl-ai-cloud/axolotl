@@ -63,9 +63,11 @@ builder.
    overridden by each subclass. `_mask_non_assistant` delegates to the
    scanner; if no boundaries are declared it short-circuits and emits a
    one-shot warning (legacy behavior preserved).
-4. **Plumbing**: `cfg.train_on_inputs`, the first dataset's `roles_to_train`
-   and `train_on_eos` are threaded through `build_collator` →
-   `get_processing_strategy` → each strategy's constructor.
+4. **Plumbing**: `cfg.train_on_inputs` (top-level) and the first dataset's
+   `roles_to_train` / `train_on_eos` (per-dataset, under `datasets[0]`) are
+   threaded through `build_collator` → `get_processing_strategy` → each
+   strategy's constructor. See *Where to put the masking knobs in YAML*
+   below — top-level `roles_to_train` / `train_on_eos` are silently ignored.
 
 ## Audit table
 
@@ -100,6 +102,71 @@ behavior and emits a one-shot warning naming the strategy class so the miss
 is visible in training logs. To enable role masking for one of these models,
 subclass the strategy and implement `_build_role_boundaries` — see the Gemma
 and Qwen implementations for the pattern.
+
+## Where to put the masking knobs in YAML
+
+`roles_to_train` and `train_on_eos` are **per-dataset** fields — they live
+under each entry of `datasets:` (and `test_datasets:`), not at the root of
+the config. Only `train_on_inputs` is read from the top level. The
+multimodal collator resolves the mask knobs in `build_collator` with:
+
+```python
+ds_cfg = (self.cfg.datasets or [None])[0]
+roles_to_train = _ds_get(ds_cfg, "roles_to_train")
+train_on_eos   = _ds_get(ds_cfg, "train_on_eos")
+# ... then passed to get_processing_strategy(..., roles_to_train, train_on_eos)
+```
+
+There is no fallback to a top-level `cfg.roles_to_train` / `cfg.train_on_eos`,
+and the schema (`ChatTemplateDatasetConfig` in `utils/schemas/datasets.py`)
+only defines these fields at the dataset level. If you put them at the root,
+they are silently ignored for the MM path.
+
+**Why this is a trap:** when the resolver returns `None`,
+`ProcessingStrategy.__init__` falls back to its defaults — `["assistant"]`
+and `"turn"` — which happen to be what most users want. So the loss *looks*
+correctly masked to assistant-only, but the declared intent in the YAML is
+dead code. Any future change to those defaults, or to a non-default value
+the user intended to set, will silently flip the behavior.
+
+### Correct placement
+
+```yaml
+# Top-level: only train_on_inputs lives here.
+train_on_inputs: false
+
+datasets:
+  - path: data/train.jsonl
+    type: chat_template
+    roles_to_train:          # per-dataset — this is what the MM scanner reads
+      - assistant
+    train_on_eos: turn       # per-dataset — same
+
+test_datasets:
+  - path: data/val.jsonl
+    type: chat_template
+    split: train
+    roles_to_train:
+      - assistant
+    train_on_eos: turn
+```
+
+### How to verify at runtime
+
+`build_collator` logs the resolved knobs at INFO:
+
+```
+MM collator: train_on_inputs=False roles_to_train=['assistant'] train_on_eos=turn role_boundaries_override=none
+```
+
+If `roles_to_train` logs as `None`, the YAML knobs are not reaching the
+scanner — check that they are under `datasets[0]`, not at the root.
+
+Each verified strategy additionally logs its resolved boundary token ids at
+strategy init (e.g. `<|turn>model` → `[105, 4368]`, `<turn|>` → `[106]` for
+Gemma 4). If a strategy emits the "legacy behavior, role masking disabled"
+one-shot warning instead, it is on the fallback path — use
+`cfg.role_boundaries` (below) to activate masking.
 
 ## Config-based override: `cfg.role_boundaries`
 
@@ -151,21 +218,21 @@ this revision the logical units are:
 2. **`feat: thread cfg.train_on_inputs / roles_to_train / train_on_eos into
    MM collator`** — `build_collator` reads the knobs from `cfg` and the
    first dataset entry and passes them to `get_processing_strategy`.
-4. **`docs: multimodal assistant-mask design doc`** — this file.
-5. **`feat: cfg.role_boundaries YAML override for MM role-mask scanner`** —
+3. **`docs: multimodal assistant-mask design doc`** — this file.
+4. **`feat: cfg.role_boundaries YAML override for MM role-mask scanner`** —
    schema field (`MultiModalConfig.role_boundaries`), resolver that converts
    string markers to token ids at strategy init, ``eos_token`` sentinel, and
    wiring through ``build_collator`` / ``get_processing_strategy`` /
    every strategy constructor.
-6. **`test: additional coverage for MM role-mask scanner edge cases`** —
+5. **`test: additional coverage for MM role-mask scanner edge cases`** —
    expands the unit test suite covering scanner semantics, per-strategy
    masking, media-token masking within assistant spans, dispatcher
    routing, and override semantics (replace built-in, enable on unverified
    strategy, eos_token sentinel, null end, validation errors, pydantic
    model input).
-7. **`chore: tighten docstrings and comments in multimodal mask refactor`**
+6. **`chore: tighten docstrings and comments in multimodal mask refactor`**
    — no-behavior-change polish.
-8. **`fix: resolve MM per-dataset masking knobs for pydantic SFTDataset`**
+7. **`fix: resolve MM per-dataset masking knobs for pydantic SFTDataset`**
    — `build_collator` resolver now uses `.get` → `getattr` fallback so
    `roles_to_train` / `train_on_eos` are honored when datasets are supplied
    as pydantic models (not just `DictDefault`). Adds an INFO log of the
