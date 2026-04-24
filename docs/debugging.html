@@ -914,8 +914,9 @@ If you prefer to watch a video, rather than read, you can skip to the <a href="#
 <h3 class="anchored" data-anchor-id="setup">Setup</h3>
 <p>Make sure you have an <a href="https://setuptools.pypa.io/en/latest/userguide/development_mode.html">editable install</a> of Axolotl, which ensures that changes you make to the code are reflected at runtime. Run the following commands from the root of this project:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> sync <span class="at">--extra</span> flash-attn <span class="at">--extra</span> deepspeed <span class="at">--group</span> dev <span class="at">--group</span> test</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--no-project</span> <span class="at">--relocatable</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[deepspeed]'</span> <span class="at">--group</span> dev <span class="at">--group</span> test</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <section id="remote-hosts" class="level4">
 <h4 class="anchored" data-anchor-id="remote-hosts">Remote Hosts</h4>
 <p>If you developing on a remote host, you can easily use VSCode to debug remotely. To do so, you will need to follow this <a href="https://code.visualstudio.com/docs/remote/ssh">remote - SSH guide</a>. You can also see the video below on <a href="#video---attaching-to-docker-on-remote-host">Docker and Remote SSH debugging</a>.</p>
@@ -1035,8 +1036,9 @@ If you already have axolotl cloned on your host, make sure you have the latest c
 To understand which containers are available, see the <a href="../README.md#docker">Docker section of the README</a> and the <a href="https://hub.docker.com/r/axolotlai/axolotl/tags">DockerHub repo</a>. For details of how the Docker containers are built, see axolotl’s <a href="../.github/workflows/main.yml">Docker CI builds</a>.</p>
 </blockquote>
 <p>You will now be in the container. Next, install Axolotl with dev dependencies:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> sync <span class="at">--extra</span> flash-attn <span class="at">--extra</span> deepspeed <span class="at">--group</span> dev <span class="at">--group</span> test</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv <span class="at">--no-project</span> <span class="at">--relocatable</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[deepspeed]'</span> <span class="at">--group</span> dev <span class="at">--group</span> test</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="attach-to-container" class="level3">
 <h3 class="anchored" data-anchor-id="attach-to-container">Attach To Container</h3>

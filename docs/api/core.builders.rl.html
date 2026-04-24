@@ -820,8 +820,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFRLTrainerBuilder">HFRLTrainerBuilder</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFRLTrainerBuilder(cfg, model, tokenizer, processor<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Trainer factory class for TRL-based RLHF trainers (e.g.&nbsp;DPO)</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.core.builders.rl.HFRLTrainerBuilder.build_collator">build_collator</a></td>
+<td>Build a data collator for preference-tuning trainers.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.core.builders.rl.HFRLTrainerBuilder.build_collator" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.core.builders.rl.HFRLTrainerBuilder.build_collator">build_collator</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>core.builders.rl.HFRLTrainerBuilder.build_collator(<span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Build a data collator for preference-tuning trainers.</p>
+<p>Returns None for RL types that provide their own collator (e.g.&nbsp;GRPO,
+KTO), letting the trainer construct its default. For DPO/IPO/ORPO/SIMPO
+returns an <code>AxolotlDPODataCollatorWithPadding</code> when
+<code>pad_to_multiple_of</code> is set, otherwise None (so the trainer
+falls back to the TRL default).</p>
 
 
+</section>
+</section>
 </section>
 </section>
 </section>
