@@ -13,7 +13,7 @@ This guide shows how to fine-tune SmolVLM2 models with Axolotl.
     Here is an example of how to install from pip:
     ```bash
     # Ensure you have a compatible version of Pytorch installed
-    uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+    uv pip install --no-build-isolation 'axolotl>=0.16.1'
     ```
 
 2. Install an extra dependency:

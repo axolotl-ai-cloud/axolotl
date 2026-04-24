@@ -9,11 +9,11 @@ Tencent released a family of opensource models called HunYuan with varying param
     Here is an example of how to install from main for pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.6.0 min)
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-uv pip install --no-build-isolation -e '.[flash-attn]'
+uv pip install --no-build-isolation -e '.'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh

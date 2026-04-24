@@ -1016,7 +1016,7 @@ class AxolotlInputConfig(
     torch_compile: Literal["auto"] | bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.6.0"
+            "description": "Whether to use torch.compile and which backend to use."
         },
     )
     torch_compile_backend: str | None = Field(

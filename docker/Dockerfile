@@ -24,9 +24,9 @@ WORKDIR /workspace/axolotl
 # If AXOLOTL_EXTRAS is set, append it in brackets; don't install deepspeed with arm64
 RUN pip uninstall -y causal_conv1d
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        BASE_EXTRAS="flash-attn,ring-flash-attn,optimizers,ray"; \
+        BASE_EXTRAS="optimizers,ray"; \
     else \
-        BASE_EXTRAS="deepspeed,flash-attn,ring-flash-attn,optimizers,ray"; \
+        BASE_EXTRAS="deepspeed,optimizers,ray"; \
     fi && \
     if [ "$AXOLOTL_EXTRAS" != "" ]; then \
         pip install --no-build-isolation -e .[$BASE_EXTRAS,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \

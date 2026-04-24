@@ -13,10 +13,17 @@ This section describes the different Docker images that are released by AxolotlA
 For Blackwell GPUs, please use the tags with PyTorch 2.9.1 and CUDA 12.8.
 :::
 
-::: {.callout-tip}
-Each image below is available in a **uv variant** that uses [uv](https://docs.astral.sh/uv/) with
-a relocatable venv (`/workspace/axolotl-venv`) instead of Miniconda + pip. Append `-uv` to the image name
-(e.g. `axolotlai/axolotl-base-uv`). Tags follow the same format. We recommend the uv images for new deployments.
+::: {.callout-important}
+### Switch to the `-uv` images
+
+Each image below ships a **uv variant** that uses [uv](https://docs.astral.sh/uv/) with a relocatable venv
+(`/workspace/axolotl-venv`) instead of Miniconda + pip. Append `-uv` to the image name
+(e.g. `axolotlai/axolotl-uv`, `axolotlai/axolotl-base-uv`, `axolotlai/axolotl-cloud-uv`). Tags follow the
+same format as their non-uv counterparts.
+
+**We recommend switching to the `-uv` images early.** In the near future we will publish the uv-based
+build to the non-uv tags as well. The non-uv names will continue to work, but they will start serving
+the uv image.
 :::
 
 ## Base
@@ -85,7 +92,7 @@ Tags examples:
 - `main-py3.12-cu130-2.10.0`
 - `main-latest`
 - `main-20260315-py3.11-cu128-2.9.1`
-- `0.12.0`
+- `0.16.1`
 
 ## Cloud
 
