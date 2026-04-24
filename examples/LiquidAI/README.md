@@ -15,7 +15,7 @@ Thanks to the team at LiquidAI for giving us early access to prepare for these r
     Here is an example of how to install from pip:
     ```bash
     # Ensure you have a compatible version of Pytorch installed
-    uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.16.1'
+    uv pip install --no-build-isolation 'axolotl>=0.16.1'
     ```
 
 2.  Run one of the finetuning examples below.

@@ -15,7 +15,7 @@ This guide shows how to fine-tune it with Axolotl with multi-turn conversations 
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 
-uv pip install --no-build-isolation -e '.[flash-attn]'
+uv pip install --no-build-isolation -e '.'
 
 # Install CCE https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy
 python scripts/cutcrossentropy_install.py | sh

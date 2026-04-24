@@ -10,7 +10,7 @@ Gemma-3n is a family of multimodal models from Google found on [HuggingFace](htt
 
 ```bash
 # Ensure you have Pytorch installed (Pytorch 2.9.1 min)
-uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.16.1'
+uv pip install --no-build-isolation 'axolotl>=0.16.1'
 ```
 
 2. In addition to Axolotl's requirements, Gemma-3n requires:

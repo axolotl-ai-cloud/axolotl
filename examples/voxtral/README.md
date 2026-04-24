@@ -12,7 +12,7 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
 ```bash
 # Ensure you have Pytorch installed (Pytorch 2.9.1 min)
-uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.16.1'
+uv pip install --no-build-isolation 'axolotl>=0.16.1'
 ```
 
 2. Please install the below.
