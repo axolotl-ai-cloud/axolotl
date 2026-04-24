@@ -54,8 +54,10 @@ python setup.py install
 
 Requirements: Hopper or Blackwell GPUs
 
+FA4 is still a pre-release on PyPI, so `--pre` is required:
+
 ```bash
-pip install flash-attn-4
+pip install --pre flash-attn-4
 ```
 
 Or from source:
