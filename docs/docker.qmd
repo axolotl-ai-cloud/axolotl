@@ -10,10 +10,6 @@ This section describes the different Docker images that are released by AxolotlA
 [Docker Hub](https://hub.docker.com/u/axolotlai).
 
 ::: {.callout-important}
-For Blackwell GPUs, please use the tags with PyTorch 2.9.1 and CUDA 12.8.
-:::
-
-::: {.callout-important}
 ### Switch to the `-uv` images
 
 Each image below ships a **uv variant** that uses [uv](https://docs.astral.sh/uv/) with a relocatable venv
