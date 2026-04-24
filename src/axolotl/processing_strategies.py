@@ -91,7 +91,14 @@ class ProcessingStrategy:
 
         built_in = self._build_role_boundaries()
 
-        if role_boundaries_override is not None:
+        # Truthiness (not ``is not None``) — an empty list is treated the same
+        # as an unset field: fall back to the strategy's built-in boundaries.
+        # Rationale: ``role_boundaries`` is an opt-in user escape hatch for
+        # unsupported / custom templates; writing ``role_boundaries: []`` in
+        # YAML is almost always a typo or leftover, and honoring it literally
+        # would produce all-masked labels (zero gradient). Users who truly
+        # want "no role masking" should omit the field entirely.
+        if role_boundaries_override:
             overridden = _resolve_role_boundary_override(
                 role_boundaries_override, self.processor.tokenizer
             )
@@ -297,12 +304,15 @@ class ProcessingStrategy:
             if key not in _ROLE_MASK_WARNED:
                 _ROLE_MASK_WARNED.add(key)
                 LOG.warning(
-                    "%s does not declare role boundaries; "
+                    "%s has no built-in role boundaries; "
                     "cfg.train_on_inputs / cfg.roles_to_train / cfg.train_on_eos "
-                    "will not restrict loss to assistant tokens for this "
-                    "multimodal model. Only pad and media tokens are masked. "
-                    "See axolotl/processing_strategies.py for how to declare "
-                    "boundaries.",
+                    "will NOT restrict loss to assistant tokens for this "
+                    "multimodal model — only pad and media tokens are masked, "
+                    "every other token (system, user, assistant) contributes "
+                    "to loss. To enable assistant-only masking, declare "
+                    "per-role markers in YAML via cfg.role_boundaries — see "
+                    "docs/multimodal_assistant_mask.md for the format and the "
+                    "list of strategies on this fallback path.",
                     key,
                 )
             return labels

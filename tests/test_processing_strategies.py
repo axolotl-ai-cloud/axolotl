@@ -4,6 +4,7 @@ import logging
 
 import pytest
 import torch
+from pydantic import ValidationError
 
 from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
@@ -205,6 +206,46 @@ def test_strategy_accepts_all_supported_train_on_eos_values():
                 {"role": "assistant", "start": "BOA", "end": "EOT"}
             ],
         )
+
+
+def test_empty_role_boundaries_override_falls_back_to_builtin():
+    """``role_boundaries`` is opt-in: an empty list must be treated as unset.
+
+    Rationale lives in ProcessingStrategy.__init__. Locking this in because the
+    doc promises "non-empty list replaces built-ins; empty / unset keeps them."
+    """
+    vocab = {
+        "<|im_start|>assistant\n": [101, 102, 103],
+        "<|im_start|>user\n": [101, 106, 103],
+        "<|im_end|>": [104],
+    }
+    strat_empty = Qwen2VLProcessingStrategy(
+        _Processor(_Tokenizer(vocab, pad_id=0)),
+        role_boundaries_override=[],
+    )
+    strat_default = Qwen2VLProcessingStrategy(
+        _Processor(_Tokenizer(vocab, pad_id=0)),
+    )
+    # Empty override === no override: both strategies keep the built-in boundaries.
+    assert strat_empty.role_boundaries == strat_default.role_boundaries
+    assert len(strat_empty.role_boundaries) > 0  # sanity: built-ins are non-empty
+
+
+def test_sft_dataset_schema_accepts_all_supported_train_on_eos_values():
+    """SFTDataset.train_on_eos must accept every value the scanner honors.
+
+    Regression: schema previously declared ``Literal["all", "turn", "last"]``,
+    so ``train_on_eos: none`` raised a pydantic ValidationError at config-load
+    time and users could never reach the scanner's documented ``"none"`` branch.
+    """
+    from axolotl.utils.schemas.datasets import SFTDataset
+
+    for val in ("all", "turn", "last", "none"):
+        ds = SFTDataset(path="dummy", type="chat_template", train_on_eos=val)
+        assert ds.train_on_eos == val
+
+    with pytest.raises(ValidationError):
+        SFTDataset(path="dummy", type="chat_template", train_on_eos="bogus")
 
 
 def test_strategy_init_logs_resolved_masking_config_builtin(axolotl_caplog):

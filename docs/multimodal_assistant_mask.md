@@ -164,9 +164,11 @@ scanner — check that they are under `datasets[0]`, not at the root.
 
 Each verified strategy additionally logs its resolved boundary token ids at
 strategy init (e.g. `<|turn>model` → `[105, 4368]`, `<turn|>` → `[106]` for
-Gemma 4). If a strategy emits the "legacy behavior, role masking disabled"
-one-shot warning instead, it is on the fallback path — use
-`cfg.role_boundaries` (below) to activate masking.
+Gemma 4). If a strategy emits the "has no built-in role boundaries ... only
+pad and media tokens are masked" one-shot warning instead, it is on the
+fallback path — declare per-role markers in YAML via `cfg.role_boundaries`
+(below) to activate masking. The strategies currently on this path are
+listed in the audit table above under `fallback + warn`.
 
 ## Config-based override: `cfg.role_boundaries`
 
@@ -196,9 +198,13 @@ Semantics:
   resolved token-id sequences at INFO level.
 - The special value `end: eos_token` is the portable way to express
   "Pixtral-style assistant turns end at EOS" without hard-coding an id.
-- When `role_boundaries` is set, it **replaces** the strategy's built-in
-  declarations wholesale. This is intentional: partial overlays are hard to
-  reason about at review time.
+- `role_boundaries` is an **opt-in override**. A non-empty list **replaces**
+  the strategy's built-in declarations wholesale (partial overlays are
+  intentionally unsupported — they're hard to reason about at review time).
+  Leaving the field unset *or* setting it to an empty list (`[]`) both mean
+  "use the strategy's built-ins." Writing `role_boundaries: []` is almost
+  always a typo or leftover — honoring it literally would produce all-masked
+  labels and zero gradient, so it is treated the same as unset.
 - `cfg.roles_to_train` still governs which declared roles contribute to
   loss. You can declare `user` and `assistant` boundaries and set
   `roles_to_train: ["assistant"]` to have the scanner correctly identify
