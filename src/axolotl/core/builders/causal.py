@@ -547,14 +547,19 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 if self.cfg.role_boundaries:
                     role_boundaries_override = list(self.cfg.role_boundaries)
 
-                LOG.info(
-                    "MM collator: train_on_inputs=%s roles_to_train=%s "
-                    "train_on_eos=%s role_boundaries_override=%s",
-                    bool(self.cfg.train_on_inputs),
-                    roles_to_train,
-                    train_on_eos,
-                    "set" if role_boundaries_override else "none",
-                )
+                # HFCausalTrainerBuilder.build() calls build_collator twice
+                # (once is_eval=True, once for training); log only on the
+                # training pass so users see a single authoritative line
+                # instead of two identical banners during startup diagnosis.
+                if not is_eval:
+                    LOG.info(
+                        "MM collator: train_on_inputs=%s roles_to_train=%s "
+                        "train_on_eos=%s role_boundaries_override=%s",
+                        bool(self.cfg.train_on_inputs),
+                        roles_to_train,
+                        train_on_eos,
+                        "set" if role_boundaries_override else "none",
+                    )
 
                 kwargs["processing_strategy"] = get_processing_strategy(
                     self.processor,

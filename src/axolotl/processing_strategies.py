@@ -414,7 +414,11 @@ def _apply_role_boundaries(
                     last_trainable_end_span[i] = (content_end, end_after)
             else:
                 # Non-trainable role: only the end marker can contribute, and only on train_on_eos="all".
-                if found_end and train_on_eos == "all":
+                # Gate on include_end to mirror the trainable branch: a boundary
+                # that declares include_end=False (e.g. Pixtral / Mistral V7
+                # Tekken user, whose [/INST] end is shared with assistant-start)
+                # must not leak its end marker into loss via the "all" path.
+                if found_end and best_match.include_end and train_on_eos == "all":
                     content_end = end_after - len(best_match.end_tokens)
                     mask[i][content_end:end_after] = 1
 
@@ -643,19 +647,33 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
         )
-        # Gemma3 uses boi_token as the image placeholder.
-        special_tokens_map = (
-            getattr(processor.tokenizer, "special_tokens_map", {}) or {}
-        )
-        boi = special_tokens_map.get("boi_token")
+        # Gemma3 uses boi_token as the image placeholder. Real Gemma3
+        # tokenizers expose it as a direct attribute (set from
+        # tokenizer_config.json init_kwargs), not as a key in
+        # ``special_tokens_map`` — that dict only holds HF's standard slots
+        # (bos/eos/pad/unk/...). Verified against transformers
+        # ``models/gemma3/processing_gemma3.py`` which reads ``tokenizer.boi_token``
+        # directly.
+        boi = getattr(processor.tokenizer, "boi_token", None)
         if boi is not None:
             self.image_token = boi
             self.image_token_id = processor.tokenizer.convert_tokens_to_ids(boi)
 
     def process_labels(self, input_ids):
         labels = super().process_labels(input_ids)
-        # Gemma3-specific <image_soft_token> id; not exposed as a tokenizer attribute.
-        labels[labels == 262144] = -100
+        # Gemma3 soft image token. Resolve via tokenizer for robustness against
+        # vocab shifts (custom fine-tunes, added specials, upstream retokenization).
+        # Falls back to the known default id if the token isn't in vocab, so the
+        # strategy still does the right thing on a stock checkpoint where the
+        # string lookup returns unk. Mirrors Gemma4's convert_tokens_to_ids +
+        # unk-id guard pattern.
+        tok = self.processor.tokenizer
+        soft_id = tok.convert_tokens_to_ids("<image_soft_token>")
+        unk_id = getattr(tok, "unk_token_id", None)
+        if soft_id is not None and soft_id != unk_id:
+            labels[labels == soft_id] = -100
+        else:
+            labels[labels == 262144] = -100
         return labels
 
 
@@ -1044,10 +1062,18 @@ class InternVLProcessingStrategy(ProcessingStrategy):
 
 
 class Glm4vProcessingStrategy(ProcessingStrategy):
-    """Processing Strategy class for GLM4V / GLM4V-MoE.
+    """Processing Strategy class for the GLM-4V family — covers both
+    ``Glm4vProcessor`` (GLM-4V / GLM-4.1V) and ``Glm46VProcessor``
+    (GLM-4.6V / GLM-4.7V). Both ship identical media-token markers
+    (``<|image|>``, ``<|video|>``, ``<|begin_of_image|>``,
+    ``<|end_of_image|>``, ``<|begin_of_video|>``, ``<|end_of_video|>``);
+    the only upstream difference is the video-timestamp string format,
+    which doesn't affect masking.
 
-    Role boundaries NOT declared — GLM4V markers (``<|assistant|>`` /
-    ``<|user|>``) unverified against a real checkpoint.
+    Role boundaries NOT declared — GLM-4V role markers
+    (``<|assistant|>`` / ``<|user|>``) are unverified against a real
+    checkpoint. Users who need assistant-only masking should set
+    ``cfg.role_boundaries`` in YAML.
     """
 
     def __init__(
@@ -1182,6 +1208,24 @@ def get_processing_strategy(
             exc,
         )
 
+    # Register BOTH Glm4vProcessor (GLM-4V / GLM-4.1V) and Glm46VProcessor
+    # (GLM-4.6V / GLM-4.7V) — they ship the same image/video markers, so one
+    # strategy class covers both. Missing either registration would route a
+    # genuine processor to the base fallback (pad + media-only masking with
+    # a one-shot warning). Imports are independent try/except blocks so a
+    # missing module on an older transformers build doesn't disable the other.
+    try:
+        from transformers.models.glm4v.processing_glm4v import Glm4vProcessor
+
+        if isinstance(processor, Glm4vProcessor):
+            return Glm4vProcessingStrategy(**processing_kwargs)
+    except (ImportError, ModuleNotFoundError) as exc:
+        LOG.debug(
+            "Glm4vProcessor import failed; Glm4v strategy will be unavailable "
+            "for GLM-4V / GLM-4.1V: %r",
+            exc,
+        )
+
     try:
         from transformers.models.glm46v.processing_glm46v import Glm46VProcessor
 
@@ -1189,7 +1233,8 @@ def get_processing_strategy(
             return Glm4vProcessingStrategy(**processing_kwargs)
     except (ImportError, ModuleNotFoundError) as exc:
         LOG.debug(
-            "Glm46VProcessor import failed; Glm4v strategy will be unavailable: %r",
+            "Glm46VProcessor import failed; Glm4v strategy will be unavailable "
+            "for GLM-4.6V / GLM-4.7V: %r",
             exc,
         )
 

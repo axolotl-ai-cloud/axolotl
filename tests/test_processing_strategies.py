@@ -127,6 +127,34 @@ def test_scanner_train_on_eos_all_keeps_non_assistant_end_marker():
     assert out == [-100, -100, -100, 9, -100, -100, 8, 9]
 
 
+def test_scanner_train_on_eos_all_with_non_trainable_include_end_false():
+    """Non-trainable role with ``include_end=False`` must NOT leak its end
+    marker into loss under ``train_on_eos="all"``. Scanner-level lock-in for
+    the Pixtral / Mistral V7 Tekken shared-token case: the trainable branch
+    already gates on ``include_end``; the non-trainable branch must mirror it.
+
+    Regression for the bug where ``[/INST]`` (user-end with include_end=False,
+    shared with assistant-start) leaked into loss on ``train_on_eos="all"``.
+    """
+    boundaries = [
+        RoleBoundary(
+            role="user",
+            start_tokens=[50],
+            end_tokens=[51],
+            include_end=False,  # shared with assistant-start
+        ),
+        RoleBoundary(
+            role="assistant",
+            start_tokens=[51],
+            end_tokens=[99],  # eos
+        ),
+    ]
+    seq = [50, 7, 51, 8, 8, 99]  # [INST] 7 [/INST] 8 8 EOS
+    out = _scan(boundaries, seq, roles_to_train=("assistant",), train_on_eos="all")
+    # [/INST] at idx 2 must stay masked — user.include_end=False says so.
+    assert out == [-100, -100, -100, 8, 8, 99]
+
+
 def test_scanner_roles_to_train_user_and_assistant():
     boundaries = [
         RoleBoundary(role="assistant", start_tokens=[1, 2], end_tokens=[9]),
@@ -397,7 +425,10 @@ def _gemma_tokenizer():
         "<start_of_image>": [50],  # boi_token for Gemma3
     }
     tok = _Tokenizer(vocab, pad_id=0)
-    tok.special_tokens_map = {"boi_token": "<start_of_image>"}
+    # Real Gemma3 tokenizers expose boi_token as a direct attribute (set from
+    # tokenizer_config.json init_kwargs), not via special_tokens_map. Mirror
+    # that shape here so the test exercises the production code path.
+    tok.boi_token = "<start_of_image>"
     return tok
 
 
@@ -619,15 +650,51 @@ def test_mistral_v7_tekken_system_user_assistant():
     assert out == [-100, -100, -100, -100, -100, -100, 8, 99]
 
 
+def test_pixtral_train_on_eos_all_respects_user_include_end_false():
+    """Regression: non-trainable role's end marker must respect include_end=False.
+
+    [/INST] is shared between user-end (include_end=False so it can be re-matched
+    as assistant-start) and assistant-start. Without gating the non-trainable
+    branch on include_end, train_on_eos='all' leaks [/INST] into loss via the
+    user branch — contradicting the boundary's own "don't include end" flag.
+    """
+    vocab = {"[INST]": [50], "[/INST]": [51]}
+    tok = _Tokenizer(vocab, pad_id=0, eos_id=99)
+    strategy = PixtralProcessingStrategy(_Processor(tok), train_on_eos="all")
+    seq = [50, 7, 51, 8, 8, 99]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # [/INST] at idx 2 must stay masked — user.include_end=False says so.
+    # Assistant content (8, 8) + EOS (99) are unmasked as normal.
+    assert out == [-100, -100, -100, 8, 8, 99]
+
+
+def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
+    """Same asymmetry as the Pixtral case, with system + user + assistant.
+
+    System end marker [/SYSTEM_PROMPT] has include_end=True (default) so it
+    *should* be unmasked under train_on_eos='all'. The user's [/INST] must
+    NOT be unmasked despite also being an end marker, because user declares
+    include_end=False so the scanner can rewind and re-match it as
+    assistant-start.
+    """
+    vocab = {
+        "[SYSTEM_PROMPT]": [40],
+        "[/SYSTEM_PROMPT]": [41],
+        "[INST]": [50],
+        "[/INST]": [51],
+    }
+    tok = _Tokenizer(vocab, pad_id=0, eos_id=99)
+    strategy = MistralV7TekkenProcessingStrategy(_Processor(tok), train_on_eos="all")
+    seq = [40, 5, 41, 50, 7, 51, 8, 99]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # system content masked, [/SYSTEM_PROMPT]=41 kept (include_end=True + all);
+    # user + [/INST]=51 masked (include_end=False); assistant 8 + eos 99 kept.
+    assert out == [-100, -100, 41, -100, -100, -100, 8, 99]
+
+
 # --------------------------------------------------------------------------- #
 # Dispatcher routing
 # --------------------------------------------------------------------------- #
-
-
-@pytest.fixture
-def _mistral_common_stub():
-    # Placeholder; dispatcher lazy-imports Mistral3Processor and degrades gracefully.
-    return None
 
 
 def _dispatch(processor, chat_template_type):
@@ -638,32 +705,32 @@ def _dispatch(processor, chat_template_type):
     )
 
 
-def test_dispatch_qwen2_vl(_mistral_common_stub):
+def test_dispatch_qwen2_vl():
     s = _dispatch(_Processor(_qwen_tokenizer()), "qwen2_vl")
     assert isinstance(s, Qwen2VLProcessingStrategy)
 
 
-def test_dispatch_qwen3_5(_mistral_common_stub):
+def test_dispatch_qwen3_5():
     s = _dispatch(_Processor(_qwen_tokenizer()), "qwen3_5")
     assert isinstance(s, Qwen3_5ProcessingStrategy)
 
 
-def test_dispatch_gemma3(_mistral_common_stub):
+def test_dispatch_gemma3():
     s = _dispatch(_Processor(_gemma_tokenizer()), "gemma3")
     assert isinstance(s, Gemma3ProcessingStrategy)
 
 
-def test_dispatch_gemma3n(_mistral_common_stub):
+def test_dispatch_gemma3n():
     s = _dispatch(_Processor(_gemma_tokenizer()), "gemma3n")
     assert isinstance(s, Gemma3nProcessingStrategy)
 
 
-def test_dispatch_gemma4(_mistral_common_stub):
+def test_dispatch_gemma4():
     s = _dispatch(_FakeGemma4Processor(), "gemma4")
     assert isinstance(s, Gemma4ProcessingStrategy)
 
 
-def test_dispatch_llama3_2_vision(_mistral_common_stub):
+def test_dispatch_llama3_2_vision():
     vocab = {
         "<|start_header_id|>assistant<|end_header_id|>\n\n": [1, 2, 3, 4, 5],
         "<|eot_id|>": [10],
@@ -672,7 +739,7 @@ def test_dispatch_llama3_2_vision(_mistral_common_stub):
     assert isinstance(s, Llama3_2VisionProcessingStrategy)
 
 
-def test_dispatch_llama4(_mistral_common_stub):
+def test_dispatch_llama4():
     vocab = {
         "<|header_start|>assistant<|header_end|>\n\n": [20, 21, 22, 23],
         "<|eot|>": [30],
@@ -681,13 +748,13 @@ def test_dispatch_llama4(_mistral_common_stub):
     assert isinstance(s, Llama4ProcessingStrategy)
 
 
-def test_dispatch_pixtral(_mistral_common_stub):
+def test_dispatch_pixtral():
     vocab = {"[INST]": [50], "[/INST]": [51]}
     s = _dispatch(_Processor(_Tokenizer(vocab, pad_id=0, eos_id=99)), "pixtral")
     assert isinstance(s, PixtralProcessingStrategy)
 
 
-def test_dispatch_mistral_v7_tekken(_mistral_common_stub):
+def test_dispatch_mistral_v7_tekken():
     vocab = {
         "[INST]": [50],
         "[/INST]": [51],
@@ -700,10 +767,70 @@ def test_dispatch_mistral_v7_tekken(_mistral_common_stub):
     assert isinstance(s, MistralV7TekkenProcessingStrategy)
 
 
-def test_dispatch_unknown_falls_back_to_base(_mistral_common_stub):
+def test_dispatch_unknown_falls_back_to_base():
     vocab = {"dummy": [1]}
     s = _dispatch(_Processor(_Tokenizer(vocab, pad_id=0)), "llava")
     assert type(s) is ProcessingStrategy
+
+
+def _glm_vision_processor(cls_path):
+    """Build a spec'd MagicMock so isinstance(mock, cls) passes offline.
+
+    The dispatcher does ``isinstance(processor, <HF class>)``; we don't want
+    to instantiate a real HF processor (needs image_processor + tokenizer
+    files on disk), so mock the class with ``spec=``.
+    """
+    from importlib import import_module
+    from unittest.mock import MagicMock
+
+    mod_name, cls_name = cls_path.rsplit(".", 1)
+    cls = getattr(import_module(mod_name), cls_name)
+
+    vocab = {
+        "<|image|>": [200],
+        "<|begin_of_image|>": [201],
+        "<|end_of_image|>": [202],
+        "<|video|>": [210],
+        "<|begin_of_video|>": [211],
+        "<|end_of_video|>": [212],
+    }
+    tok = _Tokenizer(vocab, pad_id=0)
+    proc = MagicMock(spec=cls)
+    proc.tokenizer = tok
+    # Base ProcessingStrategy.__init__ probes ``processor.image_token``; the
+    # Glm4v strategy reads tokenizer attributes directly, so drop the attribute
+    # on the mock to skip the base-class path.
+    del proc.image_token
+    return proc
+
+
+def test_dispatch_glm4v_via_Glm4vProcessor():
+    """Regression: Glm4vProcessor (GLM-4V / GLM-4.1V) must route to
+    Glm4vProcessingStrategy. Previously only Glm46VProcessor was registered,
+    so genuine GLM-4V processors fell through to the base ProcessingStrategy.
+    """
+    pytest.importorskip("transformers.models.glm4v.processing_glm4v")
+    from axolotl.processing_strategies import Glm4vProcessingStrategy
+
+    proc = _glm_vision_processor(
+        "transformers.models.glm4v.processing_glm4v.Glm4vProcessor"
+    )
+    s = _dispatch(proc, None)
+    assert isinstance(s, Glm4vProcessingStrategy)
+
+
+def test_dispatch_glm4v_via_Glm46VProcessor():
+    """Glm46VProcessor (GLM-4.6V / GLM-4.7V) also routes to the shared
+    Glm4vProcessingStrategy — same media-token markers as GLM-4V.
+    """
+    pytest.importorskip("transformers.models.glm46v.processing_glm46v")
+    from axolotl.processing_strategies import Glm4vProcessingStrategy
+
+    proc = _glm_vision_processor(
+        "transformers.models.glm46v.processing_glm46v.Glm46VProcessor"
+    )
+    s = _dispatch(proc, None)
+    assert isinstance(s, Glm4vProcessingStrategy)
 
 
 # --------------------------------------------------------------------------- #
