@@ -545,6 +545,14 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 if self.cfg.role_boundaries:
                     role_boundaries_override = list(self.cfg.role_boundaries)
 
+                # Deduped union of per-dataset `field_messages` so custom
+                # conversation column names are honored by the MM collator.
+                field_messages = []
+                for dataset_cfg in ds_entries:
+                    field_message = _ds_get(dataset_cfg, "field_messages")
+                    if field_message and field_message not in field_messages:
+                        field_messages.append(field_message)
+
                 # build() calls build_collator twice (eval + train); log once.
                 if not is_eval:
                     LOG.info(
@@ -566,6 +574,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                     roles_to_train=roles_to_train,
                     train_on_eos=train_on_eos,
                     role_boundaries_override=role_boundaries_override,
+                    field_messages=field_messages or None,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
