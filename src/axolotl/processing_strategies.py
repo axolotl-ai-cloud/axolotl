@@ -152,25 +152,35 @@ class ProcessingStrategy:
         return tuple(field for field in field_messages if field)
 
     def _get_messages_field(self, example: dict) -> str | None:
-        if "messages" in example and example["messages"] is not None:
-            return "messages"
+        # Honor an explicitly configured `field_messages` first so a stale
+        # "messages" column on the row cannot silently override the user's
+        # intent. When `field_messages` is left at its default of
+        # ("messages",) this collapses back to the previous behavior.
         for field in self.field_messages:
             if field in example and example[field] is not None:
                 return field
+        if "messages" in example and example["messages"] is not None:
+            return "messages"
         return None
 
     @staticmethod
     def _is_legacy_schema(messages) -> bool:
-        """Detect ShareGPT-style schema by inspecting the first message."""
+        """Detect ShareGPT-style schema by inspecting the first message.
+
+        Both `from` and `value` must be present so that rows whose first
+        message merely happens to carry a `from` key (e.g., custom metadata)
+        are not misrouted into the legacy conversion branch.
+        """
         return (
             isinstance(messages, list)
             and bool(messages)
             and isinstance(messages[0], dict)
             and "from" in messages[0]
+            and "value" in messages[0]
         )
 
     def __call__(self, examples: list[dict]) -> list[dict]:
-        """Normalize examples to OpenAI ``messages`` format (accepts legacy ``conversations``)."""
+        """Normalize examples to OpenAI ``messages`` (accepts legacy ``conversations`` or custom ``field_messages``)."""
         role_mapping = {
             "human": "user",
             "gpt": "assistant",
