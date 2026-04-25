@@ -139,14 +139,18 @@ def build_image_token_spec(
         image_token = override
     else:
         proc_token = getattr(processor, "image_token", None)
-        # Gemma-3-style: `image_token` is the post-expansion soft token; the
-        # user-facing placeholder is `boi_token`.
+        # Gemma-3-style only: `image_token` is the post-expansion soft token
+        # (its name literally contains "soft_token"); the user-facing
+        # placeholder is `boi_token`. Gemma-4 reverses this — `image_token`
+        # IS the user-facing placeholder (`<|image|>`) and `boi_token`
+        # (`<|image>`) is just a bracket marker, so don't blindly swap.
         boi_token = getattr(processor, "boi_token", None)
         if (
             boi_token
             and proc_token
             and boi_token != proc_token
             and boi_token in known_special_tokens
+            and "soft_token" in proc_token
         ):
             proc_token = boi_token
         if proc_token is not None:
