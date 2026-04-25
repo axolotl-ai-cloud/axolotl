@@ -253,7 +253,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             for tid in self._image_family_token_ids:
                 tok_labels[tok_labels == tid] = -100
             batch["labels"] = tok_labels
-            return dict(batch)
+            return batch
 
         # No truncation: it chops input_ids mid-placeholder while pixel_values
         # keep every image — silent text/pixel mismatch. We warn post-hoc instead.

@@ -294,8 +294,13 @@ class TestMultimodalCPTGates:
         assert "multimodal `test_datasets`" in msg
         assert "multimodal_pretrain" in msg
 
-    def test_remove_unused_columns_auto_set_emits_info_log(self, min_base_cfg, caplog):
+    def test_remove_unused_columns_auto_set_emits_info_log(
+        self, min_base_cfg, caplog, monkeypatch
+    ):
         """Auto-setting `remove_unused_columns: false` for MM CPT logs an INFO record naming the previous value."""
+        # `axolotl` logger has propagate=False (logging_config.py); flip it so
+        # caplog's root handler receives the record.
+        monkeypatch.setattr(logging.getLogger("axolotl"), "propagate", True)
         cfg = _mm_cpt_cfg(min_base_cfg)
         cfg.pop("remove_unused_columns", None)
         with caplog.at_level(logging.INFO, logger="axolotl.utils.schemas.validation"):
@@ -314,9 +319,12 @@ class TestMultimodalCPTGates:
         assert "previous value: None" in msg
 
     def test_remove_unused_columns_already_false_does_not_log(
-        self, min_base_cfg, caplog
+        self, min_base_cfg, caplog, monkeypatch
     ):
         """When the user already set `remove_unused_columns: false`, no auto-set log fires."""
+        monkeypatch.setattr(
+            logging.getLogger("axolotl.utils.schemas.validation"), "propagate", True
+        )
         cfg = _mm_cpt_cfg(min_base_cfg, remove_unused_columns=False)
         with caplog.at_level(logging.INFO, logger="axolotl.utils.schemas.validation"):
             validate_config(cfg)
