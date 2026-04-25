@@ -251,7 +251,7 @@ class TestCustomOptimizers(unittest.TestCase):
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
-                "lora_dropout": 0.05,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "val_set_size": 0.1,
                 "special_tokens": {
@@ -264,18 +264,22 @@ class TestCustomOptimizers(unittest.TestCase):
                     },
                 ],
                 "num_epochs": 1,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "micro_batch_size": 8,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 2e-4,
+                "learning_rate": 1e-4,
                 "optimizer": "came_pytorch",
                 "adam_beta3": 0.9999,
                 "adam_epsilon2": 1e-16,
-                "max_steps": 50,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "logging_steps": 1,
                 "lr_scheduler": "cosine",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -287,10 +291,10 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
         check_tensorboard_loss_decreased(
             temp_dir + "/runs",
-            initial_window=5,
-            final_window=5,
-            max_initial=4.5,
-            max_final=4.3,
+            initial_window=10,
+            final_window=10,
+            max_initial=4.0,
+            max_final=3.0,
         )
 
 
