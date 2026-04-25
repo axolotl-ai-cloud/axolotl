@@ -20,7 +20,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# Decompression-bomb cap (~7070×7070).
+# Decompression-bomb cap (~7070x7070).
 _DEFAULT_MAX_IMAGE_PIXELS = 50_000_000
 _DEFAULT_MAX_IMAGES_PER_ROW = 32
 
@@ -128,7 +128,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 w, h = src.size
                 if w * h > self.max_image_pixels:
                     raise ValueError(
-                        f"Image pixels ({w}×{h}) exceed "
+                        f"Image pixels ({w}x{h}) exceed "
                         f"max_image_pixels ({self.max_image_pixels})."
                     )
                 # Multi-frame bomb guard (GIF/TIFF/WebP).
@@ -329,7 +329,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
         if pad_id is not None:
             labels[labels == pad_id] = -100
 
-        # Without this, image-family ids dominate loss and blow it up ~10×.
+        # Without this, image-family ids dominate loss and blow it up ~10x.
         for tid in self._image_family_token_ids:
             labels[labels == tid] = -100
 
