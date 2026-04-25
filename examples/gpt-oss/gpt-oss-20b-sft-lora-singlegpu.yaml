@@ -56,7 +56,6 @@ learning_rate: 2e-4
 bf16: true
 tf32: true
 
-attn_implementation: flash_attention_2
 attn_implementation: kernels-community/vllm-flash-attn3  # this is not needed if using flash_attn >= 2.8.3
 
 gradient_checkpointing: true
