@@ -1,12 +1,11 @@
 """Tests for attn_implementation normalization and capability computation.
 
-Covers the Phase 1 contract:
+Covers the contract:
 - `attn_implementation` accepts canonical names only; short-form aliases are rejected.
 - Legacy boolean flags are mapped to the canonical value, warned on, and stripped.
 - Canonical `attn_implementation` + legacy flag raises.
 - Capability flags are computed from `attn_implementation`.
-
-Plus Phase 2 gap fixes and full-model validation behaviour.
+- Validator behaviour for sample_packing / scaling_softmax / s2 / fp8 / hub kernels.
 """
 
 import logging
@@ -379,8 +378,8 @@ class TestValidatedConfig:
         assert validated.attn_supports_packing is True
 
 
-class TestPhase2GapFixes:
-    """Regression tests for the validator gaps closed in Phase 2."""
+class TestAttentionValidators:
+    """Regression tests for sample_packing / scaling_softmax / s2 / fp8 validators."""
 
     def test_sample_packing_with_eager_warns(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(
