@@ -57,30 +57,43 @@ class ProcessingStrategy:
         return tuple(field for field in field_messages if field)
 
     def _get_messages_field(self, example: dict) -> str | None:
-        if "messages" in example and example["messages"] is not None:
-            return "messages"
+        # Honor an explicitly configured `field_messages` first so a stale
+        # "messages" column on the row cannot silently override the user's
+        # intent. When `field_messages` is left at its default of
+        # ("messages",) this collapses back to the previous behavior.
         for field in self.field_messages:
             if field in example and example[field] is not None:
                 return field
+        if "messages" in example and example["messages"] is not None:
+            return "messages"
         return None
 
     @staticmethod
     def _is_legacy_schema(messages) -> bool:
-        """Detect ShareGPT-style schema by inspecting the first message."""
+        """Detect ShareGPT-style schema by inspecting the first message.
+
+        Both `from` and `value` must be present so that rows whose first
+        message merely happens to carry a `from` key (e.g., custom metadata)
+        are not misrouted into the legacy conversion branch.
+        """
         return (
             isinstance(messages, list)
             and bool(messages)
             and isinstance(messages[0], dict)
             and "from" in messages[0]
+            and "value" in messages[0]
         )
 
     def __call__(self, examples: list[dict]) -> list[dict]:
         """
         Preprocess conversation examples to ensure consistent format.
         Converts different conversation formats to OpenAI format with 'messages'.
-        Supports two formats:
-        1. OpenAI format with 'messages'
-        2. Legacy format with 'conversations'
+        Supports three source keys:
+        1. OpenAI format under the `messages` key
+        2. Legacy ShareGPT format under the `conversations` key
+        3. Any user-configured `field_messages` column, whose schema is
+           auto-detected (OpenAI vs ShareGPT) from its first message and
+           routed into the matching canonical branch above.
 
         Args:
             examples: list of conversation dictionaries
@@ -89,7 +102,7 @@ class ProcessingStrategy:
             list of dicts in OpenAI format with 'messages' key
 
         Raises:
-            ValueError: If the conversation format is not supported
+            ValueError: If none of the supported source keys are present.
         """
         role_mapping = {
             "human": "user",
