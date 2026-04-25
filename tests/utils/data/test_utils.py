@@ -2,11 +2,14 @@
 Unit tests for data utility functions
 """
 
+import tempfile
 import unittest
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from datasets import Dataset
 
+from axolotl.utils.data.shared import _load_from_local_path
 from axolotl.utils.data.utils import handle_long_seq_in_dataset, remove_double_bos_token
 from axolotl.utils.dict import DictDefault
 
@@ -539,6 +542,58 @@ class TestHandleLongSeqInDataset(unittest.TestCase):
         # Should behave like 'drop'
         self.assertEqual(len(result), 1)
         self.assertEqual(len(result[0]["input_ids"]), 3)
+
+
+class TestLocalFileSplitHandling(unittest.TestCase):
+    """Regression tests for local-file dataset split handling."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.gettempdir())
+
+    @patch("axolotl.utils.data.shared.load_dataset")
+    def test_local_jsonl_preserves_split_slice(self, mock_load_dataset):
+        path = str(self.tmpdir / "sample.jsonl")
+        dataset_config = DictDefault(
+            {"path": path, "ds_type": "json", "split": "train[:500]"}
+        )
+        load_dataset_kwargs = {"split": dataset_config.split}
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            _load_from_local_path(dataset_config, load_dataset_kwargs)
+
+        mock_load_dataset.assert_called_once()
+        _, kwargs = mock_load_dataset.call_args
+        self.assertEqual(kwargs["split"], "train[:500]")
+        self.assertEqual(kwargs["data_files"], path)
+
+    @patch("axolotl.utils.data.shared.load_dataset")
+    def test_local_csv_preserves_split_slice(self, mock_load_dataset):
+        path = str(self.tmpdir / "sample.csv")
+        dataset_config = DictDefault(
+            {"path": path, "ds_type": "csv", "split": "train[:200]"}
+        )
+        load_dataset_kwargs = {"split": dataset_config.split}
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            _load_from_local_path(dataset_config, load_dataset_kwargs)
+
+        mock_load_dataset.assert_called_once()
+        _, kwargs = mock_load_dataset.call_args
+        self.assertEqual(kwargs["split"], "train[:200]")
+        self.assertEqual(kwargs["data_files"], path)
+
+    @patch("axolotl.utils.data.shared.load_dataset")
+    def test_local_file_no_split_defaults_to_train(self, mock_load_dataset):
+        path = str(self.tmpdir / "sample.parquet")
+        dataset_config = DictDefault({"path": path, "split": None})
+        load_dataset_kwargs = {"split": None}
+
+        with patch("pathlib.Path.is_file", return_value=True):
+            _load_from_local_path(dataset_config, load_dataset_kwargs)
+
+        mock_load_dataset.assert_called_once()
+        _, kwargs = mock_load_dataset.call_args
+        self.assertEqual(kwargs["split"], "train")
 
 
 class TestRemoveDoubleBOSToken(unittest.TestCase):

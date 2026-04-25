@@ -240,8 +240,10 @@ def _load_from_local_path(
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
 
-        # For single file datasets, HF always creates only a "train" split
-        if dataset_type in ("json", "csv", "text"):
+        # Single-file paths always expose only a "train" split regardless of format.
+        # Preserve any user-provided slice syntax (e.g. "train[:500]"); only
+        # fall back to "train" when no split was specified.
+        if not load_dataset_kwargs.get("split"):
             load_dataset_kwargs["split"] = "train"
 
         return load_dataset(
