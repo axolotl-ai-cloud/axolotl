@@ -206,6 +206,97 @@ def test_wrap_streaming_dataset_uses_pretraining_config_arg(
     assert captured["kwargs"]["image_column"] == "eval_imgs"
 
 
+def test_wrap_streaming_dataset_eval_honors_eval_sequence_len(
+    smolvlm_processor, monkeypatch
+):
+    """is_eval=True with cfg.eval_sequence_len set caps encoder at eval_sequence_len."""
+    captured = {}
+
+    def fake_partial(fn, **kwargs):
+        captured["encode_fn"] = fn
+        captured["kwargs"] = kwargs
+        return lambda batch: batch
+
+    monkeypatch.setattr("axolotl.utils.data.streaming.functools.partial", fake_partial)
+
+    class _Dataset:
+        features = {"text": None, "images": None}
+
+        def shuffle(self, **_):
+            return self
+
+        def map(self, *_args, **_kwargs):
+            return self
+
+    cfg = DictDefault(
+        {
+            "sample_packing": False,
+            "pretraining_dataset": [
+                {"path": "train/ds", "type": "multimodal_pretrain"}
+            ],
+            "sequence_len": 4096,
+            "eval_sequence_len": 1024,
+            "shuffle_merged_datasets": False,
+            "streaming_multipack_buffer_size": 1000,
+            "seed": 42,
+        }
+    )
+
+    wrap_streaming_dataset(
+        _Dataset(),
+        smolvlm_processor.tokenizer,
+        cfg,
+        ds_wrapper_fn=None,
+        processor=smolvlm_processor,
+        pretraining_config=DictDefault(
+            {"path": "test/ds", "type": "multimodal_pretrain"}
+        ),
+        is_eval=True,
+    )
+    assert captured["kwargs"]["max_tokens"] == 1024
+
+    captured.clear()
+    wrap_streaming_dataset(
+        _Dataset(),
+        smolvlm_processor.tokenizer,
+        cfg,
+        ds_wrapper_fn=None,
+        processor=smolvlm_processor,
+        pretraining_config=DictDefault(
+            {"path": "train/ds", "type": "multimodal_pretrain"}
+        ),
+        is_eval=False,
+    )
+    assert captured["kwargs"]["max_tokens"] == 4096
+
+    # eval_sequence_len unset -> eval falls back to sequence_len.
+    captured.clear()
+    cfg_no_eval = DictDefault(
+        {
+            "sample_packing": False,
+            "pretraining_dataset": [
+                {"path": "train/ds", "type": "multimodal_pretrain"}
+            ],
+            "sequence_len": 4096,
+            "shuffle_merged_datasets": False,
+            "streaming_multipack_buffer_size": 1000,
+            "seed": 42,
+        }
+    )
+    wrap_streaming_dataset(
+        _Dataset(),
+        smolvlm_processor.tokenizer,
+        cfg_no_eval,
+        ds_wrapper_fn=None,
+        processor=smolvlm_processor,
+        pretraining_config=DictDefault(
+            {"path": "test/ds", "type": "multimodal_pretrain"}
+        ),
+        is_eval=True,
+    )
+    assert captured["kwargs"]["max_tokens"] == 4096
+
+
 # ---- MultiModalPretrainDataCollator ---------------------------------------
 
 
@@ -303,11 +394,20 @@ def test_collator_rejects_remote_urls(smolvlm_processor):
         "file:///etc/passwd",
         "ftp://x/y.png",
         "data:image/png;base64,xxx",
+        # Cloud / object-store / hub URIs.
+        "s3://bucket/key.png",
+        "gs://bucket/key.png",
+        "gcs://bucket/key.png",
+        "az://container/key.png",
+        "azure://account/container/key.png",
+        "hf://datasets/foo/bar/img.png",
         # Case-variant bypass attempts.
         "HTTP://evil.com/x.png",
         "Https://x/y.jpg",
         "FILE:///etc/passwd",
         "DATA:image/png;base64,xxx",
+        "S3://bucket/key.png",
+        "GS://bucket/key.png",
     ):
         with pytest.raises(RuntimeError) as exc:
             collator._load_images_for_row([url], row_index=0)
@@ -391,6 +491,42 @@ def test_collator_rejects_too_many_images(smolvlm_processor, two_tiny_images):
 
 
 # ---- mixed / all-text batches --------------------------------------------
+
+
+def test_collator_warns_when_tokenizer_diverges_from_processor_tokenizer(
+    smolvlm_processor, caplog
+):
+    """Construct-time warning when self.tokenizer is not processor.tokenizer."""
+    import logging as _logging
+
+    spec = build_image_token_spec(smolvlm_processor)
+
+    # Same tokenizer: no warning.
+    with caplog.at_level(
+        _logging.WARNING, logger="axolotl.utils.collators.mm_pretrain"
+    ):
+        MultiModalPretrainDataCollator(
+            tokenizer=smolvlm_processor.tokenizer,
+            processor=smolvlm_processor,
+            image_token_spec=spec,
+        )
+    assert not any("tokenize inconsistently" in r.getMessage() for r in caplog.records)
+
+    caplog.clear()
+
+    # Different tokenizer instance (a stand-in object): warning fires.
+    class _OtherTokenizer:
+        pad_token_id = None
+
+    with caplog.at_level(
+        _logging.WARNING, logger="axolotl.utils.collators.mm_pretrain"
+    ):
+        MultiModalPretrainDataCollator(
+            tokenizer=_OtherTokenizer(),
+            processor=smolvlm_processor,
+            image_token_spec=spec,
+        )
+    assert any("tokenize inconsistently" in r.getMessage() for r in caplog.records)
 
 
 def test_collator_all_text_batch_uses_tokenizer_fallback(smolvlm_processor):

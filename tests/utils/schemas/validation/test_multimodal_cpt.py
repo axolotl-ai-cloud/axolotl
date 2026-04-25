@@ -240,6 +240,60 @@ class TestMultimodalCPTGates:
         validated = validate_config(cfg)
         assert len(validated.test_datasets) == 2
 
+    def test_mixed_modality_test_datasets_rejected_at_validation(self, min_base_cfg):
+        """A test_datasets list mixing MM and non-MM entries fails at config-load."""
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[
+                {"path": "eval/a", "type": "multimodal_pretrain"},
+                {"path": "eval/b", "type": "alpaca", "split": "test"},
+            ],
+        )
+        with pytest.raises(ValueError) as exc:
+            validate_config(cfg)
+        msg = str(exc.value)
+        assert "Mixing multimodal and non-multimodal" in msg
+        assert "test_datasets" in msg
+        assert "share modality" in msg
+
+    def test_mm_test_datasets_with_text_training_rejected(self, min_base_cfg):
+        """MM test_datasets paired with non-MM training fails at config-load."""
+        cfg = DictDefault(
+            **(
+                min_base_cfg
+                | {
+                    "datasets": None,
+                    "pretraining_dataset": [{"path": "text/ds", "type": "pretrain"}],
+                    "test_datasets": [
+                        {"path": "eval/a", "type": "multimodal_pretrain"}
+                    ],
+                    "streaming": True,
+                    "max_steps": 10,
+                    "sequence_len": 2048,
+                    "processor_type": "AutoProcessor",
+                }
+            )
+        )
+        with pytest.raises(ValueError) as exc:
+            validate_config(cfg)
+        msg = str(exc.value)
+        assert "Multimodal `test_datasets`" in msg
+        assert "multimodal CPT training" in msg
+        assert "multimodal_pretrain" in msg
+
+    def test_text_test_datasets_with_mm_training_rejected(self, min_base_cfg):
+        """Non-MM test_datasets paired with MM training fails at config-load."""
+        cfg = _mm_cpt_cfg(
+            min_base_cfg,
+            test_datasets=[{"path": "eval/a", "type": "alpaca", "split": "test"}],
+        )
+        with pytest.raises(ValueError) as exc:
+            validate_config(cfg)
+        msg = str(exc.value)
+        assert "Multimodal CPT training" in msg
+        assert "multimodal `test_datasets`" in msg
+        assert "multimodal_pretrain" in msg
+
     def test_remove_unused_columns_auto_set_emits_info_log(self, min_base_cfg, caplog):
         """Auto-setting `remove_unused_columns: false` for MM CPT logs an INFO record naming the previous value."""
         cfg = _mm_cpt_cfg(min_base_cfg)
@@ -252,7 +306,9 @@ class TestMultimodalCPTGates:
             for r in caplog.records
             if r.levelno == logging.INFO and "Auto-set" in r.getMessage()
         ]
-        assert matches, "expected an INFO record about auto-setting remove_unused_columns"
+        assert matches, (
+            "expected an INFO record about auto-setting remove_unused_columns"
+        )
         msg = matches[0].getMessage()
         assert "remove_unused_columns" in msg
         assert "previous value: None" in msg

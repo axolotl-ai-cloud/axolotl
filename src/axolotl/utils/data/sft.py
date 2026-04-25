@@ -171,24 +171,18 @@ def _prepare_streaming_dataset(
             for t in test_dicts
         )
         if is_mm_cpt_eval:
-            eval_streams = []
-            for entry in test_dicts:
-                if not (
-                    entry.get("type") == "multimodal_pretrain"
-                    or bool(entry.get("multimodal"))
-                ):
-                    raise ValueError(
-                        "Mixing multimodal and non-multimodal entries in "
-                        "`test_datasets` is not supported. All eval entries "
-                        "must be MM (type: multimodal_pretrain or "
-                        "multimodal: true) when training is MM CPT."
-                    )
-                eval_config = _pretraining_config_from_entry(entry)
-                eval_streams.append(
-                    _load_streaming_dataset(
-                        eval_config, cfg, tokenizer, processor=processor
-                    )
+            # Modality homogeneity is enforced by check_multimodal_cpt at config
+            # parse time; every entry here is guaranteed to be MM.
+            eval_streams = [
+                _load_streaming_dataset(
+                    _pretraining_config_from_entry(entry),
+                    cfg,
+                    tokenizer,
+                    processor=processor,
+                    is_eval=True,
                 )
+                for entry in test_dicts
+            ]
             eval_dataset = (
                 eval_streams[0]
                 if len(eval_streams) == 1
@@ -216,12 +210,14 @@ def _pretraining_config_from_entry(entry: dict) -> DictDefault:
             "skip": entry.get("skip"),
             "split": entry.get("split", "train"),
             "data_files": entry.get("data_files"),
+            "ds_type": entry.get("ds_type"),
             "type": entry.get("type", "pretrain"),
             "text_column": entry.get("text_column", "text"),
             "multimodal": entry.get("multimodal"),
             "image_column": entry.get("image_column", "images"),
             "image_base_dir": entry.get("image_base_dir"),
             "image_token": entry.get("image_token"),
+            "trust_remote_code": entry.get("trust_remote_code", False),
         }
     )
 
@@ -240,12 +236,14 @@ def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
             "skip": 0,
             "split": "train",
             "data_files": None,
+            "ds_type": None,
             "type": "pretrain",
             "text_column": "text",
             "multimodal": None,
             "image_column": "images",
             "image_base_dir": None,
             "image_token": None,  # nosec
+            "trust_remote_code": False,
         }
     )
 
@@ -255,6 +253,7 @@ def _load_streaming_dataset(
     cfg: DictDefault,
     tokenizer: PreTrainedTokenizer,
     processor: ProcessorMixin | None = None,
+    is_eval: bool = False,
 ) -> IterableDataset:
     """Load and prepare a streaming dataset for pretraining."""
     # Create dataset wrapper partial function
@@ -275,13 +274,28 @@ def _load_streaming_dataset(
     ):
         iter_dataset = _create_placeholder_dataset(pretraining_config)
     else:
-        iter_dataset = load_dataset(
-            pretraining_config["path"],
-            streaming=True,
-            split=pretraining_config["split"],
-            name=pretraining_config["name"],
-            data_files=pretraining_config["data_files"],
-        )
+        ds_type = pretraining_config.get("ds_type")
+        if ds_type:
+            # ds_type names the loader (e.g. 'json'); path is the data_files glob.
+            iter_dataset = load_dataset(
+                ds_type,
+                streaming=True,
+                split=pretraining_config["split"],
+                name=pretraining_config["name"],
+                data_files=(
+                    pretraining_config["data_files"] or pretraining_config["path"]
+                ),
+                trust_remote_code=pretraining_config.get("trust_remote_code", False),
+            )
+        else:
+            iter_dataset = load_dataset(
+                pretraining_config["path"],
+                streaming=True,
+                split=pretraining_config["split"],
+                name=pretraining_config["name"],
+                data_files=pretraining_config["data_files"],
+                trust_remote_code=pretraining_config.get("trust_remote_code", False),
+            )
 
     # Apply skip if specified
     if pretraining_config["skip"]:
@@ -296,6 +310,7 @@ def _load_streaming_dataset(
         dataset_wrapper_partial,
         processor=processor,
         pretraining_config=pretraining_config,
+        is_eval=is_eval,
     )
 
     # Format for PyTorch

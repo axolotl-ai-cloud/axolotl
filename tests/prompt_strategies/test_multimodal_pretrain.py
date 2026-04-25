@@ -69,6 +69,21 @@ def test_build_image_token_spec_rejects_plain_word_override(smolvlm_processor):
         build_image_token_spec(smolvlm_processor, override="image")
 
 
+def test_build_image_token_spec_prefers_boi_token_over_expansion_token(
+    smolvlm_processor,
+):
+    """Gemma-3-style autodetect: `boi_token` is preferred over `image_token`
+    when they differ."""
+
+    class _FakeGemma3Like:
+        image_token = "<image>"
+        boi_token = "<fake_token_around_image>"
+        tokenizer = smolvlm_processor.tokenizer
+
+    spec = build_image_token_spec(_FakeGemma3Like())
+    assert spec.image_token == "<fake_token_around_image>"
+
+
 # ---- check_processor_compatibility (startup-time gate) ---------------------
 
 

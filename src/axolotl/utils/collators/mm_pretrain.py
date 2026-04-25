@@ -49,6 +49,16 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 "return_tensors='pt' (in-place torch ops are used downstream)."
             )
         check_processor_compatibility(self.processor)
+        # All-text batches use self.tokenizer; image batches use self.processor.
+        # If they don't share the same tokenizer instance, the two paths can
+        # tokenize the same text differently.
+        proc_tokenizer = getattr(self.processor, "tokenizer", None)
+        if proc_tokenizer is not None and proc_tokenizer is not self.tokenizer:
+            LOG.warning(
+                "MultiModalPretrainDataCollator.tokenizer is not "
+                "processor.tokenizer; all-text and image batches may "
+                "tokenize inconsistently."
+            )
         self._image_family_token_ids = set(self.image_token_spec.image_family_token_ids)
         if self.image_base_dir is not None:
             self._base_dir_real = os.path.realpath(self.image_base_dir)
@@ -60,7 +70,20 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             raise ValueError("Image path contains embedded NUL byte.")
         p_lower = p.lower()
         if p_lower.startswith(
-            ("http://", "https://", "ftp://", "ftps://", "file://", "data:")
+            (
+                "http://",
+                "https://",
+                "ftp://",
+                "ftps://",
+                "file://",
+                "data:",
+                "s3://",
+                "gs://",
+                "gcs://",
+                "az://",
+                "azure://",
+                "hf://",
+            )
         ) or p.startswith(("\\\\", "//")):
             raise ValueError(
                 f"Non-local image path scheme is not supported in v1 "
@@ -246,6 +269,14 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             batch = self.processor(**proc_kwargs)
         except Exception as exc:
             # Pinpoint the bad row; bail to "inconclusive" if retry raises a different class.
+            LOG.warning(
+                "MultiModalPretrainDataCollator: processor failed on a batch "
+                "of %d rows (%s); retrying each row individually to locate "
+                "the offender. This adds up to %d extra processor calls.",
+                len(texts),
+                type(exc).__name__,
+                len(texts),
+            )
             offender_idx: Optional[int] = None
             retry_ok = True
             retry_kwargs: dict[str, Any] = {
