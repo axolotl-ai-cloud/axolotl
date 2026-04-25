@@ -185,9 +185,7 @@ def test_build_image_token_spec_gemma4_uses_image_token_not_boi():
 
 def test_build_image_token_spec_gemma3_swaps_to_boi_token():
     """Gemma-3: `image_token` is the post-expansion soft token; placeholder is `boi_token`."""
-    tok = _StubTokenizer(
-        {"<image_soft_token>": 262144, "<start_of_image>": 255999}
-    )
+    tok = _StubTokenizer({"<image_soft_token>": 262144, "<start_of_image>": 255999})
     proc = _StubProcessor(
         tok, image_token="<image_soft_token>", boi_token="<start_of_image>"
     )
