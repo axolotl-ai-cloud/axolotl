@@ -69,11 +69,13 @@ def test_build_image_token_spec_rejects_plain_word_override(smolvlm_processor):
         build_image_token_spec(smolvlm_processor, override="image")
 
 
-def test_build_image_token_spec_prefers_boi_token_over_expansion_token(
+def test_build_image_token_spec_keeps_image_token_when_no_soft_token_in_name(
     smolvlm_processor,
 ):
-    """Gemma-3-style autodetect: `boi_token` is preferred over `image_token`
-    when they differ. Resolved id must match the boi_token, not image_token."""
+    """Non-Gemma-3 processors: the boi-swap heuristic only fires when
+    `image_token` name contains "soft_token" (Gemma-3 convention). Otherwise
+    `image_token` IS the user-facing placeholder (Gemma-4 convention) and
+    must not be silently replaced by `boi_token`."""
     tok = smolvlm_processor.tokenizer
     image_id = tok.convert_tokens_to_ids("<image>")
     boi_id = tok.convert_tokens_to_ids("<fake_token_around_image>")
@@ -81,16 +83,15 @@ def test_build_image_token_spec_prefers_boi_token_over_expansion_token(
         "fixture assumption broken: SmolVLM tokenizer should map these to distinct ids"
     )
 
-    class _FakeGemma3Like:
-        image_token = "<image>"
+    class _FakeGemma4Like:
+        image_token = "<image>"  # no 'soft_token' in name → must not swap
         boi_token = "<fake_token_around_image>"
         tokenizer = tok
 
-    spec = build_image_token_spec(_FakeGemma3Like())
-    assert spec.image_token == "<fake_token_around_image>"
-    assert spec.image_token_id == boi_id
-    assert spec.image_token_id != image_id
-    assert boi_id in spec.image_family_token_ids
+    spec = build_image_token_spec(_FakeGemma4Like())
+    assert spec.image_token == "<image>"
+    assert spec.image_token_id == image_id
+    assert spec.image_token_id != boi_id
 
 
 # ---- check_processor_compatibility (startup-time gate) ---------------------
