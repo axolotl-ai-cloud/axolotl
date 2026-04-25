@@ -322,9 +322,11 @@ class TestMultimodalCPTGates:
         self, min_base_cfg, caplog, monkeypatch
     ):
         """When the user already set `remove_unused_columns: false`, no auto-set log fires."""
-        monkeypatch.setattr(
-            logging.getLogger("axolotl.utils.schemas.validation"), "propagate", True
-        )
+        # Mirror the positive test: flip propagate on the parent `axolotl`
+        # logger (the one with propagate=False), not the leaf — otherwise
+        # caplog never sees axolotl.* records and this negative assertion
+        # is vacuous (it would pass even if the auto-set log fired).
+        monkeypatch.setattr(logging.getLogger("axolotl"), "propagate", True)
         cfg = _mm_cpt_cfg(min_base_cfg, remove_unused_columns=False)
         with caplog.at_level(logging.INFO, logger="axolotl.utils.schemas.validation"):
             validate_config(cfg)
