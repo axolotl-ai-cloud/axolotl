@@ -10,6 +10,7 @@ from datasets import (
     DatasetDict,
     IterableDataset,
     IterableDatasetDict,
+    concatenate_datasets,
     load_dataset,
 )
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -134,7 +135,9 @@ def _prepare_streaming_dataset(
     """
     if cfg.pretraining_dataset:
         dataset_config = _extract_pretraining_config(cfg)
-        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
+        train_dataset = _load_streaming_dataset(
+            dataset_config, cfg, tokenizer, processor=processor
+        )
     elif cfg.sample_packing:
         # TODO(djsaunde): Implement for multiple datasets
         dataset_config = DictDefault(cfg.datasets[0])
@@ -142,7 +145,9 @@ def _prepare_streaming_dataset(
         # Ensure we have a split set - default to 'train' if not specified
         if not hasattr(dataset_config, "split") or not dataset_config.split:
             dataset_config.split = "train"
-        train_dataset = _load_streaming_dataset(dataset_config, cfg, tokenizer)
+        train_dataset = _load_streaming_dataset(
+            dataset_config, cfg, tokenizer, processor=processor
+        )
     else:
         # Use legacy loading function for non-packed streaming datasets
         train_dataset, eval_dataset, prompters = _load_and_prepare_datasets(
@@ -160,17 +165,65 @@ def _prepare_streaming_dataset(
     # Load evaluation dataset if specified
     eval_dataset = None
     if cfg.test_datasets:
-        _, eval_dataset, _ = _load_and_prepare_datasets(
-            tokenizer,
-            cfg,
-            split="test",
-            processor=processor,
-            streaming=False,
+        test_dicts = [t if isinstance(t, dict) else dict(t) for t in cfg.test_datasets]
+        is_mm_cpt_eval = any(
+            t.get("type") == "multimodal_pretrain" or bool(t.get("multimodal"))
+            for t in test_dicts
         )
+        if is_mm_cpt_eval:
+            eval_streams = []
+            for entry in test_dicts:
+                if not (
+                    entry.get("type") == "multimodal_pretrain"
+                    or bool(entry.get("multimodal"))
+                ):
+                    raise ValueError(
+                        "Mixing multimodal and non-multimodal entries in "
+                        "`test_datasets` is not supported. All eval entries "
+                        "must be MM (type: multimodal_pretrain or "
+                        "multimodal: true) when training is MM CPT."
+                    )
+                eval_config = _pretraining_config_from_entry(entry)
+                eval_streams.append(
+                    _load_streaming_dataset(
+                        eval_config, cfg, tokenizer, processor=processor
+                    )
+                )
+            eval_dataset = (
+                eval_streams[0]
+                if len(eval_streams) == 1
+                else concatenate_datasets(eval_streams)
+            )
+        else:
+            _, eval_dataset, _ = _load_and_prepare_datasets(
+                tokenizer,
+                cfg,
+                split="test",
+                processor=processor,
+                streaming=False,
+            )
 
     # For streaming, we return max_steps directly from config or -1 if not set
     total_num_steps = cfg.max_steps if cfg.max_steps else -1
     return train_dataset, eval_dataset, total_num_steps, []
+
+
+def _pretraining_config_from_entry(entry: dict) -> DictDefault:
+    return DictDefault(
+        {
+            "path": entry["path"],
+            "name": entry.get("name"),
+            "skip": entry.get("skip"),
+            "split": entry.get("split", "train"),
+            "data_files": entry.get("data_files"),
+            "type": entry.get("type", "pretrain"),
+            "text_column": entry.get("text_column", "text"),
+            "multimodal": entry.get("multimodal"),
+            "image_column": entry.get("image_column", "images"),
+            "image_base_dir": entry.get("image_base_dir"),
+            "image_token": entry.get("image_token"),
+        }
+    )
 
 
 def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
@@ -178,17 +231,7 @@ def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
     if isinstance(cfg.pretraining_dataset, list) and isinstance(
         cfg.pretraining_dataset[0], dict
     ):
-        config = cfg.pretraining_dataset[0]
-        return DictDefault(
-            {
-                "path": config["path"],
-                "name": config["name"],
-                "skip": config["skip"],
-                "split": config.get("split", "train"),
-                "data_files": config.get("data_files"),
-                "type": config.get("type", "pretrain"),
-            }
-        )
+        return _pretraining_config_from_entry(cfg.pretraining_dataset[0])
     # Simple string path case
     return DictDefault(
         {
@@ -198,12 +241,20 @@ def _extract_pretraining_config(cfg: DictDefault) -> DictDefault:
             "split": "train",
             "data_files": None,
             "type": "pretrain",
+            "text_column": "text",
+            "multimodal": None,
+            "image_column": "images",
+            "image_base_dir": None,
+            "image_token": None,  # nosec
         }
     )
 
 
 def _load_streaming_dataset(
-    pretraining_config: DictDefault, cfg: DictDefault, tokenizer: PreTrainedTokenizer
+    pretraining_config: DictDefault,
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer,
+    processor: ProcessorMixin | None = None,
 ) -> IterableDataset:
     """Load and prepare a streaming dataset for pretraining."""
     # Create dataset wrapper partial function
@@ -213,6 +264,7 @@ def _load_streaming_dataset(
         tokenizer=tokenizer,
         cfg=cfg,
         dataset_base_type=pretraining_config["type"],
+        processor=processor,
     )
 
     # Load the actual dataset
@@ -221,7 +273,7 @@ def _load_streaming_dataset(
         and cfg.accelerator_config.dispatch_batches
         and not is_local_main_process()
     ):
-        iter_dataset = _create_placeholder_dataset()
+        iter_dataset = _create_placeholder_dataset(pretraining_config)
     else:
         iter_dataset = load_dataset(
             pretraining_config["path"],
@@ -242,19 +294,39 @@ def _load_streaming_dataset(
         tokenizer,
         cfg,
         dataset_wrapper_partial,
+        processor=processor,
+        pretraining_config=pretraining_config,
     )
 
     # Format for PyTorch
     return train_dataset.with_format("torch")
 
 
-def _create_placeholder_dataset() -> IterableDataset:
+def _create_placeholder_dataset(
+    pretraining_config: DictDefault | None = None,
+) -> IterableDataset:
     """Create a minimal placeholder dataset for non-main processes."""
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
-        f.write("text\n")
-        f.write("lorem ipsum dolor sit amet\n")
-        f.seek(0)
-        return load_dataset("csv", data_files=f.name, split="train", streaming=True)
+    text_column = "text"
+    image_column: str | None = None
+    if pretraining_config is not None:
+        text_column = pretraining_config.get("text_column") or "text"
+        is_mm = pretraining_config.get("type") == "multimodal_pretrain" or bool(
+            pretraining_config.get("multimodal")
+        )
+        if is_mm:
+            image_column = pretraining_config.get("image_column") or "images"
+
+    if image_column is None:
+        with tempfile.NamedTemporaryFile(mode="w+", delete=False) as f:
+            f.write(f"{text_column}\n")
+            f.write("lorem ipsum dolor sit amet\n")
+            f.seek(0)
+            return load_dataset("csv", data_files=f.name, split="train", streaming=True)
+
+    def _gen():
+        yield {text_column: "lorem ipsum dolor sit amet", image_column: []}
+
+    return IterableDataset.from_generator(_gen)
 
 
 def _load_tokenized_prepared_datasets(
