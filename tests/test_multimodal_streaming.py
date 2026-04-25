@@ -500,11 +500,14 @@ def test_collator_rejects_too_many_images(smolvlm_processor, two_tiny_images):
 
 
 def test_collator_warns_when_tokenizer_diverges_from_processor_tokenizer(
-    smolvlm_processor, caplog
+    smolvlm_processor, caplog, monkeypatch
 ):
     """Construct-time warning when self.tokenizer is not processor.tokenizer."""
     import logging as _logging
 
+    # `axolotl` logger has propagate=False (logging_config.py); flip it so
+    # caplog's root handler receives the record.
+    monkeypatch.setattr(_logging.getLogger("axolotl"), "propagate", True)
     spec = build_image_token_spec(smolvlm_processor)
 
     # Same tokenizer: no warning.
