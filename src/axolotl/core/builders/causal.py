@@ -487,12 +487,17 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         spec = build_image_token_spec(
             self.processor, override=_mm_cpt_get(pt_cfg, "image_token")
         )
+        max_length = (
+            self.cfg.eval_sequence_len
+            if is_eval and self.cfg.eval_sequence_len
+            else self.cfg.sequence_len
+        )
         collator_kwargs = {
             "tokenizer": self.tokenizer,
             "processor": self.processor,
             "image_token_spec": spec,
             "image_base_dir": _mm_cpt_get(pt_cfg, "image_base_dir"),
-            "max_length": self.cfg.sequence_len,
+            "max_length": max_length,
         }
         if pad_to_multiple_of is not None:
             collator_kwargs["pad_to_multiple_of"] = pad_to_multiple_of

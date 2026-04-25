@@ -434,6 +434,23 @@ independently. When more than one multimodal entry is provided,
 identical across them, because the eval collator resolves both once for the
 merged eval stream.
 
+### Mixed image / text-only batches
+
+Rows with no images are allowed. All-text batches bypass the processor and
+tokenize via the base tokenizer (no `pixel_values`). Mixed batches are
+handed to the processor as-is.
+
+Verified VLM families:
+
+- HuggingFace `SmolVLM` / `SmolVLM2`
+- Google `Gemma-3` (4B), `Gemma-4` (E2B, 31B)
+- Alibaba `Qwen2.5-VL`, `Qwen3-VL`
+
+For other families (LLaVA, Qwen2-VL, Idefics3), the collator's per-row
+retry isolates and names the offending row on processor failure — failures
+are loud, not silent. Smoke-test before long runs, or pre-filter rows
+without images.
+
 ### Gates and rejections
 
 The following combinations are rejected at config-load time with a clear error:

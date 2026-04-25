@@ -17,6 +17,8 @@ LOG = get_logger(__name__)
 
 
 def _get_incompatible_processor_classes() -> tuple[type, ...]:
+    import importlib
+
     classes: list[type] = []
     for mod_path, name in (
         ("transformers.models.mllama", "MllamaProcessor"),
@@ -24,8 +26,6 @@ def _get_incompatible_processor_classes() -> tuple[type, ...]:
         ("transformers.models.internvl", "InternVLProcessor"),
     ):
         try:
-            import importlib
-
             mod = importlib.import_module(mod_path)
             cls = getattr(mod, name, None)
             if cls is not None:
@@ -108,8 +108,12 @@ def build_image_token_spec(
     known_special_tokens: set[str] = set()
     try:
         known_special_tokens |= set(tokenizer.get_added_vocab().keys())
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        LOG.debug(
+            "tokenizer.get_added_vocab() failed on %s: %s",
+            type(tokenizer).__name__,
+            exc,
+        )
     known_special_tokens |= set(getattr(tokenizer, "all_special_tokens", None) or [])
     known_special_tokens |= set(
         getattr(tokenizer, "additional_special_tokens", None) or []
@@ -135,6 +139,16 @@ def build_image_token_spec(
         image_token = override
     else:
         proc_token = getattr(processor, "image_token", None)
+        # Gemma-3-style: `image_token` is the post-expansion soft token; the
+        # user-facing placeholder is `boi_token`.
+        boi_token = getattr(processor, "boi_token", None)
+        if (
+            boi_token
+            and proc_token
+            and boi_token != proc_token
+            and boi_token in known_special_tokens
+        ):
+            proc_token = boi_token
         if proc_token is not None:
             image_token_id = resolve_id(proc_token)
             if image_token_id is not None:
@@ -245,7 +259,8 @@ class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
             raise ValueError(
                 f"Multimodal CPT row tokenizes to {len(ids)} tokens which "
                 f"exceeds sequence_len={self.max_length}. Pre-chunk your text "
-                f"or raise sequence_len."
+                f"or raise sequence_len (image patch expansion at the "
+                f"processor may push the final length even higher)."
             )
 
         n_chunks = len(res["input_ids"])

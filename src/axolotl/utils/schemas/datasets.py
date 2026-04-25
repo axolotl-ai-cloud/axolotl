@@ -236,6 +236,12 @@ class PretrainingDataset(BaseModel):
     type: str | None = "pretrain"
     trust_remote_code: bool | None = False
     data_files: str | None = None
+    ds_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
+        },
+    )
     skip: int | None = None
 
     # Multimodal CPT fields. Opt-in via `type: multimodal_pretrain` or `multimodal: true`.
@@ -275,6 +281,12 @@ class MultiModalEvalDataset(BaseModel):
     name: str | None = None
     split: str | None = "train"
     data_files: str | list[str] | None = None
+    ds_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
+        },
+    )
     skip: int | None = None
     type: str | None = None
     trust_remote_code: bool | None = False

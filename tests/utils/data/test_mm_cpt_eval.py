@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from axolotl.utils.data.sft import (
     _create_placeholder_dataset,
     _prepare_streaming_dataset,
@@ -54,6 +52,88 @@ def test_placeholder_mm_honors_custom_columns():
     assert row["imgs"] == []
 
 
+def test_pretraining_config_from_entry_preserves_trust_remote_code():
+    """trust_remote_code on the dataset entry survives normalization."""
+    from axolotl.utils.data.sft import _pretraining_config_from_entry
+
+    cfg = _pretraining_config_from_entry(
+        {"path": "ds", "type": "multimodal_pretrain", "trust_remote_code": True}
+    )
+    assert cfg["trust_remote_code"] is True
+
+    cfg = _pretraining_config_from_entry({"path": "ds", "type": "multimodal_pretrain"})
+    assert cfg["trust_remote_code"] is False
+
+
+def test_pretraining_config_from_entry_preserves_ds_type():
+    """ds_type on the dataset entry survives normalization."""
+    from axolotl.utils.data.sft import _pretraining_config_from_entry
+
+    cfg = _pretraining_config_from_entry(
+        {"path": "/data/*.jsonl", "type": "multimodal_pretrain", "ds_type": "json"}
+    )
+    assert cfg["ds_type"] == "json"
+
+    cfg = _pretraining_config_from_entry({"path": "ds", "type": "multimodal_pretrain"})
+    assert cfg["ds_type"] is None
+
+
+def test_load_streaming_dataset_routes_ds_type_to_loader(monkeypatch):
+    """When ds_type is set, load_dataset is called with the loader name and
+    path becomes data_files."""
+    from axolotl.utils.data.sft import _load_streaming_dataset
+
+    captured = {}
+
+    def fake_load_dataset(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+        class _Stub:
+            def skip(self, *_a, **_kw):
+                return self
+
+        return _Stub()
+
+    def fake_wrap(ds, *_a, **_kw):
+        return ds
+
+    class _StubFormat:
+        def with_format(self, *_a, **_kw):
+            return self
+
+    monkeypatch.setattr("axolotl.utils.data.sft.load_dataset", fake_load_dataset)
+    monkeypatch.setattr(
+        "axolotl.utils.data.sft.wrap_streaming_dataset",
+        lambda *a, **kw: _StubFormat(),
+    )
+
+    pretraining_config = DictDefault(
+        {
+            "path": "/data/shards/*.jsonl",
+            "name": None,
+            "skip": 0,
+            "split": "train",
+            "data_files": None,
+            "ds_type": "json",
+            "type": "multimodal_pretrain",
+            "text_column": "text",
+            "multimodal": True,
+            "image_column": "images",
+            "image_base_dir": None,
+            "image_token": None,
+            "trust_remote_code": False,
+        }
+    )
+    cfg = DictDefault({"sequence_len": 2048, "accelerator_config": None})
+
+    _load_streaming_dataset(pretraining_config, cfg, tokenizer=None, processor=None)
+
+    assert captured["args"] == ("json",)
+    assert captured["kwargs"]["data_files"] == "/data/shards/*.jsonl"
+    assert captured["kwargs"]["split"] == "train"
+
+
 # ---- multiple MM eval datasets are loaded --------------------------------
 
 
@@ -90,7 +170,7 @@ def test_mm_eval_iterates_all_test_datasets(monkeypatch):
     )
     monkeypatch.setattr("axolotl.utils.data.sft.concatenate_datasets", fake_concat)
 
-    train, eval_ds, _, _ = _prepare_streaming_dataset(
+    _train, eval_ds, _, _ = _prepare_streaming_dataset(
         cfg, tokenizer=None, processor=None
     )
 
@@ -98,28 +178,8 @@ def test_mm_eval_iterates_all_test_datasets(monkeypatch):
     assert eval_ds == ("<stream:eval/a>", "<stream:eval/b>", "<stream:eval/c>")
 
 
-def test_mm_eval_rejects_mixed_mm_and_non_mm_test_datasets(monkeypatch):
-    """MM CPT runs require every test_datasets entry to be MM; mixed lists raise."""
-    cfg = DictDefault(
-        {
-            "streaming": True,
-            "pretraining_dataset": [
-                {"path": "train/ds", "type": "multimodal_pretrain"}
-            ],
-            "test_datasets": [
-                {"path": "eval/a", "type": "multimodal_pretrain"},
-                # Plain text eval entry — not allowed alongside MM eval.
-                {"path": "eval/b", "type": "pretrain"},
-            ],
-            "max_steps": 10,
-        }
-    )
-    monkeypatch.setattr(
-        "axolotl.utils.data.sft._load_streaming_dataset",
-        lambda *_a, **_kw: "<stream>",
-    )
-    with pytest.raises(ValueError, match="multimodal and non-multimodal"):
-        _prepare_streaming_dataset(cfg, tokenizer=None, processor=None)
+# Mixed MM / non-MM test_datasets is rejected at config-load time by
+# check_multimodal_cpt (see tests/utils/schemas/validation/test_multimodal_cpt.py).
 
 
 # ---- eval collator pulls image settings from test_datasets ---------------
@@ -184,3 +244,59 @@ def test_eval_collator_uses_eval_image_settings(monkeypatch):
     builder._build_mm_pretrain_collator(is_eval=False)
     assert captured["override"] == "<train_img>"
     assert captured["kwargs"]["image_base_dir"] == "/train_images"
+
+
+def test_eval_collator_honors_eval_sequence_len(monkeypatch):
+    """Eval collator uses cfg.eval_sequence_len when set; train collator uses cfg.sequence_len."""
+    from axolotl.core.builders.causal import HFCausalTrainerBuilder
+
+    captured = {}
+
+    class _FakeSpec:
+        image_token = "<img>"
+        image_token_id = 7
+        image_family_token_ids = (7,)
+
+    monkeypatch.setattr(
+        "axolotl.prompt_strategies.multimodal_pretrain.build_image_token_spec",
+        lambda processor, override=None: _FakeSpec(),
+    )
+
+    class _FakeCollator:
+        def __init__(self, **kw):
+            captured["kwargs"] = kw
+
+    monkeypatch.setattr(
+        "axolotl.core.builders.causal.MultiModalPretrainDataCollator", _FakeCollator
+    )
+
+    builder = HFCausalTrainerBuilder.__new__(HFCausalTrainerBuilder)
+    builder.tokenizer = object()
+    builder.processor = object()
+    builder.cfg = DictDefault(
+        {
+            "pretraining_dataset": [{"type": "multimodal_pretrain"}],
+            "test_datasets": [{"type": "multimodal_pretrain"}],
+            "sequence_len": 4096,
+            "eval_sequence_len": 1024,
+        }
+    )
+
+    builder._build_mm_pretrain_collator(is_eval=True)
+    assert captured["kwargs"]["max_length"] == 1024
+
+    captured.clear()
+    builder._build_mm_pretrain_collator(is_eval=False)
+    assert captured["kwargs"]["max_length"] == 4096
+
+    # eval_sequence_len unset -> eval falls back to sequence_len
+    builder.cfg = DictDefault(
+        {
+            "pretraining_dataset": [{"type": "multimodal_pretrain"}],
+            "test_datasets": [{"type": "multimodal_pretrain"}],
+            "sequence_len": 4096,
+        }
+    )
+    captured.clear()
+    builder._build_mm_pretrain_collator(is_eval=True)
+    assert captured["kwargs"]["max_length"] == 4096

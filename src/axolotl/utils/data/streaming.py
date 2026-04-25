@@ -263,7 +263,14 @@ def wrap_streaming_dataset(
     ds_wrapper_fn,
     processor: Optional[ProcessorMixin] = None,
     pretraining_config=None,
+    is_eval: bool = False,
 ):
+    # Eval streams honor cfg.eval_sequence_len when set, else cfg.sequence_len.
+    effective_seq_len = (
+        cfg.eval_sequence_len
+        if is_eval and getattr(cfg, "eval_sequence_len", None)
+        else cfg.sequence_len
+    )
     if cfg.sample_packing:
         # For SFT (non-pretraining) datasets, always use multipack_attn=True to ensure
         # attention isolation between packed sequences
@@ -340,7 +347,7 @@ def wrap_streaming_dataset(
             encode = functools.partial(
                 encode_streaming_multimodal,
                 tokenizer=tokenizer,
-                max_tokens=cfg.sequence_len,
+                max_tokens=effective_seq_len,
                 image_token=spec.image_token,
                 image_token_id=spec.image_token_id,
                 text_column=text_column,
@@ -350,7 +357,7 @@ def wrap_streaming_dataset(
             encode = functools.partial(
                 encode_streaming,
                 tokenizer=tokenizer,
-                max_tokens=cfg.sequence_len,
+                max_tokens=effective_seq_len,
                 text_column=text_column,
                 concatenate=cfg.pretraining_sample_concatenation is True,
             )

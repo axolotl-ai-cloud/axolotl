@@ -1343,12 +1343,6 @@ class PretrainingValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_multimodal_cpt(cls, data):
-        pd = data.get("pretraining_dataset")
-        if not pd:
-            return data
-
-        pd_list = pd if isinstance(pd, list) else [pd]
-
         def _entry_is_mm(entry) -> bool:
             if isinstance(entry, dict):
                 ds_type_ = entry.get("type")
@@ -1357,6 +1351,38 @@ class PretrainingValidationMixin:
                 ds_type_ = getattr(entry, "type", None)
                 mm_flag_ = getattr(entry, "multimodal", None)
             return ds_type_ == "multimodal_pretrain" or bool(mm_flag_)
+
+        pd = data.get("pretraining_dataset")
+        pd_list = pd if isinstance(pd, list) else ([pd] if pd else [])
+        train_is_mm = (
+            bool(pd_list) and isinstance(pd_list[0], dict) and _entry_is_mm(pd_list[0])
+        )
+
+        test_datasets = data.get("test_datasets") or []
+        test_dicts = [t for t in test_datasets if isinstance(t, dict)]
+        mm_flags = [_entry_is_mm(t) for t in test_dicts]
+        if mm_flags:
+            if any(mm_flags) != all(mm_flags):
+                raise ValueError(
+                    "Mixing multimodal and non-multimodal entries in "
+                    "`test_datasets` is not supported. All eval entries "
+                    "must share modality."
+                )
+            if all(mm_flags) and not train_is_mm:
+                raise ValueError(
+                    "Multimodal `test_datasets` require multimodal CPT "
+                    "training (set `pretraining_dataset[0].type` to "
+                    "'multimodal_pretrain' or `multimodal: true`)."
+                )
+            if not any(mm_flags) and train_is_mm:
+                raise ValueError(
+                    "Multimodal CPT training requires multimodal "
+                    "`test_datasets` entries (type='multimodal_pretrain' "
+                    "or multimodal: true)."
+                )
+
+        if not pd_list:
+            return data
 
         # MM config resolves from entry[0] only; multi-entry runs miscollate or silently demote.
         if len(pd_list) > 1 and any(_entry_is_mm(e) for e in pd_list):
@@ -1373,9 +1399,7 @@ class PretrainingValidationMixin:
         if not isinstance(first, dict):
             return data
 
-        ds_type = first.get("type")
-        is_mm_cpt = ds_type == "multimodal_pretrain" or bool(first.get("multimodal"))
-        if not is_mm_cpt:
+        if not train_is_mm:
             return data
 
         if not data.get("processor_type"):
