@@ -60,6 +60,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 
@@ -120,6 +121,7 @@ class TestPhiMultipack(unittest.TestCase):
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
 

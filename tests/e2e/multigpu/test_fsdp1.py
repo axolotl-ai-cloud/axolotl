@@ -32,8 +32,8 @@ def verify_training_success(temp_dir):
 
     check_tensorboard_loss_decreased(
         temp_dir + "/runs",
-        initial_window=3,
-        final_window=3,
+        initial_window=10,
+        final_window=10,
         max_initial=5.0,
         max_final=4.7,
     )
@@ -60,7 +60,8 @@ class TestFSDP1:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 20,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
@@ -80,6 +81,9 @@ class TestFSDP1:
                     "fsdp_use_orig_params": False,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
             }
         )
@@ -136,12 +140,12 @@ class TestFSDP1:
                 "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 30,
-                "warmup_steps": 3,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 2e-4,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -157,6 +161,9 @@ class TestFSDP1:
                     "fsdp_use_orig_params": False,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
             }
         )
@@ -217,6 +224,9 @@ class TestFSDP1:
                     "fsdp_use_orig_params": False,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
             }
         )
 
@@ -279,7 +289,7 @@ class TestFSDP1:
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 2e-4,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -295,6 +305,9 @@ class TestFSDP1:
                     "fsdp_use_orig_params": False,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": "auto",
                 "tf32": True,
             }

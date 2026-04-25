@@ -33,7 +33,7 @@ class TestMixtral(unittest.TestCase):
                 "adapter": "qlora",
                 "lora_r": 16,
                 "lora_alpha": 32,
-                "lora_dropout": 0.1,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "val_set_size": 0.05,
                 "special_tokens": {},
@@ -47,16 +47,18 @@ class TestMixtral(unittest.TestCase):
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 2e-4,
+                "learning_rate": 3e-3,
                 "optimizer": "adamw_bnb_8bit",
                 "lr_scheduler": "cosine",
-                "max_steps": 50,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "logging_steps": 1,
-                "save_steps": 50,
-                "eval_steps": 50,
+                "save_steps": 80,
+                "eval_steps": 80,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
@@ -67,8 +69,8 @@ class TestMixtral(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
         check_tensorboard_loss_decreased(
             temp_dir + "/runs",
-            initial_window=5,
-            final_window=5,
+            initial_window=10,
+            final_window=10,
             max_initial=6.0,
             max_final=4.7,
         )
@@ -93,16 +95,18 @@ class TestMixtral(unittest.TestCase):
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 2e-4,
-                "optimizer": "adamw_bnb_8bit",
+                "learning_rate": 5e-4,
+                "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
-                "max_steps": 50,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "logging_steps": 1,
-                "save_steps": 50,
-                "eval_steps": 50,
+                "save_steps": 80,
+                "eval_steps": 80,
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)

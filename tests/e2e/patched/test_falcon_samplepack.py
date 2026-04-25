@@ -61,6 +61,7 @@ class TestFalconPatched(unittest.TestCase):
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
@@ -110,6 +111,7 @@ class TestFalconPatched(unittest.TestCase):
                 "bf16": "auto",
                 "save_first_step": False,
                 "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
