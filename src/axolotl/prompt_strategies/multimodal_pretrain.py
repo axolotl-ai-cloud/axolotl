@@ -45,7 +45,7 @@ _KNOWN_IMAGE_TOKEN_CANDIDATES: tuple[str, ...] = (
     "<IMG_CONTEXT>",
 )
 
-# Without masking these in labels, loss blows up ~10× on Qwen/SmolVLM.
+# Without masking these in labels, loss blows up ~10x on Qwen/SmolVLM.
 _IMAGE_FAMILY_TOKEN_CANDIDATES: tuple[str, ...] = (
     "<image>",
     "<|image|>",
@@ -210,6 +210,7 @@ class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
         image_token_id: int,
         image_column: str = "images",
         image_base_dir: str | None = None,
+        image_token_spec: ImageTokenSpec | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -217,6 +218,7 @@ class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
         self.image_token_id = image_token_id
         self.image_column = image_column
         self.image_base_dir = image_base_dir
+        self.image_token_spec = image_token_spec
 
     def _tokenize(
         self,
@@ -227,8 +229,18 @@ class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
         # No truncation: collator re-tokenizes the full text without truncation;
         # truncating here decouples the stored ids from what the model receives.
         res = self.tokenizer(prompt, add_special_tokens=True)
-        res["input_ids"] = [res["input_ids"] + [self.tokenizer.eos_token_id]]
-        res["attention_mask"] = [res["attention_mask"] + [1]]
+        ids = list(res["input_ids"])
+        mask = list(res["attention_mask"])
+        bos_id = getattr(self.tokenizer, "bos_token_id", None)
+        if strip_bos_token and ids and bos_id is not None and ids[0] == bos_id:
+            ids = ids[1:]
+            mask = mask[1:]
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        if add_eos_token and eos_id is not None:
+            ids = ids + [eos_id]
+            mask = mask + [1]
+        res["input_ids"] = [ids]
+        res["attention_mask"] = [mask]
         return res
 
     def tokenize_prompt(self, prompt: dict[str, Any]) -> dict[str, list]:
@@ -263,9 +275,12 @@ class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
                 f"processor may push the final length even higher)."
             )
 
-        n_chunks = len(res["input_ids"])
-        res["images"] = [list(images)] * n_chunks
-        res["_mm_text"] = [text] * n_chunks
+        # `_tokenize` produces exactly one chunk; the assert keeps that
+        # invariant explicit so a future change there can't silently
+        # mis-align `images` / `_mm_text` against `input_ids`.
+        assert len(res["input_ids"]) == 1
+        res["images"] = [list(images)]
+        res["_mm_text"] = [text]
         return res
 
 
@@ -307,6 +322,6 @@ def load(
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
         max_length=cfg.sequence_len,
+        image_token_spec=spec,
     )
-    strat.image_token_spec = spec  # type: ignore[attr-defined]
     return strat

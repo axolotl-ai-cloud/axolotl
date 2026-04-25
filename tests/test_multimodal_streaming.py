@@ -105,9 +105,11 @@ def test_encode_rejects_row_without_list(smolvlm_processor, two_tiny_images):
 
 
 def test_encode_counts_placeholders_on_full_text(smolvlm_processor, two_tiny_images):
-    # All 3 placeholders must be counted even when text would have been truncated.
+    # The last placeholder must remain countable even when it's hundreds of
+    # tokens deep — guards against a regression that adds tokenizer
+    # truncation and silently drops trailing placeholders.
     spec = build_image_token_spec(smolvlm_processor)
-    long_filler = "lorem ipsum " * 20
+    long_filler = "lorem ipsum " * 400
     text = f"{spec.image_token} {long_filler} {spec.image_token} {long_filler} {spec.image_token}"
     examples = {
         "text": [text],
@@ -120,7 +122,11 @@ def test_encode_counts_placeholders_on_full_text(smolvlm_processor, two_tiny_ima
         image_token=spec.image_token,
         image_token_id=spec.image_token_id,
     )
-    assert sum(1 for t in out["input_ids"][0] if t == spec.image_token_id) == 3
+    ids = out["input_ids"][0]
+    # Sanity: the input is genuinely long, so a truncating regression would
+    # have to cut into it to drop the last placeholder.
+    assert len(ids) > 2000
+    assert sum(1 for t in ids if t == spec.image_token_id) == 3
 
 
 def test_encode_rejects_row_exceeding_max_tokens(smolvlm_processor, two_tiny_images):

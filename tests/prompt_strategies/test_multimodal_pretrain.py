@@ -73,15 +73,24 @@ def test_build_image_token_spec_prefers_boi_token_over_expansion_token(
     smolvlm_processor,
 ):
     """Gemma-3-style autodetect: `boi_token` is preferred over `image_token`
-    when they differ."""
+    when they differ. Resolved id must match the boi_token, not image_token."""
+    tok = smolvlm_processor.tokenizer
+    image_id = tok.convert_tokens_to_ids("<image>")
+    boi_id = tok.convert_tokens_to_ids("<fake_token_around_image>")
+    assert boi_id != image_id, (
+        "fixture assumption broken: SmolVLM tokenizer should map these to distinct ids"
+    )
 
     class _FakeGemma3Like:
         image_token = "<image>"
         boi_token = "<fake_token_around_image>"
-        tokenizer = smolvlm_processor.tokenizer
+        tokenizer = tok
 
     spec = build_image_token_spec(_FakeGemma3Like())
     assert spec.image_token == "<fake_token_around_image>"
+    assert spec.image_token_id == boi_id
+    assert spec.image_token_id != image_id
+    assert boi_id in spec.image_family_token_ids
 
 
 # ---- check_processor_compatibility (startup-time gate) ---------------------
