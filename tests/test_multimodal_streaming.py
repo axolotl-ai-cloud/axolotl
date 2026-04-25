@@ -146,6 +146,80 @@ def test_encode_rejects_row_exceeding_max_tokens(smolvlm_processor, two_tiny_ima
         )
 
 
+# ---- build_image_token_spec autodetection --------------------------------
+
+
+class _StubTokenizer:
+    """Minimal tokenizer stub for autodetection tests."""
+
+    def __init__(self, vocab: dict[str, int], unk_id: int = 0):
+        self._vocab = vocab
+        self.unk_token_id = unk_id
+        self.all_special_tokens = list(vocab.keys())
+        self.additional_special_tokens: list[str] = []
+
+    def get_added_vocab(self):
+        return dict(self._vocab)
+
+    def convert_tokens_to_ids(self, tok):
+        return self._vocab.get(tok, self.unk_token_id)
+
+
+class _StubProcessor:
+    def __init__(self, tokenizer, image_token=None, boi_token=None):
+        self.tokenizer = tokenizer
+        if image_token is not None:
+            self.image_token = image_token
+        if boi_token is not None:
+            self.boi_token = boi_token
+
+
+def test_build_image_token_spec_gemma4_uses_image_token_not_boi():
+    """Gemma-4: `image_token` is the user-facing placeholder; don't swap to boi_token."""
+    tok = _StubTokenizer({"<|image|>": 258880, "<|image>": 255999})
+    proc = _StubProcessor(tok, image_token="<|image|>", boi_token="<|image>")
+    spec = build_image_token_spec(proc)
+    assert spec.image_token == "<|image|>"
+    assert spec.image_token_id == 258880
+
+
+def test_build_image_token_spec_gemma3_swaps_to_boi_token():
+    """Gemma-3: `image_token` is the post-expansion soft token; placeholder is `boi_token`."""
+    tok = _StubTokenizer(
+        {"<image_soft_token>": 262144, "<start_of_image>": 255999}
+    )
+    proc = _StubProcessor(
+        tok, image_token="<image_soft_token>", boi_token="<start_of_image>"
+    )
+    spec = build_image_token_spec(proc)
+    assert spec.image_token == "<start_of_image>"
+    assert spec.image_token_id == 255999
+
+
+def test_build_image_token_spec_override_not_special_rejected():
+    """Override that isn't a registered special token is rejected (would BPE-tokenize)."""
+    tok = _StubTokenizer({"<|image|>": 258880})
+    proc = _StubProcessor(tok, image_token="<|image|>")
+    with pytest.raises(ValueError, match="not a registered special token"):
+        build_image_token_spec(proc, override="not_a_real_token")
+
+
+def test_build_image_token_spec_override_resolves_to_unk_rejected():
+    """Override that resolves to unk is rejected with a clear error."""
+    tok = _StubTokenizer({"<|image|>": 258880, "<|fake|>": 0}, unk_id=0)
+    proc = _StubProcessor(tok, image_token="<|image|>")
+    with pytest.raises(ValueError, match="did not resolve"):
+        build_image_token_spec(proc, override="<|fake|>")
+
+
+def test_build_image_token_spec_no_candidates_raises():
+    """If neither processor attrs nor any known candidate resolve, raise a clear error."""
+    tok = _StubTokenizer({})  # nothing registered
+    proc = _StubProcessor(tok)  # no image_token, no boi_token
+    with pytest.raises(ValueError, match="Could not autodetect"):
+        build_image_token_spec(proc)
+
+
 # ---- wrap_streaming_dataset routing --------------------------------------
 
 
@@ -494,6 +568,71 @@ def test_collator_rejects_too_many_images(smolvlm_processor, two_tiny_images):
     paths = [str(two_tiny_images[0])] * 3
     with pytest.raises(ValueError, match="max_images_per_row"):
         collator._load_images_for_row(paths, row_index=0)
+
+
+def test_collator_skip_bad_images_drops_row_and_continues(
+    smolvlm_processor, two_tiny_images, tmp_path
+):
+    """skip_bad_images=True: bad row drops, batch survives on remaining rows."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    rows = [
+        {
+            "_mm_text": f"{spec.image_token}\ngood row",
+            "images": [str(two_tiny_images[0])],
+        },
+        {
+            "_mm_text": f"{spec.image_token}\nbad row",
+            "images": [str(tmp_path / "missing.png")],
+        },
+    ]
+    batch = collator.torch_call(rows)
+    # Surviving row produced a batch with pixel_values from the good image.
+    assert "input_ids" in batch and "pixel_values" in batch
+    assert batch["input_ids"].shape[0] == 1
+
+
+def test_collator_all_rows_dropped_raises(smolvlm_processor, tmp_path):
+    """skip_bad_images=True with every row failing surfaces a RuntimeError."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+        skip_bad_images=True,
+    )
+    rows = [
+        {
+            "_mm_text": f"{spec.image_token}\nrow",
+            "images": [str(tmp_path / f"missing_{i}.png")],
+        }
+        for i in range(2)
+    ]
+    with pytest.raises(RuntimeError, match="All rows in the batch were dropped"):
+        collator.torch_call(rows)
+
+
+def test_collator_rejects_multi_frame_image(smolvlm_processor, tmp_path):
+    """Multi-frame GIF is rejected by the in-process bomb guard."""
+    spec = build_image_token_spec(smolvlm_processor)
+    collator = MultiModalPretrainDataCollator(
+        tokenizer=smolvlm_processor.tokenizer,
+        processor=smolvlm_processor,
+        image_token_spec=spec,
+    )
+    # Build an in-memory 2-frame GIF; verify the inner guard fires (the
+    # outer `_load_images_for_row` wraps it in a basename-only RuntimeError).
+    gif_path = tmp_path / "anim.gif"
+    f0 = Image.new("RGB", (16, 16), color=(255, 0, 0))
+    f1 = Image.new("RGB", (16, 16), color=(0, 255, 0))
+    f0.save(gif_path, save_all=True, append_images=[f1], duration=100, loop=0)
+    with pytest.raises(ValueError, match="Multi-frame"):
+        collator._open_image_hardened(str(gif_path))
 
 
 # ---- mixed / all-text batches --------------------------------------------
