@@ -287,7 +287,12 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 retry_kwargs["pad_to_multiple_of"] = self.pad_to_multiple_of
             for i, (t, imgs) in enumerate(zip(texts, images, strict=True)):
                 try:
-                    self.processor(text=[t], images=[imgs], **retry_kwargs)
+                    if len(imgs) == 0:
+                        # Some processors reject `images=[[]]` — would mislabel
+                        # text-only rows as the offender.
+                        self.tokenizer(text=[t], **retry_kwargs)
+                    else:
+                        self.processor(text=[t], images=[imgs], **retry_kwargs)
                 except Exception as retry_exc:
                     if isinstance(retry_exc, type(exc)) or isinstance(
                         exc, type(retry_exc)
