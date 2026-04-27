@@ -10,7 +10,10 @@ from axolotl.utils import get_pytorch_version
 from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import check_model_output_exists
+from tests.e2e.utils import (
+    check_model_output_exists,
+    check_tensorboard_loss_decreased,
+)
 
 
 @pytest.fixture()
@@ -35,13 +38,16 @@ def min_cfg(temp_dir):
         "num_epochs": 1,
         "micro_batch_size": 8,
         "gradient_accumulation_steps": 1,
-        "learning_rate": 0.00001,
+        "learning_rate": 5e-4,
         "optimizer": "adamw_torch_fused",
         "output_dir": temp_dir,
         "lr_scheduler": "cosine",
-        "max_steps": 10,
+        "max_steps": 40,
+        "warmup_steps": 5,
         "bf16": "auto",
         "save_first_step": False,
+        "use_tensorboard": True,
+        "seed": 42,
     }
 
 
@@ -64,11 +70,18 @@ class TestCutCrossEntropyIntegration:
         else:
             train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
+            check_tensorboard_loss_decreased(
+                temp_dir + "/runs",
+                initial_window=5,
+                final_window=5,
+                max_initial=2.2,
+                max_final=2.0,
+            )
 
     def test_qwen2_w_cce(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "plugins": [
                     "axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin",
                 ],
@@ -87,13 +100,15 @@ class TestCutCrossEntropyIntegration:
                 "num_epochs": 1,
                 "micro_batch_size": 4,
                 "gradient_accumulation_steps": 1,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "output_dir": temp_dir,
                 "lr_scheduler": "cosine",
-                "max_steps": 10,
+                "max_steps": 50,
                 "bf16": "auto",
                 "save_first_step": False,
+                "use_tensorboard": True,
+                "seed": 42,
             }
         )
         cfg = validate_config(cfg)
@@ -108,6 +123,13 @@ class TestCutCrossEntropyIntegration:
         else:
             train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
+            check_tensorboard_loss_decreased(
+                temp_dir + "/runs",
+                initial_window=5,
+                final_window=5,
+                max_initial=5.0,
+                max_final=4.7,
+            )
 
     @pytest.mark.parametrize(
         "attention_type",
@@ -136,3 +158,10 @@ class TestCutCrossEntropyIntegration:
         else:
             train(cfg=cfg, dataset_meta=dataset_meta)
             check_model_output_exists(temp_dir, cfg)
+            check_tensorboard_loss_decreased(
+                temp_dir + "/runs",
+                initial_window=5,
+                final_window=5,
+                max_initial=2.2,
+                max_final=2.0,
+            )
