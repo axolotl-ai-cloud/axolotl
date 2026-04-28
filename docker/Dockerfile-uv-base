@@ -50,7 +50,11 @@ RUN PYTHON_CP="cp$(echo $PYTHON_VERSION | tr -d '.')" && \
         arm64) ARCH_TAG="2_34_aarch64" ;; \
         *) echo "Unsupported architecture: $TARGETARCH"; exit 1 ;; \
     esac && \
-    WHL_VERSION="v0.7.16" && \
+    # Select prebuild-wheel release tag (v0.9.4 for torch 2.11, v0.7.16 otherwise)
+    case "$TORCH_TAG" in \
+        torch2.11) WHL_VERSION="v0.9.4" ;; \
+        *) WHL_VERSION="v0.7.16" ;; \
+    esac && \
     WHL_FILE="flash_attn-2.8.3+cu${CUDA}${TORCH_TAG}-${PYTHON_CP}-${PYTHON_CP}-${LINUX_TAG}${ARCH_TAG}.whl" && \
     wget -nv "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/${WHL_VERSION}/${WHL_FILE}" && \
     uv pip install --no-cache-dir "${WHL_FILE}" && \
