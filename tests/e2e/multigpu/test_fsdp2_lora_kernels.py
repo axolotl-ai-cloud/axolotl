@@ -40,7 +40,7 @@ def _run_training(temp_dir, cfg):
 def _base_lora_fsdp2_config(temp_dir, **overrides):
     """Base config for LoRA + FSDP2 + kernel tests."""
     cfg = {
-        "base_model": "Qwen/Qwen3-0.6B",
+        "base_model": "axolotl-ai-co/tiny-qwen3-129m",
         "sequence_len": 512,
         "val_set_size": 0.0,
         "datasets": [

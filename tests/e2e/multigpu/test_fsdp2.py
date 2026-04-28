@@ -1,24 +1,23 @@
 """Test module for FSDP2 multi-GPU functionality."""
 
-import os
 from pathlib import Path
 
 import pytest
-import torch
 import yaml
 from accelerate.test_utils import execute_subprocess_async
-from tbparse import SummaryReader
 from transformers.testing_utils import get_torch_dist_unique_port
 
 from axolotl.utils.dict import DictDefault
 
-from tests.e2e.utils import most_recent_subdir, require_torch_2_7_0
+from tests.e2e.utils import check_tensorboard_loss_decreased, require_torch_2_7_0
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def verify_training_success(temp_dir):
-    """Verify that training completed successfully by checking artifacts and loss."""
+    """Verify that training completed successfully — artifacts, no-NaN, loss
+    stayed in qwen2-pretraining scale (tiny-qwen2-129m final pretrain CE ~3.92).
+    """
     output_path = Path(temp_dir)
 
     model_files = list(output_path.glob("*.bin")) + list(
@@ -31,19 +30,13 @@ def verify_training_success(temp_dir):
         "No checkpoint files found - training may have failed"
     )
 
-    tb_log_path = most_recent_subdir(temp_dir + "/runs")
-    if tb_log_path:
-        event_files = sorted(os.listdir(tb_log_path))
-        if event_files:
-            event_file = os.path.join(tb_log_path, event_files[0])
-            reader = SummaryReader(event_file)
-            df = reader.scalars
-            train_loss_df = df[df.tag == "train/train_loss"]
-            if len(train_loss_df) > 0:
-                final_loss = train_loss_df.value.values[-1]
-                assert not torch.isnan(torch.tensor(final_loss)), (
-                    f"Training loss is NaN: {final_loss}"
-                )
+    check_tensorboard_loss_decreased(
+        temp_dir + "/runs",
+        initial_window=10,
+        final_window=10,
+        max_initial=5.0,
+        max_final=4.7,
+    )
 
 
 class TestFSDP2:
@@ -57,7 +50,7 @@ class TestFSDP2:
     def test_fft_sft(self, temp_dir, fsdp_cpu_ram_efficient_loading):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -68,11 +61,12 @@ class TestFSDP2:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -86,6 +80,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
             }
         )
@@ -114,7 +111,7 @@ class TestFSDP2:
     def test_lora_sft(self, temp_dir, peft_use_dora):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -128,14 +125,15 @@ class TestFSDP2:
                 "adapter": "lora",
                 "lora_r": 8,
                 "lora_alpha": 16,
-                "lora_dropout": 0.05,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -149,6 +147,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
                 # explicitly disable LORA kernels, as they may be auto-enabled
                 "lora_mlp_kernel": False,
@@ -180,7 +181,7 @@ class TestFSDP2:
     def test_lora_sft_kernels(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -195,11 +196,12 @@ class TestFSDP2:
                 "lora_alpha": 16,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -213,6 +215,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
                 "lora_mlp_kernel": True,
                 "lora_qkv_kernel": True,
@@ -243,7 +248,7 @@ class TestFSDP2:
     def test_qlora_sft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -257,14 +262,15 @@ class TestFSDP2:
                 "adapter": "qlora",
                 "lora_r": 8,
                 "lora_alpha": 16,
-                "lora_dropout": 0.05,
+                "lora_dropout": 0.0,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -278,6 +284,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
             }
         )
@@ -305,7 +314,7 @@ class TestFSDP2:
     def test_qlora_sft_kernels(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [
@@ -321,11 +330,12 @@ class TestFSDP2:
                 "lora_alpha": 16,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 80,
+                "warmup_steps": 5,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -339,6 +349,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
                 "bf16": True,
                 "lora_mlp_kernel": True,
                 "lora_qkv_kernel": True,
@@ -370,7 +383,7 @@ class TestFSDP2:
     def test_dpo_fft(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "rl": "dpo",
@@ -383,11 +396,11 @@ class TestFSDP2:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 2e-4,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -401,6 +414,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
             }
         )
 
@@ -428,7 +444,7 @@ class TestFSDP2:
     def test_dpo_lora(self, temp_dir):
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "rl": "dpo",
                 "chat_template": "chatml",
@@ -445,11 +461,11 @@ class TestFSDP2:
                 "lora_dropout": 0.05,
                 "lora_target_linear": True,
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 2,
                 "gradient_accumulation_steps": 1,
                 "output_dir": temp_dir,
-                "learning_rate": 0.00001,
+                "learning_rate": 1e-3,
                 "optimizer": "adamw_torch_fused",
                 "lr_scheduler": "cosine",
                 "flash_attention": True,
@@ -463,6 +479,9 @@ class TestFSDP2:
                     "reshard_after_forward": True,
                 },
                 "use_tensorboard": True,
+                "seed": 42,
+                "sample_packing": True,
+                "pad_to_sequence_len": True,
             }
         )
 
