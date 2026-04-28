@@ -137,15 +137,49 @@ def download_smollm2_135m_gptq_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_qwen_2_5_half_billion_model():
-    # download the model
-    snapshot_download_w_retry("Qwen/Qwen2.5-0.5B", repo_type="model")
+def download_qwen3_half_billion_model():
+    # download the model (still used as the KD teacher in tests/e2e/integrations/test_kd.py)
+    snapshot_download_w_retry("Qwen/Qwen3-0.6B", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
-def download_qwen3_half_billion_model():
-    # download the model
-    snapshot_download_w_retry("Qwen/Qwen3-0.6B", repo_type="model")
+def download_tiny_llama_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-llama-50m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_mistral_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-mistral-25m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_mixtral_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-mixtral-30m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_phi_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-phi-64m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_falcon_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-falcon-42m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_qwen2_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-qwen2-129m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_qwen3_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-qwen3-129m", repo_type="model")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def download_tiny_gemma2_model():
+    snapshot_download_w_retry("axolotl-ai-co/tiny-gemma2-137m", repo_type="model")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -638,7 +672,15 @@ def fixture_min_base_cfg():
 )
 def test_load_fixtures(
     download_smollm2_135m_model,
-    download_qwen_2_5_half_billion_model,
+    download_qwen3_half_billion_model,
+    download_tiny_llama_model,
+    download_tiny_mistral_model,
+    download_tiny_mixtral_model,
+    download_tiny_phi_model,
+    download_tiny_falcon_model,
+    download_tiny_qwen2_model,
+    download_tiny_qwen3_model,
+    download_tiny_gemma2_model,
     download_tatsu_lab_alpaca_dataset,
     download_mhenrichsen_alpaca_2k_dataset,
     download_mhenrichsen_alpaca_2k_w_revision_dataset,
