@@ -35,7 +35,7 @@ warmup_ratio: 0.1
 optimizer: adamw_8bit
 lr_scheduler: cosine
 learning_rate: 3e-4
-sdp_attention: true
+attn_implementation: sdpa
 
 bf16: auto
 tf32: true

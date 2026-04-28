@@ -257,19 +257,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
-        training_arguments_kwargs["sample_packing_drop_attention_mask"] = bool(
-            self.cfg.flash_attention
-            or self.cfg.xformers_attention
-            or self.cfg.flex_attention
+        training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
+            self.cfg.attn_supports_packing
         )
         training_arguments_kwargs["multipack_real_batches"] = (
             self.cfg.multipack_real_batches
             if self.cfg.multipack_real_batches is not None
-            else not (
-                self.cfg.flash_attention
-                or self.cfg.flex_attention
-                or self.cfg.xformers_attention
-            )
+            else not self.cfg.attn_supports_packing
         )
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
@@ -508,11 +502,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
             if (
-                self.cfg.flex_attention
+                self.cfg.attn_implementation == "flex_attention"
                 or self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
                 or (
                     self.cfg.model_config_type in ["llama"]
-                    and self.cfg.flash_attention is not True
+                    and self.cfg.attn_implementation != "flash_attention_2"
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq

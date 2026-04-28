@@ -343,12 +343,7 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (
-                    needs_fa2_dtype
-                    or self.cfg.flash_attention
-                    or self.cfg.flex_attention
-                    or self.cfg.sage_attention
-                )
+                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -633,35 +628,20 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        """Sample packing uses custom FA2 patch"""
-        if self.cfg.gemma4_hybrid_attn_impl:
-            # Load model with flash_attention_2 for sliding window layers;
-            # global layers will be patched to sdpa post-load.
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-            # Set flash_attention so multipack/sample_packing patches activate
-            self.cfg.flash_attention = True
-        elif self.cfg.attn_implementation:
-            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
-        elif self.cfg.flex_attention:
-            self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = "flex_attention"
-
-        elif self.cfg.flash_attention:
-            if not self.cfg.sample_packing and self.cfg.s2_attention:
-                pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = "sdpa"
-        elif self.cfg.sage_attention:
-            # sets FA2 attention to re-use same internal handling like masking
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = "eager"
+        # s2 and fp8 need a different HF backend at load time than their
+        # canonical name: s2 patches FA2 internals, so load under FA2; fp8
+        # replaces F.scaled_dot_product_attention post-load, so load under sdpa.
+        # Every other canonical name (and hub-kernel paths) is passed through
+        # verbatim — xformers/sage/flash_attention_* are registered under their
+        # own names in ALL_ATTENTION_FUNCTIONS before model load. gemma4_hybrid
+        # is already pinned to flash_attention_2 by normalize_attn_implementation.
+        _LOAD_TIME_OVERRIDE = {"s2": "flash_attention_2", "fp8": "sdpa"}
+        if self.cfg.attn_implementation:
+            hf_impl = _LOAD_TIME_OVERRIDE.get(
+                self.cfg.attn_implementation, self.cfg.attn_implementation
+            )
+            self.model_kwargs["attn_implementation"] = hf_impl
+            self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True

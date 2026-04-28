@@ -521,9 +521,9 @@ class TestMultiGPULlama:
             }
         )
         if attention_backend == "flash":
-            cfg.flash_attention = True
+            cfg.attn_implementation = "flash_attention_2"
         elif attention_backend == "flex":
-            cfg.flex_attention = True
+            cfg.attn_implementation = "flex_attention"
 
         # write cfg to yaml file
         Path(temp_dir).mkdir(parents=True, exist_ok=True)

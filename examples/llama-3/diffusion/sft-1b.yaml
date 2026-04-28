@@ -41,7 +41,7 @@ tf32: true
 
 gradient_checkpointing: true
 resume_from_checkpoint:
-sdp_attention: true
+attn_implementation: sdpa
 
 logging_steps: 1
 save_strategy: best

@@ -64,7 +64,7 @@ bf16: true
 tf32: true
 
 torch_compile: true
-flex_attention: true
+attn_implementation: flex_attention
 flex_attn_compile_kwargs:
   dynamic: false
   mode: max-autotune-no-cudagraphs

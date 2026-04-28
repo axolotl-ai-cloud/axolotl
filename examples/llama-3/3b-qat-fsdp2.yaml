@@ -26,7 +26,7 @@ dataset_prepared_path: ./outputs/qat_out/dataset_prepared
 
 sample_packing: false
 sequence_len: 8192
-flash_attention: true
+attn_implementation: flash_attention_2
 
 qat:
   activation_dtype: int8
