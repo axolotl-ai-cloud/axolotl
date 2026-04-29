@@ -521,12 +521,53 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
+                # Mirror ChatTemplateStrategy: per-dataset masking knobs from first MM dataset, else global cfg.
+                # NOTE: Multi-dataset configs use the first dataset's masking knobs for all datasets;
+                # heterogeneous per-dataset overrides are not supported in the MM path today.
+                ds_entries = self.cfg.datasets or []
+                ds_cfg = ds_entries[0] if ds_entries else None
+
+                def _ds_get(cfg_obj, key):
+                    # Handle DictDefault / dict / pydantic uniformly:
+                    # dict-style .get first, then attribute access.
+                    if cfg_obj is None:
+                        return None
+                    if hasattr(cfg_obj, "get"):
+                        try:
+                            return cfg_obj.get(key)
+                        except (AttributeError, KeyError, TypeError):
+                            pass
+                    return getattr(cfg_obj, key, None)
+
+                roles_to_train = _ds_get(ds_cfg, "roles_to_train")
+                train_on_eos = _ds_get(ds_cfg, "train_on_eos")
+
+                # cfg.role_boundaries replaces the strategy's built-in markers.
+                role_boundaries_override = None
+                if self.cfg.role_boundaries:
+                    role_boundaries_override = list(self.cfg.role_boundaries)
+
+                # build() calls build_collator twice (eval + train); log once.
+                if not is_eval:
+                    LOG.info(
+                        "MM collator: train_on_inputs=%s roles_to_train=%s "
+                        "train_on_eos=%s role_boundaries_override=%s",
+                        bool(self.cfg.train_on_inputs),
+                        roles_to_train,
+                        train_on_eos,
+                        "set" if role_boundaries_override else "none",
+                    )
+
                 kwargs["processing_strategy"] = get_processing_strategy(
                     self.processor,
                     training_args.chat_template,
                     self.cfg.chat_template,
                     image_size=training_args.image_size,
                     image_resize_algorithm=training_args.image_resize_algorithm,
+                    train_on_inputs=bool(self.cfg.train_on_inputs),
+                    roles_to_train=roles_to_train,
+                    train_on_eos=train_on_eos,
+                    role_boundaries_override=role_boundaries_override,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
