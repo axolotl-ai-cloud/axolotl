@@ -1,16 +1,8 @@
-"""Guard the attn_implementation source-of-truth invariant.
+"""Enforce attn_implementation as the single source of truth.
 
-`cfg.attn_implementation` is the single source of truth for the attention
-backend on the validated config. Legacy boolean flags (`flash_attention`,
-`sdp_attention`, `xformers_attention`, `flex_attention`, `sage_attention`,
-`s2_attention`, `eager_attention`) are input-only deprecated aliases — they
-are stripped from `data` by `normalize_attn_implementation` and must never be
-read downstream.
-
-This test greps `src/` and fails if it finds a `cfg.<legacy>_attention` read.
-If you're here because this test failed, migrate the read site to
-`cfg.attn_implementation` or one of the `attn_supports_packing /
-attn_uses_flash_lib / attn_needs_dtype_cast` computed capability flags.
+Fails if src/ contains a cfg.<legacy>_attention read. Migrate offending sites
+to cfg.attn_implementation or the attn_supports_packing/attn_uses_flash_lib/
+attn_needs_dtype_cast computed flags.
 """
 
 from __future__ import annotations

@@ -1397,16 +1397,7 @@ class AxolotlInputConfig(
     @model_validator(mode="before")
     @classmethod
     def normalize_attn_implementation(cls, data):
-        """Map legacy boolean attention flags to the canonical `attn_implementation`.
-
-        `attn_implementation` is the single source of truth on the validated
-        config. Legacy booleans (`flash_attention: true`, …) are input-only
-        aliases; this validator warns, maps them to their canonical value, and
-        strips them from `data` so they cannot be read downstream.
-
-        Raises if a canonical `attn_implementation` is set alongside any legacy
-        boolean — users must pick one.
-        """
+        """Map legacy boolean attention flags to canonical attn_implementation, warn, then strip."""
         if not isinstance(data, dict):
             return data
 
