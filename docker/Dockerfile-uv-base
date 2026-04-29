@@ -9,6 +9,7 @@ FROM nvidia/cuda:$CUDA_VERSION-cudnn$CUDNN_VERSION-devel-ubuntu$UBUNTU_VERSION A
 ARG TARGETARCH
 ARG PYTHON_VERSION="3.11"
 ARG PYTORCH_VERSION="2.6.0"
+ARG TORCHVISION_VERSION="0.21.0"
 ARG CUDA="126"
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0+PTX"
 
@@ -32,7 +33,7 @@ RUN uv venv --no-project --relocatable axolotl-venv
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN uv pip install packaging setuptools wheel psutil \
-    && uv pip install torch==${PYTORCH_VERSION} torchvision \
+    && uv pip install torch==${PYTORCH_VERSION} torchvision==${TORCHVISION_VERSION} \
     && uv pip install awscli pydantic
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \

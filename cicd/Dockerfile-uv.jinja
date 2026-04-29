@@ -5,6 +5,7 @@ ENV AXOLOTL_EXTRAS="{{ AXOLOTL_EXTRAS }}"
 ENV AXOLOTL_ARGS="{{ AXOLOTL_ARGS }}"
 ENV CUDA="{{ CUDA }}"
 ENV PYTORCH_VERSION="{{ PYTORCH_VERSION }}"
+ENV TORCHVISION_VERSION="{{ TORCHVISION_VERSION }}"
 ENV GITHUB_REF="{{ GITHUB_REF }}"
 ENV GITHUB_SHA="{{ GITHUB_SHA }}"
 ENV NIGHTLY_BUILD="{{ NIGHTLY_BUILD }}"
@@ -23,7 +24,7 @@ RUN git fetch origin +$GITHUB_REF && \
     git checkout FETCH_HEAD
 
 RUN uv pip install packaging==26.0 setuptools==78.1.1
-RUN uv pip install torchvision
+RUN uv pip install torchvision==${TORCHVISION_VERSION}
 RUN uv pip uninstall causal_conv1d
 RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
         uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
