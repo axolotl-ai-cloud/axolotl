@@ -1541,6 +1541,13 @@ class ComplexValidationMixin:
                 sys.modules[
                     "transformers.modeling_flash_attention_utils"
                 ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                if not hasattr(
+                    transformers.modeling_flash_attention_utils,
+                    "is_flash_attn_greater_or_equal_2_10",
+                ):
+                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
+                        "2.10"
+                    )
                 import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
@@ -1557,6 +1564,24 @@ class ComplexValidationMixin:
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
             )
+
+            _SSM_HYBRID_MODEL_TYPES = {
+                "nemotron_h",
+                "falcon_h1",
+                "granitemoehybrid",
+            }
+            _model_config_type = getattr(self, "model_config_type", None) or ""
+            if _model_config_type in _SSM_HYBRID_MODEL_TYPES:
+                LOG.warning(
+                    f"context_parallel_size={self.context_parallel_size} with "
+                    f"model_type={_model_config_type}: SSM/Mamba layers use P2P "
+                    "hidden-state passing and additive output correction across "
+                    "CP ranks. Attention layers use ring attention. This is "
+                    "mathematically exact but has not been extensively validated "
+                    "end-to-end — verify loss curves match single-GPU baselines. "
+                    "Recommended: run a short training job and compare loss curves "
+                    "against a single-GPU baseline with the same data/seed."
+                )
 
         return self
 

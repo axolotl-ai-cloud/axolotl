@@ -358,22 +358,39 @@ class PatchManager:
 
             patch_kimi_model()
 
-        if self.cfg.model_config_type == "nemotron_h":
-            if self.cfg.sample_packing:
-                from transformers.models.nemotron_h.modeling_nemotron_h import (
-                    NemotronHPreTrainedModel,
-                )
+        ssm_hybrid_patch_needed = (
+            self.cfg.sample_packing or self.cfg.context_parallel_size > 1
+        )
 
-                from axolotl.monkeypatch.models.nemotron_h.modeling import (
-                    patch_nemotron_h_modeling_packing,
-                )
+        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
+            from transformers.models.nemotron_h.modeling_nemotron_h import (
+                NemotronHPreTrainedModel,
+            )
 
-                patch_nemotron_h_modeling_packing()
-                # supports_gradient_checkpointing is only enabled after
-                # patch_nemotron_h_modeling_packing() installs the GC-compatible
-                # NemotronHBlock.forward. Without the patch, upstream marks this
-                # False because the original block forward is not GC-safe.
-                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+            from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                patch_nemotron_h_modeling_packing,
+            )
+
+            patch_nemotron_h_modeling_packing()
+            # supports_gradient_checkpointing is only enabled after
+            # patch_nemotron_h_modeling_packing() installs the GC-compatible
+            # NemotronHBlock.forward. Without the patch, upstream marks this
+            # False because the original block forward is not GC-safe.
+            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
+        if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.falcon_h1.modeling import (
+                patch_falcon_h1_modeling_packing,
+            )
+
+            patch_falcon_h1_modeling_packing()
+
+        if self.cfg.model_config_type == "granitemoehybrid" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
+                patch_granitemoehybrid_modeling_packing,
+            )
+
+            patch_granitemoehybrid_modeling_packing()
 
         # Patches requiring CUDA
         if torch.cuda.is_available():

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -458,6 +459,15 @@ class AxolotlTrainer(
             return_outputs=return_outputs,
             num_items_in_batch=num_items_in_batch,
         )
+
+    @override
+    def _prepare_context_parallel_inputs(self, model, inputs):
+        """Disable HF Trainer's CP splitting when Axolotl's ring_attn handles it."""
+        from axolotl.monkeypatch.models.mamba_utils import is_cp_active
+
+        if is_cp_active():
+            return contextlib.nullcontext, inputs
+        return super()._prepare_context_parallel_inputs(model, inputs)
 
     @override
     def evaluate(self, *args, **kwargs):
