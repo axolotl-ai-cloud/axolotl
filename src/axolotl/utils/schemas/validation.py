@@ -183,9 +183,6 @@ class DatasetValidationMixin:
 class AttentionValidationMixin:
     """Validation methods related to attention mechanisms."""
 
-    # `check_attention_fields` was removed — `AxolotlInputConfig.normalize_attn_implementation`
-    # is now the single entry point for attention-input mapping and conflict detection.
-
     @model_validator(mode="after")
     def check_sample_packing_without_attention(self):
         if self.sample_packing and not self.attn_supports_packing:

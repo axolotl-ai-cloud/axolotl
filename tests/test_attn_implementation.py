@@ -1,11 +1,5 @@
-"""Tests for attn_implementation: input normalization, canonical-value
-acceptance, capability flags, backend registration, and downstream validators.
-
-Test classes are organized by feature concern, not by the layer of the schema
-where the behavior is implemented (classmethod normalizer vs. field validator
-vs. full `validate_config` pipeline). Each class covers a single contract end
-to end, dropping into the lower layer only where it gives faster or sharper
-coverage of an isolated branch.
+"""Tests for attn_implementation: normalization, canonical-value acceptance,
+capability flags, backend registration, and downstream validators.
 """
 
 import logging
@@ -53,12 +47,7 @@ def _xformers_available():
 
 
 class TestCapabilityTables:
-    """Backend capability classification.
-
-    Asserts both the static frozensets in `enums.py` and the `computed_field`
-    properties on a validated config read consistently from those tables, and
-    that user YAML cannot override the computed flags.
-    """
+    """Backend capability classification via frozensets and computed_field properties."""
 
     @pytest.mark.parametrize(
         "impl",
@@ -359,8 +348,6 @@ class TestGemma4HybridMode:
         assert result["attn_implementation"] == "flash_attention_2"
 
     def test_non_fa2_raises(self):
-        """The hybrid path requires FA2 under the hood — any other backend is
-        a configuration error."""
         with pytest.raises(
             ValueError, match="requires attn_implementation=flash_attention_2"
         ):
@@ -370,11 +357,7 @@ class TestGemma4HybridMode:
 
 
 class TestSamplePackingValidation:
-    """`sample_packing` requires a varlen-capable backend.
-
-    Non-varlen backends (eager, sdpa) warn about cross-sample contamination;
-    s2 raises outright because shifted-sparse attention has no varlen path.
-    """
+    """`sample_packing` warns for non-varlen backends; s2 raises outright."""
 
     def test_eager_warns(self, min_base_cfg, caplog):
         cfg = min_base_cfg | DictDefault(

@@ -97,12 +97,7 @@ class CustomSupportedOptimizers(str, Enum):
     flash_lion = "flash_lion"
 
 
-# Canonical values accepted for `attn_implementation`. These are passed to HF
-# verbatim via `model.config._attn_implementation`. HF-native backends use HF's
-# own names (`flash_attention_2`, `flex_attention`, ...); axolotl-owned backends
-# (`xformers`, `sage`, `s2`, `fp8`) register into `ALL_ATTENTION_FUNCTIONS` under
-# these exact names. Hub-kernel paths (e.g. `kernels-community/flash-attn3`) are
-# not in this set — they pass through the validator via the "/" check.
+# Accepted canonical names; hub-kernel paths (containing "/") bypass this set.
 CANONICAL_ATTN_IMPLS = frozenset(
     {
         "eager",
@@ -117,10 +112,7 @@ CANONICAL_ATTN_IMPLS = frozenset(
     }
 )
 
-# Legacy boolean attention flags → canonical `attn_implementation`. Kept for
-# backwards compatibility; the normalizer warns and strips these from the
-# validated config. Priority order (first match wins) matches the old priority:
-# specific backends beat the generic flash/sdp/eager fallbacks.
+# Legacy boolean flags → canonical attn_implementation. Priority: specific before generic.
 LEGACY_ATTN_FLAG_TO_IMPL = {
     "xformers_attention": "xformers",
     "s2_attention": "s2",
@@ -131,9 +123,7 @@ LEGACY_ATTN_FLAG_TO_IMPL = {
     "eager_attention": "eager",
 }
 
-# Short-form aliases that were accepted by the in-progress branch but are
-# rejected going forward. Mapped to canonical names only to produce a helpful
-# error message pointing users at the right value.
+# Short-form aliases rejected at validation; mapped to canonical names for error messages.
 SHORT_FORM_ALIAS_TO_CANONICAL = {
     "flash": "flash_attention_2",
     "flex": "flex_attention",
@@ -148,18 +138,19 @@ ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
         "flex_attention",
         "xformers",
         "sage",
+        "kernels-community/flash-attn2",
         "kernels-community/flash-attn3",
         "kernels-community/sage-attention",
     }
 )
 
-# Backends that require the flash_attn library (Dao-AILab/flash-attention) for
-# axolotl's own monkeypatches (FA4 auto-apply, LLaMA flash hijack, ring-FA, ...).
+# Backends that require the flash_attn library for axolotl's own monkeypatches.
 ATTN_IMPLS_USING_FLASH_LIB = frozenset(
     {
         "flash_attention_2",
         "flash_attention_3",
         "s2",
+        "kernels-community/flash-attn2",
         "kernels-community/flash-attn3",
     }
 )

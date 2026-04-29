@@ -628,13 +628,7 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        # s2 and fp8 need a different HF backend at load time than their
-        # canonical name: s2 patches FA2 internals, so load under FA2; fp8
-        # replaces F.scaled_dot_product_attention post-load, so load under sdpa.
-        # Every other canonical name (and hub-kernel paths) is passed through
-        # verbatim — xformers/sage/flash_attention_* are registered under their
-        # own names in ALL_ATTENTION_FUNCTIONS before model load. gemma4_hybrid
-        # is already pinned to flash_attention_2 by normalize_attn_implementation.
+        # s2 patches FA2 internals (load as FA2); fp8 replaces sdpa post-load (load as sdpa).
         _LOAD_TIME_OVERRIDE = {"s2": "flash_attention_2", "fp8": "sdpa"}
         if self.cfg.attn_implementation:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
