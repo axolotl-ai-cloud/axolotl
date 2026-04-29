@@ -1,16 +1,9 @@
-base_model: mistralai/Devstral-Small-2507
-
-# Automatically upload checkpoint and final model to HF
-# hub_model_id: username/custom_model_name
-
-# Enable to use mistral-common tokenizer
-tokenizer_use_mistral_common: true
-
-load_in_8bit: false
-load_in_4bit: true
+base_model: axolotl-ai-co/Mistral-Medium-3.5-128B-BF16
 
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+load_in_4bit: true
 
 datasets:
   - path: fozziethebeat/alpaca_messages_2k_test
@@ -18,7 +11,7 @@ datasets:
 
 dataset_prepared_path: last_run_prepared
 val_set_size: 0.1
-output_dir: ./outputs/qlora-out
+output_dir:
 
 adapter: qlora
 lora_model_dir:
@@ -29,7 +22,12 @@ sample_packing: true
 lora_r: 32
 lora_alpha: 16
 lora_dropout: 0
-lora_target_linear: true
+# prevents targeting vision layers
+lora_target_modules: 'model.language_model.layers.[\d]+.(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
 
 wandb_project:
 wandb_entity:
@@ -40,7 +38,8 @@ wandb_log_model:
 gradient_accumulation_steps: 4
 micro_batch_size: 2
 num_epochs: 1
-optimizer: adamw_torch
+max_steps: 10
+optimizer: adamw_bnb_8bit
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -51,16 +50,7 @@ gradient_checkpointing: true
 resume_from_checkpoint:
 logging_steps: 1
 flash_attention: true
-# scaling_softmax: true  # needs flex_attention
 
-loss_watchdog_threshold: 5.0
-loss_watchdog_patience: 3
-
-warmup_ratio: 0.05
-evals_per_epoch: 4
+warmup_ratio: 0.1
+evals_per_epoch: 1
 saves_per_epoch: 1
-
-weight_decay: 0.0
-special_tokens:
-
-# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
