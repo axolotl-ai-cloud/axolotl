@@ -27,11 +27,13 @@ class ProcessingStrategy:
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         self.processor = processor
         self.chat_template = chat_template
         self.image_token = None
         self.image_token_id = None
+        self.field_messages = self._normalize_field_messages(field_messages)
 
         self.image_size = image_size
         self.image_resize_algorithm = (
@@ -44,13 +46,54 @@ class ProcessingStrategy:
                 self.image_token
             )
 
+    @staticmethod
+    def _normalize_field_messages(
+        field_messages: str | list[str] | tuple[str, ...] | None,
+    ) -> tuple[str, ...]:
+        if field_messages is None:
+            return ("messages",)
+        if isinstance(field_messages, str):
+            return (field_messages,)
+        return tuple(field for field in field_messages if field)
+
+    def _get_messages_field(self, example: dict) -> str | None:
+        # Honor an explicitly configured `field_messages` first so a stale
+        # "messages" column on the row cannot silently override the user's
+        # intent. When `field_messages` is left at its default of
+        # ("messages",) this collapses back to the previous behavior.
+        for field in self.field_messages:
+            if field in example and example[field] is not None:
+                return field
+        if "messages" in example and example["messages"] is not None:
+            return "messages"
+        return None
+
+    @staticmethod
+    def _is_legacy_schema(messages) -> bool:
+        """Detect ShareGPT-style schema by inspecting the first message.
+
+        Both `from` and `value` must be present so that rows whose first
+        message merely happens to carry a `from` key (e.g., custom metadata)
+        are not misrouted into the legacy conversion branch.
+        """
+        return (
+            isinstance(messages, list)
+            and bool(messages)
+            and isinstance(messages[0], dict)
+            and "from" in messages[0]
+            and "value" in messages[0]
+        )
+
     def __call__(self, examples: list[dict]) -> list[dict]:
         """
         Preprocess conversation examples to ensure consistent format.
         Converts different conversation formats to OpenAI format with 'messages'.
-        Supports two formats:
-        1. OpenAI format with 'messages'
-        2. Legacy format with 'conversations'
+        Supports three source keys:
+        1. OpenAI format under the `messages` key
+        2. Legacy ShareGPT format under the `conversations` key
+        3. Any user-configured `field_messages` column, whose schema is
+           auto-detected (OpenAI vs ShareGPT) from its first message and
+           routed into the matching canonical branch above.
 
         Args:
             examples: list of conversation dictionaries
@@ -59,7 +102,7 @@ class ProcessingStrategy:
             list of dicts in OpenAI format with 'messages' key
 
         Raises:
-            ValueError: If the conversation format is not supported
+            ValueError: If none of the supported source keys are present.
         """
         role_mapping = {
             "human": "user",
@@ -114,9 +157,26 @@ class ProcessingStrategy:
 
         processed_examples = []
         for example in examples:
+            messages_field = self._get_messages_field(example)
+            # Only re-route when the user supplied a custom `field_messages`
+            # that is neither of the two canonical keys; for "messages" and
+            # "conversations" we defer entirely to the existing branches
+            # below so their behavior is unchanged.
+            if messages_field and messages_field not in {"messages", "conversations"}:
+                msgs = example[messages_field]
+                # Auto-detect ShareGPT vs OpenAI schema from the first
+                # message and route to the matching canonical key so the
+                # existing branches do the right schema conversion.
+                target = "conversations" if self._is_legacy_schema(msgs) else "messages"
+                example = dict(example)
+                example[target] = msgs
+                example.pop(messages_field, None)
+                if target == "conversations":
+                    example.pop("messages", None)
+
             if not ("messages" in example or "conversations" in example):
                 raise ValueError(
-                    "Only `messages` and `conversations` message keys are currently supported."
+                    "Only configured `field_messages`, `messages`, and `conversations` message keys are currently supported."
                 )
 
             processed_example = None
@@ -250,8 +310,11 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         self.image_token = "<|image_pad|>"  # nosec
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
@@ -267,8 +330,11 @@ class Qwen3_5ProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         self.image_token = "<|image_pad|>"  # nosec
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
@@ -293,8 +359,11 @@ class Gemma3ProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         self.image_token = processor.tokenizer.special_tokens_map["boi_token"]
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
             self.image_token
@@ -413,8 +482,11 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         special_ids = (
             processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids
         )
@@ -441,8 +513,11 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         self.image_token = "<image>"  # nosec
 
         self.image_token_id = processor.tokenizer.additional_special_tokens_ids[
@@ -459,8 +534,11 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
         special_ids = (
             processor.tokenizer.tokenizer.instruct_tokenizer.image_encoder.special_ids
         )
@@ -489,8 +567,11 @@ class InternVLProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
 
         if not hasattr(processor, "image_ids"):
             raise ValueError("'image_ids' missing from InternVL Processor.")
@@ -520,8 +601,11 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         chat_template: Optional[str] = None,
         image_size: int | tuple[int, int] | None = None,
         image_resize_algorithm: Resampling | None = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
-        super().__init__(processor, chat_template, image_size, image_resize_algorithm)
+        super().__init__(
+            processor, chat_template, image_size, image_resize_algorithm, field_messages
+        )
 
         self.tokenizer = getattr(processor, "tokenizer", processor)
 
@@ -569,6 +653,7 @@ def get_processing_strategy(
     chat_template_type,
     image_size: int | tuple[int, int] | None = None,
     image_resize_algorithm: Resampling | None = None,
+    field_messages: str | list[str] | tuple[str, ...] | None = None,
 ):
     from axolotl.utils.mistral.mistral3_processor import Mistral3Processor
 
@@ -577,6 +662,7 @@ def get_processing_strategy(
         "chat_template": chat_template,
         "image_size": image_size,
         "image_resize_algorithm": image_resize_algorithm,
+        "field_messages": field_messages,
     }
 
     if chat_template_type in [None, "tokenizer_default"]:

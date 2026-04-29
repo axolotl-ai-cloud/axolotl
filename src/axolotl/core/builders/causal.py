@@ -521,12 +521,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
+                field_messages = []
+                for dataset_cfg in self.cfg.datasets or []:
+                    field_message = dataset_cfg.get("field_messages")
+                    if field_message and field_message not in field_messages:
+                        field_messages.append(field_message)
                 kwargs["processing_strategy"] = get_processing_strategy(
                     self.processor,
                     training_args.chat_template,
                     self.cfg.chat_template,
                     image_size=training_args.image_size,
                     image_resize_algorithm=training_args.image_resize_algorithm,
+                    field_messages=field_messages or None,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening
