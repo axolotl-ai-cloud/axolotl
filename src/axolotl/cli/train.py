@@ -11,11 +11,11 @@ from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
-from axolotl.cli.config import load_cfg
+from axolotl.cli.config import gpu_capabilities, load_cfg
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, resolve_dtype
+from axolotl.utils.config import normalize_config, resolve_dtype, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import prepare_optim_env
 
@@ -92,13 +92,26 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
 
 
 def ray_train_func(kwargs: dict):
+    """Ray Train entrypoint executed on each GPU worker.
+
+    Re-validates the config against worker-local GPU capabilities (deferred from
+    the driver), then runs the standard training pipeline.
+    """
     # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
     # also renormalize the config now that TorchTrainer has spawned distributed workers
     cfg = DictDefault(kwargs["cfg"])
+
+    # GPU capability detection was deferred from the driver; run the checks now
+    # that we are on a worker that actually has the training device attached.
+    capabilities, env_capabilities = gpu_capabilities()
+    cfg = validate_config(
+        cfg,
+        capabilities=capabilities,
+        env_capabilities=env_capabilities,
+    )
+
     prepare_optim_env(cfg)
     normalize_config(cfg)
-
-    # now that we are on the worker node, we can check `is_torch_bf16_gpu_available` to resolve dtype
     resolve_dtype(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
