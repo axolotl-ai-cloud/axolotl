@@ -31,6 +31,7 @@ WORKDIR /workspace
 RUN uv venv --no-project --relocatable axolotl-venv
 
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
+ENV VIRTUAL_ENV="/workspace/axolotl-venv"
 
 RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install torch==${PYTORCH_VERSION} torchvision==${TORCHVISION_VERSION} \

@@ -1,6 +1,8 @@
 ARG BASE_TAG=main-base
 FROM axolotlai/axolotl-base-uv:$BASE_TAG
 
+ENV VIRTUAL_ENV="/workspace/axolotl-venv"
+
 ARG TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6+PTX"
 ARG AXOLOTL_EXTRAS=""
 ARG AXOLOTL_ARGS=""
