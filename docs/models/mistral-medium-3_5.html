@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Plano Orchestrator – Axolotl</title>
+<title>Mistral Medium 3.5 – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -144,7 +144,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/plano.html">Plano Orchestrator</a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/mistral-medium-3_5.html">Mistral Medium 3.5</a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
     </div>
@@ -212,7 +212,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link active">
+  <a href="../../docs/models/plano.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Plano Orchestrator</span></a>
   </div>
 </li>
@@ -248,7 +248,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link">
+  <a href="../../docs/models/mistral-medium-3_5.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Mistral Medium 3.5</span></a>
   </div>
 </li>
@@ -786,12 +786,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a>
-  <ul class="collapse">
-  <li><a href="#orchestration-prompt" id="toc-orchestration-prompt" class="nav-link" data-scroll-target="#orchestration-prompt">Orchestration Prompt</a></li>
+  <li><a href="#getting-started" id="toc-getting-started" class="nav-link active" data-scroll-target="#getting-started">Getting started</a></li>
+  <li><a href="#reasoning-effort" id="toc-reasoning-effort" class="nav-link" data-scroll-target="#reasoning-effort">Reasoning Effort</a></li>
+  <li><a href="#thinking-support" id="toc-thinking-support" class="nav-link" data-scroll-target="#thinking-support">Thinking Support</a></li>
   <li><a href="#tips" id="toc-tips" class="nav-link" data-scroll-target="#tips">Tips</a></li>
-  </ul></li>
-  <li><a href="#optimization-guides" id="toc-optimization-guides" class="nav-link" data-scroll-target="#optimization-guides">Optimization Guides</a></li>
   <li><a href="#related-resources" id="toc-related-resources" class="nav-link" data-scroll-target="#related-resources">Related Resources</a></li>
   </ul>
 </nav>
@@ -799,9 +797,9 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/plano.html">Plano Orchestrator</a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../../docs/getting-started.html">Getting Started</a></li><li class="breadcrumb-item"><a href="../../docs/models/kimi-linear.html">Model Guides</a></li><li class="breadcrumb-item"><a href="../../docs/models/mistral-medium-3_5.html">Mistral Medium 3.5</a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">Plano Orchestrator</h1>
+<h1 class="title">Mistral Medium 3.5</h1>
 </div>
 
 
@@ -818,41 +816,68 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </header>
 
 
-<p><a href="https://huggingface.co/collections/katanemo/plano-orchestrator">Plano-Orchestrator</a> is a family of 4B and 30B-A3B routing and orchestration models designed for multi-agent systems. It analyzes user intent and conversation context to make precise routing decisions, excelling at multi-turn context understanding, multi-intent detection, and context-dependent routing.</p>
-<p>This guide shows how to fine-tune it with Axolotl with multi-turn conversations and proper masking.</p>
+<p><a href="https://huggingface.co/mistralai/Mistral-Medium-3.5-128B">Mistral Medium 3.5</a> is a 128B parameter dense multimodal model from MistralAI that unifies instruct, reasoning, and agentic capabilities into a single model.
+It shares the <code>mistral3</code> architecture (dense, YaRN RoPE, 256k context) with Ministral 3 and supports the same <code>reasoning_effort</code> toggle as Mistral Small 4.</p>
+<p>Thanks to the team at MistralAI for giving us early access to prepare for this release.</p>
 <section id="getting-started" class="level2">
 <h2 class="anchored" data-anchor-id="getting-started">Getting started</h2>
 <ol type="1">
 <li><p>Install Axolotl following the <a href="https://docs.axolotl.ai/docs/installation.html">installation guide</a>.</p></li>
 <li><p>Install <a href="https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy">Cut Cross Entropy</a> to reduce training VRAM usage.</p></li>
-<li><p>Run the finetuning example:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/plano/plano-4b-qlora.yaml</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
+<li><p>(Text config only) Install <a href="https://docs.axolotl.ai/docs/attention.html#flash-attention-4">Flash Attention 4</a> on Hopper/Blackwell.</p></li>
+<li><p>Run one of the example configs:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># text-only</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/mistral-medium-3_5/qlora-text.yml  <span class="co"># ~83.1 GiB</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="co"># text + vision</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co"># wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="ex">axolotl</span> train examples/mistral-medium-3_5/qlora-vision.yml  <span class="co"># ~80.3 GiB</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div></li>
 </ol>
-<p>This config uses about 5.1 GiB VRAM. Let us know how it goes. Happy finetuning! 🚀</p>
-<section id="orchestration-prompt" class="level3">
-<h3 class="anchored" data-anchor-id="orchestration-prompt">Orchestration Prompt</h3>
-<p>Plano-Orchestrator uses a specific orchestration prompt format for routing/agent decisions. Please check the <a href="https://huggingface.co/katanemo/Plano-Orchestrator-4B">official model card</a> for proper prompt formatting and the <code>ORCHESTRATION_PROMPT</code> template.</p>
+<p>Note: vision training does not currently work with Flash Attention 4.</p>
 </section>
-<section id="tips" class="level3">
-<h3 class="anchored" data-anchor-id="tips">Tips</h3>
+<section id="reasoning-effort" class="level2">
+<h2 class="anchored" data-anchor-id="reasoning-effort">Reasoning Effort</h2>
+<p>The chat template supports a <code>reasoning_effort</code> variable to control the model’s reasoning depth:</p>
 <ul>
-<li>To use the larger <a href="https://huggingface.co/katanemo/Plano-Orchestrator-30B-A3B">Plano-Orchestrator-30B-A3B</a> MoE model, simply change <code>base_model: katanemo/Plano-Orchestrator-30B-A3B</code> in the config and enable multi-GPU training if needed.</li>
-<li>You can run a full finetuning by removing the <code>adapter: qlora</code> and <code>load_in_4bit: true</code> from the config.</li>
-<li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
-<li>The dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</li>
+<li><code>"none"</code> — instruct mode (default)</li>
+<li><code>"high"</code> — reasoning mode with explicit thinking steps</li>
 </ul>
+<p>Pass it via <code>chat_template_kwargs</code> under your dataset config:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> your/dataset</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">chat_template_kwargs</span><span class="kw">:</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">reasoning_effort</span><span class="kw">:</span><span class="at"> high</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="thinking-support" class="level2">
+<h2 class="anchored" data-anchor-id="thinking-support">Thinking Support</h2>
+<p>The chat template supports a <code>thinking</code> content type in assistant messages for training on reasoning traces (rendered as <code>[THINK]...[/THINK]</code> blocks).</p>
+<p>To use thinking datasets, add the <code>thinking</code> mapping via <code>message_property_mappings</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">datasets</span><span class="kw">:</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">path</span><span class="kw">:</span><span class="at"> your/thinking-dataset</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">type</span><span class="kw">:</span><span class="at"> chat_template</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">message_property_mappings</span><span class="kw">:</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">role</span><span class="kw">:</span><span class="at"> role</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">content</span><span class="kw">:</span><span class="at"> content</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">thinking</span><span class="kw">:</span><span class="at"> thinking</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">chat_template_kwargs</span><span class="kw">:</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">reasoning_effort</span><span class="kw">:</span><span class="at"> high</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>See the <a href="../../docs/models/magistral/think.html">Magistral thinking guide</a> for dataset format details.</p>
 </section>
-<section id="optimization-guides" class="level2">
-<h2 class="anchored" data-anchor-id="optimization-guides">Optimization Guides</h2>
-<p>Please check the <a href="https://docs.axolotl.ai/docs/optimizations.html">Optimizations doc</a>.</p>
+<section id="tips" class="level2">
+<h2 class="anchored" data-anchor-id="tips">Tips</h2>
+<ul>
+<li>For smaller experiments on the same architecture, see <a href="ministral3/index.qmd"><code>examples/ministral3</code></a> (Ministral 3, 3B).</li>
+<li>Read more on how to load your own dataset at <a href="https://docs.axolotl.ai/docs/dataset_loading.html">docs</a>.</li>
+<li>The text dataset format follows the OpenAI Messages format as seen <a href="https://docs.axolotl.ai/docs/dataset-formats/conversation.html#chat_template">here</a>.</li>
+<li>The vision model requires multi-modal dataset format as documented <a href="https://docs.axolotl.ai/docs/multimodal.html#dataset-format">here</a>.</li>
+</ul>
 </section>
 <section id="related-resources" class="level2">
 <h2 class="anchored" data-anchor-id="related-resources">Related Resources</h2>
 <ul>
-<li><a href="https://github.com/katanemo/plano">Plano GitHub</a></li>
+<li><a href="https://mistral.ai/news/vibe-remote-agents-mistral-medium-3-5">Mistral Medium 3.5 Blog</a></li>
 <li><a href="https://docs.axolotl.ai">Axolotl Docs</a></li>
-<li><a href="https://axolotl.ai">Axolotl Website</a></li>
 <li><a href="https://github.com/axolotl-ai-cloud/axolotl">Axolotl GitHub</a></li>
 <li><a href="https://discord.gg/7m9sfhzaf3">Axolotl Discord</a></li>
 </ul>
