@@ -1,6 +1,6 @@
 # Finetune Mistral Medium 3.5 with Axolotl
 
-Mistral Medium 3.5 is a 128B parameter dense multimodal model from MistralAI that unifies instruct, reasoning, and agentic capabilities into a single model.
+[Mistral Medium 3.5](https://huggingface.co/mistralai/Mistral-Medium-3.5-128B) is a 128B parameter dense multimodal model from MistralAI that unifies instruct, reasoning, and agentic capabilities into a single model.
 It shares the `mistral3` architecture (dense, YaRN RoPE, 256k context) with Ministral 3 and supports the same `reasoning_effort` toggle as Mistral Small 4.
 
 Thanks to the team at MistralAI for giving us early access to prepare for this release.
@@ -17,11 +17,11 @@ Thanks to the team at MistralAI for giving us early access to prepare for this r
 
     ```bash
     # text-only
-    axolotl train examples/mistral-medium-3.5/qlora-text.yml  # ~83.1 GiB
+    axolotl train examples/mistral-medium-3_5/qlora-text.yml  # ~83.1 GiB
 
     # text + vision
     # wget https://huggingface.co/datasets/Nanobit/text-vision-2k-test/resolve/main/African_elephant.jpg
-    axolotl train examples/mistral-medium-3.5/qlora-vision.yml  # ~80.3 GiB
+    axolotl train examples/mistral-medium-3_5/qlora-vision.yml  # ~80.3 GiB
     ```
 
 Note: vision training does not currently work with Flash Attention 4.
@@ -72,7 +72,7 @@ See the [Magistral thinking guide](../magistral/think/README.md) for dataset for
 
 ## Related Resources
 
-- [MistralAI Mistral Medium 3.5 Blog](https://mistral.ai/news/mistral-medium-3-5)
+- [Mistral Medium 3.5 Blog](https://mistral.ai/news/vibe-remote-agents-mistral-medium-3-5)
 - [Axolotl Docs](https://docs.axolotl.ai)
 - [Axolotl GitHub](https://github.com/axolotl-ai-cloud/axolotl)
 - [Axolotl Discord](https://discord.gg/7m9sfhzaf3)
