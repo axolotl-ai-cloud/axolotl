@@ -38,7 +38,8 @@ jobs:
             torchvision: 0.24.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu128 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
@@ -74,7 +75,8 @@ jobs:
             torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu130 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
@@ -83,7 +85,8 @@ jobs:
             torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu130 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
