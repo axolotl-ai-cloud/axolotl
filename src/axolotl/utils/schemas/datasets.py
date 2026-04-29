@@ -236,7 +236,101 @@ class PretrainingDataset(BaseModel):
     type: str | None = "pretrain"
     trust_remote_code: bool | None = False
     data_files: str | None = None
+    ds_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
+        },
+    )
     skip: int | None = None
+
+    # Multimodal CPT fields. Opt-in via `type: multimodal_pretrain` or `multimodal: true`.
+    multimodal: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Opt in to multimodal CPT. Auto-enabled when type='multimodal_pretrain'."
+        },
+    )
+    image_column: str | None = Field(
+        default="images",
+        json_schema_extra={
+            "description": "Column holding a list of image paths per row."
+        },
+    )
+    image_base_dir: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Base directory for relative image paths."},
+    )
+    image_token: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Override the image placeholder token (autodetected from processor if unset)."
+        },
+    )
+
+
+class MultiModalEvalDataset(BaseModel):
+    """Multimodal CPT eval dataset configuration (test_datasets entry).
+
+    Use type='multimodal_pretrain' (or multimodal=True). The dataset must
+    expose a text column and a list[str] image-paths column; their names
+    default to 'text' and 'images' and can be overridden per-entry.
+    """
+
+    path: str | None = None
+    name: str | None = None
+    split: str | None = "train"
+    data_files: str | list[str] | None = None
+    ds_type: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
+        },
+    )
+    skip: int | None = None
+    type: str | None = None
+    trust_remote_code: bool | None = False
+
+    multimodal: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Opt in to multimodal eval. Auto-enabled when type='multimodal_pretrain'."
+        },
+    )
+    text_column: str | None = Field(
+        default="text",
+        json_schema_extra={"description": "Column holding the row's text."},
+    )
+    image_column: str | None = Field(
+        default="images",
+        json_schema_extra={
+            "description": "Column holding a list of image paths per row."
+        },
+    )
+    image_base_dir: str | None = Field(
+        default=None,
+        json_schema_extra={"description": "Base directory for relative image paths."},
+    )
+    image_token: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Override the image placeholder token (autodetected from processor if unset)."
+        },
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_mm_markers(cls, data):
+        if isinstance(data, BaseModel):
+            data = data.model_dump()
+        if not isinstance(data, dict):
+            return data
+        if data.get("type") != "multimodal_pretrain" and not data.get("multimodal"):
+            raise ValueError(
+                "MultiModalEvalDataset requires type='multimodal_pretrain' "
+                "or multimodal=True"
+            )
+        return data
 
 
 class UserDefinedDPOType(BaseModel):

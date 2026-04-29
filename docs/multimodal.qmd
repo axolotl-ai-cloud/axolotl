@@ -360,6 +360,137 @@ Here is an example of a multi-modal dataset:
 ]
 ```
 
+## Continued Pre-training (CPT) with images {#sec-multimodal-cpt}
+
+Raw image+text continued pretraining — no chat template, no conversational
+scaffolding. The model learns to emit raw text conditioned on visual patches.
+Intended for use cases like OCR/transcription corpora where every row is a
+tight `(image, target_text)` pair and any user/assistant framing would pollute
+the learned signal.
+
+### Dataset format (JSONL)
+
+Two keys per row: `text` (the raw string) and `images` (list of local paths).
+The `text` must contain the model's placeholder token **once per image**,
+placed immediately before the text it describes, followed by a newline:
+
+```json
+{"text": "<image>\nInvoice number: 10427. Total due: 148.32 USD.", "images": ["/dataset/crops/doc_14_p2.png"]}
+{"text": "<image>\nChapter 3 begins with a description of the storm over the harbor.", "images": ["/dataset/crops/doc_14_p3.png"]}
+```
+
+Notes:
+
+- Never wrap the row in `User:` / `Assistant:` / `Transcribe this:` scaffolding. That is the whole point of the CPT path.
+- Do not manually append an EOS token. Axolotl appends one during tokenization.
+- The newline between the placeholder and the real text preserves the BPE
+  boundary. Without it, some tokenizers merge the visual-token boundary with
+  the first real character.
+
+### The placeholder token varies by model
+
+| Model family | Placeholder | Notes |
+|---|---|---|
+| LLaVA-1.5 / 1.6 | `<image>` | |
+| SmolVLM / SmolVLM2 / Idefics3 | `<image>` | Processor expands to 1088 tokens (17 tiles × 64) |
+| Qwen2-VL / Qwen2.5-VL / Qwen3-VL | `<\|image_pad\|>` | Processor autowraps with `<\|vision_start\|>` / `<\|vision_end\|>` |
+| Gemma-3 | `<start_of_image>` | Processor expands to 256 `<image_soft_token>` |
+| Gemma-4 | `<\|image\|>` | Processor expands to 256 `<\|image\|>` |
+
+Axolotl autodetects the placeholder from the loaded processor. If autodetection
+fails, supply `image_token: <your token>` on the dataset entry.
+
+### YAML example
+
+```yaml
+base_model: HuggingFaceTB/SmolVLM-500M-Instruct
+processor_type: AutoProcessor
+
+pretraining_dataset:
+  - path: /path/to/shards/*.jsonl
+    ds_type: json
+    type: multimodal_pretrain
+    text_column: text
+    image_column: images
+    image_base_dir: /path/to/images   # optional, for relative paths
+    # image_token: "<image>"           # optional override; autodetect by default
+
+streaming: true
+sequence_len: 2048
+sample_packing: false                  # REQUIRED — see below
+remove_unused_columns: false           # auto-set by validator
+
+max_steps: 10000
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+```
+
+### Eval datasets
+
+`test_datasets` accepts multimodal entries (`type: multimodal_pretrain` or
+`multimodal: true`). Per-entry `text_column` and `image_column` are honored
+independently. When more than one multimodal entry is provided,
+`image_base_dir` and `image_token` must be either unset on every entry or
+identical across them, because the eval collator resolves both once for the
+merged eval stream.
+
+### Mixed image / text-only batches
+
+Rows with no images are allowed. All-text batches bypass the processor and
+tokenize via the base tokenizer (no `pixel_values`). Mixed batches are
+handed to the processor as-is.
+
+Verified VLM families:
+
+- HuggingFace `SmolVLM` / `SmolVLM2`
+- Google `Gemma-3` (4B), `Gemma-4` (E2B, 31B)
+- Alibaba `Qwen2.5-VL`, `Qwen3-VL`
+
+For other families (LLaVA, Qwen2-VL, Idefics3), the collator's per-row
+retry isolates and names the offending row on processor failure — failures
+are loud, not silent. Smoke-test before long runs, or pre-filter rows
+without images.
+
+### Gates and rejections
+
+The following combinations are rejected at config-load time with a clear error:
+
+- `sample_packing: true` — cross-row packing would break the 1-to-1 alignment
+  between text placeholders and `pixel_values`.
+- `chat_template` set to anything — defeats the purpose of the CPT path.
+- `processor_type` unset — no processor means no image tensors.
+- Multiple MM `test_datasets` entries with mismatched `image_base_dir` or `image_token`.
+
+In addition, the following model families are **not supported** in v1 and will
+be rejected when their processor is loaded:
+
+- **Llama-3.2-Vision (Mllama)** — uses cross-attention image injection, not
+  in-stream placeholders. Use chat-template SFT.
+- **Pixtral** — requires `mistral_common` and a different API.
+- **InternVL** — ships a custom processor that doesn't produce `pixel_values`.
+
+Per-row validation: at encode time the row's text is tokenized once and the
+number of `image_token_id` occurrences in the resulting token-id list must
+equal `len(images)`. Counting by token id (not by substring) avoids false
+matches — e.g., `<image>` would substring-match inside `<image_soft_token>`.
+This is a critical guardrail — LLaVA and Qwen-VL processors silently
+accept rows without placeholders and drop the image, which looks like
+successful training but teaches nothing. If a row fails this check,
+inspect the tokenized ids rather than the raw string.
+
+### Why masking image tokens in labels is automatic
+
+For this multimodal CPT path, the collator masks every image-family token id
+(`<image>`, `<\|image_pad\|>`, `<\|vision_start\|>`, `<\|vision_end\|>`,
+`<start_of_image>`, `<end_of_image>`, `<image_soft_token>`, `<\|image\|>`,
+etc.) to `-100` in the labels tensor.
+
+Supported processors expand image placeholders into vision-specific token ids.
+If those ids contribute to loss, the model is trained to predict patch or
+marker tokens rather than only the target text. On architectures like
+Qwen-VL and SmolVLM, leaving them unmasked substantially increases loss and can
+destabilize training.
+
 ## FAQ
 
 1. `PIL.UnidentifiedImageError: cannot identify image file ...`

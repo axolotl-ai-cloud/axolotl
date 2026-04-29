@@ -20,6 +20,7 @@ from axolotl.utils.schemas.datasets import (
     DatasetConfig,
     DPODataset,
     KTODataset,
+    MultiModalEvalDataset,
     PretrainingDataset,
     SFTDataset,
     StepwiseSupervisedDataset,
@@ -341,7 +342,8 @@ class AxolotlInputConfig(
     test_datasets: (
         Annotated[
             list[
-                SFTDataset
+                MultiModalEvalDataset
+                | SFTDataset
                 | DPODataset
                 | KTODataset
                 | StepwiseSupervisedDataset

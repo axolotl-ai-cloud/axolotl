@@ -113,6 +113,24 @@ def download_smollm2_135m_instruct_model():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def download_smolvlm_500m_instruct_model():
+    # Processor/tokenizer only — skip ~1 GB of weight shards.
+    snapshot_download_w_retry(
+        "HuggingFaceTB/SmolVLM-500M-Instruct",
+        repo_type="model",
+        allow_patterns=[
+            "*.json",
+            "*.txt",
+            "*.model",
+            "*.jinja",
+            "tokenizer*",
+            "vocab*",
+            "merges*",
+        ],
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
 def download_smollm2_135m_gptq_model():
     # download the model
     snapshot_download_w_retry("lilmeaty/SmolLM2-135M-Instruct-GPTQ", repo_type="model")
