@@ -1,0 +1,60 @@
+# Qwen3-30B-A3B BF16 LoRA + Expert Parallel (DeepEP wrapping grouped_mm).
+# Same shape as baseline_lora.yaml — only differences are the plugin block
+# and expert_parallel_enabled. Run on 2x A100 80GB NVLink:
+#   torchrun --nproc-per-node=2 -m axolotl.cli.train \
+#     examples/expert_parallel/ep_lora.yaml
+
+base_model: Qwen/Qwen3-30B-A3B-Instruct-2507
+
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+dataset_prepared_path: ./outputs/deepep_e2e/data_prepared
+output_dir: ./outputs/deepep_e2e/ep
+
+adapter: lora
+load_in_4bit: false
+load_in_8bit: false
+
+# Plugin will auto-upgrade `grouped_mm` -> `deep_ep_grouped_mm` when EP is enabled.
+experts_implementation: grouped_mm
+
+expert_parallel_size: 2  # world group at 2 ranks
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+sequence_len: 2048
+sample_packing: true
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 50
+
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.0001
+warmup_steps: 5
+
+bf16: true
+tf32: false
+
+gradient_checkpointing: true
+flash_attention: true
+logging_steps: 1
+save_strategy: "no"
+
+seed: 42
+
+wandb_project: deepep
+wandb_name: ep-deep_ep_grouped_mm-ddp-ignored-lora-50steps

@@ -1,0 +1,56 @@
+# Qwen3-30B-A3B BF16 LoRA baseline — DDP, no EP, grouped_mm experts.
+# Run on 2x A100 80GB:
+#   torchrun --nproc-per-node=2 -m axolotl.cli.train \
+#     examples/expert_parallel/baseline_lora.yaml
+
+base_model: Qwen/Qwen3-30B-A3B-Instruct-2507
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+dataset_prepared_path: ./outputs/deepep_e2e/data_prepared
+output_dir: ./outputs/deepep_e2e/baseline
+
+# BF16 LoRA: base frozen and held in bf16, only adapters train.
+adapter: lora
+load_in_4bit: false
+load_in_8bit: false
+
+# grouped_mm is transformers' default fused-experts kernel; the EP-disabled
+# control we're comparing against.
+experts_implementation: grouped_mm
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+sequence_len: 2048
+sample_packing: true
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 50
+
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.0001
+warmup_steps: 5
+
+bf16: true
+tf32: false
+
+gradient_checkpointing: true
+flash_attention: true
+logging_steps: 1
+save_strategy: "no"
+
+seed: 42
+
+wandb_project: deepep
+wandb_name: baseline-grouped_mm-ddp-lora-50steps
