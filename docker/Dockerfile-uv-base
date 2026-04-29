@@ -34,7 +34,8 @@ ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
 RUN uv pip install packaging setuptools wheel psutil \
     && uv pip install torch==${PYTORCH_VERSION} torchvision==${TORCHVISION_VERSION} \
-    && uv pip install awscli pydantic
+    && uv pip install awscli pydantic \
+    && python -c "import torch, torchvision; torchvision.ops.nms; print('OK', torch.__version__, torchvision.__version__)"
 
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
         MAMBA_SKIP_CUDA_BUILD=TRUE CAUSAL_CONV1D_SKIP_CUDA_BUILD=TRUE uv pip install --no-build-isolation mamba_ssm causal_conv1d; \

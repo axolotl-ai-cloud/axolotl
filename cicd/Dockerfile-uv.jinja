@@ -26,11 +26,13 @@ RUN git fetch origin +$GITHUB_REF && \
 RUN uv pip install packaging==26.0 setuptools==78.1.1
 RUN uv pip install torchvision==${TORCHVISION_VERSION}
 RUN uv pip uninstall causal_conv1d
-RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
-        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS; \
+RUN uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt && \
+    if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
+        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray,$AXOLOTL_EXTRAS] $AXOLOTL_ARGS --override /tmp/torch-pin.txt; \
     else \
-        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS; \
-    fi
+        uv pip install --no-build-isolation -e .[deepspeed,flash-attn,ring-flash-attn,optimizers,ray] $AXOLOTL_ARGS --override /tmp/torch-pin.txt; \
+    fi && \
+    python -c "import torch, torchvision; torchvision.ops.nms; print('OK', torch.__version__, torchvision.__version__)"
 
 # Override with nightly HF packages for nightly builds
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
