@@ -329,7 +329,7 @@ class ModelLoader:
 
         # Apply gradient checkpointing if needed
         needs_fa2_dtype = self.cfg.adapter or self.is_fsdp_enabled
-        if self.cfg.adapter in ["lora", "qlora"]:
+        if self.cfg.adapter in ["lora", "qlora", "mixlora"]:
             needs_fa2_dtype = True
             if self.cfg.gradient_checkpointing:
                 self.model.gradient_checkpointing_enable(
@@ -571,7 +571,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         if (
-            self.cfg.adapter in ["qlora", "lora"]
+            self.cfg.adapter in ["qlora", "lora", "mixlora"]
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config["quant_method"]
             in ["gptq", "awq", "bitsandbytes"]
@@ -905,7 +905,7 @@ class ModelLoader:
 
         if (
             not skip_prepare_model_for_kbit_training
-            and self.cfg.adapter in ["lora", "qlora"]
+            and self.cfg.adapter in ["lora", "qlora", "mixlora"]
             and (self.cfg.load_in_8bit or self.cfg.load_in_4bit)
         ):
             LOG.info("converting PEFT model w/ prepare_model_for_kbit_training")
