@@ -38,7 +38,7 @@ wandb_log_model:
 gradient_accumulation_steps: 2
 micro_batch_size: 1
 num_epochs: 1
-optimizer: adamw_bnb_8bit
+optimizer: adamw_torch_fused
 lr_scheduler: cosine
 learning_rate: 0.0002
 
@@ -57,3 +57,14 @@ evals_per_epoch: 4
 saves_per_epoch: 1
 weight_decay: 0.0
 special_tokens:
+
+fsdp_config:
+  fsdp_version: 2
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3_5DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  sharding_strategy: FULL_SHARD
+  reshard_after_forward: true
+  activation_checkpointing: true
