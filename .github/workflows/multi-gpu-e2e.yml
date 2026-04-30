@@ -35,6 +35,7 @@ jobs:
           #            cuda_version: 12.9.1
           #            python_version: "3.12"
           #            pytorch: 2.9.1
+          #            torchvision: 0.24.1
           #            axolotl_extras: "fbgemm-gpu"
           #            num_gpus: 2
           #            dockerfile: "Dockerfile-uv.jinja"
@@ -42,6 +43,7 @@ jobs:
             cuda_version: 13.0.0
             python_version: "3.11"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             axolotl_extras:
             #            axolotl_extras: fbgemm-gpu
             num_gpus: 2
@@ -49,6 +51,7 @@ jobs:
             cuda_version: 12.8.1
             python_version: "3.11"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             axolotl_extras: "fbgemm-gpu"
             num_gpus: 2
     runs-on: [self-hosted, modal]
@@ -68,6 +71,7 @@ jobs:
         run: |
           echo "BASE_TAG=main-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}" >> $GITHUB_ENV
           echo "PYTORCH_VERSION=${{ matrix.pytorch}}" >> $GITHUB_ENV
+          echo "TORCHVISION_VERSION=${{ matrix.torchvision}}" >> $GITHUB_ENV
           echo "AXOLOTL_ARGS=${{ matrix.axolotl_args}}" >> $GITHUB_ENV
           echo "AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}" >> $GITHUB_ENV
           echo "CUDA=${{ matrix.cuda }}" >> $GITHUB_ENV

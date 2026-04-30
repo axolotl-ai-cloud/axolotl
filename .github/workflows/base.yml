@@ -35,14 +35,17 @@ jobs:
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu128 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
             platforms: "linux/amd64,linux/arm64"
@@ -51,6 +54,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-base"
             platforms: "linux/amd64,linux/arm64"
@@ -59,6 +63,7 @@ jobs:
 #            cudnn_version: ""
 #            python_version: "3.12"
 #            pytorch: 2.9.1
+#            torchvision: 0.24.1
 #            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
 #            dockerfile: "Dockerfile-base"
 #            platforms: "linux/amd64,linux/arm64"
@@ -67,22 +72,27 @@ jobs:
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu130 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
+            # arm64 disabled: torchvision 0.24.1+cu130 has no aarch64 wheel
+            platforms: "linux/amd64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-base"
             platforms: "linux/amd64,linux/arm64"
@@ -91,6 +101,7 @@ jobs:
 #            cudnn_version: ""
 #            python_version: "3.11"
 #            pytorch: nightly
+#            torchvision: nightly
 #            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
 #            dockerfile: "Dockerfile-base-nightly"
 #          # "next" is for release candidates of pytorch
@@ -99,6 +110,7 @@ jobs:
 #            cudnn_version: ""
 #            python_version: "3.11"
 #            pytorch: next
+#            torchvision: next
 #            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
 #            dockerfile: "Dockerfile-base-next"
     steps:
@@ -133,6 +145,7 @@ jobs:
             CUDA=${{ matrix.cuda }}
             PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
+            TORCHVISION_VERSION=${{ matrix.torchvision }}
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
   build-base-uv:
     if: ${{ github.repository_owner == 'axolotl-ai-cloud' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
@@ -149,6 +162,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -157,6 +171,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -165,6 +180,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -173,6 +189,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -181,6 +198,7 @@ jobs:
 #            cudnn_version: ""
 #            python_version: "3.12"
 #            pytorch: 2.9.1
+#            torchvision: 0.24.1
 #            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
 #            dockerfile: "Dockerfile-uv-base"
 #            platforms: "linux/amd64,linux/arm64"
@@ -189,6 +207,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.11"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -197,6 +216,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.9.1
+            torchvision: 0.24.1
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -205,6 +225,7 @@ jobs:
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.10.0
+            torchvision: 0.25.0
             torch_cuda_arch_list: "9.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
@@ -240,4 +261,5 @@ jobs:
             CUDA=${{ matrix.cuda }}
             PYTHON_VERSION=${{ matrix.python_version }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
+            TORCHVISION_VERSION=${{ matrix.torchvision }}
             TORCH_CUDA_ARCH_LIST=${{ matrix.torch_cuda_arch_list }}
