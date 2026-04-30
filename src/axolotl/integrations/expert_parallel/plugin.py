@@ -172,7 +172,8 @@ class ExpertParallelPlugin(BasePlugin):
 
         try:
             state = AcceleratorState()
-        except (RuntimeError, AttributeError) as e:
+        except (RuntimeError, AttributeError, ValueError) as e:
+            # ValueError occurs from unittest due to no trainer constructing Accelerator()
             LOG.debug(f"expert_parallel: AcceleratorState() not ready: {e}")
             return None
         mesh = getattr(state, "device_mesh", None)
