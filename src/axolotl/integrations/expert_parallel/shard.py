@@ -91,11 +91,9 @@ def shard_expert_weights(model, ep_group) -> int:
             the EP world size.
 
     DDP composition: the sharded params hold DIFFERENT content per rank, so we
-    add their fully-qualified names to `model._ddp_params_and_buffers_to_ignore`.
-    Without this, DDP's startup broadcast would copy rank 0's slice to every
-    rank and corrupt the EP partition (rank 1 would end up with rank 0's
-    [0..E_local) experts even though local_expert_offset says it owns the
-    second half). FSDP composition is handled differently — see plan §FSDP+EP.
+    add their fully-qualified names to `model._ddp_params_and_buffers_to_ignore`
+    to prevent the startup broadcast from copying rank 0's slice everywhere.
+    FSDP composition is handled in `ExpertParallelPlugin.fully_shard_experts`.
     """
     if ep_group is None:
         return 0
