@@ -303,8 +303,7 @@ class ExpertParallelPlugin(BasePlugin):
     @staticmethod
     def _register_expert_grad_scale(model, ep_size: int) -> int:
         """Scale expert weight grads by `1/ep_size` so EP / FSDP / FSDP+EP
-        produce the same effective gradient. See README "Expert gradient
-        scaling" for the derivation.
+        produce the same effective gradient.
         """
         from .shard import _detect_experts_modules
 
