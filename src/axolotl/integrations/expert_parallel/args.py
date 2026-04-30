@@ -38,6 +38,7 @@ class ExpertParallelArgs(BaseModel):
     | User setting                                    | Effective kernel        |
     |-------------------------------------------------|-------------------------|
     | `use_scattermoe: true`                          | `deep_ep_scattermoe`    |
+    | `use_sonicmoe: true`                            | `deep_ep_sonicmoe`      |
     | `experts_implementation: grouped_mm/batched_mm` | `deep_ep_grouped_mm`    |
     | `experts_implementation: eager`                 | `deep_ep` (eager local) |
     | (unset)                                         | `deep_ep_grouped_mm`    |

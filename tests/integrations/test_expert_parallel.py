@@ -92,11 +92,8 @@ class TestKernelInference:
     def test_default_picks_grouped_mm(self):
         assert self._infer() == "grouped_mm"
 
-    def test_use_sonicmoe_falls_back_with_warning(self, caplog):
-        # SonicMoE isn't a generic kernel; falls back to grouped_mm.
-        with caplog.at_level("WARNING"):
-            assert self._infer(use_sonicmoe=True) == "grouped_mm"
-        assert any("SonicMoE" in m for m in caplog.messages)
+    def test_use_sonicmoe_picks_sonicmoe(self):
+        assert self._infer(use_sonicmoe=True) == "sonicmoe"
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +106,7 @@ class TestRegistration:
         assert kernel_to_registered_name("eager") == "deep_ep"
         assert kernel_to_registered_name("grouped_mm") == "deep_ep_grouped_mm"
         assert kernel_to_registered_name("scattermoe") == "deep_ep_scattermoe"
+        assert kernel_to_registered_name("sonicmoe") == "deep_ep_sonicmoe"
 
     def test_register_all_idempotent(self):
         from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS

@@ -636,6 +636,17 @@ def setup_parallelism_envs(cfg):
         from axolotl.monkeypatch.accelerate.parallelism_config import patch_prepare_cp
 
         patch_prepare_cp()
+    # Expert Parallel patch must apply before the first `Accelerator()`
+    # call so `ep_size` lands in the mesh.
+    if cfg.expert_parallel_size and cfg.expert_parallel_size > 1:
+        os.environ["PARALLELISM_CONFIG_EP_SIZE"] = str(cfg.expert_parallel_size)
+        if cfg.dp_shard_size and cfg.dp_shard_size > 1:
+            set_accelerate_parallelism_config = True
+        from axolotl.monkeypatch.accelerate.parallelism_config import (
+            patch_parallelism_config,
+        )
+
+        patch_parallelism_config()
     if set_accelerate_parallelism_config:
         os.environ["ACCELERATE_USE_PARALLELISM_CONFIG"] = "true"
 

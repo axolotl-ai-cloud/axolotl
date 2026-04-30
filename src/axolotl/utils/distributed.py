@@ -304,6 +304,7 @@ def build_parallelism_config(cfg):
         cfg.dp_shard_size,
         cfg.dp_replicate_size,
         bool(cfg.fsdp or cfg.fsdp_config),
+        getattr(cfg, "expert_parallel_size", None),
     )
 
     if pc_kwargs:
@@ -323,9 +324,20 @@ def _get_parallel_config_kwargs(
     dp_shard_size: int | None = None,
     dp_replicate_size: int | None = None,
     is_fsdp: bool = False,
+    expert_parallel_size: int | None = None,
 ):
     pc_kwargs = {}
     remaining_world_size = world_size
+
+    # EP consumes part of world_size; subtract it up front so the auto-fill
+    # below doesn't put EP ranks into `dp_replicate_size`.
+    if expert_parallel_size and expert_parallel_size > 1:
+        if remaining_world_size % expert_parallel_size != 0:
+            raise ValueError(
+                f"expert_parallel_size ({expert_parallel_size}) must divide "
+                f"world_size ({world_size})."
+            )
+        remaining_world_size = remaining_world_size // expert_parallel_size
 
     if tensor_parallel_size and tensor_parallel_size > 1:
         pc_kwargs["tp_size"] = tensor_parallel_size
