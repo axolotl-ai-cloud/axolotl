@@ -21,13 +21,13 @@ LoRA is not supported for BitNet models
 Install the `onebitllms` package before using this feature:
 
 ```bash
-pip install onebitllms
+uv pip install onebitllms
 ```
 
 Or from source:
 
 ```bash
-pip install git+https://github.com/tiiuae/onebitllms
+uv pip install git+https://github.com/tiiuae/onebitllms
 ```
 
 ## Supported models 

@@ -852,7 +852,7 @@ class ModelLoader:
             except ImportError as exc:
                 raise ImportError(
                     "The 'onebitllms' package is required for use_onebitllms. "
-                    "Install it with: pip install onebitllms"
+                    "Install it with: `uv pip install onebitllms`"
                 ) from exc
 
             self.model = replace_linear_with_bitnet_linear(self.model)
