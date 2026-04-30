@@ -846,6 +846,17 @@ class ModelLoader:
             else:
                 self.model = self._load_model_from_pretrained(model_loader_class)
 
+        if self.cfg.use_onebitllms:
+            try:
+                from onebitllms import replace_linear_with_bitnet_linear
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'onebitllms' package is required for use_onebitllms. "
+                    "Install it with: pip install onebitllms"
+                ) from exc
+
+            self.model = replace_linear_with_bitnet_linear(self.model)
+
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 

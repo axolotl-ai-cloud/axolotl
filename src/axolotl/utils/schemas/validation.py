@@ -638,6 +638,12 @@ class LoRAValidationMixin:
             raise ValueError("Fused modules are not supported with LoRA/QLoRA")
         return self
 
+    @model_validator(mode="after")
+    def check_onebitllms_lora(self):
+        if self.use_onebitllms and self.adapter in ["lora", "qlora"]:
+            raise ValueError("LoRA/QLoRA is not supported with use_onebitllms")
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
