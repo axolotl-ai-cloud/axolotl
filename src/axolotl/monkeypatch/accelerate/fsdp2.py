@@ -400,6 +400,17 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if any(isinstance(m, ParamWrapper) for m in model.modules()):
             patch_peft_param_wrapper_for_fsdp2()
 
+    # EP+FSDP: pre-wrap experts on `dp_shard` before the outer auto-wrap so
+    # the walker skips them. See `expert_parallel/README.md`.
+    if (
+        mesh is not None
+        and "ep" in getattr(mesh, "mesh_dim_names", ())
+        and "dp_shard" in mesh.mesh_dim_names
+    ):
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        ExpertParallelPlugin.fully_shard_experts(model, mesh["dp_shard"], fsdp2_kwargs)
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
     if auto_wrap_policy is not None:
