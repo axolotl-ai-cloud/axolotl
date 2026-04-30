@@ -41,9 +41,7 @@ class ExpertParallelPlugin(BasePlugin):
 
         register_all()
 
-        # Auto-compose with the user's chosen local kernel. The kernels integration
-        # has already validated that `experts_implementation in {eager, scattermoe}`
-        # and `use_scattermoe: true` is consistent — we read the result and upgrade.
+        # Upgrade the user's chosen local kernel to its DeepEP-wrapped variant.
         local_kernel = self._infer_local_kernel(cfg)
         composite = kernel_to_registered_name(local_kernel)
         previous = getattr(cfg, "experts_implementation", None)
@@ -142,21 +140,9 @@ class ExpertParallelPlugin(BasePlugin):
     def _infer_local_kernel(cfg) -> str:
         """Decide which local-experts kernel runs under DeepEP dispatch.
 
-        Source-of-truth toggles:
-        - Custom MoE kernels (ScatterMoE, SonicMoE): `use_scattermoe` /
-          `use_sonicmoe` (the master flags from `kernels/args.py`). Note that
-          `experts_implementation: scattermoe` is set BY the kernels validator
-          AS A CONSEQUENCE of `use_scattermoe: true` — checking it would be
-          redundant and would also misfire if a user set the string without
-          the master flag.
-        - Standard transformers kernels: `experts_implementation` directly
-          (`eager`, `grouped_mm`, `batched_mm`).
-
-        SonicMoE composes with EP via the `_sonicmoe_local` helper in
-        `experts_fn.py`, which delegates to
-        `axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts.gemma4_sonicmoe_experts_forward`.
-        The plugin upgrades the user's `use_sonicmoe: true` selection to the
-        composite `deep_ep_sonicmoe` registered name when EP is enabled.
+        `use_scattermoe` / `use_sonicmoe` are the master flags from
+        `kernels/args.py` and take precedence; otherwise fall back to
+        `experts_implementation` (`eager` / `grouped_mm` / `batched_mm`).
         """
         if getattr(cfg, "use_scattermoe", False):
             return "scattermoe"
