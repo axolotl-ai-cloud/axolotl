@@ -110,6 +110,8 @@ fsdp_config:
   sharding_strategy: FULL_SHARD
 ```
 
+See full example configs at [`examples/expert_parallel/`](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/expert_parallel).
+
 #### Implementation notes
 
 EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager.
