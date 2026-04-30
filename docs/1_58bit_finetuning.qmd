@@ -30,7 +30,7 @@ Or from source:
 uv pip install git+https://github.com/tiiuae/onebitllms
 ```
 
-## Supported models 
+## Supported models
 
 For now, only `Falcon-E` series of models are supported. Make sure to use their `-prequantized` version:
 
@@ -52,7 +52,7 @@ use_onebitllms: true
 ```
 
 ::: {.callout-note}
-For BitNet models, it is recommended to use a higher learning rate than classic models (usually in the order of magnitude of 10x). 
+For BitNet models, it is recommended to use a higher learning rate than classic models (usually in the order of magnitude of 10x).
 :::
 
 ## Considerations after training
