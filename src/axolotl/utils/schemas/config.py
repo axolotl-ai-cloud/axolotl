@@ -517,8 +517,35 @@ class AxolotlInputConfig(
 
     gc_steps: int | None = Field(
         default=None,
+        deprecated=(
+            "Use `torch_empty_cache_steps` to control CUDA cache clearing and "
+            "`gc_collect_steps` for Python garbage collection. "
+            "`gc_steps` will be removed in a future version."
+        ),
         json_schema_extra={
-            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+            "description": "Deprecated. Run garbage collection every `gc_steps` steps. Use `torch_empty_cache_steps` and `gc_collect_steps` instead."
+        },
+    )
+    torch_empty_cache_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Number of steps between calls to `torch.cuda.empty_cache()`, "
+                "handled natively by the HuggingFace Trainer. "
+                "This helps manage GPU memory fragmentation during training."
+            )
+        },
+    )
+    gc_collect_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Number of steps between Python `gc.collect()` calls. "
+                "-1 will run on epoch end and before evaluations only. "
+                "None means disabled (no periodic Python GC). "
+                "This is separate from `torch_empty_cache_steps` as `gc.collect()` "
+                "reclaims Python-level memory which the native Trainer cache clearing does not do."
+            )
         },
     )
 
@@ -1766,6 +1793,34 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             del data["dataset_processes"]
         elif data.get("dataset_num_proc") is None:
             data["dataset_num_proc"] = get_default_process_count()
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_gc_steps(cls, data):
+        gc_steps = data.get("gc_steps")
+        if gc_steps is not None:
+            if (
+                data.get("torch_empty_cache_steps") is None
+                and data.get("gc_collect_steps") is None
+            ):
+                # Map gc_steps to both new options to preserve original behavior
+                if gc_steps > 0:
+                    data["torch_empty_cache_steps"] = gc_steps
+                data["gc_collect_steps"] = gc_steps
+                LOG.warning(
+                    "`gc_steps` is deprecated. Use `torch_empty_cache_steps` for "
+                    "CUDA cache clearing (handled natively by Trainer) and "
+                    "`gc_collect_steps` for Python garbage collection. "
+                    "Automatically mapping gc_steps=%d to both options.",
+                    gc_steps,
+                )
+            else:
+                LOG.warning(
+                    "`gc_steps` is set alongside `torch_empty_cache_steps` or "
+                    "`gc_collect_steps`. The new options take precedence; "
+                    "`gc_steps` is ignored."
+                )
         return data
 
     @model_validator(mode="before")

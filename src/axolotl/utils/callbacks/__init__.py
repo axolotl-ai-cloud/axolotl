@@ -878,15 +878,25 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
 
 class GCCallback(TrainerCallback):
-    """Callback to garbage collect torch cache"""
+    """Callback to run Python garbage collection during training.
 
-    def __init__(self, gc_steps: int | None = -1):
-        self.gc_steps: int = gc_steps or -1
+    This handles gc.collect() calls which reclaim Python-level memory. CUDA cache
+    clearing is handled natively by the Trainer via torch_empty_cache_steps in
+    TrainingArguments, so this callback focuses solely on Python GC.
+
+    Note: gc.collect() is still valuable because it can free Python objects that
+    hold references to GPU tensors, allowing those tensors to be reclaimed.
+    """
+
+    def __init__(self, gc_collect_steps: int | None = -1, gc_steps: int | None = None):
+        if gc_steps is not None and gc_collect_steps in (-1, None):
+            gc_collect_steps = gc_steps
+        self.gc_collect_steps: int = gc_collect_steps or -1
         self.next_gc_on_begin_step: int = -1
 
     def _gc(self):
-        torch.cuda.empty_cache()
         gc.collect()
+        torch.cuda.empty_cache()
 
     def on_train_begin(
         self,
@@ -919,7 +929,9 @@ class GCCallback(TrainerCallback):
             self._gc()
             # also GC on the start of the next step after the eval
             self.next_gc_on_begin_step = state.global_step + 1
-        elif self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
+        elif (
+            self.gc_collect_steps > 0 and state.global_step % self.gc_collect_steps == 0
+        ):
             self._gc()
         elif (
             args.save_strategy == SaveStrategy.STEPS

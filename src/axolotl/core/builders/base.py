@@ -122,8 +122,11 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
+        gc_collect_steps = getattr(self.cfg, "gc_collect_steps", None) or getattr(
+            self.cfg, "gc_steps", None
+        )
+        if gc_collect_steps:
+            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -573,6 +576,8 @@ class TrainerBuilderBase(abc.ABC):
             "dion_rank_fraction",
             "dion_rank_multiple_of",
             "dataset_num_proc",
+            # memory management
+            "torch_empty_cache_steps",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)
