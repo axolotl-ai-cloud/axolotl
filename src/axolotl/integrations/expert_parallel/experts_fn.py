@@ -8,9 +8,9 @@
 
 """DeepEP-backed registered functions for `ALL_EXPERTS_FUNCTIONS`.
 
-Three names registered (eager / grouped_mm / scattermoe) sharing one
-`_deep_ep_forward` body. Templates ported from `bench_deep_ep.py` Stage 1 modes
-3 and 4 — see `BENCHMARK.md` for validating numbers.
+Four names registered (eager / grouped_mm / scattermoe / sonicmoe) sharing one
+`_deep_ep_forward` body. Templates ported from `bench_deep_ep.py` Stage 1
+modes 3 and 4.
 """
 
 from __future__ import annotations
@@ -66,10 +66,21 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     return scattermoe_experts_forward(experts, recv_x, recv_topk_idx, recv_topk_weights)
 
 
+def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
+    from axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts import (
+        gemma4_sonicmoe_experts_forward,
+    )
+
+    return gemma4_sonicmoe_experts_forward(
+        experts, recv_x, recv_topk_idx, recv_topk_weights
+    )
+
+
 _LOCAL_KERNELS = {
     "eager": _eager_local,
     "grouped_mm": _grouped_mm_local,
     "scattermoe": _scattermoe_local,
+    "sonicmoe": _sonicmoe_local,
 }
 
 
@@ -220,15 +231,22 @@ def deep_ep_scattermoe_experts_forward(self, hidden_states, top_k_index, top_k_w
     )
 
 
+def deep_ep_sonicmoe_experts_forward(self, hidden_states, top_k_index, top_k_weights):
+    return _deep_ep_forward(
+        self, hidden_states, top_k_index, top_k_weights, kernel_name="sonicmoe"
+    )
+
+
 REGISTRY = {
     "deep_ep": deep_ep_experts_forward,
     "deep_ep_grouped_mm": deep_ep_grouped_mm_experts_forward,
     "deep_ep_scattermoe": deep_ep_scattermoe_experts_forward,
+    "deep_ep_sonicmoe": deep_ep_sonicmoe_experts_forward,
 }
 
 
 def register_all() -> None:
-    """Register the three names in `ALL_EXPERTS_FUNCTIONS` and whitelist them."""
+    """Register the four names in `ALL_EXPERTS_FUNCTIONS` and whitelist them."""
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
     from transformers.modeling_utils import PreTrainedModel
 
@@ -255,4 +273,5 @@ def kernel_to_registered_name(kernel: str) -> str:
         "eager": "deep_ep",
         "grouped_mm": "deep_ep_grouped_mm",
         "scattermoe": "deep_ep_scattermoe",
+        "sonicmoe": "deep_ep_sonicmoe",
     }[kernel]

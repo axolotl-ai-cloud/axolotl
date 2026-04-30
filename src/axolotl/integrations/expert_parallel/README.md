@@ -1,16 +1,99 @@
-# Expert Parallel (DeepEP) Integration
+# Expert Parallelism Integration
 
-Replaces the MoE dispatch/combine path with DeepEP's fused kernels. See repo-root `DEEPEP_SETUP.md` for install and `BENCHMARK.md` for measured speedups.
+Replaces the MoE dispatch/combine path with DeepEP's fused kernels.
 
-## Enable in YAML
+## Requirements
 
-EP is enabled by setting `expert_parallel_size > 1` — same shape as `tensor_parallel_size` and `dp_shard_size`. No separate enable flag.
+Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink.
+
+## Installation
+
+**Hopper (sm_90, H100):**
+
+```bash
+git clone --depth 1 https://github.com/deepseek-ai/DeepEP.git
+cd DeepEP
+TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 uv pip install --no-build-isolation .
+python -c "import deep_ep; print(deep_ep.Buffer)"
+```
+
+**Ampere (sm_80, A100, intranode-only)** — needs two small source patches gated on `DISABLE_NVSHMEM=1`:
+
+```bash
+git clone --depth 1 https://github.com/deepseek-ai/DeepEP.git
+cd DeepEP
+
+# Patch 1: setup.py — honor DISABLE_NVSHMEM=1
+git apply <<'EOF'
+--- a/setup.py
++++ b/setup.py
+@@ -19,7 +19,10 @@ if __name__ == '__main__':
+     disable_nvshmem = False
+     nvshmem_dir = os.getenv('NVSHMEM_DIR', None)
+     nvshmem_host_lib = 'libnvshmem_host.so'
+-    if nvshmem_dir is None:
++    if int(os.getenv('DISABLE_NVSHMEM', '0')):
++        disable_nvshmem = True
++        nvshmem_dir = None
++    elif nvshmem_dir is None:
+         try:
+             nvshmem_dir = importlib.util.find_spec("nvidia.nvshmem").submodule_search_locations[0]
+             nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_dir)
+EOF
+
+# Patch 2: csrc/deep_ep.cpp — gate the three mask_buffer methods
+git apply <<'EOF'
+--- a/csrc/deep_ep.cpp
++++ b/csrc/deep_ep.cpp
+@@ -1823,22 +1823,34 @@ bool is_sm90_compiled() {
+ }
+
+ void Buffer::low_latency_update_mask_buffer(int rank_to_mask, bool mask) {
++#ifndef DISABLE_NVSHMEM
+     EP_HOST_ASSERT(mask_buffer_ptr != nullptr and "Shrink mode must be enabled");
+     EP_HOST_ASSERT(rank_to_mask >= 0 and rank_to_mask < num_ranks);
+     internode_ll::update_mask_buffer(mask_buffer_ptr, rank_to_mask, mask, at::cuda::getCurrentCUDAStream());
++#else
++    EP_HOST_ASSERT(false and "NVSHMEM is disabled during compilation");
++#endif
+ }
+
+ void Buffer::low_latency_query_mask_buffer(const torch::Tensor& mask_status) {
++#ifndef DISABLE_NVSHMEM
+     EP_HOST_ASSERT(mask_buffer_ptr != nullptr and "Shrink mode must be enabled");
+     EP_HOST_ASSERT(mask_status.numel() == num_ranks && mask_status.scalar_type() == torch::kInt32);
+
+     internode_ll::query_mask_buffer(
+         mask_buffer_ptr, num_ranks, reinterpret_cast<int*>(mask_status.data_ptr()), at::cuda::getCurrentCUDAStream());
++#else
++    EP_HOST_ASSERT(false and "NVSHMEM is disabled during compilation");
++#endif
+ }
+
+ void Buffer::low_latency_clean_mask_buffer() {
++#ifndef DISABLE_NVSHMEM
+     EP_HOST_ASSERT(mask_buffer_ptr != nullptr and "Shrink mode must be enabled");
+     internode_ll::clean_mask_buffer(mask_buffer_ptr, num_ranks, at::cuda::getCurrentCUDAStream());
++#else
++    EP_HOST_ASSERT(false and "NVSHMEM is disabled during compilation");
++#endif
+ }
+
+ }  // namespace deep_ep
+EOF
+
+DISABLE_NVSHMEM=1 DISABLE_SM90_FEATURES=1 TORCH_CUDA_ARCH_LIST=8.0 MAX_JOBS=16 \
+  uv pip install --no-build-isolation .
+python -c "import deep_ep; print(deep_ep.Buffer)"
+```
+
+## Usage
 
 ```yaml
 plugins:
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
 
-expert_parallel_size: 2          # 1 = disabled (default); > 1 = enabled
+expert_parallel_size: 2  # 1 = disabled (default); > 1 = enabled
 ```
 
 For composition with FSDP at 4+ GPUs, set both `expert_parallel_size` and `dp_shard_size`. The product must equal `world_size`:
@@ -27,65 +110,40 @@ fsdp_config:
   sharding_strategy: FULL_SHARD
 ```
 
-The plugin builds a 2D `DeviceMesh` with axes `(ep, dp_shard)`. EP groups are *strided* (orthogonal to FSDP's contiguous dp_shard groups), so the two parallelisms run on disjoint process groups and don't fight.
+#### Implementation notes
 
-The plugin auto-composes with whatever local-experts kernel you've already configured. You set the kernel via the standard axolotl knobs and the plugin transparently upgrades it:
+EP composes with the local-experts kernel you've already configured: ScatterMoE, SonicMoE, grouped_mm, or eager.
 
-| Your existing config                              | Local kernel under DeepEP   |
-|---------------------------------------------------|-----------------------------|
-| `use_scattermoe: true`                            | ScatterMoE (Triton)         |
-| `use_sonicmoe: true`                              | grouped_mm + warning¹        |
+EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `ep` axis, non-expert params across `dp_shard`. The two collectives run on disjoint process groups, so they don't conflict. Layout follows [*Expert Parallelism with FSDP* (tinkerings.dev)](https://tinkerings.dev/posts/expert_parallel.html) — "rows share weights, columns move tokens."
+
+| Your existing config                                | Local kernel under DeepEP |
+|-----------------------------------------------------|---------------------------|
+| `use_scattermoe: true`                              | ScatterMoE (Triton)       |
+| `use_sonicmoe: true`                                | SonicMoE (Gemma4)         |
 | `experts_implementation: grouped_mm` / `batched_mm` | grouped_mm (transformers) |
-| `experts_implementation: eager`                   | eager Python loop           |
-| (unset)                                           | grouped_mm (default)        |
+| `experts_implementation: eager`                     | eager Python loop         |
+| (unset)                                             | grouped_mm (default)      |
 
-The master flags `use_scattermoe` / `use_sonicmoe` are the source of truth for the custom MoE kernels — `experts_implementation: scattermoe` is set BY the kernels validator AS A CONSEQUENCE of `use_scattermoe: true`, so we only check the master flag (avoids misfires if a user sets the string without the flag).
+## Limitations
 
-You don't need to know the composite registered names (`deep_ep`, `deep_ep_grouped_mm`, `deep_ep_scattermoe`) — the plugin maps your existing `use_scattermoe` / `experts_implementation` selection onto the right one.
-
-¹ SonicMoE composition is future work — see "SonicMoE composition" below.
-
-## How it works
-
-`pre_model_load` registers the three composite names in `transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS`, patches `PreTrainedModel.get_correct_experts_implementation` to whitelist them, and rewrites `cfg.experts_implementation` to the composite name based on your other config.
-
-`post_model_build` walks the model and slices each Experts module's `gate_up_proj` / `down_proj` along the experts dim — each rank owns `E / ep_size` experts. The registered forward function then routes tokens via DeepEP, runs the local kernel on the received tokens, and combines back.
-
-`Buffer.dispatch` and `Buffer.combine` are wrapped in `torch.autograd.Function` (`_DeepEPDispatch` / `_DeepEPCombine`) so backward propagates correctly: backward-of-dispatch is combine, backward-of-combine is dispatch (handle is reused).
-
-## When EP pays off
-
-EP saves memory by sharding experts across ranks. The throughput story is more nuanced and depends on whether the saved comm (no expert grad sync under full FT) outweighs the added comm (dispatch + combine per layer).
-
-Measured at 2-rank A100 NVLink (the floor case — see `BENCHMARK.md §5`):
-
-| Mode | Throughput vs DDP | Memory vs DDP |
-|---|---|---|
-| DDP + EP, LoRA frozen experts (Qwen3-30B-A3B 48 layers) | −9% | ~−47% |
-| DDP + EP, full FT (tiny 4-layer × 32-expert) | −2% (within noise) | ~−16% |
-| FSDP2 only, full FT (same tiny model) | −14% | ~−27% |
-
-**Memory wins are reliable.** **Throughput at 2-rank intranode is essentially flat to slightly negative** because DeepEP's per-layer dispatch overhead sits in the same ballpark as the saved `all_reduce` work. EP is roughly throughput-neutral; FSDP alone gives more memory savings but pays a real all_gather cost.
-
-The interesting composition (FSDP + EP on orthogonal mesh axes) needs at least 4 GPUs (`world = dp_shard × ep` with both ≥ 2). At 2 GPUs you can pick one or the other. Above 4 ranks both should compose — FSDP shards non-expert params, EP shards experts, communications happen on disjoint process groups.
-
-If you need EP for memory reasons (model doesn't fit otherwise), this is the right tool today. If you need EP for throughput reasons, validate at your target scale before assuming the win.
-
-## Constraints (v1)
-
-- Models must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). Mixtral's `ModuleList[BlockSparseTop2MLP]` is out of scope.
-- `num_experts` must be divisible by `expert_parallel_size`. Validated at `post_model_build`.
-- World size must equal `expert_parallel_size × dp_shard_size × tensor_parallel_size × context_parallel_size`. Validated at `pre_model_load` and at process-group construction with a clear error message.
-- 3+ axis composition (EP × DP × TP/CP) is not yet supported in v1; raises `NotImplementedError` with a clear message.
-- Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don't benefit from LL.
+- Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
+- `num_experts` must be divisible by `expert_parallel_size`.
+- 3+ axis composition (EP × DP × TP/CP) is not yet supported in v1; raises `NotImplementedError`.
+- DeepEP limitation: Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don't benefit from LL.
 - FP8 dispatch needs Hopper + DISABLE_SM90_FEATURES=0.
 
-## Hardware
+## Troubleshooting
 
-Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink. See `DEEPEP_SETUP.md` for build steps and driver/CUDA forward-compat notes.
+### `CUBLAS_STATUS_INVALID_VALUE` on a basic bf16 GEMM after `import deep_ep`
 
-## SonicMoE composition (future work)
+The system's `libcublas.so.13` is older than what cu130 torch expects. Put the cu13 lib that ships with the torch wheel on `LD_LIBRARY_PATH`:
 
-`use_sonicmoe: true` + `expert_parallel_enabled: true` currently falls back to grouped_mm with a warning. SonicMoE today is a Gemma4-only direct rebind on `Gemma4TextExperts.forward` (see `axolotl/integrations/kernels/libs/sonicmoe/gemma4_experts.py`).
+```bash
+export LD_LIBRARY_PATH=$(python -c "import os, nvidia.cu13 as m; print(os.path.join(os.path.dirname(m.__file__), 'lib'))"):$LD_LIBRARY_PATH
+```
 
-The path forward is the `EXPERTS_ONLY_BLOCK` constant in `axolotl/integrations/kernels/constants.py:60-67` — a `model_type → Experts class name` table. Once SonicMoE registers via `ALL_EXPERTS_FUNCTIONS.register("sonicmoe", sonicmoe_experts_forward)` keyed off this constant (matching the ScatterMoE registration pattern at `kernels/libs/scattermoe_lora/gemma4_experts.py:209`), composition with EP is a one-line change here: add a `_sonicmoe_local` helper that lazy-imports and calls the registered fn, plus a `"sonicmoe"` branch in `_infer_local_kernel`. No EP-side architectural change needed.
+Unrelated to DeepEP itself, but anyone on cu130 torch hits it on boxes with a system CUDA toolkit older than 13.0.
+
+### `CUDA error 803` (system not yet initialized)
+
+On driver `< 580`, also prepend `/usr/local/cuda-13.0/compat` to `LD_LIBRARY_PATH`. **Do not** add the compat dir on driver `≥ 580` (its `libcuda` is older than the running driver and triggers `CUDA error 803`).

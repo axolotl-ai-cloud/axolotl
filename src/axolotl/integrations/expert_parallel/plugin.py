@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from importlib.util import find_spec
 
+import torch
 import torch.distributed as dist
 
 from axolotl.integrations.base import BasePlugin
@@ -21,10 +22,7 @@ LOG = get_logger(__name__)
 
 
 class ExpertParallelPlugin(BasePlugin):
-    """Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels.
-
-    See DEEPEP_SETUP.md (install) and BENCHMARK.md (perf) at repo root.
-    """
+    """Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels."""
 
     def get_input_args(self):
         return "axolotl.integrations.expert_parallel.ExpertParallelArgs"
@@ -50,7 +48,7 @@ class ExpertParallelPlugin(BasePlugin):
         composite = kernel_to_registered_name(local_kernel)
         previous = getattr(cfg, "experts_implementation", None)
         cfg.experts_implementation = composite
-        LOG.info(
+        LOG.debug(
             f"expert_parallel: experts_implementation {previous!r} -> {composite!r} "
             f"(local kernel: {local_kernel!r})"
         )
@@ -79,6 +77,11 @@ class ExpertParallelPlugin(BasePlugin):
             num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
             num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
         )
+        # Pure-EP path: register the grad-scale hook now. FSDP+EP defers
+        # registration to `fully_shard_experts` (after experts become DTensors).
+        if (cfg.dp_shard_size or 1) <= 1:
+            ep_size = cfg.expert_parallel_size or 1
+            self._register_expert_grad_scale(model, ep_size)
 
     def post_model_load(self, cfg, model):
         """Propagate DDP-ignored params to the outermost model wrapper.
@@ -130,7 +133,7 @@ class ExpertParallelPlugin(BasePlugin):
 
         existing = list(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
         model._ddp_params_and_buffers_to_ignore = existing + resolved
-        LOG.info(
+        LOG.debug(
             f"expert_parallel: propagated {len(resolved)} DDP-ignored param "
             f"name(s) onto outer wrapper {type(model).__name__}."
         )
@@ -149,25 +152,17 @@ class ExpertParallelPlugin(BasePlugin):
         - Standard transformers kernels: `experts_implementation` directly
           (`eager`, `grouped_mm`, `batched_mm`).
 
-        SonicMoE is currently a Gemma4-only direct rebind on
-        `Gemma4TextExperts.forward`, not registered against
-        `ALL_EXPERTS_FUNCTIONS`. Once it migrates to register via the
-        `EXPERTS_ONLY_BLOCK` constant pattern (kernels/constants.py:60-67),
-        this branch can return `"sonicmoe"` and the plugin will compose for
-        free using a `_sonicmoe_local` helper.
+        SonicMoE composes with EP via the `_sonicmoe_local` helper in
+        `experts_fn.py`, which delegates to
+        `axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts.gemma4_sonicmoe_experts_forward`.
+        The plugin upgrades the user's `use_sonicmoe: true` selection to the
+        composite `deep_ep_sonicmoe` registered name when EP is enabled.
         """
         if getattr(cfg, "use_scattermoe", False):
             return "scattermoe"
 
         if getattr(cfg, "use_sonicmoe", False):
-            LOG.warning(
-                "expert_parallel + use_sonicmoe: SonicMoE is currently a Gemma4-only "
-                "direct rebind on Gemma4TextExperts.forward, not registered against "
-                "ALL_EXPERTS_FUNCTIONS. Falling back to grouped_mm for the local-experts "
-                "kernel under DeepEP. Once SonicMoE migrates to the EXPERTS_ONLY_BLOCK "
-                "registration pattern, this composition will work automatically."
-            )
-            return "grouped_mm"
+            return "sonicmoe"
 
         ei = getattr(cfg, "experts_implementation", None)
         if ei in ("grouped_mm", "batched_mm"):
@@ -181,30 +176,36 @@ class ExpertParallelPlugin(BasePlugin):
     _device_mesh = None
 
     @staticmethod
+    def _accelerate_mesh():
+        """Return accelerate's device_mesh, force-creating the Accelerator if
+        needed. The AcceleratorState singleton makes this idempotent w.r.t.
+        the trainer's later `Accelerator()` call.
+        """
+        from accelerate import Accelerator
+        from accelerate.state import AcceleratorState
+
+        try:
+            state = AcceleratorState()
+        except (RuntimeError, AttributeError) as e:
+            LOG.debug(f"expert_parallel: AcceleratorState() not ready: {e}")
+            return None
+        mesh = getattr(state, "device_mesh", None)
+        if mesh is not None:
+            return mesh
+        try:
+            Accelerator()
+        except (RuntimeError, ValueError) as e:
+            LOG.debug(f"expert_parallel: Accelerator() force-init failed: {e}")
+            return None
+        return getattr(AcceleratorState(), "device_mesh", None)
+
+    @staticmethod
     def _resolve_ep_group(cfg):
         """Return the EP ProcessGroup.
 
-        Three cases, in order of precedence:
-
-        1. EP composed with FSDP (dp_shard_size > 1 AND expert_parallel_size > 1):
-           build a 2D `DeviceMesh` with axes ("ep", "dp_shard") shape
-           (ep_size, dp_shard_size). Return `mesh["ep"].get_group()` — strided
-           groups orthogonal to accelerate's contiguous dp_shard groups.
-
-           Layout in C-order: rank R has coords (R // dp_shard_size, R % dp_shard_size).
-           For world=4, dp_shard=2, ep=2:
-               rank 0 -> (ep=0, dp=0)
-               rank 1 -> (ep=0, dp=1)
-               rank 2 -> (ep=1, dp=0)
-               rank 3 -> (ep=1, dp=1)
-               EP groups (vary ep, fix dp): {0,2}, {1,3} — strided.
-               dp_shard groups (vary dp, fix ep): {0,1}, {2,3} — contiguous,
-                                                   matches accelerate's default.
-
-        2. EP-only (ep_size == world_size): use `dist.group.WORLD`.
-
-        3. ep_size in {None, 1}: EP disabled, return `dist.group.WORLD` (caller
-           checks `_is_ep_enabled` before invoking).
+        For FSDP+EP, returns `accelerate_mesh["ep"].get_group()` — the same
+        process group that accelerate's parallelism_config built. For pure EP
+        (ep_size == world_size, no FSDP), returns `dist.group.WORLD`.
         """
         if not dist.is_available() or not dist.is_initialized():
             return None
@@ -231,38 +232,100 @@ class ExpertParallelPlugin(BasePlugin):
         if ep_size == world_size:
             return dist.group.WORLD
 
-        # Case 1: EP + FSDP — build 2D orthogonal mesh.
+        # EP + FSDP — read the ep group from accelerate's mesh, or build one
+        # ourselves if accelerate hasn't (e.g., topology unit tests that drive
+        # `_resolve_ep_group` directly without an Accelerator).
         if dp_shard_size > 1:
             if tp_size > 1 or cp_size > 1:
-                # 3D+ meshes (ep × dp_shard × tp × cp) — punt for v1 with a clear error.
                 raise NotImplementedError(
                     "EP composition with TP/CP not yet supported. Got "
                     f"ep={ep_size}, dp_shard={dp_shard_size}, tp={tp_size}, cp={cp_size}. "
                     "v1 supports only EP-only or EP × dp_shard."
                 )
-            from torch.distributed.device_mesh import init_device_mesh
+            mesh = ExpertParallelPlugin._accelerate_mesh()
+            if mesh is None or "ep" not in mesh.mesh_dim_names:
+                from torch.distributed.device_mesh import init_device_mesh
 
-            mesh = init_device_mesh(
-                "cuda",
-                (ep_size, dp_shard_size),
-                mesh_dim_names=("ep", "dp_shard"),
-            )
+                mesh = init_device_mesh(
+                    "cuda" if torch.cuda.is_available() else "cpu",
+                    (ep_size, dp_shard_size),
+                    mesh_dim_names=("ep", "dp_shard"),
+                )
             ExpertParallelPlugin._device_mesh = mesh
-            LOG.info(
-                f"expert_parallel: built 2D mesh shape={tuple(mesh.shape)} "
+            LOG.debug(
+                f"expert_parallel: ep mesh shape={tuple(mesh.shape)} "
                 f"axes={mesh.mesh_dim_names}; ep group "
                 f"members={dist.get_process_group_ranks(mesh['ep'].get_group())}"
             )
             return mesh["ep"].get_group()
 
-        # ep_size > 1, ep_size < world_size, dp_shard_size == 1 — invalid because
-        # the product check above would have already failed. Unreachable but safe.
+        # ep_size > 1, ep_size < world_size, dp_shard_size == 1 — invalid.
         raise ValueError(
             f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
             "without dp_shard_size > 1 to fill the remaining axes is not supported. "
             "Set dp_shard_size such that ep × dp_shard == world_size, or set "
             "expert_parallel_size = world_size for pure EP."
         )
+
+    @staticmethod
+    def fully_shard_experts(model, dp_shard_mesh, fsdp2_kwargs):
+        """Pre-wrap each Experts module with FSDP on the `dp_shard` axis.
+
+        Called from the patched `fsdp2_prepare_model` BEFORE the outer auto-wrap
+        so experts become FSDPModules and the auto-wrap walker skips them.
+        Inherits the outer wrap's policy (mp, offload, reshard) so inner/outer
+        collective dtypes line up; only `mesh` is overridden.
+        """
+        from torch.distributed.fsdp import fully_shard
+
+        from .shard import _detect_experts_modules
+
+        kwargs = dict(fsdp2_kwargs)
+        kwargs["mesh"] = dp_shard_mesh
+        kwargs.pop("ignored_params", None)
+
+        for _name, module in _detect_experts_modules(model):
+            fully_shard(module, **kwargs)
+
+        LOG.debug(
+            f"expert_parallel: pre-wrapped Experts modules on dp_shard mesh "
+            f"(size={dp_shard_mesh.size()})."
+        )
+
+        root = dp_shard_mesh._get_root_mesh()
+        ep_size = (
+            root["ep"].size()
+            if root is not None and "ep" in (root.mesh_dim_names or ())
+            else 1
+        )
+        ExpertParallelPlugin._register_expert_grad_scale(model, ep_size)
+
+    @staticmethod
+    def _register_expert_grad_scale(model, ep_size: int) -> int:
+        """Scale expert weight grads by `1/ep_size` so EP / FSDP / FSDP+EP
+        produce the same effective gradient. See README "Expert gradient
+        scaling" for the derivation.
+        """
+        from .shard import _detect_experts_modules
+
+        if ep_size <= 1:
+            return 0
+        scale = 1.0 / ep_size
+
+        def _scale(p):
+            if p.grad is not None:
+                p.grad.mul_(scale)
+
+        n_hooks = 0
+        for _name, module in _detect_experts_modules(model):
+            for p in module.parameters(recurse=True):
+                p.register_post_accumulate_grad_hook(_scale)
+                n_hooks += 1
+        LOG.debug(
+            f"expert_parallel: registered {n_hooks} expert grad-scale hooks "
+            f"(scale = 1/{ep_size})"
+        )
+        return n_hooks
 
     @staticmethod
     def _is_ep_enabled(cfg) -> bool:
@@ -305,7 +368,7 @@ class ExpertParallelPlugin(BasePlugin):
             return True
         msg = (
             "expert_parallel_enabled=true but `deep_ep` is not importable. "
-            "See DEEPEP_SETUP.md."
+            "See the integration README for install instructions."
         )
         if cfg.expert_parallel_fallback_on_unsupported:
             LOG.warning(msg + " Falling back to standard experts implementation.")

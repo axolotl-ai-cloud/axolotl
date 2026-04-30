@@ -9,21 +9,19 @@
 """Expert-Parallel (DeepEP) integration for axolotl.
 
 Replaces the dispatch/combine path in transformers MoE blocks with DeepEP's
-fused kernels. Registers three names in `transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS`:
+fused kernels. Registers four names in `transformers.integrations.moe.ALL_EXPERTS_FUNCTIONS`:
 
 - `deep_ep`               — eager local expert MLP (reference)
 - `deep_ep_grouped_mm`    — transformers' grouped_mm kernel (default)
 - `deep_ep_scattermoe`    — axolotl's ScatterMoE kernel
+- `deep_ep_sonicmoe`      — axolotl's SonicMoE kernel
 
 User opts in via:
 
     plugins:
       - axolotl.integrations.expert_parallel
     expert_parallel_enabled: true
-    expert_parallel_local_kernel: grouped_mm   # eager | grouped_mm | scattermoe
-
-See `BENCHMARK.md` and `DEEPEP_SETUP.md` at repo root for the validating numbers
-and install steps.
+    expert_parallel_local_kernel: grouped_mm   # eager | grouped_mm | scattermoe | sonicmoe
 """
 
 from .args import ExpertParallelArgs

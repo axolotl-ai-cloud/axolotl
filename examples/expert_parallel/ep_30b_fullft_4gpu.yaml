@@ -1,0 +1,37 @@
+base_model: Qwen/Qwen3-30B-A3B-Instruct-2507
+
+plugins:
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+
+experts_implementation: grouped_mm
+expert_parallel_size: 4 # world size 4
+
+datasets:
+  - path: mhenrichsen/alpaca_2k_test
+    type: alpaca
+
+dataset_prepared_path:
+output_dir: ./outputs/out
+
+sequence_len: 2048
+sample_packing: true
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+max_steps: 50
+
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.003
+warmup_steps: 0.1
+
+bf16: true
+tf32: false
+
+gradient_checkpointing: true
+flash_attention: true
+logging_steps: 1
+evals_per_epoch:
+saves_per_epoch: 1
+
+seed: 42
