@@ -25,7 +25,7 @@ RUN git fetch origin +$GITHUB_REF && \
     git checkout FETCH_HEAD
 
 RUN uv pip install packaging==26.0 setuptools==78.1.1
-RUN uv pip install torchvision==${TORCHVISION_VERSION}
+RUN uv pip install torchvision
 RUN uv pip uninstall causal_conv1d
 RUN uv pip freeze | grep -E "^(torch|torchvision)==" > /tmp/torch-pin.txt && \
     if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
