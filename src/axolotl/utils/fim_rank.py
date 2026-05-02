@@ -57,6 +57,14 @@ def _get_lora_b_params(
     which makes ∂loss/∂lora_A = scaling × lora_B^T × upstream = 0 at init.
     lora_B receives a meaningful gradient immediately since lora_A is
     kaiming-initialised.
+
+    Args:
+        model: A PEFT-wrapped model with LoRA adapters.
+        adapter_name: Name of the active LoRA adapter. Default ``"default"``.
+
+    Returns:
+        Mapping from layer name (everything before ``.lora_B.{adapter}.weight``)
+        to the corresponding ``lora_B`` parameter tensor.
     """
     params = {}
     suffix = f".lora_B.{adapter_name}.weight"
@@ -128,9 +136,7 @@ def _accumulate_fim(
         )
         return {}
 
-    result = {
-        name: fim_accum[name] / max(fim_steps[name], 1) for name in fim_accum
-    }
+    result = {name: fim_accum[name] / max(fim_steps[name], 1) for name in fim_accum}
 
     all_zero = all(v.abs().max().item() < 1e-12 for v in result.values())
     if all_zero:
@@ -152,7 +158,23 @@ def _allocate_ranks(
     """Allocate integer ranks proportional to importance under a fixed budget.
 
     Budget = n_layers × base_r (mean rank preserved).
-    Uses a water-filling + largest-remainder algorithm.
+    Uses a two-phase algorithm:
+
+    * Phase 1 (water-filling): iteratively fix layers that saturate ``r_max``,
+      redistributing their excess budget to the remaining free layers.
+    * Phase 2 (largest-remainder rounding): convert continuous allocations to
+      integers while preserving the total budget, then enforce ``r_min`` by
+      adjusting the lowest-importance layers.
+
+    Args:
+        importance: Mapping from layer name to scalar importance score.
+        base_r: Original LoRA rank, defines per-layer budget.
+        r_min: Minimum rank assigned to any layer.
+        r_max: Maximum rank assigned to any layer.
+
+    Returns:
+        Mapping from layer name to allocated integer rank in ``[r_min, r_max]``.
+        Returns an empty dict when ``importance`` is empty.
     """
     if not importance:
         return {}
@@ -198,7 +220,20 @@ def _resize_layer(
     new_r: int,
     adjust_scaling: bool,
 ) -> None:
-    """Resize lora_A and lora_B to new_r in-place, preserving existing weights."""
+    """Resize ``lora_A`` and ``lora_B`` weight matrices to ``new_r`` in-place.
+
+    Preserves existing weight values up to ``min(old_r, new_r)`` rows/columns.
+    Any extra rows in ``lora_A`` (when increasing rank) are kaiming-initialised;
+    extra columns in ``lora_B`` are zero-initialised to preserve the no-op
+    property at the start of training.
+
+    Args:
+        layer: A LoRA layer instance with ``lora_A`` and ``lora_B`` attributes.
+        adapter_name: Name of the adapter whose weights will be resized.
+        new_r: Target rank.
+        adjust_scaling: When ``True``, rescales ``layer.scaling`` so that the
+            effective ``lora_alpha / r`` factor is preserved after the rank change.
+    """
     if adapter_name not in layer.lora_A:
         return
 

@@ -12,7 +12,6 @@ from axolotl.utils.fim_rank import (
     apply_fim_ranks,
 )
 
-
 # ---------------------------------------------------------------------------
 # Minimal model helpers
 # ---------------------------------------------------------------------------
@@ -28,7 +27,9 @@ class TinyMLP(nn.Module):
         x = torch.relu(self.fc1(input_ids.float()))
         logits = self.fc2(x)
         loss = (
-            nn.functional.mse_loss(logits, labels.float()) if labels is not None else None
+            nn.functional.mse_loss(logits, labels.float())
+            if labels is not None
+            else None
         )
         return type("Out", (), {"loss": loss, "logits": logits})()
 
