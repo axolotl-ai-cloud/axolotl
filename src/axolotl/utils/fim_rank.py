@@ -37,7 +37,7 @@ import logging
 import math
 import warnings
 from collections import defaultdict
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 import torch.nn as nn
@@ -66,7 +66,7 @@ def _get_lora_b_params(
         Mapping from layer name (everything before ``.lora_B.{adapter}.weight``)
         to the corresponding ``lora_B`` parameter tensor.
     """
-    params = {}
+    params: dict[str, torch.Tensor] = {}
     suffix = f".lora_B.{adapter_name}.weight"
     for param_name, param in model.named_parameters():
         if param_name.endswith(suffix):
@@ -215,7 +215,7 @@ def _allocate_ranks(
 
 
 def _resize_layer(
-    layer: nn.Module,
+    layer: Any,
     adapter_name: str,
     new_r: int,
     adjust_scaling: bool,
@@ -321,9 +321,10 @@ def apply_fim_ranks(
         if isinstance(module, LoraLinear) and name in rank_pattern:
             _resize_layer(module, adapter_name, rank_pattern[name], adjust_scaling)
 
-    # Persist in config for serialisation
-    if hasattr(model, "peft_config") and adapter_name in model.peft_config:
-        cfg = model.peft_config[adapter_name]
+    # Persist in config for serialisation (peft_config is not typed on nn.Module)
+    peft_config: Any = getattr(model, "peft_config", None)
+    if peft_config is not None and adapter_name in peft_config:
+        cfg = peft_config[adapter_name]
         updates = {k: v for k, v in rank_pattern.items() if v != base_r}
         cfg.rank_pattern.update(updates)
 

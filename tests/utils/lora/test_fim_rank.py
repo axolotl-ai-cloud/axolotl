@@ -39,7 +39,7 @@ def _make_peft_model(r: int = 4):
 
     base = TinyMLP()
     cfg = LoraConfig(r=r, lora_alpha=r * 2, target_modules=["fc1", "fc2"], bias="none")
-    return get_peft_model(base, cfg)
+    return get_peft_model(base, cfg)  # type: ignore[arg-type]
 
 
 def _make_dataloader(n: int = 4, bs: int = 2, in_f: int = 16, out_f: int = 4):
