@@ -84,6 +84,44 @@ class LoraConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "List of layer indices to replicate."},
     )
+    fim_auto_rank: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enable FIM-guided automatic LoRA rank allocation. When true, a short "
+                "calibration pass accumulates empirical Fisher Information Matrix (eFIM) "
+                "diagonal scores per layer and reallocates ranks proportionally to each "
+                "layer's loss sensitivity — concentrating capacity where it matters most. "
+                "Requires a dataloader to be available at training setup time. "
+                "See also: fim_calibration_batches, fim_rank_min, fim_rank_max."
+            )
+        },
+    )
+    fim_calibration_batches: int | None = Field(
+        default=8,
+        json_schema_extra={
+            "description": (
+                "Number of training batches used for FIM calibration when fim_auto_rank=true. "
+                "More batches give a better importance estimate at the cost of additional "
+                "pre-training compute. Default: 8."
+            )
+        },
+    )
+    fim_rank_min: int | None = Field(
+        default=1,
+        json_schema_extra={
+            "description": "Minimum rank assigned to any layer when fim_auto_rank=true. Default: 1."
+        },
+    )
+    fim_rank_max: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Maximum rank assigned to any layer when fim_auto_rank=true. "
+                "Defaults to 2 * lora_r if not set."
+            )
+        },
+    )
     peft_init_lora_weights: bool | str | None = Field(
         default=None,
         json_schema_extra={
