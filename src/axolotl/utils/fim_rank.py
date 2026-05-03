@@ -180,36 +180,47 @@ def _allocate_ranks(
         return {}
 
     names = list(importance.keys())
-    scores = {n: max(importance[n], 1e-10) for n in names}
-    budget = base_r * len(names)
+    n = len(names)
+    budget = base_r * n
+
+    # Guard: if r_min alone would exceed the budget, clamp r_min so the contract
+    # (mean rank = base_r) is achievable. This prevents silent over-subscription.
+    effective_r_min = min(r_min, budget // n) if n > 0 else r_min
+
+    scores = {name: max(importance[name], 1e-10) for name in names}
+
+    # Pre-reserve r_min for every layer; distribute the surplus proportionally.
+    reserved = effective_r_min * n
+    surplus = float(budget - reserved)
 
     result: dict[str, int] = {}
     free = list(names)
-    free_budget = float(budget)
+    free_surplus = surplus
 
-    # Phase 1: fix layers that saturate r_max
+    # Phase 1: fix layers whose proportional share saturates r_max - r_min
+    ceiling = r_max - effective_r_min
     while free:
-        total = sum(scores[n] for n in free)
-        raw = {n: scores[n] / total * free_budget for n in free}
-        saturated = [n for n in free if math.floor(raw[n]) >= r_max]
+        total = sum(scores[name] for name in free)
+        raw = {name: scores[name] / total * free_surplus for name in free}
+        saturated = [name for name in free if math.floor(raw[name]) >= ceiling]
         if not saturated:
             break
-        for n in saturated:
-            result[n] = r_max
-        free_budget -= len(saturated) * r_max
-        free = [n for n in free if n not in result]
+        for name in saturated:
+            result[name] = r_max
+        free_surplus -= len(saturated) * ceiling
+        free = [name for name in free if name not in result]
 
-    # Phase 2: largest-remainder rounding over remaining layers
+    # Phase 2: largest-remainder rounding over remaining free layers
     if free:
-        total = sum(scores[n] for n in free)
-        raw = {n: scores[n] / total * free_budget for n in free}
-        floors = {n: math.floor(raw[n]) for n in free}
-        remainder = int(free_budget) - sum(floors.values())
-        by_frac = sorted(free, key=lambda n: -(raw[n] - floors[n]))
-        for i, n in enumerate(by_frac):
-            floors[n] += 1 if i < remainder else 0
-        for n in free:
-            result[n] = max(r_min, min(r_max, floors[n]))
+        total = sum(scores[name] for name in free)
+        raw = {name: scores[name] / total * free_surplus for name in free}
+        floors = {name: math.floor(raw[name]) for name in free}
+        remainder = int(free_surplus) - sum(floors.values())
+        by_frac = sorted(free, key=lambda name: -(raw[name] - floors[name]))
+        for i, name in enumerate(by_frac):
+            floors[name] += 1 if i < remainder else 0
+        for name in free:
+            result[name] = effective_r_min + max(0, min(ceiling, floors[name]))
 
     return result
 

@@ -62,7 +62,15 @@ class TestAllocateRanks:
     def test_budget_preserved(self):
         imp = {"a": 3.0, "b": 1.0, "c": 1.0}
         ranks = _allocate_ranks(imp, base_r=4, r_min=1, r_max=8)
-        assert abs(sum(ranks.values()) - 4 * 3) <= len(ranks)
+        # Budget must be exactly n_layers × base_r (largest-remainder guarantees this)
+        assert sum(ranks.values()) == 4 * 3
+
+    def test_budget_preserved_with_nonzero_r_min(self):
+        # Regression for CodeRabbit finding: r_min used to cause over-subscription
+        imp = {"hi": 100.0, "lo": 0.1}
+        base_r = 4
+        ranks = _allocate_ranks(imp, base_r=base_r, r_min=3, r_max=8)
+        assert sum(ranks.values()) == base_r * len(imp)
 
     def test_higher_importance_gets_higher_rank(self):
         imp = {"high": 10.0, "low": 0.1}

@@ -266,6 +266,30 @@ class LoraConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_fim_auto_rank(self):
+        """Reject nonsensical fim_auto_rank combinations early with a clear error."""
+        if not self.fim_auto_rank:
+            return self
+        if not self.lora_r:
+            raise ValueError(
+                "fim_auto_rank requires lora_r to be set to a positive integer."
+            )
+        batches = self.fim_calibration_batches
+        if batches is not None and batches <= 0:
+            raise ValueError(
+                f"fim_calibration_batches must be a positive integer, got {batches}."
+            )
+        r_min = self.fim_rank_min
+        if r_min is not None and r_min <= 0:
+            raise ValueError(f"fim_rank_min must be >= 1, got {r_min}.")
+        r_max = self.fim_rank_max
+        if r_max is not None and r_min is not None and r_max < r_min:
+            raise ValueError(
+                f"fim_rank_max ({r_max}) must be >= fim_rank_min ({r_min})."
+            )
+        return self
+
 
 class ReLoRAConfig(BaseModel):
     """ReLoRA configuration subset"""
