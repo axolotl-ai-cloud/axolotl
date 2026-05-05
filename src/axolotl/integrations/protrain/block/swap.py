@@ -111,6 +111,17 @@ LOG = get_logger(__name__)
 SIZE_THRESHOLD_BYTES: int = 1 << 20  # 1 MiB
 
 
+#: Safety margin reserved on top of the swap-in's own allocation when
+#: gating in :func:`unpack_from_pool`. Backward kernels enqueued *after*
+#: the headroom check may also allocate transients (workspace buffers,
+#: intermediate gradients) before the swap-in's ``empty_strided`` runs;
+#: 64 MiB is generous enough to absorb typical transformer-block
+#: backward transients without cutting into the headroom that motivated
+#: the gate. Tunable: lower if profiling shows the gate is over-firing,
+#: raise if backward still OOMs after the gate's host-side drain.
+_SWAP_HEADROOM_SAFETY_BYTES: int = 64 * 1024 * 1024
+
+
 def _swap_stream_wait_compute(swap_stream: "torch.cuda.Stream") -> None:
     """Make ``swap_stream`` wait on the current (compute) stream."""
     if swap_stream is None or not torch.cuda.is_available():
@@ -279,6 +290,47 @@ def _make_pack_unpack(
         # values match the original at every logical index while the
         # underlying storage is laid out the way the original tensor's
         # storage was.
+        #
+        # Headroom gate — uphold the cost model's "swap-in only when
+        # memory is available" invariant. ``cost/memory.py`` documents
+        # that SWAP blocks are modelled as zero contribution to the
+        # op-walk peak under the paper's assumption that swap-in only
+        # fires when memory is available. The runtime never actually
+        # checked this: ``empty_strided`` would just OOM in backward,
+        # and an analytically-feasible config could crash mysteriously.
+        # The gate below bridges that gap. ``mem_get_info`` queries the
+        # CUDA driver's free-memory counter (which already accounts for
+        # memory cached by PyTorch's allocator), so it answers "would a
+        # fresh allocation succeed" — exactly what we need. The
+        # synchronize-then-recheck dance is what makes this the closest
+        # analogue to the paper's assumption: backward kernels free
+        # their saved tensors after they finish, and ``synchronize()``
+        # drains them, typically opening enough headroom for the
+        # swap-in. We only synchronize on the deficit branch — the
+        # drain has a real cost (full compute-stream wait), so the
+        # conditional is load-bearing for steady-state throughput.
+        required_bytes = handle.nbytes
+        free_bytes, _total = torch.cuda.mem_get_info(handle.device)
+        if free_bytes < required_bytes + _SWAP_HEADROOM_SAFETY_BYTES:
+            torch.cuda.synchronize(handle.device)
+            free_bytes, _total = torch.cuda.mem_get_info(handle.device)
+            if free_bytes < required_bytes + _SWAP_HEADROOM_SAFETY_BYTES:
+                # Fall through to allocation anyway — the OOM is
+                # unavoidable at this point. The warning makes the
+                # SWAP gate the named cause in the operator's logs
+                # rather than a mysterious ``empty_strided`` failure.
+                LOG.warning(
+                    "SWAP unpack: insufficient GPU headroom for swap-in "
+                    "(need %d bytes + %d safety, have %d free) on device "
+                    "%s. The cost model assumed swap would not contribute "
+                    "to peak; this configuration violates that assumption "
+                    "— consider rerunning with n_swap=0 or smaller.",
+                    required_bytes,
+                    _SWAP_HEADROOM_SAFETY_BYTES,
+                    free_bytes,
+                    handle.device,
+                )
+
         gpu_buf = torch.empty_strided(
             handle.shape,
             handle.stride,
