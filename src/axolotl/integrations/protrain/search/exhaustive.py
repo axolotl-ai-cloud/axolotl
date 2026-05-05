@@ -183,6 +183,7 @@ def _block_map_peak_contribution(
     *,
     forward_ops_by_block: dict[BlockId, list[int]] | None = None,
     tree_index_map: dict[BlockId, int] | None = None,
+    n_persist: int | None = None,
 ) -> int:
     """Compute the block-map-dependent part of the raw peak.
 
@@ -210,6 +211,21 @@ def _block_map_peak_contribution(
     retains them like NONE). The ``layout`` parameter is required to
     provide ``S_chunk``.
 
+    ``n_persist``: when provided, the OFFLOAD bump is suppressed for
+    OFFLOAD blocks whose chunks are ALL in the persistent set
+    (``chunk_id < n_persist``). Rationale: ``ChunkManager.gather`` is
+    a no-op for persistent chunks (see ``chunk/manager.py::gather``
+    "Persistent chunks: no-op — they were never offloaded"), so the
+    backward-window chunk-gather residency that the bump models does
+    not occur when the block's chunks are already GPU-resident. When
+    ``n_persist`` is ``None`` (legacy callers — ``estimate_peak``'s
+    full op-walk path), every OFFLOAD block contributes the bump.
+    The searcher's hot loop varies ``n_persist`` independently of
+    ``block_map`` and so MUST pass this argument to avoid over-stating
+    the peak for high-``n_persist`` OFFLOAD configs (which would
+    spuriously prune feasible candidates via the ``max_sum`` ceiling
+    derived from ``f_bm``).
+
     Cross-attention term mirrors ``estimate_peak``'s Fix-3 enc-dec
     accounting — see the docstring of that function. For single-tree
     causal-LM traces the term is 0 and this matches the legacy F_bm.
@@ -228,9 +244,16 @@ def _block_map_peak_contribution(
 
     # Identify CKPT bump ops (first forward op of each CKPT block) and
     # OFFLOAD bump ops (last forward op of each OFFLOAD block — closest
-    # forward index to that block's first backward op).
+    # forward index to that block's first backward op). When
+    # ``n_persist`` is provided, an OFFLOAD block whose chunks are ALL
+    # within the persistent set contributes NO bump — the runtime
+    # ``ChunkManager.gather`` short-circuits for persistent chunks so
+    # no backward-window chunk-buffer materialization happens.
     ckpt_bump_op: dict[int, int] = {}
     offload_bump_op: dict[int, int] = {}
+    persistent_chunks: set[ChunkId] | None = None
+    if n_persist is not None:
+        persistent_chunks = {ChunkId(i) for i in range(max(0, int(n_persist)))}
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
             continue
@@ -238,6 +261,16 @@ def _block_map_peak_contribution(
         if mode is BlockMode.CKPT:
             ckpt_bump_op[op_idxs[0]] = int(block_id)
         elif mode is BlockMode.OFFLOAD:
+            if persistent_chunks is not None:
+                chunks = layout.block_to_chunks.get(block_id, ())
+                # All-persistent OFFLOAD block: gather is a no-op, so
+                # no backward chunk-buffer materialization. ``chunks``
+                # may be empty for sparse/degenerate layouts; treat
+                # that as "no bump" since there's no chunk to gather.
+                if chunks and all(
+                    ChunkId(int(cid)) in persistent_chunks for cid in chunks
+                ):
+                    continue
             offload_bump_op[op_idxs[-1]] = int(block_id)
 
     # Cumulative NONE / OFFLOAD activation bytes at each forward-op index.
@@ -422,15 +455,6 @@ def search(
                 block_map = assign_modes(
                     n_swap, n_ckpt, bounds.N_block, n_offload=n_offload
                 )
-                # F_bm: max over forward ops of
-                #   live_none + ckpt_extra + offload_extra + intra + inter
-                f_bm = _block_map_peak_contribution(
-                    block_map,
-                    trace,
-                    layout,
-                    forward_ops_by_block=forward_ops_by_block,
-                    tree_index_map=tree_index_map,
-                )
 
                 # For a fixed (n_ckpt, n_swap) sweep n_persist. The optimal
                 # n_buffer at each n_persist is the maximum feasible value
@@ -481,21 +505,71 @@ def search(
                 _cap_dominates = (
                     _hot_cap is not None and int(alpha * _hot_cap) <= capacity_bytes
                 )
-                if _cap_dominates:
-                    max_sum = bounds.N_chunk
-                elif alpha > 0 and s_chunk > 0:
-                    max_sum = int((capacity_bytes / alpha - f_bm) / s_chunk)
+
+                # F_bm depends on ``n_persist`` via the OFFLOAD-bump term:
+                # ``_block_map_peak_contribution`` charges ``S_chunk`` per
+                # OFFLOAD block at that block's last forward op, but the
+                # runtime ``ChunkManager.gather`` short-circuits for
+                # persistent chunks (``chunk/manager.py::gather`` "Persistent
+                # chunks: no-op — they were never offloaded"). When an
+                # OFFLOAD block's chunks are all in the persistent set the
+                # backward-window chunk-buffer materialization does not
+                # happen, so the bump must be suppressed. When ``n_offload``
+                # is 0 the contribution is ``n_persist``-invariant and we
+                # hoist a single computation outside the inner loop;
+                # otherwise the inner loop recomputes per-``n_persist``.
+                f_bm_invariant: int | None
+                if n_offload == 0:
+                    f_bm_invariant = _block_map_peak_contribution(
+                        block_map,
+                        trace,
+                        layout,
+                        forward_ops_by_block=forward_ops_by_block,
+                        tree_index_map=tree_index_map,
+                    )
                 else:
-                    max_sum = bounds.N_chunk
-                max_sum = max(0, min(max_sum, bounds.N_chunk))
+                    f_bm_invariant = None
 
                 for n_persist in range(0, bounds.N_chunk + 1):
+                    # Recompute ``f_bm`` per ``n_persist`` when OFFLOAD
+                    # blocks exist — the OFFLOAD bump drops out for blocks
+                    # whose chunks are all persistent (see
+                    # ``_block_map_peak_contribution`` docstring). When
+                    # ``n_offload == 0`` the value is invariant and the
+                    # hoisted ``f_bm_invariant`` is reused.
+                    if f_bm_invariant is not None:
+                        f_bm = f_bm_invariant
+                    else:
+                        f_bm = _block_map_peak_contribution(
+                            block_map,
+                            trace,
+                            layout,
+                            forward_ops_by_block=forward_ops_by_block,
+                            tree_index_map=tree_index_map,
+                            n_persist=n_persist,
+                        )
+                    if _cap_dominates:
+                        max_sum = bounds.N_chunk
+                    elif alpha > 0 and s_chunk > 0:
+                        max_sum = int((capacity_bytes / alpha - f_bm) / s_chunk)
+                    else:
+                        max_sum = bounds.N_chunk
+                    max_sum = max(0, min(max_sum, bounds.N_chunk))
+
                     # Max feasible n_buffer at this n_persist (partition + capacity).
                     max_buffer = min(bounds.N_chunk - n_persist, max_sum - n_persist)
                     if max_buffer < 0:
-                        # n_persist alone exceeds the capacity budget — any
-                        # larger n_persist will too; stop scanning.
-                        break
+                        # n_persist alone exceeds the capacity budget at
+                        # this ``f_bm``. With OFFLOAD active, future
+                        # ``n_persist`` values may have a SMALLER ``f_bm``
+                        # (more OFFLOAD blocks become fully persistent →
+                        # fewer bumps survive), so the budget can re-open;
+                        # use ``continue`` instead of ``break`` to keep
+                        # scanning. With no OFFLOAD blocks the budget is
+                        # monotone in n_persist and we can break.
+                        if f_bm_invariant is not None:
+                            break
+                        continue
 
                     # Scheduler needs enough buffers to hold (current block's
                     # non-persistent chunks) union (next block's non-persistent

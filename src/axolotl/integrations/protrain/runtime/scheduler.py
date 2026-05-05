@@ -101,6 +101,32 @@ class Scheduler:
             block_id: idx for idx, block_id in enumerate(self._block_order)
         }
 
+        # Precompute the "last backward owner" for every chunk. ``build_layout``
+        # packs the params of one transformer block into one chunk when they
+        # fit, but a single chunk can hold params of MULTIPLE consecutive
+        # blocks under the block-contiguity rule (§3.1.1). When that happens
+        # ``layout.block_to_chunks[bid]`` for two adjacent blocks both contain
+        # the shared chunk id. Backward iterates blocks in reverse-forward
+        # order, so the LATER block in forward visits the chunk FIRST in
+        # backward — if ``post_block_backward`` calls
+        # ``reduce_grads_and_offload(cid)`` then, the chunk's grads are
+        # finalized before the EARLIER block has produced its grads, which
+        # at best wastes a regather/offload cycle and at worst
+        # double-finalizes the chunk's reduce / CPU-optim state. Defer the
+        # finalize until the EARLIEST forward-order block that owns each
+        # chunk runs its post-backward — that block is the LAST visit in
+        # backward. ``BlockId`` is a ``NewType("BlockId", int)`` and the
+        # scheduler already assumes forward order is ascending integer order
+        # (see ``_block_order = sorted(block_map.keys())`` above), so the
+        # earliest-forward owner is simply ``min(owners)``.
+        chunk_last_bwd_owner: dict[ChunkId, BlockId] = {}
+        for bid, cids in self.layout.block_to_chunks.items():
+            for cid in cids:
+                prev = chunk_last_bwd_owner.get(cid)
+                if prev is None or bid < prev:
+                    chunk_last_bwd_owner[cid] = bid
+        self._chunk_last_bwd_owner: dict[ChunkId, BlockId] = chunk_last_bwd_owner
+
         self._prefetch_stream: "torch.cuda.Stream | None" = None
         self._swap_stream: "torch.cuda.Stream | None" = None
         # ActivationSwapPool reference, attached lazily by the model
@@ -420,6 +446,15 @@ class Scheduler:
           mode issues the distributed all-reduce per param.
         """
         for cid in self._chunks_for(block_id):
+            # Block-contiguity rule (§3.1.1): a chunk can be shared with an
+            # adjacent block. Only the EARLIEST forward-order owner — i.e.
+            # the LAST block to visit the chunk in backward — should
+            # finalize it. Skipping here lets the earlier block's
+            # post_block_backward fire the reduce-and-offload once all
+            # owners have produced their grads. See the
+            # ``_chunk_last_bwd_owner`` precomputation in ``__init__``.
+            if self._chunk_last_bwd_owner.get(cid, block_id) != block_id:
+                continue
             self.chunk_manager.reduce_grads_and_offload(cid)
 
     # ---- end-of-iteration cleanup -------------------------------------

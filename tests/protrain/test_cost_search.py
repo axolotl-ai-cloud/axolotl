@@ -1719,6 +1719,97 @@ def test_search_returns_valid_block_map(toy_trace, toy_layout, toy_hw):
 
 
 # ---------------------------------------------------------------------------
+# OFFLOAD-bump: f_bm must drop as n_persist absorbs OFFLOAD blocks
+# ---------------------------------------------------------------------------
+
+
+def test_block_map_peak_contribution_drops_offload_bumps_when_persistent(
+    toy_trace, toy_layout
+):
+    """``_block_map_peak_contribution`` must suppress the OFFLOAD chunk-gather
+    bump for OFFLOAD blocks whose chunks are all in the persistent set.
+
+    Rationale: ``ChunkManager.gather`` is a no-op for persistent chunks
+    (see ``chunk/manager.py::gather`` "Persistent chunks: no-op — they
+    were never offloaded"), so the backward-window chunk-buffer
+    materialization that the bump models does not occur. Hoisting
+    ``f_bm`` over the ``n_persist`` axis (legacy behaviour, before this
+    fix) over-states the peak for high-``n_persist`` OFFLOAD configs
+    and over-prunes feasible candidates via the searcher's
+    ``max_sum`` ceiling.
+
+    Pre-fix: this test would fail because every OFFLOAD block always
+    contributed ``+S_chunk`` regardless of ``n_persist``, so the
+    contribution would be CONSTANT across the n_persist sweep.
+    Post-fix: contribution is monotone non-increasing in ``n_persist``
+    and STRICTLY decreases at thresholds where OFFLOAD blocks become
+    fully persistent.
+    """
+    from axolotl.integrations.protrain.search.exhaustive import (
+        _block_map_peak_contribution,
+    )
+    from axolotl.integrations.protrain.types import BlockId, BlockMode
+
+    # All-OFFLOAD block_map: every block is OFFLOAD, so every block
+    # contributes a candidate ``+S_chunk`` bump under the legacy code.
+    n_block = len(toy_trace.activation_sizes)
+    block_map = {BlockId(b): BlockMode.OFFLOAD for b in range(n_block)}
+
+    # Toy layout: each block owns exactly one chunk (chunk_id = b%N_chunk).
+    # When n_persist >= max_chunk_id_owned + 1, every OFFLOAD block has
+    # all its chunks in the persistent set → all bumps suppressed.
+
+    # Baseline (legacy hoisted call without n_persist): includes an
+    # ``S_chunk`` bump fired at one forward op. The op-walk's max
+    # candidate at that op = live_none[i] + S_chunk + intra + inter.
+    f_bm_legacy = _block_map_peak_contribution(block_map, toy_trace, toy_layout)
+
+    # n_persist=0: NO chunks persistent. All OFFLOAD bumps still fire.
+    f_bm_n0 = _block_map_peak_contribution(
+        block_map, toy_trace, toy_layout, n_persist=0
+    )
+    assert f_bm_n0 == f_bm_legacy, (
+        f"n_persist=0 must match the legacy (no-arg) call: "
+        f"legacy={f_bm_legacy} n_persist=0={f_bm_n0}"
+    )
+
+    # n_persist large enough that every chunk owned by any OFFLOAD
+    # block is persistent. Toy layout has 8 blocks each owning chunk
+    # ``b % 12 = b``; so n_persist=8 covers chunks {0..7}, which is
+    # the full set of chunks owned by blocks {0..7}. Every OFFLOAD
+    # block's chunks are now persistent → no bump fires anywhere.
+    max_owned_chunk = max(
+        int(c) for chunks in toy_layout.block_to_chunks.values() for c in chunks
+    )
+    n_persist_full = max_owned_chunk + 1
+    f_bm_full_persist = _block_map_peak_contribution(
+        block_map, toy_trace, toy_layout, n_persist=n_persist_full
+    )
+
+    # Strict drop: at least one ``S_chunk`` bump must have disappeared.
+    # The exact magnitude depends on which op held the max in the
+    # legacy walk, but the post-fix value must be strictly smaller.
+    assert f_bm_full_persist < f_bm_legacy, (
+        f"n_persist={n_persist_full} should drop OFFLOAD bumps: "
+        f"legacy={f_bm_legacy} f_bm_full_persist={f_bm_full_persist}; "
+        "expected strict decrease because every OFFLOAD block's "
+        "chunks are now persistent (no backward chunk-gather residency)"
+    )
+
+    # Sanity: contribution is monotone non-increasing as n_persist grows.
+    prev = f_bm_legacy
+    for n_persist in range(0, n_persist_full + 1):
+        cur = _block_map_peak_contribution(
+            block_map, toy_trace, toy_layout, n_persist=n_persist
+        )
+        assert cur <= prev, (
+            f"f_bm not monotone non-increasing in n_persist: "
+            f"prev={prev} cur={cur} at n_persist={n_persist}"
+        )
+        prev = cur
+
+
+# ---------------------------------------------------------------------------
 # Helper for debugging tests if they fail
 # ---------------------------------------------------------------------------
 
