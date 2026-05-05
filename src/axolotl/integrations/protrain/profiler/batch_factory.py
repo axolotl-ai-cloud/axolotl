@@ -231,7 +231,10 @@ def seq_classification_batch_factory(
 
     cfg = getattr(model, "config", None)
     problem_type = getattr(cfg, "problem_type", None) if cfg is not None else None
-    if problem_type == "regression":
+    inferred_regression = problem_type == "regression" or (
+        problem_type is None and num_labels == 1
+    )
+    if inferred_regression:
         # Multi-target regression uses (batch_size, num_labels); single-target
         # uses (batch_size,). HF's MSELoss path squeezes/handles both, but the
         # shapes must match num_labels to avoid broadcasting bugs / crashes.
