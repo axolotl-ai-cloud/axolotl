@@ -1,21 +1,24 @@
-"""Exhaustive 4-knob search for ProTrain (§3.3).
+"""Exhaustive 5-knob search for ProTrain (§3.3, Option B §4.3).
 
 Algorithm:
 
 1. Derive ``Bounds`` from ``(trace, layout)``.
-2. Enumerate ``(n_persist, n_buffer, n_swap, n_checkpoint)`` within
-   bounds, subject to:
+2. Enumerate ``(n_persist, n_buffer, n_swap, n_checkpoint, n_offload)``
+   within bounds, subject to:
 
    - ``n_persist + n_buffer <= N_chunk``
-   - ``n_swap + n_checkpoint <= N_block``
-   - ``n_swap <= min(N_block - n_checkpoint, N_interval)``
+   - ``n_swap + n_checkpoint + n_offload <= N_block``
+   - ``n_swap <= min(N_block - n_checkpoint - n_offload, N_interval)``
 
 3. For each candidate, compute ``block_map = assign_modes(...)``.
 4. Evaluate ``estimate_peak``; drop candidates above ``capacity_bytes``.
 5. Drop runtime-inadmissible candidates: any block whose parameter
-   chunks are not all persistent must use CKPT, because the current
-   runtime releases non-persistent chunk storage after forward and
-   relies on checkpoint recomputation to re-gather it for backward.
+   chunks are not all persistent must use ``CKPT`` or ``OFFLOAD``,
+   because the current runtime releases non-persistent chunk storage
+   after forward and relies either on checkpoint recomputation
+   (``CKPT``) or on the OFFLOAD saved-tensors-hook re-bind path
+   (``OFFLOAD``) to make activations available again for backward.
+   See ``block_map_runtime_admissible`` for the precise predicate.
 6. If ``cpu_capacity_bytes`` is not None, evaluate
    ``estimate_cpu_footprint``; drop candidates above the host-RAM gate.
 7. Among survivors, evaluate ``estimate_runtime`` and pick argmin.
@@ -23,10 +26,11 @@ Algorithm:
    distinguishes GPU-pressure failure (no cfg cleared the GPU gate)
    from CPU-pressure failure (some cleared GPU but all busted CPU).
 
-The search space is tiny (~10^4 at most on realistic models) — no
-pruning cleverness is needed for correctness. We do sort candidates
-by a cheap static peak estimate so early OOMs filter out large chunks
-of the space without the full op-walk.
+The search space is tiny (~10^4 at most on realistic models even with
+the added ``n_offload`` axis) — no pruning cleverness is needed for
+correctness. We do sort candidates by a cheap static peak estimate so
+early OOMs filter out large chunks of the space without the full
+op-walk.
 """
 
 from __future__ import annotations
@@ -356,8 +360,9 @@ def search(
 
     Notes
     -----
-    Correctness is equivalent to the naive 4-loop enumeration that
-    calls ``estimate_peak`` and ``estimate_runtime`` inside the inner
+    Correctness is equivalent to the naive 5-loop enumeration over
+    ``(n_persist, n_buffer, n_swap, n_ckpt, n_offload)`` that calls
+    ``estimate_peak`` and ``estimate_runtime`` inside the inner
     (n_persist, n_buffer) iteration. We exploit two structural
     invariants to avoid quadratic op-walks across the full search
     space:
@@ -366,7 +371,8 @@ def search(
        ``(n_persist + n_buffer) * S_chunk + F(block_map)``. The
        block-map-dependent term ``F`` is independent of
        ``(n_persist, n_buffer)`` so we compute it once per
-       ``(n_swap, n_ckpt)`` pair (O(N_swap*N_ckpt*N_op)).
+       ``(n_swap, n_ckpt, n_offload)`` triple
+       (O(N_swap*N_ckpt*N_offload*N_op)).
     2. ``estimate_runtime`` is a closed-form function of the config,
        evaluated only for configs that already clear the capacity
        gate — keeping the inner loop purely arithmetic.

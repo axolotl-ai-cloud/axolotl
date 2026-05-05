@@ -95,7 +95,7 @@ def _early_init_dist_for_nccl(cfg) -> int:
     the env-derived rendezvous and returns the world size. Accelerate's
     later ``Accelerator()`` constructor checks ``is_initialized()`` and
     skips its own init when we've already brought the PG up — see
-    ``accelerate/state.py`` ``PartialState.__init__`` lines 219–244.
+    ``accelerate/state.py`` ``PartialState.__init__`` lines 219-244.
 
     Returns
     -------

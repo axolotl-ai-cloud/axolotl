@@ -207,8 +207,10 @@ def seq_classification_batch_factory(
     Label shape/dtype follows ``model.config.problem_type`` so we exercise
     the same loss path the real training run would:
 
-    * ``"regression"`` — float tensor of shape ``(batch_size,)`` (HF uses
-      MSE; integer labels would either crash or silently cast).
+    * ``"regression"`` — float tensor of shape ``(batch_size,)`` for
+      single-target regression or ``(batch_size, num_labels)`` for
+      multi-target regression (HF uses MSE; integer labels would either
+      crash or silently cast).
     * ``"multi_label_classification"`` — float tensor of shape
       ``(batch_size, num_labels)`` with 0/1 entries (HF uses BCE-with-logits).
     * Anything else (single-label / unset) — long tensor of shape
@@ -230,8 +232,12 @@ def seq_classification_batch_factory(
     cfg = getattr(model, "config", None)
     problem_type = getattr(cfg, "problem_type", None) if cfg is not None else None
     if problem_type == "regression":
+        # Multi-target regression uses (batch_size, num_labels); single-target
+        # uses (batch_size,). HF's MSELoss path squeezes/handles both, but the
+        # shapes must match num_labels to avoid broadcasting bugs / crashes.
+        regression_shape = (batch_size, num_labels) if num_labels > 1 else (batch_size,)
         labels = torch.randn(
-            (batch_size,),
+            regression_shape,
             device=device,
             dtype=torch.float,
         )

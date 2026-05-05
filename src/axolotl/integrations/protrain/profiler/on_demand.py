@@ -138,8 +138,8 @@ class OnDemandTensorMgr:
 
     def __enter__(self) -> "OnDemandTensorMgr":
         """Spill parameters to pinned CPU and install the gather/spill hooks."""
-        self._entered = True
         if self.disabled:
+            self._entered = True
             return self
         if self.model is None:
             raise ValueError(
@@ -243,6 +243,7 @@ class OnDemandTensorMgr:
                 self._n_pin_failures,
             )
 
+        self._entered = True
         return self
 
     def _restore_after_partial_setup(self) -> None:

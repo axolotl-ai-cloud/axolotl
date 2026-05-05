@@ -261,6 +261,48 @@ def _allreduce_visibility_consensus(present: bool, *, what: str, path: str) -> b
     )
 
 
+def _read_metadata_lockstep(path: str) -> dict[str, Any]:
+    """Read + parse ``metadata.json`` with the same all-reduced status protocol used for shard I/O.
+
+    The metadata read sits between visibility consensus and the trailing
+    collectives in the load hook (``_perform_online_reshard`` and the
+    per-rank shard read). A rank-local read or parse failure here would
+    otherwise let the failing rank unwind to the outer barrier in
+    ``install_load_hook`` while surviving ranks march into those
+    collectives and wedge the job. Mirror the per-rank-shard-read sync:
+    every rank contributes a 0/1 status, the cluster all-reduces, and
+    any non-zero total raises everywhere — local failures still surface
+    their original exception (``_allreduce_status_or_raise`` returns
+    without raising for them), so tracebacks aren't stomped.
+    """
+    status = 0
+    captured_exc: Exception | None = None
+    metadata: dict[str, Any] | None = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if not isinstance(loaded, dict):
+            raise RuntimeError(
+                f"ProTrain optimizer load: metadata at {path!r} is not a JSON object."
+            )
+        metadata = loaded
+    except Exception as exc:
+        status = 1
+        captured_exc = exc
+    try:
+        _allreduce_status_or_raise(status, op="load (metadata read)")
+    except Exception:
+        # Another rank failed; this rank is the synthesized-error rank.
+        # Local failures fall through to the captured re-raise below so
+        # the original traceback wins.
+        if captured_exc is None:
+            raise
+    if captured_exc is not None:
+        raise captured_exc
+    assert metadata is not None
+    return metadata
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1101,8 +1143,7 @@ def _load_protrain_optim_dir(
             f"ProTrain optimizer load: {target!r} exists but lacks "
             f"{METADATA_FILENAME}. Refusing to load partial checkpoint."
         )
-    with open(meta_path) as f:
-        metadata = json.load(f)
+    metadata = _read_metadata_lockstep(meta_path)
 
     fmt = int(metadata.get("format_version", 0))
     if fmt == 1:
@@ -1225,8 +1266,7 @@ def _load_protrain_optim_dir(
             # by construction so the rest of the Mode-C body becomes
             # the standard same-world load path.
             target = online_reshard_temp_dir
-            with open(os.path.join(target, METADATA_FILENAME)) as f:
-                metadata = json.load(f)
+            metadata = _read_metadata_lockstep(os.path.join(target, METADATA_FILENAME))
             saved_world = int(metadata["protrain_world_size"])
             assert saved_world == current_world, (
                 "online reshard produced metadata with "

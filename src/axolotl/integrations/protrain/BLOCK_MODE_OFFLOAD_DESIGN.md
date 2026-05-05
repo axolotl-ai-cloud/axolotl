@@ -1,7 +1,7 @@
 # Block-Mode OFFLOAD — Design Note (Option B)
 
 **Status:** complete. M1 (types + validator) and M2 (runtime hook) shipped in commit `8264f773`; M3 (scheduler integration) shipped in commit `a1ab8aff`; M4 (cost model + searcher) shipped in commit `ea20710a`; M5 (test enablement — re-enabled the 3 previously-skipped slow tests) shipped in commit `c7c155f7`. All milestones M1–M5 have landed; Option B is fully implemented — see [§7 Implementation roadmap](#7-implementation-roadmap) for the per-milestone summary.
-**Scope:** extend the ProTrain runtime so a non-persistent chunk's owning block can run under `BlockMode.NONE` (no recompute) — i.e. the param chunk is gathered for forward, offloaded after forward, AND re-gathered for backward without invoking `torch.utils.checkpoint`.
+**Scope:** extend the ProTrain runtime so a non-persistent chunk's owning block can run under `BlockMode.OFFLOAD` (no recompute) — i.e. the param chunk is gathered for forward, offloaded after forward, AND re-gathered for backward without invoking `torch.utils.checkpoint`.
 **Builds on:** `DESIGN.md` (overall plugin), `CHECKPOINT_DESIGN.md` / `CHECKPOINT_DESIGN_PHASE2.md` (style template).
 **Branch base:** `protrain-optim-checkpoint-phase2-mode-c` @ tip (per `MEMORY.md::protrain_branch_state`).
 
@@ -16,7 +16,7 @@
 5. [Test matrix expansion](#5-test-matrix-expansion)
 6. [Risks and open questions](#6-risks-and-open-questions)
 7. [Implementation roadmap](#7-implementation-roadmap)
-8. [Deferral / kill criteria](#8-deferral--kill-criteria)
+8. [Deferral / kill criteria](#8-deferral--kill-criteria-historical)
 9. [Glossary](#9-glossary)
 
 ---

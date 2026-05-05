@@ -9,13 +9,11 @@ Kwargs handling
 ---------------
 HuggingFace transformer blocks take positional tensors plus keyword
 arguments such as ``attention_mask``, ``position_ids``, ``past_key_value``,
-``output_attentions``, ``use_cache``. The functional form of
-``torch.utils.checkpoint.checkpoint`` only forwards positional arguments to
-the wrapped function (kwargs are consumed by the checkpoint machinery
-itself, not passed through). To route kwargs correctly we build a closure
-that captures the kwargs dict and applies it internally, then pass only
-positional tensors into ``checkpoint``. This preserves the block's native
-call signature.
+``output_attentions``, ``use_cache``. With ``use_reentrant=False``,
+``torch.utils.checkpoint.checkpoint`` natively forwards keyword arguments
+to the wrapped callable, so we pass ``*args, **kwargs`` straight through
+without a wrapping closure. This preserves the block's native call
+signature.
 """
 
 from __future__ import annotations
@@ -65,9 +63,6 @@ class CheckpointedBlock(nn.Module):
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the wrapped block under ``torch.utils.checkpoint`` (activations recomputed)."""
-        # torch.utils.checkpoint.checkpoint only threads positional args into
-        # the wrapped callable. Capture kwargs in a closure so HF blocks that
-        # rely on e.g. attention_mask= still see them.
         block = self.block
         # Per-invocation call counter captured by the ``_run`` closure.
         # ``torch.utils.checkpoint`` invokes ``_run`` twice per top-level
@@ -78,7 +73,7 @@ class CheckpointedBlock(nn.Module):
         # block is called multiple times before backward.
         fwd_call_count = 0
 
-        def _run(*inner_args: Any) -> Any:
+        def _run(*inner_args: Any, **inner_kwargs: Any) -> Any:
             nonlocal fwd_call_count
             fwd_call_count += 1
             # Skip the hook on the initial forward (count == 1): the
@@ -88,12 +83,16 @@ class CheckpointedBlock(nn.Module):
                 hook = self._protrain_recompute_pre_hook
                 if hook is not None:
                     hook()
-            return block(*inner_args, **kwargs)
+            return block(*inner_args, **inner_kwargs)
 
+        # ``use_reentrant=False`` natively threads kwargs to the wrapped
+        # callable, so HF block kwargs (attention_mask=, position_ids=, ...)
+        # flow through without manual capture.
         return torch_checkpoint.checkpoint(
             _run,
             *args,
             use_reentrant=False,
+            **kwargs,
         )
 
     def extra_repr(self) -> str:

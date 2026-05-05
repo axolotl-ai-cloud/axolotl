@@ -259,6 +259,22 @@ def _collect_sharded_no_decay_shard_param_ids(
     fp32 (and which dtype-splitting tends to put in their own region
     anyway).
 
+    Granularity trade-off (CR PR #17 round-2): a strictly HF-equivalent
+    fix would split each region into byte-precise decay / no-decay
+    sub-extents and emit a separate optimizer entry per sub-extent.
+    That requires synthesizing per-intersection slice views of
+    ``region.shard_param``, registering each as its own
+    ``nn.Parameter`` on the underlying FusedAdam, partitioning the
+    region's gradient buffer to match, and tracking distinct optimizer
+    state (``exp_avg`` / ``exp_avg_sq``) per sub-extent — a substantial
+    refactor of the per-region CPU-Adam interface and a perf risk on
+    the hot offload step. The over-cover surface is bounded in
+    practice because Mode-C's dtype-driven region split typically
+    isolates fp32 norm scales into their own region (no adjacent
+    decay-class weights to over-cover), so the residual decay leakage
+    is small. We keep the region-level mapping for v1 and revisit if
+    measured divergence from HF Trainer warrants the refactor.
+
     Returns a set of ``id(shard_param)`` that should be treated as
     no-decay. Empty when the chunk manager has no sharded chunks
     populated, or when the no-decay source set is itself empty.
