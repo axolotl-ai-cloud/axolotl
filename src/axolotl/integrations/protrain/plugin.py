@@ -24,6 +24,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.integrations.protrain.api.hardware import (  # noqa: F401 — re-exported for back-compat
+    DEFAULT_PCIE_BPS as _DEFAULT_PCIE_BPS,
+)
+from axolotl.integrations.protrain.api.hardware import (
+    build_hardware_profile as _shared_build_hardware_profile,
+)
+from axolotl.integrations.protrain.api.hardware import (
+    resolve_world_size_from_env as _resolve_world_size_from_env,
+)
 from axolotl.integrations.protrain.args import _has_protrain_plugin
 from axolotl.utils.logging import get_logger
 
@@ -37,33 +46,11 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
-# Default PCIe H2D bandwidth assumed for HardwareProfile construction when
-# no measured value is available. 13 GB/s matches a typical PCIe Gen4 x16
-# 3090 rig; the profiler's microbench will overwrite this once the cache
-# key misses and a full profile runs — this constant only seeds the
-# constructor for the cost model's effective-bandwidth prior.
-_DEFAULT_PCIE_BPS = 13e9
-
-
-def _resolve_world_size_from_env() -> int:
-    """Return ``WORLD_SIZE`` from the env, defaulting to 1.
-
-    Both torchrun and Accelerate's launchers populate ``WORLD_SIZE`` /
-    ``RANK`` / ``LOCAL_RANK`` / ``MASTER_ADDR`` / ``MASTER_PORT`` before
-    the user script starts. We treat the env as the source of truth here
-    because the plugin's ``post_model_load`` runs before the trainer (and
-    thus before Accelerate) has had a chance to call
-    :func:`torch.distributed.init_process_group`.
-    """
-    import os
-
-    raw = os.environ.get("WORLD_SIZE")
-    if raw is None:
-        return 1
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return 1
+# ``_DEFAULT_PCIE_BPS`` and ``_resolve_world_size_from_env`` are re-exported
+# from :mod:`axolotl.integrations.protrain.api.hardware` so the plugin path
+# and the direct API helper (:func:`auto_wrap`) share a single canonical
+# source. The leading-underscore aliases preserve the legacy import paths
+# any external caller (or future drift detector) may have keyed on.
 
 
 def _early_init_dist_for_nccl(cfg) -> int:
@@ -451,8 +438,13 @@ def _is_plugin_active(cfg) -> bool:
 def _build_hardware_profile(cfg):
     """Construct a ``HardwareProfile`` from the first visible CUDA device.
 
-    Populates ``zero3_shard`` from the same auto-detect logic used by
-    :func:`protrain_model_wrapper`: when no explicit
+    Thin cfg-aware wrapper around
+    :func:`axolotl.integrations.protrain.api.hardware.build_hardware_profile`
+    — the shared helper that the direct API entry point
+    (:func:`axolotl.integrations.protrain.api.auto_wrap`) also calls.
+
+    The plugin-specific work this layer adds is the
+    ``zero3_shard`` auto-detect: when no explicit
     ``protrain_zero3_shard`` override is set in YAML, enable sharding
     iff ``world_size > 1`` AND ``protrain_force_all_persistent`` is
     False. The wrapper itself re-checks this (honouring a live
@@ -460,87 +452,12 @@ def _build_hardware_profile(cfg):
     place — this initial population keeps the cost model honest even
     when the wrapper is bypassed.
     """
-    import torch
+    # Resolve world_size first so the zero3_shard auto-detect below
+    # consults the same value the shared helper will stamp into the
+    # returned HardwareProfile.
+    from axolotl.integrations.protrain.api.hardware import _resolve_world_size
 
-    from axolotl.integrations.protrain.types import HardwareProfile
-
-    if not torch.cuda.is_available():
-        raise RuntimeError(
-            "ProTrain plugin requires a CUDA device; torch.cuda.is_available() is False."
-        )
-
-    # Honour CUDA_VISIBLE_DEVICES — the ordinal here is logical, which
-    # resolves to whatever the user masked in via the env var. Read this
-    # rank's device (set by ``torch.cuda.set_device(LOCAL_RANK)`` in
-    # ``post_model_load``) so heterogeneous-memory multi-GPU rigs report
-    # the correct ``capacity_bytes`` / SKU per rank instead of always
-    # reading device 0.
-    import os
-
-    raw_local_rank = os.environ.get("LOCAL_RANK", "0")
-    try:
-        local_rank = int(raw_local_rank)
-    except ValueError:
-        LOG.warning(
-            "ProTrain: invalid LOCAL_RANK=%r; falling back to current CUDA device.",
-            raw_local_rank,
-        )
-        local_rank = torch.cuda.current_device()
-
-    visible = int(torch.cuda.device_count())
-    if visible <= 0:
-        raise RuntimeError("ProTrain plugin requires at least one visible CUDA device.")
-    if not (0 <= local_rank < visible):
-        LOG.warning(
-            "ProTrain: LOCAL_RANK=%d out of visible CUDA range [0, %d); "
-            "falling back to current CUDA device.",
-            local_rank,
-            visible,
-        )
-        device = torch.cuda.current_device()
-    else:
-        device = local_rank
-    props = torch.cuda.get_device_properties(device)
-    gpu_memory_bytes = int(props.total_memory)
-    gpu_sku = torch.cuda.get_device_name(device)
-
-    # Measured PCIe bandwidth lives in the profiler trace; at plugin load
-    # time we seed a reasonable prior. The cost model uses hardware_profile
-    # for effective-bandwidth derating (cost/bandwidth.py) where the
-    # absolute value matters less than the ratio against n_swap traffic.
-    pcie_h2d_bps = _DEFAULT_PCIE_BPS
-    pcie_d2h_bps = _DEFAULT_PCIE_BPS
-
-    # Prefer the live process group when one is up (set by our early
-    # init in ``post_model_load`` for multi-rank torchrun runs). Fall
-    # back to ``WORLD_SIZE`` env (also accurate under torchrun, defaults
-    # to 1 for single-process runs). Do NOT use ``torch.cuda.device_count()``
-    # as a fallback: visible GPU count is not the distributed rank count,
-    # so on a single-process run on a multi-GPU host this would inflate
-    # ``world_size`` from 1 to N and skew the profiler cache key, the
-    # per-rank CPU-capacity budget, and the cost-model sharding divisor
-    # before the wrapper has a chance to correct it.
-    try:
-        import torch.distributed as _dist
-
-        if _dist.is_available() and _dist.is_initialized():
-            world_size = max(1, int(_dist.get_world_size()))
-        elif (
-            os.environ.get("RANK") is not None
-            and os.environ.get("LOCAL_RANK") is not None
-        ):
-            # Mirror ``_early_init_dist_for_nccl``'s launcher-env sanity
-            # check: ``WORLD_SIZE>1`` without ``RANK``/``LOCAL_RANK`` is a
-            # non-launcher / misconfigured environment where no process
-            # group can come up. Trusting ``_resolve_world_size_from_env``
-            # in that case would let the searcher pick a multi-rank cache
-            # key and ``zero3_shard=True`` for a run that's actually
-            # single-process. Fall back to 1 instead.
-            world_size = _resolve_world_size_from_env()
-        else:
-            world_size = 1
-    except ImportError:
-        world_size = 1
+    world_size = _resolve_world_size()
 
     # Mirror protrain_model_wrapper's zero3_shard auto-detect so the
     # searcher's CPU-footprint accounting lines up with the runtime's
@@ -552,13 +469,8 @@ def _build_hardware_profile(cfg):
     else:
         zero3_shard = bool(explicit) and (world_size > 1)
 
-    return HardwareProfile(
-        gpu_sku=gpu_sku,
-        gpu_memory_bytes=gpu_memory_bytes,
-        gpu_count=world_size,
-        pcie_h2d_bps=pcie_h2d_bps,
-        pcie_d2h_bps=pcie_d2h_bps,
-        has_nvlink=False,
+    return _shared_build_hardware_profile(
+        world_size_override=world_size,
         zero3_shard=zero3_shard,
     )
 

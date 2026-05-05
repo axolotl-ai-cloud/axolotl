@@ -2156,6 +2156,112 @@ def protrain_model_wrapper(
     return wrapped
 
 
+def auto_wrap(
+    model: nn.Module,
+    batch_size: int,
+    seq_len: int,
+    *,
+    capacity_bytes: int | None = None,
+    cpu_capacity_bytes: int | None = None,
+    cache_dir: str | None = None,
+) -> WrappedModel:
+    """Drop-in ProTrain wrapper with auto-derived ``HardwareProfile``.
+
+    Construct a :class:`HardwareProfile` from live ``torch.cuda`` queries
+    and call :func:`protrain_model_wrapper` with auto-mode enabled. This
+    is the closest analogue to the paper's Figure 1 single-line API for
+    users who aren't going through the Axolotl plugin path:
+
+    .. code-block:: python
+
+        from axolotl.integrations import protrain
+
+        wrapped = protrain.auto_wrap(model, batch_size=4, seq_len=2048)
+        optimizer = protrain.protrain_optimizer_wrapper(wrapped)
+
+    Parameters
+    ----------
+    model : nn.Module
+        Any standard ``nn.Module``. Must already be on the GPU device
+        you want ProTrain to use (place via ``model.cuda()`` or
+        ``model.to(device)`` first). ``auto_wrap`` does not move models
+        — explicit is better than implicit for device placement.
+    batch_size, seq_len : int
+        Used for both the profiler invocation and the cache key.
+    capacity_bytes : int | None
+        GPU memory budget passed through to the searcher. ``None``
+        defaults to ``hw.gpu_memory_bytes - 2 GiB`` headroom (resolved
+        inside :func:`protrain_model_wrapper`).
+    cpu_capacity_bytes : int | None
+        Per-rank pinned CPU RAM budget the searcher should treat as a
+        hard feasibility filter. ``None`` auto-derives from
+        ``psutil.virtual_memory()`` inside the wrapper.
+    cache_dir : str | None
+        Profiler cache directory override. Currently reserved — the
+        profiler reads ``XDG_CACHE_HOME`` directly; passed through for
+        forward compatibility.
+
+    Returns
+    -------
+    WrappedModel
+        Ready for standard PyTorch training-loop use:
+        ``loss.backward(); optimizer.step()``.
+
+    Raises
+    ------
+    RuntimeError
+        If CUDA is not available, or ``model`` parameters live on CPU
+        (auto_wrap does not move models).
+
+    See Also
+    --------
+    protrain_model_wrapper : the lower-level wrapper exposed for callers
+        who need fine-grained control over the
+        :class:`HardwareProfile`, override knobs, or sharding mode
+        (``zero3_shard``, ``force_all_persistent``, the four-tuple
+        ``n_*_override`` debug knobs).
+    """
+    import torch
+
+    from axolotl.integrations.protrain.api.hardware import build_hardware_profile
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "ProTrain.auto_wrap requires CUDA; torch.cuda.is_available() is False. "
+            "Construct a HardwareProfile manually and call protrain_model_wrapper "
+            "directly for non-CUDA test harnesses."
+        )
+
+    # Refuse to silently accept a CPU-resident model. The wrapper itself
+    # would later raise inside the profiler's tracker (which calls
+    # ``torch.cuda.memory_stats(device)`` on the model's device) — surface
+    # the contract here with a clearer message.
+    try:
+        param_device = next(model.parameters()).device
+    except StopIteration:
+        param_device = None
+    if param_device is not None and param_device.type != "cuda":
+        raise RuntimeError(
+            f"ProTrain.auto_wrap requires the model to be on GPU before the call "
+            f"(found device={param_device}). Move it first via "
+            f"`model.cuda()` or `model.to('cuda:N')`, then re-invoke."
+        )
+
+    hw = build_hardware_profile()
+
+    return protrain_model_wrapper(
+        model,
+        model_config=getattr(model, "config", None),
+        hardware_profile=hw,
+        batch_size=batch_size,
+        seq_len=seq_len,
+        capacity_bytes=capacity_bytes,
+        cpu_capacity_bytes=cpu_capacity_bytes,
+        cache_dir=cache_dir,
+        auto_mode=True,
+    )
+
+
 def _find_block_parent_map(
     model: nn.Module, blocks: list[nn.Module]
 ) -> dict[int, "nn.ModuleList"]:
@@ -2188,4 +2294,4 @@ def _find_block_parent_map(
     return out
 
 
-__all__ = ["protrain_model_wrapper"]
+__all__ = ["auto_wrap", "protrain_model_wrapper"]

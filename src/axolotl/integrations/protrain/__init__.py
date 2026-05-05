@@ -8,6 +8,11 @@ Exposed as an Axolotl plugin. User opt-in in YAML:
 See DESIGN.md for module layout and paper-section references.
 """
 
+from axolotl.integrations.protrain.api import (
+    auto_wrap,
+    protrain_model_wrapper,
+    protrain_optimizer_wrapper,
+)
 from axolotl.integrations.protrain.args import ProTrainArgs
 from axolotl.integrations.protrain.plugin import ProTrainPlugin
 from axolotl.integrations.protrain.types import (
@@ -46,4 +51,7 @@ __all__ = [
     "ProfilerTrace",
     "SearchResult",
     "WrappedModel",
+    "auto_wrap",
+    "protrain_model_wrapper",
+    "protrain_optimizer_wrapper",
 ]
