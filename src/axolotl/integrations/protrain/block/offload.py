@@ -168,10 +168,29 @@ class OffloadedBlock(nn.Module):
     ) -> None:
         """Wire the chunk manager + scheduler into this wrapper.
 
-        Idempotent — re-attaching with the same manager is a no-op;
-        re-attaching with a new manager is legal (e.g. after a
-        re-search at epoch boundaries).
+        Idempotent — re-attaching with the same manager (and updating
+        only the scheduler) is allowed. Swapping in a *different*
+        chunk manager mid-run is rejected: any ``_ParamHandle``
+        previously recorded by ``_pack`` references the prior
+        manager's storage map by ``ChunkId``, and resolving those
+        handles against a freshly-constructed manager would silently
+        decode against unrelated storage. Callers that need to swap
+        managers (e.g. a re-search at an epoch boundary) MUST call
+        :meth:`detach_runtime` first; that path is only safe between
+        forward/backward boundaries when no saved-tensor handles are
+        outstanding.
         """
+        if self._chunk_manager is not None and self._chunk_manager is not chunk_manager:
+            raise RuntimeError(
+                "OffloadedBlock.attach_runtime: refusing to swap chunk "
+                "managers on an already-attached wrapper. Saved "
+                "_ParamHandles from prior forwards reference the old "
+                "manager's storage map by ChunkId and would decode "
+                "against unrelated storage on the new manager. Call "
+                "detach_runtime() first, and only between "
+                "forward/backward boundaries when no saved-tensor "
+                "handles are outstanding."
+            )
         self._chunk_manager = chunk_manager
         self._scheduler = scheduler
 
@@ -332,12 +351,19 @@ class OffloadedBlock(nn.Module):
         # the unpacked tensor.
         backward_handle = mgr.gather_for_backward(handle.chunk_id)
 
-        assert mgr.buffer_pool is not None, (
-            "OffloadedBlock._unpack: chunk manager has no buffer_pool — "
-            "cannot reconstruct the saved view. This indicates the "
-            "OFFLOAD path was reached on an all-persistent layout, "
-            "which the admissibility filter should have rejected."
-        )
+        # Explicit runtime check, NOT an ``assert``: ``python -O`` strips
+        # asserts, and silently dereferencing a ``None`` buffer_pool
+        # below would raise an obscure ``AttributeError`` instead of
+        # this descriptive failure. Release the just-bumped backward
+        # refcount so we don't leak handle state into the manager.
+        if mgr.buffer_pool is None:
+            backward_handle.release()
+            raise RuntimeError(
+                "OffloadedBlock._unpack: chunk manager has no buffer_pool — "
+                "cannot reconstruct the saved view. This indicates the "
+                "OFFLOAD path was reached on an all-persistent layout, "
+                "which the admissibility filter should have rejected."
+            )
         buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
         if buf is None:
             # Defensive: gather_for_backward should have made the chunk

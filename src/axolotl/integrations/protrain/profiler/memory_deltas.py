@@ -123,8 +123,8 @@ class MemoryDeltaTracker:
 
 
 __all__ = [
-    "intra_op_delta",
-    "inter_op_delta",
-    "MemorySnapshot",
     "MemoryDeltaTracker",
+    "MemorySnapshot",
+    "inter_op_delta",
+    "intra_op_delta",
 ]
