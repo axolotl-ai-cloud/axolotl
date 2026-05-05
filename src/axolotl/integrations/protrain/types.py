@@ -354,12 +354,21 @@ class ChunkLayout:
 
 @dataclass(frozen=True)
 class CostConfig:
-    """The four tunable knobs (§3.3 table)."""
+    """The five tunable knobs (§3.3 table + Option B §3.6).
+
+    ``n_offload`` is the new Option B axis (see
+    ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.6 / §4.3). It defaults to 0
+    so legacy 4-knob callers continue to construct identical
+    configurations. The searcher's outer loop enumerates non-zero
+    values; pre-Option-B producers (tests, model wrapper synth-cfg
+    builders) keep working unchanged.
+    """
 
     n_persist: int  # chunks pinned on GPU
     n_buffer: int  # pre-allocated chunk buffers
     n_swap: int  # blocks using activation swap
     n_checkpoint: int  # blocks using gradient checkpointing
+    n_offload: int = 0  # blocks using BlockMode.OFFLOAD (Option B §3.6)
 
 
 @dataclass(frozen=True)

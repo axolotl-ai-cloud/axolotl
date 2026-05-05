@@ -582,6 +582,22 @@ def estimate_runtime(
     t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_total)
     t_bwd_recompute = 0.0
     t_bwd_swap_prefetch = 0.0
+    # OFFLOAD chunk-gather wall (Option B §4.2). For every OFFLOAD block
+    # the runtime re-gathers the chunk via PCIe H2D (and a NCCL gather on
+    # multi-rank ZeRO-3) at the start of that block's backward, so the
+    # autograd unpack hook can rebind saved-tensor views into the freshly
+    # populated chunk buffer. The cost is one chunk's worth of bytes per
+    # OFFLOAD block, less any overlap that happens to land on the
+    # critical path with the previous backward block's compute.
+    #
+    # The model mirrors the CKPT trade: CKPT recompute scales with model
+    # compute per block; OFFLOAD gather scales with chunk_bytes / pcie_bw
+    # (plus the NCCL gather on multi-rank). On PCIe Gen3 the trade tilts
+    # toward OFFLOAD when blocks are big (compute-heavy) but chunks are
+    # small (gather-cheap); on slow PCIe with tiny blocks CKPT may still
+    # win. The searcher consumes both terms via the (n_checkpoint,
+    # n_offload) axes.
+    n_offload_blocks = 0
     for bid_raw, act_sz in trace.activation_sizes.items():
         bid = BlockId(int(bid_raw))
         mode = block_map.get(bid, BlockMode.NONE)
@@ -596,8 +612,44 @@ def estimate_runtime(
         elif mode is BlockMode.SWAP:
             if eff_h2d > 0:
                 t_bwd_swap_prefetch += act_sz / eff_h2d
+        elif mode is BlockMode.OFFLOAD:
+            n_offload_blocks += 1
 
-    t_bwd_compute_total = t_bwd_compute_base + t_bwd_recompute
+    # T_bwd_gather: per-OFFLOAD-block backward chunk gather time.
+    # Mirrors the structure of ``t_bwd_comm_per_chunk_uncached`` (the
+    # uncached non-persistent backward gather) — full NCCL gather +
+    # H2D PCIe per chunk. Buffer-cache hits do not apply here: OFFLOAD
+    # blocks live on non-persistent chunks (the only mode where
+    # offload was ever useful per Option B §3.5), and the
+    # post-forward chunk release means the buffer pool slot has
+    # already been recycled by the time backward starts.
+    #
+    # Overlap with the previous backward block's compute is handled
+    # implicitly by the chunk-roofline ``max()`` reduction the
+    # analytical (non-phase-2) backward branch performs below — when
+    # the per-chunk roofline assembles ``t_bwd_uncached_chunks`` it
+    # takes the elementwise max of compute vs. comm. We attribute the
+    # OFFLOAD gather to non-persistent chunks (which already pay the
+    # gather collective when uncached), so adding the gather cost a
+    # second time would double-count. Instead, the OFFLOAD term lands
+    # as an additive backward wall here for the analytical AND
+    # phase-2 paths: the phase-2 chunked wall is captured under
+    # ``phase2_n_offload=0`` (bootstrap config has no OFFLOAD blocks
+    # — Option B is not yet wired into bootstrap), so any candidate
+    # with ``n_offload > 0`` must add this wall on top.
+    t_bwd_gather = 0.0
+    if n_offload_blocks > 0:
+        if eff_h2d > 0:
+            t_bwd_gather_per_block = layout.S_chunk / eff_h2d
+        else:
+            t_bwd_gather_per_block = 0.0
+        # NCCL gather contribution per OFFLOAD block at chunk payload size.
+        # Single-rank / no-collective case has nccl_gather=0 (set above),
+        # so the term collapses to PCIe-only.
+        t_bwd_gather_per_block += nccl_gather
+        t_bwd_gather = n_offload_blocks * t_bwd_gather_per_block
+
+    t_bwd_compute_total = t_bwd_compute_base + t_bwd_recompute + t_bwd_gather
     # Gate mirrors ``_bwd_compute_time_from_trace`` Path 1: accept the
     # chunked measurement when the bootstrap had no CKPT
     # (``per_block_recompute_s`` is naturally 0 there) OR when both fields

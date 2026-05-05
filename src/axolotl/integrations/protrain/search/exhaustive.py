@@ -133,30 +133,43 @@ def block_map_runtime_admissible(
 
 
 def _iter_candidates(bounds: Bounds) -> Iterator[CostConfig]:
-    """Enumerate feasible ``CostConfig`` tuples within ``bounds``."""
+    """Enumerate feasible ``CostConfig`` tuples within ``bounds``.
+
+    Five axes (Option B §4.3): ``n_checkpoint``, ``n_offload``,
+    ``n_swap``, ``n_persist``, ``n_buffer``. ``n_offload`` lives in
+    the outer-loop neighbourhood of ``n_ckpt`` because the two trade
+    against each other on the backward wall (Option B §4.2). Search
+    space grows by ~``N_block`` (~17K -> ~440K candidates on a
+    Llama-3B-class model with ``N_block=26``), still well under the
+    second-budget for closed-form per-candidate evaluation.
+    """
     n_chunk = bounds.N_chunk
     n_block = bounds.N_block
     n_interval = bounds.N_interval
 
     for n_ckpt in range(0, n_block + 1):
-        # n_swap bounded by (a) blocks remaining after ckpt, (b) N_interval.
-        max_swap = min(n_block - n_ckpt, n_interval)
-        for n_swap in range(0, max_swap + 1):
-            for n_persist in range(0, n_chunk + 1):
-                # n_buffer fills the remainder of chunk budget.
-                max_buffer = n_chunk - n_persist
-                for n_buffer in range(0, max_buffer + 1):
-                    yield CostConfig(
-                        n_persist=n_persist,
-                        n_buffer=n_buffer,
-                        n_swap=n_swap,
-                        n_checkpoint=n_ckpt,
-                    )
+        for n_offload in range(0, n_block - n_ckpt + 1):
+            # n_swap bounded by (a) blocks remaining after
+            # ckpt+offload, (b) N_interval.
+            max_swap = min(n_block - n_ckpt - n_offload, n_interval)
+            for n_swap in range(0, max_swap + 1):
+                for n_persist in range(0, n_chunk + 1):
+                    # n_buffer fills the remainder of chunk budget.
+                    max_buffer = n_chunk - n_persist
+                    for n_buffer in range(0, max_buffer + 1):
+                        yield CostConfig(
+                            n_persist=n_persist,
+                            n_buffer=n_buffer,
+                            n_swap=n_swap,
+                            n_checkpoint=n_ckpt,
+                            n_offload=n_offload,
+                        )
 
 
 def _block_map_peak_contribution(
     block_map: BlockStrategyMap,
     trace: ProfilerTrace,
+    layout: ChunkLayout,
     *,
     forward_ops_by_block: dict[BlockId, list[int]] | None = None,
     tree_index_map: dict[BlockId, int] | None = None,
@@ -167,7 +180,7 @@ def _block_map_peak_contribution(
     the terms that do not depend on ``(n_persist, n_buffer)``:
 
         F(block_map) = max over forward ops i of
-            (live_none_at(i) + ckpt_extra_at(i)
+            (live_none_at(i) + ckpt_extra_at(i) + offload_extra_at(i)
              + cross_attn_at(i) + intra[i] + inter[i])
 
     The returned value is the pre-alpha raw contribution; the caller
@@ -179,6 +192,13 @@ def _block_map_peak_contribution(
     ``trace`` (not ``block_map``); when called inside the searcher's
     hot loop callers should compute them once and pass them in to
     skip the per-iteration rebuild.
+
+    The OFFLOAD bump term (``offload_extra_at``) lands at the LAST
+    forward op of each OFFLOAD block (Option B §4.1) and contributes
+    ``layout.S_chunk`` (the buffer-pool chunk gather only —
+    activations are already counted in ``live_none`` because OFFLOAD
+    retains them like NONE). The ``layout`` parameter is required to
+    provide ``S_chunk``.
 
     Cross-attention term mirrors ``estimate_peak``'s Fix-3 enc-dec
     accounting — see the docstring of that function. For single-tree
@@ -196,22 +216,31 @@ def _block_map_peak_contribution(
             if op.is_forward and op.block_id is not None:
                 forward_ops_by_block[op.block_id].append(i)
 
-    # Identify CKPT bump ops.
+    # Identify CKPT bump ops (first forward op of each CKPT block) and
+    # OFFLOAD bump ops (last forward op of each OFFLOAD block — closest
+    # forward index to that block's first backward op).
     ckpt_bump_op: dict[int, int] = {}
+    offload_bump_op: dict[int, int] = {}
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
             continue
-        if block_map.get(block_id, BlockMode.NONE) is BlockMode.CKPT:
+        mode = block_map.get(block_id, BlockMode.NONE)
+        if mode is BlockMode.CKPT:
             ckpt_bump_op[op_idxs[0]] = int(block_id)
+        elif mode is BlockMode.OFFLOAD:
+            offload_bump_op[op_idxs[-1]] = int(block_id)
 
-    # Cumulative NONE-block activation bytes at each forward-op index.
+    # Cumulative NONE / OFFLOAD activation bytes at each forward-op index.
+    # OFFLOAD retains activations on GPU symmetrically to NONE; the
+    # additional chunk gather bump fires at the per-block backward window
+    # via ``offload_bump_op`` and is added separately below.
     block_first_op = {bid: ops[0] for bid, ops in forward_ops_by_block.items() if ops}
     blocks_in_fwd_order = sorted(block_first_op.items(), key=lambda kv: kv[1])
     cumulative_none: list[tuple[int, int]] = []  # (first_op_idx, cumulative)
     running = 0
     for bid, first_idx in blocks_in_fwd_order:
         mode = block_map.get(bid, BlockMode.NONE)
-        if mode is BlockMode.NONE:
+        if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
             running += trace.activation_sizes.get(bid, 0)
         cumulative_none.append((first_idx, running))
 
@@ -228,6 +257,7 @@ def _block_map_peak_contribution(
         tree_index_map = block_tree_index_map(trace)
     cross_attn_bytes = cross_attn_persist_bytes(trace, block_map, tree_index_map)
 
+    s_chunk = layout.S_chunk
     best = 0
     have_any_forward = False
     for i, op in enumerate(trace.op_order):
@@ -240,19 +270,27 @@ def _block_map_peak_contribution(
         ckpt_extra = 0
         if i in ckpt_bump_op:
             ckpt_extra = trace.activation_sizes.get(BlockId(ckpt_bump_op[i]), 0)
+        offload_extra = 0
+        if i in offload_bump_op:
+            offload_extra = s_chunk
         op_cross_attn = op_cross_attn_surcharge(op, cross_attn_bytes, tree_index_map)
-        candidate = live_none + ckpt_extra + op_cross_attn + intra + inter
+        candidate = (
+            live_none + ckpt_extra + offload_extra + op_cross_attn + intra + inter
+        )
         if candidate > best:
             best = candidate
 
     if not have_any_forward:
-        # Degenerate trace: fall back to the NONE retained-activation
-        # total so the caller's peak is at least ``model_state_present +
-        # retained``.
+        # Degenerate trace: fall back to the NONE/OFFLOAD retained-
+        # activation total so the caller's peak is at least
+        # ``model_state_present + retained``. (OFFLOAD retains
+        # activations like NONE — the chunk-gather bump term would
+        # only fire during the op-walk if forward ops were present.)
         total_none = 0
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
-            if block_map.get(bid, BlockMode.NONE) is BlockMode.NONE:
+            mode = block_map.get(bid, BlockMode.NONE)
+            if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
                 total_none += act_sz
         return total_none
 
@@ -377,168 +415,180 @@ def search(
     tree_index_map = block_tree_index_map(trace)
 
     for n_ckpt in range(0, bounds.N_block + 1):
-        max_swap = min(bounds.N_block - n_ckpt, bounds.N_interval)
-        for n_swap in range(0, max_swap + 1):
-            block_map = assign_modes(n_swap, n_ckpt, bounds.N_block)
-            # F_bm: max over forward ops of
-            #   live_none + ckpt_extra + intra + inter
-            f_bm = _block_map_peak_contribution(
-                block_map,
-                trace,
-                forward_ops_by_block=forward_ops_by_block,
-                tree_index_map=tree_index_map,
-            )
+        # Option B §4.3: outer loop over n_offload — added as a sibling
+        # axis to n_ckpt because the two trade against each other on the
+        # backward wall (Option B §4.2). Search space grows ~N_block× but
+        # the per-candidate work is closed-form so it stays sub-second on
+        # realistic Llama-3B/7B-class models.
+        for n_offload in range(0, bounds.N_block - n_ckpt + 1):
+            max_swap = min(bounds.N_block - n_ckpt - n_offload, bounds.N_interval)
+            for n_swap in range(0, max_swap + 1):
+                block_map = assign_modes(
+                    n_swap, n_ckpt, bounds.N_block, n_offload=n_offload
+                )
+                # F_bm: max over forward ops of
+                #   live_none + ckpt_extra + offload_extra + intra + inter
+                f_bm = _block_map_peak_contribution(
+                    block_map,
+                    trace,
+                    layout,
+                    forward_ops_by_block=forward_ops_by_block,
+                    tree_index_map=tree_index_map,
+                )
 
-            # For a fixed (n_ckpt, n_swap) sweep n_persist. The optimal
-            # n_buffer at each n_persist is the maximum feasible value
-            # in [0, N_chunk - n_persist]: ``estimate_runtime``'s
-            # n_buffer dependence enters only through ``n_cached =
-            # min(n_buffer, n_nonpersist)`` inside the backward
-            # communication term, and
-            # ``max(compute, comm_cached) <= max(compute, comm_uncached)``
-            # because cached chunks skip the re-gather. So moving a
-            # chunk from uncached to cached never increases ``t_iter``;
-            # the argmin is reached by maximising n_buffer within
-            # capacity. That collapses the inner (n_persist, n_buffer)
-            # loop from O(N_chunk^2) to O(N_chunk), which is the
-            # difference between finishing in ~1s and ~10min on 7B
-            # configurations where ``N_chunk`` lands in the hundreds.
-            #
-            # Peak bound on (n_persist + n_buffer):
-            #   int(alpha * (sum * S_chunk + F_bm)) <= capacity
-            #   => sum <= floor((capacity/alpha - F_bm) / S_chunk)
-            #
-            # CAVEAT: this bound uses the uncapped ``F_bm`` raw-peak
-            # decomposition. The inner loop later applies
-            # ``hot_iter_peak_cap`` which can LOWER ``raw_peak`` when
-            # the per-block trace shows the F_bm op-walk overestimates
-            # the true hot-iter peak. When the cap fires
-            # (``raw_peak > hot_cap``), ``predicted_peak`` collapses to
-            # ``alpha * hot_cap`` — independent of (n_persist+n_buffer).
-            # If ``alpha * hot_cap <= capacity_bytes``, EVERY config
-            # with sum > max_sum (which the F_bm bound would prune)
-            # actually clears the GPU gate via the cap. Compute the cap
-            # once per (n_swap, n_ckpt) pair — it depends only on
-            # ``trace``, ``block_map``, and ``cfg.n_checkpoint``/
-            # ``cfg.n_swap`` (see ``cost/memory.py::hot_iter_peak_cap``;
-            # n_persist/n_buffer are not read) — and widen ``max_sum``
-            # to the natural ``N_chunk`` ceiling when the cap rescues
-            # the whole sum-axis. Probe cfg uses n_persist=n_buffer=0
-            # because those fields are unused by ``hot_iter_peak_cap``.
-            _cap_probe_cfg = CostConfig(
-                n_persist=0,
-                n_buffer=0,
-                n_swap=n_swap,
-                n_checkpoint=n_ckpt,
-            )
-            _hot_cap = hot_iter_peak_cap(trace, block_map, _cap_probe_cfg)
-            _cap_dominates = (
-                _hot_cap is not None and int(alpha * _hot_cap) <= capacity_bytes
-            )
-            if _cap_dominates:
-                max_sum = bounds.N_chunk
-            elif alpha > 0 and s_chunk > 0:
-                max_sum = int((capacity_bytes / alpha - f_bm) / s_chunk)
-            else:
-                max_sum = bounds.N_chunk
-            max_sum = max(0, min(max_sum, bounds.N_chunk))
-
-            for n_persist in range(0, bounds.N_chunk + 1):
-                # Max feasible n_buffer at this n_persist (partition + capacity).
-                max_buffer = min(bounds.N_chunk - n_persist, max_sum - n_persist)
-                if max_buffer < 0:
-                    # n_persist alone exceeds the capacity budget — any
-                    # larger n_persist will too; stop scanning.
-                    break
-
-                # Scheduler needs enough buffers to hold (current block's
-                # non-persistent chunks) ∪ (next block's non-persistent
-                # chunks) simultaneously — that's how the lookahead
-                # prefetch in runtime/scheduler.py::pre_block_forward
-                # works. Skip n_persist values that can't support that
-                # minimum within the capacity budget.
-                min_buffer = min_n_buffer_for(layout, n_persist)
-                if min_buffer > max_buffer:
-                    continue
-                if not block_map_runtime_admissible(layout, block_map, n_persist):
-                    continue
-
-                # Optimum n_buffer is the max feasible: cached chunks
-                # skip re-gather in backward, and estimate_runtime is
-                # monotone non-increasing in n_buffer through the
-                # ``min(n_buffer, n_nonpersist)`` cache-hit term. We also
-                # evaluate n_buffer = min_buffer as the tie-break
-                # boundary so the picked config doesn't over-commit
-                # buffer capacity when the runtime is flat.
+                # For a fixed (n_ckpt, n_swap) sweep n_persist. The optimal
+                # n_buffer at each n_persist is the maximum feasible value
+                # in [0, N_chunk - n_persist]: ``estimate_runtime``'s
+                # n_buffer dependence enters only through ``n_cached =
+                # min(n_buffer, n_nonpersist)`` inside the backward
+                # communication term, and
+                # ``max(compute, comm_cached) <= max(compute, comm_uncached)``
+                # because cached chunks skip the re-gather. So moving a
+                # chunk from uncached to cached never increases ``t_iter``;
+                # the argmin is reached by maximising n_buffer within
+                # capacity. That collapses the inner (n_persist, n_buffer)
+                # loop from O(N_chunk^2) to O(N_chunk), which is the
+                # difference between finishing in ~1s and ~10min on 7B
+                # configurations where ``N_chunk`` lands in the hundreds.
                 #
-                # When the CPU-RAM gate is active, the 2-point shortcut
-                # is unsound: ``max_buffer`` may fail the host-side
-                # ``estimate_cpu_footprint`` check (more buffered chunks
-                # = more pinned CPU staging) while an intermediate
-                # ``n_buffer`` is feasible AND faster than ``min_buffer``.
-                # Iterate the full feasible range in that case so we
-                # don't spuriously raise "no config fits" or pick a
-                # slower ``min_buffer`` config. Capacity bounds are
-                # unchanged — we still scan within ``[min_buffer,
-                # max_buffer]`` so the GPU gate stays enforced.
-                if cpu_capacity_bytes is None:
-                    # Ordered tuple (min first) so tie-breaks prefer the
-                    # smaller buffer — matches the searcher's
-                    # strict ``<`` replacement rule below where the first
-                    # candidate iterated wins on equal predicted cost.
-                    n_buffer_candidates: Iterable[int] = (min_buffer, max_buffer)
+                # Peak bound on (n_persist + n_buffer):
+                #   int(alpha * (sum * S_chunk + F_bm)) <= capacity
+                #   => sum <= floor((capacity/alpha - F_bm) / S_chunk)
+                #
+                # CAVEAT: this bound uses the uncapped ``F_bm`` raw-peak
+                # decomposition. The inner loop later applies
+                # ``hot_iter_peak_cap`` which can LOWER ``raw_peak`` when
+                # the per-block trace shows the F_bm op-walk overestimates
+                # the true hot-iter peak. When the cap fires
+                # (``raw_peak > hot_cap``), ``predicted_peak`` collapses to
+                # ``alpha * hot_cap`` — independent of (n_persist+n_buffer).
+                # If ``alpha * hot_cap <= capacity_bytes``, EVERY config
+                # with sum > max_sum (which the F_bm bound would prune)
+                # actually clears the GPU gate via the cap. Compute the cap
+                # once per (n_swap, n_ckpt) pair — it depends only on
+                # ``trace``, ``block_map``, and ``cfg.n_checkpoint``/
+                # ``cfg.n_swap`` (see ``cost/memory.py::hot_iter_peak_cap``;
+                # n_persist/n_buffer are not read) — and widen ``max_sum``
+                # to the natural ``N_chunk`` ceiling when the cap rescues
+                # the whole sum-axis. Probe cfg uses n_persist=n_buffer=0
+                # because those fields are unused by ``hot_iter_peak_cap``.
+                _cap_probe_cfg = CostConfig(
+                    n_persist=0,
+                    n_buffer=0,
+                    n_swap=n_swap,
+                    n_checkpoint=n_ckpt,
+                    n_offload=n_offload,
+                )
+                _hot_cap = hot_iter_peak_cap(trace, block_map, _cap_probe_cfg)
+                _cap_dominates = (
+                    _hot_cap is not None and int(alpha * _hot_cap) <= capacity_bytes
+                )
+                if _cap_dominates:
+                    max_sum = bounds.N_chunk
+                elif alpha > 0 and s_chunk > 0:
+                    max_sum = int((capacity_bytes / alpha - f_bm) / s_chunk)
                 else:
-                    n_buffer_candidates = range(min_buffer, max_buffer + 1)
-                for n_buffer in n_buffer_candidates:
-                    n_total += 1
-                    model_state_present = (n_persist + n_buffer) * s_chunk
-                    raw_peak = model_state_present + f_bm
-                    # Apply the hot-iter ground-truth cap (v6+ traces with
-                    # per-block peaks). Mirrors the cap in
-                    # ``cost/memory.py::estimate_peak`` so the searcher
-                    # picks the same config ``estimate_peak`` would
-                    # validate, closing the F_bm-vs-estimate_peak gap.
-                    _cfg_for_cap = CostConfig(
-                        n_persist=n_persist,
-                        n_buffer=n_buffer,
-                        n_swap=n_swap,
-                        n_checkpoint=n_ckpt,
-                    )
-                    _cap = hot_iter_peak_cap(trace, block_map, _cfg_for_cap)
-                    if _cap is not None and raw_peak > _cap:
-                        raw_peak = _cap
-                    predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
-                    if predicted_peak > capacity_bytes:
+                    max_sum = bounds.N_chunk
+                max_sum = max(0, min(max_sum, bounds.N_chunk))
+
+                for n_persist in range(0, bounds.N_chunk + 1):
+                    # Max feasible n_buffer at this n_persist (partition + capacity).
+                    max_buffer = min(bounds.N_chunk - n_persist, max_sum - n_persist)
+                    if max_buffer < 0:
+                        # n_persist alone exceeds the capacity budget — any
+                        # larger n_persist will too; stop scanning.
+                        break
+
+                    # Scheduler needs enough buffers to hold (current block's
+                    # non-persistent chunks) ∪ (next block's non-persistent
+                    # chunks) simultaneously — that's how the lookahead
+                    # prefetch in runtime/scheduler.py::pre_block_forward
+                    # works. Skip n_persist values that can't support that
+                    # minimum within the capacity budget.
+                    min_buffer = min_n_buffer_for(layout, n_persist)
+                    if min_buffer > max_buffer:
                         continue
-                    n_gpu_feasible += 1
-                    cfg = CostConfig(
-                        n_persist=n_persist,
-                        n_buffer=n_buffer,
-                        n_swap=n_swap,
-                        n_checkpoint=n_ckpt,
-                    )
-                    # Hard CPU-RAM feasibility gate. Skipped when
-                    # ``cpu_capacity_bytes`` is None (caller opted out
-                    # of host-side filtering — backward-compatible
-                    # default). Estimated bytes are per-rank pinned
-                    # CPU; sharding is reflected via hw.zero3_shard
-                    # inside ``estimate_cpu_footprint``.
-                    if cpu_capacity_bytes is not None:
-                        cpu_footprint = estimate_cpu_footprint(
-                            cfg, layout, hw, trace=trace
+                    if not block_map_runtime_admissible(layout, block_map, n_persist):
+                        continue
+
+                    # Optimum n_buffer is the max feasible: cached chunks
+                    # skip re-gather in backward, and estimate_runtime is
+                    # monotone non-increasing in n_buffer through the
+                    # ``min(n_buffer, n_nonpersist)`` cache-hit term. We also
+                    # evaluate n_buffer = min_buffer as the tie-break
+                    # boundary so the picked config doesn't over-commit
+                    # buffer capacity when the runtime is flat.
+                    #
+                    # When the CPU-RAM gate is active, the 2-point shortcut
+                    # is unsound: ``max_buffer`` may fail the host-side
+                    # ``estimate_cpu_footprint`` check (more buffered chunks
+                    # = more pinned CPU staging) while an intermediate
+                    # ``n_buffer`` is feasible AND faster than ``min_buffer``.
+                    # Iterate the full feasible range in that case so we
+                    # don't spuriously raise "no config fits" or pick a
+                    # slower ``min_buffer`` config. Capacity bounds are
+                    # unchanged — we still scan within ``[min_buffer,
+                    # max_buffer]`` so the GPU gate stays enforced.
+                    if cpu_capacity_bytes is None:
+                        # Ordered tuple (min first) so tie-breaks prefer the
+                        # smaller buffer — matches the searcher's
+                        # strict ``<`` replacement rule below where the first
+                        # candidate iterated wins on equal predicted cost.
+                        n_buffer_candidates: Iterable[int] = (min_buffer, max_buffer)
+                    else:
+                        n_buffer_candidates = range(min_buffer, max_buffer + 1)
+                    for n_buffer in n_buffer_candidates:
+                        n_total += 1
+                        model_state_present = (n_persist + n_buffer) * s_chunk
+                        raw_peak = model_state_present + f_bm
+                        # Apply the hot-iter ground-truth cap (v6+ traces with
+                        # per-block peaks). Mirrors the cap in
+                        # ``cost/memory.py::estimate_peak`` so the searcher
+                        # picks the same config ``estimate_peak`` would
+                        # validate, closing the F_bm-vs-estimate_peak gap.
+                        _cfg_for_cap = CostConfig(
+                            n_persist=n_persist,
+                            n_buffer=n_buffer,
+                            n_swap=n_swap,
+                            n_checkpoint=n_ckpt,
+                            n_offload=n_offload,
                         )
-                        if cpu_footprint > cpu_capacity_bytes:
-                            n_cpu_rejected += 1
+                        _cap = hot_iter_peak_cap(trace, block_map, _cfg_for_cap)
+                        if _cap is not None and raw_peak > _cap:
+                            raw_peak = _cap
+                        predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
+                        if predicted_peak > capacity_bytes:
                             continue
-                    n_feasible += 1
-                    predicted_iter_s = estimate_runtime(
-                        cfg, trace, layout, block_map, hw
-                    )
-                    if predicted_iter_s < best_iter_s:
-                        best_iter_s = predicted_iter_s
-                        best_cfg = cfg
-                        best_block_map = block_map
-                        best_peak = predicted_peak
+                        n_gpu_feasible += 1
+                        cfg = CostConfig(
+                            n_persist=n_persist,
+                            n_buffer=n_buffer,
+                            n_swap=n_swap,
+                            n_checkpoint=n_ckpt,
+                            n_offload=n_offload,
+                        )
+                        # Hard CPU-RAM feasibility gate. Skipped when
+                        # ``cpu_capacity_bytes`` is None (caller opted out
+                        # of host-side filtering — backward-compatible
+                        # default). Estimated bytes are per-rank pinned
+                        # CPU; sharding is reflected via hw.zero3_shard
+                        # inside ``estimate_cpu_footprint``.
+                        if cpu_capacity_bytes is not None:
+                            cpu_footprint = estimate_cpu_footprint(
+                                cfg, layout, hw, trace=trace
+                            )
+                            if cpu_footprint > cpu_capacity_bytes:
+                                n_cpu_rejected += 1
+                                continue
+                        n_feasible += 1
+                        predicted_iter_s = estimate_runtime(
+                            cfg, trace, layout, block_map, hw
+                        )
+                        if predicted_iter_s < best_iter_s:
+                            best_iter_s = predicted_iter_s
+                            best_cfg = cfg
+                            best_block_map = block_map
+                            best_peak = predicted_peak
 
     if best_cfg is None or best_block_map is None:
         # Disambiguate the failure mode for the caller. If at least one

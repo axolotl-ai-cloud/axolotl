@@ -459,10 +459,19 @@ def estimate_peak(
     model_state_present = (n_persist + n_buffer) * layout.S_chunk
 
     # --- Per-block activation policy -----------------------------------
-    # NONE / CKPT / SWAP blocks contribute differently to the live set:
-    #   NONE: full activation bytes retained from fwd to bwd.
-    #   CKPT: 0 bytes retained; bumps peak at first op of this block.
-    #   SWAP: 0 bytes retained in steady state (see module docstring).
+    # NONE / CKPT / SWAP / OFFLOAD blocks contribute differently to the live set:
+    #   NONE:    full activation bytes retained from fwd to bwd.
+    #   CKPT:    0 bytes retained; bumps peak at first op of this block
+    #            (S_chunk + activation_size — recompute materializes both).
+    #   SWAP:    0 bytes retained in steady state (see module docstring).
+    #   OFFLOAD: full activation bytes retained (same as NONE), AND a
+    #            smaller backward-side bump of ``S_chunk`` (chunk gather only,
+    #            activations already counted in live_none — see Option B
+    #            §4.1). Timed at the LAST forward op of the block, which is
+    #            the op-walk index closest to that block's first backward op
+    #            (backward processes blocks in reverse forward order; the
+    #            forward-only op-walk lands the bump at the symmetrically
+    #            closest forward index).
     n_block = len(trace.activation_sizes)
     forward_ops_by_block = _group_ops_by_block(trace)
     tree_index_map = block_tree_index_map(trace)
@@ -472,23 +481,34 @@ def estimate_peak(
     # checkpoint recomputation bump. If the block has no ops (degenerate
     # test input) the bump lands at op index -1 and is ignored below.
     ckpt_bump_op: dict[int, int] = {}
+    # Resolve "last op index" for each OFFLOAD block; used to schedule the
+    # backward-window chunk-gather bump (§4.1). The last forward op is the
+    # closest forward index to the block's first backward op — backward
+    # walks blocks in reverse forward order, so the OFFLOAD-block gather
+    # peak materializes at that op-walk position when the forward
+    # activations are still resident.
+    offload_bump_op: dict[int, int] = {}
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
             continue
         mode = block_map.get(block_id, BlockMode.NONE)
         if mode is BlockMode.CKPT:
             ckpt_bump_op[op_idxs[0]] = int(block_id)
+        elif mode is BlockMode.OFFLOAD:
+            offload_bump_op[op_idxs[-1]] = int(block_id)
 
-    # Retained-activation contribution from NONE blocks — constant across
-    # the op-walk (these activations are live from their first op
-    # through the end of forward).
+    # Retained-activation contribution from NONE + OFFLOAD blocks —
+    # constant across the op-walk (these activations are live from their
+    # first op through the end of forward). OFFLOAD retains activations
+    # symmetrically to NONE; the additional chunk-gather bump fires only
+    # at the per-block backward window via ``offload_bump_op``.
     retained_none_bytes = 0
     for block_id_raw, act_sz in trace.activation_sizes.items():
         # ``activation_sizes`` is typed ``dict[BlockId, int]`` but
         # pickled maps may use int keys; normalize.
         bid = BlockId(int(block_id_raw))
         mode = block_map.get(bid, BlockMode.NONE)
-        if mode is BlockMode.NONE:
+        if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
             retained_none_bytes += act_sz
         # CKPT: only live during its recomputation window -> handled
         #       by the per-op bump below.
@@ -520,7 +540,13 @@ def estimate_peak(
     running = 0
     for bid, first_idx in blocks_in_fwd_order:
         mode = block_map.get(bid, BlockMode.NONE)
-        if mode is BlockMode.NONE:
+        if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
+            # OFFLOAD retains forward activations on GPU (§3.3 lifecycle
+            # table — "Forward activations: retained on GPU"). They join
+            # the NONE running total so the live_none-at-op-i view sees
+            # the same bytes as a NONE block would; the backward-window
+            # chunk gather bump is a separate per-op bump landed via
+            # ``offload_bump_op`` below.
             running += trace.activation_sizes.get(bid, 0)
         cumulative_none.append((first_idx, running))
 
@@ -555,10 +581,31 @@ def estimate_peak(
         if i in ckpt_bump_op:
             ckpt_extra = trace.activation_sizes.get(BlockId(ckpt_bump_op[i]), 0)
 
+        # OFFLOAD backward-gather bump (Option B §4.1): the chunk is
+        # re-gathered into the buffer pool for this block's backward
+        # while the forward-retained activations are still live. The
+        # bump is ``S_chunk`` only (chunk buffer materialization) — the
+        # activation bytes are already counted in ``live_none`` because
+        # OFFLOAD blocks retain activations like NONE. This is strictly
+        # smaller than the CKPT bump (which pays
+        # ``S_chunk + activation_size`` because recompute materializes
+        # both). Lands at the LAST forward op of the OFFLOAD block —
+        # the closest op-walk index to that block's first backward op
+        # in the reverse-order backward traversal.
+        offload_extra = 0
+        if i in offload_bump_op:
+            offload_extra = layout.S_chunk
+
         op_cross_attn = op_cross_attn_surcharge(op, cross_attn_bytes, tree_index_map)
 
         candidate = (
-            model_state_present + live_none + ckpt_extra + op_cross_attn + intra + inter
+            model_state_present
+            + live_none
+            + ckpt_extra
+            + offload_extra
+            + op_cross_attn
+            + intra
+            + inter
         )
         if candidate > raw_peak:
             raw_peak = candidate
@@ -598,11 +645,13 @@ def estimate_peak(
 
     scaled = int(ALPHA_FRAGMENTATION * raw_peak)
     LOG.debug(
-        "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d raw=%dB alpha=%.2f -> %dB",
+        "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d n_offload=%d "
+        "raw=%dB alpha=%.2f -> %dB",
         cfg.n_persist,
         cfg.n_buffer,
         cfg.n_swap,
         cfg.n_checkpoint,
+        cfg.n_offload,
         raw_peak,
         ALPHA_FRAGMENTATION,
         scaled,
