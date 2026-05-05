@@ -101,7 +101,7 @@ def _make_backward_post_hook(scheduler: "Scheduler", block_id: BlockId):
 def install_hooks(
     model: nn.Module,
     chunk_manager: "ChunkManager",
-    block_map: BlockStrategyMap,  # noqa: ARG001 — scheduler already owns this
+    block_map: BlockStrategyMap,
     scheduler: "Scheduler",
 ) -> list["RemovableHandle"]:
     """Attach the four-per-block scheduler hooks.
@@ -137,6 +137,25 @@ def install_hooks(
         state.
     """
     blocks = flatten_block_trees(discover_blocks(model))
+
+    # Fail fast if the discovered block layout disagrees with the
+    # ``block_map`` the scheduler was configured with. Without this
+    # guard a drift between wrapping and scheduler setup would still
+    # install hooks and silently call ``Scheduler.pre/post_*`` with
+    # the wrong ``BlockId``s — i.e. prefetch/release the wrong chunks
+    # — instead of failing at install time.
+    expected_ids = set(block_map.keys())
+    actual_ids = {cast(BlockId, idx) for idx in range(len(blocks))}
+    if actual_ids != expected_ids:
+        missing = sorted(expected_ids - actual_ids)
+        extra = sorted(actual_ids - expected_ids)
+        raise ValueError(
+            "install_hooks block layout mismatch: discovered "
+            f"{len(blocks)} block(s) with ids {sorted(actual_ids)} but "
+            f"block_map has {len(expected_ids)} id(s) {sorted(expected_ids)}; "
+            f"missing from discovery: {missing}; "
+            f"extra in discovery: {extra}"
+        )
 
     handles: list["RemovableHandle"] = []
     for idx, block in enumerate(blocks):

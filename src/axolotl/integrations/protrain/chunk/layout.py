@@ -103,15 +103,15 @@ def build_layout(
     block_referenced: set[ParamId] = set()
     pid_owner: dict[ParamId, BlockId] = {}
     overlaps: dict[ParamId, list[BlockId]] = {}
-    for block_id, params in block_spans.items():
+    for owner_bid, params in block_spans.items():
         for pid in params:
             prior = pid_owner.get(pid)
-            if prior is not None and prior != block_id:
+            if prior is not None and prior != owner_bid:
                 bucket = overlaps.setdefault(pid, [prior])
-                if block_id not in bucket:
-                    bucket.append(block_id)
+                if owner_bid not in bucket:
+                    bucket.append(owner_bid)
             else:
-                pid_owner[pid] = block_id
+                pid_owner[pid] = owner_bid
             block_referenced.add(pid)
     if overlaps:
         overlap_sorted = sorted(
@@ -179,7 +179,7 @@ def build_layout(
             i += 1
             continue
 
-        block_id = pid_to_block.get(pid)
+        block_id: BlockId | None = pid_to_block.get(pid)
         if block_id is None:
             _place(pid, param_sizes[pid], None)
             i += 1
@@ -241,8 +241,8 @@ def build_layout(
     for pid, size in param_sizes.items():
         if pid in param_to_chunk:
             continue
-        block_id = _block_of(pid, block_spans)
-        _place(pid, size, block_id)
+        fallback_bid: BlockId | None = _block_of(pid, block_spans)
+        _place(pid, size, fallback_bid)
 
     # Drop a trailing empty chunk that ``_seal_and_open`` may have left open
     # (e.g. the final placement started a fresh chunk for a block but only

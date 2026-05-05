@@ -1833,12 +1833,38 @@ def install_load_hook(
         # always run the lockstep barrier, then re-raise the captured
         # exception after the barrier so the cluster fails in lockstep.
         original_exc_info: Any = None
+        hf_load_status = 0
+        peer_hf_failure: Exception | None = None
         try:
             original(checkpoint)
         except Exception:
+            hf_load_status = 1
             original_exc_info = sys.exc_info()
 
-        if original_exc_info is None and checkpoint is not None:
+        # Synchronize the native-HF load result across ranks BEFORE any rank
+        # enters ``_load_protrain_optim_dir`` (which runs its own collectives).
+        # Otherwise, a one-rank HF failure would leave that rank waiting at
+        # the trailing barrier while surviving ranks dive into the ProTrain
+        # load path's collectives → cluster wedge. ``_allreduce_status_or_raise``
+        # makes every rank raise in lockstep when any rank reports failure.
+        try:
+            _allreduce_status_or_raise(
+                hf_load_status, op="load (HF optimizer/scheduler)"
+            )
+        except Exception as exc:
+            # Local-failure ranks already have ``original_exc_info`` set and
+            # _allreduce_status_or_raise returns without raising for them.
+            # Surviving ranks land here: capture the peer-failure marker so
+            # we still skip the ProTrain load path and hit the same trailing
+            # barrier as the failed ranks.
+            if original_exc_info is None:
+                peer_hf_failure = exc
+
+        if (
+            original_exc_info is None
+            and peer_hf_failure is None
+            and checkpoint is not None
+        ):
             try:
                 _load_protrain_optim_dir(
                     raw,
@@ -1868,6 +1894,10 @@ def install_load_hook(
             # traceback intact, AFTER the barrier so surviving ranks
             # don't wedge.
             raise original_exc_info[1].with_traceback(original_exc_info[2])
+        if peer_hf_failure is not None:
+            # Surviving rank: a peer's HF load failed. Raise after the
+            # trailing barrier so the cluster fails in lockstep.
+            raise peer_hf_failure
 
     trainer._load_optimizer_and_scheduler = _patched  # type: ignore[method-assign]
 

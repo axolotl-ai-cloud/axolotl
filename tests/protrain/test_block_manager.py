@@ -441,8 +441,13 @@ def test_monotonic_memory_reduction_sweep() -> None:
         for h in cast("list[Any]", wrapped._hook_handles):
             try:
                 h.remove()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — best-effort cleanup
+                logger.debug(
+                    "Failed to remove hook %s during test cleanup: %s",
+                    h,
+                    e,
+                    exc_info=True,
+                )
         del wrapped, model, out
         torch.cuda.empty_cache()
         torch.cuda.synchronize()

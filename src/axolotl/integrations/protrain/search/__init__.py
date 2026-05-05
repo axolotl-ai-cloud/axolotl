@@ -5,8 +5,8 @@ Public surface:
 - ``derive_bounds`` — upper bounds on the five tunable knobs
   (including ``n_offload`` — the OFFLOAD axis).
 - ``search`` — exhaustive enumeration with OOM pruning over all five
-  knobs (``n_persist``, ``n_swap``, ``n_ckpt``, ``n_offload``,
-  ``micro_bs``); returns the minimum-runtime ``SearchResult`` that fits
+  knobs (``n_persist``, ``n_buffer``, ``n_swap``, ``n_ckpt``,
+  ``n_offload``); returns the minimum-runtime ``SearchResult`` that fits
   under the given GPU capacity.
 """
 

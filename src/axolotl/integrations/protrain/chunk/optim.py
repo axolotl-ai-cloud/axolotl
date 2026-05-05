@@ -237,9 +237,23 @@ class CpuFusedAdamAdapter:
     # ---- lifecycle ------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Tear down the worker pool. Call explicitly before process exit."""
-        self.wait_all()
-        self._executor.shutdown(wait=True)
+        """Tear down the worker pool. Call explicitly before process exit.
+
+        ``wait_all()`` may re-raise a worker exception. We still need to
+        release the executor in that case — otherwise the thread pool
+        leaks on the explicit-cleanup path and ``__del__`` would swallow
+        the failure silently. Run the executor shutdown in ``finally``
+        and re-raise the original error after the pool is released.
+        """
+        error: BaseException | None = None
+        try:
+            self.wait_all()
+        except BaseException as exc:  # noqa: BLE001 — re-raised below
+            error = exc
+        finally:
+            self._executor.shutdown(wait=True)
+        if error is not None:
+            raise error
 
     def __del__(self) -> None:  # noqa: D401
         try:
