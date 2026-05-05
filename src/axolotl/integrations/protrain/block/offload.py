@@ -132,6 +132,17 @@ class _ParamHandle:
     stride: tuple[int, ...]  # in elements of dtype
     dtype: torch.dtype
     requires_grad: bool
+    #: ``id()`` of the chunk manager active when ``_pack`` recorded the
+    #: handle. ``_unpack`` cross-checks against the currently-attached
+    #: manager: if they differ, the wrapper was detached and re-attached
+    #: with a different manager between forward and backward, and the
+    #: handle's ``ChunkId`` would resolve against unrelated storage on
+    #: the new manager. Capturing ``id()`` (rather than holding a strong
+    #: reference) avoids extending the prior manager's lifetime past
+    #: its detach; the integer is stable for the duration the manager
+    #: object is alive, which is exactly the window during which any
+    #: outstanding handle could plausibly be unpacked.
+    runtime_id: int
 
 
 class OffloadedBlock(nn.Module):
@@ -160,6 +171,14 @@ class OffloadedBlock(nn.Module):
         self._chunk_manager: "ChunkManager | None" = None
         self._scheduler: Any = None  # M3 owns the scheduler interface contract
         self._warned_no_runtime = False
+        #: ``id()`` of the currently-attached chunk manager, or ``None``
+        #: when detached. Stamped into every ``_ParamHandle`` produced
+        #: by ``_pack`` and cross-checked by ``_unpack`` to detect a
+        #: detach + re-attach-with-a-different-manager between forward
+        #: and backward (the in-flight ``attach_runtime`` swap is
+        #: rejected outright; this guards the detach-then-re-attach
+        #: variant where the in-flight check no longer fires).
+        self._runtime_id: int | None = None
 
     def attach_runtime(
         self,
@@ -193,11 +212,13 @@ class OffloadedBlock(nn.Module):
             )
         self._chunk_manager = chunk_manager
         self._scheduler = scheduler
+        self._runtime_id = id(chunk_manager)
 
     def detach_runtime(self) -> None:
         """Drop the manager reference — wrapper degrades to identity."""
         self._chunk_manager = None
         self._scheduler = None
+        self._runtime_id = None
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the wrapped block under saved_tensors_hooks that record param handles."""
@@ -299,6 +320,7 @@ class OffloadedBlock(nn.Module):
             stride=tuple(int(s) for s in t.stride()),
             dtype=t.dtype,
             requires_grad=t.requires_grad,
+            runtime_id=id(mgr),
         )
 
     def _unpack(self, handle: Any) -> torch.Tensor:
@@ -343,6 +365,33 @@ class OffloadedBlock(nn.Module):
                 "chunk manager has been detached; backward cannot proceed."
             )
 
+        # Runtime-identity guard (checked BEFORE gather_for_backward so we
+        # never bump the new manager's refcount on a stale handle). The
+        # in-flight ``attach_runtime`` swap is rejected by attach_runtime
+        # itself, but a detach + re-attach-with-a-different-manager
+        # sequence between forward and backward bypasses that check —
+        # the wrapper sees ``self._chunk_manager is None`` during detach,
+        # then a fresh manager attaches, and the cached ``_ParamHandle``
+        # would resolve its ``ChunkId`` against the new manager's
+        # storage map (likely reconstructing from unrelated storage and
+        # silently corrupting backward). The ``id()`` comparison detects
+        # this reliably: even if Python recycles the integer for a new
+        # manager allocated at the same address, the prior manager has
+        # been deallocated, so any handle that still references it must
+        # have been re-decoded post-detach — exactly the failure we want
+        # to flag rather than silently miscompute.
+        if handle.runtime_id != id(mgr):
+            raise RuntimeError(
+                "OffloadedBlock._unpack: saved _ParamHandle was produced "
+                "against a different chunk manager than the currently-"
+                "attached one. The wrapper was detach_runtime()'d and "
+                "re-attached with a new manager between forward and "
+                "backward; resolving this handle's ChunkId against the "
+                "new manager's storage map would decode against unrelated "
+                "storage. detach/re-attach cycles are only safe when no "
+                "saved-tensor handles are outstanding."
+            )
+
         # Gather the chunk (idempotent if resident) and bump the
         # backward refcount. ``BackwardHandle`` owns the decrement on
         # its __del__ — we attach it to the view below so the autograd
@@ -351,90 +400,109 @@ class OffloadedBlock(nn.Module):
         # the unpacked tensor.
         backward_handle = mgr.gather_for_backward(handle.chunk_id)
 
-        # Explicit runtime check, NOT an ``assert``: ``python -O`` strips
-        # asserts, and silently dereferencing a ``None`` buffer_pool
-        # below would raise an obscure ``AttributeError`` instead of
-        # this descriptive failure. Release the just-bumped backward
-        # refcount so we don't leak handle state into the manager.
-        if mgr.buffer_pool is None:
-            backward_handle.release()
-            raise RuntimeError(
-                "OffloadedBlock._unpack: chunk manager has no buffer_pool — "
-                "cannot reconstruct the saved view. This indicates the "
-                "OFFLOAD path was reached on an all-persistent layout, "
-                "which the admissibility filter should have rejected."
-            )
-        buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
-        if buf is None:
-            # Defensive: gather_for_backward should have made the chunk
-            # resident. If not, an intervening evict-then-deferred-offload
-            # raced us; we re-gather synchronously.
-            mgr.gather(handle.chunk_id)
+        # Every pre-return failure path between this gather_for_backward
+        # call and the final ``view._protrain_backward_handle =`` binding
+        # MUST release ``backward_handle`` first — otherwise the manager's
+        # refcount leaks and a subsequent iteration sees a chunk that
+        # appears permanently in-flight, blocking offload. The structured
+        # try/except below ensures even an unforeseen exception (e.g. an
+        # ATen error inside ``as_strided``, an OOM in ``torch.empty``,
+        # or an attribute-set failure at the final binding) routes
+        # through ``release()``. The explicit ``if`` checks raise via
+        # the same path; only the successful binding suppresses release.
+        released = False
+        try:
+            # Explicit runtime check, NOT an ``assert``: ``python -O`` strips
+            # asserts, and silently dereferencing a ``None`` buffer_pool
+            # below would raise an obscure ``AttributeError`` instead of
+            # this descriptive failure.
+            if mgr.buffer_pool is None:
+                raise RuntimeError(
+                    "OffloadedBlock._unpack: chunk manager has no buffer_pool — "
+                    "cannot reconstruct the saved view. This indicates the "
+                    "OFFLOAD path was reached on an all-persistent layout, "
+                    "which the admissibility filter should have rejected."
+                )
             buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
             if buf is None:
-                # Release the refcount we just bumped so we don't leak
-                # a handle into the manager state on failure.
-                backward_handle.release()
+                # Defensive: gather_for_backward should have made the chunk
+                # resident. If not, an intervening evict-then-deferred-offload
+                # raced us; we re-gather synchronously.
+                mgr.gather(handle.chunk_id)
+                buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
+                if buf is None:
+                    raise RuntimeError(
+                        f"OffloadedBlock._unpack: chunk {int(handle.chunk_id)} "
+                        "is not resident after gather_for_backward — pool "
+                        "may have been evicted by an unbalanced acquire."
+                    )
+
+            # Reconstruct the view at the recorded byte offset/shape via
+            # ``as_strided`` on a typed view of the chunk's storage. The
+            # storage-typed-empty + ``as_strided`` path (rather than
+            # ``buf.narrow().view(dtype).view(shape)``) is load-bearing for
+            # autograd correctness: with the latter chain, autograd's
+            # backward kernels through the unpacked tensor produce wrong
+            # gradients on upstream parameters (verified empirically on
+            # Linear-block backward — embed.weight grad diverges by ~2x
+            # while h.weight grad is correct). The exact failure mode is
+            # an autograd metadata mismatch buried in the dtype-changing
+            # ``view(dtype)`` step; ``as_strided`` skips that step by
+            # walking storage in the param's dtype directly.
+            storage = buf.untyped_storage()
+            typed = torch.empty(0, dtype=handle.dtype, device=buf.device).set_(  # type: ignore[call-overload]
+                storage
+            )
+            # storage_offset is bytes; as_strided wants ELEMENTS of dtype.
+            elem_size = int(handle.dtype.itemsize)
+            if handle.storage_offset % elem_size != 0:
                 raise RuntimeError(
                     f"OffloadedBlock._unpack: chunk {int(handle.chunk_id)} "
-                    "is not resident after gather_for_backward — pool "
-                    "may have been evicted by an unbalanced acquire."
+                    f"storage_offset {handle.storage_offset} is not aligned "
+                    f"to dtype {handle.dtype} element size {elem_size}; the "
+                    "chunk layout's per-param alignment pass should have "
+                    "prevented this."
                 )
+            elem_offset = handle.storage_offset // elem_size
+            # Use the saved stride directly — pack captured the original
+            # tensor's stride at save time, which may not match a row-
+            # major contiguous layout (e.g. ``F.linear`` saves ``weight``
+            # with ``stride=(1, in_dim)`` because the matmul wants the
+            # transposed view). Reconstructing with a guessed contiguous
+            # stride would read the storage in the wrong element order —
+            # silent gradient corruption on consumers of the saved view.
+            shape_t = tuple(int(s) for s in handle.shape)
+            view = typed.as_strided(shape_t, handle.stride, elem_offset)
 
-        # Reconstruct the view at the recorded byte offset/shape via
-        # ``as_strided`` on a typed view of the chunk's storage. The
-        # storage-typed-empty + ``as_strided`` path (rather than
-        # ``buf.narrow().view(dtype).view(shape)``) is load-bearing for
-        # autograd correctness: with the latter chain, autograd's
-        # backward kernels through the unpacked tensor produce wrong
-        # gradients on upstream parameters (verified empirically on
-        # Linear-block backward — embed.weight grad diverges by ~2x
-        # while h.weight grad is correct). The exact failure mode is
-        # an autograd metadata mismatch buried in the dtype-changing
-        # ``view(dtype)`` step; ``as_strided`` skips that step by
-        # walking storage in the param's dtype directly.
-        storage = buf.untyped_storage()
-        typed = torch.empty(0, dtype=handle.dtype, device=buf.device).set_(  # type: ignore[call-overload]
-            storage
-        )
-        # storage_offset is bytes; as_strided wants ELEMENTS of dtype.
-        elem_size = int(handle.dtype.itemsize)
-        if handle.storage_offset % elem_size != 0:
-            backward_handle.release()
-            raise RuntimeError(
-                f"OffloadedBlock._unpack: chunk {int(handle.chunk_id)} "
-                f"storage_offset {handle.storage_offset} is not aligned "
-                f"to dtype {handle.dtype} element size {elem_size}; the "
-                "chunk layout's per-param alignment pass should have "
-                "prevented this."
-            )
-        elem_offset = handle.storage_offset // elem_size
-        # Use the saved stride directly — pack captured the original
-        # tensor's stride at save time, which may not match a row-
-        # major contiguous layout (e.g. ``F.linear`` saves ``weight``
-        # with ``stride=(1, in_dim)`` because the matmul wants the
-        # transposed view). Reconstructing with a guessed contiguous
-        # stride would read the storage in the wrong element order —
-        # silent gradient corruption on consumers of the saved view.
-        shape_t = tuple(int(s) for s in handle.shape)
-        view = typed.as_strided(shape_t, handle.stride, elem_offset)
+            if handle.requires_grad:
+                view.requires_grad_(True)
 
-        if handle.requires_grad:
-            view.requires_grad_(True)
-
-        # Pin the BackwardHandle to the view's lifetime via a private
-        # attribute. The autograd engine holds ``view`` until the
-        # consuming Node's apply() returns; once it drops the
-        # reference, ``view`` is GC'd, the attribute is dropped, and
-        # the BackwardHandle's __del__ decrements the manager's
-        # refcount (potentially draining a deferred offload).
-        #
-        # A weakref-keyed dict would also work, but it would require
-        # a finalizer + global state. The private attribute is
-        # local to the view, costs one Python attribute set, and is
-        # cleaned up by the standard Python ref-counting path.
-        view._protrain_backward_handle = backward_handle  # type: ignore[attr-defined]
-        return view
+            # Pin the BackwardHandle to the view's lifetime via a private
+            # attribute. The autograd engine holds ``view`` until the
+            # consuming Node's apply() returns; once it drops the
+            # reference, ``view`` is GC'd, the attribute is dropped, and
+            # the BackwardHandle's __del__ decrements the manager's
+            # refcount (potentially draining a deferred offload).
+            #
+            # A weakref-keyed dict would also work, but it would require
+            # a finalizer + global state. The private attribute is
+            # local to the view, costs one Python attribute set, and is
+            # cleaned up by the standard Python ref-counting path.
+            #
+            # Once this attribute set succeeds, ownership of the
+            # backward_handle's refcount transfers to the view's
+            # lifetime; the ``finally`` clause must NOT release it.
+            view._protrain_backward_handle = backward_handle  # type: ignore[attr-defined]
+            released = True  # ownership transferred to the view
+            return view
+        finally:
+            if not released:
+                # Any exception path — the explicit ``raise``s above, an
+                # ATen failure inside the reconstruction, or an attribute-
+                # set failure on the final binding — releases the
+                # just-bumped refcount so manager state stays consistent
+                # for subsequent iterations.
+                backward_handle.release()
 
     def extra_repr(self) -> str:
         """Return the wrapper's mode tag for ``print(model)``."""
