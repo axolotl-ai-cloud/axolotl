@@ -10,26 +10,48 @@ traffic. Per the paper:
     §3.3: "we estimate the swapping time, identify the affected chunks,
     and use the reduced bandwidth instead."
 
-Earlier this module returned a single scalar derate per direction and
-the runtime estimator applied it uniformly to every chunk's prefetch.
-That over-penalised configurations because chunks whose prefetch never
-overlaps a swap operation actually run at full PCIe bandwidth.
+History
+-------
 
-The current model exposes two pieces:
+The earliest implementation returned a single scalar derate per
+direction and the runtime estimator applied it uniformly to every
+chunk's prefetch — that over-penalised configurations because chunks
+whose prefetch never overlaps a swap operation actually run at full
+PCIe bandwidth.
 
-- :func:`effective_bw` — the derated (h2d, d2h) pair used for the
-  *affected* subset of non-persistent chunks. Same arithmetic as before;
-  retained for backward compatibility and as the per-chunk "affected"
-  bandwidth.
-- :func:`n_affected_chunks` — count of non-persistent chunks whose
-  prefetch overlaps swap traffic (per paper §3.3 / §A.1). The runtime
-  estimator splits its per-chunk PCIe sum into ``n_affected`` chunks
-  costed at the derated bandwidth and ``n_unaffected`` chunks costed at
-  full PCIe bandwidth.
+A first refinement counted "affected chunks" (``n_affected_chunks``)
+via the heuristic ``min(n_swap + 1, N_chunk - n_persist)`` and
+distributed the derate across that count. This was an improvement but
+still a count heuristic — it did not compute *which specific chunks*
+have prefetch windows overlapping *which specific swap operations*; it
+just charged the derate to the first ``n_affected`` non-persistent
+chunks.
 
-Refine the affected-chunk identification against measured contention if
-a later test shows a >5% runtime mismatch vs. observed
-``torch.cuda.Event`` timing for a workload with non-trivial ``n_swap``.
+The current model is per-chunk timeline-overlap. For each chunk we
+compute how many SWAP operations actually share PCIe with that chunk's
+prefetch window (a function of the chunk's owning block, the runtime
+scheduler's prefetch depth, and the per-block ``BlockStrategyMap``).
+The derate factor scales with the overlap count, so a chunk whose
+prefetch window never touches a SWAP block runs at full bandwidth even
+when ``n_swap > 0`` elsewhere in the model.
+
+API
+---
+
+- :func:`chunk_swap_overlap_count` — for a given chunk, count the
+  SWAP-block operations that contend with its prefetch window.
+- :func:`effective_bw_for_chunk` — per-chunk ``(eff_h2d, eff_d2h)``;
+  full bandwidth when overlap is 0, ``raw / (1 + 0.5 * overlap)``
+  otherwise. This is the primary path consumed by
+  :func:`cost.runtime.estimate_runtime`.
+- :func:`effective_bw` — legacy worst-case ``(eff_h2d, eff_d2h)`` pair.
+  Retained for backward compatibility (the runtime ``Scheduler`` uses
+  it as a single scalar to size its swap-stream pacing — see
+  ``api.model_wrapper`` plumbing). NEW callers should prefer
+  :func:`effective_bw_for_chunk`.
+- :func:`n_affected_chunks` — legacy count heuristic. Retained for
+  backward compatibility / external test consumers; the runtime no
+  longer consumes it.
 
 Paper references: §3.3 "bandwidth contention is modeled explicitly"; §A.1
 swap-bandwidth identification.
@@ -37,28 +59,57 @@ swap-bandwidth identification.
 
 from __future__ import annotations
 
-from axolotl.integrations.protrain.types import ChunkLayout, CostConfig, HardwareProfile
+from axolotl.integrations.protrain.types import (
+    BlockId,
+    BlockMode,
+    BlockStrategyMap,
+    ChunkId,
+    ChunkLayout,
+    CostConfig,
+    HardwareProfile,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
 
+# Runtime scheduler's prefetch depth (``runtime/scheduler.py``):
+#
+# - ``pre_block_forward`` (line ~260): on entry to block ``b`` it kicks
+#   off async gather for block ``b + 1``'s chunks on the prefetch
+#   stream. That copy runs OVERLAPPED with block ``b``'s compute — so
+#   block ``b + 1``'s chunk prefetch window IS block ``b``'s compute
+#   window. ``prefetch_depth = 1``.
+# - ``pre_block_backward`` (line ~411): symmetrically, on entry to
+#   backward of block ``b`` it kicks off prefetch of block ``b - 1``'s
+#   chunks. ``prefetch_depth = 1`` in backward as well.
+#
+# If a future scheduler refactor exposes a tunable lookahead, plumb it
+# through here (e.g. via ``HardwareProfile`` or a ``CostConfig`` field)
+# and pass it down to :func:`chunk_swap_overlap_count`. As of HEAD the
+# lookahead is hardcoded to one block in both directions.
+_DEFAULT_PREFETCH_DEPTH = 1
+
+
 def effective_bw(cfg: CostConfig, hw: HardwareProfile) -> tuple[float, float]:
-    """Return ``(effective_h2d_bps, effective_d2h_bps)`` for AFFECTED chunks.
+    """Legacy worst-case ``(effective_h2d_bps, effective_d2h_bps)`` pair.
 
-    When ``cfg.n_swap == 0`` the raw PCIe bandwidths are returned unchanged
-    (no swap traffic, nothing to contend with). When ``cfg.n_swap > 0`` the
-    effective bandwidth is reduced by a factor
-    ``1 / (1 + 0.5 * min(1, n_swap / max(1, gpu_count)))``. The factor
-    bottoms out at ``2/3`` when every rank has at least one swap block
-    competing for the link — matching the paper's qualitative claim that
-    "unlimited" swap degrades prefetch throughput by roughly a third.
+    .. deprecated::
+        Prefer :func:`effective_bw_for_chunk` for cost-model
+        computations. This function is retained for the runtime
+        :class:`~axolotl.integrations.protrain.runtime.scheduler.Scheduler`
+        which consumes a single scalar pair to size its swap-stream
+        pacing (the scheduler does not have a chunk-level view of
+        which prefetch is active when, so the worst-case derate is
+        the right thing to feed it).
 
-    This is the bandwidth used for chunks whose prefetch window overlaps
-    swap traffic — see :func:`n_affected_chunks` for the chunk-count
-    selector. Chunks whose prefetch falls outside the swap window pay
-    full ``hw.pcie_h2d_bps`` / ``hw.pcie_d2h_bps`` and do NOT consume
-    this derated value.
+    When ``cfg.n_swap == 0`` the raw PCIe bandwidths are returned
+    unchanged (no swap traffic, nothing to contend with). When
+    ``cfg.n_swap > 0`` the effective bandwidth is reduced by a factor
+    ``1 / (1 + 0.5 * min(1, n_swap / max(1, gpu_count)))`` — the same
+    arithmetic the per-chunk path applies when ``overlap_count == 1``,
+    matching the paper's qualitative claim that "unlimited" swap
+    degrades prefetch throughput by roughly a third.
 
     Parameters
     ----------
@@ -71,23 +122,18 @@ def effective_bw(cfg: CostConfig, hw: HardwareProfile) -> tuple[float, float]:
     Returns
     -------
     tuple[float, float]
-        Effective H2D and D2H bandwidths in bytes / second for the
-        affected-chunks subset.
+        Worst-case effective H2D and D2H bandwidths in bytes / second.
     """
     gpu_count = max(1, hw.gpu_count)
     if cfg.n_swap <= 0:
         return hw.pcie_h2d_bps, hw.pcie_d2h_bps
 
-    # First-order contention model. See module docstring for refinement
-    # guidance; the 0.5 slope and the clamp at gpu_count were picked to
-    # keep the derate monotone in n_swap without letting a single swap
-    # block on one rank halve the bandwidth for the entire cluster.
     contention = 0.5 * min(1.0, cfg.n_swap / gpu_count)
     denom = 1.0 + contention
     eff_h2d = hw.pcie_h2d_bps / denom
     eff_d2h = hw.pcie_d2h_bps / denom
     LOG.debug(
-        "effective_bw: n_swap=%d gpu_count=%d derate=%.3f h2d=%.2e d2h=%.2e",
+        "effective_bw (legacy): n_swap=%d gpu_count=%d derate=%.3f h2d=%.2e d2h=%.2e",
         cfg.n_swap,
         gpu_count,
         denom,
@@ -98,60 +144,18 @@ def effective_bw(cfg: CostConfig, hw: HardwareProfile) -> tuple[float, float]:
 
 
 def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
-    """How many non-persistent chunks have prefetch windows overlapping swap.
+    """Legacy count of non-persistent chunks overlapping swap traffic.
 
-    Per paper §3.3: "we estimate the swapping time, **identify the
-    affected chunks**, and use the reduced bandwidth instead." This
-    function is the identification step. The runtime estimator then
-    splits the per-chunk PCIe sum into ``n_affected`` chunks at the
-    derated bandwidth (:func:`effective_bw`) and the remaining
-    non-persistent chunks at full PCIe bandwidth.
+    .. deprecated::
+        The runtime estimator now uses
+        :func:`chunk_swap_overlap_count` per-chunk. This count
+        heuristic is retained as a coarse summary for external test
+        consumers and back-compat with pre-timeline callers.
 
-    Formula
-    -------
-    ``n_affected = min(n_swap + 1, N_chunk - n_persist)``
+    Formula (unchanged from the count-heuristic implementation):
+    ``n_affected = min(n_swap + 1, N_chunk - n_persist)``.
 
-    Rationale (paper §3.3 + ``block/layout_rules.py:121-123``):
-
-    - Layout rule 1 ("swap-early") puts swap blocks in positions
-      ``[0, n_swap)``. Active D2H traffic happens during forward(b) for
-      every swap block ``b``; H2D traffic happens during backward(b).
-    - The runtime prefetches the chunk for block ``b+1`` during
-      block ``b``'s forward (one prefetch-depth lookahead). So during
-      forward of swap blocks ``[0, n_swap)``, the chunks being
-      prefetched belong to blocks ``[1, n_swap+1]`` — that's ``n_swap``
-      block positions, plus one extra position past the last swap block
-      where the prefetch window still trails into swap traffic. With
-      ~one chunk per block in well-balanced layouts (the typical
-      transformer case), this corresponds to roughly ``n_swap + 1``
-      chunks.
-    - Symmetric argument for backward (swap H2D + chunk prefetch
-      contention) yields the same affected count.
-    - Clamp at ``N_chunk - n_persist`` because persistent chunks never
-      leave GPU and contribute zero prefetch traffic — they cannot be
-      "affected" by definition.
-
-    Returns 0 when ``n_swap <= 0`` (no swap traffic, no contention) so
-    the runtime collapses to full-bandwidth costing for every chunk —
-    matching the original no-contention behaviour.
-
-    When ``n_swap`` is large enough that the formula saturates at
-    ``N_chunk - n_persist``, every non-persistent chunk is affected and
-    the per-chunk model becomes equivalent to the old flat-derate
-    behaviour at full ``effective_bw``.
-
-    Parameters
-    ----------
-    cfg:
-        The candidate knob configuration being costed.
-    layout:
-        Chunk layout (``N_chunk`` is consulted).
-
-    Returns
-    -------
-    int
-        Number of non-persistent chunks whose prefetch overlaps swap
-        traffic; clamped to ``[0, N_chunk - n_persist]``.
+    Returns 0 when ``n_swap <= 0`` (no swap traffic, no contention).
     """
     if cfg.n_swap <= 0:
         return 0
@@ -159,4 +163,188 @@ def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
     return min(cfg.n_swap + 1, n_nonpersist)
 
 
-__all__ = ["effective_bw", "n_affected_chunks"]
+def _block_of_chunk(
+    chunk_id: ChunkId, layout: ChunkLayout
+) -> list[BlockId]:
+    """Return the block(s) owning ``chunk_id``.
+
+    ``layout.block_to_chunks`` maps block -> tuple[ChunkId]. For a
+    typical transformer layout each chunk belongs to exactly one
+    block, but the data structure supports many-to-many (intra-chunk
+    block-shared paths). We return the list of owning blocks so the
+    overlap calculation can union prefetch-source windows across all
+    owners — defensive against fixtures and real layouts where a
+    chunk straddles a block boundary.
+    """
+    owners: list[BlockId] = []
+    for bid, cids in layout.block_to_chunks.items():
+        for cid in cids:
+            if int(cid) == int(chunk_id):
+                owners.append(bid)
+                break
+    return owners
+
+
+def chunk_swap_overlap_count(
+    chunk_id: ChunkId,
+    layout: ChunkLayout,
+    block_map: BlockStrategyMap,
+    prefetch_depth: int = _DEFAULT_PREFETCH_DEPTH,
+    direction: str = "fwd",
+) -> int:
+    """How many SWAP operations overlap ``chunk_id``'s prefetch window.
+
+    A chunk belonging to block ``b`` is prefetched while block
+    ``b - prefetch_depth`` (forward) or ``b + prefetch_depth``
+    (backward) is computing — that is the prefetch SOURCE window. If
+    any block within that source window is a SWAP block, its D2H
+    (forward) / H2D (backward) activation traffic competes with this
+    chunk's prefetch on the shared PCIe link.
+
+    Concretely, with ``prefetch_depth = 1``:
+
+    - **Forward**: chunk for block ``b`` is gathered onto the prefetch
+      stream during the compute of block ``b - 1``. If block ``b - 1``
+      is SWAP, its activation D2H is in flight on the swap stream
+      during the same window → 1 overlap.
+    - **Backward**: chunk for block ``b`` is gathered during the
+      backward compute of block ``b + 1``. If block ``b + 1`` is SWAP,
+      its activation H2D is in flight → 1 overlap.
+
+    For chunks owned by multiple blocks (rare, but supported by the
+    ``ChunkLayout`` schema) the per-owner source windows are unioned
+    and SWAP blocks in the union are counted once each. ``ChunkId(0)``
+    has no source window in forward (no preceding block to prefetch
+    from); we return 0 in that case — the chunk is gathered
+    synchronously by the first-block warm-up in
+    ``Scheduler.pre_block_forward`` and pays no contention from the
+    one prefetch-depth lookahead path.
+
+    Parameters
+    ----------
+    chunk_id:
+        Chunk whose prefetch window we're costing.
+    layout:
+        Chunk layout, consulted for ``block_to_chunks``.
+    block_map:
+        Per-block mode assignment; SWAP blocks contribute to overlap.
+    prefetch_depth:
+        Number of compute blocks the prefetch trails the consumer
+        block. Defaults to 1, matching the runtime scheduler's
+        ``pre_block_forward`` / ``pre_block_backward`` lookahead. If a
+        scheduler refactor introduces a tunable depth, pass it through
+        here.
+    direction:
+        ``"fwd"`` or ``"bwd"``. Determines whether the source window is
+        on the lower-indexed (forward) or higher-indexed (backward)
+        side of the consumer block.
+
+    Returns
+    -------
+    int
+        Number of SWAP blocks whose forward D2H (forward direction) or
+        backward H2D (backward direction) traffic overlaps this
+        chunk's prefetch. Range ``[0, prefetch_depth * len(owners)]``.
+    """
+    if direction not in ("fwd", "bwd"):
+        raise ValueError(f"direction must be 'fwd' or 'bwd', got {direction!r}")
+    if prefetch_depth < 1:
+        return 0
+
+    owners = _block_of_chunk(chunk_id, layout)
+    if not owners:
+        return 0
+
+    # Source-block index range. ``layout.block_to_chunks`` may be sparse
+    # in pathological fixtures; we don't iterate it here — we just
+    # consult ``block_map.get(...)`` which returns ``BlockMode.NONE`` by
+    # convention for missing blocks (the cost-model invariant; see
+    # ``layout_rules.assign_modes`` which always populates every block).
+    source_blocks: set[BlockId] = set()
+    for owner in owners:
+        b = int(owner)
+        if direction == "fwd":
+            # Forward: prefetch for block b runs during compute of
+            # blocks [b - prefetch_depth, b - 1]. Negative indices
+            # don't exist (first-block warm-up handles them) — clamp
+            # to 0.
+            for offset in range(1, prefetch_depth + 1):
+                src = b - offset
+                if src >= 0:
+                    source_blocks.add(BlockId(src))
+        else:
+            # Backward: prefetch for block b runs during backward of
+            # blocks [b + 1, b + prefetch_depth]. There is no upper
+            # clamp — backward of block N_block-1 has no successor and
+            # contributes no overlap.
+            for offset in range(1, prefetch_depth + 1):
+                src = b + offset
+                source_blocks.add(BlockId(src))
+
+    overlap = 0
+    for src in source_blocks:
+        if block_map.get(src, BlockMode.NONE) is BlockMode.SWAP:
+            overlap += 1
+    return overlap
+
+
+def effective_bw_for_chunk(
+    chunk_id: ChunkId,
+    cfg: CostConfig,
+    hw: HardwareProfile,
+    layout: ChunkLayout,
+    block_map: BlockStrategyMap,
+    direction: str = "fwd",
+    prefetch_depth: int = _DEFAULT_PREFETCH_DEPTH,
+) -> tuple[float, float]:
+    """Per-chunk ``(eff_h2d_bps, eff_d2h_bps)`` under timeline-aware contention.
+
+    Returns the FULL PCIe bandwidth pair when the chunk's prefetch
+    window overlaps no SWAP operations (overlap_count = 0). Otherwise
+    derates by ``1 / (1 + 0.5 * overlap_count)``, matching the
+    qualitative paper bound (one swap source ≈ 1.5x denominator,
+    matching the legacy worst-case derate).
+
+    Parameters
+    ----------
+    chunk_id:
+        Chunk whose prefetch is being costed.
+    cfg:
+        Candidate knob configuration. Consulted for ``n_swap``: when
+        ``n_swap == 0`` we short-circuit to full bandwidth without
+        traversing the layout (cheap fast path for the no-swap case).
+    hw:
+        Static hardware description; ``pcie_h2d_bps`` and
+        ``pcie_d2h_bps`` are the raw bandwidths to derate.
+    layout, block_map:
+        Forwarded to :func:`chunk_swap_overlap_count`.
+    direction:
+        ``"fwd"`` or ``"bwd"``.
+    prefetch_depth:
+        Forwarded to :func:`chunk_swap_overlap_count`.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(eff_h2d_bps, eff_d2h_bps)`` for this chunk.
+    """
+    # Fast path: no swap blocks anywhere → no chunk can overlap swap.
+    if cfg.n_swap <= 0:
+        return hw.pcie_h2d_bps, hw.pcie_d2h_bps
+
+    overlap = chunk_swap_overlap_count(
+        chunk_id, layout, block_map, prefetch_depth=prefetch_depth, direction=direction
+    )
+    if overlap <= 0:
+        return hw.pcie_h2d_bps, hw.pcie_d2h_bps
+
+    denom = 1.0 + 0.5 * overlap
+    return hw.pcie_h2d_bps / denom, hw.pcie_d2h_bps / denom
+
+
+__all__ = [
+    "chunk_swap_overlap_count",
+    "effective_bw",
+    "effective_bw_for_chunk",
+    "n_affected_chunks",
+]

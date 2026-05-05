@@ -1451,6 +1451,132 @@ def test_effective_bw_multi_gpu_derate():
     assert abs(h2d_4 - expected_h2d_4) / expected_h2d_4 < 1e-6
 
 
+def test_bandwidth_contention_is_per_chunk():
+    """Chunks adjacent to swap blocks pay contention; distant chunks don't.
+
+    Verifies the timeline-overlap model in
+    ``cost.bandwidth.effective_bw_for_chunk``: a chunk's prefetch
+    window is the compute window of the block one position EARLIER in
+    forward order (and one position LATER in backward order). If the
+    block in that source window is SWAP, the chunk's PCIe bandwidth
+    is derated; otherwise it stays at full PCIe.
+
+    Layout: 8 blocks, 8 chunks, block i -> chunk i. Block map: blocks
+    [0, 1] are SWAP, the rest are NONE. Then:
+
+    - Forward: chunk for block ``b`` is prefetched during compute of
+      block ``b - 1``. Chunks 1 and 2 have prefetch sources at blocks
+      0 and 1 respectively — both SWAP — so they are derated.
+      Chunk 0 has no source block (first-block warm-up); not derated.
+      Chunk 3+ have source blocks 2+ — all NONE — so full bandwidth.
+    - Backward: chunk for block ``b`` is prefetched during backward
+      of block ``b + 1``. Chunks 0..6 have backward source blocks
+      1..7 respectively. Only chunk 0's source (block 1) is SWAP, so
+      only chunk 0 is derated in backward; chunk 7 has no successor
+      block, so full bandwidth.
+    """
+    from axolotl.integrations.protrain.cost.bandwidth import (
+        chunk_swap_overlap_count,
+        effective_bw_for_chunk,
+    )
+
+    n_block = 8
+    n_chunk = 8
+    layout = ChunkLayout(
+        S_chunk=64 * MB,
+        N_chunk=n_chunk,
+        chunks=tuple((ParamId(f"p.{i}"),) for i in range(n_chunk)),
+        param_to_chunk={ParamId(f"p.{i}"): ChunkId(i) for i in range(n_chunk)},
+        block_to_chunks={BlockId(b): (ChunkId(b),) for b in range(n_block)},
+    )
+    block_map: dict[BlockId, BlockMode] = {
+        BlockId(b): (BlockMode.SWAP if b < 2 else BlockMode.NONE)
+        for b in range(n_block)
+    }
+    cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    hw = _make_hw()
+
+    # Forward overlap counts: chunk b's prefetch source is block b-1.
+    # block 0 = SWAP, block 1 = SWAP, blocks 2..7 = NONE.
+    assert chunk_swap_overlap_count(
+        ChunkId(0), layout, block_map, direction="fwd"
+    ) == 0  # no source (first block)
+    assert chunk_swap_overlap_count(
+        ChunkId(1), layout, block_map, direction="fwd"
+    ) == 1  # source = block 0 (SWAP)
+    assert chunk_swap_overlap_count(
+        ChunkId(2), layout, block_map, direction="fwd"
+    ) == 1  # source = block 1 (SWAP)
+    assert chunk_swap_overlap_count(
+        ChunkId(3), layout, block_map, direction="fwd"
+    ) == 0  # source = block 2 (NONE)
+    assert chunk_swap_overlap_count(
+        ChunkId(7), layout, block_map, direction="fwd"
+    ) == 0  # source = block 6 (NONE)
+
+    # Backward overlap counts: chunk b's prefetch source is block b+1.
+    assert chunk_swap_overlap_count(
+        ChunkId(0), layout, block_map, direction="bwd"
+    ) == 1  # source = block 1 (SWAP)
+    assert chunk_swap_overlap_count(
+        ChunkId(1), layout, block_map, direction="bwd"
+    ) == 0  # source = block 2 (NONE)
+    assert chunk_swap_overlap_count(
+        ChunkId(2), layout, block_map, direction="bwd"
+    ) == 0  # source = block 3 (NONE)
+    assert chunk_swap_overlap_count(
+        ChunkId(7), layout, block_map, direction="bwd"
+    ) == 0  # no successor
+
+    # Effective bandwidth: chunk 2 is derated in forward, chunk 7 is
+    # never derated. Full bandwidth: hw.pcie_h2d_bps. Derated:
+    # hw.pcie_h2d_bps / (1 + 0.5 * 1) = pcie / 1.5.
+    eff_chunk_2_fwd_h2d, eff_chunk_2_fwd_d2h = effective_bw_for_chunk(
+        ChunkId(2), cfg, hw, layout, block_map, direction="fwd"
+    )
+    eff_chunk_7_fwd_h2d, eff_chunk_7_fwd_d2h = effective_bw_for_chunk(
+        ChunkId(7), cfg, hw, layout, block_map, direction="fwd"
+    )
+    assert eff_chunk_2_fwd_h2d == pytest.approx(hw.pcie_h2d_bps / 1.5)
+    assert eff_chunk_2_fwd_d2h == pytest.approx(hw.pcie_d2h_bps / 1.5)
+    assert eff_chunk_7_fwd_h2d == pytest.approx(hw.pcie_h2d_bps)
+    assert eff_chunk_7_fwd_d2h == pytest.approx(hw.pcie_d2h_bps)
+
+    # n_swap == 0 boundary: every chunk gets full bandwidth in both
+    # directions, even chunks adjacent to what WOULD be swap blocks.
+    cfg_no_swap = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
+    block_map_none = {BlockId(b): BlockMode.NONE for b in range(n_block)}
+    for cid in range(n_chunk):
+        for direction in ("fwd", "bwd"):
+            h2d, d2h = effective_bw_for_chunk(
+                ChunkId(cid), cfg_no_swap, hw, layout, block_map_none,
+                direction=direction,
+            )
+            assert h2d == hw.pcie_h2d_bps
+            assert d2h == hw.pcie_d2h_bps
+
+    # n_swap == N_block boundary: every block is SWAP, so every
+    # non-edge chunk has at least one SWAP source in both directions.
+    block_map_all_swap = {BlockId(b): BlockMode.SWAP for b in range(n_block)}
+    cfg_all_swap = CostConfig(
+        n_persist=0, n_buffer=0, n_swap=n_block, n_checkpoint=0
+    )
+    # Chunks 1..7 in forward (chunk 0 has no source) and chunks 0..6
+    # in backward (chunk 7 has no source) all see overlap=1.
+    for cid in range(1, n_chunk):
+        h2d, _ = effective_bw_for_chunk(
+            ChunkId(cid), cfg_all_swap, hw, layout, block_map_all_swap,
+            direction="fwd",
+        )
+        assert h2d == pytest.approx(hw.pcie_h2d_bps / 1.5)
+    for cid in range(0, n_chunk - 1):
+        h2d, _ = effective_bw_for_chunk(
+            ChunkId(cid), cfg_all_swap, hw, layout, block_map_all_swap,
+            direction="bwd",
+        )
+        assert h2d == pytest.approx(hw.pcie_h2d_bps / 1.5)
+
+
 # ---------------------------------------------------------------------------
 # knobs / derive_bounds
 # ---------------------------------------------------------------------------
