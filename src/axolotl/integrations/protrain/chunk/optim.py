@@ -363,6 +363,13 @@ class GpuFusedAdamAdapter:
         """Load state into the wrapped optimizer (no-op when adapter is empty)."""
         optim = self._optim
         if optim is None:
+            if state_dict.get("state") or state_dict.get("param_groups"):
+                raise ValueError(
+                    "Cannot load non-empty optimizer state into an empty "
+                    "GpuFusedAdamAdapter: this layout has no persistent-chunk "
+                    "params but the checkpoint contains optimizer state "
+                    "(likely a Mode-A/Mode-C config mismatch on resume)."
+                )
             return
         optim.load_state_dict(state_dict)
 

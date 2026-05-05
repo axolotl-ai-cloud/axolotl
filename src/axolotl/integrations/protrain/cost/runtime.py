@@ -211,7 +211,7 @@ def _fwd_compute_time_from_trace(
        hooked_fwd_wall_s``, clamped to ``[_HOOK_SCALE_MIN,
        _HOOK_SCALE_MAX]``) to the per-op sum. On transformer-sized
        models this strips ~2.5-8x hook inflation from the measurement.
-       The scaled total is then capped at ``steady_fwd_wall_s`` (or 2×
+       The scaled total is then capped at ``steady_fwd_wall_s`` (or 2x
        activation-byte roofline as a legacy fallback) to protect
        against runaway measurements on stale traces.
     3. **Activation-size roofline** (always available): pure fallback
@@ -262,7 +262,7 @@ def _fwd_compute_time_from_trace(
             #   (a) measured `steady_fwd_wall_s` — the ground-truth
             #       hook-less forward wall; if present, this IS what
             #       steady-state training actually spends on forward.
-            #   (b) 2× activation-byte roofline — fallback for legacy
+            #   (b) 2x activation-byte roofline — fallback for legacy
             #       traces (pre-TRACE_VERSION=4) that lack the measurement.
             # Without the cap the searcher reorders toward
             # offload-everything configs that are worse in reality.
@@ -329,7 +329,7 @@ def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> fl
     2. **Steady (unwrapped) measurement** (TRACE_VERSION ≥ 7): measured
        ``steady_bwd_wall_s / steady_fwd_wall_s`` ratio from the 4-iter
        hot loop. Captures the actual transformer-specific bwd/fwd
-       relationship on the measured hardware — typically 1.5-2.2×
+       relationship on the measured hardware — typically 1.5-2.2x
        depending on the attention implementation. Used when phase-2
        didn't run (smaller models where the unwrapped backward fits)
        and is more accurate than the heuristic.
@@ -337,7 +337,7 @@ def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> fl
     3. **Heuristic** (always available): trainable-fraction-aware.
        LoRA / adapter training has ~0.1% trainable; backward only flows
        through those params, ratio ≈ 1.0. Full finetune sees the
-       canonical 2.0×. This is the path 7B-LoRA traces hit before
+       canonical 2.0x. This is the path 7B-LoRA traces hit before
        phase-2 because the unwrapped backward OOMs and the chunked
        measurement hadn't been wired up.
 
@@ -370,8 +370,8 @@ def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> fl
         measured_ratio = trace.steady_bwd_wall_s / trace.steady_fwd_wall_s
         # Clamp to a sane range — if the measurement is wildly off
         # (measurement noise or forward OOM that fell through), don't
-        # let it propagate. Transformers run between 1.0× (LoRA, autograd
-        # skips frozen subgraphs) and 3× (full-finetune with attention recomp).
+        # let it propagate. Transformers run between 1.0x (LoRA, autograd
+        # skips frozen subgraphs) and 3x (full-finetune with attention recomp).
         measured_ratio = max(1.0, min(3.0, measured_ratio))
         return t_fwd_total * measured_ratio
     # ---- Path 3: trainable-fraction-aware heuristic ----
@@ -813,7 +813,7 @@ def estimate_runtime(
     t_gpu_optim = n_persist * ms_per_chunk / gpu_adam_bps
     # In ZeRO-3/Mode-C, non-persistent chunks are sharded across ranks, so
     # each rank only Adam-steps ``1/world_size`` of every chunk. Without
-    # this divide the CPU-optim cost was billed at ``world_size×`` actual
+    # this divide the CPU-optim cost was billed at ``world_size x`` actual
     # — the searcher consequently under-rated configs with high
     # ``n_nonpersist``. Mode-B (DDP-replicated, no sharding) leaves every
     # rank stepping the full chunk, so the divide stays gated on

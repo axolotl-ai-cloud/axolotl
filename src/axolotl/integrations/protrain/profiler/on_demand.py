@@ -295,6 +295,18 @@ class OnDemandTensorMgr:
                 else:
                     # CPU-original: cpu_storage IS the original tensor.
                     spill.param.data = spill.cpu_storage
+                # Mirror __exit__'s grad restore: if a grad was moved to the
+                # gather device during partial setup, move it back so the
+                # caller doesn't see a param/grad device mismatch on the
+                # exception path. Unlikely to fire (no backward has run by
+                # the time setup unwinds), but symmetric with __exit__.
+                if (
+                    spill.param.grad is not None
+                    and spill.param.grad.device != spill.original_device
+                ):
+                    spill.param.grad = spill.param.grad.to(
+                        spill.original_device, non_blocking=True
+                    )
             except Exception as _e:  # noqa: BLE001 - defensive
                 LOG.warning(
                     "OnDemandTensorMgr: failed to restore param to %s during "
