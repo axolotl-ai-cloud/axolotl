@@ -1,6 +1,9 @@
 """Single-stream memory allocation context (paper Appendix B.2).
 
-Status: **PARTIALLY IMPLEMENTED — class shipped, runtime wire-up deferred.**
+Status: **WIRED.** Production call sites now exist in
+:mod:`chunk.buffer_pool` (long-lived pool slot pre-allocation),
+:mod:`chunk.manager` (gather scratch / persistent buffers / restore-time
+allocations), and the scheduler indirectly through those.
 
 Paper reference
 ---------------
@@ -14,48 +17,57 @@ through one stream sidesteps that fragmentation entirely.
 
 What this module provides
 -------------------------
-:class:`SingleStreamAllocator` is a fully-functional context manager
-that pins Python-side allocations to a single managed CUDA stream
-(default stream by default). The ``__enter__`` / ``__exit__`` /
-``sync()`` semantics are real and usable by any caller who explicitly
-opts in.
+:class:`SingleStreamAllocator` is a context manager that pins
+Python-side allocations to a single managed CUDA stream (the default
+stream by default). The ``__enter__`` / ``__exit__`` / ``sync()``
+semantics compose with PyTorch's ``torch.cuda.stream(...)`` context
+manager: a ``with SingleStreamAllocator():`` block nested inside an
+outer ``with torch.cuda.stream(prefetch_stream):`` block correctly
+switches the current stream to the default for the duration of the
+inner block, then restores ``prefetch_stream`` on exit. Allocations
+inside the inner block therefore land on the *default-stream* heap
+even though kernel launches outside the inner block continue on the
+prefetch stream.
 
-Why this is a stub in practice
-------------------------------
-**The class is NOT currently wired into the ProTrain runtime.** A
-search of the codebase shows zero call sites outside this module's own
-docstring example. In particular, :mod:`runtime.scheduler` does the
-*opposite* of the paper's design: it constructs two dedicated
-non-default ``torch.cuda.Stream()`` instances — one for chunk prefetch,
-one for activation swap — so that PCIe copies can overlap the compute
-stream. See ``runtime/scheduler.py::_init_streams`` (the
-``self._prefetch_stream = torch.cuda.Stream()`` /
-``self._swap_stream = torch.cuda.Stream()`` lines).
+Usage pattern (the App B.2 contract)
+------------------------------------
+The wire-up has two parts at every call site that hands a buffer to a
+non-default stream:
 
-This is a known, intentional deviation from the paper, tracked in
-``DESIGN.md`` under
-"Design Decisions → Single-Stream Allocation (App B.2 — DEFERRED)".
-The wire-up is non-trivial: every allocation in the chunk manager,
-buffer pool, and scheduler would need to route through one allocator
-context, and buffer-pool reuse semantics would need to be reverified.
-Profile data on the project's reference hardware (RTX 3090) has not
-shown allocator fragmentation as a top contributor to peak memory —
-the ``α = 1.10`` fragmentation factor (see DESIGN.md §Design Decisions
-item 1) covers it — so the work is deferred until a measurement
-justifies it.
+1. **Allocate inside the allocator context** so the buffer comes from
+   the default-stream heap::
 
-Calling this class
-------------------
-A caller who imports and instantiates :class:`SingleStreamAllocator`
-gets a real allocator context, but they will trigger a
-:class:`UserWarning` at construction time pointing back here, because
-no production caller exists today and accidental future use should be
-discoverable in logs.
+       with torch.cuda.stream(prefetch_stream):
+           with SingleStreamAllocator():
+               buf = torch.empty(nbytes, dtype=torch.uint8, device=dev)
+           # ^ buf is on the default-stream heap
+           buf.record_stream(prefetch_stream)
+           buf.copy_(cpu_src, non_blocking=True)
+           # ... use buf on prefetch_stream
+
+2. **Call ``buf.record_stream(non_default_stream)`` immediately after
+   exiting the allocator context** if the buffer is consumed on a
+   non-default stream. This is the "directly managing deallocation
+   synchronization ourselves" the paper mentions: it tells PyTorch's
+   caching allocator to defer reuse of the buffer's underlying storage
+   until ``non_default_stream`` has retired the work that uses it.
+   Skipping this step opens a race where the allocator can hand the
+   storage to a later default-stream allocation while the non-default
+   stream is still reading or writing the bytes — silent data
+   corruption.
+
+Long-lived allocations (buffer-pool slots, persistent chunk buffers)
+do not need ``record_stream`` because their lifetime is owned by the
+manager and they are released only at teardown, when every consuming
+stream has long since drained.
+
+Reentrancy: the wrapper composes correctly with itself and with raw
+``torch.cuda.stream(...)`` blocks. Like all CUDA-stream context
+managers it is not thread-safe.
 """
 
 from __future__ import annotations
 
-import warnings
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING
 
@@ -65,12 +77,6 @@ if TYPE_CHECKING:
     import torch
 
 LOG = get_logger(__name__)
-
-# Module-level flag so the deferred-wire-up warning fires only once per
-# process, no matter how many SingleStreamAllocator instances get
-# constructed. Keeps test logs and any future accidental call sites
-# readable.
-_WARNED_UNWIRED = False
 
 
 class SingleStreamAllocator:
@@ -86,32 +92,20 @@ class SingleStreamAllocator:
     The context is a thin wrapper over ``torch.cuda.stream(stream)``:
     inside the ``with`` block the current stream is set to ``self.stream``
     so any allocations made from Python-side code land on that stream.
-    Exiting the context restores the previous current stream.
+    Exiting the context restores the previous current stream — including
+    when nested inside an outer ``torch.cuda.stream(prefetch_stream)``
+    block, where the outer prefetch stream is restored on exit.
 
-    Reentrancy: the wrapper is safe to nest with itself, but like all
-    ``torch.cuda.stream`` usage it is not thread-safe.
+    See the module docstring for the App B.2 ``record_stream`` contract
+    every call site that hands a freshly-allocated buffer to a
+    non-default stream MUST observe.
 
-    .. warning::
-        This class corresponds to paper Appendix B.2 but is **not wired
-        into the ProTrain runtime** — the scheduler uses dedicated
-        non-default streams. Constructing an instance emits a one-time
-        :class:`UserWarning` so accidental future callers can find this
-        gap via logs. See the module docstring and ``DESIGN.md``
-        §"Single-Stream Allocation (App B.2 — DEFERRED)" for the full
-        rationale.
+    Reentrancy: the wrapper is safe to nest with itself and with raw
+    ``torch.cuda.stream(...)`` blocks, but like all ``torch.cuda.stream``
+    usage it is not thread-safe.
     """
 
     def __init__(self, stream: "torch.cuda.Stream | None" = None) -> None:
-        global _WARNED_UNWIRED
-        if not _WARNED_UNWIRED:
-            _WARNED_UNWIRED = True
-            warnings.warn(
-                "SingleStreamAllocator is defined for paper App B.2 fidelity but is "
-                "not wired into the ProTrain runtime. See DESIGN.md "
-                "§Single-Stream Allocation for status.",
-                stacklevel=2,
-            )
-
         # Import lazily so the module remains importable without a CUDA
         # runtime (matters for docs builds and syntax-only CI lanes).
         import torch

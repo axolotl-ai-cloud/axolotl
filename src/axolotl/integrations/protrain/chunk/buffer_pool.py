@@ -89,17 +89,42 @@ class BufferPool:
         # Local import so the module can be imported without torch present.
         import torch
 
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
         self.n_buffer = int(n_buffer)
         self.S_chunk = int(S_chunk)
         self.pinned_host = pinned_host
         self.device = torch.device(device)
 
         # Pre-allocate every buffer up-front — the whole point of the pool
-        # is to avoid allocator churn during training.
-        self._buffers: list["torch.Tensor"] = [
-            torch.empty(self.S_chunk, dtype=torch.uint8, device=self.device)
-            for _ in range(self.n_buffer)
-        ]
+        # is to avoid allocator churn during training. Route through the
+        # default-stream allocator (paper App B.2 / SingleStreamAllocator
+        # contract) so every long-lived pool slot sits on the default
+        # stream's heap. These slots are the largest sustained GPU
+        # allocation in ProTrain (n_buffer × S_chunk bytes — tens of
+        # gigabytes on training-scale models), so unifying their heap
+        # is the highest-leverage single application of App B.2. No
+        # ``record_stream`` needed: the slots' lifetime is owned by the
+        # pool and they only return to the allocator at pool teardown,
+        # by which point every consuming stream has drained.
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            with SingleStreamAllocator():
+                self._buffers: list["torch.Tensor"] = [
+                    torch.empty(
+                        self.S_chunk, dtype=torch.uint8, device=self.device
+                    )
+                    for _ in range(self.n_buffer)
+                ]
+        else:
+            # CPU-only path (test lanes without CUDA): no heap concept, no
+            # need for the allocator context — a plain construction keeps
+            # the import path light.
+            self._buffers = [
+                torch.empty(self.S_chunk, dtype=torch.uint8, device=self.device)
+                for _ in range(self.n_buffer)
+            ]
         # Per-slot chunk tag; ``None`` means "never held a chunk". This
         # tag survives ``release`` so the forward→backward reuse lookup
         # works even after a buffer has been handed back to the free list.

@@ -1179,6 +1179,28 @@ class ChunkManager:
 
         moved = 0
 
+        # App B.2: route every GPU allocation made by this teardown path
+        # through the default-stream heap. ``restore_to_gpu`` runs at
+        # manager teardown and is never invoked from inside a
+        # non-default stream context today, but the wraps cost almost
+        # nothing and keep the heap-routing invariant uniform across
+        # the chunk manager. No ``record_stream`` calls needed: every
+        # allocation here is consumed only by default-stream copies and
+        # the freshly-allocated tensors are immediately written to via
+        # ``copy_`` on the same stream they were allocated on.
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
+        # Helper closure to keep the per-site wrap a one-liner.
+        _on_cuda = self.device.type == "cuda" and torch.cuda.is_available()
+
+        def _alloc_empty(shape, dtype):
+            if _on_cuda:
+                with SingleStreamAllocator():
+                    return torch.empty(shape, dtype=dtype, device=self.device)
+            return torch.empty(shape, dtype=dtype, device=self.device)
+
         # ---- Non-persistent chunks: copy from pinned CPU slots --------
         # For sharded chunks ``slot.cpu_data is None`` — those are
         # handled by the sharded reassembly block below. For replicated
@@ -1192,9 +1214,7 @@ class ChunkManager:
                 param = self._params_by_id.get(slot.param_id)
                 if param is None or slot.cpu_data is None:
                     continue
-                gpu_tensor = torch.empty(
-                    slot.shape, dtype=slot.dtype, device=self.device
-                )
+                gpu_tensor = _alloc_empty(slot.shape, slot.dtype)
                 gpu_tensor.copy_(slot.cpu_data)
                 param.data = gpu_tensor
                 moved += slot.numel * slot.element_size
@@ -1220,11 +1240,7 @@ class ChunkManager:
                 # Must use the manager's device so the per-slot rebind
                 # below produces tensors on the same device as the
                 # rest of the model.
-                chunk_buf = torch.empty(
-                    shard_state.chunk_bytes,
-                    dtype=torch.uint8,
-                    device=self.device,
-                )
+                chunk_buf = _alloc_empty(shard_state.chunk_bytes, torch.uint8)
 
                 for region in shard_state.regions:
                     # Stage this rank's CPU shard onto GPU. Mirrors the
@@ -1233,21 +1249,15 @@ class ChunkManager:
                     # transient (we do NOT consult the buffer pool here
                     # — restore is a one-shot teardown and the pool may
                     # already be torn down by the caller).
-                    my_shard_gpu = torch.empty(
-                        region.shard_bytes,
-                        dtype=torch.uint8,
-                        device=self.device,
-                    )
+                    my_shard_gpu = _alloc_empty(region.shard_bytes, torch.uint8)
                     my_shard_gpu.copy_(region.cpu_shard_bytes, non_blocking=True)
 
                     # Padded gather output: region_bytes_padded ==
                     # shard_bytes * world_size, so this matches the
                     # all_gather_into_tensor contract exactly (output
                     # length == input length * world_size).
-                    gather_scratch = torch.empty(
-                        region.region_bytes_padded,
-                        dtype=torch.uint8,
-                        device=self.device,
+                    gather_scratch = _alloc_empty(
+                        region.region_bytes_padded, torch.uint8
                     )
                     dist.all_gather_into_tensor(gather_scratch, my_shard_gpu)
 
@@ -1281,9 +1291,7 @@ class ChunkManager:
                         continue
                     byte_view = chunk_buf.narrow(0, slot.byte_offset, nbytes)
                     typed = byte_view.view(slot.dtype).view(slot.shape)
-                    gpu_tensor = torch.empty(
-                        slot.shape, dtype=slot.dtype, device=self.device
-                    )
+                    gpu_tensor = _alloc_empty(slot.shape, slot.dtype)
                     gpu_tensor.copy_(typed)
                     param.data = gpu_tensor
                     moved += nbytes
@@ -1313,9 +1321,7 @@ class ChunkManager:
                 offset = ((offset + esz - 1) // esz) * esz
                 byte_view = buf.narrow(0, offset, nbytes)
                 typed = byte_view.view(param.data.dtype).view(param.shape)
-                gpu_tensor = torch.empty(
-                    param.shape, dtype=param.data.dtype, device=self.device
-                )
+                gpu_tensor = _alloc_empty(param.shape, param.data.dtype)
                 gpu_tensor.copy_(typed)
                 param.data = gpu_tensor
                 moved += nbytes
@@ -1354,10 +1360,24 @@ class ChunkManager:
         """Return a zero-element GPU tensor of ``dtype`` (cached per dtype)."""
         import torch
 
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
         existing = self._empty_by_dtype.get(dtype)
         if existing is not None:
             return existing
-        t = torch.empty(0, device=self.device, dtype=dtype)
+        # App B.2: cached one-per-dtype zero-element placeholder; route
+        # through the default-stream heap for consistency with the rest
+        # of the chunk-manager allocations even though the byte
+        # footprint is trivial. No record_stream needed: the placeholder
+        # is process-lived and never the consumer of any kernel work
+        # (it's a 0-element ``param.data`` sentinel).
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            with SingleStreamAllocator():
+                t = torch.empty(0, device=self.device, dtype=dtype)
+        else:
+            t = torch.empty(0, device=self.device, dtype=dtype)
         self._empty_by_dtype[dtype] = t
         return t
 
@@ -1669,19 +1689,69 @@ class ChunkManager:
         import torch
         import torch.distributed as dist
 
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
+        # App B.2 wire-up: this method is called from
+        # ``ChunkManager.gather`` which the scheduler invokes inside
+        # ``with torch.cuda.stream(self._prefetch_stream):`` (see
+        # ``Scheduler._gather_on_prefetch_stream``). Without the
+        # SingleStreamAllocator wrapper below, ``torch.empty`` would
+        # land on the prefetch-stream's heap — and the next default-
+        # stream allocation could not reuse the bytes after these
+        # transient scratch tensors fall out of scope, fragmenting the
+        # allocator. Routing them through the default-stream heap and
+        # then issuing ``record_stream`` to whatever stream is current
+        # at call time keeps the allocator-free path correctly gated
+        # on the consuming work.
+        cur_stream: "torch.cuda.Stream | None" = None
+        on_cuda = buf.device.type == "cuda" and torch.cuda.is_available()
+        if on_cuda:
+            cur_stream = torch.cuda.current_stream(device=buf.device)
+        # Skip the wrap when the caller is already on the default
+        # stream — the allocations would already land on the right heap
+        # and the ``record_stream`` calls would be no-ops. This keeps
+        # the CPU-only / synchronous-fallback paths zero-overhead.
+        wrap_alloc = on_cuda and cur_stream is not None and (
+            cur_stream != torch.cuda.default_stream(device=buf.device)
+        )
+
         for region in shard_state.regions:
             # Staging: this rank's shard on GPU.
-            my_shard_gpu = torch.empty(
-                region.shard_bytes, dtype=torch.uint8, device=buf.device
-            )
+            if wrap_alloc:
+                with SingleStreamAllocator():
+                    my_shard_gpu = torch.empty(
+                        region.shard_bytes, dtype=torch.uint8, device=buf.device
+                    )
+                # Tie the buffer's lifetime to whichever stream is
+                # actually about to consume it — the prefetch stream
+                # in steady-state, the default stream in the
+                # synchronous fallback. Without record_stream the
+                # default-stream allocator could free the storage
+                # while the H2D/all_gather below is still in flight.
+                my_shard_gpu.record_stream(cur_stream)  # type: ignore[arg-type]
+            else:
+                my_shard_gpu = torch.empty(
+                    region.shard_bytes, dtype=torch.uint8, device=buf.device
+                )
             my_shard_gpu.copy_(region.cpu_shard_bytes, non_blocking=True)
 
             # Gather output scratch: region_bytes_padded (may be > region_bytes).
-            gather_scratch = torch.empty(
-                region.region_bytes_padded,
-                dtype=torch.uint8,
-                device=buf.device,
-            )
+            if wrap_alloc:
+                with SingleStreamAllocator():
+                    gather_scratch = torch.empty(
+                        region.region_bytes_padded,
+                        dtype=torch.uint8,
+                        device=buf.device,
+                    )
+                gather_scratch.record_stream(cur_stream)  # type: ignore[arg-type]
+            else:
+                gather_scratch = torch.empty(
+                    region.region_bytes_padded,
+                    dtype=torch.uint8,
+                    device=buf.device,
+                )
             dist.all_gather_into_tensor(gather_scratch, my_shard_gpu)
 
             # Write the valid-bytes prefix into the pool buffer at the
@@ -2005,6 +2075,10 @@ class ChunkManager:
         import torch
         import torch.distributed as dist
 
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
         slots = self._cpu_slots.get(chunk_id, [])
         if not slots:
             return
@@ -2021,6 +2095,23 @@ class ChunkManager:
                 break
         if not any_grad:
             return
+
+        # App B.2: this method runs from ``Scheduler.post_block_backward``
+        # which today does not wrap in a non-default stream context, so
+        # the per-region scratch buffers below would already land on the
+        # default-stream heap. We wrap defensively anyway: if a future
+        # caller invokes this from inside a non-default stream context
+        # (e.g. a swap-stream-driven gradient finalizer), the wrap keeps
+        # the heap selection canonical and ``record_stream`` ties the
+        # buffer's lifetime to the actually-consuming stream. Computed
+        # once outside the loop because ``current_stream`` is a syscall
+        # we don't want to repeat per region.
+        on_cuda = device.type == "cuda" and torch.cuda.is_available()
+        cur_stream: "torch.cuda.Stream | None" = None
+        wrap_alloc = False
+        if on_cuda:
+            cur_stream = torch.cuda.current_stream(device=device)
+            wrap_alloc = cur_stream != torch.cuda.default_stream(device=device)
 
         # Build an index from slot.byte_offset -> slot so we can quickly
         # locate every param whose bytes land inside a given region.
@@ -2053,11 +2144,20 @@ class ChunkManager:
             # Stage a padded per-region grad buffer on GPU so
             # reduce_scatter's input length matches
             # region_bytes_padded. Trailing (padding) bytes stay zero.
-            region_grad = torch.zeros(
-                region.region_bytes_padded,
-                dtype=torch.uint8,
-                device=device,
-            )
+            if wrap_alloc:
+                with SingleStreamAllocator():
+                    region_grad = torch.zeros(
+                        region.region_bytes_padded,
+                        dtype=torch.uint8,
+                        device=device,
+                    )
+                region_grad.record_stream(cur_stream)  # type: ignore[arg-type]
+            else:
+                region_grad = torch.zeros(
+                    region.region_bytes_padded,
+                    dtype=torch.uint8,
+                    device=device,
+                )
             for slot in slots:
                 if slot.byte_offset < r_start:
                     continue
@@ -2081,9 +2181,16 @@ class ChunkManager:
             shard_numel_r = region.shard_bytes // region.element_size
             full_numel_r = region.region_bytes_padded // region.element_size
             region_grad_typed = region_grad.view(region.dtype).view(full_numel_r)
-            my_shard_grad_gpu = torch.empty(
-                shard_numel_r, dtype=region.dtype, device=device
-            )
+            if wrap_alloc:
+                with SingleStreamAllocator():
+                    my_shard_grad_gpu = torch.empty(
+                        shard_numel_r, dtype=region.dtype, device=device
+                    )
+                my_shard_grad_gpu.record_stream(cur_stream)  # type: ignore[arg-type]
+            else:
+                my_shard_grad_gpu = torch.empty(
+                    shard_numel_r, dtype=region.dtype, device=device
+                )
             dist.reduce_scatter_tensor(
                 my_shard_grad_gpu,
                 region_grad_typed,
@@ -2371,16 +2478,35 @@ class ChunkManager:
             return existing
         import torch
 
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
         # Source the device from ``self.device`` rather than
         # ``self.buffer_pool.device`` so this works in the
         # all-persistent layout where ``buffer_pool is None``.
         # ``self.device`` is canonical (always set in __init__) and
         # equal to ``buffer_pool.device`` when a pool exists.
-        buf = torch.empty(
-            self.layout.S_chunk,
-            dtype=torch.uint8,
-            device=self.device,
-        )
+        #
+        # App B.2: persistent chunk buffers are long-lived — they sit
+        # GPU-resident for the entire training run — so routing their
+        # allocation through the default-stream heap unifies them with
+        # the buffer-pool slots and the rest of the chunk-manager state.
+        # No ``record_stream`` needed (long-lived, no cross-stream
+        # release race).
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            with SingleStreamAllocator():
+                buf = torch.empty(
+                    self.layout.S_chunk,
+                    dtype=torch.uint8,
+                    device=self.device,
+                )
+        else:
+            buf = torch.empty(
+                self.layout.S_chunk,
+                dtype=torch.uint8,
+                device=self.device,
+            )
         self._persistent_buffers[chunk_id] = buf
         return buf
 

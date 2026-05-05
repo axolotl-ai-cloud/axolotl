@@ -211,6 +211,18 @@ class Scheduler:
         No-op if the prefetch stream is unavailable (CPU-only test
         lanes) — the chunk manager's synchronous ``gather`` is still
         correct; it is simply serialised against compute.
+
+        App B.2 wire-up note: the ``with torch.cuda.stream(self._prefetch_stream)``
+        block below sets the *kernel-launch* stream to the prefetch
+        stream so that H2D copies overlap compute. Any *allocations*
+        the chunk manager makes inside the gather call route through
+        :class:`SingleStreamAllocator` (see ``chunk/manager.py::_gather_sharded``
+        and the buffer-pool pre-allocation in
+        ``chunk/buffer_pool.py::BufferPool.__init__``) so the bytes
+        come from the default-stream heap regardless of which stream
+        is current here. ``record_stream`` calls inside the chunk
+        manager tie those buffers' lifetimes to this prefetch stream
+        for correctness.
         """
         try:
             import torch
