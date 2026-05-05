@@ -198,49 +198,56 @@ def measure_chunked_steady(
         )
 
     model.train()
+    # Bind every CUDA timing/memory API call to the model's device so a
+    # future refactor that changes the current-device context between
+    # plugin setup and measurement cannot silently measure the wrong GPU.
+    device = next(model.parameters()).device
+    if device.type != "cuda":
+        raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
 
-    # Warmup — discard timings.
-    for _ in range(n_warmup):
-        out = model(**batch)
-        loss = _extract_loss(out)
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
+    with torch.cuda.device(device):
+        # Warmup — discard timings.
+        for _ in range(n_warmup):
+            out = model(**batch)
+            loss = _extract_loss(out)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+        torch.cuda.synchronize(device)
+        torch.cuda.reset_peak_memory_stats(device)
 
-    fwd_times_s: list[float] = []
-    bwd_times_s: list[float] = []
-    step_times_s: list[float] = []
-    for _ in range(n_iters):
-        fwd_start = torch.cuda.Event(enable_timing=True)
-        fwd_end = torch.cuda.Event(enable_timing=True)
-        bwd_start = torch.cuda.Event(enable_timing=True)
-        bwd_end = torch.cuda.Event(enable_timing=True)
-        step_end = torch.cuda.Event(enable_timing=True)
+        fwd_times_s: list[float] = []
+        bwd_times_s: list[float] = []
+        step_times_s: list[float] = []
+        for _ in range(n_iters):
+            fwd_start = torch.cuda.Event(enable_timing=True)
+            fwd_end = torch.cuda.Event(enable_timing=True)
+            bwd_start = torch.cuda.Event(enable_timing=True)
+            bwd_end = torch.cuda.Event(enable_timing=True)
+            step_end = torch.cuda.Event(enable_timing=True)
 
-        fwd_start.record()
-        out = model(**batch)
-        loss = _extract_loss(out)
-        fwd_end.record()
+            fwd_start.record()
+            out = model(**batch)
+            loss = _extract_loss(out)
+            fwd_end.record()
 
-        bwd_start.record()
-        loss.backward()
-        bwd_end.record()
-        optimizer.step()
-        step_end.record()
+            bwd_start.record()
+            loss.backward()
+            bwd_end.record()
+            optimizer.step()
+            step_end.record()
 
-        torch.cuda.synchronize()
-        fwd_times_s.append(fwd_start.elapsed_time(fwd_end) / 1000.0)
-        bwd_times_s.append(bwd_start.elapsed_time(bwd_end) / 1000.0)
-        step_times_s.append(bwd_end.elapsed_time(step_end) / 1000.0)
+            torch.cuda.synchronize(device)
+            fwd_times_s.append(fwd_start.elapsed_time(fwd_end) / 1000.0)
+            bwd_times_s.append(bwd_start.elapsed_time(bwd_end) / 1000.0)
+            step_times_s.append(bwd_end.elapsed_time(step_end) / 1000.0)
 
-        optimizer.zero_grad(set_to_none=True)
+            optimizer.zero_grad(set_to_none=True)
 
-    fwd_median = statistics.median(fwd_times_s)
-    bwd_median = statistics.median(bwd_times_s)
-    step_median = statistics.median(step_times_s)
-    peak_bytes = int(torch.cuda.max_memory_allocated())
+        fwd_median = statistics.median(fwd_times_s)
+        bwd_median = statistics.median(bwd_times_s)
+        step_median = statistics.median(step_times_s)
+        peak_bytes = int(torch.cuda.max_memory_allocated(device))
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

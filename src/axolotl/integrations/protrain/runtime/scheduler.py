@@ -94,6 +94,12 @@ class Scheduler:
         # single-tree and encoder-decoder models). Used to resolve
         # "next block" for the prefetch rule.
         self._block_order: list[BlockId] = sorted(block_map.keys())
+        # O(1) reverse lookup of forward-order index for each block id;
+        # avoids the O(n) ``list.index()`` scan in ``_next_block_of`` /
+        # ``_prev_block_of`` on deep models (e.g., 96-layer).
+        self._block_index_map: dict[BlockId, int] = {
+            block_id: idx for idx, block_id in enumerate(self._block_order)
+        }
 
         self._prefetch_stream: "torch.cuda.Stream | None" = None
         self._swap_stream: "torch.cuda.Stream | None" = None
@@ -154,9 +160,8 @@ class Scheduler:
 
     def _next_block_of(self, block_id: BlockId) -> BlockId | None:
         """Return the block id scheduled *after* ``block_id`` in forward order."""
-        try:
-            idx = self._block_order.index(block_id)
-        except ValueError:
+        idx = self._block_index_map.get(block_id)
+        if idx is None:
             return None
         nxt = idx + 1
         if nxt >= len(self._block_order):
@@ -169,11 +174,8 @@ class Scheduler:
         Backward walks the block list in reverse, so the "next" block in
         backward is the one with index ``idx - 1`` in forward order.
         """
-        try:
-            idx = self._block_order.index(block_id)
-        except ValueError:
-            return None
-        if idx <= 0:
+        idx = self._block_index_map.get(block_id)
+        if idx is None or idx <= 0:
             return None
         return self._block_order[idx - 1]
 

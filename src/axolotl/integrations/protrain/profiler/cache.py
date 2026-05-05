@@ -14,7 +14,7 @@ import hashlib
 import json
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +122,20 @@ _CACHE_SUBDIR = Path("protrain") / "profiler"
 # v16 ``.pkl`` files remain on disk but are never looked up under the
 # v17 ``.json`` extension — the cache is local-only and a re-profile
 # is cheap, so the migration policy is "ignore + retrace".
-TRACE_VERSION = 17
+# Version 18 adds ``phase2_n_offload`` to the persisted phase-2 bootstrap
+# cfg tuple. Option B's search space includes the n_offload axis (see
+# ``exhaustive.py`` / ``block/layout_rules.py``) and the bootstrap
+# captures it in ``boot_result.cfg.n_offload``, but v17 cached only
+# (persist, buffer, checkpoint). Two configs that differ only in the
+# offload axis would therefore share a cached measurement and the
+# wrapper's ``phase2_matches_cfg`` predicate would mis-calibrate the
+# cost model (in particular ``steady_phase2_peak_bytes`` and the
+# chunked-bwd base term). Bumping forces a fresh trace so the offload
+# count is recorded under the matching cfg. ``ProfilerTrace`` may not
+# yet carry the field; the (de)serializers fall back to 0 via getattr
+# / fields-introspection so a v18 payload round-trips cleanly either
+# way and the bump alone invalidates v17 entries that lacked the axis.
+TRACE_VERSION = 18
 
 
 @dataclass(frozen=True)
@@ -253,6 +266,11 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_n_persist": int(trace.phase2_n_persist),
         "phase2_n_buffer": int(trace.phase2_n_buffer),
         "phase2_n_checkpoint": int(trace.phase2_n_checkpoint),
+        # ``phase2_n_offload`` (TRACE_VERSION 18) joins the persisted phase-2
+        # cfg tuple. ``getattr`` keeps this defensive against ``ProfilerTrace``
+        # builds that haven't yet exposed the field — the bump still
+        # invalidates v17 traces lacking the offload axis.
+        "phase2_n_offload": int(getattr(trace, "phase2_n_offload", 0)),
         "phase2_per_block_recompute_s": float(trace.phase2_per_block_recompute_s),
         "steady_fwd_chunked_wall_s": float(trace.steady_fwd_chunked_wall_s),
         "block_tree_index": {
@@ -268,6 +286,15 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     Raises ``KeyError`` / ``ValueError`` / ``TypeError`` if required fields
     are missing or malformed; callers treat that as a cache miss.
     """
+    # ``phase2_n_offload`` (TRACE_VERSION 18) joined the phase-2 cfg tuple.
+    # Pass it as a kwarg only when the live ``ProfilerTrace`` dataclass
+    # actually exposes the field — older builds in the same tree (e.g. test
+    # fixtures pinned to a prior schema) would otherwise raise TypeError on
+    # the unexpected kwarg and turn every v18 hit into a cache miss.
+    _trace_field_names = {f.name for f in fields(ProfilerTrace)}
+    extra: dict[str, Any] = {}
+    if "phase2_n_offload" in _trace_field_names:
+        extra["phase2_n_offload"] = int(data.get("phase2_n_offload", 0))
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={
@@ -317,6 +344,7 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
         block_tree_index={
             BlockId(int(k)): int(v) for k, v in data.get("block_tree_index", {}).items()
         },
+        **extra,
     )
 
 

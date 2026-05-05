@@ -362,21 +362,29 @@ class OnDemandTensorMgr:
         original_device = param.device
 
         if original_device.type == "cpu":
-            # CPU-resident: cpu_storage IS the original tensor. Pin it for
-            # async H2D copies in pre-gather, best-effort. Pin into a
-            # separate variable and only swap on success, so a partial
-            # failure inside pin_memory() cannot drop the original tensor.
+            # CPU-resident: capture the original tensor first so restore can
+            # always recover it, then attempt to pin a (possibly new) copy
+            # for async H2D in pre-gather. pin_memory() returns a NEW pinned
+            # tensor on success (only returns self if already pinned), so we
+            # must preserve the original reference separately — otherwise
+            # tied-weight / shared-storage relationships break on restore.
+            original_data = param.data
             try:
-                pinned = param.data.pin_memory()
+                pinned = original_data.pin_memory()
                 cpu_storage = pinned
             except Exception:  # noqa: BLE001 - pinning is best-effort
-                cpu_storage = param.data
+                cpu_storage = original_data
                 self._n_pin_failures += 1
+            # If pin_memory returned self (already-pinned input), the two
+            # references alias the same tensor; restore via cpu_storage path
+            # is sufficient. Only set original_data when pinning produced a
+            # distinct tensor that would otherwise replace the original.
+            spill_original = original_data if cpu_storage is not original_data else None
             self._spills[id(param)] = _ParamSpill(
                 param=param,
                 cpu_storage=cpu_storage,
                 original_device=original_device,
-                original_data=None,
+                original_data=spill_original,
             )
             return
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from axolotl.integrations.base import BasePlugin
+from axolotl.integrations.protrain.args import _has_protrain_plugin
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -411,22 +412,18 @@ def _is_plugin_active(cfg) -> bool:
     without touching Axolotl-internal state.
 
     Activation is strictly opt-in: the ``plugins:`` config list must contain
-    one of the canonical ProTrain entry points (the ``module.ClassName`` form
-    consumed by :func:`axolotl.integrations.base.load_plugin`, or the bare
-    package/module path which Axolotl resolves to the same class). Substring
-    matches such as ``"my-protrain-extension"`` or ``"protrain_disabled"``
-    are intentionally rejected to prevent accidental activation.
+    the canonical ProTrain entry point. Membership is delegated to
+    :func:`axolotl.integrations.protrain.args._has_protrain_plugin` so the
+    runtime gate cannot drift from the Pydantic validators in ``args.py`` —
+    both call sites share ``_PROTRAIN_PLUGIN_KEYS`` as the single source of
+    truth. Substring matches such as ``"my-protrain-extension"`` or
+    ``"protrain_disabled"`` are intentionally rejected to prevent accidental
+    activation.
     """
     if not getattr(cfg, "protrain_auto_memory", False):
         return False
     plugins = getattr(cfg, "plugins", None) or []
-    allowed = {
-        "axolotl.integrations.protrain.protrainplugin",
-        "axolotl.integrations.protrain.plugin.protrainplugin",
-        "axolotl.integrations.protrain",
-        "axolotl.integrations.protrain.plugin",
-    }
-    return any(isinstance(p, str) and p.strip().lower() in allowed for p in plugins)
+    return _has_protrain_plugin(plugins)
 
 
 def _build_hardware_profile(cfg):

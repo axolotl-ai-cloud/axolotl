@@ -73,8 +73,15 @@ class MemoryDeltaTracker:
         return self._torch.cuda.memory_stats(self._device)
 
     def reset(self) -> None:
-        """Reset the ``peak_*`` tracker on the device so the next snapshot is local."""
-        self._torch.cuda.reset_peak_memory_stats(self._device)
+        """Reset the ``peak_*`` tracker on the device so the next snapshot is local.
+
+        Guarded by ``torch.cuda.is_available()`` so external callers on CPU-only
+        hosts get a no-op rather than a CUDA-init error. ``snapshot()`` is
+        already safe because ``memory_stats()`` returns an empty dict when CUDA
+        is unavailable and ``.get()`` defaults handle the missing keys.
+        """
+        if self._torch.cuda.is_available():
+            self._torch.cuda.reset_peak_memory_stats(self._device)
 
     def snapshot(self) -> MemorySnapshot:
         """Return current allocator state (allocated + peak-since-last-reset)."""

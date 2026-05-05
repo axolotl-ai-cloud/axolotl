@@ -498,7 +498,6 @@ def estimate_peak(
     #            (backward processes blocks in reverse forward order; the
     #            forward-only op-walk lands the bump at the symmetrically
     #            closest forward index).
-    n_block = len(trace.activation_sizes)
     forward_ops_by_block = _group_ops_by_block(trace)
     tree_index_map = block_tree_index_map(trace)
     cross_attn_bytes = cross_attn_persist_bytes(trace, block_map, tree_index_map)
@@ -682,17 +681,15 @@ def estimate_peak(
         ALPHA_FRAGMENTATION,
         scaled,
     )
-    # Silence the unused-var warning when trace has no forward ops.
-    _ = n_block
     return scaled
 
 
 __all__ = [
-    "estimate_peak",
-    "estimate_cpu_footprint",
     "ALPHA_FRAGMENTATION",
     "block_tree_index_map",
     "cross_attn_persist_bytes",
-    "op_cross_attn_surcharge",
+    "estimate_cpu_footprint",
+    "estimate_peak",
     "hot_iter_peak_cap",
+    "op_cross_attn_surcharge",
 ]

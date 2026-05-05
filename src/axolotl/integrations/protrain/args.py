@@ -444,27 +444,44 @@ class ProTrainArgs(BaseModel):
                 "gradient_checkpointing=false or remove the ProTrain plugin."
             )
         tp_size = data.get("tensor_parallel_size")
-        if tp_size is not None and int(tp_size) > 1:
-            raise ValueError(
-                "ProTrain is incompatible with tensor_parallel_size > 1 "
-                "(scope-excluded per plan.md — the chunk layout does not shard "
-                "across TP ranks in this milestone). Set tensor_parallel_size=1 "
-                "or remove the ProTrain plugin."
-            )
+        if tp_size is not None:
+            try:
+                tp_size_int = int(tp_size)
+            except (TypeError, ValueError):
+                # Non-numeric value (e.g., "auto") — let Pydantic surface
+                # the type error from its own field validators.
+                tp_size_int = None
+            if tp_size_int is not None and tp_size_int > 1:
+                raise ValueError(
+                    "ProTrain is incompatible with tensor_parallel_size > 1 "
+                    "(scope-excluded per plan.md — the chunk layout does not shard "
+                    "across TP ranks in this milestone). Set tensor_parallel_size=1 "
+                    "or remove the ProTrain plugin."
+                )
         cp_size = data.get("context_parallel_size")
-        if cp_size is not None and int(cp_size) > 1:
-            raise ValueError(
-                "ProTrain is incompatible with context_parallel_size > 1 "
-                "(scope-excluded per plan.md — single-3090 target). Set "
-                "context_parallel_size=1 or remove the ProTrain plugin."
-            )
+        if cp_size is not None:
+            try:
+                cp_size_int = int(cp_size)
+            except (TypeError, ValueError):
+                cp_size_int = None
+            if cp_size_int is not None and cp_size_int > 1:
+                raise ValueError(
+                    "ProTrain is incompatible with context_parallel_size > 1 "
+                    "(scope-excluded per plan.md — single-3090 target). Set "
+                    "context_parallel_size=1 or remove the ProTrain plugin."
+                )
         sp_degree = data.get("sequence_parallel_degree")
-        if sp_degree is not None and int(sp_degree) > 1:
-            raise ValueError(
-                "ProTrain is incompatible with sequence_parallel_degree > 1 "
-                "(scope-excluded per plan.md — single-3090 target). Set "
-                "sequence_parallel_degree=1 or remove the ProTrain plugin."
-            )
+        if sp_degree is not None:
+            try:
+                sp_degree_int = int(sp_degree)
+            except (TypeError, ValueError):
+                sp_degree_int = None
+            if sp_degree_int is not None and sp_degree_int > 1:
+                raise ValueError(
+                    "ProTrain is incompatible with sequence_parallel_degree > 1 "
+                    "(scope-excluded per plan.md — single-3090 target). Set "
+                    "sequence_parallel_degree=1 or remove the ProTrain plugin."
+                )
         if data.get("load_in_8bit"):
             raise ValueError(
                 "ProTrain is incompatible with load_in_8bit=true (bitsandbytes "

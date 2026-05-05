@@ -190,12 +190,17 @@ def uninstall_hooks(handles: list["RemovableHandle"]) -> None:
     Safe to call multiple times — ``RemovableHandle.remove`` is
     idempotent in modern PyTorch.
     """
+    failed: list["RemovableHandle"] = []
     for h in handles:
         try:
             h.remove()
         except Exception as exc:  # noqa: BLE001 — best-effort removal
             LOG.warning("uninstall_hooks: handle.remove() failed: %s", exc)
-    handles.clear()
+            failed.append(h)
+    # Retain handles whose .remove() raised so a future cleanup /
+    # re-install pass can try again; clearing them unconditionally
+    # would leak the only reference to a still-installed hook.
+    handles[:] = failed
 
 
 __all__ = ["install_hooks", "uninstall_hooks"]

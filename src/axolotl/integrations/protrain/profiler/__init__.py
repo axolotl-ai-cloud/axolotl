@@ -40,8 +40,8 @@ def reconstruct_peak_bytes(trace: ProfilerTrace) -> int:
     This is intentionally cruder than the full Eqs. 8-11 from the ProTrain
     paper (per-block retained-vs-checkpoint-vs-swap decisions, alpha=1.10
     fragmentation, bumps at the first op of each CKPT block). The full
-    reconstruction lives in M4 ``cost/memory.py``; until that module exists
-    we only need a peak estimate that matches ``torch.cuda.max_memory_allocated()``
+    reconstruction lives in ``cost/memory.py:estimate_peak``; this simplified
+    version provides a peak estimate that matches ``torch.cuda.max_memory_allocated()``
     within ~10 percent on a tiny model with no optimizations enabled, because
     both numbers track the same physical quantity when every block is NONE.
     """

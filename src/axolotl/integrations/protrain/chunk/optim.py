@@ -208,9 +208,26 @@ class CpuFusedAdamAdapter:
         fut.result()  # re-raises worker exceptions on the caller's thread
 
     def wait_all(self) -> None:
-        """Block until every in-flight chunk step has finished."""
+        """Block until every in-flight chunk step has finished.
+
+        Every pending future is awaited even if one raises, so gradient
+        computation is not left in an incomplete state. The first captured
+        exception is re-raised after all futures have been awaited; any
+        additional exceptions are logged.
+        """
+        errors: list[BaseException] = []
         for fut in list(self._pending.values()):
-            fut.result()
+            try:
+                fut.result()
+            except BaseException as exc:  # noqa: BLE001 — re-raised below
+                errors.append(exc)
+        if errors:
+            if len(errors) > 1:
+                LOG.error(
+                    "wait_all: %d additional errors suppressed",
+                    len(errors) - 1,
+                )
+            raise errors[0]
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         """Zero gradients across every chunk's params."""

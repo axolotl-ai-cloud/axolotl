@@ -1,11 +1,13 @@
-"""ProTrain 4-knob searcher (M4).
+"""ProTrain 5-knob searcher (M4).
 
 Public surface:
 
-- ``derive_bounds`` — upper bounds on the four tunable knobs.
-- ``search`` — exhaustive enumeration with OOM pruning; returns the
-  minimum-runtime ``SearchResult`` that fits under the given GPU
-  capacity.
+- ``derive_bounds`` — upper bounds on the five tunable knobs
+  (including ``n_offload`` — the OFFLOAD axis).
+- ``search`` — exhaustive enumeration with OOM pruning over all five
+  knobs (``n_persist``, ``n_swap``, ``n_ckpt``, ``n_offload``,
+  ``micro_bs``); returns the minimum-runtime ``SearchResult`` that fits
+  under the given GPU capacity.
 """
 
 from __future__ import annotations

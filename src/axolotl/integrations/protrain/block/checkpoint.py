@@ -51,13 +51,6 @@ class CheckpointedBlock(nn.Module):
         # because the recompute calls ``self.block`` directly and does
         # not pass through hooks attached to this wrapper module.
         self._protrain_recompute_pre_hook: Callable[[], None] | None = None
-        # Per-call counter on the wrapper. ``torch.utils.checkpoint`` invokes
-        # the closure ``_run`` twice per top-level forward when activations
-        # are dropped: once during the initial forward (count == 1) and once
-        # during the backward replay / recompute pass (count >= 2). The
-        # counter is reset at the top of every ``forward()`` call so the
-        # signal is local to a single block invocation.
-        self._fwd_call_count: int = 0
 
     def set_recompute_pre_hook(self, hook: Callable[[], None] | None) -> None:
         """Install a callback run before recompute (backward) forwards only.
@@ -77,18 +70,22 @@ class CheckpointedBlock(nn.Module):
         # the wrapped callable. Capture kwargs in a closure so HF blocks that
         # rely on e.g. attention_mask= still see them.
         block = self.block
-        # Reset per-top-level-forward call count. ``_run`` increments this
-        # on every entry; count == 1 is the initial forward, count >= 2 is
-        # the recompute replay during backward. The recompute hook fires
-        # only on the latter.
-        self._fwd_call_count = 0
+        # Per-invocation call counter captured by the ``_run`` closure.
+        # ``torch.utils.checkpoint`` invokes ``_run`` twice per top-level
+        # forward when activations are dropped: once during the initial
+        # forward (count == 1) and once during the backward replay /
+        # recompute pass (count >= 2). Keeping the counter local to this
+        # ``forward()`` invocation avoids cross-talk when the same wrapped
+        # block is called multiple times before backward.
+        fwd_call_count = 0
 
         def _run(*inner_args: Any) -> Any:
-            self._fwd_call_count += 1
+            nonlocal fwd_call_count
+            fwd_call_count += 1
             # Skip the hook on the initial forward (count == 1): the
             # wrapper's forward-pre hooks have already gathered this
             # block's params. Fire only on recompute (count >= 2).
-            if self._fwd_call_count >= 2:
+            if fwd_call_count >= 2:
                 hook = self._protrain_recompute_pre_hook
                 if hook is not None:
                     hook()

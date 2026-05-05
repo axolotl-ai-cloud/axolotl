@@ -63,6 +63,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -159,15 +160,12 @@ def _broadcast_status_or_raise(status: int, *, src: int, op: str) -> None:
     and synthesize a ``RuntimeError`` so the cluster fails in lockstep
     instead of deadlocking on the trailing barrier.
 
-    No-op (with the source rank's ``status`` short-circuit-raised) when
-    dist is not initialised.
+    No-op when dist is not initialised: in single-rank runs the local
+    exception is already propagating from the caller's ``finally``-
+    bracketed ``except: raise``, so synthesizing a generic RuntimeError
+    here would only stomp the actionable underlying traceback.
     """
     if not _dist_is_active():
-        if status != 0:
-            raise RuntimeError(
-                f"ProTrain optimizer {op}: rank {src} reported non-zero status "
-                "(see preceding traceback for the underlying error)."
-            )
         return
     flag = _dist_status_tensor(status)
     torch.distributed.broadcast(flag, src=src)
@@ -194,13 +192,13 @@ def _allreduce_status_or_raise(status: int, *, op: str) -> None:
     rank contributes its local 0/1 status; if the sum is non-zero, every
     rank raises so the cluster fails in lockstep instead of deadlocking
     on the trailing barrier.
+
+    No-op when dist is not initialised: in single-rank runs the local
+    exception is already propagating from the caller's ``except: raise``,
+    so synthesizing a generic RuntimeError here would only stomp the
+    actionable underlying traceback.
     """
     if not _dist_is_active():
-        if status != 0:
-            raise RuntimeError(
-                f"ProTrain optimizer {op}: local rank reported non-zero "
-                "status (see preceding traceback for the underlying error)."
-            )
         return
     flag = _dist_status_tensor(status)
     torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.SUM)
@@ -694,7 +692,14 @@ def _save_protrain_optim_dir(
         rank0_status = 0
         try:
             if rank == 0:
-                os.makedirs(target, exist_ok=True)
+                # Reset the dir before reusing it: a partial save or a
+                # replayed ``checkpoint-<step>`` could otherwise leave
+                # stale ``gpu_optim.pt`` / ``cpu_optim/*.pt`` files
+                # behind, and the load side treats those extras as hard
+                # mismatches (so a retry could leave an otherwise-good
+                # save unloadable).
+                shutil.rmtree(target, ignore_errors=True)
+                os.makedirs(target, exist_ok=False)
 
                 _fp = _build_layout_fingerprint(chunk_manager, world_size, zero3_shard)
                 metadata = {
@@ -808,7 +813,13 @@ def _save_protrain_optim_dir(
     rank0_status = 0
     try:
         if rank == 0:
-            os.makedirs(target, exist_ok=True)
+            # Reset the dir before reusing it: a partial save or a
+            # replayed ``checkpoint-<step>`` could otherwise leave
+            # stale ``gpu_optim.pt`` / ``cpu_optim/*.pt`` files behind,
+            # and the load side treats those extras as hard mismatches
+            # (so a retry could leave an otherwise-good save unloadable).
+            shutil.rmtree(target, ignore_errors=True)
+            os.makedirs(target, exist_ok=False)
 
             metadata = {
                 "format_version": SCHEMA_FORMAT_VERSION,
@@ -1657,49 +1668,81 @@ def _make_callback_class():
                 _barrier_or_noop()
                 return control
 
-            # ---------- 1. Drain CPU adam on every rank ----------
-            chunk_manager.wait_cpu_optim_all()
+            # ---------- 1-3. Pre-save preamble under lockstep protocol ----------
+            # Failure protocol: ``wait_cpu_optim_all()``, rank-0's
+            # ``_estimate_optim_state_bytes`` size estimate, and the
+            # one-shot ``_verify_replicated_state_across_ranks`` all run
+            # before the first synchronized status exchange. If any of
+            # those raises on only a subset of ranks, surviving ranks
+            # would wedge in ``_broadcast_object_list_or_noop``,
+            # ``all_gather_object``, or the trailing ``_barrier_or_noop``.
+            # All-reduce a SUM of per-rank statuses around the whole
+            # preamble; any rank's failure propagates to every rank so
+            # the cluster fails in lockstep. ``skip_decision`` and
+            # ``self._verify_replicated_done`` are only committed after
+            # the synchronized status check confirms every rank
+            # succeeded.
+            preamble_status = 0
+            skip = False
+            verify_fired = False
+            estimate = 0
+            try:
+                # ---------- 1. Drain CPU adam on every rank ----------
+                chunk_manager.wait_cpu_optim_all()
 
-            # ---------- 2. Estimate-gate broadcast ----------
-            # Rank-0 decides; all ranks act on rank-0's decision. The
-            # broadcast is a no-op on single-rank runs.
-            if rank == 0:
-                estimate = _estimate_optim_state_bytes(raw)
-                skip = estimate > self._save_max_bytes
-                if skip:
-                    LOG.warning(
-                        "ProTrain optimizer save: estimated %d bytes "
-                        "(~%.2f GiB) exceeds protrain_optim_save_max_bytes="
-                        "%d (~%.2f GiB) — skipping save (decision "
-                        "broadcast to %d ranks).",
-                        estimate,
-                        estimate / 1024**3,
-                        self._save_max_bytes,
-                        self._save_max_bytes / 1024**3,
-                        world_size,
-                    )
-            else:
-                skip = False  # placeholder, will be overwritten by broadcast
+                # ---------- 2. Estimate-gate (rank-0 decides) ----------
+                if rank == 0:
+                    estimate = _estimate_optim_state_bytes(raw)
+                    skip = estimate > self._save_max_bytes
+                    if skip:
+                        LOG.warning(
+                            "ProTrain optimizer save: estimated %d bytes "
+                            "(~%.2f GiB) exceeds protrain_optim_save_max_bytes="
+                            "%d (~%.2f GiB) — skipping save (decision "
+                            "broadcast to %d ranks).",
+                            estimate,
+                            estimate / 1024**3,
+                            self._save_max_bytes,
+                            self._save_max_bytes / 1024**3,
+                            world_size,
+                        )
+
+                # ---------- 3. Cross-rank verify (opt-in, once per run) ----------
+                # Mode-B only: in Mode-C every rank's inner state
+                # intentionally differs (per-rank shard), so cross-rank
+                # hashing would falsely raise. The schema documents "Has
+                # no effect on single-rank or ZeRO-3 sharded runs" —
+                # ``world_size > 1`` covers single-rank; ``not
+                # zero3_shard`` covers Mode-C.
+                if (
+                    self._verify_replicated
+                    and not self._verify_replicated_done
+                    and world_size > 1
+                    and not zero3_shard
+                ):
+                    _verify_replicated_state_across_ranks(raw, world_size=world_size)
+                    verify_fired = True
+            except Exception:
+                preamble_status = 1
+                raise
+            finally:
+                _allreduce_status_or_raise(
+                    preamble_status, op="save (pre-save preamble)"
+                )
+
+            # Commit one-shot verify state only after the synchronized
+            # status check confirmed every rank's preamble succeeded.
+            if verify_fired:
+                self._verify_replicated_done = True
+
+            # ---------- 2b. Broadcast skip decision ----------
+            # Rank-0's gate decision goes out to every rank; non-rank-0
+            # writes a placeholder that the broadcast overwrites.
             skip_decision = [skip]
             _broadcast_object_list_or_noop(skip_decision, src=0)
             if skip_decision[0]:
                 _barrier_or_noop()
                 return control
-
-            # ---------- 3. Cross-rank verify (opt-in, once per run) ----------
-            # Mode-B only: in Mode-C every rank's inner state intentionally
-            # differs (per-rank shard), so cross-rank hashing would falsely
-            # raise. The schema documents "Has no effect on single-rank or
-            # ZeRO-3 sharded runs" — `world_size > 1` covers single-rank;
-            # `not zero3_shard` covers Mode-C.
-            if (
-                self._verify_replicated
-                and not self._verify_replicated_done
-                and world_size > 1
-                and not zero3_shard
-            ):
-                _verify_replicated_state_across_ranks(raw, world_size=world_size)
-                self._verify_replicated_done = True
 
             # ---------- 4. Write per-mode ----------
             # Mode-B: rank-0 writes everything; non-zero ranks return
@@ -1779,29 +1822,52 @@ def install_load_hook(
     original = trainer._load_optimizer_and_scheduler
 
     def _patched(checkpoint: str | None) -> None:
-        original(checkpoint)
-        if checkpoint is None:
-            return
+        # Failure protocol: ``original(checkpoint)`` (the native HF
+        # optimizer/scheduler load) is outside any cluster-wide status
+        # handling, but the patched method still executes a distributed
+        # barrier on the success path. If the native HF load fails on
+        # one rank only, surviving ranks would otherwise wedge on the
+        # trailing barrier. Wrap ``original`` in try/except, capture
+        # ``sys.exc_info()`` so the original traceback is preserved,
+        # only run ``_load_protrain_optim_dir`` on the success path,
+        # always run the lockstep barrier, then re-raise the captured
+        # exception after the barrier so the cluster fails in lockstep.
+        original_exc_info: Any = None
         try:
-            _load_protrain_optim_dir(
-                raw,
-                checkpoint,
-                allow_online_reshard=allow_online_reshard,
-            )
+            original(checkpoint)
         except Exception:
-            LOG.exception(
-                "ProTrain optimizer load failed from %s — re-raising. "
-                "If you intended to discard the saved state, set "
-                "protrain_save_optimizer_state=False and remove the "
-                "protrain_optim/ subdirectory from the checkpoint.",
-                checkpoint,
-            )
-            raise
+            original_exc_info = sys.exc_info()
+
+        if original_exc_info is None and checkpoint is not None:
+            try:
+                _load_protrain_optim_dir(
+                    raw,
+                    checkpoint,
+                    allow_online_reshard=allow_online_reshard,
+                )
+            except Exception:
+                LOG.exception(
+                    "ProTrain optimizer load failed from %s — re-raising. "
+                    "If you intended to discard the saved state, set "
+                    "protrain_save_optimizer_state=False and remove the "
+                    "protrain_optim/ subdirectory from the checkpoint.",
+                    checkpoint,
+                )
+                # Run the lockstep barrier before re-raising so a
+                # ProTrain-load failure on one rank doesn't wedge the
+                # cluster on the next collective.
+                _barrier_or_noop()
+                raise
         # Defensive barrier: every rank loaded its own copy of the
         # files; the barrier just ensures the cluster moves past the
         # load slot in lockstep before training resumes. Cheap on
         # single-rank (no-op).
         _barrier_or_noop()
+        if original_exc_info is not None:
+            # Re-raise the original HF load failure with its original
+            # traceback intact, AFTER the barrier so surviving ranks
+            # don't wedge.
+            raise original_exc_info[1].with_traceback(original_exc_info[2])
 
     trainer._load_optimizer_and_scheduler = _patched  # type: ignore[method-assign]
 

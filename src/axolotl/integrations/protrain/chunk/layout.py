@@ -93,13 +93,35 @@ def build_layout(
             )
 
     # Validate block_spans entries up front: every ParamId referenced by any
-    # block must exist in the model. Without this check, an unknown ParamId
-    # would be silently skipped on the per-iteration ``param_sizes[pid]``
-    # lookup path (or worse, raise deep inside the placement loop with a
-    # confusing traceback). Fail fast at the API boundary instead.
+    # block must exist in the model, and no ParamId may belong to two blocks.
+    # Without these checks, an unknown ParamId would be silently skipped on
+    # the per-iteration ``param_sizes[pid]`` lookup path (or worse, raise
+    # deep inside the placement loop with a confusing traceback), and an
+    # overlapping ParamId would be silently assigned to the first block by
+    # ``_block_of()`` so ``block_to_chunks`` would no longer reflect the
+    # caller's spans. Fail fast at the API boundary instead.
     block_referenced: set[ParamId] = set()
-    for params in block_spans.values():
-        block_referenced.update(params)
+    pid_owner: dict[ParamId, BlockId] = {}
+    overlaps: dict[ParamId, list[BlockId]] = {}
+    for block_id, params in block_spans.items():
+        for pid in params:
+            prior = pid_owner.get(pid)
+            if prior is not None and prior != block_id:
+                bucket = overlaps.setdefault(pid, [prior])
+                if block_id not in bucket:
+                    bucket.append(block_id)
+            else:
+                pid_owner[pid] = block_id
+            block_referenced.add(pid)
+    if overlaps:
+        overlap_sorted = sorted(
+            f"{pid!r} -> [{', '.join(repr(b) for b in bids)}]"
+            for pid, bids in overlaps.items()
+        )
+        raise ValueError(
+            "block_spans contains param(s) assigned to multiple blocks: "
+            + "; ".join(overlap_sorted)
+        )
     missing_block_pids = block_referenced - param_sizes.keys()
     if missing_block_pids:
         missing_sorted = sorted(repr(p) for p in missing_block_pids)

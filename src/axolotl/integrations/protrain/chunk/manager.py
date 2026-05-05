@@ -2342,6 +2342,26 @@ class ChunkManager:
                     total += int(region.cpu_shard_grad_bytes.numel())
         return total
 
+    def replicated_cpu_bytes(self) -> int:
+        """Total pinned CPU bytes this rank holds in replicated (non-sharded) mode.
+
+        Sums ``(numel * element_size)`` for every per-param ``cpu_data``
+        and ``cpu_grad`` slot across every non-persistent chunk. Mirrors
+        :meth:`per_rank_cpu_bytes` (which is for ZeRO-3-style sharding)
+        for the replicated-offload layout where every rank holds the
+        full chunk in pinned host memory. Used by benchmark scripts so
+        they do not have to reach into the private ``_cpu_slots``
+        mapping.
+        """
+        total = 0
+        for slots in self._cpu_slots.values():
+            for s in slots:
+                if s.cpu_data is not None:
+                    total += s.numel * s.element_size
+                if s.cpu_grad is not None:
+                    total += s.numel * s.element_size
+        return total
+
     # ---- internals -----------------------------------------------------
 
     def _ensure_persistent_buffer(self, chunk_id: ChunkId) -> "torch.Tensor":

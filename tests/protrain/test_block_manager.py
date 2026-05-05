@@ -12,9 +12,12 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.integrations.protrain.chunk import ChunkManager
@@ -391,8 +394,13 @@ def test_monotonic_memory_reduction_sweep() -> None:
         for h in cast("list[Any]", probe._hook_handles):
             try:
                 h.remove()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 — best-effort cleanup
+                logger.debug(
+                    "Failed to remove hook %s during test cleanup: %s",
+                    h,
+                    e,
+                    exc_info=True,
+                )
         del probe
         torch.cuda.empty_cache()
         torch.cuda.synchronize()

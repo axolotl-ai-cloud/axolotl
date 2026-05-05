@@ -161,7 +161,7 @@ def test_protrain_optimizer_zero_grad_and_step_shapes(gpu_device):  # noqa: ARG0
 
 @pytest.mark.gpu
 @pytest.mark.skipif(not _SEARCH_AVAILABLE, reason=_SEARCH_SKIP_REASON)
-def test_protrain_wrapper_raises_if_capacity_too_small():
+def test_protrain_wrapper_raises_if_capacity_too_small(gpu_device):  # noqa: ARG001 — fixture activates CUDA masking
     """An absurdly small ``capacity_bytes`` forces the searcher to raise."""
     pytest.importorskip("torch")
     import torch

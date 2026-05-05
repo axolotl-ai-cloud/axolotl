@@ -280,18 +280,10 @@ _WORKER_SCRIPT = textwrap.dedent(
         if mode == "zero3":
             cpu_pinned = int(chunk_manager.per_rank_cpu_bytes())
         elif mode == "replicated":
-            total = 0
-            # Iterate every non-persistent chunk's slots; replicated
-            # mode holds the full chunk on every rank, so sum
-            # (numel * element_size) over every slot with a non-None
-            # ``cpu_data`` tensor.
-            for cid, slots in chunk_manager._cpu_slots.items():
-                for s in slots:
-                    if s.cpu_data is not None:
-                        total += s.numel * s.element_size
-                    if s.cpu_grad is not None:
-                        total += s.numel * s.element_size
-            cpu_pinned = total
+            # Replicated mode holds the full chunk on every rank.
+            # Use the public accessor (mirrors per_rank_cpu_bytes for
+            # ZeRO-3 sharded layout) instead of touching ``_cpu_slots``.
+            cpu_pinned = int(chunk_manager.replicated_cpu_bytes())
         else:
             cpu_pinned = 0
 

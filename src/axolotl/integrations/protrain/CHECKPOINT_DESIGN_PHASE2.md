@@ -645,8 +645,10 @@ implementation. They are recorded here for historical context; the
 decisions below are what shipped on
 `protrain-optim-checkpoint-phase2-mode-c`.
 
-1. **World-size mismatch policy (§4.1).** Chose Option B (allowed
-   for replicated, hard error for sharded).
+1. **World-size mismatch policy (§4.1).** Chose Option B: replicated
+   world-size changes are allowed; sharded world-size changes are a
+   hard error unless resolved via the offline reshard tool or the
+   opt-in online reshard mechanism described in §4.1.
 
 2. **Forward compat for v1 saves (§5).** Chose YES — the v2 loader
    accepts v1 saves as `replicated`/`world_size=1` in ~10 lines.
