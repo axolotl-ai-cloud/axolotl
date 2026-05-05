@@ -76,6 +76,7 @@ _WORKER_SCRIPT = textwrap.dedent(
     import os
     import sys
     import time
+    from datetime import timedelta
 
     import torch
     import torch.distributed as dist
@@ -96,11 +97,16 @@ _WORKER_SCRIPT = textwrap.dedent(
 
         torch.cuda.set_device(rank)
         if world_size > 1:
+            # Bound NCCL rendezvous so a stuck rank fails fast instead
+            # of hanging the whole benchmark up to the parent's 30-min
+            # subprocess timeout. 5 min is generous for a localhost
+            # process group on this rig (typically completes in <2s).
             dist.init_process_group(
                 backend="nccl",
                 rank=rank,
                 world_size=world_size,
                 device_id=torch.device("cuda", rank),
+                timeout=timedelta(minutes=5),
             )
         try:
             _run(rank, world_size, out_dir, mode, bs, seq, n_iters, n_warmup)

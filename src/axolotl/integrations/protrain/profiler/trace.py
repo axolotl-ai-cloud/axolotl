@@ -820,6 +820,10 @@ def run_trace(
                             bwd_exc,
                         )
                         bwd_iter_s.clear()  # drop partial measurements
+                        # Clear any partially materialized grads so the next
+                        # iter's forward peak/time isn't measured against an
+                        # inflated baseline (and doesn't OOM spuriously).
+                        model.zero_grad(set_to_none=True)
                         # Don't raise — continue forward timing
                 del steady_out
                 torch.cuda.synchronize(device)

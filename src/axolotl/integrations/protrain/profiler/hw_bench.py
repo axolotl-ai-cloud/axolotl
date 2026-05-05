@@ -522,9 +522,9 @@ def measure_nccl(
         # device guard (cheaper than entering on each iter, equally correct).
         gather_times: list[float] = []
         with torch.cuda.device(device_idx):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
             for _ in range(n_iters):
-                start = torch.cuda.Event(enable_timing=True)
-                end = torch.cuda.Event(enable_timing=True)
                 start.record()
                 dist.all_gather_into_tensor(gathered, shard)
                 end.record()
@@ -551,9 +551,9 @@ def measure_nccl(
         # device guard (cheaper than entering on each iter, equally correct).
         reduce_times: list[float] = []
         with torch.cuda.device(device_idx):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
             for _ in range(n_iters):
-                start = torch.cuda.Event(enable_timing=True)
-                end = torch.cuda.Event(enable_timing=True)
                 start.record()
                 dist.reduce_scatter_tensor(reduced, full_payload)
                 end.record()

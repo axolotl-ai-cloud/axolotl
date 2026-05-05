@@ -206,6 +206,10 @@ def measure_chunked_steady(
         raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
 
     with torch.cuda.device(device):
+        # Start from a clean grad state so leftover grads from prior
+        # trace work (e.g. the phase-1 profile pass) cannot pollute
+        # the first warmup step's peak-memory and timing samples.
+        optimizer.zero_grad(set_to_none=True)
         # Warmup — discard timings.
         for _ in range(n_warmup):
             out = model(**batch)
@@ -215,6 +219,11 @@ def measure_chunked_steady(
             optimizer.zero_grad(set_to_none=True)
         torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
+        # Re-zero after the peak-stats reset: warmup left grads at
+        # ``None`` already, but be explicit so the timed loop's first
+        # iteration always starts from the same grad state regardless
+        # of ``n_warmup``.
+        optimizer.zero_grad(set_to_none=True)
 
         fwd_times_s: list[float] = []
         bwd_times_s: list[float] = []

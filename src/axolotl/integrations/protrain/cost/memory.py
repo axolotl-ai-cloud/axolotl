@@ -156,9 +156,11 @@ def cross_attn_persist_bytes(
       final block already includes the hidden-state output that gets
       passed to the decoder; it's strictly larger than the
       cross-attn-only saved-state.
-    - When that block is in NONE mode the bytes are already counted in
-      :func:`estimate_peak`'s ``live_none`` accumulator, so we return
-      ``0`` to avoid double-counting.
+    - When that block is in NONE or OFFLOAD mode the bytes are already
+      counted in :func:`estimate_peak`'s ``live_none`` accumulator
+      (OFFLOAD retains forward activations on GPU symmetrically to
+      NONE — see the ``retained_none_bytes`` / ``cumulative_none``
+      construction below), so we return ``0`` to avoid double-counting.
     - When that block is in CKPT or SWAP mode its activations are not
       in ``live_none``; CKPT discards the BLOCK INTERNALS but the
       OUTPUT hidden tensor passed to the decoder cannot be discarded
@@ -177,8 +179,11 @@ def cross_attn_persist_bytes(
         return 0
     last_enc_bid = encoder_bids[-1]
     last_enc_mode = block_map.get(last_enc_bid, BlockMode.NONE)
-    if last_enc_mode is BlockMode.NONE:
+    if last_enc_mode is BlockMode.NONE or last_enc_mode is BlockMode.OFFLOAD:
         # Already counted in retained_none_bytes; avoid double-counting.
+        # OFFLOAD retains forward activations on GPU like NONE (the
+        # OFFLOAD-only bump is the per-block backward chunk gather,
+        # tracked separately via ``offload_bump_op`` in estimate_peak).
         return 0
     return int(trace.activation_sizes.get(last_enc_bid, 0))
 
@@ -458,8 +463,9 @@ def estimate_peak(
        full activation bytes are not in ``live_none``, but the output
        hidden tensor still IS retained for cross-attn — so we add
        ``cross_attn_persist_bytes`` as a per-decoder-op surcharge.
-       When the encoder's last block is NONE the bytes are already in
-       ``live_none``; the helper returns 0 to avoid double-counting.
+       When the encoder's last block is NONE or OFFLOAD the bytes are
+       already in ``live_none`` (OFFLOAD retains forward activations
+       on GPU like NONE); the helper returns 0 to avoid double-counting.
     3. **Backward sequencing:** decoder backward runs to completion
        before encoder backward starts. The forward-driven peak we
        compute here is naturally an upper bound on the backward peak

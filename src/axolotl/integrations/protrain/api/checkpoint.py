@@ -768,6 +768,19 @@ def _save_protrain_optim_dir(
         try:
             if optim._cpu_optim is not None and optim._cpu_optim._optims:
                 cpu_dir = os.path.join(target, CPU_OPTIM_DIRNAME)
+                # Require the rank-0 checkpoint tree to be visible on every
+                # rank before writing shards. If ``target`` is missing on a
+                # non-zero rank, ``output_dir`` is not actually a shared
+                # filesystem and an implicit ``makedirs`` would manufacture a
+                # local shard dir whose chunk_<N>_rank_<R>.pt files would be
+                # invisible to rank 0 -- the save would look successful but
+                # be unresumable. Fail loudly instead.
+                if not os.path.isdir(target):
+                    raise RuntimeError(
+                        f"ProTrain optimizer save: checkpoint directory "
+                        f"{target!r} is not visible on rank {rank}. Mode-C "
+                        "saves require a shared filesystem across all ranks."
+                    )
                 # Defensive mkdir on every rank in case dist isn't actually
                 # initialized (single-rank zero3_shard "test mode" run that
                 # falls back to replicated behaviour but still wants the

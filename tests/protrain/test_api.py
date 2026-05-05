@@ -134,9 +134,10 @@ def test_protrain_optimizer_zero_grad_and_step_shapes(gpu_device):  # noqa: ARG0
 
     optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
 
-    # Snapshot a parameter pre-step for the "parameters change" assertion.
-    (name, param) = next(iter(model.named_parameters()))
-    before = param.detach().clone()
+    # Snapshot trainable parameters pre-step for the "parameters change" assertion.
+    before = {
+        n: p.detach().clone() for n, p in model.named_parameters() if p.requires_grad
+    }
 
     # Build a trivial batch and run fwd + bwd.
     input_ids = torch.randint(0, 128, (2, 128), device=device, dtype=torch.long)
@@ -146,12 +147,12 @@ def test_protrain_optimizer_zero_grad_and_step_shapes(gpu_device):  # noqa: ARG0
     out.loss.backward()
     optim.step()
 
-    after = param.detach()
-    changed = not torch.allclose(before, after)
-    assert changed, (
-        f"parameter {name!r} unchanged after optim.step() — "
-        "update path did not reach it"
+    changed = any(
+        not torch.allclose(before[n], p.detach())
+        for n, p in model.named_parameters()
+        if p.requires_grad
     )
+    assert changed, "no trainable parameter changed after optim.step()"
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,7 @@ matching the SWAP wrapper's degradation behavior.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -132,16 +133,20 @@ class _ParamHandle:
     stride: tuple[int, ...]  # in elements of dtype
     dtype: torch.dtype
     requires_grad: bool
-    #: ``id()`` of the chunk manager active when ``_pack`` recorded the
-    #: handle. ``_unpack`` cross-checks against the currently-attached
-    #: manager: if they differ, the wrapper was detached and re-attached
-    #: with a different manager between forward and backward, and the
-    #: handle's ``ChunkId`` would resolve against unrelated storage on
-    #: the new manager. Capturing ``id()`` (rather than holding a strong
-    #: reference) avoids extending the prior manager's lifetime past
-    #: its detach; the integer is stable for the duration the manager
-    #: object is alive, which is exactly the window during which any
-    #: outstanding handle could plausibly be unpacked.
+    #: Monotonic attach-epoch token of the chunk manager active when
+    #: ``_pack`` recorded the handle. ``_unpack`` cross-checks against
+    #: the currently-attached wrapper epoch: if they differ, the
+    #: wrapper was detached and re-attached (possibly with a different
+    #: manager) between forward and backward, and the handle's
+    #: ``ChunkId`` would resolve against unrelated storage on the new
+    #: manager. We use a process-wide monotonic counter
+    #: (``OffloadedBlock._next_attach_token``) rather than ``id(mgr)``
+    #: because ``id()`` is the address of a live object: after
+    #: ``detach_runtime()`` the prior manager can be GC'd and Python is
+    #: free to reuse that address for the next manager, in which case
+    #: a stale ``_ParamHandle`` would silently pass the guard. The
+    #: monotonic token is unique for the lifetime of the process and
+    #: never recycled.
     runtime_id: int
 
 
@@ -163,6 +168,19 @@ class OffloadedBlock(nn.Module):
     #: not consulted by ``_pack``. See module-level docstring.
     SIZE_THRESHOLD_BYTES: int = SIZE_THRESHOLD_BYTES
 
+    #: Process-wide monotonic counter handing out attach-epoch tokens.
+    #: Each ``attach_runtime()`` call draws a fresh token; the token is
+    #: stamped into every ``_ParamHandle`` produced by ``_pack`` and
+    #: cross-checked by ``_unpack`` to detect detach + re-attach
+    #: between forward and backward. Unlike ``id(chunk_manager)``, the
+    #: token is never recycled, so a stale handle cannot collide with
+    #: a freshly-allocated manager that happens to land at the prior
+    #: manager's address. ``itertools.count()`` advances atomically
+    #: under the GIL on a single ``next()`` call, so concurrent
+    #: ``attach_runtime`` calls on distinct wrappers always observe
+    #: distinct tokens.
+    _next_attach_token = itertools.count(1)
+
     def __init__(self, block: nn.Module) -> None:
         """Wrap ``block`` in identity-mode; runtime wired by :meth:`attach_runtime`."""
         super().__init__()
@@ -171,13 +189,15 @@ class OffloadedBlock(nn.Module):
         self._chunk_manager: "ChunkManager | None" = None
         self._scheduler: Any = None  # M3 owns the scheduler interface contract
         self._warned_no_runtime = False
-        #: ``id()`` of the currently-attached chunk manager, or ``None``
-        #: when detached. Stamped into every ``_ParamHandle`` produced
-        #: by ``_pack`` and cross-checked by ``_unpack`` to detect a
-        #: detach + re-attach-with-a-different-manager between forward
-        #: and backward (the in-flight ``attach_runtime`` swap is
-        #: rejected outright; this guards the detach-then-re-attach
-        #: variant where the in-flight check no longer fires).
+        #: Monotonic attach-epoch token of the currently-attached chunk
+        #: manager, or ``None`` when detached. Stamped into every
+        #: ``_ParamHandle`` produced by ``_pack`` and cross-checked by
+        #: ``_unpack`` to detect a detach + re-attach-with-a-different-
+        #: manager between forward and backward (the in-flight
+        #: ``attach_runtime`` swap is rejected outright; this guards
+        #: the detach-then-re-attach variant where the in-flight check
+        #: no longer fires). See ``_next_attach_token`` for why we
+        #: prefer a monotonic counter over ``id(mgr)``.
         self._runtime_id: int | None = None
 
     def attach_runtime(
@@ -210,9 +230,17 @@ class OffloadedBlock(nn.Module):
                 "forward/backward boundaries when no saved-tensor "
                 "handles are outstanding."
             )
+        # Draw a fresh monotonic token only on a genuine attach (first
+        # attach, or attach after a detach). The idempotent
+        # same-manager re-attach path (documented contract above) must
+        # NOT bump the epoch — any in-flight ``_ParamHandle`` from a
+        # prior forward references the same manager's storage map and
+        # is still valid; bumping the token would falsely flag those
+        # handles as stale at backward time.
+        if self._chunk_manager is None:
+            self._runtime_id = next(OffloadedBlock._next_attach_token)
         self._chunk_manager = chunk_manager
         self._scheduler = scheduler
-        self._runtime_id = id(chunk_manager)
 
     def detach_runtime(self) -> None:
         """Drop the manager reference — wrapper degrades to identity."""
@@ -313,6 +341,13 @@ class OffloadedBlock(nn.Module):
         # handle. Autograd's saved-tensor table now holds only the
         # handle — the underlying GPU storage becomes collectible the
         # moment the scheduler issues offload(chunk_id) post-forward.
+        # Stamp the wrapper's monotonic attach-epoch token rather than
+        # ``id(mgr)``. The token cannot be recycled across a
+        # detach/re-attach cycle, so a stale handle whose recorded
+        # token differs from the current ``self._runtime_id`` is
+        # detected unconditionally. ``mgr is not None`` here because
+        # the cold-path guard above already returned if the manager
+        # was detached, so ``self._runtime_id`` is non-``None``.
         return _ParamHandle(
             chunk_id=chunk_id,
             storage_offset=storage_offset,
@@ -320,7 +355,7 @@ class OffloadedBlock(nn.Module):
             stride=tuple(int(s) for s in t.stride()),
             dtype=t.dtype,
             requires_grad=t.requires_grad,
-            runtime_id=id(mgr),
+            runtime_id=self._runtime_id,  # type: ignore[arg-type]
         )
 
     def _unpack(self, handle: Any) -> torch.Tensor:
@@ -374,13 +409,14 @@ class OffloadedBlock(nn.Module):
         # then a fresh manager attaches, and the cached ``_ParamHandle``
         # would resolve its ``ChunkId`` against the new manager's
         # storage map (likely reconstructing from unrelated storage and
-        # silently corrupting backward). The ``id()`` comparison detects
-        # this reliably: even if Python recycles the integer for a new
-        # manager allocated at the same address, the prior manager has
-        # been deallocated, so any handle that still references it must
-        # have been re-decoded post-detach — exactly the failure we want
-        # to flag rather than silently miscompute.
-        if handle.runtime_id != id(mgr):
+        # silently corrupting backward). Comparing the wrapper's
+        # monotonic attach-epoch token (``self._runtime_id``) against
+        # the token stamped into the handle detects this unconditionally:
+        # ``attach_runtime`` advances the token on every detach/re-attach
+        # cycle, and the counter is never recycled — so unlike
+        # ``id(mgr)`` (which the GC could recycle if the prior manager
+        # is freed before backward), no collision is possible.
+        if handle.runtime_id != self._runtime_id:
             raise RuntimeError(
                 "OffloadedBlock._unpack: saved _ParamHandle was produced "
                 "against a different chunk manager than the currently-"

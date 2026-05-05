@@ -42,15 +42,17 @@ def _load_cudart() -> ctypes.CDLL | None:
     finally ``ctypes.util.find_library('cudart')`` which resolves to
     whichever ``libcudart.so.*`` ``ldconfig`` knows about.
     """
-    # Explicit SONAMEs come first so we prefer a specific major version if
-    # more than one is on the library search path. ``libcudart.so`` is the
-    # unversioned symlink (only present with -dev packages); the versioned
-    # names are what end-user CUDA toolkits install.
+    # Explicit versioned SONAMEs come first so we prefer a specific major
+    # version (and a deterministic newest-first order) when more than one
+    # runtime is on the library search path. ``libcudart.so`` is the
+    # unversioned symlink (only present with -dev packages) and is tried
+    # last as a fallback for systems where the versioned SONAME isn't
+    # directly resolvable but the dev symlink is.
     candidates: list[str] = [
-        "libcudart.so",
         "libcudart.so.13",
         "libcudart.so.12",
         "libcudart.so.11.0",
+        "libcudart.so",
     ]
     # Let ctypes locate whatever the current ld cache has, too.
     resolved = ctypes.util.find_library("cudart")

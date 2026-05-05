@@ -70,6 +70,12 @@ class MemoryDeltaTracker:
     # ---- allocator interface --------------------------------------------
 
     def _stats(self) -> dict:
+        # ``torch.cuda.memory_stats`` raises on CPU-only hosts (it's a CUDA-
+        # specific API that requires an initialized CUDA context). Guard with
+        # ``is_available()`` so callers on CPU-only machines get an empty dict
+        # and ``snapshot()`` falls back to zeros via ``.get()`` defaults.
+        if not self._torch.cuda.is_available():
+            return {}
         return self._torch.cuda.memory_stats(self._device)
 
     def reset(self) -> None:

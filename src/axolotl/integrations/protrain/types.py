@@ -451,7 +451,7 @@ class WrappedModel:
     search_result: SearchResult
     chunk_manager: object = None
     scheduler: object = None
-    _hook_handles: list[object] = field(default_factory=list)
+    _hook_handles: list[object] = field(default_factory=list, repr=False)
 
 
 __all__ = [

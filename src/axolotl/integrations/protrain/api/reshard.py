@@ -298,10 +298,9 @@ def reshard_mode_c_shards(
     """Top-level driver. Reads ``src_dir``, writes ``dst_dir`` at
     ``target_world_size`` ranks.
 
-    Idempotent at the dst_dir level — overwrites whatever is at
-    ``dst_dir/cpu_optim/chunk_*`` and ``dst_dir/metadata.json``, but
-    refuses to overwrite a non-empty dst_dir without confirmation. The
-    caller is responsible for ensuring ``dst_dir`` is fresh.
+    Writes a fresh output tree at ``dst_dir``. The function refuses to
+    run when ``dst_dir`` already exists and is non-empty, so callers
+    must provide an empty or nonexistent destination directory.
 
     Parameters
     ----------
