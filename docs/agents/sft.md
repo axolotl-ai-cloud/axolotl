@@ -83,7 +83,7 @@ Watch for: loss never decreasing (check `train_on_inputs`, dataset, LR), loss go
 | Issue | Fix |
 |-------|-----|
 | OOM during training | Reduce `micro_batch_size`, enable `gradient_checkpointing`, reduce `sequence_len` |
-| `sample_packing` + SDPA + bf16 = 0.0 loss | Use `flash_attention: true` or disable `sample_packing` |
+| `sample_packing` + SDPA + bf16 = 0.0 loss | Use `attn_implementation: flash_attention_2` or disable `sample_packing` |
 | Missing chat template error | Set `chat_template: chatml` explicitly |
 | Label masking wrong | Run `axolotl preprocess config.yaml --debug` and inspect labels |
 | Loss NaN | Use `bf16: auto`, lower LR, check data for empty samples |

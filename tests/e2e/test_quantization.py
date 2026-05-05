@@ -45,7 +45,7 @@ def _get_fake_quant_config_dtype(config):
 @pytest.fixture()
 def model():
     dummy_model = AutoModelForCausalLM.from_pretrained(
-        "Qwen/Qwen2-0.5B",
+        "axolotl-ai-co/tiny-qwen2-129m",
         device_map="auto",
         dtype=torch.bfloat16,
     )

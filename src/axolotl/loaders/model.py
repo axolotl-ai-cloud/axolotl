@@ -343,12 +343,7 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (
-                    needs_fa2_dtype
-                    or self.cfg.flash_attention
-                    or self.cfg.flex_attention
-                    or self.cfg.sage_attention
-                )
+                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -633,35 +628,14 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        """Sample packing uses custom FA2 patch"""
-        if self.cfg.gemma4_hybrid_attn_impl:
-            # Load model with flash_attention_2 for sliding window layers;
-            # global layers will be patched to sdpa post-load.
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-            # Set flash_attention so multipack/sample_packing patches activate
-            self.cfg.flash_attention = True
-        elif self.cfg.attn_implementation:
-            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
-        elif self.cfg.flex_attention:
-            self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = "flex_attention"
-
-        elif self.cfg.flash_attention:
-            if not self.cfg.sample_packing and self.cfg.s2_attention:
-                pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = "sdpa"
-        elif self.cfg.sage_attention:
-            # sets FA2 attention to re-use same internal handling like masking
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = "eager"
+        # s2 patches FA2 internals (load as FA2); fp8 replaces sdpa post-load (load as sdpa).
+        _LOAD_TIME_OVERRIDE = {"s2": "flash_attention_2", "fp8": "sdpa"}
+        if self.cfg.attn_implementation:
+            hf_impl = _LOAD_TIME_OVERRIDE.get(
+                self.cfg.attn_implementation, self.cfg.attn_implementation
+            )
+            self.model_kwargs["attn_implementation"] = hf_impl
+            self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
@@ -845,6 +819,17 @@ class ModelLoader:
                 self.model = self._load_model_from_config(model_loader_class)
             else:
                 self.model = self._load_model_from_pretrained(model_loader_class)
+
+        if self.cfg.use_onebitllms:
+            try:
+                from onebitllms import replace_linear_with_bitnet_linear
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'onebitllms' package is required for use_onebitllms. "
+                    "Install it with: `uv pip install onebitllms`"
+                ) from exc
+
+            self.model = replace_linear_with_bitnet_linear(self.model)
 
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True

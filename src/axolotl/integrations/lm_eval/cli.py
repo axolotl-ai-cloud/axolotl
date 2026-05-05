@@ -114,10 +114,18 @@ def lm_eval(config: str, cloud: Optional[str] = None):
         with open(config, encoding="utf-8") as file:
             cfg: DictDefault = DictDefault(yaml.safe_load(file))
 
+        # This path operates on raw YAML via DictDefault (not the validated
+        # AxolotlInputConfig), so we resolve flash-attn from either the canonical
+        # `attn_implementation` field or the deprecated `flash_attention` boolean.
+        _flash_attn_impls = {"flash_attention_2", "flash_attention_3"}
+        lm_eval_flash_attention = bool(
+            cfg.flash_attention or cfg.attn_implementation in _flash_attn_impls
+        )
+
         for lm_eval_args in build_lm_eval_command(
             cfg.lm_eval_tasks,
             bfloat16=cfg.bfloat16 or cfg.bf16,
-            flash_attention=cfg.flash_attention,
+            flash_attention=lm_eval_flash_attention,
             output_dir=cfg.output_dir,
             batch_size=cfg.lm_eval_batch_size,
             wandb_project=cfg.wandb_project,

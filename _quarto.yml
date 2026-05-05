@@ -311,6 +311,7 @@ website:
             - docs/dataset_loading.qmd
             - docs/qat.qmd
             - docs/quantize.qmd
+            - docs/1_58bit_finetuning.qmd
             - docs/optimizations.qmd
 
         - section: "Core Concepts"

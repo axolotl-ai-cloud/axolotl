@@ -103,6 +103,12 @@ class ModelInputConfig(BaseModel):
         default=None,
         json_schema_extra={"description": "kwargs for model quantization config"},
     )
+    use_onebitllms: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Whether to use `onebitllms` for 1.58bit training (only for bitnet models)."
+        },
+    )
 
     @field_validator("trust_remote_code")
     @classmethod

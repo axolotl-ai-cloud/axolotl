@@ -4,6 +4,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 
 import copy
 import functools
+import gc
 import os
 import sys
 
@@ -161,6 +162,7 @@ def get_state_dict(self, model, unwrap=True):
 
         state_dict = {}
         sharded_state_dict = model.state_dict()
+        is_rank_zero = torch.distributed.get_rank() == 0
         for param_name, param in sharded_state_dict.items():
             if param.is_cpu:
                 param = param.to(torch.device("cuda"))
@@ -168,9 +170,20 @@ def get_state_dict(self, model, unwrap=True):
             if isinstance(param, DTensor):
                 param = param.full_tensor()
 
-            if torch.distributed.get_rank() == 0:
+            if is_rank_zero:
                 state_dict[param_name] = param.cpu()
+            # Drop the GPU-resident gathered tensor before the next iteration
+            # allocates the next one; otherwise the caching allocator holds
+            # both reservations and we accumulate ~model-size of VRAM.
+            del param
             torch.distributed.barrier()
+
+        # Release the sharded view and force the allocator to give back the
+        # gather buffers.
+        del sharded_state_dict
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     elif self.distributed_type == DistributedType.FSDP:
         from torch.distributed.fsdp import (
             FullStateDictConfig,

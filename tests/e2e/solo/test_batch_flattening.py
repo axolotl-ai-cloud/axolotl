@@ -18,7 +18,7 @@ from transformers import AutoModelForCausalLM
 # Import the actual trainer methods we want to test
 from axolotl.core.trainers.grpo.async_trainer import AsyncGRPOTrainer
 
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = "axolotl-ai-co/tiny-qwen3-129m"
 
 
 def _fix_patched_attention(model):

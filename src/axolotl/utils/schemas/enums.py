@@ -98,6 +98,68 @@ class CustomSupportedOptimizers(str, Enum):
     scao = "scao"
 
 
+# Accepted canonical names; hub-kernel paths (containing "/") bypass this set.
+CANONICAL_ATTN_IMPLS = frozenset(
+    {
+        "eager",
+        "sdpa",
+        "flash_attention_2",
+        "flash_attention_3",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "s2",
+        "fp8",
+    }
+)
+
+# Legacy boolean flags → canonical attn_implementation. Priority: specific before generic.
+LEGACY_ATTN_FLAG_TO_IMPL = {
+    "xformers_attention": "xformers",
+    "s2_attention": "s2",
+    "sage_attention": "sage",
+    "flex_attention": "flex_attention",
+    "flash_attention": "flash_attention_2",
+    "sdp_attention": "sdpa",
+    "eager_attention": "eager",
+}
+
+# Short-form aliases rejected at validation; mapped to canonical names for error messages.
+SHORT_FORM_ALIAS_TO_CANONICAL = {
+    "flash": "flash_attention_2",
+    "flex": "flex_attention",
+    "sdp": "sdpa",
+}
+
+# Backends that support varlen sample packing via `position_ids`.
+ATTN_IMPLS_SUPPORTING_PACKING = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "flex_attention",
+        "xformers",
+        "sage",
+        "kernels-community/flash-attn2",
+        "kernels-community/flash-attn3",
+        "kernels-community/sage-attention",
+    }
+)
+
+# Backends that require the flash_attn library for axolotl's own monkeypatches.
+ATTN_IMPLS_USING_FLASH_LIB = frozenset(
+    {
+        "flash_attention_2",
+        "flash_attention_3",
+        "s2",
+        "kernels-community/flash-attn2",
+        "kernels-community/flash-attn3",
+    }
+)
+
+# Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
+ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
+
+
 class RingAttnFunc(str, Enum):
     """Enum class for supported `ring-flash-attn` implementations"""
 
