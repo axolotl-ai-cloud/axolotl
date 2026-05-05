@@ -247,6 +247,17 @@ _PROTRAIN_WORKER_SCRIPT = textwrap.dedent(
         # are non-persistent (CPU-offloaded + sharded). auto_mode=False
         # so the selector cannot fall back to Mode B (replicate-on-CPU)
         # on a model that comfortably fits in 24GB.
+        #
+        # M5 (Option B / OFFLOAD): n_checkpoint=0 + n_persist=2 makes
+        # the non-persistent tail blocks unsafe under NONE; switch them
+        # to BlockMode.OFFLOAD via n_offload_override=cfg.num_hidden_layers.
+        # All blocks become OFFLOAD; persistent ones tolerate it
+        # vacuously. This is the apples-to-apples DeepSpeed Stage-3
+        # comparison: both ProTrain Mode-C (OFFLOAD) and DeepSpeed
+        # Stage-3 run forward + backward without recompute, both gather
+        # chunks H2D for backward; only the chunk-management heuristics
+        # differ. See BLOCK_MODE_OFFLOAD_DESIGN.md §3.7 / §5.1.
+        n_block_estimate = int(cfg.num_hidden_layers)
         wrapped = protrain_model_wrapper(
             model,
             model_config=cfg,
@@ -259,8 +270,19 @@ _PROTRAIN_WORKER_SCRIPT = textwrap.dedent(
             n_buffer_override=2,
             n_swap_override=0,
             n_checkpoint_override=0,
+            n_offload_override=n_block_estimate,
             zero3_shard=True,
             auto_mode=False,
+        )
+        # M5: confirm we exercise the OFFLOAD path (no CKPT fallback).
+        assert wrapped.search_result.cfg.n_checkpoint == 0, (
+            f"M5 OFFLOAD path: expected n_checkpoint=0, got "
+            f"{wrapped.search_result.cfg.n_checkpoint} — searcher fell "
+            "back to recompute, defeating the apples-to-apples premise"
+        )
+        assert wrapped.search_result.cfg.n_offload > 0, (
+            f"M5 OFFLOAD path: expected n_offload>0, got "
+            f"{wrapped.search_result.cfg.n_offload}"
         )
         optim = protrain_optimizer_wrapper(wrapped, lr=1e-5)
 
@@ -704,6 +726,16 @@ def test_modec_vs_deepspeed_stage3_4gpu(tmp_path) -> None:
     Closes the M6 Mode-C external-baseline gap from plan.md. See the
     module docstring for workload sizing rationale and the three
     acceptance bars.
+
+    Apples-to-apples comparison (re-enabled in M5 of the Option B
+    rollout, see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1): both
+    ProTrain Mode-C (now configured with ``BlockMode.OFFLOAD`` rather
+    than CKPT on non-persistent blocks) and DeepSpeed Stage-3 run
+    forward + backward without recompute, both gather chunks H2D for
+    backward; only the chunk-management heuristics differ. Pre-M5 this
+    test was held back because ProTrain forced CKPT on every
+    non-persistent block, paying an extra forward pass per iter that
+    DeepSpeed does not.
     """
     pytest.importorskip("torch")
     pytest.importorskip("transformers")

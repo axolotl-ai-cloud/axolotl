@@ -918,6 +918,14 @@ def _construct_runtime(
                 n_buffer=result.cfg.n_buffer,
                 n_swap=result.cfg.n_swap,
                 n_checkpoint=result.cfg.n_checkpoint,
+                # Option B: preserve the n_offload axis through peak
+                # calibration. Pre-Option-B this rebuild silently
+                # dropped n_offload because the field didn't exist;
+                # without this carry-over an explicit
+                # n_offload_override would be erased the moment a
+                # block_map calibration fired (M5 follow-up, see
+                # BLOCK_MODE_OFFLOAD_DESIGN.md §M5).
+                n_offload=result.cfg.n_offload,
             ),
             block_map=result.block_map,
             predicted_peak_bytes=calibrated_peak,
@@ -1144,6 +1152,7 @@ def protrain_model_wrapper(
     n_buffer_override: int | None = None,
     n_swap_override: int | None = None,
     n_checkpoint_override: int | None = None,
+    n_offload_override: int | None = None,
     zero3_shard: bool | None = None,
     auto_mode: bool = False,
 ) -> WrappedModel:
@@ -1204,6 +1213,20 @@ def protrain_model_wrapper(
         explicit values. A single override in isolation is ignored (the
         searcher's picks stay consistent across the 4-tuple); this is
         documented on the pydantic fields.
+    n_offload_override:
+        Optional Option B knob (see ``BLOCK_MODE_OFFLOAD_DESIGN.md``)
+        plumbed alongside the 4-tuple override path. When omitted (or
+        ``None``) defaults to 0 — pre-Option-B callers see identical
+        behaviour. When the four-tuple override path is active and
+        ``n_offload_override`` is non-zero, that many block positions
+        are tagged ``BlockMode.OFFLOAD`` by ``assign_modes`` (placed in
+        the unopt-late tail before NONE — see ``layout_rules.py``).
+        Use this to drive a "no-recompute on non-persistent blocks"
+        config: set ``n_checkpoint_override=0`` and
+        ``n_offload_override = N_block - n_swap_override``. Bounds:
+        ``0 <= n_offload <= N_block - n_swap - n_checkpoint``; outside
+        this range the override path raises ``ValueError`` to mirror
+        the searcher's enumeration.
     zero3_shard:
         M7 ZeRO-3 activation. When ``None`` (default) the wrapper
         auto-detects: shard iff
@@ -1530,6 +1553,11 @@ def protrain_model_wrapper(
         n_buffer = int(n_buffer_override)
         n_swap = int(n_swap_override)
         n_checkpoint = int(n_checkpoint_override)
+        # Option B: plumb the optional ``n_offload`` knob through the
+        # override path. Defaults to 0 to preserve pre-Option-B
+        # behaviour for callers that omit the kwarg. See
+        # ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.6 / §7 (M5).
+        n_offload = int(n_offload_override) if n_offload_override is not None else 0
 
         if not (0 <= n_persist <= layout.N_chunk):
             raise ValueError(
@@ -1544,16 +1572,25 @@ def protrain_model_wrapper(
                 f"n_checkpoint_override={n_checkpoint} incompatible "
                 f"with n_swap_override={n_swap} (N_block={n_block})"
             )
+        if not (0 <= n_offload <= n_block - n_swap - n_checkpoint):
+            raise ValueError(
+                f"n_offload_override={n_offload} incompatible with "
+                f"n_swap_override={n_swap} + "
+                f"n_checkpoint_override={n_checkpoint} (N_block={n_block}); "
+                f"valid range is [0, {n_block - n_swap - n_checkpoint}]"
+            )
         synth_cfg = CostConfig(
             n_persist=n_persist,
             n_buffer=n_buffer,
             n_swap=n_swap,
             n_checkpoint=n_checkpoint,
+            n_offload=n_offload,
         )
         block_map = assign_modes(
             n_swap=n_swap,
             n_checkpoint=n_checkpoint,
             N_block=n_block,
+            n_offload=n_offload,
         )
 
         # Replicate the searcher's two runtime-safety invariants. Without
@@ -1576,13 +1613,14 @@ def protrain_model_wrapper(
         if not block_map_runtime_admissible(layout, block_map, n_persist):
             raise ValueError(
                 f"override block_map for n_swap={n_swap} n_checkpoint={n_checkpoint} "
-                f"is runtime-unsafe at n_persist={n_persist}: at least one "
-                "block owns non-persistent chunks but is NOT in CKPT mode. "
-                "After offload the runtime rebinds param.data to an empty "
-                "sentinel; only CKPT blocks (which re-gather chunks during "
-                "recompute) tolerate this. Either raise n_persist to make "
-                "those blocks fully resident, or raise n_checkpoint so "
-                "they recompute."
+                f"n_offload={n_offload} is runtime-unsafe at n_persist={n_persist}: "
+                "at least one block owns non-persistent chunks but is NOT in CKPT "
+                "or OFFLOAD mode. After offload the runtime rebinds param.data to "
+                "an empty sentinel; only CKPT (recompute) and OFFLOAD "
+                "(saved-tensors-hook re-gather) blocks tolerate this. Either raise "
+                "n_persist to make those blocks fully resident, raise n_checkpoint "
+                "so they recompute, or raise n_offload (Option B) so they re-gather "
+                "via the saved-tensors-hook path."
             )
 
         result = SearchResult(
@@ -1726,6 +1764,20 @@ def protrain_model_wrapper(
         torch.cuda.is_available()
         and trace.steady_bwd_chunked_wall_s == 0.0
         and n_block > 0
+        # Skip phase-2 calibration on the explicit-override and
+        # force_all_persistent paths. Both paths have already
+        # materialized a deterministic ``SearchResult`` from caller-
+        # supplied knobs (see the ``force_all_persistent`` and
+        # ``all_overrides_set`` branches above), and phase-2's post-
+        # measurement re-search would silently replace that cfg with
+        # the searcher's own pick — defeating the override (e.g. the
+        # M5 OFFLOAD-mode tests would lose ``n_offload>0`` because
+        # the searcher would re-pick a fits-on-GPU cfg with
+        # ``n_offload=0``). Phase-2's whole point is to refine a
+        # search-derived cfg with measured backward times; on the
+        # explicit/forced paths there is nothing to refine.
+        and not force_all_persistent
+        and not all_overrides_set
     )
     if use_phase2:
         from axolotl.integrations.protrain.profiler.phase2 import (
@@ -1980,6 +2032,12 @@ def protrain_model_wrapper(
                             n_buffer=new_result.cfg.n_buffer,
                             n_swap=new_result.cfg.n_swap,
                             n_checkpoint=new_result.cfg.n_checkpoint,
+                            # Option B: preserve n_offload through the
+                            # phase-2 post-measurement calibration
+                            # rebuild. Mirrors the same fix in the
+                            # initial _construct_runtime calibration
+                            # path above.
+                            n_offload=new_result.cfg.n_offload,
                         ),
                         block_map=new_result.block_map,
                         predicted_peak_bytes=calibrated_peak,

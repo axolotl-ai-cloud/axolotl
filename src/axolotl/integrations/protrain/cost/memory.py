@@ -207,16 +207,36 @@ def hot_iter_peak_cap(
     trace: ProfilerTrace,
     block_map: BlockStrategyMap,
     cfg: CostConfig | None = None,
+    layout: ChunkLayout | None = None,
 ) -> int | None:
     """Measured ground-truth upper bound on the raw op-walk peak, or None.
 
     Prefers per-block data from TRACE_VERSION ≥ 6:
-    ``max(steady_fwd_block_peak_bytes) + max_ckpt_activation`` under the
-    given ``block_map``. Falls back to the aggregate
-    ``steady_fwd_peak_bytes`` (v5) but only when ``cfg`` is provided AND
-    the config is fully-NONE (the aggregate makes no provision for CKPT
-    recomp bumps). Returns ``None`` when no hot-iter data is available —
-    callers then leave the op-walk raw peak untouched.
+    ``max(steady_fwd_block_peak_bytes) + max_ckpt_activation
+    + offload_bump`` under the given ``block_map``. Falls back to the
+    aggregate ``steady_fwd_peak_bytes`` (v5) but only when ``cfg`` is
+    provided AND the config is fully-NONE (the aggregate makes no
+    provision for CKPT recomp / OFFLOAD gather bumps). Returns ``None``
+    when no hot-iter data is available — callers then leave the op-walk
+    raw peak untouched.
+
+    OFFLOAD bump (R5-A): :func:`estimate_peak` adds an ``S_chunk``
+    surcharge at the LAST forward op of each OFFLOAD block (the
+    backward-window chunk-gather; see Option B §4.1). Because OFFLOAD
+    bumps fire one-at-a-time across the op-walk (each at a different op
+    index) and the searcher's peak takes the per-op maximum, only ONE
+    such ``S_chunk`` bump contributes to the modeled peak — analogous
+    to how the CKPT bump adds ``max_ckpt_activation`` once. The
+    steady-forward profiling pass that produces
+    ``steady_fwd_block_peak_bytes`` runs under the all-NONE policy and
+    therefore captures none of the OFFLOAD chunk-gather residency. We
+    must add it back here, otherwise the cap clamps OFFLOAD configs
+    below their own modeled peak (the searcher would then over-prefer
+    OFFLOAD configs that don't actually fit). Requires ``layout`` to be
+    threaded through; when ``layout`` is ``None`` (legacy callers) the
+    OFFLOAD bump degrades to ``0`` and the cap behaviour matches the
+    pre-R5-A implementation — the legacy fallback never activates from
+    in-tree call sites, which all pass ``layout``.
 
     Used by BOTH :func:`estimate_peak` (full op-walk path) and
     :func:`axolotl.integrations.protrain.search.exhaustive.search`
@@ -226,17 +246,23 @@ def hot_iter_peak_cap(
     if trace.steady_fwd_block_peak_bytes:
         forward_max_block_peak = max(trace.steady_fwd_block_peak_bytes.values())
         ckpt_recomp_bump = 0
+        has_offload = False
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
-            if block_map.get(bid, BlockMode.NONE) is BlockMode.CKPT:
+            mode = block_map.get(bid, BlockMode.NONE)
+            if mode is BlockMode.CKPT:
                 if act_sz > ckpt_recomp_bump:
                     ckpt_recomp_bump = act_sz
-        return forward_max_block_peak + ckpt_recomp_bump
+            elif mode is BlockMode.OFFLOAD:
+                has_offload = True
+        offload_bump = layout.S_chunk if (has_offload and layout is not None) else 0
+        return forward_max_block_peak + ckpt_recomp_bump + offload_bump
     if (
         trace.steady_fwd_peak_bytes > 0
         and cfg is not None
         and cfg.n_checkpoint == 0
         and cfg.n_swap == 0
+        and cfg.n_offload == 0
     ):
         return trace.steady_fwd_peak_bytes
     return None
@@ -639,7 +665,7 @@ def estimate_peak(
     #   2. Aggregate-only populated (v5, or v6 when discover_blocks failed)
     #      AND all-NONE cfg -> use aggregate
     #   3. Neither -> preserve op-walk raw_peak
-    measured_cap = hot_iter_peak_cap(trace, block_map, cfg)
+    measured_cap = hot_iter_peak_cap(trace, block_map, cfg, layout)
     if measured_cap is not None and raw_peak > measured_cap:
         raw_peak = measured_cap
 

@@ -1137,11 +1137,18 @@ def test_estimate_runtime_phase2_bwd_credits_n_buffer_cache_hits():
         f"uncached={t_uncached:.6f}; cache hits should save the "
         "backward all-gather collective per chunk"
     )
-    # Each delta cache hit saves the backward NCCL gather time at the
-    # chunk-payload size (``nccl_gather_s[64MB] = 0.01`` in
-    # ``_make_trace`` for world=2). Reduce-offload still happens on
-    # cached chunks so the savings are exactly the gather collective.
-    expected_delta = n_chunk * 0.01
+    # Each delta cache hit saves both (a) the backward NCCL gather
+    # collective at the chunk-payload size and (b) the H2D reload of
+    # the evicted chunk back into the buffer pool — see CodeRabbit
+    # R5-B in ``cost/runtime.py::_comm_time_chunk`` (the three-branch
+    # split: forward / backward-cached / backward-uncached). Pre-R5-B
+    # the cache-hit delta was just ``nccl_gather``, undercounting the
+    # PCIe reload time. Reduce-offload still happens on cached chunks
+    # so the D2H term cancels.
+    expected_delta_per_chunk = (
+        trace.nccl_gather_s[layout.S_chunk] + layout.S_chunk / hw.pcie_h2d_bps
+    )
+    expected_delta = n_chunk * expected_delta_per_chunk
     assert t_uncached - t_cached == pytest.approx(expected_delta, abs=1e-9)
 
     # CKPT recompute composes additively with the buffer-cache correction.

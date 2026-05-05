@@ -603,11 +603,24 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
         # (keep activations GPU-resident; the test is about model-state
         # offload, not activation offload).
         #
+        # M5 (Option B / OFFLOAD): with n_checkpoint=0 the non-persistent
+        # tail blocks would sit in NONE mode, which the runtime contract
+        # rejects (saved-tensors-hooks aren't safe once the chunk is
+        # offloaded post-forward). Switch them to BlockMode.OFFLOAD so
+        # backward re-gathers chunks via the saved-tensors-hook path
+        # rather than via recompute — the apples-to-apples DeepSpeed
+        # Stage-3 model-state offload mode. Set n_offload to N_block
+        # (=cfg.num_hidden_layers) so EVERY block is OFFLOAD: persistent
+        # blocks tolerate OFFLOAD vacuously (their chunks are always
+        # resident, the unpack hook hits the fast path) and non-persistent
+        # blocks get the new path. See BLOCK_MODE_OFFLOAD_DESIGN.md §5.1.
+        #
         # auto_mode=False because the test's whole point is to exercise
         # the ZeRO-3 sharded path; with auto_mode=True the selector
         # would see ample CPU RAM and pick Mode B (replicated) instead,
         # defeating the test. Set explicit zero3_shard + bypass the
         # selector.
+        n_block_estimate = int(cfg.num_hidden_layers)
         wrapped = protrain_model_wrapper(
             model,
             model_config=cfg,
@@ -620,8 +633,23 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
             n_buffer_override=2,
             n_swap_override=0,
             n_checkpoint_override=0,
+            n_offload_override=n_block_estimate,
             zero3_shard=None if not force_replicate else False,
             auto_mode=False,
+        )
+        # M5: confirm we actually exercise the OFFLOAD path (no silent
+        # fallback to CKPT). The test's whole premise is "no recompute
+        # on non-persistent blocks" — verify the picked config has
+        # n_checkpoint=0 AND n_offload>0.
+        assert wrapped.search_result.cfg.n_checkpoint == 0, (
+            f"M5 OFFLOAD path: expected n_checkpoint=0, got "
+            f"{wrapped.search_result.cfg.n_checkpoint} — searcher "
+            "fell back to recompute, defeating the no-recompute premise"
+        )
+        assert wrapped.search_result.cfg.n_offload > 0, (
+            f"M5 OFFLOAD path: expected n_offload>0, got "
+            f"{wrapped.search_result.cfg.n_offload} — OFFLOAD mode "
+            "did not engage on any block"
         )
         optim = protrain_optimizer_wrapper(wrapped, lr=1e-5)
 
@@ -856,6 +884,16 @@ def _launch_zero3(
 @pytest.mark.gpu
 def test_protrain_4gpu_zero3_sharding(tmp_path) -> None:
     """M7 ZeRO-3 test: 4-GPU sharded training saves on-GPU memory vs replicated.
+
+    Now exercises ZeRO-3 sharding via OFFLOAD mode (no recompute) — an
+    apples-to-apples model-state offload test (re-enabled in M5 of the
+    Option B rollout, see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §5.1).
+    Pre-M5 this configuration was rejected by the runtime admissibility
+    check because non-persistent NONE blocks could not safely hold
+    saved tensors after their chunk was offloaded; with
+    ``BlockMode.OFFLOAD`` the saved-tensors-hook re-gathers chunks for
+    backward without invoking ``torch.utils.checkpoint`` (i.e. without
+    paying the recompute tax DeepSpeed Stage-3 doesn't pay either).
 
     Runs two 4-rank Llama-3B training sessions on 4x 3090:
 
@@ -1224,6 +1262,14 @@ _MISTRAL_MODEC_WORKER_SCRIPT = textwrap.dedent(
         # 1 (keep the embed chunk on GPU; everything else CPU-offloaded
         # and sharded across ranks). auto_mode=False so the selector
         # cannot fall back to Mode B on the small model.
+        #
+        # M5 (Option B / OFFLOAD): n_checkpoint=0 + n_persist=1 leaves
+        # the non-persistent tail blocks unsafe under NONE; switch them
+        # to BlockMode.OFFLOAD via n_offload_override=N_block (=
+        # cfg.num_hidden_layers, which is 4 for this tiny-Mistral). All
+        # blocks become OFFLOAD; persistent blocks tolerate it
+        # vacuously. See BLOCK_MODE_OFFLOAD_DESIGN.md §5.1.
+        n_block_estimate = int(cfg.num_hidden_layers)
         wrapped = protrain_model_wrapper(
             model,
             model_config=cfg,
@@ -1236,8 +1282,18 @@ _MISTRAL_MODEC_WORKER_SCRIPT = textwrap.dedent(
             n_buffer_override=2,
             n_swap_override=0,
             n_checkpoint_override=0,
+            n_offload_override=n_block_estimate,
             zero3_shard=True,
             auto_mode=False,
+        )
+        # M5: confirm we exercise the OFFLOAD path (not CKPT fallback).
+        assert wrapped.search_result.cfg.n_checkpoint == 0, (
+            f"M5 OFFLOAD path: expected n_checkpoint=0, got "
+            f"{wrapped.search_result.cfg.n_checkpoint}"
+        )
+        assert wrapped.search_result.cfg.n_offload > 0, (
+            f"M5 OFFLOAD path: expected n_offload>0, got "
+            f"{wrapped.search_result.cfg.n_offload}"
         )
         optim = protrain_optimizer_wrapper(wrapped, lr=1e-4)
 

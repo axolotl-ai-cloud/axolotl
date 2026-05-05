@@ -391,27 +391,49 @@ def _comm_time_chunk(
 ) -> float:
     """Return the communication time for a single non-persistent chunk.
 
-    Per-chunk cost = NCCL gather (for the shard) + PCIe H2D (CPU->GPU)
-    in forward, + PCIe D2H (grad reduce-offload) in backward. Buffer-
-    cached chunks skip the backward re-gather.
+    Three-way split on (is_backward, buffer_cached):
+
+    - Forward (any chunk): NCCL gather + PCIe H2D (CPU->GPU shard reload)
+      to populate the chunk buffer before compute.
+    - Backward, buffer-cached: the buffer still has the chunk from
+      forward, so the all-gather is skipped and the H2D reload is also
+      skipped — only the PCIe D2H (grad reduce-offload) remains.
+    - Backward, uncached: the chunk was evicted from the buffer pool
+      between forward and backward (n_buffer < n_nonpersist), so the
+      shard must be re-fetched H2D *before* the all-gather can run, then
+      the grad is drained D2H after the backward op. Cost is
+      ``collective + S_chunk/eff_h2d + S_chunk/eff_d2h``.
+
+    The third case was previously charging only ``collective +
+    S_chunk/eff_d2h`` and so systematically undercosted OFFLOAD / low-
+    ``n_buffer`` configs (CodeRabbit Round-5 R5-B). The fix here applies
+    to non-persistent chunks evicted between forward and backward; the
+    separate ``T_bwd_gather`` term in :func:`estimate_runtime` (added in
+    M4 for OFFLOAD blocks specifically, charged once per OFFLOAD block)
+    is independent of this per-chunk accounting and continues to be
+    added on top — see the M4 comment block in ``estimate_runtime`` for
+    the no-double-count argument.
     """
     # NCCL gather contribution is size-dependent; the trace keys
     # ``nccl_gather_s`` by payload bytes. We pre-selected the right
     # entry in the caller.
     collective = nccl_gather_s
 
-    bw = eff_h2d if not is_backward else eff_d2h
-    if bw <= 0:
-        # Defensive: avoid division by zero on a pathological profile.
-        pcie = 0.0
-    else:
-        pcie = S_chunk / bw
+    # Defensive divisions: a pathological/unmeasured eff_*2d collapses
+    # the corresponding PCIe term to 0 instead of raising.
+    h2d = S_chunk / eff_h2d if eff_h2d > 0 else 0.0
+    d2h = S_chunk / eff_d2h if eff_d2h > 0 else 0.0
 
-    if is_backward and buffer_cached:
-        # The buffer still has the chunk — no re-gather, just the
-        # reduce-offload on the D2H side.
-        return pcie
-    return collective + pcie
+    if not is_backward:
+        # Forward: gather then H2D reload to populate the chunk buffer.
+        return collective + h2d
+    if buffer_cached:
+        # Backward cache-hit: skip both the all-gather and the H2D
+        # reload; only the grad drain remains.
+        return d2h
+    # Backward uncached: evicted-from-buffer chunk needs H2D reload
+    # before the gather, plus the D2H grad-offload after compute.
+    return collective + h2d + d2h
 
 
 def _pick_nccl(nccl_table: dict, payload_bytes: int) -> float:
@@ -680,22 +702,29 @@ def estimate_runtime(
         # where ``n_buffer >= 6`` would let most non-persistent chunks
         # survive forward and skip the re-gather in backward.
         #
-        # The savings-per-delta-hit is the backward NCCL gather time at
-        # the chunk payload size, taken from the same trace tables the
-        # analytical path uses. Mirrors
-        # ``t_bwd_comm_per_chunk_uncached - t_bwd_comm_per_chunk_cached =
-        # nccl_gather`` in the analytical branch below, keeping the two
-        # paths' n_buffer-coefficients consistent.
+        # The savings-per-delta-hit is the backward NCCL gather PLUS the
+        # H2D reload that an uncached chunk would have to pay before the
+        # gather. Mirrors
+        # ``t_bwd_comm_per_chunk_uncached - t_bwd_comm_per_chunk_cached
+        # = collective + S_chunk/eff_h2d`` in the analytical branch
+        # below (post CodeRabbit Round-5 R5-B fix), keeping the two
+        # paths' n_buffer-coefficients consistent. Pre-R5-B this term
+        # was just ``nccl_gather`` and so under-credited buffer cache
+        # hits in the phase-2 override path on PCIe-bound single-rank
+        # configs.
         n_nonpersist_bootstrap = max(0, layout.N_chunk - trace.phase2_n_persist)
         bootstrap_cached = min(trace.phase2_n_buffer, n_nonpersist_bootstrap)
         candidate_cached = min(n_buffer, n_nonpersist)
         delta_cached = candidate_cached - bootstrap_cached
-        # Savings per cache hit = backward gather collective skipped.
-        # Single-rank / no-collective case has nccl_gather=0, so the
-        # translation is a no-op there (correctly: no NCCL gather to
-        # skip). Same nccl_gather value the analytical path uses for
-        # ``t_bwd_comm_per_chunk_*`` at this S_chunk.
-        gather_save_per_hit = nccl_gather
+        # Savings per cache hit = backward gather collective skipped +
+        # H2D reload skipped. Single-rank / no-collective case has
+        # nccl_gather=0 (PCIe-only term remains); a pathological
+        # eff_h2d<=0 collapses the H2D term to 0 (matching
+        # ``_comm_time_chunk``'s defensive division). Same arithmetic
+        # the analytical path uses for ``t_bwd_comm_per_chunk_*`` at
+        # this S_chunk.
+        h2d_save_per_hit = layout.S_chunk / eff_h2d if eff_h2d > 0 else 0.0
+        gather_save_per_hit = nccl_gather + h2d_save_per_hit
         # Net override: subtract delta-hit savings from the measured
         # backward. Clamp at 0 to prevent negative t_bwd if a wildly
         # noisy trace has more savings than measured backward (would

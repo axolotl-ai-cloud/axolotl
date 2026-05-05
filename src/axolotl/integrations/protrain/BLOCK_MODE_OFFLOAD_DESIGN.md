@@ -1,6 +1,6 @@
 # Block-Mode OFFLOAD — Design Note (Option B)
 
-**Status:** partially implemented. M1 (config types + validator) and M2 (runtime hook) shipped on this branch in commit `8264f773`. M3 (cost-model wiring), M4 (test matrix), and M5 (docs/changelog rollup) are still pending — see [§7 Implementation roadmap](#7-implementation-roadmap).
+**Status:** mostly implemented. M1 (types + validator) and M2 (runtime hook) shipped in commit `8264f773`; M3 (scheduler integration) shipped in commit `a1ab8aff`; M4 (cost model + searcher) shipped in commit `ea20710a`. Only M5 (test enablement — re-enables 3 failing slow tests) remains pending — see [§7 Implementation roadmap](#7-implementation-roadmap).
 **Scope:** extend the ProTrain runtime so a non-persistent chunk's owning block can run under `BlockMode.NONE` (no recompute) — i.e. the param chunk is gathered for forward, offloaded after forward, AND re-gathered for backward without invoking `torch.utils.checkpoint`.
 **Builds on:** `DESIGN.md` (overall plugin), `CHECKPOINT_DESIGN.md` / `CHECKPOINT_DESIGN_PHASE2.md` (style template).
 **Branch base:** `protrain-optim-checkpoint-phase2-mode-c` @ tip (per `MEMORY.md::protrain_branch_state`).
@@ -762,7 +762,7 @@ unrecognized tensors fall through to the outer context.
 
 ## 7. Implementation roadmap
 
-### M1 — types + validator (small, ~1 day)
+### M1 — types + validator (small, ~1 day) — SHIPPED (`8264f773`)
 
 Add `BlockMode.OFFLOAD = "offload"` to `types.py`. Update
 `block/strategy.py` re-exports. Update
@@ -775,7 +775,7 @@ honor it under unopt-late placement. Unit tests:
 Exit criteria: tests pass; existing test suite green (no behavior
 change yet because no producer sets `n_offload>0`).
 
-### M2 — runtime hook (medium, ~3 days)
+### M2 — runtime hook (medium, ~3 days) — SHIPPED (`8264f773`)
 
 Implement `block/offload.py::OffloadedBlock`:
 
@@ -807,7 +807,7 @@ Unit tests:
 Exit criteria: unit tests pass; manual smoke (a tiny 2-block model)
 trains a few iterations and matches a reference forward+backward.
 
-### M3 — scheduler integration (medium, ~3 days)
+### M3 — scheduler integration (medium, ~3 days) — SHIPPED (`a1ab8aff`)
 
 Wire `OffloadedBlock` into `runtime/hooks.py::install`. Update
 `runtime/scheduler.py::pre_block_backward` to be aware of
@@ -818,7 +818,7 @@ backward). Update `Scheduler.drain` to flush any deferred offloads.
 Smoke test: `test_protrain_2gpu_mistral_modec_smoke` should now
 pass with the OFFLOAD config.
 
-### M4 — cost model + searcher (small, ~2 days)
+### M4 — cost model + searcher (small, ~2 days) — SHIPPED (`ea20710a`)
 
 Add the `T_bwd_gather` term to `cost/runtime.py`. Add the OFFLOAD
 backward-bump term to `cost/memory.py::estimate_peak`. Extend

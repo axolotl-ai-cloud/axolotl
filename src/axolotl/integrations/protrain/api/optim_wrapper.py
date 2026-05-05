@@ -201,17 +201,22 @@ def protrain_optimizer_wrapper(
     # the CPU adam would step against full-size GPU tensors and the
     # mid-prefix non-persistent chunk's CPU shards would never get
     # an optimizer step.
-    module = wrapped.module
-    params_by_name = dict(module.named_parameters())
-
+    # Resolve params via ChunkManager._params_by_id (populated at chunk-
+    # manager construction, which runs PRE-block-wrap) rather than
+    # ``module.named_parameters()`` (which after wrapping carries a
+    # ``.block.`` infix from the OffloadedBlock/SwappedBlock/CheckpointedBlock
+    # wrappers, mismatching the layout's pre-wrap pid keys). Without this
+    # fix, the per-chunk param list comes back empty for any wrapped
+    # block — silently skipping optimizer construction for those chunks
+    # and leading to ``cpu_optim is None`` at backward (R2-05 fail-fast).
     persistent_params: list["nn.Parameter"] = []
     cpu_params_per_chunk: dict[ChunkId, list["nn.Parameter"]] = {}
 
     for cid, chunk_param_ids in enumerate(layout.chunks):
         chunk_params = [
-            params_by_name[str(pid)]
+            chunk_manager._params_by_id[pid]
             for pid in chunk_param_ids
-            if str(pid) in params_by_name
+            if pid in chunk_manager._params_by_id
         ]
         if cid in persistent_ids:
             persistent_params.extend(chunk_params)

@@ -509,86 +509,101 @@ def main() -> int:
     root = Path(__file__).resolve().parent
     work_dir = Path(tempfile.mkdtemp(prefix="benchmark_multi_gpu_", dir=str(root)))
 
-    bs = 2
-    seq = 256
-    n_iters = 6
-    n_warmup = 2
+    # Cleanup escape hatch: set PROTRAIN_BENCHMARK_KEEP_TMP=1 to retain
+    # the per-rank stats dir (rank{r}.json) after the run for debugging
+    # a failed mode. Default behavior is to remove it on both success
+    # and failure so repeated runs don't leak temp dirs under scripts/.
+    keep_tmp = os.environ.get("PROTRAIN_BENCHMARK_KEEP_TMP", "") == "1"
 
-    # Each mode gets its own port to avoid bind collisions across
-    # sequential subprocess lifetimes on the same host.
-    ports = {
-        "single": "29540",
-        "ddp": "29541",
-        "replicated": "29542",
-        "zero3": "29543",
-    }
+    try:
+        bs = 2
+        seq = 256
+        n_iters = 6
+        n_warmup = 2
 
-    t0 = time.perf_counter()
-    results = {}
+        # Each mode gets its own port to avoid bind collisions across
+        # sequential subprocess lifetimes on the same host.
+        ports = {
+            "single": "29540",
+            "ddp": "29541",
+            "replicated": "29542",
+            "zero3": "29543",
+        }
 
-    # Single-rank baseline — isolate on CUDA_VISIBLE_DEVICES=1 so it
-    # doesn't trip over the multi-rank env. world_size=1 means no
-    # process group setup; same as running on a fresh shell.
-    print("\n[benchmark] single-rank baseline (GPU 1)...", flush=True)
-    stats = _launch_mode(
-        mode="single",
-        world_size=1,
-        cuda_visible="1",
-        bs=bs,
-        seq=seq,
-        n_iters=n_iters,
-        n_warmup=n_warmup,
-        work_dir=work_dir,
-        master_port=ports["single"],
-    )
-    results["single"] = _summarize("single", stats, n_warmup)
+        t0 = time.perf_counter()
+        results = {}
 
-    for mode in ("ddp", "replicated", "zero3"):
-        print(f"\n[benchmark] {mode} world_size=4 (GPUs 1,4,5,7)...", flush=True)
+        # Single-rank baseline — isolate on CUDA_VISIBLE_DEVICES=1 so it
+        # doesn't trip over the multi-rank env. world_size=1 means no
+        # process group setup; same as running on a fresh shell.
+        print("\n[benchmark] single-rank baseline (GPU 1)...", flush=True)
         stats = _launch_mode(
-            mode=mode,
-            world_size=4,
-            cuda_visible="1,4,5,7",
+            mode="single",
+            world_size=1,
+            cuda_visible="1",
             bs=bs,
             seq=seq,
             n_iters=n_iters,
             n_warmup=n_warmup,
             work_dir=work_dir,
-            master_port=ports[mode],
+            master_port=ports["single"],
         )
-        results[mode] = _summarize(mode, stats, n_warmup)
+        results["single"] = _summarize("single", stats, n_warmup)
 
-    wall_s = time.perf_counter() - t0
+        for mode in ("ddp", "replicated", "zero3"):
+            print(f"\n[benchmark] {mode} world_size=4 (GPUs 1,4,5,7)...", flush=True)
+            stats = _launch_mode(
+                mode=mode,
+                world_size=4,
+                cuda_visible="1,4,5,7",
+                bs=bs,
+                seq=seq,
+                n_iters=n_iters,
+                n_warmup=n_warmup,
+                work_dir=work_dir,
+                master_port=ports[mode],
+            )
+            results[mode] = _summarize(mode, stats, n_warmup)
 
-    # Persist JSON (ordered + with wall clock).
-    summary_order = ["single", "ddp", "replicated", "zero3"]
-    summaries: list[dict] = [results[m] for m in summary_order if m in results]
-    payload = {
-        "workload": {
-            "model": "Llama-3B (fresh-init, LoRA r=8)",
-            "bs_per_rank": bs,
-            "seq": seq,
-            "n_iters": n_iters,
-            "n_warmup": n_warmup,
-            "dtype": "fp16",
-            "gpus": "1,4,5,7 (RTX 3090)",
-        },
-        "wall_clock_s": wall_s,
-        "summaries": summaries,
-    }
-    out_json = root / "multi_gpu_benchmark_results.json"
-    with out_json.open("w") as f:
-        json.dump(payload, f, indent=2)
+        wall_s = time.perf_counter() - t0
 
-    md = _render_markdown(summaries)
-    print("\n" + "=" * 72)
-    print("ProTrain multi-GPU benchmark — 4x RTX 3090 (GPUs 1,4,5,7)")
-    print("=" * 72)
-    print(md)
-    print()
-    print(f"Wall clock: {wall_s:.1f}s")
-    print(f"JSON written to: {out_json}")
-    return 0
+        # Persist JSON (ordered + with wall clock).
+        summary_order = ["single", "ddp", "replicated", "zero3"]
+        summaries: list[dict] = [results[m] for m in summary_order if m in results]
+        payload = {
+            "workload": {
+                "model": "Llama-3B (fresh-init, LoRA r=8)",
+                "bs_per_rank": bs,
+                "seq": seq,
+                "n_iters": n_iters,
+                "n_warmup": n_warmup,
+                "dtype": "fp16",
+                "gpus": "1,4,5,7 (RTX 3090)",
+            },
+            "wall_clock_s": wall_s,
+            "summaries": summaries,
+        }
+        out_json = root / "multi_gpu_benchmark_results.json"
+        with out_json.open("w") as f:
+            json.dump(payload, f, indent=2)
+
+        md = _render_markdown(summaries)
+        print("\n" + "=" * 72)
+        print("ProTrain multi-GPU benchmark — 4x RTX 3090 (GPUs 1,4,5,7)")
+        print("=" * 72)
+        print(md)
+        print()
+        print(f"Wall clock: {wall_s:.1f}s")
+        print(f"JSON written to: {out_json}")
+        return 0
+    finally:
+        if keep_tmp:
+            print(
+                f"[benchmark] PROTRAIN_BENCHMARK_KEEP_TMP=1 — retaining {work_dir}",
+                flush=True,
+            )
+        else:
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
