@@ -29,6 +29,15 @@ LOG = get_logger(__name__)
 
 
 # Canonical plugin identifier strings that activate the ProTrain validators.
+#
+# THIS IS THE SINGLE SOURCE OF TRUTH for the strict allow-list used at
+# Pydantic config-validation time. ``axolotl.integrations.protrain.plugin
+# ::_is_plugin_active`` (the runtime activation gate) imports
+# :func:`_has_protrain_plugin` / :data:`_PROTRAIN_PLUGIN_KEYS` from this
+# module so both sites agree on what counts as "the ProTrain plugin is
+# registered". If you add a new accepted form, add it here — do not
+# fork the list in ``plugin.py``.
+#
 # Only `axolotl.integrations.protrain.ProTrainPlugin` is accepted — that's
 # the form used by tests, the example config
 # (examples/protrain/3090-7b-lora.yml), and the docstrings in this file,
@@ -41,6 +50,13 @@ LOG = get_logger(__name__)
 # never install. Users who type the bare module form get the same
 # "missing plugin" ValueError as users who omit `plugins:` altogether,
 # pointing them at the correct class form.
+#
+# The runtime gate ``plugin._is_plugin_active`` historically accepted
+# additional fully-qualified spellings (e.g. ``...plugin.ProTrainPlugin``)
+# under a case-insensitive normalize — those forms are not produced by
+# the documented user-facing config and are NOT part of this allow-list.
+# Unifying on the strict set here is intentional: the runtime gate
+# should never fire for an id the config validator would have rejected.
 _PROTRAIN_PLUGIN_KEYS = frozenset(
     {
         "axolotl.integrations.protrain.ProTrainPlugin",
@@ -56,6 +72,12 @@ def _has_protrain_plugin(plugins) -> bool:
     substring ``"protrain"`` (or future plugins under a different module
     path) cannot accidentally activate the ProTrain validators.
 
+    This helper is the single source of truth for "is the ProTrain
+    plugin registered in ``plugins:``": both the Pydantic validators in
+    this module AND ``plugin._is_plugin_active`` (the runtime activation
+    gate) call it so config validation and runtime activation cannot
+    drift apart on which ids count as registered.
+
     Tolerates malformed ``plugins`` values: a non-iterable scalar (None,
     int, bool, dict, etc.) returns False rather than raising
     ``TypeError`` from ``any(... for p in plugins)``, and non-string
@@ -67,6 +89,14 @@ def _has_protrain_plugin(plugins) -> bool:
     if not isinstance(plugins, (list, tuple, set, frozenset)):
         return False
     return any(isinstance(p, str) and p in _PROTRAIN_PLUGIN_KEYS for p in plugins)
+
+
+# Re-exported so ``plugin.py`` (and any future call site that needs the
+# strict ProTrain-plugin allow-list) can import a single canonical name
+# rather than copy-pasting the set. Keeping this in ``__all__`` also
+# documents the public-to-the-package contract: this constant + helper
+# are the answer to "which strings count as the ProTrain plugin id".
+__all__ = ["ProTrainArgs", "_PROTRAIN_PLUGIN_KEYS", "_has_protrain_plugin"]
 
 
 class ProTrainArgs(BaseModel):

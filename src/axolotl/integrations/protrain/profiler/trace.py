@@ -303,7 +303,16 @@ def run_trace(
     # post-forward hook after recording the "post" event; resolved into
     # ``op_latencies`` (seconds) after ``torch.cuda.synchronize()`` so that
     # ``Event.elapsed_time`` reads never stall the hook path.
-    pending_events: "list[tuple[OpId, CudaEvent | None, CudaEvent | None]]" = []
+    #
+    # ``parent_op_id`` is captured at post-hook time and used during lazy
+    # resolution to convert each op's INCLUSIVE event-pair elapsed (parent
+    # span covers all of its descendants' work) into an EXCLUSIVE
+    # self-time. Without that subtraction, ``cost/runtime.py``'s
+    # ``_fwd_compute_time_from_trace`` — which sums ``op_latencies`` for
+    # every op carrying the same ``block_id`` — double-counts every
+    # composite span (block compute grows with nesting depth instead of
+    # tracking real runtime, which then poisons CKPT recompute costing).
+    pending_events: "list[tuple[OpId, OpId | None, CudaEvent | None, CudaEvent | None]]" = []
 
     # Stack of in-flight _OpFrames keyed by the calling module id. Submodules
     # fire pre-hooks before their parent's post-hook; a dict keyed on id()
@@ -503,7 +512,20 @@ def run_trace(
             with torch.cuda.device(device_idx):
                 post_event = torch.cuda.Event(enable_timing=True)
                 post_event.record()
-            pending_events.append((frame.op_id, frame.pre_event, post_event))
+            # Capture parent's op_id (NOT module id) so the lazy resolver
+            # can subtract this span's INCLUSIVE elapsed from the parent's
+            # to produce exclusive self-time. The parent's _OpFrame is
+            # still alive here — children always post-hook before their
+            # enclosing parent — so the lookup always succeeds when a
+            # parent exists.
+            parent_op_id: "OpId | None" = None
+            if frame.parent_id is not None:
+                parent_frame = live_frames.get(frame.parent_id)
+                if parent_frame is not None:
+                    parent_op_id = parent_frame.op_id
+            pending_events.append(
+                (frame.op_id, parent_op_id, frame.pre_event, post_event)
+            )
 
         # NOTE: ``op_records`` is appended at PRE-time (see _pre_forward)
         # so ``op_order`` reflects start-of-execution order. The intra /
@@ -906,7 +928,13 @@ def run_trace(
                     with torch.cuda.device(device_idx):
                         bwd_post_event = torch.cuda.Event(enable_timing=True)
                         bwd_post_event.record()
-                    pending_events.append((bwd_op_id, bwd_pre_event, bwd_post_event))
+                    # Synthetic backward op has no parent in the forward
+                    # nesting tree — it's logged as a sibling at the
+                    # top level, so its inclusive elapsed IS its
+                    # exclusive elapsed (no children rolled in).
+                    pending_events.append(
+                        (bwd_op_id, None, bwd_pre_event, bwd_post_event)
+                    )
                 snap = tracker.snapshot()
                 intra_deltas[bwd_op_id] = intra_op_delta(
                     before.allocated_bytes, snap.peak_allocated_bytes
@@ -957,9 +985,24 @@ def run_trace(
     # Eager-record / lazy-read: all Events were recorded during the hook
     # path; ``elapsed_time`` is only valid after both events complete,
     # which the sync above guarantees. Reading now avoids per-op stalls.
+    #
+    # Composition-safe self-time: the event pair on each frame brackets
+    # the WHOLE module forward — including every nested submodule — so
+    # the raw elapsed is INCLUSIVE. ``cost/runtime.py`` later sums
+    # ``op_latencies`` for every op carrying a given ``block_id`` to get
+    # block compute time; if we stored inclusive elapsed verbatim, each
+    # composite (the block itself, attention, mlp, ...) would re-count
+    # its leaves' work and the per-block total would scale with module
+    # nesting depth instead of real wall-clock. Pass 1 collects each
+    # op's inclusive elapsed; pass 2 subtracts the sum of children's
+    # inclusive elapsed to yield exclusive self-time, which is what we
+    # actually publish. This mirrors the existing
+    # ``children_peak_contribution`` rollup used for memory.
     op_latencies: dict[OpId, float] = {}
     if cuda_available:
-        for op_id, pre_ev, post_ev in pending_events:
+        inclusive_ms: dict[OpId, float] = {}
+        children_ms: dict[OpId, float] = {}
+        for op_id, parent_op_id, pre_ev, post_ev in pending_events:
             if pre_ev is None or post_ev is None:
                 continue
             try:
@@ -970,7 +1013,19 @@ def run_trace(
             # Guard negative / absurd readings from clock skew.
             if elapsed_ms < 0:
                 continue
-            op_latencies[op_id] = elapsed_ms / 1000.0
+            inclusive_ms[op_id] = elapsed_ms
+            if parent_op_id is not None:
+                children_ms[parent_op_id] = (
+                    children_ms.get(parent_op_id, 0.0) + elapsed_ms
+                )
+        for op_id, elapsed_ms in inclusive_ms.items():
+            self_ms = elapsed_ms - children_ms.get(op_id, 0.0)
+            # Floating-point / sibling-overlap can drive this slightly
+            # negative for composites whose own kernel cost rounds to
+            # zero; clamp at 0 so downstream sums stay sane.
+            if self_ms < 0.0:
+                self_ms = 0.0
+            op_latencies[op_id] = self_ms / 1000.0
 
         # Resolve the whole-forward hooked wall time from the pair of
         # events wrapping the hooked forward call (see above). Must
