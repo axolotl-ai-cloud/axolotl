@@ -429,44 +429,41 @@ def test_estimate_runtime_offload_gather_term() -> None:
     bm_offload[BlockId(5)] = BlockMode.OFFLOAD
     t_offload = estimate_runtime(cfg_offload, trace, layout, bm_offload, hw)
 
-    # T_bwd_gather formula (§4.2): per non-persistent chunk owned by an
-    # OFFLOAD block, S_chunk / eff_h2d_bps + nccl_gather (zero on single-
-    # rank).
-    expected_per_chunk_gather = s_chunk / pcie_h2d_bps
-    n_offload_chunks = 2  # blocks 4,5 each own 1 non-persistent chunk
-    expected_total_gather = n_offload_chunks * expected_per_chunk_gather
+    # CodeRabbit PR #13 round-2 R2-4 contract update: the cost model NO
+    # LONGER charges a separate ``t_bwd_gather`` term for OFFLOAD blocks
+    # — the per-chunk backward gather cost (collective + S_chunk/h2d) is
+    # already accounted for in ``_comm_time_chunk``'s backward-uncached
+    # branch (R5-B's three-way split), so adding a second wall on top
+    # was double-counting. The OFFLOAD-vs-NONE delta in the cost model
+    # should now be ~0; what previously was ``t_bwd_gather`` is the
+    # marginal cost of the saved-tensor-rebind, which is dominated by
+    # noise floor terms and not modeled separately.
     actual_delta = t_offload - t_baseline
 
-    # Gate: actual delta should be in the same ballpark as the
-    # analytical formula. Allow up to 50% slack because eff_h2d may
-    # apply a multiplicative factor (the bandwidth model lives in
-    # cost/bandwidth.py and clamps for n_buffer occupancy).
-    assert actual_delta > 0.5 * expected_total_gather, (
-        f"OFFLOAD gather wall should scale with n_offload * S_chunk / h2d_bps "
-        f"(expected ~{expected_total_gather * 1000:.2f}ms); got "
-        f"actual_delta={actual_delta * 1000:.2f}ms"
-    )
-    assert actual_delta < 2.0 * expected_total_gather, (
-        f"OFFLOAD gather wall ballooned beyond formula (expected "
-        f"~{expected_total_gather * 1000:.2f}ms); got "
-        f"actual_delta={actual_delta * 1000:.2f}ms"
+    # No-double-count invariant: OFFLOAD adds no measurable wall above
+    # NONE for the same n_persist/n_buffer config. Allow microsecond-
+    # scale floating-point noise.
+    assert abs(actual_delta) < 1e-6, (
+        f"OFFLOAD vs NONE should have ~zero runtime delta after R2-4 "
+        f"(separate t_bwd_gather term removed; per-chunk gather already "
+        f"in _comm_time_chunk uncached path). Got "
+        f"actual_delta={actual_delta * 1000:.6f}ms"
     )
 
-    # Linearity check: doubling the count of non-persistent OFFLOAD
-    # chunks approximately doubles the added wall. With n_persist=2,
-    # chunks 2..7 are non-persistent, so blocks 2,3,4,5 each own one
-    # non-persistent OFFLOAD chunk → 4 chunks total → ~2× the delta.
+    # Symmetry check: 4× OFFLOAD should also produce ~zero delta vs
+    # baseline. With n_persist=2, blocks 2,3,4,5 each own one non-
+    # persistent chunk; cost model produces identical wall regardless
+    # of whether they're tagged NONE or OFFLOAD (both pay the per-chunk
+    # uncached path).
     cfg_offload_4 = replace(cfg_baseline, n_offload=4)
     bm_offload_4 = dict(bm_baseline)
     for b in (2, 3, 4, 5):
         bm_offload_4[BlockId(b)] = BlockMode.OFFLOAD
     t_offload_4 = estimate_runtime(cfg_offload_4, trace, layout, bm_offload_4, hw)
     delta_4 = t_offload_4 - t_baseline
-    # Doubling n_offload should ~double the delta (within 25% — other
-    # terms in t_iter may not be perfectly flat).
-    assert delta_4 == pytest.approx(2.0 * actual_delta, rel=0.25), (
-        f"doubling n_offload should ~double the gather wall; "
-        f"actual_delta_2={actual_delta:.6f}, actual_delta_4={delta_4:.6f}"
+    assert abs(delta_4) < 1e-6, (
+        f"4× OFFLOAD vs NONE should also have ~zero runtime delta; got "
+        f"delta_4={delta_4 * 1000:.6f}ms"
     )
 
     # CKPT-vs-OFFLOAD trade in the "OFFLOAD wins" regime: at matching

@@ -85,7 +85,11 @@ class PinnedHostMemory:
     ``record_stream`` + ``release_buffer`` after enqueueing the H2D
     copy). :meth:`close` raises ``RuntimeError`` if any borrow is
     still outstanding so the lifetime violation is loud rather than
-    silent.
+    silent. Destructor-driven cleanup (:meth:`__del__`) cannot raise,
+    so it instead **intentionally leaks** the pinned region until
+    process exit when borrows are still outstanding (logging loudly
+    so the missing ``release_buffer`` is diagnosable); it only frees
+    when no borrows remain.
     """
 
     def __init__(self, n_buffer: int, S_chunk: int) -> None:
@@ -322,8 +326,9 @@ class PinnedHostMemory:
         explicit ``close()`` path is the user-controlled deterministic
         teardown surface, so we want loud failure on lifetime
         violations. Destructor-driven cleanup falls through
-        :meth:`__del__`, which logs and force-frees because destructors
-        must not raise.
+        :meth:`__del__`, which logs and intentionally skips free when
+        borrows remain (to avoid use-after-free), and only frees when
+        no borrows are outstanding.
         """
         if self._closed:
             return

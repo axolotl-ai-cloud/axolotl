@@ -375,18 +375,17 @@ def test_monotonic_memory_reduction_sweep() -> None:
         # the layout during the call.
         # We don't know N_chunk up front, so do a throwaway wrap with
         # defaults to learn it, tear down, then redo with explicit knobs.
-        try:
-            probe = protrain_model_wrapper(
-                model,
-                model_config=cfg,
-                hardware_profile=hw,
-                batch_size=1,
-                seq_len=8,
-                capacity_bytes=2 * (1 << 30),
-                force_all_persistent=True,  # skip searcher; we just want the layout
-            )
-        except Exception:
-            pytest.skip("probe wrap failed on this GPU/env")
+        # Let exceptions propagate: a failing probe wrap is a real regression
+        # in protrain_model_wrapper / the search path, not a skip condition.
+        probe = protrain_model_wrapper(
+            model,
+            model_config=cfg,
+            hardware_profile=hw,
+            batch_size=1,
+            seq_len=8,
+            capacity_bytes=2 * (1 << 30),
+            force_all_persistent=True,  # skip searcher; we just want the layout
+        )
         n_chunk = cast("ChunkManager", probe.chunk_manager).layout.N_chunk
         # Uninstall hooks from the probe so we can rebuild.
         for h in cast("list[Any]", probe._hook_handles):

@@ -36,7 +36,7 @@ src/axolotl/integrations/protrain/
 │   └── optim.py                 # DeepSpeedCPUAdam adapter (non-persist) + GPU FusedAdam (persist)
 ├── block/
 │   ├── __init__.py
-│   ├── strategy.py              # BlockMode enum {NONE, CKPT, SWAP}
+│   ├── strategy.py              # BlockMode enum {NONE, CKPT, SWAP, OFFLOAD}
 │   ├── dispatcher.py            # per-block forward wrapper honoring selected mode
 │   ├── checkpoint.py            # CKPT path (torch.utils.checkpoint adapter)
 │   ├── swap.py                  # SWAP wrapper: D2H in fwd / H2D in bwd on _swap_stream
@@ -83,7 +83,12 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 
 - `trace.py` — `run_trace(model: nn.Module, batch: dict, cfg: ProfilerConfig) -> ProfilerTrace`. Installs pre/post fwd + bwd hooks, records op order, delegates Δ capture. §3.2.
 - `memory_deltas.py` — `intra_op_delta(op) -> int`, `inter_op_delta(prev, curr) -> int` from `torch.cuda.memory_stats()`. Catches the ~17% invisible peak. §3.2, App A.2.
-- `on_demand.py` — `class OnDemandTensorMgr` context; `allocate_inputs(op)` / `free_after(op)`. Enables profiling models larger than single-GPU. §3.2. The on-demand pre-gather hook is registered with `prepend=True` so it fires BEFORE the trace driver's `_pre_forward`; the trace's `allocated_before` snapshot therefore already includes the gathered param, and `intra_op_delta = peak − allocated_before` captures only workspace + output (not the gather). Post-release stays FIFO so it fires after the trace's `_post_forward` peak read. Same ordering for backward (`prepend=True` on `register_full_backward_pre_hook`, FIFO on the post hook).
+- `on_demand.py` — `class OnDemandTensorMgr` context; `allocate_inputs(op)` / `free_after(op)`. Enables profiling models larger than single-GPU. §3.2. Hook registration order:
+  - Pre-gather hook registered with `prepend=True` → fires BEFORE the trace driver's `_pre_forward`
+  - Trace's `allocated_before` snapshot includes the gathered param
+  - `intra_op_delta = peak − allocated_before` captures only workspace + output (not the gather)
+  - Post-release uses FIFO ordering → fires after the trace's `_post_forward` peak read
+  - Same ordering pattern for backward (`prepend=True` on `register_full_backward_pre_hook`, FIFO on the post hook)
 - `hw_bench.py` — `measure_pcie() -> BW`, `measure_nccl(world_size) -> NcclTable`. §3.2.
 - `cache.py` — `load(key) -> ProfilerTrace | None`, `save(key, trace)`. Key = `(arch_hash, bs, seq, sku, world)`. §7. The `TRACE_VERSION` constant prefixes the cache key, so a bump invalidates all prior entries silently. Versions: v2 added per-op latencies, v3 added measured Adam throughput, v4 added hook-dispatch calibration (hooked/steady fwd-wall), v5 added the aggregate steady-fwd peak, v6 added per-block steady peaks (tighter cap for fractional-NONE configs), v7 changed the steady-state methodology from a single iteration to a 4-iter hot loop (2 warmup + 2 measured, median) and added a best-effort steady_bwd_wall. The fields list didn't change at v7 but the recorded *values* shifted, so the cost model's measured bwd/fwd-ratio path requires a fresh trace under the new methodology.
 
@@ -98,7 +103,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 
 ### block/ (M3)
 
-- `strategy.py` — `class BlockMode(Enum){NONE, CKPT, SWAP}`; `BlockStrategyMap = dict[int, BlockMode]`. §3.1.2.
+- `strategy.py` — `class BlockMode(Enum){NONE, CKPT, SWAP, OFFLOAD}`; `BlockStrategyMap = dict[int, BlockMode]`. §3.1.2.
 - `dispatcher.py` — `wrap_block(block: nn.Module, mode: BlockMode) -> nn.Module`. §3.1.2.
 - `checkpoint.py` — thin wrapper over `torch.utils.checkpoint.checkpoint` (use_reentrant=False). §3.1.2.
 - `swap.py` — `SwappedBlock`: D2H of output activation to a pinned-host slot on `_swap_stream` in forward; H2D back on `_swap_stream` in backward, with cross-stream event handshake. Pool + stream injected post-construction via `attach_runtime`. §3.1.2.
@@ -237,7 +242,7 @@ This gap is functionally inert in the auto-selected Mode A and Mode B paths. Mod
 
 Workaround for Mode C operators: run `scripts/protrain/measure_nccl.py` once on the target rig under a real distributed launcher (it inits the process group itself and writes a JSON of `{payload_bytes: seconds}` for both gather and reduce-scatter). The output can be hand-loaded into the trace before search runs, or — more practically — used to validate that Mode C predictions match the standalone benchmark on the operator's interconnect.
 
-Late-bind path: `plugin.post_trainer_create` calls `_remeasure_nccl_and_research(wrapped)` after Accelerate brings up dist. When `world_size > 1` and the cached trace's NCCL tables are empty, the helper measures NCCL on the live process group, splices the populated tables + actual world into the trace via `dataclasses.replace`, persists the updated trace under a new cache key (so the next multi-rank run hits it directly without re-measuring), and re-runs `search()` with the same layout + capacity + hardware profile. The chunk manager is NOT rebuilt — optimizer state slots are already wired into the trainer — so the running step uses the bootstrap config; if the post-NCCL search picks a different `cfg`/`block_map`, a WARN is logged and `WrappedModel.search_result` is overwritten so future cost-model-based decisions reflect real comm cost. Subsequent multi-rank runs hit the cache and pick the new config from the start. Mode A / Mode B remain unaffected since they don't consume the NCCL tables.
+Late-bind path: `plugin.post_trainer_create` calls `_remeasure_nccl_and_research(wrapped)` after Accelerate brings up dist. When `world_size > 1` and the cached trace's NCCL tables are empty, the helper measures NCCL on the live process group, splices the populated tables + actual world into the trace via `dataclasses.replace`, persists the updated trace under a new cache key (so the next multi-rank run hits it directly without re-measuring), and re-runs `search()` with the same layout + capacity + hardware profile. The chunk manager is NOT rebuilt — optimizer state slots are already wired into the trainer — so the running step uses the bootstrap config; if the post-NCCL search picks a different `cfg`/`block_map`, a WARN is logged and `WrappedModel.search_result` is overwritten so future cost-model-based decisions reflect real comm cost. Subsequent multi-rank runs hit the cache and pick the new config from the start. Mode A and Mode B remain unaffected since they don't consume the NCCL tables.
 
 #### Multi-GPU — Measured Throughput (4x 3090)
 

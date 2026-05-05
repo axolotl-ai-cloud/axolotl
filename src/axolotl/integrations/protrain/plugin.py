@@ -716,6 +716,7 @@ class ProTrainPlugin(BasePlugin):
         n_buffer_override = getattr(cfg, "protrain_n_buffer_override", None)
         n_swap_override = getattr(cfg, "protrain_n_swap_override", None)
         n_checkpoint_override = getattr(cfg, "protrain_n_checkpoint_override", None)
+        n_offload_override = getattr(cfg, "protrain_n_offload_override", None)
         zero3_shard = getattr(cfg, "protrain_zero3_shard", None)
 
         # auto_mode defaults to True (see ProTrainArgs). On the auto
@@ -743,6 +744,7 @@ class ProTrainPlugin(BasePlugin):
             n_buffer_override=n_buffer_override,
             n_swap_override=n_swap_override,
             n_checkpoint_override=n_checkpoint_override,
+            n_offload_override=n_offload_override,
             zero3_shard=zero3_shard,
             auto_mode=bool(auto_mode),
         )

@@ -889,7 +889,11 @@ def run_trace(
                 next_op_id_local = next_op_id
                 bwd_op_id = OpId(next_op_id_local)
                 next_op_id = next_op_id_local + 1
-                tracker.reset()
+                # MemoryDeltaTracker doesn't expose reset() — reset the CUDA
+                # peak counter directly so the backward snapshot's
+                # ``peak_allocated_bytes`` reflects only the bwd pass.
+                if cuda_available:
+                    torch.cuda.reset_peak_memory_stats(device)
                 before = tracker.snapshot()
                 prev_end = tracker.last_end_bytes
                 bwd_pre_event = None

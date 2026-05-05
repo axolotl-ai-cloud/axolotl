@@ -200,6 +200,18 @@ class ProTrainArgs(BaseModel):
         default=None,
         json_schema_extra={"description": "Debug override for n_checkpoint."},
     )
+    protrain_n_offload_override: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Debug override for n_offload (Option B). When set, forces the "
+                "given count of OFFLOAD-mode blocks (saved-tensors-hooks for "
+                "params, no recompute). Only meaningful with "
+                "``protrain_force_all_persistent: false`` and a layout that has "
+                "non-persistent chunks; ignored otherwise."
+            )
+        },
+    )
 
     protrain_zero3_shard: bool | None = Field(
         default=None,

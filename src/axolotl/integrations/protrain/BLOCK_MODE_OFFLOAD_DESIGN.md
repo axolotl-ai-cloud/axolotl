@@ -1,6 +1,6 @@
 # Block-Mode OFFLOAD — Design Note (Option B)
 
-**Status:** mostly implemented. M1 (types + validator) and M2 (runtime hook) shipped in commit `8264f773`; M3 (scheduler integration) shipped in commit `a1ab8aff`; M4 (cost model + searcher) shipped in commit `ea20710a`. Only M5 (test enablement — re-enables 3 failing slow tests) remains pending — see [§7 Implementation roadmap](#7-implementation-roadmap).
+**Status:** complete. M1 (types + validator) and M2 (runtime hook) shipped in commit `8264f773`; M3 (scheduler integration) shipped in commit `a1ab8aff`; M4 (cost model + searcher) shipped in commit `ea20710a`; M5 (test enablement — re-enabled the 3 previously-skipped slow tests) shipped in commit `c7c155f7`. All milestones M1–M5 have landed; Option B is fully implemented — see [§7 Implementation roadmap](#7-implementation-roadmap) for the per-milestone summary.
 **Scope:** extend the ProTrain runtime so a non-persistent chunk's owning block can run under `BlockMode.NONE` (no recompute) — i.e. the param chunk is gathered for forward, offloaded after forward, AND re-gathered for backward without invoking `torch.utils.checkpoint`.
 **Builds on:** `DESIGN.md` (overall plugin), `CHECKPOINT_DESIGN.md` / `CHECKPOINT_DESIGN_PHASE2.md` (style template).
 **Branch base:** `protrain-optim-checkpoint-phase2-mode-c` @ tip (per `MEMORY.md::protrain_branch_state`).
@@ -831,16 +831,15 @@ Calibrate against measured throughput from the M3 smoke test;
 adjust the hot-cap path in `cost/memory.py` if needed (per-block
 peaks for OFFLOAD differ from CKPT).
 
-### M5 — test enablement (small, ~1 day)
+### M5 — test enablement (small, ~1 day) — SHIPPED (`c7c155f7`)
 
-Re-enable the three slow tests:
-* `test_protrain_4gpu_zero3_sharding` — assert no recompute (new
+Re-enabled the three previously-skipped slow tests:
+* `test_protrain_4gpu_zero3_sharding` — asserts no recompute (new
   assertion).
 * `test_protrain_2gpu_mistral_modec_smoke` — already passing from M3.
-* `test_modec_vs_deepspeed_stage3_4gpu` — write the new comparison
-  test.
+* `test_modec_vs_deepspeed_stage3_4gpu` — new comparison test.
 
-Exit criteria: all three pass on the 4× 3090 target rig (per
+Exit criteria met: all three pass on the 4× 3090 target rig (per
 `MEMORY.md::hardware_protrain_targets`).
 
 ---
