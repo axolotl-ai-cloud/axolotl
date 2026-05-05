@@ -22,6 +22,14 @@ Design contract (see DESIGN.md §Design Decisions):
   before forward/backward compute, so the buffer-pool residency term
   is identical to the replicated path. Sharding only changes the
   per-rank pinned CPU footprint — see :func:`estimate_cpu_footprint`.
+- The persistent-chunk and buffer-slot multipliers in
+  :func:`estimate_peak` are derived from
+  ``trace.model_state_bytes / (N_chunk * S_chunk)`` rather than the
+  raw fp16 param size: ``S_chunk`` itself is computed from fp16 PARAM
+  bytes only (see :func:`axolotl.integrations.protrain.chunk.layout._param_bytes`),
+  so a persistent chunk's true GPU residency under full fp16 + Adam
+  is ~8x ``S_chunk`` (params + grads + fp32 master + 2x momenta), not
+  1x. See the inline derivation at the top of :func:`estimate_peak`.
 """
 
 from __future__ import annotations
@@ -486,9 +494,79 @@ def estimate_peak(
     # is ``n_buffer * S_chunk`` not ``(N_chunk - n_persist) * S_chunk``.
     # Clamp n_persist/n_buffer into [0, N_chunk] defensively — the
     # searcher should never violate these, but other callers may.
+    #
+    # FULL-STATE ACCOUNTING (paper Eq. 11). The raw ``S_chunk`` is
+    # derived in ``chunk/layout.py`` from fp16 PARAM bytes only — it
+    # carries no grads, no fp32 master, and no Adam moments. A
+    # persistent chunk under full fp16 + Adam fine-tune actually pins
+    # the full per-param state on GPU:
+    #
+    #     fp16 params (1xS) + fp16 grads (1xS) + fp32 master (2xS)
+    #         + fp32 exp_avg (2xS) + fp32 exp_avg_sq (2xS) ~= 8xS
+    #
+    # ``trace.model_state_bytes`` (set by
+    # ``profiler/trace.py::_count_model_state_bytes``) carries this
+    # aggregate (frozen-param resident bytes + per-trainable-param
+    # 4-byte param+grad + 12-byte fp32-master+m+v). Dividing by the
+    # fp16 chunk total ``N_chunk * S_chunk`` recovers the per-chunk
+    # multiplier:
+    #
+    # * Full FT (every param trainable, fp16 + Adam): factor ~= 8.0
+    # * LoRA with frozen base (Adam state only on the tiny adapter
+    #   set): factor ~= 1.0 (frozen params dominate the aggregate so
+    #   model_state_bytes ~= fp16 param bytes).
+    #
+    # A buffer slot only holds the transient gather + grad accumulation
+    # during the backward window, NOT the optimizer state (which lives
+    # only on the chunks the optimizer is currently stepping — handled
+    # by the runtime cost model, not the peak model). So the buffer
+    # coefficient is fixed at 2.0 (fp16 params + fp16 grads). This is
+    # the same conservative coefficient the runtime materializes during
+    # backward — see ``chunk/manager.py::gather`` + the per-param grad
+    # offload path in ``api/model_wrapper.py``.
+    #
+    # When ``trace.model_state_bytes`` is unset/zero (older traces
+    # predating this field's population), fall back to the legacy
+    # 1xS_chunk multiplier and log a warning so the searcher still
+    # runs but the regression is visible. This matches the paper's
+    # original Eq. 11 derivation under the implicit "params only on
+    # GPU" assumption — strictly an UNDER-estimate for full FT, so the
+    # searcher will pick configs that OOM at runtime; the warning
+    # signals that the trace cache should be refreshed.
     n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
     n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
-    model_state_present = (n_persist + n_buffer) * layout.S_chunk
+
+    fp16_total_bytes = layout.N_chunk * layout.S_chunk
+    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0)
+    if fp16_total_bytes > 0 and model_state_total > 0:
+        # Per-chunk multiplier: aggregate state bytes / fp16-params total.
+        # Clamp >= 1.0 because the aggregate by construction includes
+        # the fp16 params themselves (any value < 1.0 would indicate a
+        # trace bug; we still respect it but never go below the legacy
+        # behaviour).
+        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
+    else:
+        LOG.warning(
+            "estimate_peak: trace.model_state_bytes is missing or zero "
+            "(model_state_bytes=%d, fp16_total=%dB); falling back to the "
+            "legacy n_persist*S_chunk multiplier. The peak estimate will "
+            "UNDER-count full optimizer state — refresh the profiler trace "
+            "cache (TRACE_VERSION bump) to restore Eq. 11 fidelity.",
+            model_state_total,
+            fp16_total_bytes,
+        )
+        persistent_factor = 1.0
+    # Buffer slot during backward = fp16 params (gathered) + fp16 grads
+    # (accumulated). 2.0 is a strict upper bound on the buffer pool's
+    # transient peak; the optimizer state never lives in the buffer
+    # pool itself (non-persistent chunks have their fp32 master + m +
+    # v on CPU and only stream onto GPU through the optimizer's own
+    # transient buffers, accounted for separately by the runtime model).
+    buffer_factor = 2.0
+    model_state_present = int(
+        n_persist * layout.S_chunk * persistent_factor
+        + n_buffer * layout.S_chunk * buffer_factor
+    )
 
     # --- Per-block activation policy -----------------------------------
     # NONE / CKPT / SWAP / OFFLOAD blocks contribute differently to the live set:
