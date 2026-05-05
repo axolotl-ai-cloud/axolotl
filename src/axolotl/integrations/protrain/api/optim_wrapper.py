@@ -197,6 +197,98 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         return None
 
 
+# HF Trainer's ``get_decay_parameter_names`` excludes bias and norm-layer
+# parameters from weight decay by default; if we collapse everything into
+# a single global ``weight_decay`` here we silently change training behavior
+# relative to the stock Trainer path. The token list below mirrors HF's
+# name-based filter (``bias``, ``LayerNorm``, ``RMSNorm``, ``.norm.``,
+# ``_norm``) and is matched case-insensitively against
+# ``model.named_parameters()`` names.
+_HF_NO_DECAY_NAME_TOKENS: tuple[str, ...] = (
+    "bias",
+    "layernorm",
+    "rmsnorm",
+    ".norm.",
+    "_norm",
+)
+
+
+def _collect_no_decay_param_ids(module: "nn.Module") -> set[int]:
+    """Return ``id(p)`` for every parameter HF Trainer would put in the no-decay group.
+
+    Mirrors :func:`transformers.trainer_pt_utils.get_decay_parameter_names`
+    by filtering parameter NAMES against
+    ``_HF_NO_DECAY_NAME_TOKENS``. Name-based matching (case-insensitive)
+    catches both LayerNorm/RMSNorm modules and bias terms — the same set
+    that the upstream Trainer puts in its ``weight_decay=0.0`` group.
+    """
+    no_decay: set[int] = set()
+    for name, param in module.named_parameters():
+        lname = name.lower()
+        if any(tok in lname for tok in _HF_NO_DECAY_NAME_TOKENS):
+            no_decay.add(id(param))
+    return no_decay
+
+
+def _split_optim_param_groups(
+    inner: torch.optim.Optimizer | None,
+    no_decay_param_ids: set[int],
+) -> None:
+    """Split each of ``inner.param_groups`` into a decay/no-decay pair in place.
+
+    ``CpuFusedAdamAdapter`` / ``GpuFusedAdamAdapter`` accept a single
+    flat param list + a single ``weight_decay`` scalar, so the underlying
+    ``torch.optim.Optimizer`` ends up with exactly one param group whose
+    ``weight_decay`` applies uniformly to every param. To preserve the
+    HF Trainer.create_optimizer convention (bias/LayerNorm in a
+    ``weight_decay=0.0`` group), we post-process each underlying
+    optimizer's ``param_groups`` here: for any group containing at least
+    one no-decay param AND at least one decay param, we split it into
+    two groups — same hyperparams except the no-decay group's
+    ``weight_decay`` is forced to ``0.0``. Single-membership groups
+    (all-decay or all-no-decay) get their ``weight_decay`` set in place
+    without an extra group.
+
+    No-op when ``inner`` is ``None`` (empty-param adapter), when the
+    no-decay set is empty, or when no group needs splitting.
+    """
+    if inner is None or not no_decay_param_ids:
+        return
+    new_groups: list[dict[str, Any]] = []
+    changed = False
+    for group in inner.param_groups:
+        params = list(group["params"])
+        decay_params = [p for p in params if id(p) not in no_decay_param_ids]
+        no_decay_params = [p for p in params if id(p) in no_decay_param_ids]
+        if not no_decay_params:
+            # Fully-decay group: leave weight_decay as the caller set it.
+            new_groups.append(group)
+            continue
+        if not decay_params:
+            # Fully-no-decay group: zero its weight_decay in place.
+            if group.get("weight_decay", 0.0) != 0.0:
+                group["weight_decay"] = 0.0
+                changed = True
+            new_groups.append(group)
+            continue
+        # Mixed: split into two groups sharing every other hyperparam.
+        decay_group = {**group, "params": decay_params}
+        no_decay_group = {**group, "params": no_decay_params, "weight_decay": 0.0}
+        new_groups.append(decay_group)
+        new_groups.append(no_decay_group)
+        changed = True
+    if not changed:
+        return
+    # ``torch.optim.Optimizer`` stores param_groups as a list of dicts and
+    # ``step()`` reads ``group["weight_decay"]`` per group, so direct
+    # replacement is safe. Per-param state lives in ``optimizer.state``
+    # keyed by parameter ``id``, not by group index, so re-grouping the
+    # same params across two groups doesn't disturb existing moment
+    # buckets (we run this before the first step anyway — adapters are
+    # freshly built above and have no state yet).
+    inner.param_groups = new_groups
+
+
 def protrain_optimizer_wrapper(
     wrapped: WrappedModel,
     *,
@@ -214,6 +306,23 @@ def protrain_optimizer_wrapper(
     into the chunk manager in-place so the scheduler's async
     ``reduce_grads_and_offload`` path continues to pump the right
     optimizer.
+
+    The HF Trainer's ``create_optimizer`` splits parameters into a
+    decay group and a ``weight_decay=0.0`` group for bias / LayerNorm /
+    RMSNorm params. We honor that split here by post-processing each
+    underlying torch ``Optimizer.param_groups`` after adapter
+    construction (see :func:`_split_optim_param_groups`); the supplied
+    ``weight_decay`` argument applies only to the decay group.
+
+    Caveat — sharded path: when ``zero3_shard=True`` the CPU adapter is
+    built against each chunk's flat per-region ``shard_param`` rather
+    than the original ``nn.Parameter`` objects, so we cannot identify
+    bias/norm BYTES inside a shard_param post-hoc. ``_DtypeRegion``
+    splitting on dtype already isolates fp32 norm regions from fp16
+    attention/MLP regions on the standard Llama config, but bias terms
+    that share their parent linear's dtype remain in the decay group in
+    that mode. Splitting regions on decay-membership requires touching
+    ``ChunkManager.materialize_offload`` and is deferred.
     """
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
     layout = chunk_manager.layout
@@ -347,6 +456,26 @@ def protrain_optimizer_wrapper(
                 "torch-wheel mismatch) or switch to an all-persistent "
                 "config so no CPU optimizer is needed."
             ) from err
+
+    # Preserve HF Trainer's bias/norm no-decay split — the adapter
+    # constructors take a single ``weight_decay`` scalar, so we
+    # post-process each underlying torch Optimizer's param_groups to
+    # split out the no-decay subset. ``model_wrapper.py`` resolves
+    # ``wrapped.module`` to the original (pre-block-wrap) ``nn.Module``,
+    # which is the same names ``named_parameters()`` returned at chunk
+    # build time, so id-membership matches what the adapters now hold.
+    no_decay_param_ids = _collect_no_decay_param_ids(wrapped.module)
+    if no_decay_param_ids:
+        if gpu_optim is not None:
+            _split_optim_param_groups(gpu_optim.underlying, no_decay_param_ids)
+        if cpu_optim is not None:
+            # ``CpuFusedAdamAdapter`` exposes per-chunk inner optimizers via
+            # the (private) ``_optims`` dict; there's no public iterator,
+            # and adding one would touch a sibling file. ``getattr`` keeps
+            # this resilient if a future refactor renames the slot.
+            inner_optims = getattr(cpu_optim, "_optims", {}) or {}
+            for inner in inner_optims.values():
+                _split_optim_param_groups(inner, no_decay_param_ids)
 
     # Swap the freshly-built adapters into the chunk manager so the
     # scheduler's post_block_backward -> reduce_grads_and_offload ->

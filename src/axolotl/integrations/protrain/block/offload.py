@@ -90,11 +90,12 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
-#: Saved tensors smaller than this many bytes pass through unchanged
-#: (no metadata handle, no chunk lookup). Tiny saved tensors recover
-#: negligible memory and the storage-ptr lookup + handle allocation
-#: dominates the cost. 1 MiB matches ``SwappedBlock``'s threshold for
-#: consistency. Tests may override per-instance (see ``_pack``).
+#: Retained for ``SwappedBlock`` parity and test-override compatibility.
+#: NOT consulted by ``OffloadedBlock._pack``: gating saves on size would
+#: pass through small chunk-managed params (e.g. biases / LayerNorm
+#: weights), pinning the chunk buffer past offload and defeating the
+#: design. The chunk-storage lookup is the sole gate; non-chunk tensors
+#: pass through regardless of size.
 SIZE_THRESHOLD_BYTES: int = 1 << 20  # 1 MiB
 
 
@@ -147,8 +148,8 @@ class OffloadedBlock(nn.Module):
     construct wrappers without runtime see clean degradation.
     """
 
-    #: Saved tensors smaller than this many bytes are kept on GPU
-    #: (as if no hook were installed). Override per-instance for tests.
+    #: Retained for ``SwappedBlock`` parity and test-override compatibility;
+    #: not consulted by ``_pack``. See module-level docstring.
     SIZE_THRESHOLD_BYTES: int = SIZE_THRESHOLD_BYTES
 
     def __init__(self, block: nn.Module) -> None:
@@ -220,19 +221,13 @@ class OffloadedBlock(nn.Module):
         -------
         - ``_ParamHandle`` if ``t`` is a chunk-managed param view.
         - ``t`` (passthrough) if ``t`` is anything else: a pure
-          activation, a tensor on a non-CUDA device, a tensor below
-          the size threshold, or a tensor whose storage isn't tracked.
-          Pure activations are SWAP's domain, not ours; passing them
+          activation, a tensor on a non-CUDA device, or a tensor
+          whose storage isn't tracked by the chunk manager. Pure
+          activations are SWAP's domain, not ours; passing them
           through cleanly composes the OFFLOAD context with an outer
           SWAP context if a future workstream nests the two.
         """
         if not isinstance(t, torch.Tensor) or not t.is_cuda:
-            return t
-
-        # Below-threshold: even if it aliases a chunk param, the
-        # bookkeeping cost outweighs the bytes saved. Keep on GPU.
-        nbytes = t.numel() * t.element_size()
-        if nbytes < self.SIZE_THRESHOLD_BYTES:
             return t
 
         mgr = self._chunk_manager
@@ -245,6 +240,17 @@ class OffloadedBlock(nn.Module):
         # up by `data_ptr()` matches the pool-buffer storage exactly
         # because every chunk param is a `view` of the chunk's flat
         # uint8 buffer (see ChunkManager._rebind_params_to_buffer).
+        #
+        # The chunk-storage lookup is the SOLE gate — there is no
+        # size-threshold check above. A small chunk-managed param view
+        # (e.g. a bias or LayerNorm weight below the legacy 1 MiB
+        # threshold) still aliases the chunk's GPU storage; if we
+        # passed it through on size, autograd's saved-tensor table
+        # would retain a strong reference to that view, pinning the
+        # chunk buffer past post_block_forward's offload — defeating
+        # OFFLOAD on any chunk that contains a small param. Non-chunk
+        # tensors (activations, params from non-managed modules) are
+        # passed through unconditionally below.
         try:
             ptr = t.untyped_storage().data_ptr()
         except Exception:  # noqa: BLE001 — defensive against aten edge cases
@@ -253,7 +259,8 @@ class OffloadedBlock(nn.Module):
         chunk_id = mgr.chunk_id_for_storage_ptr(ptr)
         if chunk_id is None:
             # Not a chunk-managed param view (likely a forward
-            # activation produced inside this block). Passthrough.
+            # activation produced inside this block). Passthrough —
+            # pure activations are SWAP's domain, not ours.
             return t
 
         # Storage offset in BYTES from the start of the chunk's

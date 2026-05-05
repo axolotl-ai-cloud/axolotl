@@ -237,12 +237,35 @@ def build_layout(
 
     # Any params present in the model but absent from exec_order fall through
     # to the end (the profiler may have missed them, or they're unused). They
-    # still need a chunk assignment so ``param_to_chunk`` is total.
+    # still need a chunk assignment so ``param_to_chunk`` is total. Route them
+    # through the same block-aware grouping as the main path: when a leftover
+    # param belongs to a block, place every still-unplaced member of that
+    # block contiguously (sealing the current chunk first if the whole group
+    # won't fit) so ``block_to_chunks`` keeps the same block-contiguity
+    # invariant the main loop establishes. True standalone leftovers
+    # (``pid_owner.get(pid) is None``) fall back to plain greedy fit.
     for pid, size in param_sizes.items():
         if pid in param_to_chunk:
             continue
-        fallback_bid: BlockId | None = _block_of(pid, block_spans)
-        _place(pid, size, fallback_bid)
+        fallback_bid: BlockId | None = pid_owner.get(pid)
+        if fallback_bid is None:
+            _place(pid, size, None)
+            continue
+
+        # Collect every still-unplaced member of this block, preserving the
+        # caller's block_spans order so block-internal ordering is stable.
+        pending = [
+            qpid for qpid in block_spans[fallback_bid] if qpid not in param_to_chunk
+        ]
+        block_total = sum(param_sizes[qpid] for qpid in pending)
+        cur_idx = len(chunks) - 1
+        remaining = S_chunk - chunk_bytes[cur_idx]
+        if chunk_bytes[cur_idx] > 0 and block_total > remaining:
+            # Same seal-before-block rule as the main path: keep the block
+            # chunk-aligned when it won't fit alongside the current contents.
+            _seal_and_open()
+        for qpid in pending:
+            _place(qpid, param_sizes[qpid], fallback_bid)
 
     # Drop a trailing empty chunk that ``_seal_and_open`` may have left open
     # (e.g. the final placement started a fresh chunk for a block but only

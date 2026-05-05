@@ -79,14 +79,12 @@ def _run_as_rank() -> None:
             file=sys.stderr,
         )
 
-    success = False
     try:
         gather_table, reduce_table = measure_nccl(
             world_size=world_size,
             n_iters=args.n_iters,
             n_warmup=args.n_warmup,
         )
-        success = True
 
         if rank == 0:
             out_path = Path(
@@ -117,11 +115,10 @@ def _run_as_rank() -> None:
                     f"{reduce_table[size] * 1000:>10.3f}"
                 )
     finally:
-        # Barrier only on the success path: if any rank raised before reaching
-        # this point, peers must not block here waiting for the failed rank.
+        # No barrier here: a rank-local `success` gate would deadlock if ranks
+        # disagree on status, and the output logic above already completes
+        # before teardown (only rank 0 writes results, independently of peers).
         # destroy_process_group() always runs to release NCCL state.
-        if success:
-            dist.barrier()
         dist.destroy_process_group()
 
 

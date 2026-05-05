@@ -96,12 +96,20 @@ class MemoryDeltaTracker:
         First call establishes the baseline and returns 0. Intended for the
         inter-op hook slot where the "previous end" is whatever the last
         post-op hook observed.
+
+        Uses ``peak_allocated_bytes`` (not ``allocated_bytes``) for the delta
+        so transient spikes that allocate-then-free between hooks are still
+        counted — that inter-op transient is exactly what this module exists
+        to recover (paper §3.2 / Appendix A.2). The baseline is then advanced
+        with the current ``allocated_bytes`` so the next call measures growth
+        from the post-op resident set.
         """
-        current = self.snapshot().allocated_bytes
+        snap = self.snapshot()
+        current = snap.allocated_bytes
         if self._last_end_bytes is None:
             self._last_end_bytes = current
             return 0
-        delta = max(0, current - self._last_end_bytes)
+        delta = max(0, snap.peak_allocated_bytes - self._last_end_bytes)
         self._last_end_bytes = current
         return delta
 

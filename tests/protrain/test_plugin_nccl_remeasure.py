@@ -284,8 +284,13 @@ def test_remeasure_splices_nccl_and_keeps_search_result_when_unchanged(
     )
 
 
-def test_remeasure_overwrites_search_result_when_cfg_changes(tmp_path, monkeypatch):
-    """Different cfg post-NCCL: search_result is overwritten, chunk_manager is NOT rebuilt."""
+def test_remeasure_stashes_post_nccl_result_when_cfg_changes(tmp_path, monkeypatch):
+    """Different cfg post-NCCL: search_result is NOT overwritten — the post-NCCL
+    plan is stashed on ``wrapped.post_nccl_search_result`` for telemetry while
+    ``search_result`` continues to reflect the actually-installed runtime
+    (chunk_manager / scheduler / hooks are wired to the bootstrap config and
+    cannot be rebuilt mid-flight). Per CodeRabbit PR #15 R3190190419.
+    """
     pytest.importorskip("torch")
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
@@ -297,6 +302,7 @@ def test_remeasure_overwrites_search_result_when_cfg_changes(tmp_path, monkeypat
     wrapped.chunk_manager = sentinel_chunk_manager
 
     orig_cfg = wrapped.search_result.cfg
+    orig_search_result = wrapped.search_result  # capture for later identity check
     different_result = _make_search_result(
         n_persist=orig_cfg.n_persist + 1, predicted_iter_s=0.08
     )
@@ -321,7 +327,13 @@ def test_remeasure_overwrites_search_result_when_cfg_changes(tmp_path, monkeypat
             p.stop()
 
     assert (updated, changed) == (True, True)
-    assert wrapped.search_result is different_result
+    # Live runtime state untouched — search_result/_trace continue to reflect
+    # the installed (bootstrap) plan because chunk_manager/scheduler/hooks/
+    # optimizer slots cannot be rebuilt mid-flight.
+    assert wrapped.search_result is orig_search_result
+    assert wrapped.search_result is not different_result
+    # The post-NCCL plan is published on telemetry-only fields.
+    assert getattr(wrapped, "post_nccl_search_result", None) is different_result
     # chunk_manager preserved — the spec is explicit that we must not
     # rebuild it post-research (optimizer state slots are wired into the
     # trainer already).

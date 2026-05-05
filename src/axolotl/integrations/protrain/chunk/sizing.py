@@ -8,8 +8,6 @@ without needing a model handle: the input is a ``{ParamId -> bytes}`` map.
 
 from __future__ import annotations
 
-from typing import Mapping
-
 from axolotl.integrations.protrain.types import ParamId
 from axolotl.utils.logging import get_logger
 
@@ -45,10 +43,18 @@ def _simulate_waste(sizes_in_order: list[int], S_chunk: int) -> int:
 
 
 def pick_S_chunk(
-    model_state_bytes_per_param: Mapping[ParamId, int],
+    model_state_bytes_per_param: dict[ParamId, int],
     candidates: tuple[int, ...] = DEFAULT_GRID,
 ) -> int:
     """Pick the ``S_chunk`` from ``candidates`` minimizing fragmentation waste.
+
+    The simulation iterates ``model_state_bytes_per_param`` in dict insertion
+    order (Python 3.7+ guarantee), so callers MUST insert params in the
+    intended layout/execution order — pass a plain ``dict[ParamId, int]``
+    (or a subclass that preserves insertion order). The signature is
+    intentionally typed as ``dict`` rather than ``Mapping`` because
+    ``Mapping`` does not contract a stable iteration order, and the result
+    of this function depends on it.
 
     Ties are broken by picking the *larger* candidate — fewer chunks means
     less scheduler overhead and larger individual H2D transfers, both of
@@ -57,9 +63,6 @@ def pick_S_chunk(
     if not candidates:
         raise ValueError("candidates must be non-empty")
 
-    # Dict iteration order is insertion order (Python 3.7+), which matches
-    # the caller's intended layout order. If the caller wants exec-order
-    # simulation, they should pass an exec-ordered dict.
     sizes_in_order = list(model_state_bytes_per_param.values())
 
     # Filter out candidates smaller than the largest single param tensor:

@@ -139,6 +139,18 @@ class _CPUHandle:
     swap_stream: "torch.cuda.Stream"
     slot_id: int
     shape: tuple[int, ...]
+    #: Stride (in ELEMENTS of dtype, matching ``torch.Tensor.stride()``)
+    #: of the original GPU tensor at pack time. Capturing it is
+    #: load-bearing: PyTorch's ``F.linear`` saves ``weight`` with stride
+    #: ``(1, in_dim)`` because the matmul wants the transposed view, and
+    #: other ops likewise save tensors with non-row-major strides. If
+    #: ``unpack_from_pool`` rebuilt the GPU view with a guessed
+    #: contiguous stride (the default of ``torch.empty(shape)``),
+    #: backward kernels would read storage in the wrong element order
+    #: and produce silently-wrong upstream gradients. Same lesson as
+    #: ``OffloadedBlock``'s ``_ParamHandle.stride`` — see ``offload.py``
+    #: for the empirical Linear-block divergence that motivated it.
+    stride: tuple[int, ...]
     dtype: torch.dtype
     device: torch.device
     nbytes: int
@@ -222,6 +234,7 @@ def _make_pack_unpack(
             swap_stream=swap_stream,
             slot_id=slot_id,
             shape=tuple(t.shape),
+            stride=tuple(int(s) for s in t.stride()),
             dtype=t.dtype,
             device=t.device,
             nbytes=nbytes,
@@ -250,7 +263,28 @@ def _make_pack_unpack(
         # ordering on swap_stream itself guards reuse-via-acquire
         # within the same stream, but ``close()`` consults the borrow
         # counter on the host with no awareness of swap_stream events.
-        gpu_buf = torch.empty(handle.shape, dtype=handle.dtype, device=handle.device)
+        # Allocate the destination GPU buffer with the ORIGINAL tensor's
+        # stride, not a contiguous default. ``torch.empty(shape)`` would
+        # give us ``stride=row-major(shape)``, which mismatches the
+        # ``.stride()`` of the tensor we packed for any non-contiguous
+        # save (e.g. ``F.linear``'s ``(1, in_dim)`` weight stride).
+        # Backward kernels that consume the saved tensor read its
+        # storage via the recorded stride; rebuilding with a guessed
+        # stride silently corrupts upstream gradients. ``empty_strided``
+        # allocates storage sized to cover the full strided extent and
+        # exposes the requested stride directly. The downstream
+        # ``copy_`` from the contiguous CPU slot resolves logically
+        # (PyTorch's ``copy_`` performs an elementwise copy regardless
+        # of source/destination stride mismatch), so the saved-tensor
+        # values match the original at every logical index while the
+        # underlying storage is laid out the way the original tensor's
+        # storage was.
+        gpu_buf = torch.empty_strided(
+            handle.shape,
+            handle.stride,
+            dtype=handle.dtype,
+            device=handle.device,
+        )
         _swap_stream_wait_compute(handle.swap_stream)
         h2d_done: "torch.cuda.Event | None" = None
         with torch.cuda.stream(handle.swap_stream):

@@ -106,7 +106,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 - `strategy.py` — `class BlockMode(Enum){NONE, CKPT, SWAP, OFFLOAD}`; `BlockStrategyMap = dict[int, BlockMode]`. §3.1.2.
 - `dispatcher.py` — `wrap_block(block: nn.Module, mode: BlockMode) -> nn.Module`. §3.1.2.
 - `checkpoint.py` — thin wrapper over `torch.utils.checkpoint.checkpoint` (use_reentrant=False). §3.1.2.
-- `swap.py` — `SwappedBlock`: D2H of output activation to a pinned-host slot on `_swap_stream` in forward; H2D back on `_swap_stream` in backward, with cross-stream event handshake. Pool + stream injected post-construction via `attach_runtime`. §3.1.2.
+- `swap.py` — `SwappedBlock`: wraps the block's forward in a `torch.autograd.graph.saved_tensors_hooks` context so **every autograd-saved tensor** (not just the block output) is D2H-copied to a pinned-host slot on `_swap_stream` in forward and H2D-copied back on `_swap_stream` in backward, with cross-stream event handshake against the default compute stream. Pool + stream are injected post-construction via `attach_runtime`; wrapper lifetime spans one fwd+bwd pair, and memory accounting must charge the sum of saved-tensor bytes (activations, RNG state, intermediate tensors), not just the block output. §3.1.2.
 - `swap_pool.py` — `ActivationSwapPool`: pinned-host slot pool sized to `n_swap × prefetch_depth × max_act_bytes`. Backed by one `PinnedHostMemory` allocation; slot acquire/release tracked Python-side. §3.1.2.
 - `layout_rules.py` — `assign_modes(n_swap, n_checkpoint, N_block) -> BlockStrategyMap`. Swap-early / unopt-late / interleave. §3.1.2.
 

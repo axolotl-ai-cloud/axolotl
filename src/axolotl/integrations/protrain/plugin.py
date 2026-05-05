@@ -246,14 +246,24 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     On invocation, the helper measures NCCL on the live process group,
     splices the new tables and actual world size into the cached trace,
     persists the updated trace under a new cache key, and re-runs
-    ``search()`` with the same layout + capacity + hardware profile. If
-    the new search picks a different ``cfg`` or ``block_map`` the
-    WrappedModel's ``search_result`` is overwritten and a DEBUG (was
-    WARNING pre-Item 6) is logged — but the chunk manager itself is NOT
-    rebuilt. The optimizer state slots are already wired into the
-    trainer; rebuilding mid-flight would invalidate them. The updated
-    SearchResult exists so any future cost-model-based decisions
-    (telemetry, dynamic re-tuning) reflect real comm cost.
+    ``search()`` with the same layout + capacity + hardware profile.
+    Behaviour after the re-run depends on whether the picked config
+    actually moved:
+
+    * **Same cfg + block_map (the expected case post-Item 6).** Only
+      the predicted iter time and the trace's NCCL tables refreshed,
+      so it is safe to publish them onto ``WrappedModel.search_result``
+      / ``_trace`` — the installed runtime still matches.
+    * **Different cfg or block_map.** The chunk_manager / scheduler /
+      hooks (and the optimizer state slots that ride on them) are
+      already wired for the bootstrap config; rebuilding mid-flight
+      would invalidate them. Instead of overwriting the live runtime
+      contract, the late-search outputs are stashed on
+      ``post_nccl_search_result`` / ``post_nccl_trace`` (telemetry
+      only) and a DEBUG (was WARNING pre-Item 6) is logged. The
+      installed ``search_result`` / ``_trace`` continue to reflect
+      what is actually running. Future runs hit the multi-rank cache
+      and pick the new config from the start.
 
     Returns ``(updated, cfg_changed)`` for telemetry / test inspection:
 
@@ -381,16 +391,25 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         # INFO/WARN locally if you're debugging the late-bind path.
         LOG.debug(
             "ProTrain: post-NCCL search picked a different config than "
-            "the bootstrap prediction. cfg %s -> %s; updating "
-            "WrappedModel.search_result for telemetry but NOT rebuilding "
-            "chunk_manager (optimizer slots are already wired). The "
-            "running step uses the bootstrap config; future runs will "
-            "hit the multi-rank cache and pick the new config from the "
-            "start. Reaching this branch suggests early dist init was "
-            "skipped — check cfg.ddp_backend / launcher env.",
+            "the bootstrap prediction. cfg %s -> %s; stashing the "
+            "post-NCCL plan on WrappedModel.post_nccl_search_result for "
+            "telemetry and LEAVING search_result/_trace untouched so "
+            "they continue to reflect the installed runtime "
+            "(chunk_manager / scheduler / hooks are already wired for "
+            "the bootstrap config; the optimizer state slots ride on "
+            "those, so we cannot rebuild mid-flight). The running step "
+            "uses the bootstrap config; future runs will hit the "
+            "multi-rank cache and pick the new config from the start. "
+            "Reaching this branch suggests early dist init was skipped "
+            "— check cfg.ddp_backend / launcher env.",
             wrapped.search_result.cfg,
             new_result.cfg,
         )
+        # Telemetry-only: keep the late-search outputs visible to
+        # callers (tests, dynamic re-tuning) without overwriting the
+        # live runtime contract reported via ``search_result``/``_trace``.
+        wrapped.post_nccl_search_result = new_result  # type: ignore[attr-defined]
+        wrapped.post_nccl_trace = new_trace  # type: ignore[attr-defined]
     else:
         LOG.info(
             "ProTrain: post-NCCL re-run picked the same config; "
@@ -398,9 +417,12 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
             wrapped.search_result.predicted_iter_s,
             new_result.predicted_iter_s,
         )
+        # Same cfg + block_map: only the cost-model numbers (and the
+        # NCCL tables on the trace) refreshed. Safe to publish onto the
+        # live fields — the installed runtime still matches.
+        wrapped.search_result = new_result
+        wrapped._trace = new_trace  # type: ignore[attr-defined]
 
-    wrapped.search_result = new_result
-    wrapped._trace = new_trace  # type: ignore[attr-defined]
     return (True, cfg_changed)
 
 

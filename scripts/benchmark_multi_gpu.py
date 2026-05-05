@@ -130,7 +130,15 @@ _WORKER_SCRIPT = textwrap.dedent(
         )
         from axolotl.integrations.protrain.types import HardwareProfile
 
-        torch.manual_seed(42 + rank)
+        # Use a shared seed across ranks for model init so the
+        # ``replicated`` and ``zero3`` modes start from identical
+        # weights on every rank — i.e. the cross-rank setup is a true
+        # synchronized replica/shard, matching what DDP gives via
+        # broadcast at wrap time. Without this, fresh-init RNG
+        # divergence biases the mode-to-mode benchmark comparison.
+        torch.manual_seed(42)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(42)
 
         # Llama-3B config — same as the M7 ZeRO-3 test so profiler cache
         # hits are shared across runs.
@@ -241,6 +249,10 @@ _WORKER_SCRIPT = textwrap.dedent(
         else:
             ddp_module = wrapped.module
 
+        # Reseed per-rank AFTER model init so each rank gets a distinct
+        # synthetic minibatch (model weights stay identical across ranks
+        # — see the shared ``manual_seed(42)`` above).
+        torch.manual_seed(42 + rank)
         input_ids = torch.randint(
             0, cfg.vocab_size, (bs, seq), device=device, dtype=torch.long
         )

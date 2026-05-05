@@ -172,6 +172,7 @@ class ProTrainArgs(BaseModel):
 
     protrain_capacity_bytes: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": (
                 "Override the GPU memory budget (bytes) the searcher respects. "
@@ -183,6 +184,7 @@ class ProTrainArgs(BaseModel):
 
     protrain_cpu_capacity_bytes: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": (
                 "Per-rank pinned CPU RAM budget (bytes) the searcher uses as a "
@@ -210,6 +212,7 @@ class ProTrainArgs(BaseModel):
     # leave these None and let the cost model pick.
     protrain_n_persist_override: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": (
                 "Debug override: force the number of persistent chunks. "
@@ -220,18 +223,22 @@ class ProTrainArgs(BaseModel):
     )
     protrain_n_buffer_override: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={"description": "Debug override for n_buffer."},
     )
     protrain_n_swap_override: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={"description": "Debug override for n_swap."},
     )
     protrain_n_checkpoint_override: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={"description": "Debug override for n_checkpoint."},
     )
     protrain_n_offload_override: int | None = Field(
         default=None,
+        ge=0,
         json_schema_extra={
             "description": (
                 "Debug override for n_offload (Option B). When set, forces the "
@@ -293,6 +300,7 @@ class ProTrainArgs(BaseModel):
 
     protrain_optim_save_max_bytes: int | None = Field(
         default=2 * 1024 * 1024 * 1024,
+        ge=0,
         json_schema_extra={
             "description": (
                 "Soft cap (bytes) on the estimated optimizer-state save "

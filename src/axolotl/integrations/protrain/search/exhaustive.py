@@ -75,7 +75,12 @@ def min_n_buffer_for(layout: ChunkLayout, n_persist: int) -> int:
     persistent: set[ChunkId] = {ChunkId(i) for i in range(n_persist)}
     block_ids = sorted(layout.block_to_chunks.keys())
     if not block_ids:
-        return 0
+        # Sparse/degenerate layout: ``n_persist < N_chunk`` above means at
+        # least one chunk is non-persistent, but block_to_chunks doesn't
+        # surface which block owns it. The pool allocator still needs one
+        # slot to materialize that chunk, so honour the same ``max(1, …)``
+        # invariant the dense branch enforces below.
+        return 1
     need = 0
     for i, bid in enumerate(block_ids):
         cur_np = [c for c in layout.block_to_chunks.get(bid, ()) if c not in persistent]
