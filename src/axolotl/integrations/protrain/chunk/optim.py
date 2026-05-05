@@ -164,8 +164,12 @@ class CpuFusedAdamAdapter:
             iters doesn't see CPU-resident ``.data`` (BUG 4 fix).
         """
         prev = self._pending.get(chunk_id)
-        if prev is not None and not prev.done():
-            prev.result()  # propagate any exception
+        if prev is not None:
+            # ``result()`` waits if pending; on a completed future it returns
+            # immediately for success or raises for failure. The earlier
+            # ``not prev.done()`` short-circuit dropped exceptions from
+            # already-finished failed futures (CR 3191882419).
+            prev.result()
         optim = self._optims.get(chunk_id)
         if optim is None:
             # No params belonging to this chunk live on CPU (e.g. a fully

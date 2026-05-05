@@ -317,10 +317,10 @@ class OnDemandTensorMgr:
         if torch is not None and torch.cuda.is_available():
             try:
                 torch.cuda.synchronize()
-            except Exception as exc:  # noqa: BLE001 - defensive
+            except Exception as _e:  # noqa: BLE001 - defensive
                 LOG.debug(
                     "OnDemandTensorMgr: synchronize failed during partial-setup unwind (%s)",
-                    exc,
+                    _e,
                 )
         self._spills.clear()
 
@@ -331,14 +331,17 @@ class OnDemandTensorMgr:
             return
 
         # Remove hooks first so partial forward calls during exit unwinding
-        # don't try to gather params that are mid-restore.
+        # don't try to gather params that are mid-restore. NOTE: rebind
+        # ``except`` to ``_e`` (not ``exc``) because Python 3 deletes the
+        # except-binding after the block exits — a name collision with the
+        # ``exc`` parameter would silently delete the original and the
+        # later ``_sthook_ctx.__exit__(exc_type, exc, tb)`` call would
+        # raise ``NameError`` if any hook removal failed (CR 3191882429).
         for h in self._handles:
             try:
                 h.remove()
-            except Exception as exc:  # noqa: BLE001 - defensive
-                LOG.debug(
-                    "OnDemandTensorMgr: hook removal failed during exit (%s)", exc
-                )
+            except Exception as _e:  # noqa: BLE001 - defensive
+                LOG.debug("OnDemandTensorMgr: hook removal failed during exit (%s)", _e)
         self._handles.clear()
 
         # Exit saved_tensors_hooks BEFORE restoring params — any in-flight
@@ -391,8 +394,8 @@ class OnDemandTensorMgr:
         if torch.cuda.is_available():
             try:
                 torch.cuda.synchronize()
-            except Exception as exc:  # noqa: BLE001 - defensive
-                LOG.debug("OnDemandTensorMgr: synchronize failed during exit (%s)", exc)
+            except Exception as _e:  # noqa: BLE001 - defensive
+                LOG.debug("OnDemandTensorMgr: synchronize failed during exit (%s)", _e)
         self._spills.clear()
 
     # ---- spill / restore helpers ---------------------------------------
