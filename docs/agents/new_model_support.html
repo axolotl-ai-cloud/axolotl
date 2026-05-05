@@ -1027,35 +1027,35 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td>FA2</td>
-<td><code>flash_attention: true</code></td>
+<td><code>attn_implementation: flash_attention_2</code></td>
 <td>256</td>
 <td>✅</td>
 <td>Fastest when supported</td>
 </tr>
 <tr class="even">
 <td>FA4</td>
-<td>auto with <code>flash_attention: true</code></td>
+<td>auto with <code>attn_implementation: flash_attention_2</code></td>
 <td>256 (SM90+)</td>
 <td>✅</td>
 <td>Auto-detected on H100+</td>
 </tr>
 <tr class="odd">
 <td>SDPA</td>
-<td><code>sdp_attention: true</code></td>
+<td><code>attn_implementation: sdpa</code></td>
 <td>None</td>
 <td>✅</td>
 <td>Universal fallback</td>
 </tr>
 <tr class="even">
 <td>flex</td>
-<td><code>flex_attention: true</code></td>
+<td><code>attn_implementation: flex_attention</code></td>
 <td>None</td>
 <td>⚠️ Triton OOM for large head_dim</td>
 <td>Good for variable head dims</td>
 </tr>
 <tr class="odd">
 <td>eager</td>
-<td>neither set</td>
+<td><code>attn_implementation: eager</code></td>
 <td>None</td>
 <td>✅</td>
 <td>Slowest, always works</td>

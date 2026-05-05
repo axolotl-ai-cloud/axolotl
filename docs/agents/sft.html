@@ -1023,7 +1023,7 @@ Multi-GPU: FSDP or DeepSpeed shards model across GPUs automatically.</code></pre
 </tr>
 <tr class="even">
 <td><code>sample_packing</code> + SDPA + bf16 = 0.0 loss</td>
-<td>Use <code>flash_attention: true</code> or disable <code>sample_packing</code></td>
+<td>Use <code>attn_implementation: flash_attention_2</code> or disable <code>sample_packing</code></td>
 </tr>
 <tr class="odd">
 <td>Missing chat template error</td>

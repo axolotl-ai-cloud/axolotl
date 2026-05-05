@@ -885,7 +885,7 @@ through a ring communication pattern.</p>
 <section id="limitations" class="level2">
 <h2 class="anchored" data-anchor-id="limitations">Limitations</h2>
 <ul>
-<li>Flash attention must be enabled for this to work (<code>flash_attention: true</code> in config YAML)</li>
+<li>Flash attention must be enabled for this to work (<code>attn_implementation: flash_attention_2</code> in config YAML)</li>
 <li>May have a small performance overhead due to communication between GPUs</li>
 </ul>
 </section>

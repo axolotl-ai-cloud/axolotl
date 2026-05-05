@@ -838,12 +838,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="attention-implementations">Attention Implementations</h3>
 <p>Using an optimized attention implementation is critical for training speed.</p>
 <ul>
-<li><strong><a href="https://github.com/Dao-AILab/flash-attention">Flash Attention 2</a></strong>: <code>flash_attention: true</code>. <strong>(Recommended)</strong> The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check <a href="https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support">AMD Support</a>.</li>
-<li><strong><a href="https://pytorch.org/blog/flexattention/">Flex Attention</a></strong>: <code>flex_attention: true</code>.</li>
-<li><strong><a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">SDP Attention</a></strong>: <code>sdp_attention: true</code>. PyTorch’s native implementation.</li>
-<li><strong><a href="https://github.com/facebookresearch/xformers">Xformers</a></strong>: <code>xformers_attention: true</code>. Works with FP16.</li>
+<li><strong><a href="https://github.com/Dao-AILab/flash-attention">Flash Attention 2</a></strong>: <code>attn_implementation: flash_attention_2</code>. <strong>(Recommended)</strong> The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check <a href="https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support">AMD Support</a>.</li>
+<li><strong><a href="https://pytorch.org/blog/flexattention/">Flex Attention</a></strong>: <code>attn_implementation: flex_attention</code>.</li>
+<li><strong><a href="https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html">SDP Attention</a></strong>: <code>attn_implementation: sdpa</code>. PyTorch’s native implementation.</li>
+<li><strong><a href="https://github.com/facebookresearch/xformers">Xformers</a></strong>: <code>attn_implementation: xformers</code>. Works with FP16.</li>
 </ul>
-<p><em>Note: You should only enable one attention backend.</em></p>
+<p>See <a href="../docs/attention.html">Attention</a> for the full list of backends and the canonical values.</p>
 </section>
 <section id="lora-optimizations" class="level3">
 <h3 class="anchored" data-anchor-id="lora-optimizations">LoRA Optimizations</h3>

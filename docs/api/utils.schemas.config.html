@@ -842,15 +842,68 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlConfigWCapabilities">AxolotlConfigWCapabilities</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlConfigWCapabilities()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Wrapper to valdiate GPU capabilities with the configured options</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.utils.schemas.config.AxolotlConfigWCapabilities.check_fp8_attention_preflight">check_fp8_attention_preflight</a></td>
+<td>fp8 attention requires SM90+ and torch &gt;= 2.11 (torchao &gt;= 0.17 is pinned).</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.utils.schemas.config.AxolotlConfigWCapabilities.check_fp8_attention_preflight" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlConfigWCapabilities.check_fp8_attention_preflight">check_fp8_attention_preflight</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlConfigWCapabilities.check_fp8_attention_preflight()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>fp8 attention requires SM90+ and torch &gt;= 2.11 (torchao &gt;= 0.17 is pinned).</p>
+</section>
+</section>
 </section>
 <section id="axolotl.utils.schemas.config.AxolotlInputConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlInputConfig">AxolotlInputConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Wrapper of all config options.</p>
+<section id="methods-1" class="level4">
+<h4 class="anchored" data-anchor-id="methods-1">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.utils.schemas.config.AxolotlInputConfig.normalize_attn_implementation">normalize_attn_implementation</a></td>
+<td>Map legacy boolean attention flags to canonical attn_implementation, warn, then strip.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.utils.schemas.config.AxolotlInputConfig.validate_attn_implementation">validate_attn_implementation</a></td>
+<td>Accept canonical names and hub-kernel paths; reject short-form aliases.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.utils.schemas.config.AxolotlInputConfig.normalize_attn_implementation" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlInputConfig.normalize_attn_implementation">normalize_attn_implementation</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig.normalize_attn_implementation(data)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Map legacy boolean attention flags to canonical attn_implementation, warn, then strip.</p>
+</section>
+<section id="axolotl.utils.schemas.config.AxolotlInputConfig.validate_attn_implementation" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlInputConfig.validate_attn_implementation">validate_attn_implementation</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig.validate_attn_implementation(value)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Accept canonical names and hub-kernel paths; reject short-form aliases.</p>
+</section>
+</section>
 </section>
 <section id="axolotl.utils.schemas.config.EBFTConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.config.EBFTConfig">EBFTConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.EBFTConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.EBFTConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Configuration for Energy-Based Fine-Tuning (EBFT)</p>
 
 
