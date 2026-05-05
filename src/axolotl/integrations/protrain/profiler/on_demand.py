@@ -403,6 +403,17 @@ class OnDemandTensorMgr:
                     spill.original_device,
                     _e,
                 )
+                # Make the "leaving on CPU storage" claim real: point
+                # ``param.data`` at the always-valid CPU spill copy and
+                # move any grad to CPU so the caller doesn't see a
+                # placeholder/transient tensor or a device-mismatched
+                # grad on the failure path (CR 3191961003).
+                spill.param.data = spill.cpu_storage
+                if (
+                    spill.param.grad is not None
+                    and getattr(spill.param.grad.device, "type", None) != "cpu"
+                ):
+                    spill.param.grad = spill.param.grad.to("cpu", non_blocking=True)
         # Synchronize each unique CUDA target the restore loop wrote
         # to. Bare ``torch.cuda.synchronize()`` only waits on the
         # current device — non_blocking copies queued to other devices
@@ -570,13 +581,19 @@ class OnDemandTensorMgr:
                     "to original data — peak may inflate for this op.",
                     exc,
                 )
-                if spill.original_data is not None:
+                if (
+                    spill.original_data is not None
+                    and spill.original_data.device == dest
+                ):
                     param.data = spill.original_data
                 else:
-                    # CPU-original: assigning cpu_storage here leaves the
-                    # weight on CPU and the next CUDA op fails with a
-                    # confusing secondary device-mismatch error, hiding
-                    # the real gather error/OOM. Surface the real cause.
+                    # Either CPU-original, OR a cross-device fallback where
+                    # original_data lives on a different device than the
+                    # current gather target. Both cases would leave a
+                    # device-mismatched weight in place that would fail with
+                    # a confusing secondary device-mismatch on the next op,
+                    # hiding the real gather error/OOM. Surface the real
+                    # cause (CR 3191961010).
                     raise
 
     def _post_release(self, module: "nn.Module", inputs: Any, output: Any) -> None:
@@ -632,8 +649,14 @@ class OnDemandTensorMgr:
             if not getattr(tensor, "is_cuda", False):
                 return tensor
             return tensor.detach().to("cpu", non_blocking=False)
-        except Exception:  # noqa: BLE001 - defensive
-            return tensor
+        except Exception as _e:  # noqa: BLE001 - surface spill failures
+            # Returning the original CUDA tensor would silently keep the
+            # saved-for-backward buffer alive on GPU, invalidating the
+            # trace peak or causing a downstream OOM without exposing
+            # why spill broke. Mirror ``_unpack_hook``'s log+raise
+            # contract so failures are visible (CR 3191961017).
+            LOG.warning("OnDemandTensorMgr pack spill failed (%s)", _e)
+            raise
 
     def _unpack_hook(self, packed: Any) -> Any:
         """Restore a spilled tensor on the configured GPU device.
