@@ -267,7 +267,7 @@ def _block_map_peak_contribution(
                 # no backward chunk-buffer materialization. ``chunks``
                 # may be empty for sparse/degenerate layouts; treat
                 # that as "no bump" since there's no chunk to gather.
-                if chunks and all(
+                if not chunks or all(
                     ChunkId(int(cid)) in persistent_chunks for cid in chunks
                 ):
                     continue
