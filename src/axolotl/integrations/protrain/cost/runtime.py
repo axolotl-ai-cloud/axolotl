@@ -16,16 +16,20 @@ sub-terms are described in prose in App A.1 but not numbered:
 
 Key accounting rules (summary §3.3, paper §3.3.1):
 
-- Persistent chunks contribute no prefetch/gather cost (they never leave
-  GPU).
-- Buffer-cached chunks skip re-gather in backward — modeled by halving
-  their backward communication term.
+- Persistent chunks contribute no prefetch/gather/H2D/D2H cost (they
+  never leave GPU), but in ZeRO-3 mode they still pay the per-chunk
+  ``T_reduce`` (reduce-scatter) at the end of backward — paper Eq. 6
+  charges ``T_reduce`` on every chunk ``i ≤ N_chunk``.
+- Buffer-cached chunks skip re-gather in backward but still pay
+  ``T_reduce`` and the D2H grad-offload — gather is amortised by the
+  cache; reduce always happens when the chunk's grads finalize.
 - CPU-Adam overlaps GPU backward; only exposed if ``T_cpu_optim`` exceeds
   ``T_bwd + T_gpu_optim``.
 - CKPT blocks add a recomputation-compute term to backward.
 - SWAP blocks add CPU<->GPU activation transfer on both sides.
-- For single-rank (``world == 1``) the NCCL gather/reduce terms are 0
-  because there are no collectives.
+- For single-rank (``world == 1``) or replicated layouts
+  (``zero3_shard=False``) the NCCL gather/reduce terms are 0 because
+  there are no per-chunk collectives.
 
 The estimator is a pure function of the frozen dataclass inputs; it does
 not allocate tensors or touch CUDA.
@@ -388,21 +392,27 @@ def _comm_time_chunk(
     *,
     is_backward: bool,
     buffer_cached: bool,
+    nccl_reduce_s: float = 0.0,
 ) -> float:
     """Return the communication time for a single non-persistent chunk.
 
     Three-way split on (is_backward, buffer_cached):
 
     - Forward (any chunk): NCCL gather + PCIe H2D (CPU->GPU shard reload)
-      to populate the chunk buffer before compute.
+      to populate the chunk buffer before compute. ``nccl_reduce_s`` is
+      ignored on forward.
     - Backward, buffer-cached: the buffer still has the chunk from
       forward, so the all-gather is skipped and the H2D reload is also
-      skipped — only the PCIe D2H (grad reduce-offload) remains.
+      skipped — only the PCIe D2H (grad reduce-offload) remains. The
+      ZeRO-3 reduce-scatter (``nccl_reduce_s``) IS charged here per
+      paper Eq. 6: reduce always happens when the chunk's grads
+      finalize, regardless of whether the chunk was buffer-cached
+      (gather is amortized by the cache; reduce is not).
     - Backward, uncached: the chunk was evicted from the buffer pool
       between forward and backward (n_buffer < n_nonpersist), so the
       shard must be re-fetched H2D *before* the all-gather can run, then
       the grad is drained D2H after the backward op. Cost is
-      ``collective + S_chunk/eff_h2d + S_chunk/eff_d2h``.
+      ``collective + reduce + S_chunk/eff_h2d + S_chunk/eff_d2h``.
 
     The third case was previously charging only ``collective +
     S_chunk/eff_d2h`` and so systematically undercosted OFFLOAD / low-
@@ -417,6 +427,12 @@ def _comm_time_chunk(
     :func:`estimate_runtime`, but that double-counted the gather (CR
     PR #13 Round-2 R3186562956); the explicit term has been removed
     and the per-chunk uncached cost here charges it exactly once.
+
+    ``nccl_reduce_s`` (default 0.0) is the per-chunk reduce-scatter
+    collective time at this S_chunk payload; the caller pre-selects the
+    right entry from ``trace.nccl_reduce_s`` and passes 0.0 when there
+    is no collective (single-rank, ``zero3_shard=False``, etc.). Added
+    uniformly to BOTH backward branches per paper Eq. 6.
     """
     # NCCL gather contribution is size-dependent; the trace keys
     # ``nccl_gather_s`` by payload bytes. We pre-selected the right
@@ -430,14 +446,16 @@ def _comm_time_chunk(
 
     if not is_backward:
         # Forward: gather then H2D reload to populate the chunk buffer.
+        # No reduce on forward.
         return collective + h2d
     if buffer_cached:
         # Backward cache-hit: skip both the all-gather and the H2D
-        # reload; only the grad drain remains.
-        return d2h
+        # reload; the grad drain plus reduce-scatter remain.
+        return d2h + nccl_reduce_s
     # Backward uncached: evicted-from-buffer chunk needs H2D reload
-    # before the gather, plus the D2H grad-offload after compute.
-    return collective + h2d + d2h
+    # before the gather, plus the D2H grad-offload after compute, plus
+    # reduce-scatter for the chunk's grad shard.
+    return collective + h2d + d2h + nccl_reduce_s
 
 
 def _pick_nccl(nccl_table: dict, payload_bytes: int) -> float:
@@ -474,17 +492,40 @@ def estimate_runtime(
 
     # NCCL table lookup at chunk-payload size. Single-rank -> world==1
     # and the tables should be empty (or contain zero times), yielding
-    # 0s here. The all-reduce (grad reduce-scatter) collective is NOT
-    # used here: the per-chunk backward comm in this model represents
-    # only the gather collective (which a buffer cache hit avoids) plus
-    # the PCIe D2H grad-offload — the reduce-scatter is overlapped with
-    # compute under ZeRO-3 and is accounted for separately when present.
+    # 0s here.
+    #
+    # Both ``nccl_gather`` (all-gather, populates the chunk buffer
+    # before compute) and ``nccl_reduce`` (reduce-scatter, drains the
+    # chunk's grad shard at the end of backward) are charged per paper
+    # Eq. 6. The earlier model dropped ``T_reduce`` entirely, justified
+    # as "overlapped with compute under ZeRO-3"; that overlap is at
+    # best partial on PCIe Gen3-class fabrics and is not a modelling
+    # assumption the paper makes. Charging ``T_reduce`` in full here is
+    # conservative — the cost model now reflects Eq. 6 directly and
+    # any genuine compute/reduce overlap shows up as estimator
+    # over-prediction rather than a structural under-credit on the
+    # comm term that lets the searcher pick reduce-heavy configs the
+    # runtime can't actually overlap.
+    #
+    # Important: ``T_reduce`` is added UNIFORMLY to every backward
+    # chunk (persistent + cached + uncached non-persistent). It is NOT
+    # part of the buffer-cache-hit savings — gather is amortised by
+    # the cache (the chunk is already resident), but reduce-scatter
+    # always happens when the chunk's grads finalize, regardless of
+    # whether the chunk was buffer-cached. The phase-2 buffer-cache
+    # delta correction at ~line 741 therefore continues to subtract
+    # only ``nccl_gather + h2d`` per delta cache hit; ``nccl_reduce``
+    # is invariant in n_buffer and cancels out of the delta.
     if not hw.zero3_shard or hw.gpu_count <= 1 or trace.world <= 1:
         nccl_gather = 0.0
+        nccl_reduce = 0.0
     else:
         nccl_gather = _pick_nccl(trace.nccl_gather_s, layout.S_chunk)
+        nccl_reduce = _pick_nccl(trace.nccl_reduce_s, layout.S_chunk)
 
-    # Non-persistent chunks: forward has gather + H2D.
+    # Non-persistent chunks: forward has gather + H2D. ``nccl_reduce`` is
+    # not passed (forward branch ignores it; default 0.0 keeps the
+    # forward cost untouched).
     t_fwd_comm_per_chunk = _comm_time_chunk(
         layout.S_chunk,
         eff_h2d,
@@ -498,11 +539,15 @@ def estimate_runtime(
     # The collective term passed here is the all-GATHER time at chunk
     # payload size — that's what a buffer cache hit saves (the gather
     # is amortised; the reduce always happens regardless of caching).
-    # Must match the phase-2 correction at ~line 626, which subtracts
-    # ``nccl_gather`` per delta cache hit; using ``nccl_reduce`` here
-    # would make the two paths disagree on the n_buffer coefficient
-    # and the searcher's optimum n_buffer would depend on which
-    # branch is taken.
+    # ``nccl_reduce`` is added inside ``_comm_time_chunk`` to BOTH
+    # backward branches per paper Eq. 6.
+    #
+    # Must keep the GATHER coefficient in lock-step with the phase-2
+    # correction at ~line 741, which subtracts ``nccl_gather + h2d``
+    # per delta cache hit. Adding ``nccl_reduce`` to the per-chunk
+    # backward cost does NOT perturb the n_buffer coefficient because
+    # the same ``nccl_reduce`` is charged on cached AND uncached
+    # branches (cancels in the cached/uncached delta).
     t_bwd_comm_per_chunk_cached = _comm_time_chunk(
         layout.S_chunk,
         eff_h2d,
@@ -510,6 +555,7 @@ def estimate_runtime(
         nccl_gather,
         is_backward=True,
         buffer_cached=True,
+        nccl_reduce_s=nccl_reduce,
     )
     t_bwd_comm_per_chunk_uncached = _comm_time_chunk(
         layout.S_chunk,
@@ -518,6 +564,7 @@ def estimate_runtime(
         nccl_gather,
         is_backward=True,
         buffer_cached=False,
+        nccl_reduce_s=nccl_reduce,
     )
 
     # ----- Forward compute ---------------------------------------------
@@ -755,7 +802,14 @@ def estimate_runtime(
         n_cached = min(n_buffer, n_nonpersist)
         n_uncached = n_nonpersist - n_cached
 
-        t_bwd_persistent_chunks = n_persist * t_bwd_compute_per_chunk
+        # Persistent chunks: paper Eq. 6 first branch — only the
+        # reduce-scatter collective contributes to comm (no gather, no
+        # H2D, no D2H grad-offload because the chunk lives on GPU).
+        # Paper Eq. 5 backward roofline is max(compute, comm) per chunk,
+        # so we max the per-chunk compute against ``nccl_reduce``.
+        t_bwd_persistent_chunks = n_persist * max(
+            t_bwd_compute_per_chunk, nccl_reduce
+        )
         t_bwd_cached_chunks = n_cached * max(
             t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_cached
         )
