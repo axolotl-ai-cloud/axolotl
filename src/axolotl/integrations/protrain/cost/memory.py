@@ -780,9 +780,73 @@ def estimate_peak(
     #   2. Aggregate-only populated (v5, or v6 when discover_blocks failed)
     #      AND all-NONE cfg -> use aggregate
     #   3. Neither -> preserve op-walk raw_peak
+    #
+    # LAYERING (post-d908bf28 fix): ``raw_peak`` is the sum of two layers,
+    #
+    #     raw_peak = model_state_present + op_walk_activation_portion
+    #
+    # where ``op_walk_activation_portion`` is everything the per-op walk
+    # contributed on top of the static persistent + buffer-pool footprint
+    # (live NONE activations, CKPT/OFFLOAD bumps, cross-attn surcharge,
+    # intra/inter deltas).
+    #
+    # ``measured_cap`` from :func:`hot_iter_peak_cap` is captured during
+    # the profiler's hook-less steady FORWARD pass (see
+    # ``profiler/trace.py::run_trace`` around the ``steady_fwd_peak_bytes``
+    # assignment). At that moment:
+    #
+    #     - fp16 params are resident (= ``N_chunk * S_chunk`` bytes)
+    #     - the forward's max activation is resident
+    #     - NO grads, NO fp32 master, NO Adam moments (the optimizer has
+    #       not been constructed yet — :class:`OnDemandTensorMgr` only
+    #       offloads params, and on-demand mode short-circuits this whole
+    #       capture path anyway, so when ``measured_cap is not None`` we
+    #       know the FAST path ran with full params on GPU).
+    #
+    # So the cap decomposes as:
+    #
+    #     measured_cap = profile_time_model_state + measured_activation_cap
+    #     profile_time_model_state = N_chunk * S_chunk
+    #
+    # Applying the cap to the FULL ``raw_peak`` (the pre-fix code) was a
+    # bug: it silently erased the per-chunk Adam-state contribution that
+    # commit d908bf28 added via :func:`model_state_present_bytes`. For a
+    # full-FT trace where ``persistent_factor ~= 8.0``, the cap clamped
+    # raw_peak to ~``measured_activation_cap + N_chunk * S_chunk`` while
+    # the true minimum is ``model_state_present + measured_activation_cap``
+    # — Codex confirmed with a synthetic full-FT trace that the
+    # pre-fix peak (~148 MB) was less than the model-state lower bound
+    # alone (~2.36 GB).
+    #
+    # The fix bounds ONLY the activation portion, leaving the model-state
+    # term intact through the cap.
     measured_cap = hot_iter_peak_cap(trace, block_map, cfg, layout)
-    if measured_cap is not None and raw_peak > measured_cap:
-        raw_peak = measured_cap
+    if measured_cap is not None:
+        # Decompose raw_peak. Defensive max() guards degenerate traces
+        # where retained_none_bytes < model_state_present (op-walk skipped
+        # because no forward ops); the static fallback above already set
+        # raw_peak = model_state_present + retained_none_bytes, so the
+        # subtraction is non-negative in practice.
+        op_walk_portion = max(0, raw_peak - model_state_present)
+        # Decompose measured_cap. The profiler ran with all params resident
+        # on GPU whenever this cap is populated — on-demand mode skips the
+        # entire steady-fwd capture (``profiler/trace.py::run_trace``
+        # gates the per-block + aggregate measurement on
+        # ``not engage_on_demand``), so ``hot_iter_peak_cap`` returns
+        # ``None`` and this branch is unreachable in that mode. Therefore
+        # the captured peak always includes ``N_chunk * S_chunk`` of
+        # resident fp16 params; subtract it to recover the activation
+        # ceiling. Clamp at 0 so synthetic test traces (e.g.
+        # ``test_estimate_peak_uses_per_block_caps`` sets a per-block peak
+        # smaller than the layout's fp16 total) don't yield a negative
+        # cap — in that degenerate case the activation portion is pinned
+        # to 0 and raw_peak collapses to the model-state floor.
+        profile_time_model_state = layout.N_chunk * layout.S_chunk
+        measured_activation_cap = max(0, measured_cap - profile_time_model_state)
+        if op_walk_portion > measured_activation_cap:
+            op_walk_portion = measured_activation_cap
+        # Reassemble: model_state_present is preserved through the cap.
+        raw_peak = model_state_present + op_walk_portion
 
     scaled = int(ALPHA_FRAGMENTATION * raw_peak)
     LOG.debug(

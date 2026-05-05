@@ -358,6 +358,137 @@ def test_estimate_peak_per_block_cap_respects_under_predict_floor(toy_layout, to
     )
 
 
+def test_estimate_peak_cap_preserves_full_ft_model_state(toy_layout, toy_hw):
+    """Regression test: the steady-fwd cap must NOT erase Adam state.
+
+    Bug background. ``cost/memory.py::hot_iter_peak_cap`` returns the
+    profiler's hook-less steady FORWARD peak. That capture happens before
+    the optimizer is constructed — only fp16 params + the forward's max
+    activation are resident on GPU at measurement time. Until the layered
+    fix below, ``estimate_peak`` clamped the WHOLE ``raw_peak`` (which
+    correctly includes ~8x persistent-chunk Adam state under full FT) by
+    that forward-only measurement, silently erasing the optimizer-state
+    contribution that commit ``d908bf28`` had added via
+    :func:`model_state_present_bytes`.
+
+    This test constructs a synthetic full-FT trace where
+    ``model_state_bytes = 8 x (N_chunk x S_chunk)`` and the per-block
+    measured forward peak is just ``S_chunk + tiny_activation``. With
+    ``n_persist = N_chunk`` (everything persistent), the model-state
+    floor is ~8 GB while the cap value is ~512 MB. The fix layers the
+    cap so it bounds only the activation portion of ``raw_peak``, leaving
+    ``model_state_present`` intact through the cap.
+
+    Acceptance: ``peak >= ALPHA_FRAGMENTATION * model_state_present_bytes``.
+    Pre-fix this returned ~ALPHA * 512 MB and would fail by ~16x.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.memory import model_state_present_bytes
+
+    n_block = 8
+    n_chunk = 12
+    s_chunk = 64 * MB
+    fp16_total = n_chunk * s_chunk  # 768 MB
+    layout = _make_layout(n_chunk=n_chunk, s_chunk=s_chunk, n_block=n_block)
+    # Full-FT aggregate state: fp16 params + fp16 grads + fp32 master
+    # + 2x fp32 Adam moments ~= 8x fp16 params.
+    full_ft_model_state = 8 * fp16_total  # ~6 GB
+    # Steady forward measured at profile time only included params +
+    # one block's activations: ~``S_chunk + activation_per_block``.
+    activation_per_block = 4 * MB
+    measured_block_peak = s_chunk + activation_per_block
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=3,
+        activation_bytes_per_block=activation_per_block,
+        model_state_bytes=full_ft_model_state,
+        intra_delta_bytes=1 * MB,
+        inter_delta_bytes=256 * 1024,
+    )
+    trace = replace(
+        trace,
+        steady_fwd_block_peak_bytes={
+            BlockId(b): measured_block_peak for b in range(n_block)
+        },
+    )
+
+    # n_persist = N_chunk -> all chunks persistent, full Adam state
+    # resident. n_buffer=0 isolates the persistent contribution.
+    cfg = CostConfig(n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0)
+    bm = assign_modes(0, 0, n_block)
+    peak = estimate_peak(cfg, trace, layout, bm, toy_hw)
+
+    expected_min = int(ALPHA_FRAGMENTATION * model_state_present_bytes(cfg, layout, trace))
+    # Sanity-check the synthetic invariant before asserting the fix.
+    assert expected_min > 4 * GB, (
+        f"test setup error: expected_min={expected_min / 1e9:.3f}GB; should "
+        "be ~6.6GB given 8x768MB model state and ALPHA=1.10"
+    )
+    assert peak >= expected_min, (
+        f"peak {peak / 1e9:.3f}GB underestimates model-state floor "
+        f"{expected_min / 1e9:.3f}GB — the steady-fwd cap is erasing the "
+        "Adam-state contribution (regression of d908bf28)"
+    )
+
+
+def test_estimate_peak_cap_lora_shape_unchanged(toy_layout, toy_hw):
+    """Cap behaviour for LoRA-shape traces (persistent_factor ~= 1.0) is
+    unchanged by the layered cap fix.
+
+    Under LoRA-with-frozen-base, ``trace.model_state_bytes`` is dominated
+    by the frozen-param resident bytes and equals ``N_chunk x S_chunk``,
+    so ``persistent_factor = 1.0``. In that regime ``model_state_present``
+    coincides with what the profiler had resident at measurement time,
+    so the new "cap only the activation portion" path collapses to the
+    pre-fix "cap raw_peak directly" behaviour for any cap value at or
+    above ``model_state_present``.
+
+    This test pins that equivalence so the fix can't silently inflate
+    LoRA-shape peaks.
+    """
+    from dataclasses import replace
+
+    n_block = 8
+    n_chunk = 12
+    s_chunk = 64 * MB
+    fp16_total = n_chunk * s_chunk
+    layout = _make_layout(n_chunk=n_chunk, s_chunk=s_chunk, n_block=n_block)
+    # LoRA-shape: aggregate state ~= fp16 param total -> persistent_factor 1.0.
+    lora_model_state = fp16_total
+    # Cap large enough to cover model_state + activation slack but small
+    # enough that without the fix, raw_peak would be capped to it.
+    measured_block_peak = fp16_total + 128 * MB
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=3,
+        activation_bytes_per_block=32 * MB,
+        model_state_bytes=lora_model_state,
+        # Huge intra_delta so raw_peak >> measured_cap absent the cap.
+        intra_delta_bytes=2 * GB,
+    )
+    trace = replace(
+        trace,
+        steady_fwd_block_peak_bytes={
+            BlockId(b): measured_block_peak for b in range(n_block)
+        },
+    )
+
+    cfg = CostConfig(n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=0)
+    bm = assign_modes(0, 0, n_block)
+    peak = estimate_peak(cfg, trace, layout, bm, toy_hw)
+    # Cap is measured_block_peak (no CKPT/OFFLOAD bumps). With the layered
+    # fix, raw_peak is ``model_state_present + min(op_walk_portion,
+    # measured_cap - fp16_total)``, which equals ``measured_block_peak``
+    # exactly when the activation cap binds — the same value the pre-fix
+    # ``raw_peak = measured_cap`` clamp produced.
+    assert peak <= int(ALPHA_FRAGMENTATION * measured_block_peak) + 1, (
+        f"LoRA-shape peak {peak / 1e6:.1f}MB should equal the cap "
+        f"~{measured_block_peak / 1e6:.1f}MB after alpha; the fix should "
+        "be a no-op when persistent_factor ~= 1.0"
+    )
+
+
 # ---------------------------------------------------------------------------
 # memory / estimate_peak — enc-dec two-tree cost-model walk (Fix 3, Item 9)
 # ---------------------------------------------------------------------------
