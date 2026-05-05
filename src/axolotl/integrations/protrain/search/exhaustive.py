@@ -307,24 +307,6 @@ def _block_map_peak_contribution(
     return best
 
 
-def _quick_peak_proxy(
-    cfg: CostConfig, trace: ProfilerTrace, layout: ChunkLayout
-) -> int:
-    """Cheap ordering key for memory-ascending enumeration.
-
-    Not used for correctness — the full ``estimate_peak`` is always
-    called. Used only to sort candidates so we walk small-peak configs
-    first, which tightens log output when we report "evaluated N
-    feasible".
-    """
-    model_state = (cfg.n_persist + cfg.n_buffer) * layout.S_chunk
-    avg_act = sum(trace.activation_sizes.values()) / max(1, len(trace.activation_sizes))
-    # CKPT and SWAP both reduce retained activations.
-    retained_blocks = len(trace.activation_sizes) - cfg.n_checkpoint - cfg.n_swap
-    retained_bytes = int(max(0, retained_blocks) * avg_act)
-    return model_state + retained_bytes
-
-
 def search(
     trace: ProfilerTrace,
     layout: ChunkLayout,

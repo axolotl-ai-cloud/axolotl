@@ -259,16 +259,22 @@ class OnDemandTensorMgr:
         for h in self._handles:
             try:
                 h.remove()
-            except Exception:  # noqa: BLE001 - defensive
-                pass
+            except Exception as exc:  # noqa: BLE001 - defensive
+                LOG.debug(
+                    "OnDemandTensorMgr: hook removal failed during partial-setup unwind (%s)",
+                    exc,
+                )
         self._handles.clear()
 
         # Exit saved_tensors_hooks if it was entered.
         if self._sthook_ctx is not None:
             try:
                 self._sthook_ctx.__exit__(None, None, None)
-            except Exception:  # noqa: BLE001 - defensive
-                pass
+            except Exception as exc:  # noqa: BLE001 - defensive
+                LOG.debug(
+                    "OnDemandTensorMgr: saved_tensors_hooks unwind failed during partial-setup (%s)",
+                    exc,
+                )
             self._sthook_ctx = None
 
         # Restore every already-spilled param using __exit__'s logic.
@@ -299,8 +305,11 @@ class OnDemandTensorMgr:
         if torch is not None and torch.cuda.is_available():
             try:
                 torch.cuda.synchronize()
-            except Exception:  # noqa: BLE001 - defensive
-                pass
+            except Exception as exc:  # noqa: BLE001 - defensive
+                LOG.debug(
+                    "OnDemandTensorMgr: synchronize failed during partial-setup unwind (%s)",
+                    exc,
+                )
         self._spills.clear()
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -314,8 +323,10 @@ class OnDemandTensorMgr:
         for h in self._handles:
             try:
                 h.remove()
-            except Exception:  # noqa: BLE001 - defensive
-                pass
+            except Exception as exc:  # noqa: BLE001 - defensive
+                LOG.debug(
+                    "OnDemandTensorMgr: hook removal failed during exit (%s)", exc
+                )
         self._handles.clear()
 
         # Exit saved_tensors_hooks BEFORE restoring params — any in-flight
@@ -357,8 +368,8 @@ class OnDemandTensorMgr:
         if torch.cuda.is_available():
             try:
                 torch.cuda.synchronize()
-            except Exception:  # noqa: BLE001 - defensive
-                pass
+            except Exception as exc:  # noqa: BLE001 - defensive
+                LOG.debug("OnDemandTensorMgr: synchronize failed during exit (%s)", exc)
         self._spills.clear()
 
     # ---- spill / restore helpers ---------------------------------------
@@ -451,16 +462,21 @@ class OnDemandTensorMgr:
     def _infer_model_device(self) -> "torch.device | None":
         """Best-effort model-device inference for default target alignment.
 
-        Returns the device of the first parameter we can find, or
-        ``None`` if the model has no parameters (or attribute access
-        fails). Used only to pick a sensible default when the caller did
-        not supply ``device=``; explicit user input always wins.
+        Returns the device of the first parameter we can find, falling
+        back to the first buffer if the model has no parameters but does
+        have CUDA buffers (so callers like ``_unpack_hook`` don't end up
+        restoring activations to ``cuda:current_device`` on a non-default
+        rank). Returns ``None`` if both iterations are empty or attribute
+        access fails. Used only to pick a sensible default when the
+        caller did not supply ``device=``; explicit user input always wins.
         """
         if self.model is None:
             return None
         try:
             for param in self.model.parameters():
                 return param.device
+            for buffer in self.model.buffers():
+                return buffer.device
         except Exception:  # noqa: BLE001 - defensive
             return None
         return None
