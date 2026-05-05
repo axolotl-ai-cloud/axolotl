@@ -65,6 +65,17 @@ def pick_S_chunk(
 
     sizes_in_order = list(model_state_bytes_per_param.values())
 
+    # Drop non-positive candidates up front: _simulate_waste rejects them with
+    # ValueError, and they're never meaningful S_chunk values. Filtering here
+    # keeps the baseline-selection invariant ``candidates[0] > 0`` so we never
+    # hand a zero/negative size to _simulate_waste below.
+    positive = tuple(S for S in candidates if S > 0)
+    if not positive:
+        raise ValueError(
+            f"candidates must contain at least one positive S_chunk; got {candidates}"
+        )
+    candidates = positive
+
     # Filter out candidates smaller than the largest single param tensor:
     # _simulate_waste counts ``max(0, S_chunk - b)`` per non-tail chunk, so
     # any chunk whose sole occupant overflows ``S_chunk`` contributes *zero*
@@ -98,4 +109,4 @@ def pick_S_chunk(
     return best_S
 
 
-__all__ = ["pick_S_chunk", "DEFAULT_GRID"]
+__all__ = ["DEFAULT_GRID", "pick_S_chunk"]

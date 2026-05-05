@@ -217,6 +217,50 @@ def _allreduce_status_or_raise(status: int, *, op: str) -> None:
         )
 
 
+def _allreduce_visibility_consensus(present: bool, *, what: str, path: str) -> bool:
+    """Reach cross-rank consensus on whether a path is visible.
+
+    All-reduces a per-rank 0/1 ``present`` flag across the cluster and
+    classifies the result into one of three states:
+
+    * ``total == 0`` (every rank reports absent) → returns ``False``;
+      caller treats the load as a no-op (e.g. first run, opt-out).
+    * ``total == world_size`` (every rank reports present) → returns
+      ``True``; caller proceeds with the read.
+    * mixed (``0 < total < world_size``) → raises ``RuntimeError`` on
+      every rank so the cluster fails in lockstep instead of letting one
+      rank silently skip the ProTrain shard while others restore it (or
+      vice versa). This is the load-side analogue of the Mode-C save
+      path's per-rank ``os.path.isdir(target)`` visibility check.
+
+    No-op when dist is not initialised: returns ``present`` as-is so
+    single-rank runs preserve their original semantics.
+
+    ``what``/``path`` are folded into the mixed-visibility error message
+    to point the user at which file failed the cross-rank check.
+    """
+    if not _dist_is_active():
+        return bool(present)
+    flag = _dist_status_tensor(1 if present else 0)
+    torch.distributed.all_reduce(flag, op=torch.distributed.ReduceOp.SUM)
+    total = int(flag.item())
+    world = int(torch.distributed.get_world_size())
+    if total == 0:
+        return False
+    if total == world:
+        return True
+    my_rank = int(torch.distributed.get_rank())
+    raise RuntimeError(
+        f"ProTrain optimizer load: {what} {path!r} is visible on "
+        f"{total}/{world} ranks (rank {my_rank} reports "
+        f"{'present' if present else 'absent'}). This usually means "
+        "``output_dir`` is not actually a shared filesystem across all "
+        "ranks, so some ranks would skip the ProTrain shard while others "
+        "restore it -- a silent split-brain. Refusing to load; aborting "
+        "on every rank so the cluster fails in lockstep."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1026,11 +1070,33 @@ def _load_protrain_optim_dir(
     """
     original_target = os.path.join(checkpoint_dir, PROTRAIN_OPTIM_DIRNAME)
     target = original_target
-    if not os.path.isdir(target):
+
+    # Cross-rank visibility consensus on ``target`` and ``meta_path``.
+    # The Mode-C save path already enforces ``os.path.isdir(target)``
+    # per-rank before writing shards (see ``_save_protrain_optim_dir``),
+    # but the load side previously gated on rank-local stat() calls. If
+    # one rank misses the directory while others see it -- e.g.
+    # ``output_dir`` is a node-local filesystem masquerading as shared,
+    # or rank-0 wrote shards visible only to itself -- the rank-local
+    # check would silently let some ranks skip ProTrain restore while
+    # others tried to load, leaving the cluster with a mixed optimizer
+    # state. Mirror the per-rank-shard-read sync up-front: every rank
+    # skips, every rank loads, or every rank fails.
+    has_dir = _allreduce_visibility_consensus(
+        os.path.isdir(target),
+        what="checkpoint directory",
+        path=target,
+    )
+    if not has_dir:
         return False
 
     meta_path = os.path.join(target, METADATA_FILENAME)
-    if not os.path.isfile(meta_path):
+    has_meta = _allreduce_visibility_consensus(
+        os.path.isfile(meta_path),
+        what="metadata file",
+        path=meta_path,
+    )
+    if not has_meta:
         raise RuntimeError(
             f"ProTrain optimizer load: {target!r} exists but lacks "
             f"{METADATA_FILENAME}. Refusing to load partial checkpoint."

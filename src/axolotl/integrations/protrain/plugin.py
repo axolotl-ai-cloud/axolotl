@@ -525,8 +525,20 @@ def _build_hardware_profile(cfg):
 
         if _dist.is_available() and _dist.is_initialized():
             world_size = max(1, int(_dist.get_world_size()))
-        else:
+        elif (
+            os.environ.get("RANK") is not None
+            and os.environ.get("LOCAL_RANK") is not None
+        ):
+            # Mirror ``_early_init_dist_for_nccl``'s launcher-env sanity
+            # check: ``WORLD_SIZE>1`` without ``RANK``/``LOCAL_RANK`` is a
+            # non-launcher / misconfigured environment where no process
+            # group can come up. Trusting ``_resolve_world_size_from_env``
+            # in that case would let the searcher pick a multi-rank cache
+            # key and ``zero3_shard=True`` for a run that's actually
+            # single-process. Fall back to 1 instead.
             world_size = _resolve_world_size_from_env()
+        else:
+            world_size = 1
     except ImportError:
         world_size = 1
 

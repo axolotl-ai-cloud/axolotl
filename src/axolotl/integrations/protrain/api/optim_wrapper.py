@@ -230,6 +230,78 @@ def _collect_no_decay_param_ids(module: "nn.Module") -> set[int]:
     return no_decay
 
 
+def _collect_sharded_no_decay_shard_param_ids(
+    chunk_manager: "ChunkManager",
+    cpu_params_per_chunk: "dict[ChunkId, list[nn.Parameter]]",
+    no_decay_orig_param_ids: set[int],
+) -> set[int]:
+    """Map the original-param no-decay set onto sharded ``shard_param`` ids.
+
+    In the M7 sharded path each chunk's CPU FusedAdam steps over the
+    flat per-region :class:`_DtypeRegion.shard_param` tensors rather
+    than the original ``nn.Parameter`` objects. The no-decay set
+    collected from ``module.named_parameters()`` is keyed by the
+    original-param ``id()``, so a direct id-match on the shard_params
+    finds nothing — and norm/bias params silently inherit the global
+    ``weight_decay`` (CR PR #17 R3190973417).
+
+    Strategy: for each sharded chunk we already have the byte layout in
+    ``chunk_manager._cpu_slots[cid]`` (each slot carries ``param_id`` +
+    ``byte_offset`` + ``numel * element_size``) and the per-region
+    ``[chunk_offset, chunk_offset + region_bytes)`` extent. A region
+    inherits no-decay status iff ANY source param whose byte range
+    intersects the region is in the original no-decay set. This is the
+    correctness-conservative direction: HF Trainer also drops the whole
+    norm/bias param into the wd=0 group, so we never under-decay any
+    source param that the upstream Trainer would have decayed; we may
+    over-cover a few decay-bytes that share a region with a norm scale,
+    but those bytes are the SAME bytes Mode-C would already keep at
+    fp32 (and which dtype-splitting tends to put in their own region
+    anyway).
+
+    Returns a set of ``id(shard_param)`` that should be treated as
+    no-decay. Empty when the chunk manager has no sharded chunks
+    populated, or when the no-decay source set is itself empty.
+    """
+    if not no_decay_orig_param_ids:
+        return set()
+    chunk_shards = getattr(chunk_manager, "_chunk_shards", None)
+    if not chunk_shards:
+        return set()
+    cpu_slots_by_cid = getattr(chunk_manager, "_cpu_slots", {}) or {}
+    no_decay_shard_ids: set[int] = set()
+    for cid, _params in cpu_params_per_chunk.items():
+        shard_state = chunk_shards.get(cid)
+        if shard_state is None or not shard_state.regions:
+            continue
+        slots = cpu_slots_by_cid.get(cid, [])
+        if not slots:
+            continue
+        # Pre-resolve each slot to (start, end, is_no_decay) once.
+        slot_extents: list[tuple[int, int, bool]] = []
+        for slot in slots:
+            param = chunk_manager._params_by_id.get(slot.param_id)
+            if param is None:
+                continue
+            start = int(slot.byte_offset)
+            end = start + int(slot.numel) * int(slot.element_size)
+            slot_extents.append((start, end, id(param) in no_decay_orig_param_ids))
+        for region in shard_state.regions:
+            r_start = int(region.chunk_offset)
+            r_end = r_start + int(region.region_bytes)
+            region_has_no_decay = False
+            for s_start, s_end, slot_no_decay in slot_extents:
+                if not slot_no_decay:
+                    continue
+                # Intersection check.
+                if s_start < r_end and s_end > r_start:
+                    region_has_no_decay = True
+                    break
+            if region_has_no_decay:
+                no_decay_shard_ids.add(id(region.shard_param))
+    return no_decay_shard_ids
+
+
 def _split_optim_param_groups(
     inner: torch.optim.Optimizer | None,
     no_decay_param_ids: set[int],
@@ -314,15 +386,22 @@ def protrain_optimizer_wrapper(
     construction (see :func:`_split_optim_param_groups`); the supplied
     ``weight_decay`` argument applies only to the decay group.
 
-    Caveat — sharded path: when ``zero3_shard=True`` the CPU adapter is
-    built against each chunk's flat per-region ``shard_param`` rather
-    than the original ``nn.Parameter`` objects, so we cannot identify
-    bias/norm BYTES inside a shard_param post-hoc. ``_DtypeRegion``
-    splitting on dtype already isolates fp32 norm regions from fp16
-    attention/MLP regions on the standard Llama config, but bias terms
-    that share their parent linear's dtype remain in the decay group in
-    that mode. Splitting regions on decay-membership requires touching
-    ``ChunkManager.materialize_offload`` and is deferred.
+    Sharded path (``zero3_shard=True``): the CPU adapter steps over each
+    chunk's per-region flat ``shard_param`` rather than the original
+    ``nn.Parameter`` objects, so a direct id-match against the
+    no-decay source set finds nothing. We bridge that gap in
+    :func:`_collect_sharded_no_decay_shard_param_ids` by walking
+    ``ChunkManager._cpu_slots`` (which carries ``param_id`` +
+    ``byte_offset`` + ``numel * element_size`` per param) and
+    intersecting each slot's byte range against each region's
+    ``[chunk_offset, chunk_offset + region_bytes)`` extent: any region
+    overlapping at least one no-decay source param has its
+    ``shard_param`` added to the no-decay set fed to
+    :func:`_split_optim_param_groups`. This is correctness-conservative
+    — we may carry a few wd=decay bytes inside a region pinned to wd=0
+    by an adjoining norm scale, but we never silently decay a bias or
+    norm param the upstream Trainer would have left at ``wd=0``
+    (CR PR #17 R3190973417).
     """
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
     layout = chunk_manager.layout
@@ -463,19 +542,34 @@ def protrain_optimizer_wrapper(
     # split out the no-decay subset. ``model_wrapper.py`` resolves
     # ``wrapped.module`` to the original (pre-block-wrap) ``nn.Module``,
     # which is the same names ``named_parameters()`` returned at chunk
-    # build time, so id-membership matches what the adapters now hold.
+    # build time, so id-membership matches the GPU optim's persistent
+    # params directly. For the CPU optim's sharded chunks the shard_param
+    # ids do NOT match the original-param ids, so we bridge with
+    # :func:`_collect_sharded_no_decay_shard_param_ids` (region byte
+    # intersection); see its docstring for the correctness argument.
     no_decay_param_ids = _collect_no_decay_param_ids(wrapped.module)
     if no_decay_param_ids:
         if gpu_optim is not None:
             _split_optim_param_groups(gpu_optim.underlying, no_decay_param_ids)
         if cpu_optim is not None:
+            sharded_no_decay_ids = _collect_sharded_no_decay_shard_param_ids(
+                chunk_manager,
+                cpu_params_per_chunk,
+                no_decay_param_ids,
+            )
+            # Union: original-param ids cover the homogeneous-replicated
+            # path (where the CPU adapter holds the original nn.Parameters),
+            # shard_param ids cover the M7 sharded path. A given inner
+            # optimizer only sees one set or the other, so the union is
+            # always disjoint at lookup time.
+            cpu_no_decay_ids = no_decay_param_ids | sharded_no_decay_ids
             # ``CpuFusedAdamAdapter`` exposes per-chunk inner optimizers via
             # the (private) ``_optims`` dict; there's no public iterator,
             # and adding one would touch a sibling file. ``getattr`` keeps
             # this resilient if a future refactor renames the slot.
             inner_optims = getattr(cpu_optim, "_optims", {}) or {}
             for inner in inner_optims.values():
-                _split_optim_param_groups(inner, no_decay_param_ids)
+                _split_optim_param_groups(inner, cpu_no_decay_ids)
 
     # Swap the freshly-built adapters into the chunk manager so the
     # scheduler's post_block_backward -> reduce_grads_and_offload ->

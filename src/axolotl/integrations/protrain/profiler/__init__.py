@@ -46,8 +46,8 @@ def reconstruct_peak_bytes(trace: ProfilerTrace) -> int:
     both numbers track the same physical quantity when every block is NONE.
     """
     activations = sum(trace.activation_sizes.values())
-    intra = max(trace.intra_op_delta.values(), default=0)
-    inter = max(trace.inter_op_delta.values(), default=0)
+    intra = max(0, max(trace.intra_op_delta.values(), default=0))
+    inter = max(0, max(trace.inter_op_delta.values(), default=0))
     return int(trace.model_state_bytes + activations + intra + inter)
 
 

@@ -31,6 +31,7 @@ of the space without the full op-walk.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Iterable, Iterator
 
@@ -394,6 +395,8 @@ def search(
     n_feasible = 0
     n_gpu_feasible = 0  # cleared GPU gate (used to disambiguate failure mode)
     n_cpu_rejected = 0  # cleared GPU gate but failed CPU gate
+    # cleared GPU+CPU gates but estimate_runtime returned non-finite
+    n_runtime_rejected = 0
     best_iter_s: float = float("inf")
     best_cfg: CostConfig | None = None
     best_block_map: BlockStrategyMap | None = None
@@ -589,6 +592,16 @@ def search(
                         predicted_iter_s = estimate_runtime(
                             cfg, trace, layout, block_map, hw
                         )
+                        # Non-finite runtime (e.g. inf when CPU-Adam is
+                        # unavailable for non-persistent chunks, or NaN from
+                        # an underlying numerical failure) means this config
+                        # cleared every capacity gate but cannot be costed.
+                        # Track separately so the failure-mode disambiguator
+                        # below doesn't blame GPU/CPU capacity when the real
+                        # binding constraint is a runtime/dependency gap.
+                        if not math.isfinite(predicted_iter_s):
+                            n_runtime_rejected += 1
+                            continue
                         if predicted_iter_s < best_iter_s:
                             best_iter_s = predicted_iter_s
                             best_cfg = cfg
@@ -596,11 +609,24 @@ def search(
                             best_peak = predicted_peak
 
     if best_cfg is None or best_block_map is None:
-        # Disambiguate the failure mode for the caller. If at least one
-        # candidate cleared the GPU gate but every such candidate
-        # exceeded the CPU envelope, the binding constraint is host RAM,
-        # not GPU memory — surface that explicitly so the user knows to
-        # add nodes / system RAM rather than larger cards.
+        # Disambiguate the failure mode for the caller. If every fully
+        # capacity-feasible config produced a non-finite runtime
+        # estimate, the binding constraint is a runtime/dependency gap
+        # (e.g. CPU-Adam unavailable for non-persistent chunks), not
+        # capacity — surface that explicitly so the user doesn't waste
+        # time chasing memory budgets.
+        if n_feasible > 0 and n_runtime_rejected == n_feasible:
+            raise RuntimeError(
+                "no ProTrain config has a finite runtime estimate; every "
+                f"capacity-feasible config (out of {n_feasible}) was "
+                "rejected by estimate_runtime (likely CPU-Adam unavailable "
+                "for non-persistent chunks on this setup). Evaluated "
+                f"{n_total} configs total."
+            )
+        # If at least one candidate cleared the GPU gate but every such
+        # candidate exceeded the CPU envelope, the binding constraint is
+        # host RAM, not GPU memory — surface that explicitly so the user
+        # knows to add nodes / system RAM rather than larger cards.
         if (
             cpu_capacity_bytes is not None
             and n_gpu_feasible > 0

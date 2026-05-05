@@ -1,6 +1,6 @@
 ## Purpose
 
-This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 4-knob cost model, and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation is opt-in via `plugins: [axolotl.integrations.protrain]` in the user YAML; mutual exclusion with `deepspeed:` and `fsdp:` is enforced by a pydantic validator in `args.py`.
+This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 5-axis cost model (`n_persist`, `n_buffer`, `n_swap`, `n_checkpoint`, `n_offload` — the OFFLOAD axis was added by Option B / `BLOCK_MODE_OFFLOAD_DESIGN.md`), and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation is opt-in via `plugins: [axolotl.integrations.protrain]` in the user YAML; mutual exclusion with `deepspeed:` and `fsdp:` is enforced by a pydantic validator in `args.py`.
 
 ## Workstream-shape ratifications (drift from `plan.md`)
 
@@ -41,7 +41,8 @@ src/axolotl/integrations/protrain/
 │   ├── checkpoint.py            # CKPT path (torch.utils.checkpoint adapter)
 │   ├── swap.py                  # SWAP wrapper: D2H in fwd / H2D in bwd on _swap_stream
 │   ├── swap_pool.py             # pinned-RAM activation slot pool
-│   └── layout_rules.py          # placement rules: swap-early / unopt-late / interleave
+│   ├── offload.py               # OFFLOAD path (Option B): non-persist chunk re-gather in bwd, no recompute
+│   └── layout_rules.py          # placement rules: swap-early / unopt-late / interleave (incl. n_offload)
 ├── cost/
 │   ├── __init__.py
 │   ├── runtime.py               # Eqs. 2–7, per-chunk max(compute, comm) roofline
@@ -50,7 +51,7 @@ src/axolotl/integrations/protrain/
 ├── search/
 │   ├── __init__.py
 │   ├── knobs.py                 # CostConfig + bound derivation (N_chunk, N_block, N_interval)
-│   └── exhaustive.py            # 4-knob enumeration with memory-ascending pruning
+│   └── exhaustive.py            # 5-axis enumeration (incl. n_offload) with memory-ascending pruning
 ├── runtime/
 │   ├── __init__.py
 │   ├── streams.py               # single-stream alloc scheme (App B.2)
@@ -108,7 +109,8 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 - `checkpoint.py` — thin wrapper over `torch.utils.checkpoint.checkpoint` (use_reentrant=False). §3.1.2.
 - `swap.py` — `SwappedBlock`: wraps the block's forward in a `torch.autograd.graph.saved_tensors_hooks` context so **every autograd-saved tensor** (not just the block output) is D2H-copied to a pinned-host slot on `_swap_stream` in forward and H2D-copied back on `_swap_stream` in backward, with cross-stream event handshake against the default compute stream. Pool + stream are injected post-construction via `attach_runtime`; wrapper lifetime spans one fwd+bwd pair, and memory accounting must charge the sum of saved-tensor bytes (activations, RNG state, intermediate tensors), not just the block output. §3.1.2.
 - `swap_pool.py` — `ActivationSwapPool`: pinned-host slot pool sized to `n_swap × prefetch_depth × max_act_bytes`. Backed by one `PinnedHostMemory` allocation; slot acquire/release tracked Python-side. §3.1.2.
-- `layout_rules.py` — `assign_modes(n_swap, n_checkpoint, N_block) -> BlockStrategyMap`. Swap-early / unopt-late / interleave. §3.1.2.
+- `offload.py` — Option B path: keeps a non-persistent chunk's owning block under `BlockMode.NONE` (no recompute) by re-gathering the chunk for backward and offloading after fwd. See `BLOCK_MODE_OFFLOAD_DESIGN.md` §3 / §6 for the storage-ptr book-keeping and runtime hook contract.
+- `layout_rules.py` — `assign_modes(n_swap, n_checkpoint, n_offload, N_block) -> BlockStrategyMap`. Swap-early / unopt-late / interleave; `n_offload` honors the unopt-late rule (`BLOCK_MODE_OFFLOAD_DESIGN.md` §5.1). §3.1.2.
 
 ### cost/ (M4)
 
@@ -119,7 +121,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 ### search/ (M4)
 
 - `knobs.py` — `CostConfig` dataclass + `derive_bounds(trace, layout) -> Bounds(N_chunk, N_block, N_interval)`. §3.3.
-- `exhaustive.py` — `search(trace, layout, capacity_bytes) -> SearchResult`. Enumerates 4-tuple in memory-ascending order, prunes OOM, returns argmin(T_iter). §3.3.
+- `exhaustive.py` — `search(trace, layout, capacity_bytes) -> SearchResult`. Enumerates the 5-axis tuple `(n_persist, n_buffer, n_swap, n_checkpoint, n_offload)` in memory-ascending order, prunes OOM, returns argmin(T_iter). The `n_offload` axis (Option B) is the outermost loop; see `BLOCK_MODE_OFFLOAD_DESIGN.md` §5 for the enumeration order. §3.3.
 
 ### runtime/ (M2+M3 integration)
 
@@ -162,10 +164,11 @@ BlockStrategyMap = dict[int, BlockMode]
 
 @dataclass(frozen=True)
 class CostConfig:
-    n_persist: int
-    n_buffer: int
-    n_swap: int
-    n_checkpoint: int
+    n_persist: int       # chunks pinned on GPU
+    n_buffer: int        # pre-allocated chunk buffers
+    n_swap: int          # blocks using activation swap
+    n_checkpoint: int    # blocks using gradient checkpointing
+    n_offload: int = 0   # blocks using BlockMode.OFFLOAD (Option B; see BLOCK_MODE_OFFLOAD_DESIGN.md)
 
 @dataclass(frozen=True)
 class SearchResult:

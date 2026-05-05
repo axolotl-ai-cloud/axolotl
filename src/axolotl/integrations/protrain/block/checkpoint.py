@@ -23,7 +23,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import torch
 import torch.utils.checkpoint as torch_checkpoint
 from torch import nn
 
@@ -103,7 +102,3 @@ class CheckpointedBlock(nn.Module):
 
 
 __all__ = ["CheckpointedBlock"]
-
-
-# Silence unused import warnings when torch is present only for type hints.
-_ = torch

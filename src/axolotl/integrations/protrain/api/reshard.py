@@ -222,7 +222,7 @@ def _read_metadata(src_dir: str) -> dict[str, Any]:
     meta_path = os.path.join(src_dir, METADATA_FILENAME)
     if not os.path.isfile(meta_path):
         raise RuntimeError(f"reshard: missing metadata at {meta_path!r}")
-    with open(meta_path) as f:
+    with open(meta_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -496,7 +496,7 @@ def reshard_mode_c_shards(
     new_meta["resharded_from_world_size"] = int(src_world)
     # ``saving_rank`` is only meaningful for the original save; preserve it.
 
-    with open(os.path.join(dst_dir, METADATA_FILENAME), "w") as f:
+    with open(os.path.join(dst_dir, METADATA_FILENAME), "w", encoding="utf-8") as f:
         json.dump(new_meta, f, indent=2, sort_keys=True)
 
     log_fn(

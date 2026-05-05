@@ -42,18 +42,35 @@ def _load_cudart() -> ctypes.CDLL | None:
     finally ``ctypes.util.find_library('cudart')`` which resolves to
     whichever ``libcudart.so.*`` ``ldconfig`` knows about.
     """
-    # Explicit versioned SONAMEs come first so we prefer a specific major
+    # Prefer the runtime that matches the PyTorch build when discoverable —
+    # mixing torch's compiled-against major with a different ``libcudart`` on
+    # the search path is a known compatibility hazard, so we try the matching
+    # SONAME first before falling back to the deterministic newest-first list.
+    try:
+        import torch
+
+        cuda_version = torch.version.cuda
+    except Exception:  # noqa: BLE001
+        cuda_version = None
+
+    # Explicit versioned SONAMEs follow so we prefer a specific major
     # version (and a deterministic newest-first order) when more than one
     # runtime is on the library search path. ``libcudart.so`` is the
     # unversioned symlink (only present with -dev packages) and is tried
     # last as a fallback for systems where the versioned SONAME isn't
     # directly resolvable but the dev symlink is.
-    candidates: list[str] = [
-        "libcudart.so.13",
-        "libcudart.so.12",
-        "libcudart.so.11.0",
-        "libcudart.so",
-    ]
+    candidates: list[str] = []
+    if cuda_version:
+        major = cuda_version.split(".", maxsplit=1)[0]
+        candidates.append(f"libcudart.so.{major}")
+    candidates.extend(
+        [
+            "libcudart.so.13",
+            "libcudart.so.12",
+            "libcudart.so.11.0",
+            "libcudart.so",
+        ]
+    )
     # Let ctypes locate whatever the current ld cache has, too.
     resolved = ctypes.util.find_library("cudart")
     if resolved:

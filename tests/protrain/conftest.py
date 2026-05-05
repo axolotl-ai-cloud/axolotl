@@ -16,8 +16,8 @@ Recommended invocation:
   the ``-m 'not slow'`` addopts, so no cross-test contamination is
   possible.
 * Slow suite: ``pytest tests/protrain/ -m 'slow or not slow' -p no:xdist``
-  — run sequentially (no xdist) and prefer running the 7B-class tests in
-  their own process (``pytest ... --forked`` or as a separate invocation).
+  — run sequentially (no xdist) and prefer running the 7B-class tests as
+  a separate ``pytest`` invocation so each gets a fresh CUDA context.
 
 The ``reset_cuda_state_between_tests`` fixture below is ``autouse`` for
 tests marked ``slow`` so that back-to-back slow tests at least start
@@ -103,14 +103,14 @@ def reset_cuda_state_between_tests(request: pytest.FixtureRequest) -> Iterator[N
         yield
         return
 
+    gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
-    gc.collect()
     try:
         yield
     finally:
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.synchronize()
-        gc.collect()

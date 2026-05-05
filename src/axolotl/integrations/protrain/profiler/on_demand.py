@@ -150,16 +150,29 @@ class OnDemandTensorMgr:
 
         import torch
 
-        # If no explicit device was provided, infer the active CUDA device
-        # so ``_unpack_hook`` has a real GPU target to copy spilled saved
-        # tensors back to. Without this the unpack hook hits its
+        # If no explicit device was provided, infer from the model's own
+        # parameter placement first (so multi-GPU / non-default-CUDA-device
+        # callers don't silently get cuda:current_device when their model
+        # lives on a different card), then fall back to the active CUDA
+        # device. Without this the unpack hook hits its
         # ``self.device is None`` early-return on the first saved
         # activation and backward fails the moment it touches a CPU
         # tensor on a CUDA grad path.
-        if self.device is None and torch.cuda.is_available():
-            self.device = torch.device("cuda", torch.cuda.current_device())
+        if self.device is None:
+            model_device = self._infer_model_device()
+            if model_device is not None and model_device.type == "cuda":
+                self.device = model_device
+            elif torch.cuda.is_available():
+                self.device = torch.device("cuda", torch.cuda.current_device())
 
-        target_device = torch.device(self.device) if self.device is not None else None
+        # Normalize self.device once: ``torch.device(0)`` is invalid in
+        # PyTorch 2.6 — bare ints must go through ``torch.device("cuda", n)``.
+        # Also fold ``str`` and existing ``torch.device`` into the same form
+        # so all downstream consumers (_gather_target_device, _unpack_hook)
+        # can rely on ``self.device`` being a ``torch.device`` or ``None``.
+        if self.device is not None:
+            self.device = self._normalize_device(self.device)
+        target_device = self.device
 
         # 1. Spill every parameter to pinned CPU; replace .data with empty.
         # 2. Install module-level pre/post-forward hooks.
@@ -417,21 +430,58 @@ class OnDemandTensorMgr:
 
     # ---- module-level gather/release hooks -----------------------------
 
+    @staticmethod
+    def _normalize_device(device: "torch.device | str | int") -> "torch.device":
+        """Normalize a device-like value to a ``torch.device``.
+
+        ``torch.device(0)`` raises in PyTorch 2.6 (a bare int is not a
+        valid single-arg constructor). Funnel ints through
+        ``torch.device("cuda", index)`` and pass strings / existing
+        ``torch.device`` through unchanged.
+        """
+        import torch
+
+        if isinstance(device, torch.device):
+            return device
+        if isinstance(device, int):
+            return torch.device("cuda", device)
+        return torch.device(device)
+
+    def _infer_model_device(self) -> "torch.device | None":
+        """Best-effort model-device inference for default target alignment.
+
+        Returns the device of the first parameter we can find, or
+        ``None`` if the model has no parameters (or attribute access
+        fails). Used only to pick a sensible default when the caller did
+        not supply ``device=``; explicit user input always wins.
+        """
+        if self.model is None:
+            return None
+        try:
+            for param in self.model.parameters():
+                return param.device
+        except Exception:  # noqa: BLE001 - defensive
+            return None
+        return None
+
     def _gather_target_device(self) -> "torch.device | None":
         """Resolve the target device for gathered params.
 
         Falls back to the param's original device if the manager wasn't
-        constructed with an explicit ``device``.
+        constructed with an explicit ``device``. ``self.device`` is
+        already normalized to a ``torch.device`` (or ``None``) by
+        ``__enter__`` — but if the manager is invoked outside the
+        ``with`` block (e.g. by callers that drive hooks manually), or
+        was never entered, ``self.device`` may still be a raw
+        ``str``/``int``. Normalize defensively.
         """
-        import torch
-
         if self.device is None:
             return None
-        return (
-            torch.device(self.device)
-            if not isinstance(self.device, torch.device)
-            else self.device
-        )
+        import torch
+
+        if isinstance(self.device, torch.device):
+            return self.device
+        return self._normalize_device(self.device)
 
     def _pre_gather(self, module: "nn.Module", inputs: Any) -> None:
         """Copy the module's *direct* params from CPU to target_device before forward."""
@@ -532,14 +582,9 @@ class OnDemandTensorMgr:
                 # mismatch itself if it matters.
                 return packed
             try:
-                import torch
-            except Exception:  # noqa: BLE001 - defensive
+                target = self._normalize_device(self.device)
+            except Exception:  # noqa: BLE001 - defensive (torch import inside)
                 return packed
-            target = (
-                self.device
-                if isinstance(self.device, torch.device)
-                else torch.device(self.device)
-            )
             if target.type == "cpu":
                 return packed
             return packed.to(target, non_blocking=True)

@@ -202,9 +202,17 @@ def seq_classification_batch_factory(
 
     Includes ``attention_mask`` because BERT-style encoders compute the
     pooled representation as a masked mean over the sequence dimension
-    and HF errors out without one on some checkpoints. Labels are shape
-    ``(batch_size,)``, integer-typed, drawn uniformly over
-    ``[0, num_labels)``.
+    and HF errors out without one on some checkpoints.
+
+    Label shape/dtype follows ``model.config.problem_type`` so we exercise
+    the same loss path the real training run would:
+
+    * ``"regression"`` — float tensor of shape ``(batch_size,)`` (HF uses
+      MSE; integer labels would either crash or silently cast).
+    * ``"multi_label_classification"`` — float tensor of shape
+      ``(batch_size, num_labels)`` with 0/1 entries (HF uses BCE-with-logits).
+    * Anything else (single-label / unset) — long tensor of shape
+      ``(batch_size,)`` drawn uniformly over ``[0, num_labels)``.
     """
     import torch
 
@@ -218,13 +226,31 @@ def seq_classification_batch_factory(
         dtype=torch.long,
     )
     attention_mask = torch.ones((batch_size, seq_len), device=device, dtype=torch.long)
-    labels = torch.randint(
-        low=0,
-        high=max(num_labels, 1),
-        size=(batch_size,),
-        device=device,
-        dtype=torch.long,
-    )
+
+    cfg = getattr(model, "config", None)
+    problem_type = getattr(cfg, "problem_type", None) if cfg is not None else None
+    if problem_type == "regression":
+        labels = torch.randn(
+            (batch_size,),
+            device=device,
+            dtype=torch.float,
+        )
+    elif problem_type == "multi_label_classification":
+        labels = torch.randint(
+            low=0,
+            high=2,
+            size=(batch_size, max(num_labels, 1)),
+            device=device,
+            dtype=torch.long,
+        ).to(dtype=torch.float)
+    else:
+        labels = torch.randint(
+            low=0,
+            high=max(num_labels, 1),
+            size=(batch_size,),
+            device=device,
+            dtype=torch.long,
+        )
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,

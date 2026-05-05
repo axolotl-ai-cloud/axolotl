@@ -844,48 +844,48 @@ Exit criteria met: all three pass on the 4× 3090 target rig (per
 
 ---
 
-## 8. Deferral / kill criteria
+## 8. Deferral / kill criteria (historical)
 
-This design should NOT be implemented if any of the following hold:
+> **Note (post-ship):** Option B has landed (M1–M5 complete; see the
+> header and §7 Implementation roadmap). The criteria below were the
+> original pre-implementation gates evaluated before code was written;
+> they are preserved as historical context for future reviewers /
+> incident analysis. **None of these gates triggered.** Read this
+> section as a record of what *would have* deferred the work, not as
+> live guidance.
 
-1. **Paper-clarification disagreement.** If during the §2 paper
-   review (a re-read by the implementation agent before writing
-   code) we find the paper *explicitly* requires CKPT for offloaded
-   chunks, defer to a paper-clarification follow-up. Author-contact
-   may be warranted before re-attempting Option B.
+The following five conditions were the pre-implementation deferral
+gates. For each, the post-ship outcome is recorded inline:
 
-2. **PyTorch storage-pointer fragility.** If the §6.1 storage-ptr
-   identification fails in unit testing (e.g. autograd internal
-   collapses chunk-buffer storage with an unrelated tensor's
-   storage), back out and consider Option A (extend NONE
-   semantics), which can use weakrefs on `nn.Parameter` instances
-   directly — those don't hit the storage-collapse path.
+1. **Paper-clarification disagreement.** *Outcome:* the §2 paper
+   re-read confirmed Option B is consistent with the paper's
+   description; no clarification needed.
 
-3. **DeepSpeed Stage-3 baseline shifts.** If the v1 acceptance
-   criteria (per `MEMORY.md::feedback_paper_alignment`) tighten the
-   "apples-to-apples DeepSpeed comparison" requirement to the point
-   where Option B alone isn't sufficient (e.g. reviewer wants
-   ZeRO-Infinity NVMe paths), defer until the broader scope is
-   re-prioritized.
+2. **PyTorch storage-pointer fragility.** *Outcome:* the §6.1
+   storage-ptr identification held up in unit testing across the
+   M1/M2 milestones; no fallback to Option A was required.
 
-4. **Searcher-driven CKPT remains optimal in practice.** If the
-   cost-model M4 work shows that on the 3090 / PCIe Gen3 target
-   rig, OFFLOAD never wins against CKPT for realistic 7B-class
-   models (because PCIe is too slow and per-block compute is too
-   cheap), the throughput motivation evaporates. Option B would
-   then be **scientific-completeness only** (the apples-to-apples
-   comparison) and reviewers may legitimately defer. Plan the M4
-   calibration check explicitly as a go/no-go gate before M5.
+3. **DeepSpeed Stage-3 baseline shifts.** *Outcome:* v1 acceptance
+   criteria (per `MEMORY.md::feedback_paper_alignment`) did not
+   require ZeRO-Infinity NVMe paths; Option B's apples-to-apples
+   comparison surface was sufficient.
 
-5. **Runtime correctness regressions in M2 / M3.** If the
-   per-storage-ptr book-keeping introduces correctness bugs in
-   non-OFFLOAD paths (e.g. the new dict in ChunkManager corrupts
-   the persistent path), revert and re-architect with an explicit
-   `OffloadedChunkManager` subclass instead of in-place mutation.
+4. **Searcher-driven CKPT remains optimal in practice.** *Outcome:*
+   M4 calibration on the 3090 / PCIe Gen3 rig found OFFLOAD
+   competitive (Mode-C ≥1.2× throughput vs DS Stage-3 at 1.5B+, per
+   `MEMORY.md::protrain_branch_state`); the throughput motivation
+   was upheld and M5 proceeded.
 
-A go-decision requires (1) paper re-confirmation, (2) M4 calibration
-showing at least 1.2× throughput win on the 3090 rig at 3B+, and
-(3) reviewer sign-off on this doc.
+5. **Runtime correctness regressions in M2 / M3.** *Outcome:* the
+   per-storage-ptr book-keeping shipped without corrupting the
+   persistent / non-OFFLOAD paths; the inline ChunkManager mutation
+   approach was retained (no `OffloadedChunkManager` subclass
+   carve-out needed).
+
+The original go-decision required (1) paper re-confirmation,
+(2) M4 calibration showing ≥1.2× throughput win on the 3090 rig at
+3B+, and (3) reviewer sign-off on this doc — all three were
+satisfied prior to the M5 ship listed in the header.
 
 ---
 

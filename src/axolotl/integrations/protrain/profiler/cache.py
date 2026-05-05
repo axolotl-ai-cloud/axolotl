@@ -283,8 +283,10 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
 def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     """Reconstruct a ``ProfilerTrace`` from its JSON-decoded dict.
 
-    Raises ``KeyError`` / ``ValueError`` / ``TypeError`` if required fields
-    are missing or malformed; callers treat that as a cache miss.
+    Raises ``AttributeError`` / ``KeyError`` / ``ValueError`` / ``TypeError``
+    if required fields are missing or malformed (including nested payload
+    shape corruption such as ``"intra_op_delta": []`` where ``.items()`` is
+    called on a non-mapping); callers treat that as a cache miss.
     """
     # ``phase2_n_offload`` (TRACE_VERSION 18) joined the phase-2 cfg tuple.
     # Pass it as a kwarg only when the live ``ProfilerTrace`` dataclass
@@ -376,7 +378,11 @@ def load_cached_trace(key: ProfilerCacheKey) -> ProfilerTrace | None:
         return None
     try:
         return _trace_from_dict(data)
-    except (KeyError, TypeError, ValueError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        # ``AttributeError`` covers nested payload shape corruption — e.g. a
+        # malformed ``"intra_op_delta": []`` makes ``_trace_from_dict`` call
+        # ``.items()`` on a list, which would otherwise escape and abort
+        # startup instead of degrading to a clean cache miss.
         LOG.warning(
             "profiler cache at %s failed deserialization (%s); treating as miss.",
             path,
