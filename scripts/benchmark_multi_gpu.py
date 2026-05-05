@@ -50,6 +50,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import statistics
 import subprocess  # nosec B404
 import sys
@@ -421,18 +422,26 @@ def _launch_mode(
     script_path.write_text(_WORKER_SCRIPT)
     log_path = work_dir / f"worker_{mode}.log"
     with log_path.open("w") as log_f:
-        proc = subprocess.run(  # nosec B603
+        proc = subprocess.Popen(  # nosec B603
             [sys.executable, str(script_path)],
             env=env,
             stdout=log_f,
             stderr=subprocess.STDOUT,
-            check=False,
-            timeout=1800,
+            start_new_session=True,
         )
-    if proc.returncode != 0:
+        try:
+            returncode = proc.wait(timeout=1800)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            tail = log_path.read_text(encoding="utf-8", errors="replace")[-6000:]
+            raise RuntimeError(
+                f"mode={mode} worker timed out; killed process group; log tail:\n{tail}"
+            ) from None
+    if returncode != 0:
         tail = log_path.read_text(encoding="utf-8", errors="replace")[-6000:]
         raise RuntimeError(
-            f"mode={mode} worker failed (exit={proc.returncode}); log tail:\n{tail}"
+            f"mode={mode} worker failed (exit={returncode}); log tail:\n{tail}"
         )
 
     # Collect per-rank stats.

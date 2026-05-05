@@ -357,6 +357,17 @@ class OnDemandTensorMgr:
                 else:
                     # CPU-original — cpu_storage is the original tensor.
                     spill.param.data = spill.cpu_storage
+                # Grad may have been computed (or moved) on the gather
+                # device while the param was spilled. If it's not on the
+                # param's original device, the next optimizer step / CPU-
+                # side use hits a device mismatch. Move it back.
+                if (
+                    spill.param.grad is not None
+                    and spill.param.grad.device != spill.original_device
+                ):
+                    spill.param.grad = spill.param.grad.to(
+                        spill.original_device, non_blocking=True
+                    )
             except Exception as _e:  # noqa: BLE001 - defensive
                 LOG.warning(
                     "OnDemandTensorMgr: failed to restore param to %s (%s); "
@@ -520,7 +531,11 @@ class OnDemandTensorMgr:
                 if spill.original_data is not None:
                     param.data = spill.original_data
                 else:
-                    param.data = spill.cpu_storage
+                    # CPU-original: assigning cpu_storage here leaves the
+                    # weight on CPU and the next CUDA op fails with a
+                    # confusing secondary device-mismatch error, hiding
+                    # the real gather error/OOM. Surface the real cause.
+                    raise
 
     def _post_release(self, module: "nn.Module", inputs: Any, output: Any) -> None:
         """Replace the module's *direct* params with empty placeholders."""
@@ -605,8 +620,13 @@ class OnDemandTensorMgr:
             if target.type == "cpu":
                 return packed
             return packed.to(target, non_blocking=True)
-        except Exception:  # noqa: BLE001 - defensive
-            return packed
+        except Exception as exc:  # noqa: BLE001 - defensive
+            # Surface H2D failures: previously the unpack would silently
+            # degrade and autograd later exploded with "expected CUDA,
+            # got CPU" — actionable error hidden. Backward IS supported
+            # publicly, so propagate the real cause.
+            LOG.warning("OnDemandTensorMgr unpack restore failed (%s)", exc)
+            raise
 
     # ---- back-compat API (no-ops in enabled mode under hook-based path) ---
 

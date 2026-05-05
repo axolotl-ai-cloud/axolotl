@@ -1810,20 +1810,15 @@ def _make_callback_class():
             # ranks must still drain their CPU adam and participate in
             # the broadcast / barrier so the cross-rank protocol stays
             # in sync — but if rank-0 itself doesn't see the dir, that's
-            # the legitimate "skip" case.
-            if rank == 0 and not os.path.isdir(checkpoint_dir):
-                LOG.warning(
-                    "ProTrainOptimizerCheckpointCallback.on_save: expected "
-                    "checkpoint dir %s does not exist on rank-0; skipping "
-                    "ProTrain shard.",
-                    checkpoint_dir,
-                )
-                # Still broadcast the skip so non-rank-0 ranks bail in
-                # lockstep.
-                skip_decision = [True]
-                _broadcast_object_list_or_noop(skip_decision, src=0)
-                _barrier_or_noop()
-                return control
+            # the legitimate "skip" case. Capture the missing-dir
+            # decision here without early-returning: an early-return on
+            # rank-0 would skip the lockstep preamble (drain + status
+            # all-reduce) that non-zero ranks still execute, leaving
+            # peers wedged in `_allreduce_status_or_raise` while rank-0
+            # waits in broadcast/barrier. Instead we feed
+            # `checkpoint_dir_missing` into the existing skip flow so
+            # every rank reaches the same collectives in the same order.
+            checkpoint_dir_missing = rank == 0 and not os.path.isdir(checkpoint_dir)
 
             # ---------- 1-3. Pre-save preamble under lockstep protocol ----------
             # Failure protocol: ``wait_cpu_optim_all()``, rank-0's
@@ -1849,9 +1844,23 @@ def _make_callback_class():
 
                 # ---------- 2. Estimate-gate (rank-0 decides) ----------
                 if rank == 0:
-                    estimate = _estimate_optim_state_bytes(raw)
-                    skip = estimate > self._save_max_bytes
-                    if skip:
+                    if checkpoint_dir_missing:
+                        # Missing-dir takes precedence: skip without
+                        # estimating (the dir we'd write to isn't
+                        # there). Log here so the warning still fires
+                        # exactly once on rank-0, matching the prior
+                        # early-return behavior.
+                        skip = True
+                        LOG.warning(
+                            "ProTrainOptimizerCheckpointCallback.on_save: "
+                            "expected checkpoint dir %s does not exist on "
+                            "rank-0; skipping ProTrain shard.",
+                            checkpoint_dir,
+                        )
+                    else:
+                        estimate = _estimate_optim_state_bytes(raw)
+                        skip = estimate > self._save_max_bytes
+                    if skip and not checkpoint_dir_missing:
                         LOG.warning(
                             "ProTrain optimizer save: estimated %d bytes "
                             "(~%.2f GiB) exceeds protrain_optim_save_max_bytes="

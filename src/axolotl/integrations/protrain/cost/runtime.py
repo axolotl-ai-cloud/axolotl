@@ -479,7 +479,7 @@ def estimate_runtime(
     # only the gather collective (which a buffer cache hit avoids) plus
     # the PCIe D2H grad-offload — the reduce-scatter is overlapped with
     # compute under ZeRO-3 and is accounted for separately when present.
-    if hw.gpu_count <= 1 or trace.world <= 1:
+    if not hw.zero3_shard or hw.gpu_count <= 1 or trace.world <= 1:
         nccl_gather = 0.0
     else:
         nccl_gather = _pick_nccl(trace.nccl_gather_s, layout.S_chunk)

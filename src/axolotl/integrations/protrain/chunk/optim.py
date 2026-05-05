@@ -308,27 +308,27 @@ class GpuFusedAdamAdapter:
         """Return Apex ``FusedAdam`` if importable, else ``torch.optim.AdamW``."""
         try:
             from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
-
-            return FusedAdam(
-                params,
-                lr=self.lr,
-                betas=self.betas,
-                eps=self.eps,
-                weight_decay=self.weight_decay,
-            )
-        except Exception as exc:  # noqa: BLE001 — Apex may import but still be unusable
+        except ImportError as exc:
             exc_repr = f"{type(exc).__name__}: {exc}"
             LOG.warning(
-                "apex.optimizers.FusedAdam unavailable (%s); falling back to "
+                "apex.optimizers.FusedAdam import failure (%s); falling back to "
                 "torch.optim.AdamW for the persistent-chunk optimizer. "
                 "Install Apex for the paper-configured fused kernel.",
                 exc_repr,
             )
             del exc
 
-        import torch
+            import torch
 
-        return torch.optim.AdamW(
+            return torch.optim.AdamW(
+                params,
+                lr=self.lr,
+                betas=self.betas,
+                eps=self.eps,
+                weight_decay=self.weight_decay,
+            )
+
+        return FusedAdam(
             params,
             lr=self.lr,
             betas=self.betas,

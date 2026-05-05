@@ -1120,7 +1120,15 @@ def test_estimate_runtime_phase2_bwd_credits_n_buffer_cache_hits():
         phase2_per_block_recompute_s=0.0005,
     )
     layout = _make_layout()
-    hw = _make_hw(gpu_count=2)
+    # Sharded layout (zero3_shard=True) so the backward all-gather is
+    # actually billed by ``cost/runtime.py``. The replicated path
+    # (zero3_shard=False) skips the gather entirely (each rank already
+    # holds the full CPU copy), so cache hits there save only the H2D
+    # reload — see PR #18 round-1 CR fix in ``cost/runtime.py`` line
+    # ~482 (``not hw.zero3_shard or ...`` short-circuit). This test
+    # specifically validates the gather-saving invariant, so we need a
+    # config where the gather is non-zero.
+    hw = _make_hw(gpu_count=2, zero3_shard=True)
     n_chunk = layout.N_chunk
     bm_none = assign_modes(0, 0, n_block)
 

@@ -43,11 +43,11 @@ LOG = get_logger(__name__)
 
 # Bytes per fp32 master + two Adam momentums. Assumes mixed-precision Adam
 # (the training regime ProTrain targets): fp16 params+grads are 2+2 B/param,
-# fp32 master is 4 B, m and v are 4 B each => 16 B additional per param.
+# fp32 master is 4 B, m and v are 4 B each => 12 B additional per param.
 # Callers can override via ``ProfilerConfig`` extensions or by patching
 # ``optim_state_bytes_per_param`` below (kept as a module-level knob so M4
 # can plug in a real ZeRO-3 sharding calculation without reshaping the API).
-DEFAULT_OPTIM_STATE_BYTES_PER_PARAM = 16
+DEFAULT_OPTIM_STATE_BYTES_PER_PARAM = 12
 DEFAULT_PARAM_GRAD_BYTES_PER_PARAM = 4  # fp16 param + fp16 grad
 
 # Fraction of total GPU memory above which the profiler auto-engages
@@ -264,7 +264,9 @@ def run_trace(
         LOG.warning("measure_cpu_adam failed (%s); recording 0.0", exc)
         cpu_adam_bps = 0.0
     try:
-        dev_idx_for_bench = device.index if device.index is not None else 0
+        dev_idx_for_bench = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         gpu_adam_bps = (
             measure_gpu_adam(dev_idx_for_bench) if cuda_available_for_bench else 0.0
         )
@@ -334,7 +336,9 @@ def run_trace(
     # ``CUDA_VISIBLE_DEVICES`` masking a stale current device would silently
     # bind events to the wrong stream and produce bogus ``elapsed_time``
     # readings (mirrors the guards already used in ``hw_bench.py``).
-    device_idx = device.index if device.index is not None else 0
+    device_idx = (
+        device.index if device.index is not None else torch.cuda.current_device()
+    )
 
     # Build an authoritative path -> global BlockId registry from
     # ``discover_blocks`` so encoder.block.0 vs decoder.block.0 don't
@@ -1049,7 +1053,9 @@ def run_trace(
     # copy engines are unaffected by the earlier Adam microbenchmarks and
     # running PCIe post-trace matches the pre-v3 measurement ordering.
     try:
-        dev_idx = device.index if device.index is not None else 0
+        dev_idx = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         pcie_h2d_bps, pcie_d2h_bps = measure_pcie(dev_idx)
     except Exception as exc:  # pragma: no cover - defensive, GPU-only
         LOG.warning("measure_pcie failed (%s); recording zeros", exc)
@@ -1074,7 +1080,9 @@ def run_trace(
     # can scale per-op latencies. Same-SKU runs see ratio ≈ 1.0 and the
     # calibration is a no-op. Recorded post-PCIe so allocator state is settled.
     try:
-        dev_idx_for_compute = device.index if device.index is not None else 0
+        dev_idx_for_compute = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
         compute_rate_tflops = (
             measure_compute_rate(dev_idx_for_compute) if cuda_available else 0.0
         )

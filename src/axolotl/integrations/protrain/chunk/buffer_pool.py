@@ -108,6 +108,13 @@ class BufferPool:
         self._free: Deque[int] = deque(range(self.n_buffer))
         # Reverse map for O(1) resident lookup.
         self._tag_to_slot: dict[ChunkId, int] = {}
+        # Per-slot lease refcount. ``acquire`` increments (cache hit) or sets
+        # to 1 (miss); ``release`` decrements and only returns the slot to
+        # ``_free`` when the count hits 0. Without this, a cache-hit handing
+        # the same buffer to two callers would let the first ``release`` put
+        # the slot back on the free list while the second caller still holds
+        # it, allowing a subsequent miss to overwrite live data.
+        self._leases: list[int] = [0] * self.n_buffer
 
     # ---- core ops ------------------------------------------------------
 
@@ -129,6 +136,7 @@ class BufferPool:
                 self._free.remove(slot)
             except ValueError:
                 pass
+            self._leases[slot] += 1
             return self._buffers[slot]
 
         if not self._free:
@@ -145,6 +153,9 @@ class BufferPool:
             self._tag_to_slot.pop(prev_tag, None)
         self._tags[slot] = chunk_id
         self._tag_to_slot[chunk_id] = slot
+        # Freshly allocated to this chunk_id — set (don't increment) since
+        # the slot just came off the free list with a 0 lease count.
+        self._leases[slot] = 1
         return self._buffers[slot]
 
     def release(self, chunk_id: ChunkId) -> None:
@@ -156,8 +167,13 @@ class BufferPool:
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
             return
-        if slot in self._free:
-            return  # already released
+        if self._leases[slot] == 0:
+            return  # already released (double-release is a safe no-op)
+        self._leases[slot] -= 1
+        if self._leases[slot] > 0:
+            # Still leased by another caller (cache-hit reuse path) — the
+            # slot must stay off the free list until the last lease drops.
+            return
         # Append (not appendleft) to implement LRU-free: the oldest free
         # slot gets evicted first on the next ``acquire`` that misses.
         self._free.append(slot)

@@ -74,6 +74,12 @@ class MemoryDeltaTracker:
         # specific API that requires an initialized CUDA context). Guard with
         # ``is_available()`` so callers on CPU-only machines get an empty dict
         # and ``snapshot()`` falls back to zeros via ``.get()`` defaults.
+        # Also guard against a non-CUDA device passed on a GPU host: ``int``
+        # is always a CUDA device index and ``None`` means "current device",
+        # but ``str``/``torch.device`` may resolve to ``"cpu"``/``"mps"`` etc.
+        if self._device is not None and not isinstance(self._device, int):
+            if self._torch.device(self._device).type != "cuda":
+                return {}
         if not self._torch.cuda.is_available():
             return {}
         return self._torch.cuda.memory_stats(self._device)
@@ -84,9 +90,15 @@ class MemoryDeltaTracker:
         Guarded by ``torch.cuda.is_available()`` so external callers on CPU-only
         hosts get a no-op rather than a CUDA-init error. ``snapshot()`` is
         already safe because ``memory_stats()`` returns an empty dict when CUDA
-        is unavailable and ``.get()`` defaults handle the missing keys.
+        is unavailable and ``.get()`` defaults handle the missing keys. Also
+        no-op when ``self._device`` resolves to a non-CUDA device on a GPU host
+        (``int``/``None`` always pass; ``str``/``torch.device`` are normalized).
         """
-        if self._torch.cuda.is_available():
+        if self._torch.cuda.is_available() and (
+            self._device is None
+            or isinstance(self._device, int)
+            or self._torch.device(self._device).type == "cuda"
+        ):
             self._torch.cuda.reset_peak_memory_stats(self._device)
 
     def snapshot(self) -> MemorySnapshot:
