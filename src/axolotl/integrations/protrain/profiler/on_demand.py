@@ -315,13 +315,26 @@ class OnDemandTensorMgr:
                     _e,
                 )
         if torch is not None and torch.cuda.is_available():
-            try:
-                torch.cuda.synchronize()
-            except Exception as _e:  # noqa: BLE001 - defensive
-                LOG.debug(
-                    "OnDemandTensorMgr: synchronize failed during partial-setup unwind (%s)",
-                    _e,
-                )
+            # Synchronize each unique CUDA target the restore loop wrote
+            # to. Bare ``torch.cuda.synchronize()`` only waits on the
+            # current device — non_blocking copies queued to other
+            # devices (cuda:1+ on multi-GPU hosts) would still be in
+            # flight when this method returns (CR 3191XXXXXX).
+            cuda_targets = {
+                spill.original_device
+                for spill in self._spills.values()
+                if getattr(spill.original_device, "type", None) == "cuda"
+            }
+            for dev in cuda_targets:
+                try:
+                    torch.cuda.synchronize(device=dev)
+                except Exception as _e:  # noqa: BLE001 - defensive
+                    LOG.debug(
+                        "OnDemandTensorMgr: synchronize(device=%s) failed during "
+                        "partial-setup unwind (%s)",
+                        dev,
+                        _e,
+                    )
         self._spills.clear()
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -390,12 +403,26 @@ class OnDemandTensorMgr:
                     spill.original_device,
                     _e,
                 )
-        # Sync once after all restores; cheaper than per-param sync.
+        # Synchronize each unique CUDA target the restore loop wrote
+        # to. Bare ``torch.cuda.synchronize()`` only waits on the
+        # current device — non_blocking copies queued to other devices
+        # (cuda:1+ on multi-GPU hosts) would still be in flight when
+        # ``__exit__`` returns (CR 3191XXXXXX).
         if torch.cuda.is_available():
-            try:
-                torch.cuda.synchronize()
-            except Exception as _e:  # noqa: BLE001 - defensive
-                LOG.debug("OnDemandTensorMgr: synchronize failed during exit (%s)", _e)
+            cuda_targets = {
+                spill.original_device
+                for spill in self._spills.values()
+                if getattr(spill.original_device, "type", None) == "cuda"
+            }
+            for dev in cuda_targets:
+                try:
+                    torch.cuda.synchronize(device=dev)
+                except Exception as _e:  # noqa: BLE001 - defensive
+                    LOG.debug(
+                        "OnDemandTensorMgr: synchronize(device=%s) failed during exit (%s)",
+                        dev,
+                        _e,
+                    )
         self._spills.clear()
 
     # ---- spill / restore helpers ---------------------------------------
