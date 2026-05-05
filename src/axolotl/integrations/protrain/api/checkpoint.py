@@ -300,6 +300,24 @@ def _read_metadata_lockstep(path: str) -> dict[str, Any]:
     if captured_exc is not None:
         raise captured_exc
     assert metadata is not None
+    # Cross-rank fingerprint: every rank may have read a metadata.json at
+    # the same path with *different contents* — e.g. when ``output_dir``
+    # is a per-node local path rather than a shared tree. The status
+    # all-reduce above only catches read/parse failures; byte-equal
+    # success on divergent contents would otherwise leave the
+    # compatibility checks running against rank-local metadata
+    # (split-brain). Canonicalize the JSON so dict insertion order can't
+    # cause spurious mismatches, all_gather, and raise everywhere if any
+    # rank disagrees with rank-0.
+    if _dist_is_active():
+        payload = json.dumps(metadata, sort_keys=True, separators=(",", ":"))
+        gathered: list[str] = [""] * int(torch.distributed.get_world_size())
+        torch.distributed.all_gather_object(gathered, payload)
+        if any(item != gathered[0] for item in gathered[1:]):
+            raise RuntimeError(
+                f"ProTrain optimizer load: metadata at {path!r} differs across ranks. "
+                "This usually means the checkpoint path is not a single shared tree."
+            )
     return metadata
 
 
@@ -673,8 +691,8 @@ def _verify_replicated_state_across_ranks(optim: Any, *, world_size: int) -> Non
     Each rank computes a SHA-256 over its inner state, all_gather_object
     the hashes, and raises if any rank disagrees with rank-0. Cheap
     insurance against the corner case where DDP determinism fails
-    (numerical drift, manual override, etc.) and rank-0's saved state
-    would not represent the cluster.
+    (numerical drift, manual override, etc.) so neither save nor load
+    silently propagates a rank-0-only view of optimizer state.
     """
     if world_size <= 1 or not _dist_is_active():
         return
@@ -685,10 +703,9 @@ def _verify_replicated_state_across_ranks(optim: Any, *, world_size: int) -> Non
     diverged = [(r, h) for r, h in enumerate(gathered) if h != rank0]
     if diverged:
         raise RuntimeError(
-            "ProTrain optimizer save: Mode-B precondition violated — "
-            "optimizer state diverges across ranks. Refusing to save "
-            "(rank-0's state would not represent the cluster). "
-            f"rank-0 hash={rank0!r}, divergent ranks: {diverged!r}"
+            "ProTrain Mode-B precondition violated: optimizer state "
+            "diverges across ranks (rank-0's state does not represent "
+            f"the cluster). rank-0 hash={rank0!r}, divergent ranks: {diverged!r}"
         )
 
 
@@ -1663,6 +1680,15 @@ def _load_protrain_optim_dir(
             raise
     if captured_exc is not None:
         raise captured_exc
+
+    # Cross-rank state-equality check: a successful Mode-B load proves
+    # nothing about whether each rank restored the SAME bytes. If
+    # ``output_dir`` exists on every node but with different local files,
+    # the run can silently resume with divergent Adam state across DDP
+    # ranks. Re-use the save-side helper (short-circuits on world_size<=1
+    # / dist inactive) to fingerprint inner state and raise everywhere on
+    # disagreement.
+    _verify_replicated_state_across_ranks(optim, world_size=current_world)
 
     # Hyperparam drift: warn but accept. JSON serialization turns
     # ``betas`` tuples into lists; normalize before comparing so

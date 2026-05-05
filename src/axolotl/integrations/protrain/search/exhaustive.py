@@ -413,7 +413,7 @@ def search(
     for n_ckpt in range(0, bounds.N_block + 1):
         # Option B §4.3: outer loop over n_offload — added as a sibling
         # axis to n_ckpt because the two trade against each other on the
-        # backward wall (Option B §4.2). Search space grows ~N_block× but
+        # backward wall (Option B §4.2). Search space grows ~N_block-fold but
         # the per-candidate work is closed-form so it stays sub-second on
         # realistic Llama-3B/7B-class models.
         for n_offload in range(0, bounds.N_block - n_ckpt + 1):
@@ -498,7 +498,7 @@ def search(
                         break
 
                     # Scheduler needs enough buffers to hold (current block's
-                    # non-persistent chunks) ∪ (next block's non-persistent
+                    # non-persistent chunks) union (next block's non-persistent
                     # chunks) simultaneously — that's how the lookahead
                     # prefetch in runtime/scheduler.py::pre_block_forward
                     # works. Skip n_persist values that can't support that
