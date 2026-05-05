@@ -430,20 +430,20 @@ def factories_view() -> Mapping[str, BatchFactory]:
 
 
 __all__ = [
+    "BatchFactory",
+    "KNOWN_TASKS",
     "TASK_CAUSAL_LM",
+    "TASK_SEQ2SEQ_LM",
     "TASK_SEQ_CLASSIFICATION",
     "TASK_TOKEN_CLASSIFICATION",
-    "TASK_SEQ2SEQ_LM",
-    "KNOWN_TASKS",
-    "BatchFactory",
-    "detect_task_type",
     "build_batch",
+    "causal_lm_batch_factory",
+    "detect_task_type",
+    "factories_view",
+    "get_factory",
     "register_factory",
     "reset_factories",
-    "get_factory",
-    "factories_view",
-    "causal_lm_batch_factory",
+    "seq2seq_lm_batch_factory",
     "seq_classification_batch_factory",
     "token_classification_batch_factory",
-    "seq2seq_lm_batch_factory",
 ]

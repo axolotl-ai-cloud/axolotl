@@ -1317,27 +1317,6 @@ def _load_protrain_optim_dir(
                 "overrides) to resume."
             )
 
-        # Persistent (GPU) state is replicated across ranks; every rank
-        # loads from the same gpu_optim.pt. map_location='cpu' defeats
-        # HF Trainer's hostile map_location=device default.
-        gpu_path = os.path.join(target, GPU_OPTIM_FILENAME)
-        if os.path.isfile(gpu_path):
-            if optim._gpu_optim is None:
-                raise RuntimeError(
-                    "ProTrain optimizer load: gpu_optim.pt present on "
-                    "disk but current optimizer has no persistent (GPU) "
-                    "inner — partition mismatch slipped past the layout-"
-                    "signature check."
-                )
-            loaded = torch.load(gpu_path, map_location="cpu", weights_only=True)
-            optim._gpu_optim._optim.load_state_dict(loaded)
-        elif optim._gpu_optim is not None:
-            raise RuntimeError(
-                "ProTrain optimizer load: current optimizer has a "
-                "persistent (GPU) inner but gpu_optim.pt is absent on "
-                "disk."
-            )
-
         # Resolve this rank's ordinal. The load path is fired from the
         # monkey-patched ``_load_optimizer_and_scheduler`` and doesn't
         # have ready access to the HF TrainingArguments, so fall back
@@ -1359,6 +1338,14 @@ def _load_protrain_optim_dir(
         # barrier. Wrap the whole per-rank load in try/except and
         # all-reduce a SUM of statuses; if any rank failed, every rank
         # raises so the cluster fails in lockstep.
+        #
+        # The replicated gpu_optim.pt read also lives inside this
+        # synchronized block: although the file itself is identical
+        # across ranks, a missing/corrupt file or a torch.load failure
+        # on any single rank would otherwise raise locally and leave
+        # peers blocked on the trailing barrier (CR finding 3191143358).
+        # Folding the read into the same try/except + allreduce ensures
+        # rank-local failures abort uniformly.
         #
         # Stray-file rejection (Finding 3): Mode-B explicitly rejects
         # unknown files in cpu_optim/ via CHUNK_FILE_RE. Mode-C's old
@@ -1389,6 +1376,31 @@ def _load_protrain_optim_dir(
         )
         load_status = 0
         try:
+            # Persistent (GPU) state is replicated across ranks; every
+            # rank loads from the same gpu_optim.pt. map_location='cpu'
+            # defeats HF Trainer's hostile map_location=device default.
+            # Folded into the synchronized block so a rank-local failure
+            # (missing file, corrupt file, load error) participates in
+            # the lockstep abort instead of deadlocking peers at the
+            # trailing barrier.
+            gpu_path = os.path.join(target, GPU_OPTIM_FILENAME)
+            if os.path.isfile(gpu_path):
+                if optim._gpu_optim is None:
+                    raise RuntimeError(
+                        "ProTrain optimizer load: gpu_optim.pt present on "
+                        "disk but current optimizer has no persistent (GPU) "
+                        "inner — partition mismatch slipped past the layout-"
+                        "signature check."
+                    )
+                loaded = torch.load(gpu_path, map_location="cpu", weights_only=True)
+                optim._gpu_optim._optim.load_state_dict(loaded)
+            elif optim._gpu_optim is not None:
+                raise RuntimeError(
+                    "ProTrain optimizer load: current optimizer has a "
+                    "persistent (GPU) inner but gpu_optim.pt is absent on "
+                    "disk."
+                )
+
             if os.path.isdir(cpu_dir):
                 for name in os.listdir(cpu_dir):
                     m = CHUNK_SHARD_FILE_RE.match(name)

@@ -475,7 +475,9 @@ def search(
                     n_checkpoint=n_ckpt,
                     n_offload=n_offload,
                 )
-                _hot_cap = hot_iter_peak_cap(trace, block_map, _cap_probe_cfg)
+                _hot_cap = hot_iter_peak_cap(
+                    trace, block_map, _cap_probe_cfg, layout=layout
+                )
                 _cap_dominates = (
                     _hot_cap is not None and int(alpha * _hot_cap) <= capacity_bytes
                 )
@@ -549,7 +551,9 @@ def search(
                             n_checkpoint=n_ckpt,
                             n_offload=n_offload,
                         )
-                        _cap = hot_iter_peak_cap(trace, block_map, _cfg_for_cap)
+                        _cap = hot_iter_peak_cap(
+                            trace, block_map, _cfg_for_cap, layout=layout
+                        )
                         if _cap is not None and raw_peak > _cap:
                             raw_peak = _cap
                         predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
