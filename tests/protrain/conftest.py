@@ -36,6 +36,23 @@ from typing import Iterator
 import pytest
 
 
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Auto-skip ``@pytest.mark.gpu`` tests on hosts without CUDA.
+
+    Mirrors the import / availability guards used by ``set_seed`` and
+    ``reset_cuda_state_between_tests`` so the marker actually enforces
+    a skip instead of merely labelling tests.
+    """
+    if item.get_closest_marker("gpu") is None:
+        return
+    try:
+        import torch
+    except ImportError:
+        pytest.skip("gpu test requires torch")
+    if not torch.cuda.is_available():
+        pytest.skip("gpu test requires CUDA")
+
+
 @pytest.fixture
 def gpu_device() -> int:
     """Resolve the GPU ordinal tests should use.

@@ -189,6 +189,9 @@ def measure_chunked_steady(
     """
     import torch
 
+    if n_warmup < 0 or n_iters <= 0:
+        raise ValueError("n_warmup must be >= 0 and n_iters must be > 0")
+
     if not torch.cuda.is_available():
         raise RuntimeError(
             "Phase-2 measurement requires CUDA; got torch.cuda.is_available() == False"

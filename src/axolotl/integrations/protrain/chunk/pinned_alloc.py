@@ -129,6 +129,24 @@ class PinnedHostMemory:
         try:
             self._init_cudart(cudart)
         except Exception as err:  # noqa: BLE001
+            # If ``cudaHostAlloc`` succeeded but a follow-up step
+            # (``torch.frombuffer``, attribute setup, etc.) raised, ``_ptr``
+            # is populated and the pinned region is live. Without an explicit
+            # free here, ``_init_fallback()`` would allocate a *second*
+            # backing store of the same size — a transient double allocation
+            # that can OOM construction on large chunks. Drop the partially
+            # initialized buffer first so the fallback path starts clean.
+            if self._cudart is not None and self._ptr:
+                free_status = self._cudart.cudaFreeHost(ctypes.c_void_p(self._ptr))
+                if free_status != _CUDA_SUCCESS:
+                    LOG.warning(
+                        "cudaFreeHost during cudart-init cleanup returned status=%d",
+                        free_status,
+                    )
+            self._cudart = None
+            self._ptr = 0
+            self._torch_tensor = None
+            self._is_precise_size = False
             LOG.warning(
                 "PinnedHostMemory: ctypes cudaHostAlloc path failed (%s); "
                 "falling back to torch.empty(pin_memory=True).",
@@ -331,25 +349,32 @@ class PinnedHostMemory:
 
     def __del__(self) -> None:  # noqa: D401
         # Destructors must not throw, so the borrow guard in ``close()``
-        # is bypassed here: if the user dropped the allocator with views
-        # outstanding it is too late to ask them to release. We log loudly
-        # and force the free so we don't leak pinned memory at process
-        # shutdown. The view-holders will fault if they touch the region
-        # after this — that is the original hazard, surfaced rather than
-        # hidden.
+        # is bypassed here. But if borrows are still outstanding when the
+        # allocator is garbage-collected, the user has an ownership bug:
+        # views (or async H2D copies) referencing the pinned region are
+        # still live. Force-freeing here would convert that ownership bug
+        # into a use-after-free / dangling-pointer scenario where the next
+        # touch of the slot reads or writes already-released memory and
+        # may silently corrupt unrelated allocations. The safer choice in
+        # the destructor path is to *leak* the pinned region until process
+        # teardown reclaims it: the OS will free it, and the leak is loudly
+        # logged so the missing ``release_buffer`` is diagnosable. Only
+        # when no borrows remain do we proceed to the deterministic
+        # ``close()`` free.
         try:
             if self._closed:
                 return
             if self._live_borrows:
                 LOG.warning(
                     "PinnedHostMemory.__del__: %d slot view(s) still borrowed "
-                    "across slots %s at GC time; forcing free. Holders "
-                    "touching the region after this point will hit freed "
-                    "memory.",
+                    "across slots %s at GC time; leaking pinned region until "
+                    "process exit to avoid dangling-pointer use-after-free. "
+                    "Caller is missing release_buffer() pairs — fix the "
+                    "ownership bug and call close() explicitly.",
                     sum(self._live_borrows.values()),
                     sorted(self._live_borrows.keys()),
                 )
-                self._live_borrows.clear()
+                return
             self.close()
         except Exception:  # noqa: BLE001 — destructors must not throw
             LOG.exception("Error during PinnedHostMemory.__del__ cleanup")

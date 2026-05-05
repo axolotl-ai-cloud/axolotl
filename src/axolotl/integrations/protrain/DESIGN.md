@@ -12,7 +12,7 @@ Two intentional deviations from the original plan, both ratified after M5 review
 
 ## Directory Layout
 
-```
+```text
 src/axolotl/integrations/protrain/
 ├── __init__.py                  # re-exports ProTrainArgs + ProTrainPlugin
 ├── DESIGN.md                    # this file

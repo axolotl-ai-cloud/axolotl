@@ -11,11 +11,12 @@ Semantics:
   then blocks on every outstanding CPU Adam future so the non-persistent
   chunk updates have landed in their CPU shards before control returns.
 * ``zero_grad()`` — zeros grads on both adapters.
-* ``state_dict`` / ``load_state_dict`` — explicitly raise
-  ``NotImplementedError``. Optimizer-state checkpointing is M5/M6
-  scope; the M4b contract is to keep the method names resolvable so
-  HuggingFace Trainer does not blow up if it touches the optimizer
-  during init.
+* ``state_dict`` / ``load_state_dict`` — torch-side no-ops. The
+  adapters own their own state and persist it through the dedicated
+  ProTrain checkpoint hook (M5/M6); ``state_dict`` returns the empty
+  ``{"state": {}, "param_groups": [...]}`` shell HF Trainer +
+  Accelerate expect at ``prepare`` time, and ``load_state_dict``
+  accepts and silently discards the round-tripped payload.
 """
 
 from __future__ import annotations
@@ -150,21 +151,50 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                     p.grad.detach_()
                     p.grad.zero_()
 
-    # ---- checkpointing: deliberately unimplemented for M4 ---------------
+    # ---- checkpointing: torch-side no-ops, real save/load lives in the
+    # ProTrain checkpoint callback (M5/M6) -------------------------------
+    #
+    # ``protrain_optimizer_wrapper`` is exported in the public API and
+    # ``create_optimizer`` returns the raw wrapper before
+    # ``post_trainer_create`` would have a chance to monkey-patch the
+    # instance. HF Trainer (when ``save_only_model`` is False) and
+    # Accelerate (at ``prepare`` time, unconditionally) both call
+    # ``state_dict`` / ``load_state_dict`` on the optimizer; raising
+    # ``NotImplementedError`` here would crash any out-of-trainer
+    # consumer (model_wrapper.py profiling, tests). The adapters own
+    # their own state and persist it through the dedicated ProTrain
+    # checkpoint hook, so torch-side state is safely empty.
 
     def state_dict(self) -> dict[str, Any]:  # type: ignore[override]
-        """Reject the call — checkpointing goes through the dedicated callback (M5/M6)."""
-        raise NotImplementedError(
-            "ProTrain optimizer checkpointing is M5/M6 work; "
-            "disable optimizer-state saving for now."
-        )
+        """Return an empty torch-side optimizer state.
+
+        Real ProTrain optimizer state (per-shard moments held inside the
+        CPU/GPU FusedAdam adapters) is saved by the dedicated checkpoint
+        callback, not through this method. We still preserve HF's
+        ``{"state": ..., "param_groups": ...}`` shape so Accelerate's
+        ``move_to_device(state_dict, ...)`` + ``load_state_dict`` round
+        trip at ``prepare`` time does not crash.
+        """
+        next_param_idx = 0
+        param_groups: list[dict[str, Any]] = []
+        for group in self.param_groups:
+            n_params = len(group["params"])
+            param_groups.append(
+                {k: v for k, v in group.items() if k != "params"}
+                | {"params": list(range(next_param_idx, next_param_idx + n_params))}
+            )
+            next_param_idx += n_params
+        return {"state": {}, "param_groups": param_groups}
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:  # type: ignore[override]
-        """Reject the call — checkpointing goes through the dedicated load hook (M5/M6)."""
-        raise NotImplementedError(
-            "ProTrain optimizer checkpointing is M5/M6 work; "
-            "disable optimizer-state loading for now."
-        )
+        """Accept and discard torch-side state.
+
+        The dedicated ProTrain load hook restores adapter state from the
+        checkpoint shard files; the torch-facing ``state_dict`` we just
+        returned is empty by construction, so silently dropping the
+        round-tripped payload is correct.
+        """
+        return None
 
 
 def protrain_optimizer_wrapper(
@@ -259,12 +289,19 @@ def protrain_optimizer_wrapper(
                 eps=eps,
                 weight_decay=weight_decay,
             )
-        except (ImportError, Exception) as err:  # noqa: BLE001 - see below
-            # DeepSpeed's CUDA-version mismatch raises a
-            # ``CUDAMismatchException`` (subclass of ``Exception``, not
-            # ``ImportError``). Compare by class name to avoid a hard
-            # import on a broken deepspeed install.
+        except Exception as err:
+            # Only ``ImportError`` (DeepSpeed not installed) and
+            # ``CUDAMismatchException`` (a subclass of ``Exception``, not
+            # ``ImportError``, raised when system CUDA disagrees with
+            # torch's CUDA wheel) get translated into the install-DeepSpeed
+            # error path; any other exception is a real bug in
+            # ``CpuFusedAdamAdapter`` initialization and must propagate
+            # unchanged so it is not silently masked. We compare the
+            # CUDAMismatch class name as a string to avoid a hard import
+            # on a broken deepspeed install.
             is_cuda_mismatch = type(err).__name__ == "CUDAMismatchException"
+            if not isinstance(err, ImportError) and not is_cuda_mismatch:
+                raise
             # Render the exception to a string before logging — passing
             # the live ``err`` object into LOG.error propagates
             # ``err.__traceback__`` → frame locals (the persistent /

@@ -933,6 +933,16 @@ def run_trace(
         # before the post-trace probes. The hooked forward result is no longer
         # needed once op_records / deltas have been populated above.
         del output
+        # Clear the parameter ``.grad`` tensors populated by the traced
+        # backward pass before ``measure_pcie`` / ``measure_compute_rate``
+        # run below. Autograd leaves a grad tensor on every trainable
+        # parameter after ``loss.backward()``; left in place these pin a
+        # full model-sized chunk of GPU memory and inflate the probes'
+        # baseline (worst case: a probe OOM-falls-back to zero on a
+        # device that would otherwise have succeeded). Use
+        # ``set_to_none=True`` so the grad tensors are released, not
+        # merely zero-filled.
+        model.zero_grad(set_to_none=True)
         if cuda_available:
             torch.cuda.synchronize(device)
     finally:

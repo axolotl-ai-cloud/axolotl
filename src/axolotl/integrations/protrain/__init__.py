@@ -29,8 +29,6 @@ from axolotl.integrations.protrain.types import (
 )
 
 __all__ = [
-    "ProTrainArgs",
-    "ProTrainPlugin",
     "BlockId",
     "BlockMode",
     "BlockStrategyMap",
@@ -42,6 +40,8 @@ __all__ = [
     "OpId",
     "OpRecord",
     "ParamId",
+    "ProTrainArgs",
+    "ProTrainPlugin",
     "ProfilerConfig",
     "ProfilerTrace",
     "SearchResult",

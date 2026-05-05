@@ -32,10 +32,10 @@ __all__ = [
     "BlockStrategyMap",
     "BlockTree",
     "StrategyError",
-    "wrap_block",
-    "unwrap_block",
     "assign_modes",
+    "block_id_path_map",
     "discover_blocks",
     "flatten_block_trees",
-    "block_id_path_map",
+    "unwrap_block",
+    "wrap_block",
 ]

@@ -391,23 +391,37 @@ def test_estimate_runtime_offload_gather_term() -> None:
         pcie_d2h_bps=pcie_h2d_bps,
         op_latency_s=op_latency_s,
     )
+    # cpu_adam non-zero so per-chunk roofline doesn't NaN; same value
+    # used in both baseline and OFFLOAD configs so t_cpu_optim cancels
+    # in the delta.
     hw = _make_hw(pcie_h2d_bps=pcie_h2d_bps, pcie_d2h_bps=pcie_h2d_bps)
 
-    # Force everything persistent so the only knob differences flow
-    # through the per-block CKPT/OFFLOAD path. (Otherwise the CPU-Adam
-    # term and the analytical per-chunk roofline mask the per-block
-    # arithmetic we want to isolate.)
+    # n_persist=2 → chunks 0,1 persistent; chunks 2..7 non-persistent.
+    # Block i owns chunk i (1:1 mapping in _make_layout_with_persistent_block_0),
+    # so blocks 4,5 own non-persistent chunks 4,5 — eligible for the
+    # per-chunk OFFLOAD gather term (CodeRabbit PR #13 R1-10: gather
+    # is charged per non-persistent chunk owned, NOT per OFFLOAD block).
+    n_persist = 2
+    # n_buffer=2 (the lookahead minimum for any non-persistent layout) so
+    # the per-chunk roofline doesn't divide by zero. The same n_buffer
+    # value is used in both baseline and OFFLOAD configs, so its
+    # contribution cancels in the delta.
     cfg_baseline = CostConfig(
-        n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0, n_offload=0
+        n_persist=n_persist, n_buffer=2, n_swap=0, n_checkpoint=0, n_offload=0
     )
+    # NONE on non-persistent is inadmissible at the search filter, but
+    # estimate_runtime computes the arithmetic regardless — see the
+    # "search-level filter, not runtime arithmetic guard" note in §3.5.
     bm_baseline = {BlockId(b): BlockMode.NONE for b in range(n_block)}
     t_baseline = estimate_runtime(cfg_baseline, trace, layout, bm_baseline, hw)
 
-    # Two OFFLOAD blocks (target block ids 4, 5 — non-persistent in the
-    # n_persist<n_chunk case, but here all-persistent forces admissibility
-    # via the persistent path; the cost-model arithmetic for OFFLOAD's
-    # gather wall fires regardless of admissibility — that's a search-
-    # level filter, not a runtime arithmetic guard).
+    # Two OFFLOAD blocks at ids 4,5. Each owns 1 non-persistent chunk
+    # (chunks 4,5 — both >= n_persist=2). Per R1-10 the gather term is
+    # n_offload_chunks × per_chunk_cost; here n_offload_chunks = 2 so
+    # the expected delta matches what the prior per-block formulation
+    # produced for n_offload=2 (numerically the same in this 1-chunk-
+    # per-block layout, but the semantics now correctly handle multi-
+    # chunk blocks).
     n_offload = 2
     cfg_offload = replace(cfg_baseline, n_offload=n_offload)
     bm_offload = dict(bm_baseline)
@@ -415,10 +429,12 @@ def test_estimate_runtime_offload_gather_term() -> None:
     bm_offload[BlockId(5)] = BlockMode.OFFLOAD
     t_offload = estimate_runtime(cfg_offload, trace, layout, bm_offload, hw)
 
-    # T_bwd_gather formula (§4.2): per OFFLOAD block, S_chunk /
-    # eff_h2d_bps + nccl_gather (zero on single-rank).
-    expected_per_block_gather = s_chunk / pcie_h2d_bps
-    expected_total_gather = n_offload * expected_per_block_gather
+    # T_bwd_gather formula (§4.2): per non-persistent chunk owned by an
+    # OFFLOAD block, S_chunk / eff_h2d_bps + nccl_gather (zero on single-
+    # rank).
+    expected_per_chunk_gather = s_chunk / pcie_h2d_bps
+    n_offload_chunks = 2  # blocks 4,5 each own 1 non-persistent chunk
+    expected_total_gather = n_offload_chunks * expected_per_chunk_gather
     actual_delta = t_offload - t_baseline
 
     # Gate: actual delta should be in the same ballpark as the
@@ -436,8 +452,10 @@ def test_estimate_runtime_offload_gather_term() -> None:
         f"actual_delta={actual_delta * 1000:.2f}ms"
     )
 
-    # Linearity check: doubling n_offload approximately doubles the
-    # added wall.
+    # Linearity check: doubling the count of non-persistent OFFLOAD
+    # chunks approximately doubles the added wall. With n_persist=2,
+    # chunks 2..7 are non-persistent, so blocks 2,3,4,5 each own one
+    # non-persistent OFFLOAD chunk → 4 chunks total → ~2× the delta.
     cfg_offload_4 = replace(cfg_baseline, n_offload=4)
     bm_offload_4 = dict(bm_baseline)
     for b in (2, 3, 4, 5):

@@ -409,10 +409,11 @@ def _comm_time_chunk(
     ``n_buffer`` configs (CodeRabbit Round-5 R5-B). The fix here applies
     to non-persistent chunks evicted between forward and backward; the
     separate ``T_bwd_gather`` term in :func:`estimate_runtime` (added in
-    M4 for OFFLOAD blocks specifically, charged once per OFFLOAD block)
-    is independent of this per-chunk accounting and continues to be
-    added on top — see the M4 comment block in ``estimate_runtime`` for
-    the no-double-count argument.
+    M4 for OFFLOAD blocks specifically, charged once per non-persistent
+    chunk owned by an OFFLOAD block — one OFFLOAD block can span 2+
+    non-persistent chunks) is independent of this per-chunk accounting
+    and continues to be added on top — see the M4 comment block in
+    ``estimate_runtime`` for the no-double-count argument.
     """
     # NCCL gather contribution is size-dependent; the trace keys
     # ``nccl_gather_s`` by payload bytes. We pre-selected the right
@@ -604,13 +605,16 @@ def estimate_runtime(
     t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_total)
     t_bwd_recompute = 0.0
     t_bwd_swap_prefetch = 0.0
-    # OFFLOAD chunk-gather wall (Option B §4.2). For every OFFLOAD block
-    # the runtime re-gathers the chunk via PCIe H2D (and a NCCL gather on
-    # multi-rank ZeRO-3) at the start of that block's backward, so the
-    # autograd unpack hook can rebind saved-tensor views into the freshly
-    # populated chunk buffer. The cost is one chunk's worth of bytes per
-    # OFFLOAD block, less any overlap that happens to land on the
-    # critical path with the previous backward block's compute.
+    # OFFLOAD chunk-gather wall (Option B §4.2). For every non-persistent
+    # chunk owned by an OFFLOAD block, the runtime re-gathers the chunk via
+    # PCIe H2D (and a NCCL gather on multi-rank ZeRO-3) at the start of
+    # that block's backward, so the autograd unpack hook can rebind
+    # saved-tensor views into the freshly populated chunk buffer. The cost
+    # is one chunk's worth of bytes per non-persistent chunk owned (a
+    # single OFFLOAD block can span 2+ non-persistent chunks when
+    # ``len(layout.block_to_chunks[bid]) > 1``), less any overlap that
+    # happens to land on the critical path with the previous backward
+    # block's compute.
     #
     # The model mirrors the CKPT trade: CKPT recompute scales with model
     # compute per block; OFFLOAD gather scales with chunk_bytes / pcie_bw
@@ -619,7 +623,7 @@ def estimate_runtime(
     # small (gather-cheap); on slow PCIe with tiny blocks CKPT may still
     # win. The searcher consumes both terms via the (n_checkpoint,
     # n_offload) axes.
-    n_offload_blocks = 0
+    n_offload_chunks = 0
     for bid_raw, act_sz in trace.activation_sizes.items():
         bid = BlockId(int(bid_raw))
         mode = block_map.get(bid, BlockMode.NONE)
@@ -635,9 +639,20 @@ def estimate_runtime(
             if eff_h2d > 0:
                 t_bwd_swap_prefetch += act_sz / eff_h2d
         elif mode is BlockMode.OFFLOAD:
-            n_offload_blocks += 1
+            # Charge the OFFLOAD gather *per non-persistent chunk* the
+            # block owns, not per block. ``layout.block_to_chunks[bid]``
+            # may contain multiple ChunkIds for wide blocks; each one
+            # that is non-persistent (``int(cid) >= n_persist``) needs
+            # its own re-gather event for the saved-tensor unpack hook.
+            # Persistent chunks (the first ``n_persist``) never leave
+            # GPU memory, so they are excluded.
+            n_offload_chunks += sum(
+                1
+                for cid in layout.block_to_chunks.get(bid, ())
+                if int(cid) >= n_persist
+            )
 
-    # T_bwd_gather: per-OFFLOAD-block backward chunk gather time.
+    # T_bwd_gather: per-non-persistent-OFFLOAD-chunk backward gather time.
     # Mirrors the structure of ``t_bwd_comm_per_chunk_uncached`` (the
     # uncached non-persistent backward gather) — full NCCL gather +
     # H2D PCIe per chunk. Buffer-cache hits do not apply here: OFFLOAD
@@ -659,17 +674,22 @@ def estimate_runtime(
     # ``phase2_n_offload=0`` (bootstrap config has no OFFLOAD blocks
     # — Option B is not yet wired into bootstrap), so any candidate
     # with ``n_offload > 0`` must add this wall on top.
+    #
+    # This term is the SEPARATE per-OFFLOAD-chunk re-gather for the
+    # saved-tensor unpack hook; it is distinct from the per-chunk
+    # forward / backward-cached / backward-uncached comm captured in
+    # ``_comm_time_chunk``. Keep that boundary clean.
     t_bwd_gather = 0.0
-    if n_offload_blocks > 0:
+    if n_offload_chunks > 0:
         if eff_h2d > 0:
-            t_bwd_gather_per_block = layout.S_chunk / eff_h2d
+            t_bwd_gather_per_chunk = layout.S_chunk / eff_h2d
         else:
-            t_bwd_gather_per_block = 0.0
-        # NCCL gather contribution per OFFLOAD block at chunk payload size.
+            t_bwd_gather_per_chunk = 0.0
+        # NCCL gather contribution per OFFLOAD chunk at chunk payload size.
         # Single-rank / no-collective case has nccl_gather=0 (set above),
         # so the term collapses to PCIe-only.
-        t_bwd_gather_per_block += nccl_gather
-        t_bwd_gather = n_offload_blocks * t_bwd_gather_per_block
+        t_bwd_gather_per_chunk += nccl_gather
+        t_bwd_gather = n_offload_chunks * t_bwd_gather_per_chunk
 
     t_bwd_compute_total = t_bwd_compute_base + t_bwd_recompute + t_bwd_gather
     # Gate mirrors ``_bwd_compute_time_from_trace`` Path 1: accept the

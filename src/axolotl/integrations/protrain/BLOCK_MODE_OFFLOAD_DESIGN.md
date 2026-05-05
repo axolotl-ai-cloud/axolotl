@@ -400,11 +400,11 @@ class ChunkManager:
 Replace the rule with:
 
 > A block is admissible iff:
->   * mode is `CKPT` (always safe; recompute re-binds storage), OR
->   * mode is `OFFLOAD` (new path; safe because the saved-tensor hook
->     re-binds storage at backward), OR
->   * every chunk owned by the block is in the persistent set
->     (NONE / SWAP both safe in this case).
+> * mode is `CKPT` (always safe; recompute re-binds storage), OR
+> * mode is `OFFLOAD` (new path; safe because the saved-tensor hook
+>   re-binds storage at backward), OR
+> * every chunk owned by the block is in the persistent set
+>   (NONE / SWAP both safe in this case).
 >
 > Modes `NONE` and `SWAP` on a block with any non-persistent chunk
 > remain **inadmissible** — they would still capture saved tensors

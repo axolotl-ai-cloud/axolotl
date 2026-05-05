@@ -836,6 +836,19 @@ class ProTrainPlugin(BasePlugin):
         if not _is_plugin_active(cfg):
             return
 
+        # Idempotency: ``post_trainer_create`` may fire more than once on
+        # re-entrant trainer bootstraps (test harness re-creates, or a
+        # caller manually re-running the hook). Reinstalling stacks
+        # duplicate save/load hooks and double-registers the checkpoint
+        # callback — guard so a second invocation is a debug-logged
+        # no-op.
+        if getattr(trainer, "_protrain_post_trainer_create_done", False):
+            LOG.debug(
+                "ProTrain: post_trainer_create already ran on this trainer; "
+                "skipping duplicate install (idempotent path)."
+            )
+            return
+
         wrapped = getattr(cfg, "_protrain_wrapped", None)
         if wrapped is None:
             LOG.warning(
@@ -1010,6 +1023,12 @@ class ProTrainPlugin(BasePlugin):
         # Re-measure NCCL now that dist is up. No-op on single rank or
         # when the trace already has populated tables.
         _remeasure_nccl_and_research(wrapped)
+
+        # Mark this trainer as fully bootstrapped so a re-entrant call
+        # to ``post_trainer_create`` short-circuits at the guard above
+        # rather than stacking duplicate optimizer / load-hook /
+        # checkpoint-callback registrations.
+        trainer._protrain_post_trainer_create_done = True  # type: ignore[attr-defined]
 
 
 __all__ = ["ProTrainPlugin"]

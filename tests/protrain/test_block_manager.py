@@ -412,7 +412,7 @@ def test_monotonic_memory_reduction_sweep() -> None:
             seq_len=8,
             capacity_bytes=2 * (1 << 30),
             n_persist_override=n_chunk,
-            n_buffer_override=max(1, n_chunk),
+            n_buffer_override=0,
             n_swap_override=0,
             n_checkpoint_override=min(n_checkpoint, n_block),
         )

@@ -334,6 +334,15 @@ def reshard_mode_c_shards(
             f"reshard: src_world == target_world == {src_world}; "
             "copying source directory verbatim"
         )
+        if os.path.abspath(src_dir) == os.path.abspath(dst_dir):
+            raise RuntimeError("reshard: dst_dir must differ from src_dir")
+        if os.path.isdir(dst_dir) and os.listdir(dst_dir):
+            raise RuntimeError(
+                f"reshard: refusing to overwrite non-empty dst_dir {dst_dir!r}"
+            )
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        log_fn(f"reshard: copied {src_dir!r} to {dst_dir!r} (no reshape needed)")
+        return
 
     log_fn(
         f"reshard: src={src_dir!r} dst={dst_dir!r} "
@@ -456,11 +465,10 @@ def reshard_mode_c_shards(
             for k, v in per_rank_state_dicts[0]["state"][region_idx].items():
                 if k in ("exp_avg", "exp_avg_sq"):
                     continue
-                # ``step`` is a scalar tensor; clone for safety.
-                if isinstance(v, torch.Tensor):
-                    v = v.clone()
                 for r2 in range(target_world_size):
-                    new_per_rank_states[r2].setdefault(region_idx, {})[k] = v
+                    # Clone tensors per-rank so mutations don't propagate.
+                    val = v.clone() if isinstance(v, torch.Tensor) else v
+                    new_per_rank_states[r2].setdefault(region_idx, {})[k] = val
 
         param_groups = per_rank_state_dicts[0]["param_groups"]
 
