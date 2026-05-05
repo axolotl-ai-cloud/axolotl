@@ -183,67 +183,82 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
 
     DeepSpeedCPUAdam.__del__ = _safe_del  # type: ignore[attr-defined]
 
-    # Synthetic fp16 param + fp16 grad on CPU; DeepSpeedCPUAdam allocates
-    # fp32 master + two fp32 momenta internally on first step.
-    param = nn.Parameter(
-        torch.randn(n_params, dtype=torch.float16, device="cpu"),
-        requires_grad=True,
-    )
-    param.grad = torch.randn(n_params, dtype=torch.float16, device="cpu")
-
     try:
-        optim = DeepSpeedCPUAdam([param], lr=1e-4)
-    except Exception as exc:  # noqa: BLE001 - CUDA toolchain mismatch etc.
-        LOG.warning(
-            "measure_cpu_adam: DeepSpeedCPUAdam constructor failed (%s); returning 0.0",
-            repr(exc),
+        # Synthetic fp16 param + fp16 grad on CPU; DeepSpeedCPUAdam allocates
+        # fp32 master + two fp32 momenta internally on first step.
+        param = nn.Parameter(
+            torch.randn(n_params, dtype=torch.float16, device="cpu"),
+            requires_grad=True,
         )
-        # Drop the exception traceback before returning so it can't pin
-        # locals (and, via cycles, autograd tensors from the subsequent
-        # traced forward pass — observed as a +50 MB ``memory_allocated``
-        # ghost on tiny-GPT2 under pytest's unraisable-warning hook).
-        exc.__traceback__ = None
-        del exc, param
-        return 0.0
-
-    # Warmup — first step allocates optimizer state and JITs the kernel.
-    try:
-        optim.step()
-    except Exception as exc:  # noqa: BLE001 - defensive
-        LOG.warning("measure_cpu_adam: warmup step failed (%s); returning 0.0", exc)
-        return 0.0
-
-    iter_s: list[float] = []
-    for _ in range(n_iters):
-        # Re-populate grad each iter — Adam consumes it in-place but the
-        # measurement should track the steady-state kernel cost.
         param.grad = torch.randn(n_params, dtype=torch.float16, device="cpu")
-        t0 = time.perf_counter()
-        optim.step()
-        iter_s.append(time.perf_counter() - t0)
 
-    median_iter = statistics.median(iter_s)
-    if median_iter <= 0:
-        bps = 0.0
-    else:
-        bytes_processed = n_params * _ADAM_BYTES_PER_PARAM
-        bps = bytes_processed / median_iter
-        LOG.debug(
-            "measure_cpu_adam n_params=%d median_iter=%.4fs throughput=%.2f GB/s",
-            n_params,
-            median_iter,
-            bps / 1e9,
-        )
-    # Explicit cleanup — same rationale as measure_gpu_adam. We omit
-    # gc.collect() here to avoid perturbing pytest's unraisable-exception
-    # tracking of a failed DeepSpeedCPUAdam __del__ path.
-    try:
-        optim.zero_grad(set_to_none=True)
-        optim.state.clear()
-    except Exception:  # noqa: BLE001 - defensive
-        pass
-    del optim, param
-    return float(bps)
+        try:
+            optim = DeepSpeedCPUAdam([param], lr=1e-4)
+        except Exception as exc:  # noqa: BLE001 - CUDA toolchain mismatch etc.
+            LOG.warning(
+                "measure_cpu_adam: DeepSpeedCPUAdam constructor failed (%s); returning 0.0",
+                repr(exc),
+            )
+            # Drop the exception traceback before returning so it can't pin
+            # locals (and, via cycles, autograd tensors from the subsequent
+            # traced forward pass — observed as a +50 MB ``memory_allocated``
+            # ghost on tiny-GPT2 under pytest's unraisable-warning hook).
+            exc.__traceback__ = None
+            del exc, param
+            return 0.0
+
+        # Warmup — first step allocates optimizer state and JITs the kernel.
+        try:
+            optim.step()
+        except Exception as exc:  # noqa: BLE001 - defensive
+            LOG.warning("measure_cpu_adam: warmup step failed (%s); returning 0.0", exc)
+            return 0.0
+
+        iter_s: list[float] = []
+        for _ in range(n_iters):
+            # Re-populate grad each iter — Adam consumes it in-place but the
+            # measurement should track the steady-state kernel cost.
+            param.grad = torch.randn(n_params, dtype=torch.float16, device="cpu")
+            t0 = time.perf_counter()
+            optim.step()
+            iter_s.append(time.perf_counter() - t0)
+
+        median_iter = statistics.median(iter_s)
+        if median_iter <= 0:
+            bps = 0.0
+        else:
+            bytes_processed = n_params * _ADAM_BYTES_PER_PARAM
+            bps = bytes_processed / median_iter
+            LOG.debug(
+                "measure_cpu_adam n_params=%d median_iter=%.4fs throughput=%.2f GB/s",
+                n_params,
+                median_iter,
+                bps / 1e9,
+            )
+        # Explicit cleanup — same rationale as measure_gpu_adam. We omit
+        # gc.collect() here to avoid perturbing pytest's unraisable-exception
+        # tracking of a failed DeepSpeedCPUAdam __del__ path.
+        try:
+            optim.zero_grad(set_to_none=True)
+            optim.state.clear()
+        except Exception:  # noqa: BLE001 - defensive
+            pass
+        del optim, param
+        return float(bps)
+    finally:
+        # Restore the original ``__del__`` so that callers (and the rest of
+        # the test session) see DeepSpeedCPUAdam's real finaliser instead of
+        # our locally-patched ``_safe_del``. We unconditionally restore even
+        # when the original was ``None`` (i.e. the class did not define a
+        # ``__del__`` before we monkey-patched it) by deleting our override
+        # so attribute lookup falls through to ``object.__del__``.
+        if _orig_del is None:
+            try:
+                del DeepSpeedCPUAdam.__del__  # type: ignore[attr-defined]
+            except AttributeError:
+                pass
+        else:
+            DeepSpeedCPUAdam.__del__ = _orig_del  # type: ignore[attr-defined]
 
 
 def measure_gpu_adam(

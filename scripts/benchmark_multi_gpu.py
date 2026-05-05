@@ -53,6 +53,7 @@ import shutil
 import statistics
 import subprocess  # nosec B404
 import sys
+import tempfile
 import textwrap
 import time
 from pathlib import Path
@@ -419,7 +420,7 @@ def _launch_mode(
             timeout=1800,
         )
     if proc.returncode != 0:
-        tail = log_path.read_text()[-6000:]
+        tail = log_path.read_text(encoding="utf-8", errors="replace")[-6000:]
         raise RuntimeError(
             f"mode={mode} worker failed (exit={proc.returncode}); log tail:\n{tail}"
         )
@@ -506,8 +507,7 @@ def _render_markdown(summaries: list[dict]) -> str:
 
 def main() -> int:
     root = Path(__file__).resolve().parent
-    work_dir = root / "_benchmark_tmp"
-    work_dir.mkdir(exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix="benchmark_multi_gpu_", dir=str(root)))
 
     bs = 2
     seq = 256

@@ -319,6 +319,13 @@ def run_trace(
     next_op_id = 0
 
     cuda_available = device.type == "cuda" and torch.cuda.is_available()
+    # Bind every ``torch.cuda.Event`` and ``synchronize`` to ``cfg.device``'s
+    # index. ``Event()`` infers its device from the ambient
+    # ``current_device()`` at construction time, so under multi-GPU or
+    # ``CUDA_VISIBLE_DEVICES`` masking a stale current device would silently
+    # bind events to the wrong stream and produce bogus ``elapsed_time``
+    # readings (mirrors the guards already used in ``hw_bench.py``).
+    device_idx = device.index if device.index is not None else 0
 
     # Build an authoritative path -> global BlockId registry from
     # ``discover_blocks`` so encoder.block.0 vs decoder.block.0 don't
@@ -414,8 +421,9 @@ def run_trace(
         path = _module_path(module)
         pre_event = None
         if cuda_available:
-            pre_event = torch.cuda.Event(enable_timing=True)
-            pre_event.record()
+            with torch.cuda.device(device_idx):
+                pre_event = torch.cuda.Event(enable_timing=True)
+                pre_event.record()
         # Direct parent = top of stack BEFORE we push; when empty, this is
         # the root call and parent_id stays None.
         parent_id = live_frame_stack[-1] if live_frame_stack else None
@@ -492,8 +500,9 @@ def run_trace(
         tracker.mark_end(post_peak_bytes)
 
         if cuda_available and frame.pre_event is not None:
-            post_event = torch.cuda.Event(enable_timing=True)
-            post_event.record()
+            with torch.cuda.device(device_idx):
+                post_event = torch.cuda.Event(enable_timing=True)
+                post_event.record()
             pending_events.append((frame.op_id, frame.pre_event, post_event))
 
         # NOTE: ``op_records`` is appended at PRE-time (see _pre_forward)
@@ -745,11 +754,13 @@ def run_trace(
                 # fire and the whole-iter aggregate is recovered as
                 # ``max(iter_block_peaks)`` AFTER the forward completes.
                 iter_block_peaks.clear()
-                pre_sf = torch.cuda.Event(enable_timing=True)
-                post_sf = torch.cuda.Event(enable_timing=True)
-                pre_sf.record()
+                with torch.cuda.device(device_idx):
+                    pre_sf = torch.cuda.Event(enable_timing=True)
+                    post_sf = torch.cuda.Event(enable_timing=True)
+                    pre_sf.record()
                 steady_out = model(**batch)
-                post_sf.record()
+                with torch.cuda.device(device_idx):
+                    post_sf.record()
                 torch.cuda.synchronize(device)
                 fwd_iter_s.append(pre_sf.elapsed_time(post_sf) / 1000.0)
                 # High-water mark across all iters. ``max_memory_allocated``
@@ -769,11 +780,13 @@ def run_trace(
                     try:
                         steady_loss = _extract_loss(steady_out)
                         torch.cuda.synchronize(device)
-                        pre_sb = torch.cuda.Event(enable_timing=True)
-                        post_sb = torch.cuda.Event(enable_timing=True)
-                        pre_sb.record()
+                        with torch.cuda.device(device_idx):
+                            pre_sb = torch.cuda.Event(enable_timing=True)
+                            post_sb = torch.cuda.Event(enable_timing=True)
+                            pre_sb.record()
                         steady_loss.backward()
-                        post_sb.record()
+                        with torch.cuda.device(device_idx):
+                            post_sb.record()
                         torch.cuda.synchronize(device)
                         bwd_iter_s.append(pre_sb.elapsed_time(post_sb) / 1000.0)
                         model.zero_grad(set_to_none=True)
@@ -859,12 +872,14 @@ def run_trace(
             tracker.mark_end(int(torch.cuda.max_memory_allocated(device)))
         with on_demand_mgr:
             if cuda_available:
-                hooked_fwd_pre_event = torch.cuda.Event(enable_timing=True)
-                hooked_fwd_pre_event.record()
+                with torch.cuda.device(device_idx):
+                    hooked_fwd_pre_event = torch.cuda.Event(enable_timing=True)
+                    hooked_fwd_pre_event.record()
             output = model(**batch)
             if cuda_available and hooked_fwd_pre_event is not None:
-                hooked_fwd_post_event = torch.cuda.Event(enable_timing=True)
-                hooked_fwd_post_event.record()
+                with torch.cuda.device(device_idx):
+                    hooked_fwd_post_event = torch.cuda.Event(enable_timing=True)
+                    hooked_fwd_post_event.record()
 
             if cfg.include_backward:
                 loss = _extract_loss(output)
@@ -879,12 +894,14 @@ def run_trace(
                 prev_end = tracker.last_end_bytes
                 bwd_pre_event = None
                 if cuda_available:
-                    bwd_pre_event = torch.cuda.Event(enable_timing=True)
-                    bwd_pre_event.record()
+                    with torch.cuda.device(device_idx):
+                        bwd_pre_event = torch.cuda.Event(enable_timing=True)
+                        bwd_pre_event.record()
                 loss.backward()
                 if cuda_available and bwd_pre_event is not None:
-                    bwd_post_event = torch.cuda.Event(enable_timing=True)
-                    bwd_post_event.record()
+                    with torch.cuda.device(device_idx):
+                        bwd_post_event = torch.cuda.Event(enable_timing=True)
+                        bwd_post_event.record()
                     pending_events.append((bwd_op_id, bwd_pre_event, bwd_post_event))
                 snap = tracker.snapshot()
                 intra_deltas[bwd_op_id] = intra_op_delta(
@@ -904,6 +921,18 @@ def run_trace(
                         is_forward=False,
                     )
                 )
+                # Release the loss scalar (and the autograd graph it pinned
+                # via its ``grad_fn``) BEFORE the post-trace calibration probes
+                # below run. Otherwise the saved-tensors graph for ``loss``
+                # stays resident on GPU and ``measure_pcie`` /
+                # ``measure_compute_rate`` see a perturbed allocator state
+                # (worst case: OOM fallback to zero on a probe that should
+                # have succeeded).
+                del loss
+        # Drop the traced model output (logits can be large for big-vocab LMs)
+        # before the post-trace probes. The hooked forward result is no longer
+        # needed once op_records / deltas have been populated above.
+        del output
         if cuda_available:
             torch.cuda.synchronize(device)
     finally:

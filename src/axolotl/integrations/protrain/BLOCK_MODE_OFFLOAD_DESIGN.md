@@ -215,7 +215,7 @@ primitive `SwappedBlock` uses (`block/swap.py`). The difference:
 Pseudocode (deliberately incomplete — the implementation agent owns
 exact bookkeeping):
 
-```
+```python
 def pack_param_only(t: torch.Tensor):
     # Identify saved tensors that are views of a chunk-managed param.
     # Mechanism: each param.data carries an attribute set at gather
@@ -270,7 +270,7 @@ The scheduler's job is to keep param chunks resident at the right
 times. Today's lifecycle (per non-persistent chunk owned by a CKPT
 block):
 
-```
+```text
 forward enters block N:
     pre_block_forward(N)  → ensure_block_resident(N) gathers chunks
     block.forward()       → activations dropped (CKPT internally)
@@ -286,7 +286,7 @@ Under OFFLOAD, the activation drops AREN'T happening, but the chunk
 DOES get offloaded after forward — and the saved tensors point into
 that chunk. The new lifecycle:
 
-```
+```text
 forward enters block N:
     pre_block_forward(N)  → ensure_block_resident(N) gathers chunks
     block.forward()       → activations + saved-param-views captured;
@@ -379,7 +379,7 @@ The OFFLOAD path needs:
 
 Public API after Option B:
 
-```
+```text
 class ChunkManager:
     # Existing.
     def gather(chunk_id: ChunkId) -> None: ...
@@ -412,7 +412,7 @@ Replace the rule with:
 
 In code (no implementation, illustration only):
 
-```
+```python
 mode = block_map[bid]
 if mode in (CKPT, OFFLOAD):
     return True
@@ -426,7 +426,7 @@ return all(c in persistent for c in chunks_of(bid))
 swap-early / interleave-CKPT / unopt-late rules. Under Option B we
 add a new knob `n_offload`, and the function becomes:
 
-```
+```python
 assign_modes(n_swap, n_checkpoint, n_offload, N_block) -> BlockStrategyMap
 ```
 
@@ -521,7 +521,7 @@ Three term updates:
 `search/exhaustive.py` adds an outer loop over `n_offload`. The
 combined enumeration:
 
-```
+```python
 for n_ckpt in range(0, N_block + 1):
     for n_offload in range(0, N_block - n_ckpt + 1):
         max_swap = min(N_block - n_ckpt - n_offload, N_interval)
