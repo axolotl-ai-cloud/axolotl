@@ -32,8 +32,6 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-import pytest
-
 from axolotl.integrations.protrain.block.layout_rules import assign_modes
 from axolotl.integrations.protrain.cost.memory import (
     ALPHA_FRAGMENTATION,
