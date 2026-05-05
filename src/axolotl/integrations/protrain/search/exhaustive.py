@@ -383,10 +383,14 @@ def search(
     space:
 
     1. ``estimate_peak``'s raw peak decomposes as
-       ``(n_persist + n_buffer) * S_chunk + F(block_map)``. The
-       block-map-dependent term ``F`` is independent of
-       ``(n_persist, n_buffer)`` so we compute it once per
-       ``(n_swap, n_ckpt, n_offload)`` triple
+       ``model_state_present(cfg, layout, trace) + F(block_map)``,
+       where ``model_state_present`` is the persistent + buffer-pool
+       residency from ``cost/memory.py::model_state_present_bytes``
+       (full Adam state per persistent chunk under fp16+full-FT,
+       fp16-only under LoRA-with-frozen-base; see Eq. 11 derivation
+       in ``estimate_peak``). The block-map-dependent term ``F`` is
+       independent of ``(n_persist, n_buffer)`` so we compute it once
+       per ``(n_swap, n_ckpt, n_offload)`` triple
        (O(N_swap*N_ckpt*N_offload*N_op)).
     2. ``estimate_runtime`` is a closed-form function of the config,
        evaluated only for configs that already clear the capacity
@@ -430,6 +434,7 @@ def search(
         ALPHA_FRAGMENTATION,
         block_tree_index_map,
         hot_iter_peak_cap,
+        model_state_present_bytes,
     )
 
     alpha = ALPHA_FRAGMENTATION
@@ -474,6 +479,17 @@ def search(
                 # Peak bound on (n_persist + n_buffer):
                 #   int(alpha * (sum * S_chunk + F_bm)) <= capacity
                 #   => sum <= floor((capacity/alpha - F_bm) / S_chunk)
+                #
+                # CAVEAT: this uses the legacy 1xS_chunk per-chunk
+                # multiplier. Under full FT the true model-state cost
+                # per persistent chunk is up to ~8x S_chunk (full Adam
+                # state, see ``model_state_present_bytes``), so this
+                # bound is OPTIMISTIC — it lets through more sums than
+                # are actually feasible. That is safe (never excludes
+                # a feasible config); the inner loop's tight GPU gate
+                # via ``model_state_present_bytes`` does the real
+                # rejection. The looseness only costs a few extra
+                # inner iterations per (n_swap, n_ckpt, n_offload).
                 #
                 # CAVEAT: this bound uses the uncapped ``F_bm`` raw-peak
                 # decomposition. The inner loop later applies
@@ -611,29 +627,6 @@ def search(
                         n_buffer_candidates = range(min_buffer, max_buffer + 1)
                     for n_buffer in n_buffer_candidates:
                         n_total += 1
-                        model_state_present = (n_persist + n_buffer) * s_chunk
-                        raw_peak = model_state_present + f_bm
-                        # Apply the hot-iter ground-truth cap (v6+ traces with
-                        # per-block peaks). Mirrors the cap in
-                        # ``cost/memory.py::estimate_peak`` so the searcher
-                        # picks the same config ``estimate_peak`` would
-                        # validate, closing the F_bm-vs-estimate_peak gap.
-                        _cfg_for_cap = CostConfig(
-                            n_persist=n_persist,
-                            n_buffer=n_buffer,
-                            n_swap=n_swap,
-                            n_checkpoint=n_ckpt,
-                            n_offload=n_offload,
-                        )
-                        _cap = hot_iter_peak_cap(
-                            trace, block_map, _cfg_for_cap, layout=layout
-                        )
-                        if _cap is not None and raw_peak > _cap:
-                            raw_peak = _cap
-                        predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
-                        if predicted_peak > capacity_bytes:
-                            continue
-                        n_gpu_feasible += 1
                         cfg = CostConfig(
                             n_persist=n_persist,
                             n_buffer=n_buffer,
@@ -641,6 +634,36 @@ def search(
                             n_checkpoint=n_ckpt,
                             n_offload=n_offload,
                         )
+                        # Model-state residency must use the same
+                        # persistent_factor / buffer_factor derivation
+                        # as ``cost/memory.py::estimate_peak`` — the
+                        # naive ``(n_persist + n_buffer) * S_chunk``
+                        # form under-counts full Adam state on
+                        # persistent chunks (8x S_chunk under fp16+Adam,
+                        # not 1x), so the searcher's pruning would
+                        # let through configs that ``estimate_peak``
+                        # then rejects on the final validation pass.
+                        # Single-source via ``model_state_present_bytes``
+                        # so the two sites cannot drift again
+                        # (regression follow-up to commit d908bf28).
+                        model_state_present = model_state_present_bytes(
+                            cfg, layout, trace
+                        )
+                        raw_peak = model_state_present + f_bm
+                        # Apply the hot-iter ground-truth cap (v6+ traces with
+                        # per-block peaks). Mirrors the cap in
+                        # ``cost/memory.py::estimate_peak`` so the searcher
+                        # picks the same config ``estimate_peak`` would
+                        # validate, closing the F_bm-vs-estimate_peak gap.
+                        _cap = hot_iter_peak_cap(
+                            trace, block_map, cfg, layout=layout
+                        )
+                        if _cap is not None and raw_peak > _cap:
+                            raw_peak = _cap
+                        predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
+                        if predicted_peak > capacity_bytes:
+                            continue
+                        n_gpu_feasible += 1
                         # Hard CPU-RAM feasibility gate. Skipped when
                         # ``cpu_capacity_bytes`` is None (caller opted out
                         # of host-side filtering — backward-compatible

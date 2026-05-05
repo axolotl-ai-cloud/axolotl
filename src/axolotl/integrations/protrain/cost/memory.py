@@ -408,6 +408,64 @@ def estimate_cpu_footprint(
     return chunk_term + swap_term
 
 
+def model_state_present_bytes(
+    cfg: CostConfig,
+    layout: ChunkLayout,
+    trace: ProfilerTrace,
+) -> int:
+    """Resident model-state bytes for ``(n_persist, n_buffer)`` chunks.
+
+    Sums the per-chunk persistent contribution (full fp16 + grads + fp32
+    master + Adam moments under full FT, just fp16 params under
+    LoRA-with-frozen-base) plus the per-chunk transient buffer-pool
+    contribution (fp16 params gathered + fp16 grads accumulated during
+    backward). Centralized here so the searcher's inline pruning
+    (``search/exhaustive.py``) and the post-search validator
+    (:func:`estimate_peak`) cannot drift in their model-state accounting
+    — see paper Eq. 11 derivation in :func:`estimate_peak`'s body for
+    the per-factor justification.
+
+    When ``trace.model_state_bytes`` is missing or zero, falls back to
+    the legacy ``persistent_factor = 1.0`` (paper's implicit
+    "params-only on GPU" assumption — strictly an UNDER-estimate for
+    full FT) and emits a one-shot warning so the regression is visible.
+    """
+    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
+    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
+
+    fp16_total_bytes = layout.N_chunk * layout.S_chunk
+    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0)
+    if fp16_total_bytes > 0 and model_state_total > 0:
+        # Per-chunk multiplier: aggregate state bytes / fp16-params total.
+        # Clamp >= 1.0 because the aggregate by construction includes
+        # the fp16 params themselves (any value < 1.0 would indicate a
+        # trace bug; we still respect it but never go below the legacy
+        # behaviour).
+        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
+    else:
+        LOG.warning(
+            "model_state_present_bytes: trace.model_state_bytes is missing "
+            "or zero (model_state_bytes=%d, fp16_total=%dB); falling back "
+            "to the legacy n_persist*S_chunk multiplier. The peak estimate "
+            "will UNDER-count full optimizer state — refresh the profiler "
+            "trace cache (TRACE_VERSION bump) to restore Eq. 11 fidelity.",
+            model_state_total,
+            fp16_total_bytes,
+        )
+        persistent_factor = 1.0
+    # Buffer slot during backward = fp16 params (gathered) + fp16 grads
+    # (accumulated). 2.0 is a strict upper bound on the buffer pool's
+    # transient peak; the optimizer state never lives in the buffer
+    # pool itself (non-persistent chunks have their fp32 master + m +
+    # v on CPU and only stream onto GPU through the optimizer's own
+    # transient buffers, accounted for separately by the runtime model).
+    buffer_factor = 2.0
+    return int(
+        n_persist * layout.S_chunk * persistent_factor
+        + n_buffer * layout.S_chunk * buffer_factor
+    )
+
+
 def estimate_peak(
     cfg: CostConfig,
     trace: ProfilerTrace,
@@ -533,40 +591,14 @@ def estimate_peak(
     # GPU" assumption — strictly an UNDER-estimate for full FT, so the
     # searcher will pick configs that OOM at runtime; the warning
     # signals that the trace cache should be refreshed.
-    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
-    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
-
-    fp16_total_bytes = layout.N_chunk * layout.S_chunk
-    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0)
-    if fp16_total_bytes > 0 and model_state_total > 0:
-        # Per-chunk multiplier: aggregate state bytes / fp16-params total.
-        # Clamp >= 1.0 because the aggregate by construction includes
-        # the fp16 params themselves (any value < 1.0 would indicate a
-        # trace bug; we still respect it but never go below the legacy
-        # behaviour).
-        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
-    else:
-        LOG.warning(
-            "estimate_peak: trace.model_state_bytes is missing or zero "
-            "(model_state_bytes=%d, fp16_total=%dB); falling back to the "
-            "legacy n_persist*S_chunk multiplier. The peak estimate will "
-            "UNDER-count full optimizer state — refresh the profiler trace "
-            "cache (TRACE_VERSION bump) to restore Eq. 11 fidelity.",
-            model_state_total,
-            fp16_total_bytes,
-        )
-        persistent_factor = 1.0
-    # Buffer slot during backward = fp16 params (gathered) + fp16 grads
-    # (accumulated). 2.0 is a strict upper bound on the buffer pool's
-    # transient peak; the optimizer state never lives in the buffer
-    # pool itself (non-persistent chunks have their fp32 master + m +
-    # v on CPU and only stream onto GPU through the optimizer's own
-    # transient buffers, accounted for separately by the runtime model).
-    buffer_factor = 2.0
-    model_state_present = int(
-        n_persist * layout.S_chunk * persistent_factor
-        + n_buffer * layout.S_chunk * buffer_factor
-    )
+    #
+    # Delegated to ``model_state_present_bytes`` so the searcher's
+    # inline fast-path peak (``search/exhaustive.py``) and this
+    # validator share a single implementation. The two formulas
+    # previously diverged silently when only the validator was updated
+    # to charge full Adam state per persistent chunk (commit d908bf28),
+    # leaving the searcher's pruning optimistic for full FT.
+    model_state_present = model_state_present_bytes(cfg, layout, trace)
 
     # --- Per-block activation policy -----------------------------------
     # NONE / CKPT / SWAP / OFFLOAD blocks contribute differently to the live set:
@@ -775,5 +807,6 @@ __all__ = [
     "estimate_cpu_footprint",
     "estimate_peak",
     "hot_iter_peak_cap",
+    "model_state_present_bytes",
     "op_cross_attn_surcharge",
 ]
