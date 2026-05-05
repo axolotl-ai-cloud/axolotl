@@ -31,13 +31,40 @@ Key accounting rules (summary §3.3, paper §3.3.1):
   (``zero3_shard=False``) the NCCL gather/reduce terms are 0 because
   there are no per-chunk collectives.
 
+PCIe bandwidth contention (§3.3 / §A.1):
+
+- Per paper §3.3, the cost model "estimates the swapping time, identifies
+  the affected chunks, and uses the reduced bandwidth instead." The
+  identification step is :func:`bandwidth.n_affected_chunks`; the
+  reduced bandwidth is :func:`bandwidth.effective_bw`.
+- The per-chunk PCIe sums in this estimator split each non-persistent
+  chunk group (cached, uncached) into an *affected* subset (costed at
+  ``effective_bw``) and an *unaffected* subset (costed at full PCIe
+  bandwidth). This replaces the earlier "single-scalar derate applied
+  uniformly to every chunk" model, which over-penalised configurations
+  whose chunk prefetch did not actually overlap any swap traffic.
+- Affected/unaffected layering across the cached/uncached split: assume
+  affected chunks land in the *uncached* group first (the worst case
+  for runtime — uncached chunks pay both gather and H2D at the derated
+  bandwidth, while a cached chunk only pays the D2H grad-offload). Any
+  remaining affected count overflows into the cached group. This is a
+  conservative simplification that matches the paper's intent without
+  requiring per-chunk prefetch-window scheduling. Documented in the
+  affected-split block below for traceability.
+- The Eq. 6 ``T_reduce`` term is a pure NCCL collective (no PCIe
+  involved), so it is NOT affected by the bandwidth split. It is charged
+  uniformly at the trace-measured collective time.
+
 The estimator is a pure function of the frozen dataclass inputs; it does
 not allocate tensors or touch CUDA.
 """
 
 from __future__ import annotations
 
-from axolotl.integrations.protrain.cost.bandwidth import effective_bw
+from axolotl.integrations.protrain.cost.bandwidth import (
+    effective_bw,
+    n_affected_chunks,
+)
 from axolotl.integrations.protrain.types import (
     BlockId,
     BlockMode,
@@ -483,12 +510,30 @@ def estimate_runtime(
 
     See module docstring for the equations and accounting rules.
     """
+    # Affected-chunk bandwidth (paper §3.3): chunks whose prefetch window
+    # overlaps active swap traffic pay the derated PCIe rate
+    # (``eff_h2d`` / ``eff_d2h``). Chunks outside the swap window pay full
+    # ``hw.pcie_h2d_bps`` / ``hw.pcie_d2h_bps``. The split count is
+    # :func:`n_affected_chunks`. The Eq. 6 ``T_reduce`` term is a pure
+    # NCCL collective and does NOT consume PCIe — same value on both
+    # affected and unaffected branches.
     eff_h2d, eff_d2h = effective_bw(cfg, hw)
+    full_h2d, full_d2h = hw.pcie_h2d_bps, hw.pcie_d2h_bps
 
     # ----- Per-chunk comm / compute decomposition -----------------------
     n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
     n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
     n_nonpersist = max(0, layout.N_chunk - n_persist)
+    # Number of non-persistent chunks whose prefetch overlaps swap
+    # traffic (paper §3.3 / §A.1). When ``n_swap == 0`` this is 0 and
+    # every non-persistent chunk uses full PCIe bandwidth — identical
+    # behaviour to the pre-split flat model. When ``n_swap`` saturates
+    # at ``N_block``, ``n_affected`` saturates at ``n_nonpersist`` and
+    # every non-persistent chunk uses ``effective_bw`` — equivalent to
+    # the old flat-derate model. Intermediate values give a strictly
+    # cheaper cost than the old flat model (unaffected chunks pay no
+    # contention penalty).
+    n_affected = min(n_affected_chunks(cfg, layout), n_nonpersist)
 
     # NCCL table lookup at chunk-payload size. Single-rank -> world==1
     # and the tables should be empty (or contain zero times), yielding
@@ -526,10 +571,26 @@ def estimate_runtime(
     # Non-persistent chunks: forward has gather + H2D. ``nccl_reduce`` is
     # not passed (forward branch ignores it; default 0.0 keeps the
     # forward cost untouched).
-    t_fwd_comm_per_chunk = _comm_time_chunk(
+    #
+    # Two variants are computed: one at the derated bandwidth for the
+    # ``n_affected`` chunks whose prefetch window overlaps swap traffic
+    # (paper §3.3 / §A.1), and one at the full PCIe bandwidth for the
+    # remaining non-persistent chunks. The runtime sums each group at
+    # the appropriate rate. When ``n_swap == 0`` both variants are
+    # identical (``eff_h2d == full_h2d``) and the affected-count is 0,
+    # so the original no-contention behaviour is recovered exactly.
+    t_fwd_comm_per_chunk_affected = _comm_time_chunk(
         layout.S_chunk,
         eff_h2d,
         eff_d2h,
+        nccl_gather,
+        is_backward=False,
+        buffer_cached=False,
+    )
+    t_fwd_comm_per_chunk_unaffected = _comm_time_chunk(
+        layout.S_chunk,
+        full_h2d,
+        full_d2h,
         nccl_gather,
         is_backward=False,
         buffer_cached=False,
@@ -548,7 +609,12 @@ def estimate_runtime(
     # backward cost does NOT perturb the n_buffer coefficient because
     # the same ``nccl_reduce`` is charged on cached AND uncached
     # branches (cancels in the cached/uncached delta).
-    t_bwd_comm_per_chunk_cached = _comm_time_chunk(
+    #
+    # Affected/unaffected pairs computed for both cached and uncached
+    # variants. ``T_reduce`` is a pure NCCL collective (no PCIe) and is
+    # IDENTICAL on the affected and unaffected branches — only the H2D
+    # / D2H components shift.
+    t_bwd_comm_per_chunk_cached_affected = _comm_time_chunk(
         layout.S_chunk,
         eff_h2d,
         eff_d2h,
@@ -557,10 +623,28 @@ def estimate_runtime(
         buffer_cached=True,
         nccl_reduce_s=nccl_reduce,
     )
-    t_bwd_comm_per_chunk_uncached = _comm_time_chunk(
+    t_bwd_comm_per_chunk_cached_unaffected = _comm_time_chunk(
+        layout.S_chunk,
+        full_h2d,
+        full_d2h,
+        nccl_gather,
+        is_backward=True,
+        buffer_cached=True,
+        nccl_reduce_s=nccl_reduce,
+    )
+    t_bwd_comm_per_chunk_uncached_affected = _comm_time_chunk(
         layout.S_chunk,
         eff_h2d,
         eff_d2h,
+        nccl_gather,
+        is_backward=True,
+        buffer_cached=False,
+        nccl_reduce_s=nccl_reduce,
+    )
+    t_bwd_comm_per_chunk_uncached_unaffected = _comm_time_chunk(
+        layout.S_chunk,
+        full_h2d,
+        full_d2h,
         nccl_gather,
         is_backward=True,
         buffer_cached=False,
@@ -639,9 +723,19 @@ def estimate_runtime(
         else:
             t_fwd_compute_per_chunk = 0.0
 
+        # Split non-persistent chunks into affected/unaffected for the
+        # forward prefetch cost. Forward has only one buffer-state
+        # variant (no cache yet — every non-persistent chunk needs to
+        # be gathered + H2D reloaded into the buffer before compute), so
+        # the cached/uncached layering only matters for backward.
+        n_fwd_affected = min(n_affected, n_nonpersist)
+        n_fwd_unaffected = max(0, n_nonpersist - n_fwd_affected)
+
         t_fwd_persistent_chunks = n_persist * t_fwd_compute_per_chunk
-        t_fwd_nonpersistent_chunks = n_nonpersist * max(
-            t_fwd_compute_per_chunk, t_fwd_comm_per_chunk
+        t_fwd_nonpersistent_chunks = n_fwd_affected * max(
+            t_fwd_compute_per_chunk, t_fwd_comm_per_chunk_affected
+        ) + n_fwd_unaffected * max(
+            t_fwd_compute_per_chunk, t_fwd_comm_per_chunk_unaffected
         )
         t_fwd = (
             t_fwd_persistent_chunks + t_fwd_nonpersistent_chunks + t_fwd_swap_transfer
@@ -761,7 +855,7 @@ def estimate_runtime(
         # H2D reload that an uncached chunk would have to pay before the
         # gather. Mirrors
         # ``t_bwd_comm_per_chunk_uncached - t_bwd_comm_per_chunk_cached
-        # = collective + S_chunk/eff_h2d`` in the analytical branch
+        # = collective + S_chunk/<bw>`` in the analytical branch
         # below (post CodeRabbit Round-5 R5-B fix), keeping the two
         # paths' n_buffer-coefficients consistent. Pre-R5-B this term
         # was just ``nccl_gather`` and so under-credited buffer cache
@@ -773,12 +867,32 @@ def estimate_runtime(
         delta_cached = candidate_cached - bootstrap_cached
         # Savings per cache hit = backward gather collective skipped +
         # H2D reload skipped. Single-rank / no-collective case has
-        # nccl_gather=0 (PCIe-only term remains); a pathological
-        # eff_h2d<=0 collapses the H2D term to 0 (matching
-        # ``_comm_time_chunk``'s defensive division). Same arithmetic
-        # the analytical path uses for ``t_bwd_comm_per_chunk_*`` at
-        # this S_chunk.
-        h2d_save_per_hit = layout.S_chunk / eff_h2d if eff_h2d > 0 else 0.0
+        # nccl_gather=0 (PCIe-only term remains); a pathological bw<=0
+        # collapses the H2D term to 0 (matching ``_comm_time_chunk``'s
+        # defensive division).
+        #
+        # Bandwidth choice for the H2D save: per the worst-case layering
+        # used in the analytical branch (affected chunks land in the
+        # uncached group FIRST), marginal increases in n_buffer pull
+        # chunks out of the END of the uncached pool — i.e. unaffected
+        # chunks first. So a delta cache hit at the margin saves an
+        # unaffected chunk's H2D cost, which would have been paid at
+        # full PCIe bandwidth. We therefore use ``full_h2d`` here,
+        # matching the analytical branch's behavior in the regime where
+        # the marginal cached chunk is unaffected (the typical case for
+        # any candidate where ``n_buffer + n_persist > n_affected``).
+        #
+        # In the regime where every cached chunk is affected (``n_cached
+        # <= n_affected``), this slightly under-credits the cache hit
+        # (would save derated H2D, not full H2D). That's the
+        # conservative direction — it makes the searcher slightly more
+        # cautious about increasing n_buffer when contention is
+        # significant, rather than aggressive. Refining this to a
+        # piecewise rate would require carrying the affected-chunk
+        # boundary into the delta-cached arithmetic; deferred until a
+        # measured discrepancy justifies the complexity.
+        save_h2d_bw = full_h2d
+        h2d_save_per_hit = layout.S_chunk / save_h2d_bw if save_h2d_bw > 0 else 0.0
         gather_save_per_hit = nccl_gather + h2d_save_per_hit
         # Net override: subtract delta-hit savings from the measured
         # backward. Clamp at 0 to prevent negative t_bwd if a wildly
@@ -802,19 +916,44 @@ def estimate_runtime(
         n_cached = min(n_buffer, n_nonpersist)
         n_uncached = n_nonpersist - n_cached
 
+        # Layer the affected/unaffected split (paper §3.3) onto the
+        # cached/uncached split. Per the module-docstring simplification,
+        # affected chunks are assumed to land in the *uncached* group
+        # first (worst-case for runtime: uncached chunks pay both the
+        # gather and the H2D reload, so charging them at the derated
+        # bandwidth maximises the per-chunk cost). Any remaining
+        # affected count overflows into the cached group.
+        #
+        # Concretely:
+        #   uncached_affected   = min(n_affected, n_uncached)
+        #   uncached_unaffected = n_uncached - uncached_affected
+        #   cached_affected     = n_affected - uncached_affected
+        #                       (clamped to n_cached for safety)
+        #   cached_unaffected   = n_cached - cached_affected
+        n_uncached_affected = min(n_affected, n_uncached)
+        n_uncached_unaffected = n_uncached - n_uncached_affected
+        n_cached_affected = min(n_affected - n_uncached_affected, n_cached)
+        n_cached_unaffected = n_cached - n_cached_affected
+
         # Persistent chunks: paper Eq. 6 first branch — only the
         # reduce-scatter collective contributes to comm (no gather, no
         # H2D, no D2H grad-offload because the chunk lives on GPU).
         # Paper Eq. 5 backward roofline is max(compute, comm) per chunk,
         # so we max the per-chunk compute against ``nccl_reduce``.
+        # Persistent chunks have no PCIe traffic, so the affected /
+        # unaffected split does not apply to them.
         t_bwd_persistent_chunks = n_persist * max(
             t_bwd_compute_per_chunk, nccl_reduce
         )
-        t_bwd_cached_chunks = n_cached * max(
-            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_cached
+        t_bwd_cached_chunks = n_cached_affected * max(
+            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_cached_affected
+        ) + n_cached_unaffected * max(
+            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_cached_unaffected
         )
-        t_bwd_uncached_chunks = n_uncached * max(
-            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_uncached
+        t_bwd_uncached_chunks = n_uncached_affected * max(
+            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_uncached_affected
+        ) + n_uncached_unaffected * max(
+            t_bwd_compute_per_chunk, t_bwd_comm_per_chunk_uncached_unaffected
         )
         t_bwd = (
             t_bwd_persistent_chunks
