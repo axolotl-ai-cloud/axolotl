@@ -122,6 +122,15 @@ SIZE_THRESHOLD_BYTES: int = 1 << 20  # 1 MiB
 _SWAP_HEADROOM_SAFETY_BYTES: int = 64 * 1024 * 1024
 
 
+#: Number of synchronize-and-recheck retries before the SWAP gate
+#: raises. Each retry calls ``torch.cuda.synchronize()`` to drain
+#: in-flight backward kernels (which release their saved-tensor
+#: storage). Three retries is empirically sufficient for typical
+#: transformer backward shapes; raise if your workload chains many
+#: small SWAP blocks tightly.
+_SWAP_MAX_DRAIN_RETRIES: int = 3
+
+
 def _swap_stream_wait_compute(swap_stream: "torch.cuda.Stream") -> None:
     """Make ``swap_stream`` wait on the current (compute) stream."""
     if swap_stream is None or not torch.cuda.is_available():
@@ -301,35 +310,67 @@ def _make_pack_unpack(
         # The gate below bridges that gap. ``mem_get_info`` queries the
         # CUDA driver's free-memory counter (which already accounts for
         # memory cached by PyTorch's allocator), so it answers "would a
-        # fresh allocation succeed" — exactly what we need. The
-        # synchronize-then-recheck dance is what makes this the closest
-        # analogue to the paper's assumption: backward kernels free
-        # their saved tensors after they finish, and ``synchronize()``
-        # drains them, typically opening enough headroom for the
-        # swap-in. We only synchronize on the deficit branch — the
-        # drain has a real cost (full compute-stream wait), so the
-        # conditional is load-bearing for steady-state throughput.
+        # fresh allocation succeed" — exactly what we need.
+        #
+        # Two-stage enforcement:
+        #   1. Bounded retry with ``synchronize()`` — backward kernels
+        #      free their saved tensors after they finish, and a sync
+        #      drains any in-flight ones, typically opening enough
+        #      headroom for the swap-in. We only synchronize on the
+        #      deficit branch — the drain has a real cost (full
+        #      compute-stream wait), so the conditional is load-bearing
+        #      for steady-state throughput.
+        #   2. Hard raise — if even after draining we still cannot
+        #      satisfy the headroom requirement, raise ``RuntimeError``
+        #      with an actionable message. Falling through to
+        #      ``empty_strided`` would also abort, but as a CUDA
+        #      kernel-allocator OOM that blames the wrong layer; the
+        #      raise here turns the cost model's zero-peak assumption
+        #      into a checkable invariant.
         required_bytes = handle.nbytes
+        total_safety = required_bytes + _SWAP_HEADROOM_SAFETY_BYTES
+
         free_bytes, _total = torch.cuda.mem_get_info(handle.device)
-        if free_bytes < required_bytes + _SWAP_HEADROOM_SAFETY_BYTES:
+        retries_remaining = _SWAP_MAX_DRAIN_RETRIES
+        drained = False
+        while free_bytes < total_safety and retries_remaining > 0:
             torch.cuda.synchronize(handle.device)
             free_bytes, _total = torch.cuda.mem_get_info(handle.device)
-            if free_bytes < required_bytes + _SWAP_HEADROOM_SAFETY_BYTES:
-                # Fall through to allocation anyway — the OOM is
-                # unavoidable at this point. The warning makes the
-                # SWAP gate the named cause in the operator's logs
-                # rather than a mysterious ``empty_strided`` failure.
-                LOG.warning(
-                    "SWAP unpack: insufficient GPU headroom for swap-in "
-                    "(need %d bytes + %d safety, have %d free) on device "
-                    "%s. The cost model assumed swap would not contribute "
-                    "to peak; this configuration violates that assumption "
-                    "— consider rerunning with n_swap=0 or smaller.",
-                    required_bytes,
-                    _SWAP_HEADROOM_SAFETY_BYTES,
-                    free_bytes,
-                    handle.device,
-                )
+            retries_remaining -= 1
+            drained = True
+
+        if free_bytes < total_safety:
+            raise RuntimeError(
+                f"ProTrain SWAP gate: insufficient GPU headroom for "
+                f"activation swap-in on device {handle.device} after "
+                f"{_SWAP_MAX_DRAIN_RETRIES} sync-and-retry attempts. "
+                f"Need {required_bytes} bytes + "
+                f"{_SWAP_HEADROOM_SAFETY_BYTES} safety margin; have "
+                f"{free_bytes} free. The cost model assumed SWAP would "
+                f"not contribute to peak (paper §3.3 'swap-in only when "
+                f"memory available'); this configuration violates that "
+                f"invariant. Reduce n_swap or set n_swap=0 and re-run "
+                f"the searcher, or check whether parallel SWAP traffic "
+                f"from sibling unpacks is competing for the same "
+                f"headroom."
+            )
+
+        if drained:
+            # Near-miss: the gate had to drain in-flight backward
+            # kernels to recover headroom. Surface to operators so
+            # repeated near-misses are visible before they tip into
+            # an actual raise.
+            LOG.warning(
+                "SWAP unpack: drained in-flight backward kernels to "
+                "recover headroom for swap-in on device %s "
+                "(need %d bytes + %d safety, have %d free after drain). "
+                "Repeated near-misses suggest n_swap is too high for "
+                "this configuration.",
+                handle.device,
+                required_bytes,
+                _SWAP_HEADROOM_SAFETY_BYTES,
+                free_bytes,
+            )
 
         gpu_buf = torch.empty_strided(
             handle.shape,

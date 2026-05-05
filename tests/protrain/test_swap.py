@@ -837,3 +837,158 @@ def test_swap_smoke_n_swap_override_runs_three_iters() -> None:
         except Exception:
             pass
     swap_pool.close()
+
+
+# ---------------------------------------------------------------------------
+# SWAP gate enforcement (paper §3.3 "swap-in only when memory available")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+def test_swap_gate_raises_when_headroom_unrecoverable(monkeypatch) -> None:
+    """SWAP gate raises ``RuntimeError`` when sync-and-retry cannot free enough.
+
+    The gate's contract: if even after ``_SWAP_MAX_DRAIN_RETRIES``
+    sync-and-recheck attempts the device still cannot satisfy
+    ``required_bytes + _SWAP_HEADROOM_SAFETY_BYTES``, the unpack
+    path must raise (NOT fall through to ``empty_strided`` and OOM
+    in the kernel allocator). The message must name the SWAP gate
+    so the operator sees a config-level invariant violation, not a
+    mysterious kernel OOM.
+
+    We mock ``torch.cuda.mem_get_info`` to permanently report a
+    deficit; the retry loop will exhaust without ever observing
+    enough headroom, and the raise path must trigger BEFORE
+    ``torch.empty_strided`` is called.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+
+    from axolotl.integrations.protrain.block import swap as swap_mod
+
+    device = torch.device("cuda")
+
+    # Build a minimal _CPUHandle with bookkeeping that says "I need a
+    # large allocation". The gate consults handle.nbytes and
+    # handle.device only — pool/stream/slot fields aren't touched on
+    # the raise path.
+    pool = ActivationSwapPool(
+        n_swap=1, slot_bytes=64, prefetch_depth=2, slots_per_block=1
+    )
+    swap_stream = torch.cuda.Stream()
+    handle = swap_mod._CPUHandle(
+        pool=pool,
+        swap_stream=swap_stream,
+        slot_id=0,
+        shape=(8,),
+        stride=(1,),
+        dtype=torch.float32,
+        device=device,
+        # Larger than any plausible free count — combined with our
+        # mock below, the deficit is unrecoverable.
+        nbytes=1 << 40,  # 1 TiB
+        requires_grad=False,
+    )
+
+    # Mock mem_get_info so every call (initial + every retry) returns
+    # a tiny free count. The retry loop drains _SWAP_MAX_DRAIN_RETRIES
+    # times, then the gate raises.
+    call_count = {"n": 0}
+
+    def fake_mem_get_info(_dev=None):
+        call_count["n"] += 1
+        return (1024, 1 << 40)  # 1 KiB free, 1 TiB total
+
+    monkeypatch.setattr(torch.cuda, "mem_get_info", fake_mem_get_info)
+
+    # Sentinel: empty_strided MUST NOT be called once the raise
+    # unwinds the stack. We monkeypatch it to raise loudly if it
+    # ever runs after the gate decided to raise.
+    empty_strided_called = {"n": 0}
+    real_empty_strided = torch.empty_strided
+
+    def spy_empty_strided(*args, **kwargs):
+        empty_strided_called["n"] += 1
+        return real_empty_strided(*args, **kwargs)
+
+    monkeypatch.setattr(torch, "empty_strided", spy_empty_strided)
+
+    pack, unpack = swap_mod._make_pack_unpack(
+        pool, swap_stream, swap_mod.SIZE_THRESHOLD_BYTES
+    )
+
+    with pytest.raises(RuntimeError, match="ProTrain SWAP gate"):
+        unpack(handle)
+
+    # Gate consulted mem_get_info once initially + once per retry.
+    expected_calls = 1 + swap_mod._SWAP_MAX_DRAIN_RETRIES
+    assert call_count["n"] == expected_calls, (
+        f"expected {expected_calls} mem_get_info calls "
+        f"(1 initial + {swap_mod._SWAP_MAX_DRAIN_RETRIES} retries), "
+        f"got {call_count['n']}"
+    )
+
+    # Critical: the raise must unwind BEFORE empty_strided runs.
+    # Falling through to empty_strided is the antipattern this fix
+    # eliminates.
+    assert empty_strided_called["n"] == 0, (
+        "SWAP gate raised but empty_strided was still invoked — the "
+        "gate is observing-and-proceeding instead of enforcing."
+    )
+
+    pool.close()
+
+
+@pytest.mark.gpu
+def test_swap_gate_message_names_invariant_and_remediation(monkeypatch) -> None:
+    """Raised message names the gate, the deficit, and operator remedies.
+
+    Operators see this message when the cost model's swap-in-headroom
+    assumption breaks at runtime. The message must:
+
+    * Name "ProTrain SWAP gate" so it's the obvious owner.
+    * Surface the numerical deficit (need vs. have) so the operator
+      can size the gap.
+    * Suggest concrete remediation (reduce ``n_swap`` / set to 0).
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+
+    from axolotl.integrations.protrain.block import swap as swap_mod
+
+    device = torch.device("cuda")
+
+    pool = ActivationSwapPool(
+        n_swap=1, slot_bytes=64, prefetch_depth=2, slots_per_block=1
+    )
+    swap_stream = torch.cuda.Stream()
+    handle = swap_mod._CPUHandle(
+        pool=pool,
+        swap_stream=swap_stream,
+        slot_id=0,
+        shape=(8,),
+        stride=(1,),
+        dtype=torch.float32,
+        device=device,
+        nbytes=1 << 40,
+        requires_grad=False,
+    )
+
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda _dev=None: (1024, 1 << 40)
+    )
+
+    pack, unpack = swap_mod._make_pack_unpack(
+        pool, swap_stream, swap_mod.SIZE_THRESHOLD_BYTES
+    )
+
+    with pytest.raises(RuntimeError) as excinfo:
+        unpack(handle)
+
+    msg = str(excinfo.value)
+    assert "ProTrain SWAP gate" in msg
+    assert "n_swap" in msg, "message must suggest n_swap reduction"
+    assert str(handle.nbytes) in msg, "message must surface the byte deficit"
+    assert "safety margin" in msg, "message must surface the safety margin"
+
+    pool.close()
