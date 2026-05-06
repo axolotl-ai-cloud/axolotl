@@ -1505,3 +1505,222 @@ def test_snapshot_cpu_state_independent_storage() -> None:
     mgr.restore_to_gpu()
     host.close()
     del pool
+
+
+def _worker_sharded_snapshot_restore_round_trip(
+    rank: int, world_size: int, tmpdir: str
+) -> None:
+    """2-rank gloo body: sharded snapshot -> mutate -> restore round-trip.
+
+    Mirrors :func:`_worker_sharded_restore_round_trip`'s setup (mixed-
+    dtype model so the sharded chunk produces ``len(regions) == 2``)
+    but exercises the phase-2 ROLLBACK path explicitly: the bytes that
+    survive the round-trip live in ``region.cpu_shard_bytes``, not in
+    ``param.data`` (which is empty on offloaded chunks). Without
+    ``snapshot_cpu_state`` covering the sharded branch, a phase-2
+    measurement that updates the pinned shards would not roll back on
+    Mode-C and the next iter would train from post-step weights.
+    """
+    import os as _os
+
+    import torch
+    import torch.distributed as dist
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.chunk.manager import ChunkManager
+    from axolotl.integrations.protrain.chunk.pinned_alloc import (
+        PinnedHostMemory,
+    )
+
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", "29553")
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"file://{tmpdir}/rendezvous-snapshot-restore",
+        rank=rank,
+        world_size=world_size,
+    )
+
+    try:
+        torch.manual_seed(0)
+        from torch import nn
+
+        class _MixedLayer(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.proj = nn.Linear(16, 16, bias=True).to(torch.float16)
+                self.norm = nn.LayerNorm(16).to(torch.float32)
+
+        layer = _MixedLayer()
+        model = nn.Module()
+        model.h = nn.ModuleList([layer])  # type: ignore[attr-defined]
+
+        block_spans: dict = {}
+        for name, _p in model.named_parameters():
+            block_spans.setdefault(BlockId(0), []).append(ParamId(name))  # type: ignore[index]
+        exec_order = [ParamId(n) for n, _ in model.named_parameters()]
+        S_chunk = 1 << 14
+        layout = build_layout(model, exec_order, S_chunk, block_spans)
+
+        host = PinnedHostMemory(n_buffer=1, S_chunk=layout.S_chunk)
+        pool = BufferPool(
+            n_buffer=1,
+            S_chunk=layout.S_chunk,
+            pinned_host=host,
+            device=torch.device("cpu"),
+        )
+
+        mgr = ChunkManager(
+            model=model,
+            layout=layout,
+            n_persist=0,
+            buffer_pool=pool,
+            cpu_optim=None,
+            gpu_optim=None,
+            device=torch.device("cpu"),
+            world_size=world_size,
+            rank=rank,
+            zero3_shard=True,
+        )
+
+        try:
+            mgr.materialize_offload()
+        except RuntimeError as exc:
+            if "gloo" in str(exc).lower():
+                with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+                    f.write(f"gloo-unsupported: {exc}\n")
+                return
+            raise
+
+        # Sharding must have engaged for the snapshot path under test.
+        assert mgr.sharded_chunk_ids() == [ChunkId(0)], (
+            f"rank {rank}: expected chunk 0 sharded, got {mgr.sharded_chunk_ids()}"
+        )
+        shard_state = mgr._chunk_shards[ChunkId(0)]
+        assert len(shard_state.regions) == 2, (
+            f"rank {rank}: expected 2 dtype regions (fp16 + fp32), "
+            f"got {len(shard_state.regions)}"
+        )
+
+        # Capture the live region pointers + a pre-snapshot byte image.
+        # Storage identity must survive ``restore_cpu_state`` so any
+        # optimizer state aliased to these tensors stays valid.
+        live_regions = list(shard_state.regions)
+        pre_storage_ids = [
+            r.cpu_shard_bytes.untyped_storage().data_ptr() for r in live_regions
+        ]
+        pre_bytes = [r.cpu_shard_bytes.detach().clone() for r in live_regions]
+
+        snap = mgr.snapshot_cpu_state()
+        assert ChunkId(0) in snap, (
+            f"rank {rank}: snapshot must include the sharded chunk"
+        )
+        region_snaps = snap[ChunkId(0)]["regions"]
+        assert region_snaps is not None, (
+            f"rank {rank}: sharded chunk should populate 'regions', got None"
+        )
+        assert len(region_snaps) == len(live_regions), (
+            f"rank {rank}: snapshot region count {len(region_snaps)} != "
+            f"live region count {len(live_regions)}"
+        )
+
+        # Mutate every live region in place — simulates an optimizer
+        # step that wrote new weights into the pinned shadows. Region
+        # storage is uint8 (raw chunk bytes), so use an integer delta.
+        for region in live_regions:
+            region.cpu_shard_bytes.add_(torch.ones_like(region.cpu_shard_bytes))
+        for region, pre in zip(live_regions, pre_bytes, strict=True):
+            assert not torch.equal(region.cpu_shard_bytes, pre), (
+                f"rank {rank}: pre-restore mutation expected to differ "
+                "from the snapshot's reference bytes"
+            )
+
+        # The actual rollback under test.
+        mgr.restore_cpu_state(snap)
+
+        # Bit-exact restoration.
+        for region, pre in zip(live_regions, pre_bytes, strict=True):
+            assert torch.equal(region.cpu_shard_bytes, pre), (
+                f"rank {rank}: restore_cpu_state did not reinstate the "
+                "pre-mutation bytes for sharded region — phase-2 rollback "
+                "would silently advance Mode-C weights"
+            )
+
+        # Storage identity preserved (copy_, not rebind). Optimizer
+        # state aliased to these tensors must survive.
+        post_storage_ids = [
+            r.cpu_shard_bytes.untyped_storage().data_ptr() for r in live_regions
+        ]
+        assert post_storage_ids == pre_storage_ids, (
+            f"rank {rank}: restore_cpu_state must preserve underlying "
+            f"storage; pre={pre_storage_ids} post={post_storage_ids}"
+        )
+
+        # Mutating the snapshot AFTER restore must not touch the live
+        # shadow — defends against a degenerate copy_ that aliases.
+        for region_snap in region_snaps:
+            region_snap.add_(torch.ones_like(region_snap))
+        for region, pre in zip(live_regions, pre_bytes, strict=True):
+            assert torch.equal(region.cpu_shard_bytes, pre), (
+                f"rank {rank}: snapshot tensor shares storage with the "
+                "live pinned shard — must be deep-cloned"
+            )
+
+        # Tear down via the canonical sharded restore path so the
+        # manager exits in a known state (mirrors the round-trip test).
+        try:
+            mgr.restore_to_gpu()
+        except RuntimeError as exc:
+            if "not implemented" in str(exc).lower() or "gloo" in str(exc).lower():
+                with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+                    f.write(f"gloo-collective-unsupported: {exc}\n")
+                return
+            raise
+
+        host.close()
+        del pool
+
+    finally:
+        try:
+            dist.barrier()
+        except Exception:  # noqa: BLE001
+            pass
+        dist.destroy_process_group()
+
+
+@pytest.mark.slow
+@pytest.mark.gpu  # paired with the rest of the distributed lane
+def test_sharded_snapshot_cpu_state_round_trip_2rank(tmp_path) -> None:
+    """2-rank gloo: sharded snapshot_cpu_state -> mutate -> restore_cpu_state.
+
+    Closes the residual coverage gap left by the replicated-only unit
+    tests (``test_snapshot_cpu_state_restores_mutated_pinned_bytes``,
+    ``test_snapshot_cpu_state_independent_storage``): they exercise
+    ``_cpu_slots[].cpu_data`` but never touch
+    ``_chunk_shards[].regions[].cpu_shard_bytes`` because sharding
+    requires a live process group. Without this test, a regression
+    in the sharded branch of ``snapshot_cpu_state`` /
+    ``restore_cpu_state`` would survive CI — and silently corrupt
+    Mode-C weights across a phase-2 rebuild.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.distributed.is_available():
+        pytest.skip("torch.distributed unavailable")
+
+    import torch.multiprocessing as mp
+
+    world_size = 2
+    mp.spawn(
+        _worker_sharded_snapshot_restore_round_trip,
+        args=(world_size, str(tmp_path)),
+        nprocs=world_size,
+        join=True,
+    )
+
+    skip_files = list(tmp_path.glob("rank*.skip"))
+    if skip_files:
+        reasons = [f.read_text().strip() for f in skip_files]
+        pytest.skip(f"gloo does not support required collective(s): {reasons}")
