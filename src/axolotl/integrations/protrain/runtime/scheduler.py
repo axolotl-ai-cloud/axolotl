@@ -223,6 +223,30 @@ class Scheduler:
         is current here. ``record_stream`` calls inside the chunk
         manager tie those buffers' lifetimes to this prefetch stream
         for correctness.
+
+        SWAP-stream coordination (paper-fidelity §3.5+): when a SWAP
+        block's pack hook has enqueued a D2H copy on ``self._swap_stream``
+        reading FROM a chunk buffer slot, the next ``acquire`` on that
+        slot may issue a fresh H2D writing INTO the same bytes via this
+        method. Without an explicit cross-stream dependency the two
+        transfers are unordered and the slot's pre-evict bytes (which
+        SWAP's pack must capture intact for backward correctness) can
+        be overwritten mid-DMA. Making the prefetch stream wait on the
+        swap stream BEFORE entering the gather context is the minimal
+        sufficient barrier: every chunk gather here waits for any
+        in-flight SWAP D2H to retire on its source-side reads of the
+        pool buffers. The wait is a single CUDA event — cheap relative
+        to the H2D transfer it gates, and only added once per
+        :meth:`pre_block_forward` / :meth:`pre_block_backward` call.
+
+        This is the load-bearing primitive that makes ``BlockMode.SWAP``
+        admissible on blocks whose parameter chunks are NOT in the
+        persistent prefix (formerly rejected by
+        :func:`block_map_runtime_admissible`). The pinned-CPU SWAP pool
+        is the activation persistence mechanism — fully independent of
+        ``param.data`` rebinding — so once the slot's D2H read is
+        sequenced before any subsequent slot-overwriting H2D, the
+        SWAP × non-persistent combination is byte-safe.
         """
         try:
             import torch
@@ -234,6 +258,15 @@ class Scheduler:
             for cid in chunk_ids:
                 self.chunk_manager.gather(cid)
             return
+
+        # Order this prefetch's H2D writes after any in-flight SWAP D2H
+        # reads on the same pool buffers. See the docstring for why this
+        # barrier is correctness-load-bearing for SWAP × non-persistent.
+        # ``wait_stream`` records a single event and gates on it; no
+        # host-side stall, and the cost on the GPU is dominated by the
+        # H2D itself.
+        if self._swap_stream is not None:
+            self._prefetch_stream.wait_stream(self._swap_stream)
 
         with torch.cuda.stream(self._prefetch_stream):
             for cid in chunk_ids:

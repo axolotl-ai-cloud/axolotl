@@ -1294,23 +1294,37 @@ def protrain_model_wrapper(
             seq_len,
         )
         _sys.stderr.write(
-            "[protrain] profiler cache miss — running forward-only trace\n"
+            "[protrain] profiler cache miss — running backward-aware trace\n"
         )
         _sys.stderr.flush()
-        # Forward-only profile: the cost model's op-walk in
-        # :mod:`cost.memory` only reads forward ops (the synthetic
-        # ``<backward>`` record is skipped), and :mod:`cost.runtime`
-        # derives ``t_bwd`` from ``t_fwd`` + activation sizes rather
-        # than a measured backward. Running ``loss.backward()`` on a
-        # 7B-class model in the profiler blows the 24 GiB card before
-        # ProTrain's chunk offload can engage; since the backward
-        # isn't consumed by downstream cost estimation, skipping it is
-        # loss-free and unblocks integration on single-3090 budgets.
+        # Backward-aware profile (paper §3.2 / App A.2 fidelity, since
+        # TRACE_VERSION 19). The paper's profiler captures both forward
+        # and backward windows because peak memory typically occurs in
+        # backward (retained activations + grad buffers + CKPT recompute
+        # all overlap). Skipping backward forced ``cost/runtime.py`` to
+        # derive ``t_bwd`` analytically from ``t_fwd`` and the cost
+        # model's bwd peak to fall back to the trainable-fraction
+        # heuristic — both weakened searcher ranking on borderline
+        # configs.
+        #
+        # OOM guard: the original concern (running ``loss.backward()``
+        # on a 7B-class model blew the 24 GiB card before chunk offload
+        # could engage) is now mitigated by ``OnDemandTensorMgr``'s
+        # post-630e5dd4 spill semantics — GPU-resident params actually
+        # release their storage during the on-demand context, and
+        # ``saved_tensors_hooks`` spills retained activations to CPU
+        # for the duration of forward+backward. ``run_trace`` engages
+        # on-demand whenever the model state (params + grads + Adam)
+        # exceeds 60% of device memory; on smaller models the unwrapped
+        # backward is well within budget. The hot-loop steady backward
+        # is additionally guarded with a per-iter try/except that
+        # falls back to the analytical bwd_fwd ratio if any iter raises
+        # — no regression vs. the pre-v19 path on the OOM edge case.
         profiler_cfg = ProfilerConfig(
             batch_size=batch_size,
             seq_len=seq_len,
             device=str(device),
-            include_backward=False,
+            include_backward=True,
             on_demand=True,
             world_size=int(hardware_profile.gpu_count),
         )
@@ -1598,9 +1612,15 @@ def protrain_model_wrapper(
         # would never select — e.g. an n_buffer too small for the
         # scheduler's lookahead prefetch (current-block ∪ next-block
         # non-persistent chunks must fit simultaneously) or a block_map
-        # where a NONE/SWAP block owns offloaded chunks (the runtime
-        # rebinds param.data to an empty sentinel after offload, so any
-        # non-CKPT block must own only persistent chunks).
+        # where a NONE block owns offloaded chunks (no activation-save
+        # mechanism — autograd's saved tensors hold direct GPU storage
+        # refs that the chunk pool's slot reuse will clobber). CKPT,
+        # OFFLOAD and SWAP all tolerate non-persistent chunks (CKPT
+        # recomputes; OFFLOAD re-gathers via saved-tensors-hook; SWAP
+        # persists each saved tensor to a pinned-CPU pool slot decoupled
+        # from param.data — see ``block_map_runtime_admissible`` and
+        # the §6.6 SWAP × non-persistent lift in
+        # ``BLOCK_MODE_OFFLOAD_DESIGN.md``).
         min_buffer = min_n_buffer_for(layout, n_persist)
         if n_buffer < min_buffer:
             raise ValueError(
@@ -1614,13 +1634,13 @@ def protrain_model_wrapper(
             raise ValueError(
                 f"override block_map for n_swap={n_swap} n_checkpoint={n_checkpoint} "
                 f"n_offload={n_offload} is runtime-unsafe at n_persist={n_persist}: "
-                "at least one block owns non-persistent chunks but is NOT in CKPT "
-                "or OFFLOAD mode. After offload the runtime rebinds param.data to "
-                "an empty sentinel; only CKPT (recompute) and OFFLOAD "
-                "(saved-tensors-hook re-gather) blocks tolerate this. Either raise "
-                "n_persist to make those blocks fully resident, raise n_checkpoint "
-                "so they recompute, or raise n_offload (Option B) so they re-gather "
-                "via the saved-tensors-hook path."
+                "at least one block owns non-persistent chunks but is in NONE mode. "
+                "NONE installs no activation-save hooks, so PyTorch's autograd "
+                "saved-tensors hold direct GPU storage refs that the chunk pool's "
+                "slot reuse will clobber. Use CKPT (recompute), OFFLOAD (saved-"
+                "tensors-hook re-gather), or SWAP (saved tensors persisted to a "
+                "pinned-CPU pool decoupled from param.data) for non-persistent "
+                "blocks — or raise n_persist to make those blocks fully resident."
             )
 
         result = SearchResult(

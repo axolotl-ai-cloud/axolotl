@@ -1228,6 +1228,8 @@ def test_estimate_runtime_uses_phase2_chunked_fwd_measurement():
     base_trace = _make_trace()
     n_block = len(base_trace.activation_sizes)
     chunked_fwd = 0.20
+    layout = _make_layout()
+    n_chunk = layout.N_chunk
     trace = replace(
         base_trace,
         steady_fwd_chunked_wall_s=chunked_fwd,
@@ -1235,12 +1237,18 @@ def test_estimate_runtime_uses_phase2_chunked_fwd_measurement():
         # branch (otherwise its fallback paths depend on
         # steady_fwd_wall_s and would mask the forward signal).
         steady_bwd_chunked_wall_s=0.30,
+        # Anchor the bootstrap at the same ``n_persist`` as the candidate
+        # under test below so the n_persist analytical translation
+        # (paper App A.1 Eqs. 4 & 6) yields ``delta_persist = 0`` and
+        # this test isolates the chunked-fwd override behavior. A real
+        # bootstrap captures at ``phase2_n_persist=0`` (see
+        # ``profiler/phase2.py::select_bootstrap_config``); the n_persist
+        # translation is exercised by its own dedicated tests below.
+        phase2_n_persist=n_chunk,
         phase2_n_checkpoint=n_block,
         phase2_per_block_recompute_s=8 * 5 * 0.0002 / n_block,
     )
-    layout = _make_layout()
     hw = _make_hw()
-    n_chunk = layout.N_chunk
 
     cfg_high_persist = CostConfig(
         n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0
@@ -1499,6 +1507,167 @@ def test_phase2_override_routes_n_swap_through_per_chunk_contention():
         "contention derate (paper §3.3 / commit e8f45fd7) must apply on "
         "top — pre-fix the phase-2 path paid only the swap transfer and "
         "missed this term"
+    )
+
+
+def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
+    """Phase-2 chunked-wall override translates the bootstrap measurement to
+    the candidate's ``n_persist`` (paper App A.1 Eqs. 4 & 6).
+
+    The bootstrap is captured at ``trace.phase2_n_persist=0``. Each
+    chunk that becomes persistent in the candidate (vs. the bootstrap)
+    skips the full PCIe round-trip:
+
+    - Forward (Eq. 4): ``T_gather + T_upload`` (NCCL gather + S_chunk/h2d).
+    - Backward (Eqs. 6 & 7): ``T_gather + T_upload + T_offload``
+      (NCCL gather + S_chunk/h2d + S_chunk/d2h). ``T_reduce`` is
+      invariant in n_persist (every chunk pays it).
+
+    Invariants:
+
+    1. ``t_iter`` at ``n_persist=0`` equals the bootstrap measurement
+       (plus optimizer / recompute terms unaffected by the new
+       correction) — the analytical correction must be exactly zero
+       at the bootstrap pin.
+    2. ``t_iter`` at ``n_persist=N_chunk`` equals the bootstrap
+       measurement minus ``N_chunk * (fwd_save + bwd_save)`` (clamped
+       at 0).
+    3. ``t_iter`` is monotonically non-increasing in ``n_persist``
+       across the full sweep — adding a persistent chunk strictly
+       reduces (or keeps constant if clamped at 0) the predicted
+       wall.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.runtime import estimate_runtime
+
+    base_trace = _make_trace(world=2)
+    n_block = len(base_trace.activation_sizes)
+    layout = _make_layout()
+    n_chunk = layout.N_chunk
+    # Phase-2 fields populated. Bootstrap at n_persist=0 (matches the
+    # actual ``select_bootstrap_config`` formula) but with n_checkpoint=0
+    # to keep the candidate-side recompute term out of the wall budget
+    # and isolate the n_persist correction. (The Path-1 gate in
+    # ``_bwd_compute_time_from_trace`` accepts ``phase2_n_checkpoint=0``
+    # as a valid bootstrap — there's nothing to subtract.) Walls sized
+    # large enough that the n_persist correction at n_persist=N_chunk
+    # does NOT clamp at 0 — keeps the exact-equality assertion meaningful.
+    chunked_fwd = 2.0
+    chunked_bwd = 2.0
+    trace = replace(
+        base_trace,
+        # Drop model-state to avoid CPU/GPU optim costs swamping the
+        # forward/backward signal at low n_persist.
+        model_state_bytes=0,
+        steady_fwd_chunked_wall_s=chunked_fwd,
+        steady_bwd_chunked_wall_s=chunked_bwd,
+        phase2_n_persist=0,
+        phase2_n_buffer=0,
+        phase2_n_checkpoint=0,
+        phase2_per_block_recompute_s=0.0,
+    )
+    # Sharded so nccl_gather is non-zero (otherwise the savings degenerate
+    # to PCIe-only and the test wouldn't exercise the gather term of the
+    # save formula).
+    hw = _make_hw(gpu_count=2, zero3_shard=True)
+    bm = assign_modes(0, 0, n_block)  # all-NONE — no recompute on top
+
+    # ---- Invariant 1: at n_persist=0 the correction must be zero. ----
+    cfg_zero = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
+    t_zero = estimate_runtime(cfg_zero, trace, layout, bm, hw)
+    # No optimizer / no recompute (per_block_recompute_s=0), so t_iter
+    # = t_fwd + t_bwd = chunked_fwd + chunked_bwd. The buffer-cache
+    # delta at (0, 0) vs bootstrap (0, 0) is also zero, so no other
+    # corrections apply.
+    expected_zero = chunked_fwd + chunked_bwd
+    assert t_zero == pytest.approx(expected_zero, abs=1e-9), (
+        f"n_persist=0 (== bootstrap pin) must yield t_iter == bootstrap walls "
+        f"(no n_persist correction); got t_iter={t_zero:.6f}, "
+        f"expected {expected_zero:.6f}"
+    )
+
+    # ---- Invariant 2: at n_persist=N_chunk the correction is exactly
+    #      N_chunk * (fwd_save + bwd_save). ----
+    cfg_full = CostConfig(n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0)
+    t_full = estimate_runtime(cfg_full, trace, layout, bm, hw)
+    nccl_gather = trace.nccl_gather_s[layout.S_chunk]
+    pcie_per_chunk_h2d = layout.S_chunk / hw.pcie_h2d_bps
+    pcie_per_chunk_d2h = layout.S_chunk / hw.pcie_d2h_bps
+    fwd_save_per_chunk = nccl_gather + pcie_per_chunk_h2d
+    bwd_save_per_chunk = nccl_gather + pcie_per_chunk_h2d + pcie_per_chunk_d2h
+    expected_full = max(0.0, chunked_fwd - n_chunk * fwd_save_per_chunk) + max(
+        0.0, chunked_bwd - n_chunk * bwd_save_per_chunk
+    )
+    assert t_full == pytest.approx(expected_full, abs=1e-9), (
+        f"n_persist=N_chunk must subtract N_chunk * (fwd_save + bwd_save) "
+        f"per paper Eqs. 4 & 6: expected t_iter={expected_full:.6f}, "
+        f"got {t_full:.6f}; fwd_save_per_chunk={fwd_save_per_chunk:.6f} "
+        f"bwd_save_per_chunk={bwd_save_per_chunk:.6f}"
+    )
+
+    # ---- Invariant 3: t_iter is monotonically non-increasing in
+    #      n_persist over the full sweep. ----
+    walls = []
+    for np in range(n_chunk + 1):
+        cfg = CostConfig(n_persist=np, n_buffer=0, n_swap=0, n_checkpoint=0)
+        walls.append(estimate_runtime(cfg, trace, layout, bm, hw))
+    for i in range(1, len(walls)):
+        assert walls[i] <= walls[i - 1] + 1e-9, (
+            f"t_iter not monotone non-increasing in n_persist: "
+            f"walls[{i - 1}]={walls[i - 1]:.6f} -> walls[{i}]={walls[i]:.6f}; "
+            "each newly-persistent chunk must save (or hold) the predicted "
+            "wall, never increase it"
+        )
+
+
+def test_phase2_n_persist_translation_clamps_at_zero():
+    """The n_persist correction must clamp the corrected wall at 0.0 so a
+    pathologically small bootstrap measurement (or pathologically large
+    PCIe round-trip estimate) cannot drive ``t_fwd`` / ``t_bwd``
+    negative.
+
+    This mirrors the existing ``t_bwd_buffer_correction`` clamp pattern
+    (paper App A.1 cost-model invariant: predicted iter time is
+    non-negative). The clamp also covers the degenerate edge case where
+    a noisy bootstrap underestimates the true chunked wall and the
+    full-sweep correction at ``n_persist=N_chunk`` would otherwise
+    yield a negative prediction.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.runtime import estimate_runtime
+
+    base_trace = _make_trace(world=2)
+    n_block = len(base_trace.activation_sizes)
+    layout = _make_layout()
+    n_chunk = layout.N_chunk
+    # Bootstrap walls intentionally far smaller than the full sweep
+    # save (N_chunk * (gather + h2d)). Drives the correction below zero
+    # before clamping. ``phase2_n_checkpoint=0`` + all-NONE candidate
+    # ``block_map`` keeps the recompute term out of the wall budget so
+    # the clamp behavior is observable end-to-end.
+    trace = replace(
+        base_trace,
+        model_state_bytes=0,
+        steady_fwd_chunked_wall_s=1e-6,
+        steady_bwd_chunked_wall_s=1e-6,
+        phase2_n_persist=0,
+        phase2_n_buffer=0,
+        phase2_n_checkpoint=0,
+        phase2_per_block_recompute_s=0.0,
+    )
+    hw = _make_hw(gpu_count=2, zero3_shard=True)
+    bm = assign_modes(0, 0, n_block)
+    cfg_full = CostConfig(n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0)
+    t_full = estimate_runtime(cfg_full, trace, layout, bm, hw)
+    # Both walls clamp at 0; t_iter = 0 + max(0 + 0, 0) = 0.
+    assert t_full == pytest.approx(0.0, abs=1e-9), (
+        f"n_persist correction must clamp at 0 when savings exceed measured "
+        f"wall: got t_iter={t_full:.9f}, expected 0.0 "
+        f"(bootstrap walls were 1e-6 — less than even one chunk's PCIe "
+        "round-trip — so the all-persistent correction would otherwise "
+        "drive t_iter negative)"
     )
 
 
@@ -2035,8 +2204,18 @@ def test_search_picks_high_n_buffer_when_phase2_makes_savings_substantial():
     # Phase-2 fields populated. Bootstrap: n_persist=0, n_buffer=1
     # (minimum feasible for adjacent-block prefetch). Candidate space:
     # any (n_persist, n_buffer) with the GPU gate cleared.
+    #
+    # ``model_state_bytes`` is sized so all-persistent
+    # (``n_persist=N_chunk``) does NOT fit under the 4 GB capacity below
+    # — without that constraint the n_persist analytical translation
+    # (paper App A.1 Eqs. 4 & 6) would correctly rank all-persistent as
+    # the global optimum (no PCIe round-trips at all), and the
+    # n_buffer-axis assertion becomes vacuous. The mode of operation
+    # this test targets is the "must offload some chunks to fit, so
+    # cache-hit savings on the offloaded chunks dominate" regime.
     trace = replace(
         base_trace,
+        model_state_bytes=4 * GB,
         steady_fwd_chunked_wall_s=0.05,
         steady_bwd_chunked_wall_s=0.40,
         phase2_n_persist=0,
@@ -2047,15 +2226,35 @@ def test_search_picks_high_n_buffer_when_phase2_makes_savings_substantial():
     layout = _make_layout()
     hw = _make_hw(gpu_count=4, zero3_shard=True)
 
-    # Capacity wide enough to admit n_buffer up to N_chunk - 1.
+    # Capacity tight enough that all-persistent infeasible (memory
+    # forces some chunks offloaded), wide enough to admit a usable
+    # n_buffer.
     capacity = 4 * GB
     result = search(trace, layout, capacity, hw)
-    assert result.cfg.n_buffer >= 6, (
+    # Must actually offload some chunks for the test premise to hold.
+    assert result.cfg.n_persist < layout.N_chunk, (
+        f"capacity not tight enough: cfg={result.cfg} chose all-persistent "
+        f"predicted_peak={result.predicted_peak_bytes / GB:.2f}GB; "
+        "the cache-hit assertion below assumes some chunks are offloaded"
+    )
+    # GPU-resident chunk count = n_persist + n_buffer. The combined
+    # invariant captures the cache-hit-translation intent in the
+    # presence of the n_persist analytical translation: the searcher
+    # must fill the available GPU memory with EITHER persistent or
+    # cached chunks (both skip per-iter PCIe round-trips for the
+    # affected chunks), not collapse to ``min_n_buffer_for`` once
+    # n_persist saturates. Requiring ``n_persist + n_buffer >= 6``
+    # mirrors the pre-fix ``n_buffer >= 6`` floor while accommodating
+    # the searcher's freedom to redistribute resident-chunk count
+    # across both axes now that both are correctly modeled.
+    assert result.cfg.n_persist + result.cfg.n_buffer >= 6, (
         f"searcher under-credited cache-hit savings: cfg={result.cfg} "
         f"predicted_peak={result.predicted_peak_bytes} "
         f"predicted_iter_s={result.predicted_iter_s:.4f}; "
-        "expected cfg.n_buffer >= 6 once the override path translates "
-        "the bootstrap measurement across n_buffer"
+        "expected n_persist + n_buffer >= 6 — high-resident-chunk-count "
+        "configs must rank above the min_n_buffer_for floor once the "
+        "cache-hit and n_persist translations are wired into the "
+        "phase-2 chunked-wall override"
     )
 
 
@@ -2160,12 +2359,24 @@ def test_search_picks_high_n_buffer_for_llama_3b_mode_c_4gpu_inputs():
 
     capacity = 20 * GB
     result = search(trace, layout, capacity, hw)
-    assert result.cfg.n_buffer >= 6, (
-        f"Mode-C 4-GPU regression: n_buffer auto-pick collapsed to "
-        f"{result.cfg.n_buffer}. Expected >=6 so most non-persistent "
-        f"chunks fit in the buffer pool simultaneously and gather count "
-        f"approaches N_non_persist rather than 2 * N_non_persist. "
-        f"Full cfg={result.cfg}, predicted_iter_s={result.predicted_iter_s:.4f}, "
+    # GPU-resident chunk count = n_persist + n_buffer. The combined
+    # invariant captures the cache-hit-translation intent in the
+    # presence of the n_persist analytical translation: the searcher
+    # must fill the available GPU memory with EITHER persistent or
+    # cached chunks (both skip per-iter PCIe round-trips for the
+    # affected chunks), not collapse to ``min_n_buffer_for``. Requiring
+    # ``n_persist + n_buffer >= 6`` mirrors the pre-fix ``n_buffer >= 6``
+    # floor while accommodating the searcher's freedom to redistribute
+    # resident-chunk count across both axes now that the n_persist
+    # axis is also correctly modeled (paper App A.1 Eqs. 4 & 6).
+    assert result.cfg.n_persist + result.cfg.n_buffer >= 6, (
+        f"Mode-C 4-GPU regression: GPU-resident chunk count collapsed "
+        f"(n_persist={result.cfg.n_persist}, n_buffer={result.cfg.n_buffer}). "
+        f"Expected n_persist + n_buffer >= 6 so most non-persistent chunks "
+        f"either pin on GPU or fit in the buffer pool simultaneously and "
+        f"the gather count approaches N_non_persist rather than "
+        f"2 * N_non_persist. Full cfg={result.cfg}, "
+        f"predicted_iter_s={result.predicted_iter_s:.4f}, "
         f"predicted_peak={result.predicted_peak_bytes / GB:.2f}GB"
     )
 

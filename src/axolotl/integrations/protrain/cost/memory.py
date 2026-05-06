@@ -258,6 +258,23 @@ def hot_iter_peak_cap(
     """
     if trace.steady_fwd_block_peak_bytes:
         forward_max_block_peak = max(trace.steady_fwd_block_peak_bytes.values())
+        # Backward-aware cap (TRACE_VERSION ≥ 19): when the steady
+        # backward measurement is available, use the larger of the
+        # per-block forward and per-block backward peaks. The bootstrap
+        # backward holds gradient buffers + saved-for-backward
+        # activations live simultaneously across each block's bwd
+        # window, which can exceed that block's forward peak; folding
+        # the bwd-side max into the cap keeps the cap an honest upper
+        # bound for any candidate (NONE/CKPT/SWAP) block_map. When the
+        # bwd field is empty (older trace, on-demand engaged, bwd iter
+        # raised) this degrades to forward-only — preserves v18
+        # behaviour.
+        bwd_per_block = getattr(trace, "steady_bwd_block_peak_bytes", None) or {}
+        if bwd_per_block:
+            backward_max_block_peak = max(bwd_per_block.values())
+            forward_max_block_peak = max(
+                forward_max_block_peak, backward_max_block_peak
+            )
         ckpt_recomp_bump = 0
         has_offload = False
         for bid_raw, act_sz in trace.activation_sizes.items():
@@ -270,14 +287,20 @@ def hot_iter_peak_cap(
                 has_offload = True
         offload_bump = layout.S_chunk if (has_offload and layout is not None) else 0
         return forward_max_block_peak + ckpt_recomp_bump + offload_bump
+    # Aggregate fallback path. ``steady_bwd_peak_bytes`` (TRACE_VERSION
+    # ≥ 19) typically exceeds ``steady_fwd_peak_bytes`` because backward
+    # holds grads + saved activations simultaneously. Take the max so
+    # all-NONE configs see the tighter measured ceiling.
+    bwd_aggregate = int(getattr(trace, "steady_bwd_peak_bytes", 0))
+    aggregate_cap = max(int(trace.steady_fwd_peak_bytes), bwd_aggregate)
     if (
-        trace.steady_fwd_peak_bytes > 0
+        aggregate_cap > 0
         and cfg is not None
         and cfg.n_checkpoint == 0
         and cfg.n_swap == 0
         and cfg.n_offload == 0
     ):
-        return trace.steady_fwd_peak_bytes
+        return aggregate_cap
     return None
 
 

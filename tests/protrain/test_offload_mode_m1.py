@@ -3,12 +3,14 @@
 Two pure-data tests covering the M1 exit criteria from
 ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §7:
 
-1. ``test_admissibility_under_offload_rule`` — validates the new
-   ``block_map_runtime_admissible`` rule (§3.5): OFFLOAD blocks are
-   always admissible (saved-tensors-hook re-binds storage at backward),
-   CKPT blocks are always admissible (recompute re-binds storage), and
-   NONE/SWAP blocks remain admissible only when every chunk they own
-   is in the persistent set.
+1. ``test_admissibility_under_offload_rule`` — validates the
+   ``block_map_runtime_admissible`` rule (§3.5 + the 2026-05-05 SWAP ×
+   non-persistent lift, §6.6): OFFLOAD, CKPT, and SWAP blocks are
+   always admissible (each provides its own activation persistence path
+   that survives chunk-pool slot reuse). NONE blocks remain admissible
+   only when every chunk they own is in the persistent set, because
+   NONE installs no hooks and autograd's saved-tensors hold direct
+   GPU storage refs that the chunk pool's slot reuse will clobber.
 
 2. ``test_assign_modes_with_offload`` — validates the placement rule
    in the updated ``assign_modes`` (§3.6): OFFLOAD fills the
@@ -138,14 +140,51 @@ def test_admissibility_under_offload_rule() -> None:
         is True
     ), "NONE on a fully-persistent layout must remain admissible."
 
-    # --- Bonus: SWAP on non-persistent remains inadmissible (unchanged
-    # behaviour from §3.5; the rule rejects NONE/SWAP equally).
+    # --- Case E: SWAP on a non-persistent block -> ADMISSIBLE (post the
+    # 2026-05-05 §6.6 lift). The SwappedBlock pack/unpack pair persists
+    # every saved tensor to a pinned-CPU pool slot whose lifetime is
+    # independent of param.data and of the chunk buffer's GPU bytes;
+    # the scheduler's prefetch_stream.wait_stream(swap_stream) barrier
+    # closes the only theoretical D2H/H2D race on the chunk slot bytes.
+    # This unlocks the paper's joint optimisation of n_persist /
+    # n_swap / n_checkpoint without the previous chunk-residency cross-
+    # restriction.
     bm_swap: BlockStrategyMap = {
         BlockId(0): BlockMode.CKPT,
         BlockId(1): BlockMode.SWAP,
     }
-    assert block_map_runtime_admissible(layout, bm_swap, n_persist) is False, (
-        "SWAP on a block with non-persistent chunks must remain inadmissible."
+    assert block_map_runtime_admissible(layout, bm_swap, n_persist) is True, (
+        "SWAP on a block with non-persistent chunks must be admissible "
+        "(post the §6.6 SWAP × non-persistent lift; saved tensors are "
+        "persisted to a pinned-CPU pool decoupled from param.data)."
+    )
+
+    # --- Case F: SWAP on a fully-persistent layout still admissible
+    # (sanity check that the lift didn't regress the legacy path).
+    bm_swap_persist: BlockStrategyMap = {
+        BlockId(0): BlockMode.SWAP,
+        BlockId(1): BlockMode.SWAP,
+    }
+    assert (
+        block_map_runtime_admissible(
+            _make_all_persistent_layout(), bm_swap_persist, n_persist_full
+        )
+        is True
+    ), "SWAP on a fully-persistent layout must remain admissible."
+
+    # --- Case G: mixed CKPT+SWAP+OFFLOAD on non-persistent blocks all
+    # admissible. Demonstrates the post-lift composition: every non-NONE
+    # mode can land on a non-persistent block, and the searcher can mix
+    # them freely (paper §3.3 jointly-optimised knobs).
+    bm_mixed: BlockStrategyMap = {
+        BlockId(0): BlockMode.SWAP,  # block 0 has non-persistent chunk 1
+        BlockId(1): BlockMode.OFFLOAD,
+    }
+    assert block_map_runtime_admissible(layout, bm_mixed, n_persist) is True, (
+        "Mixed SWAP/OFFLOAD on non-persistent blocks must be admissible — the "
+        "lift means the searcher can compose all four modes (NONE for "
+        "fully-persistent blocks, plus CKPT/OFFLOAD/SWAP anywhere) without "
+        "chunk-residency cross-restrictions."
     )
 
 

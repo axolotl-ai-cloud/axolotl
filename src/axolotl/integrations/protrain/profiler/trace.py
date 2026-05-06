@@ -689,7 +689,9 @@ def run_trace(
     steady_fwd_wall_s = 0.0
     steady_bwd_wall_s = 0.0
     steady_fwd_peak_bytes = 0
+    steady_bwd_peak_bytes = 0
     steady_fwd_block_peak_bytes: dict[BlockId, int] = {}
+    steady_bwd_block_peak_bytes: dict[BlockId, int] = {}
     # Skip steady-state when on-demand engaged — running full-forward
     # without offload is exactly what we can't do for these models. Cost
     # model falls back to identity scale + default bwd/fwd ratio.
@@ -757,10 +759,46 @@ def run_trace(
 
             return _post
 
+        # Backward-side per-block peak hooks. Same pre/post-reset pattern
+        # as the forward hooks above: pre-bwd resets the cumulative peak
+        # counter so post-bwd observes only THIS block's backward window
+        # (gradient compute + activation rematerialization for CKPT
+        # blocks, plus saved-tensor unpack for SWAP). The whole-iter
+        # backward peak is recovered from ``iter_bwd_block_peaks`` after
+        # ``loss.backward()`` completes — same strategy used for the
+        # forward to keep the hot pre-hook path read-free.
+        iter_bwd_block_peaks: list[int] = []
+
+        def _make_bwd_pre(_dev):
+            def _bwd_pre(_mod, _grad_output):
+                torch.cuda.reset_peak_memory_stats(_dev)
+
+            return _bwd_pre
+
+        def _make_bwd_post(bid, _dev):
+            def _bwd_post(_mod, _grad_input, _grad_output):
+                block_peak = int(torch.cuda.max_memory_allocated(_dev))
+                steady_bwd_block_peak_bytes[bid] = max(
+                    steady_bwd_block_peak_bytes.get(bid, 0), block_peak
+                )
+                iter_bwd_block_peaks.append(block_peak)
+
+            return _bwd_post
+
         for idx, block in enumerate(blocks):
             bid = BlockId(idx)
             block_handles.append(block.register_forward_pre_hook(_make_pre(device)))
             block_handles.append(block.register_forward_hook(_make_post(bid, device)))
+            # Backward hooks are best-effort: only fire when the block has
+            # at least one tensor input that requires grad. For tiny test
+            # models that pass non-grad inputs they're a no-op — the
+            # forward-only peak still suffices as the bound.
+            block_handles.append(
+                block.register_full_backward_pre_hook(_make_bwd_pre(device))
+            )
+            block_handles.append(
+                block.register_full_backward_hook(_make_bwd_post(bid, device))
+            )
 
         # Multi-iter hot-loop measurement. A single forward still carries
         # allocator-settle cost that a real steady-state training loop
@@ -812,6 +850,14 @@ def run_trace(
                     try:
                         steady_loss = _extract_loss(steady_out)
                         torch.cuda.synchronize(device)
+                        # Reset the per-iter bwd peak collector and the
+                        # cumulative ``max_memory_allocated`` counter so
+                        # the whole-bwd peak is measured cleanly against
+                        # this iter's backward window (params + grads
+                        # already on GPU at this moment, but no transient
+                        # bwd allocations yet).
+                        iter_bwd_block_peaks.clear()
+                        torch.cuda.reset_peak_memory_stats(device)
                         with torch.cuda.device(device_idx):
                             pre_sb = torch.cuda.Event(enable_timing=True)
                             post_sb = torch.cuda.Event(enable_timing=True)
@@ -821,6 +867,20 @@ def run_trace(
                             post_sb.record()
                         torch.cuda.synchronize(device)
                         bwd_iter_s.append(pre_sb.elapsed_time(post_sb) / 1000.0)
+                        # Whole-iter backward peak: ``max_memory_allocated``
+                        # at this point is "peak since the last per-block
+                        # backward hook reset" (the LAST block's bwd
+                        # window), so pair it with ``max(iter_bwd_block_peaks)``
+                        # to recover the iter peak — same pattern used
+                        # for the forward.
+                        whole_bwd_iter_peak = (
+                            max(iter_bwd_block_peaks) if iter_bwd_block_peaks else 0
+                        )
+                        steady_bwd_peak_bytes = max(
+                            steady_bwd_peak_bytes,
+                            whole_bwd_iter_peak,
+                            int(torch.cuda.max_memory_allocated(device)),
+                        )
                         model.zero_grad(set_to_none=True)
                     except Exception as bwd_exc:  # pragma: no cover
                         LOG.debug(
@@ -830,6 +890,12 @@ def run_trace(
                             bwd_exc,
                         )
                         bwd_iter_s.clear()  # drop partial measurements
+                        # Drop any partially captured per-block bwd peaks
+                        # so they don't pollute the cap when a later iter
+                        # also fails — the cap relies on a CONSISTENT
+                        # set of per-block measurements.
+                        steady_bwd_block_peak_bytes.clear()
+                        steady_bwd_peak_bytes = 0
                         # Clear any partially materialized grads so the next
                         # iter's forward peak/time isn't measured against an
                         # inflated baseline (and doesn't OOM spuriously).
@@ -858,7 +924,9 @@ def run_trace(
             steady_fwd_wall_s = 0.0
             steady_bwd_wall_s = 0.0
             steady_fwd_peak_bytes = 0
+            steady_bwd_peak_bytes = 0
             steady_fwd_block_peak_bytes = {}
+            steady_bwd_block_peak_bytes = {}
         finally:
             for h in block_handles:
                 h.remove()
@@ -1143,7 +1211,9 @@ def run_trace(
         steady_fwd_wall_s=steady_fwd_wall_s,
         steady_bwd_wall_s=steady_bwd_wall_s,
         steady_fwd_peak_bytes=steady_fwd_peak_bytes,
+        steady_bwd_peak_bytes=steady_bwd_peak_bytes,
         steady_fwd_block_peak_bytes=steady_fwd_block_peak_bytes,
+        steady_bwd_block_peak_bytes=steady_bwd_block_peak_bytes,
         compute_rate_tflops=compute_rate_tflops,
         trainable_param_fraction=trainable_param_fraction,
         block_tree_index=block_tree_index,

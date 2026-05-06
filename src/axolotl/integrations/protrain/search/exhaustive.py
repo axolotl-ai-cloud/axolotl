@@ -13,12 +13,19 @@ Algorithm:
 3. For each candidate, compute ``block_map = assign_modes(...)``.
 4. Evaluate ``estimate_peak``; drop candidates above ``capacity_bytes``.
 5. Drop runtime-inadmissible candidates: any block whose parameter
-   chunks are not all persistent must use ``CKPT`` or ``OFFLOAD``,
-   because the current runtime releases non-persistent chunk storage
-   after forward and relies either on checkpoint recomputation
-   (``CKPT``) or on the OFFLOAD saved-tensors-hook re-bind path
-   (``OFFLOAD``) to make activations available again for backward.
-   See ``block_map_runtime_admissible`` for the precise predicate.
+   chunks are not all persistent must use ``CKPT``, ``OFFLOAD``, or
+   ``SWAP``. ``CKPT`` recomputes the forward through
+   ``torch.utils.checkpoint``; ``OFFLOAD``'s saved-tensors-hook
+   re-binds storage at backward via metadata + re-gather; ``SWAP``
+   persists every saved tensor to a pinned-CPU pool decoupled from
+   ``param.data`` and from the chunk buffer's GPU bytes (the
+   :class:`Scheduler` adds a ``prefetch_stream.wait_stream(swap_stream)``
+   barrier so a chunk's evicting H2D never overlaps a pack-time D2H
+   reading the same slot bytes). ``NONE`` installs no hooks and
+   therefore remains rejected on any block with non-persistent chunks
+   — autograd's saved-tensor table holds direct GPU storage references
+   that get clobbered by the chunk pool's slot reuse. See
+   ``block_map_runtime_admissible`` for the precise predicate.
 6. If ``cpu_capacity_bytes`` is not None, evaluate
    ``estimate_cpu_footprint``; drop candidates above the host-RAM gate.
 7. Among survivors, evaluate ``estimate_runtime`` and pick argmin.
@@ -109,8 +116,8 @@ def block_map_runtime_admissible(
 ) -> bool:
     """Return True iff the block strategy is safe for current chunk offload.
 
-    Four-mode admissibility (post-Option B; see
-    ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.5):
+    Four-mode admissibility (post-Option B with the SWAP × non-persistent
+    lift; see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.5 and §6.6):
 
     * ``CKPT`` — always admissible. The recompute path re-binds storage by
       replaying the wrapped forward inside ``torch.utils.checkpoint``; the
@@ -119,23 +126,57 @@ def block_map_runtime_admissible(
       saved-tensors-hook that records metadata only at pack time and
       re-gathers the chunk at unpack time, so post-forward chunk release is
       safe even with non-persistent params.
-    * ``NONE`` and ``SWAP`` — admissible iff every chunk owned by the
-      block is in the persistent set. The forward scheduler releases
-      non-persistent chunk storage after the block runs, and PyTorch's
-      saved tensors for a normal NONE/SWAP block are not a safe
-      persistence mechanism once ``param.data`` is rebound to the empty
-      sentinel. NONE/SWAP on a block with any non-persistent chunk
-      remains inadmissible.
+    * ``SWAP`` — always admissible. The SwappedBlock wrapper installs a
+      ``saved_tensors_hooks`` context that COPIES every saved tensor to
+      a pinned CPU pool slot at pack time and reconstructs a fresh GPU
+      buffer from that slot at unpack time. The pinned-CPU pool slot is
+      the activation persistence mechanism and is fully decoupled from
+      ``param.data`` and from the chunk buffer's GPU bytes — so the
+      post-forward chunk release / re-acquire cycle does not endanger
+      saved-tensor correctness once the prefetch stream is sequenced
+      against the swap stream (see
+      :meth:`Scheduler._gather_on_prefetch_stream` for the load-bearing
+      ``prefetch_stream.wait_stream(swap_stream)`` barrier that gates a
+      slot's evicting H2D against any in-flight pack-time D2H reading
+      its bytes). Backward grad-accumulation reads ``param.data``, which
+      ``Scheduler.pre_block_backward`` already re-gathers symmetrically
+      with the CKPT/OFFLOAD paths, so no additional plumbing is needed
+      to make SWAP × non-persistent byte-exact.
+    * ``NONE`` — admissible iff every chunk owned by the block is in the
+      persistent set. NONE installs no hooks, so PyTorch's autograd
+      saved-tensors reference the original GPU storage directly; once
+      that storage is reused by another chunk's gather H2D, the saved
+      tensor's bytes are corrupt and backward produces silently wrong
+      gradients. There is no in-tree fix for NONE × non-persistent —
+      use CKPT, OFFLOAD, or SWAP for blocks with non-persistent chunks.
 
-    Fully persistent blocks may use NONE/SWAP because their parameter
-    storage is never nulled or recycled.
+    Pre-2026-05 history: SWAP × non-persistent was conservatively
+    rejected on the assumption that "saved tensors are not a safe
+    persistence mechanism once ``param.data`` is rebound to the empty
+    sentinel". The conjecture conflated NONE (which IS unsafe) with
+    SWAP (which has its own pinned-CPU persistence path); empirical
+    investigation 2026-05-05 confirmed that the SWAP wrapper's pack/
+    unpack pair already handles the chunk-buffer-view case correctly
+    once the prefetch / swap stream cross-dependency is added. Lifting
+    the restriction is paper-faithful (§3.3 treats ``n_swap``,
+    ``n_persist``, ``n_checkpoint`` as JOINTLY optimised knobs without
+    chunk-residency cross-restrictions) and unblocks faster
+    configurations the searcher previously could not reach.
     """
     persistent = {ChunkId(i) for i in range(max(0, int(n_persist)))}
     for bid, chunks in layout.block_to_chunks.items():
         mode = block_map.get(bid, BlockMode.NONE)
-        if mode is BlockMode.CKPT or mode is BlockMode.OFFLOAD:
+        if (
+            mode is BlockMode.CKPT
+            or mode is BlockMode.OFFLOAD
+            or mode is BlockMode.SWAP
+        ):
             # CKPT recomputes; OFFLOAD's saved-tensors-hook re-binds
-            # storage at backward — both safe regardless of persistence.
+            # storage at backward; SWAP persists saved tensors to a
+            # pinned-CPU pool independent of ``param.data``. All three
+            # are safe regardless of chunk persistence — the scheduler's
+            # gather discipline + prefetch/swap stream sequencing make
+            # the byte-level invariants hold (see docstring).
             continue
         if any(ChunkId(int(cid)) not in persistent for cid in chunks):
             return False

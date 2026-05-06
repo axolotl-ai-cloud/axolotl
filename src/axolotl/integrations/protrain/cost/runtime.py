@@ -718,7 +718,41 @@ def estimate_runtime(
     # (the dominant case on PCIe Gen3 3090s per paper §3.1.2) the
     # phase-2 path stays exactly as before — full speed, no derate.
     if trace.steady_fwd_chunked_wall_s > 0.0 and cfg.n_swap == 0:
-        t_fwd = trace.steady_fwd_chunked_wall_s + t_fwd_swap_transfer
+        # n_persist translation (paper App A.1 Eq. 4, lines 988-1001):
+        # the bootstrap measurement was captured at
+        # ``trace.phase2_n_persist`` (typically 0 — see
+        # ``profiler/phase2.py::select_bootstrap_config``). Eq. 4 makes
+        # the per-chunk forward prefetch term zero for ``i <= n_persist``
+        # and ``T_gather + T_upload`` (NCCL gather + H2D) otherwise. When
+        # the candidate has ``n_persist > phase2_n_persist``,
+        # ``delta_persist`` chunks that were paying the full forward
+        # prefetch in the bootstrap no longer round-trip — credit those
+        # savings against the measured wall.
+        #
+        # Newly-persistent chunks are at low indices ``[phase2_n_persist,
+        # n_persist)``; the bootstrap's cached pool (if any) sits at the
+        # high-index end ``[N_chunk - phase2_n_buffer, N_chunk)`` per the
+        # LRU residency invariant — so newly-persistent chunks were
+        # uncached at bootstrap and their bootstrap forward cost is the
+        # full ``nccl_gather + h2d`` (paper Eq. 4 second branch, no
+        # caching benefit on forward — every non-persistent chunk pays
+        # gather+H2D in forward regardless of n_buffer).
+        #
+        # Negative deltas (candidate n_persist < bootstrap n_persist) are
+        # clamped to 0: rebooting the bootstrap at a higher n_persist
+        # would be the symmetric correction but the bootstrap is
+        # constructed at the minimum-feasible n_persist (typically 0)
+        # so candidates only go upward in practice.
+        delta_persist_fwd = max(0, n_persist - trace.phase2_n_persist)
+        fwd_h2d_per_chunk = layout.S_chunk / full_h2d if full_h2d > 0 else 0.0
+        fwd_persist_save_per_chunk = nccl_gather + fwd_h2d_per_chunk
+        t_fwd_persist_correction = -delta_persist_fwd * fwd_persist_save_per_chunk
+        t_fwd = max(
+            0.0,
+            trace.steady_fwd_chunked_wall_s
+            + t_fwd_swap_transfer
+            + t_fwd_persist_correction,
+        )
     else:
         # Per-chunk forward roofline: max(compute per chunk, comm per chunk).
         # Distribute the per-block compute evenly across non-persistent
@@ -915,9 +949,49 @@ def estimate_runtime(
         # only happen on a degenerate bootstrap that already cached
         # everything).
         t_bwd_buffer_correction = -delta_cached * gather_save_per_hit
+
+        # n_persist translation (paper App A.1 Eqs. 6 & 7, lines
+        # 1042-1082): on backward each moved-persistent chunk skips
+        # both the prefetch (Eq. 7: ``T_gather + T_upload`` for evicted
+        # non-persistent chunks) AND the grad-offload half of Eq. 6
+        # (``T_reduce-offload`` collapses to bare ``T_reduce`` for
+        # ``i <= n_persist``). ``T_reduce`` is invariant in ``n_persist``
+        # — persistent chunks still pay the reduce-scatter — so the
+        # per-chunk save is exactly ``T_gather + T_upload + T_offload``,
+        # i.e. ``nccl_gather + S_chunk/h2d + S_chunk/d2h``.
+        #
+        # Newly-persistent chunks live at indices
+        # ``[phase2_n_persist, n_persist)`` — low-index end. Bootstrap's
+        # cached pool is at the high-index end ``[N_chunk -
+        # phase2_n_buffer, N_chunk)``, so by the LRU invariant the
+        # newly-persistent chunks were uncached at bootstrap and the
+        # bootstrap charged them the full uncached cost
+        # (``collective + h2d + d2h + reduce``). Treat them as uncached
+        # for the savings calculation; the high-index cache pool is
+        # tracked separately by ``t_bwd_buffer_correction`` above and
+        # the two corrections compose linearly without overlap as long
+        # as ``candidate_n_persist + bootstrap_cached <= N_chunk``,
+        # which holds for any feasible cfg (the searcher constrains
+        # ``n_buffer <= N_chunk - n_persist``).
+        #
+        # Bandwidth choice mirrors the n_buffer correction: low-index
+        # newly-persistent chunks are far from the bootstrap's
+        # ``n_swap=0`` placement (no SWAP blocks anywhere in the
+        # bootstrap), so per-chunk effective bandwidth IS ``full_*``.
+        delta_persist_bwd = max(0, n_persist - trace.phase2_n_persist)
+        bwd_h2d_per_chunk = layout.S_chunk / full_h2d if full_h2d > 0 else 0.0
+        bwd_d2h_per_chunk = (
+            layout.S_chunk / hw.pcie_d2h_bps if hw.pcie_d2h_bps > 0 else 0.0
+        )
+        bwd_persist_save_per_chunk = nccl_gather + bwd_h2d_per_chunk + bwd_d2h_per_chunk
+        t_bwd_persist_correction = -delta_persist_bwd * bwd_persist_save_per_chunk
+
         t_bwd = max(
             0.0,
-            t_bwd_compute_total + t_bwd_swap_prefetch + t_bwd_buffer_correction,
+            t_bwd_compute_total
+            + t_bwd_swap_prefetch
+            + t_bwd_buffer_correction
+            + t_bwd_persist_correction,
         )
     else:
         if layout.N_chunk > 0:
@@ -1027,20 +1101,40 @@ def estimate_runtime(
     else:
         t_cpu_optim = n_nonpersist * (ms_per_chunk / cpu_shard_divisor) / cpu_adam_bps
 
-    # TODO(coderabbit-pr10-7b-residual): the phase-2 chunked-wall
-    # measurements (``trace.steady_fwd_chunked_wall_s`` /
-    # ``steady_bwd_chunked_wall_s``, consumed at lines 545-546 / 590-647)
-    # are captured under the bootstrap config (``n_persist=0+pinned``)
-    # and consumed as flat baselines independent of candidate
-    # ``n_persist``. In single-rank mode the only ``n_persist``-related
-    # term (``gather_save_per_hit`` at ~line 636) is gated on
-    # ``nccl_gather`` and short-circuits to 0 when ``world_size==1``, so
-    # candidates with high ``n_persist`` get the same chunked-wall as the
-    # bootstrap's ``n_persist=0`` measurement. On 7B-LoRA this leaves a
-    # ~19% over-prediction residual after the cpu_adam_bps fix above.
-    # Real fix needs an analytical PCIe-roundtrip translation across
-    # ``n_persist`` (or a higher-``n_persist`` re-bootstrap) — multi-day
-    # refactor, deferred per the v1 paper-alignment scope policy.
+    # n_persist translation across the phase-2 chunked-wall measurement:
+    # the bootstrap measurement is captured at ``trace.phase2_n_persist``
+    # (typically 0 — see ``profiler/phase2.py::select_bootstrap_config``)
+    # and any candidate with ``n_persist > phase2_n_persist`` would
+    # otherwise inherit the bootstrap's full PCIe round-trip cost on
+    # chunks that no longer round-trip. The corrections live inline in
+    # the phase-2 fwd/bwd override branches above:
+    #
+    #   - Forward (``t_fwd_persist_correction``, paper Eq. 4 lines
+    #     988-1001): each newly-persistent chunk saves
+    #     ``nccl_gather + S_chunk / pcie_h2d_bps`` because Eq. 4's
+    #     prefetch term collapses to 0 for ``i <= n_persist``.
+    #   - Backward (``t_bwd_persist_correction``, paper Eqs. 6 & 7
+    #     lines 1042-1082): each newly-persistent chunk saves
+    #     ``nccl_gather + S_chunk / pcie_h2d_bps + S_chunk / pcie_d2h_bps``
+    #     because Eq. 6 collapses ``T_reduce-offload`` to bare
+    #     ``T_reduce`` (no D2H offload) and Eq. 7's prefetch term goes
+    #     to 0 for persistent chunks (``T_reduce`` is invariant in
+    #     ``n_persist``).
+    #
+    # Both corrections clamp the resulting wall at 0.0 to absorb any
+    # noisy measurement where the savings exceed the measured wall, and
+    # both compose linearly with the existing ``n_buffer`` cache-hit
+    # correction (newly-persistent chunks are at low indices,
+    # cached-pool chunks at high indices — disjoint by the LRU
+    # invariant). Overlap with compute is NOT modeled here: in the
+    # phase-2 measurement the saved PCIe traffic was on the critical
+    # path (max(compute, comm) at the per-chunk roofline level on
+    # PCIe-bound configs); for compute-bound chunks the analytical
+    # subtraction may slightly over-credit, but mirrors the existing
+    # n_buffer correction's flat-subtraction pattern and is preferable
+    # to ignoring the n_persist axis entirely. Pre-fix this gap left
+    # a ~19% over-prediction residual on 7B-LoRA candidates with high
+    # n_persist.
 
     # Eq. 2: T_iter = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)
     t_iter = t_fwd + max(t_bwd + t_gpu_optim, t_cpu_optim)

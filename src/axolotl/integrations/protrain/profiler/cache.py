@@ -135,7 +135,17 @@ _CACHE_SUBDIR = Path("protrain") / "profiler"
 # yet carry the field; the (de)serializers fall back to 0 via getattr
 # / fields-introspection so a v18 payload round-trips cleanly either
 # way and the bump alone invalidates v17 entries that lacked the axis.
-TRACE_VERSION = 18
+# Version 19 engages backward profiling end-to-end (paper §3.2 / App A.2).
+# The wrapper now passes ``include_backward=True`` to ``run_trace`` and
+# the steady-state hot loop captures the BACKWARD peak alongside the
+# forward peak: ``steady_bwd_peak_bytes`` is the cumulative
+# ``max_memory_allocated`` across the hook-less backward pass, and
+# ``steady_bwd_block_peak_bytes`` carries the per-block bwd peaks via
+# ``register_full_backward_hook`` (mirroring the per-block fwd capture).
+# v18 traces have these at 0 / empty so the cost model would silently
+# regress to its analytical bwd estimate — bumping the schema forces a
+# re-profile so the measurement is captured and consumed.
+TRACE_VERSION = 19
 
 
 @dataclass(frozen=True)
@@ -258,6 +268,15 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "steady_fwd_block_peak_bytes": {
             str(int(k)): int(v) for k, v in trace.steady_fwd_block_peak_bytes.items()
         },
+        # ``steady_bwd_peak_bytes`` / ``steady_bwd_block_peak_bytes``
+        # (TRACE_VERSION 19). ``getattr`` keeps this defensive against
+        # ``ProfilerTrace`` builds that haven't yet exposed the field —
+        # the bump still invalidates v18 traces lacking the measurement.
+        "steady_bwd_peak_bytes": int(getattr(trace, "steady_bwd_peak_bytes", 0)),
+        "steady_bwd_block_peak_bytes": {
+            str(int(k)): int(v)
+            for k, v in getattr(trace, "steady_bwd_block_peak_bytes", {}).items()
+        },
         "compute_rate_tflops": float(trace.compute_rate_tflops),
         "trainable_param_fraction": float(trace.trainable_param_fraction),
         "steady_bwd_chunked_wall_s": float(trace.steady_bwd_chunked_wall_s),
@@ -288,14 +307,24 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     called on a non-mapping); callers treat that as a cache miss.
     """
     # ``phase2_n_offload`` (TRACE_VERSION 18) joined the phase-2 cfg tuple.
-    # Pass it as a kwarg only when the live ``ProfilerTrace`` dataclass
-    # actually exposes the field — older builds in the same tree (e.g. test
-    # fixtures pinned to a prior schema) would otherwise raise TypeError on
-    # the unexpected kwarg and turn every v18 hit into a cache miss.
+    # ``steady_bwd_peak_bytes`` / ``steady_bwd_block_peak_bytes``
+    # (TRACE_VERSION 19) joined the bwd-aware peak measurements. Pass
+    # them as kwargs only when the live ``ProfilerTrace`` dataclass
+    # actually exposes the fields — older builds in the same tree (e.g.
+    # test fixtures pinned to a prior schema) would otherwise raise
+    # TypeError on the unexpected kwarg and turn every fresh-version
+    # hit into a cache miss.
     _trace_field_names = {f.name for f in fields(ProfilerTrace)}
     extra: dict[str, Any] = {}
     if "phase2_n_offload" in _trace_field_names:
         extra["phase2_n_offload"] = int(data.get("phase2_n_offload", 0))
+    if "steady_bwd_peak_bytes" in _trace_field_names:
+        extra["steady_bwd_peak_bytes"] = int(data.get("steady_bwd_peak_bytes", 0))
+    if "steady_bwd_block_peak_bytes" in _trace_field_names:
+        extra["steady_bwd_block_peak_bytes"] = {
+            BlockId(int(k)): int(v)
+            for k, v in data.get("steady_bwd_block_peak_bytes", {}).items()
+        }
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={

@@ -167,6 +167,132 @@ def test_cache_roundtrip(tmp_path, monkeypatch):
     assert load_cached_trace(other) is None
 
 
+def test_minimal_trace_defaults_new_bwd_peak_fields_to_zero():
+    """A minimally-constructed trace defaults the v19 backward-peak fields.
+
+    Regression guard: pre-v19 callers that built ``ProfilerTrace`` directly
+    (cost-model unit tests, search/exhaustive smoke tests) did not populate
+    ``steady_bwd_peak_bytes`` / ``steady_bwd_block_peak_bytes``. The dataclass
+    must default those to 0 / empty so the cost model continues to fall back
+    to the analytical bwd estimate when a trace was captured without
+    ``include_backward=True``.
+    """
+    trace = _minimal_trace()
+    assert trace.steady_bwd_peak_bytes == 0
+    assert trace.steady_bwd_block_peak_bytes == {}
+
+
+def test_cache_roundtrip_preserves_bwd_peak_fields(tmp_path, monkeypatch):
+    """save -> load preserves ``steady_bwd_peak_bytes`` + per-block dict.
+
+    Locks in the TRACE_VERSION 19 cache schema additions: a backward-aware
+    profile records ``steady_bwd_peak_bytes`` (aggregate) and
+    ``steady_bwd_block_peak_bytes`` (per-block) alongside the forward-side
+    fields, and the JSON cache must round-trip both bit-for-bit.
+    """
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    key = ProfilerCacheKey(
+        arch_hash="cafebabe",
+        bs=2,
+        seq=128,
+        sku="NVIDIA GeForce RTX 3090",
+        world=1,
+    )
+    op = OpRecord(
+        op_id=OpId(0),
+        module_path="root.layer0",
+        qualified_name="Linear",
+        shape_signature=((2, 128, 16),),
+        block_id=BlockId(0),
+        is_forward=True,
+    )
+    trace = ProfilerTrace(
+        op_order=(op,),
+        intra_op_delta={OpId(0): 1024},
+        inter_op_delta={OpId(0): 512},
+        activation_sizes={BlockId(0): 2048},
+        model_state_bytes=1 << 20,
+        pcie_h2d_bps=25e9,
+        pcie_d2h_bps=23e9,
+        nccl_gather_s={},
+        nccl_reduce_s={},
+        arch_hash="cafebabe",
+        bs=2,
+        seq=128,
+        sku="NVIDIA GeForce RTX 3090",
+        world=1,
+        # Forward-side measurements (existing schema)
+        steady_fwd_peak_bytes=8 * (1 << 20),
+        steady_fwd_block_peak_bytes={BlockId(0): 6 * (1 << 20)},
+        # Backward-side measurements — NEW in v19
+        steady_bwd_peak_bytes=12 * (1 << 20),
+        steady_bwd_block_peak_bytes={BlockId(0): 10 * (1 << 20)},
+    )
+    save_cached_trace(key, trace)
+    loaded = load_cached_trace(key)
+    assert loaded is not None
+    assert loaded.steady_bwd_peak_bytes == trace.steady_bwd_peak_bytes
+    assert loaded.steady_bwd_block_peak_bytes == trace.steady_bwd_block_peak_bytes
+    # Full equality also covers backward compat with the rest of the schema.
+    assert loaded == trace
+
+
+@pytest.mark.gpu
+def test_trace_records_steady_bwd_peak_and_per_block(gpu_device):
+    """Backward-aware trace populates ``steady_bwd_peak_bytes`` + per-block dict.
+
+    Locks in the v19 capture path: when ``cfg.include_backward=True`` AND
+    on-demand does not engage (small model fits with headroom), the steady
+    hot loop records both the whole-bwd peak (cumulative
+    ``max_memory_allocated`` across the backward window) and the per-block
+    bwd peaks via ``register_full_backward_hook``. Both must be strictly
+    positive on a tiny GPT-2 forward+backward.
+    """
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+
+    device = torch.device(f"cuda:{gpu_device}")
+    _name, tok, model = _load_tiny_gpt2()
+    model = model.to(device)
+
+    bs, seq = 1, 64
+    batch = _build_batch(tok, bs, seq, device)
+
+    cfg = ProfilerConfig(
+        batch_size=bs,
+        seq_len=seq,
+        device=str(device),
+        include_backward=True,
+        on_demand=False,
+    )
+    trace = run_trace(model, batch, cfg)
+
+    # Aggregate bwd peak: must be > 0 when the steady-bwd loop ran.
+    assert trace.steady_bwd_peak_bytes > 0, (
+        "include_backward=True must populate steady_bwd_peak_bytes"
+    )
+    # Backward peak should be at least as large as the forward peak —
+    # backward holds gradients alongside saved activations. Give a 5%
+    # tolerance to absorb measurement noise on tiny models.
+    assert trace.steady_bwd_peak_bytes >= int(trace.steady_fwd_peak_bytes * 0.95), (
+        f"bwd peak {trace.steady_bwd_peak_bytes}B unexpectedly below "
+        f"fwd peak {trace.steady_fwd_peak_bytes}B"
+    )
+    # Per-block dict: at least one block recorded a bwd peak when the
+    # block discovery succeeded. Tiny-GPT-2 has H blocks; if discovery
+    # failed (e.g. unrecognised layout) the dict may be empty — only
+    # assert positivity when it's populated.
+    if trace.steady_fwd_block_peak_bytes:
+        assert trace.steady_bwd_block_peak_bytes, (
+            "fwd per-block peaks recorded but bwd per-block peaks empty — "
+            "register_full_backward_hook may not be firing on the discovered blocks"
+        )
+        for bid, peak in trace.steady_bwd_block_peak_bytes.items():
+            assert peak > 0, f"block {bid} has non-positive bwd peak {peak}"
+
+
 @pytest.mark.gpu
 def test_measure_compute_rate_returns_sane_tflops(gpu_device):
     """measure_compute_rate must return a positive TFLOPS measurement."""

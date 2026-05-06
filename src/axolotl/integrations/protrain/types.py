@@ -204,6 +204,45 @@ class ProfilerTrace:
     # at profile time). New in TRACE_VERSION=6.
     steady_fwd_block_peak_bytes: dict[BlockId, int] = field(default_factory=dict)
 
+    # ----- Backward-aware peak measurements (TRACE_VERSION 19) -----
+    #
+    # The paper's profiler is explicitly backward-aware (§3.2 / App A.2):
+    # backward dominates peak memory because retained activations,
+    # gradient buffers, and CKPT recompute windows all overlap during
+    # the backward pass. Pre-v19 ``run_trace`` ran the profiler with
+    # ``include_backward=False`` to avoid OOM on 7B-class single-3090
+    # callers; the cost model's bwd peak then degraded to an analytical
+    # estimate derived from forward measurements only.
+    #
+    # ``steady_bwd_peak_bytes`` is the cumulative
+    # ``torch.cuda.max_memory_allocated`` observed across the hook-less
+    # steady backward pass — captured in the same 4-iter hot loop that
+    # produces ``steady_bwd_wall_s``. It bounds the BACKWARD peak from
+    # below (cannot be lower than what the un-CKPT-ed bootstrap actually
+    # used) and the cost model uses it as a sanity check against
+    # estimated peaks: a candidate config whose modeled peak is below
+    # this measured floor is over-optimistic.
+    #
+    # ``steady_bwd_block_peak_bytes`` mirrors ``steady_fwd_block_peak_bytes``
+    # for backward: per-block peaks captured via lightweight
+    # ``register_full_backward_hook`` pairs around each transformer
+    # block. Future cost-model calibration can derive a per-block
+    # backward bump from these values; today they are recorded for
+    # telemetry / future use.
+    #
+    # Both fields are 0 / empty when:
+    #   - the trace ran with ``include_backward=False``,
+    #   - on-demand mode engaged (steady-state is skipped entirely),
+    #   - CUDA was unavailable, or
+    #   - the steady-state backward iter raised (e.g. analytical fallback
+    #     fired), in which case ``steady_bwd_block_peak_bytes`` is also
+    #     cleared so the recorded set is internally consistent.
+    #
+    # Pre-v19 traces deserialize with the empty / zero defaults; the
+    # cost model preserves its existing v18 behaviour in that case.
+    steady_bwd_peak_bytes: int = 0
+    steady_bwd_block_peak_bytes: dict[BlockId, int] = field(default_factory=dict)
+
     # Sustained fp16 compute throughput (TFLOPS) on the trace SKU, measured
     # by ``profiler.hw_bench.measure_compute_rate``. Consumed by
     # ``cost/runtime.py`` to scale per-op latencies when the live training

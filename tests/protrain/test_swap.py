@@ -719,6 +719,152 @@ def test_searcher_admits_swap_under_generous_cpu_budget() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SWAP × non-persistent admissibility lift (§6.6) — byte-exactness test
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+def test_swap_chunk_view_save_survives_pool_eviction() -> None:
+    """SWAP wrapper's saved-tensor must be byte-exact across slot reuse.
+
+    Background (paper §3.3 + ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §6.6):
+    pre-2026-05 the searcher's ``block_map_runtime_admissible`` rejected
+    every ``BlockMode.SWAP`` block whose parameter chunks were not all
+    in the persistent prefix. The conservative comment cited
+    "PyTorch's saved tensors for a normal NONE/SWAP block are not a safe
+    persistence mechanism once param.data is rebound to the empty
+    sentinel". Empirical investigation showed the SWAP wrapper does
+    NOT depend on param.data — its ``saved_tensors_hooks`` pack copies
+    every saved tensor's bytes to a pinned-CPU pool slot owned by the
+    wrapper, and unpack reconstructs a fresh GPU buffer from that slot
+    independently of param.data. The only theoretical risk was the
+    swap-stream D2H reading chunk-buffer bytes while the prefetch
+    stream's H2D for the next chunk overwrote the same slot — that
+    race is closed by ``Scheduler._gather_on_prefetch_stream``'s new
+    ``prefetch_stream.wait_stream(swap_stream)`` barrier.
+
+    This test exercises the byte-exact path WITHOUT requiring the full
+    chunk-manager stack (which would need DeepSpeedCPUAdam for a true
+    non-persistent run). We hand-build a Linear whose weight tensor is
+    a typed view into a fake "chunk buffer" — exactly the shape
+    ``ChunkManager._rebind_params_to_buffer`` produces — then:
+
+      1. Forward through ``SwappedBlock`` (pack copies the weight bytes
+         to the pinned CPU pool on swap_stream).
+      2. Overwrite the chunk buffer's GPU bytes (simulating the
+         scheduler's evict-and-reacquire path that pre-fix would race
+         with the in-flight pack D2H).
+      3. Rebind param.data to a fresh-correct master copy (mimicking
+         ``ChunkManager.gather`` after re-acquire).
+      4. Run backward and verify weight.grad and input.grad are
+         byte-exact against a reference forward+backward without the
+         SWAP wrapper.
+
+    Acceptance: gradients match to fp32 noise (atol=1e-5). Failure
+    means SWAP × non-persistent is silently producing wrong gradients
+    and the §6.6 lift is unsafe.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+
+    from axolotl.integrations.protrain.block import swap as swap_mod
+
+    device = torch.device("cuda")
+    torch.manual_seed(0)
+
+    in_dim = out_dim = 1024
+    weight_bytes = in_dim * out_dim * 4  # fp32
+
+    # Lower threshold so the weight (4 MiB here) is guaranteed swapped.
+    # Any block whose per-saved-tensor pack lands above the threshold
+    # exercises the codepath under test; lifting it to 0 just ensures
+    # the test fails on regression for ALL saved tensors.
+    saved = swap_mod.SIZE_THRESHOLD_BYTES
+    swap_mod.SIZE_THRESHOLD_BYTES = 0
+    try:
+        # Pretend "chunk buffer": flat uint8 GPU tensor that the param
+        # weight is a typed view over. Mirrors how
+        # ``_rebind_params_to_buffer`` lays out a non-persistent chunk.
+        chunk_buf = torch.empty(weight_bytes, dtype=torch.uint8, device=device)
+        weight_view = chunk_buf.view(torch.float32).view(in_dim, out_dim)
+        with torch.no_grad():
+            weight_view.copy_(
+                torch.randn(in_dim, out_dim, device=device, dtype=torch.float32)
+            )
+
+        block = nn.Linear(in_dim, out_dim, bias=False).to(device).to(torch.float32)
+        weight_master = weight_view.detach().clone()
+        block.weight.data = weight_view
+        block.weight.requires_grad_(True)
+
+        block_ref = nn.Linear(in_dim, out_dim, bias=False).to(device).to(torch.float32)
+        block_ref.weight.data = weight_master.clone()
+        block_ref.weight.requires_grad_(True)
+
+        pool = ActivationSwapPool(
+            n_swap=1,
+            slot_bytes=max(weight_bytes, 64 * in_dim * 4),
+            prefetch_depth=2,
+            slots_per_block=4,
+        )
+        swap_stream = torch.cuda.Stream()
+        wrapped = SwappedBlock(block)
+        wrapped.attach_runtime(pool, swap_stream)
+
+        x = torch.randn(64, in_dim, device=device, requires_grad=True)
+        x_ref = x.detach().clone().requires_grad_(True)
+
+        # ---- Forward through SWAP wrapper ----
+        out = wrapped(x)
+        loss = out.sum()
+
+        # ---- Simulate non-persistent chunk eviction-and-reacquire.
+        # Sequence the swap_stream's pack D2H BEFORE the chunk buffer
+        # overwrite — the production fix lives in the scheduler's
+        # ``_gather_on_prefetch_stream`` barrier, but here we exercise
+        # only the byte-level invariant: as long as pack's D2H
+        # completes before the chunk buffer is overwritten, the
+        # pinned-CPU slot holds the correct weight bytes for unpack.
+        torch.cuda.current_stream().wait_stream(swap_stream)
+        chunk_buf.fill_(0xFF)  # garbage — would corrupt a NONE block's
+        # saved-tensor reference, but SWAP's saved tensor lives in the
+        # pinned-CPU slot now.
+        # Mimic the chunk-manager ``gather`` post-eviction: rebind
+        # param.data to a fresh GPU buffer holding the master bytes.
+        block.weight.data = weight_master.clone()
+        torch.cuda.synchronize()
+
+        # ---- Backward ----
+        loss.backward()
+        torch.cuda.synchronize()
+
+        out_ref = block_ref(x_ref)
+        loss_ref = out_ref.sum()
+        loss_ref.backward()
+        torch.cuda.synchronize()
+
+        # Byte-exactness: fp32 round-trip through pinned CPU is bit-
+        # preserving, so the SWAP path should match the reference to
+        # tight numerical tolerance.
+        g = block.weight.grad
+        g_ref = block_ref.weight.grad
+        assert g is not None and g_ref is not None, "missing grads"
+        assert torch.allclose(g, g_ref, atol=1e-5, rtol=1e-5), (
+            f"weight.grad diverges: max diff = {(g - g_ref).abs().max().item():.3e}"
+        )
+        gx = x.grad
+        gx_ref = x_ref.grad
+        assert gx is not None and gx_ref is not None
+        assert torch.allclose(gx, gx_ref, atol=1e-5, rtol=1e-5), (
+            f"input.grad diverges: max diff = {(gx - gx_ref).abs().max().item():.3e}"
+        )
+
+        pool.close()
+    finally:
+        swap_mod.SIZE_THRESHOLD_BYTES = saved
+
+
+# ---------------------------------------------------------------------------
 # End-to-end smoke: wrap a tiny model with n_swap_override>0 and run 3 iters
 # ---------------------------------------------------------------------------
 
@@ -762,9 +908,13 @@ def test_swap_smoke_n_swap_override_runs_three_iters() -> None:
     )
 
     # Force n_swap=2 (first 2 blocks SWAP) via the explicit override.
-    # The other knobs are sized to keep all chunks persistent — SWAP
-    # blocks need their parameter chunks to be persistent (see
-    # block_map_runtime_admissible in exhaustive.py).
+    # The other knobs are sized to keep all chunks persistent — keeps
+    # this smoke test independent of the chunk-residency dimension. (As
+    # of the 2026-05-05 §6.6 lift, SWAP × non-persistent is also
+    # admissible; covered separately by
+    # ``test_swap_chunk_view_save_survives_pool_eviction`` and the pure-
+    # data ``test_admissibility_under_offload_rule`` Case E in
+    # ``test_offload_mode_m1.py``.)
     try:
         wrapped = protrain_model_wrapper(
             model,

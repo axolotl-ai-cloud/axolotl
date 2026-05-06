@@ -496,9 +496,13 @@ def test_search_picks_offload_when_advantageous() -> None:
       - capacity allows EITHER OFFLOAD (retains activations) or CKPT
         (frees activations) -> the trade is on backward wall, not
         memory.
-      - some blocks own non-persistent chunks -> NONE/SWAP would be
-        runtime-inadmissible there; the searcher must pick OFFLOAD or
-        CKPT.
+      - some blocks own non-persistent chunks -> NONE would be
+        runtime-inadmissible there; the searcher must pick OFFLOAD,
+        CKPT, or SWAP. (Post the §6.6 SWAP × non-persistent lift,
+        SWAP is also admissible — but in this PCIe-bandwidth regime
+        the cost model still favours OFFLOAD over SWAP because SWAP
+        adds activation D2H/H2D traffic that contends with chunk
+        gather PCIe bandwidth.)
 
     Asserts the searcher's pick has ``n_offload > 0`` AND the picked
     block_map is admissible.
