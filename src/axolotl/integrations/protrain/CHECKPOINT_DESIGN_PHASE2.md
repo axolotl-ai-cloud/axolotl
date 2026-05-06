@@ -44,7 +44,7 @@ unchanged:
 * All save/load files live under
   `{checkpoint_dir}/protrain_optim/`. Per-rank file naming distinguishes
   shards (see §2.1, §3.1).
-* `protrain_save_optimizer_state` flag stays. No new opt-in flag.
+* `protrain_save_optimizer_state` flag stays. Phase 2 also introduces opt-in knobs `protrain_save_optim_verify_replicated` (replicated-state cross-rank verification), `protrain_allow_online_reshard` (online world-size resharding on load), and `protrain_optim_save_max_bytes` (per-rank save-size cap). Defaults preserve Phase 1 behavior.
 
 ---
 

@@ -686,9 +686,7 @@ def search(
                         # searcher disagree with ``estimate_peak`` by ~90x on
                         # full-FT shapes (Codex-confirmed regression after the
                         # 909fc9ea fix landed in cost/memory.py only).
-                        _cap = hot_iter_peak_cap(
-                            trace, block_map, cfg, layout=layout
-                        )
+                        _cap = hot_iter_peak_cap(trace, block_map, cfg, layout=layout)
                         raw_peak = apply_hot_iter_cap(
                             raw_peak, model_state_present, _cap, layout
                         )

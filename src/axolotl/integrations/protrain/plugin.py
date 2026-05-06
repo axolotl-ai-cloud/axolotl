@@ -26,11 +26,7 @@ from typing import TYPE_CHECKING, cast
 from axolotl.integrations.base import BasePlugin
 from axolotl.integrations.protrain.api.hardware import (  # noqa: F401 — re-exported for back-compat
     DEFAULT_PCIE_BPS as _DEFAULT_PCIE_BPS,
-)
-from axolotl.integrations.protrain.api.hardware import (
     build_hardware_profile as _shared_build_hardware_profile,
-)
-from axolotl.integrations.protrain.api.hardware import (
     resolve_world_size_from_env as _resolve_world_size_from_env,
 )
 from axolotl.integrations.protrain.args import _has_protrain_plugin
@@ -624,13 +620,40 @@ class ProTrainPlugin(BasePlugin):
                 pass  # already on cuda:local_rank, no-op
             elif 0 <= local_rank < visible:
                 target = f"cuda:{local_rank}"
-                LOG.info(
-                    "ProTrain: model is on %s; moving to %s before wrap "
-                    "(post_model_load fired pre-Accelerate.prepare).",
-                    current_device,
-                    target,
-                )
-                model.to(target)
+                # Skip the move on device-mapped (``accelerate``-dispatched)
+                # loads — ``model.to()`` on a model with an ``hf_device_map``
+                # collapses the per-module placement and can OOM by
+                # materializing the full model on a single device. The
+                # device map already pins each shard to a CUDA ordinal,
+                # so the profiler's ``next(model.parameters()).device``
+                # read will report the correct device anyway.
+                hf_device_map = getattr(model, "hf_device_map", None)
+                if hf_device_map:
+                    LOG.info(
+                        "ProTrain: model has hf_device_map=%s; skipping "
+                        "pre-wrap move to %s to preserve device-mapped "
+                        "placement.",
+                        hf_device_map,
+                        target,
+                    )
+                else:
+                    LOG.info(
+                        "ProTrain: model is on %s; moving to %s before wrap "
+                        "(post_model_load fired pre-Accelerate.prepare).",
+                        current_device,
+                        target,
+                    )
+                    try:
+                        model.to(target)
+                    except RuntimeError as exc:
+                        # OOM or device-mapped collapse — log and defer to
+                        # Accelerate.prepare rather than aborting the run.
+                        LOG.warning(
+                            "ProTrain: model.to(%s) failed (%s); deferring "
+                            "placement to Accelerate.prepare.",
+                            target,
+                            exc,
+                        )
             else:
                 LOG.warning(
                     "ProTrain: model is on %s and CUDA is available, but "

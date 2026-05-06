@@ -163,9 +163,7 @@ def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
     return min(cfg.n_swap + 1, n_nonpersist)
 
 
-def _block_of_chunk(
-    chunk_id: ChunkId, layout: ChunkLayout
-) -> list[BlockId]:
+def _block_of_chunk(chunk_id: ChunkId, layout: ChunkLayout) -> list[BlockId]:
     """Return the block(s) owning ``chunk_id``.
 
     ``layout.block_to_chunks`` maps block -> tuple[ChunkId]. For a

@@ -420,7 +420,21 @@ def build_batch(
     if task_type is None:
         task_type = detect_task_type(model)
     factory = get_factory(task_type)
-    return factory(model, batch_size, seq_len, device)
+    batch = factory(model, batch_size, seq_len, device)
+    factory_id = getattr(factory, "__qualname__", None) or repr(factory)
+    if not isinstance(batch, dict):
+        raise TypeError(
+            f"batch_factory for task_type={task_type!r} ({factory_id}) "
+            f"must return a dict, got {type(batch).__name__}"
+        )
+    if "labels" not in batch:
+        raise ValueError(
+            f"batch_factory for task_type={task_type!r} ({factory_id}) "
+            f"returned a dict without a 'labels' key; the profiler "
+            f"requires 'labels' to synthesize a backward pass "
+            f"(got keys: {sorted(batch.keys())!r})"
+        )
+    return batch
 
 
 def factories_view() -> Mapping[str, BatchFactory]:

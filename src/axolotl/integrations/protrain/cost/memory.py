@@ -432,12 +432,16 @@ def estimate_cpu_footprint(
         the arithmetic here tracks the same ceiling).
     """
     non_persist = max(0, layout.N_chunk - cfg.n_persist)
-    total_bytes = non_persist * layout.S_chunk
     # Under sharding each rank holds 1/gpu_count of each chunk. Ceiling
-    # division so small chunks don't underreport for the trailing rank.
+    # division is applied PER CHUNK so small chunks don't underreport
+    # when ``S_chunk`` isn't divisible by ``gpu_count`` — summing
+    # ``total_bytes`` first and dividing once would round only at the
+    # aggregate, undercounting the trailing-rank padding by up to
+    # ``non_persist - 1`` bytes.
     per_rank_divisor = hw.gpu_count if hw.zero3_shard else 1
     per_rank_divisor = max(1, per_rank_divisor)
-    chunk_term = (total_bytes + per_rank_divisor - 1) // per_rank_divisor
+    per_chunk_sharded = (layout.S_chunk + per_rank_divisor - 1) // per_rank_divisor
+    chunk_term = non_persist * per_chunk_sharded
 
     # Activation-swap pool term — rank-local; not sharded.
     #

@@ -196,7 +196,12 @@ class ActivationSwapPool:
         NOT issue stream syncs.
         """
         with self._lock:
-            if self._closed or self._closing:
+            # Allow ``release()`` to proceed during ``_closing`` so late
+            # releases can retire outstanding borrows; otherwise
+            # ``self._pinned.close()`` blocks on still-live borrows.
+            # ``acquire()`` is the one that should reject new work when
+            # ``_closing`` is set.
+            if self._closed:
                 return
             if not 0 <= slot_id < self.n_slot:
                 LOG.warning(

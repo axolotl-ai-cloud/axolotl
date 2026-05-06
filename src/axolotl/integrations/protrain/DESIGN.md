@@ -1,6 +1,6 @@
 ## Purpose
 
-This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 5-axis cost model (`n_persist`, `n_buffer`, `n_swap`, `n_checkpoint`, `n_offload` — the OFFLOAD axis was added by Option B / `BLOCK_MODE_OFFLOAD_DESIGN.md`), and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation is opt-in via `plugins: [axolotl.integrations.protrain]` in the user YAML; mutual exclusion with `deepspeed:` and `fsdp:` is enforced by a pydantic validator in `args.py`.
+This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 5-axis cost model (`n_persist`, `n_buffer`, `n_swap`, `n_checkpoint`, `n_offload` — the OFFLOAD axis was added by Option B / `BLOCK_MODE_OFFLOAD_DESIGN.md`), and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation is opt-in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]` in the user YAML (the only spelling the pydantic validator in `args.py` accepts — see `_PROTRAIN_PLUGIN_KEYS`); mutual exclusion with `deepspeed:` and `fsdp:` is enforced by the same validator.
 
 ## Workstream-shape ratifications (drift from `plan.md`)
 
@@ -71,9 +71,9 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 
 - `class ProTrainPlugin(BasePlugin)` — thin shim.
   - `get_input_args() -> "axolotl.integrations.protrain.args.ProTrainArgs"`.
-  - `post_model_load(cfg, model)` — constructs `HardwareProfile`, runs profiler (cached), calls `protrain_model_wrapper(model, ...)`, stashes `WrappedModel` on `cfg` for `create_optimizer` to pick up.
-  - `create_optimizer(cfg, trainer) -> Optimizer` — returns `protrain_optimizer_wrapper(wrapped_model)`; returns `None` when plugin is inactive.
-  - `post_trainer_create(cfg, trainer)` — installs any trainer-level callbacks if needed for metric reporting.
+  - `post_model_load(cfg, model)` — constructs `HardwareProfile`, runs profiler (cached), calls `protrain_model_wrapper(model, ...)`, stashes `WrappedModel` on `cfg` for the post-trainer-create hook to pick up.
+  - `create_optimizer(cfg, trainer) -> Optimizer` — returns `protrain_optimizer_wrapper(wrapped_model)` for plugin loaders that dispatch to it. Axolotl's `OptimizerMixin.create_optimizer` does NOT call into `PluginManager.create_optimizer` (unlike `SchedulerMixin.create_scheduler`), so the actual install path is `post_trainer_create`, below; this method exists for plugin hosts that DO route through it (and to keep the contract documented).
+  - `post_trainer_create(cfg, trainer)` — canonical optimizer install path under Axolotl/HF Trainer: builds `protrain_optimizer_wrapper(wrapped)`, assigns it to `trainer.optimizer`, and registers the optimizer-state checkpoint/load callbacks.
 
 ### args.py (M5)
 
@@ -186,7 +186,7 @@ Zero diffs to Axolotl core files. The entire Axolotl surface consumed:
 - `get_input_args` returns `ProTrainArgs` → pydantic merge handled by `axolotl/utils/schemas/config.py:1275` (`plugins:` field)
 - `post_model_load(cfg, model)` hook — wraps post-LoRA so frozen LoRA base params contribute to persistent-chunk memory only
 - `create_optimizer(cfg, trainer)` hook — returns ProTrain optimizer; `None` if disabled
-- Example YAML: `examples/protrain/3090-7b-lora.yml` — opts in via `plugins: [axolotl.integrations.protrain]`
+- Example YAML: `examples/protrain/3090-7b-lora.yml` — opts in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]`
 
 ## Cross-Module Dependency Graph
 

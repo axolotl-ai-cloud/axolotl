@@ -51,21 +51,29 @@ class _ParamSpill:
 
     Two original-device cases:
 
-    * GPU-resident param (typical Axolotl path): we copy GPU→CPU at __enter__,
-      keep ``original_data`` alive so the optimizer's state slots (keyed on
-      ``id(param)``) keep pointing at the same buffer, and copy CPU→original
-      at __exit__.
+    * GPU-resident param (typical Axolotl path): we copy GPU→CPU at
+      ``__enter__`` and DROP the reference to the original GPU tensor so
+      the caching allocator can reclaim its storage (``original_data`` is
+      ``None``). At ``__exit__`` we re-allocate a fresh tensor on
+      ``original_device`` and copy ``cpu_storage`` back. Parameter
+      identity (``id(param)``) is preserved; optimizer state keyed on
+      ``id(param)`` (the PyTorch convention) survives the round trip.
 
-    * CPU-resident param (paper's intent — model too big for GPU): no copy
-      needed; ``cpu_storage`` IS the original tensor (pinned in place if
-      possible). ``original_data`` is None. The pre-gather hook copies to
-      the target device on demand.
+    * CPU-resident param (paper's intent — model too big for GPU): no
+      copy needed; ``cpu_storage`` IS the original tensor (pinned in
+      place if possible). ``original_data`` is also ``None`` here. The
+      pre-gather hook copies to the target device on demand.
+
+    The ``original_data`` field stays in the dataclass for forward-compat
+    with any caller that still populates it (the restore paths still
+    handle the legacy retain-storage case), but the GPU spill path no
+    longer sets it.
     """
 
     param: Any  # torch.nn.Parameter — Any keeps import light
     cpu_storage: Any  # torch.Tensor on CPU (pinned if possible)
     original_device: Any  # torch.device the param was on at __enter__
-    original_data: Any  # GPU tensor at __enter__, or None for CPU-original
+    original_data: Any  # legacy: GPU tensor at __enter__; None on the new path
 
 
 class OnDemandTensorMgr:
@@ -172,7 +180,10 @@ class OnDemandTensorMgr:
         # can rely on ``self.device`` being a ``torch.device`` or ``None``.
         if self.device is not None:
             self.device = self._normalize_device(self.device)
-        target_device = self.device
+        # Annotate the local explicitly so mypy can narrow on
+        # ``target_device.type == "cuda"`` below — ``self.device`` retains
+        # a wider union type from the dataclass field.
+        target_device: torch.device | None = self.device
 
         # 1. Spill every parameter to pinned CPU; replace .data with empty.
         # 2. Install module-level pre/post-forward hooks.
@@ -304,12 +315,21 @@ class OnDemandTensorMgr:
         for spill in self._spills.values():
             try:
                 if spill.original_data is not None:
+                    # Legacy retain-storage path (kept for forward-compat;
+                    # the GPU spill no longer populates original_data).
                     spill.original_data.copy_(
                         spill.cpu_storage.to(
                             spill.original_data.device, non_blocking=True
                         )
                     )
                     spill.param.data = spill.original_data
+                elif getattr(spill.original_device, "type", None) == "cuda":
+                    # GPU-origin without retained storage — allocate a
+                    # fresh tensor on the original device and copy from
+                    # the CPU spill. ``id(param)`` is preserved.
+                    spill.param.data = spill.cpu_storage.to(
+                        spill.original_device, non_blocking=True
+                    )
                 else:
                     # CPU-original: cpu_storage IS the original tensor.
                     spill.param.data = spill.cpu_storage
@@ -394,12 +414,24 @@ class OnDemandTensorMgr:
         for spill in self._spills.values():
             try:
                 if spill.original_data is not None:
+                    # Legacy retain-storage path (kept for forward-compat;
+                    # the GPU spill no longer populates original_data).
                     spill.original_data.copy_(
                         spill.cpu_storage.to(
                             spill.original_data.device, non_blocking=True
                         )
                     )
                     spill.param.data = spill.original_data
+                elif getattr(spill.original_device, "type", None) == "cuda":
+                    # GPU-origin without retained storage — allocate a
+                    # fresh tensor on the original device and copy from
+                    # the CPU spill. ``id(param)`` is preserved across
+                    # the round trip; ``param.data_ptr()`` may differ.
+                    # Optimizer state keys on ``id(param)`` (PyTorch
+                    # convention), so this is safe.
+                    spill.param.data = spill.cpu_storage.to(
+                        spill.original_device, non_blocking=True
+                    )
                 else:
                     # CPU-original — cpu_storage is the original tensor.
                     spill.param.data = spill.cpu_storage
@@ -495,22 +527,21 @@ class OnDemandTensorMgr:
             )
             return
 
-        # GPU-resident: copy GPU→CPU, keep original GPU tensor alive so
-        # __exit__ can copy values back into the same StorageImpl that the
-        # optimizer's state slots were keyed on.
+        # GPU-resident: copy GPU→CPU, then drop our reference to the
+        # original GPU tensor so the caching allocator can actually
+        # reclaim its storage. ``original_data=None`` flags the GPU-origin
+        # branch in the restore paths, which allocate a fresh tensor on
+        # ``original_device`` and copy ``cpu_storage`` back. Parameter
+        # identity (``id(param)``) is preserved across the round trip;
+        # ``param.data_ptr()`` may differ post-restore. Optimizer state
+        # keys on ``id(param)`` (PyTorch convention), so this is safe.
         #
-        # NOTE (CR 3192478323): retaining ``original_data`` keeps the
-        # original GPU storage allocated for the lifetime of the context,
-        # so peak GPU memory is NOT actually reduced for GPU-resident
-        # models — only CPU-resident models see the spill benefit. The
-        # profiler still measures correct *relative* deltas for op-walk
-        # peak attribution, so this is an efficiency limitation, not a
-        # correctness bug. A proper fix needs to release the original
-        # storage and re-key any optimizer state on restore (CodeRabbit
-        # tagged this "Heavy lift"); the existing GPU profile test
-        # (``test_on_demand_enabled_param_offload_and_restore``) validates
-        # byte-exact restore against this code path. Track via the
-        # CodeRabbit thread; do not silently raise here.
+        # Fix for CR 3192478323 / 3192535995 — the previous code retained
+        # ``original_data`` for the whole context, which kept the
+        # original GPU storage live and defeated the spill: peak memory
+        # stayed inflated for GPU-resident models. Releasing the storage
+        # here is what actually buys the paper's "model > device memory"
+        # guarantee.
         try:
             cpu_storage = param.data.detach().to("cpu", copy=True)
             try:
@@ -525,14 +556,16 @@ class OnDemandTensorMgr:
             )
             return
 
-        original_data = param.data
-        placeholder = torch.empty(0, dtype=original_data.dtype, device=original_device)
+        # Capture dtype before reassigning ``param.data`` — once the
+        # placeholder is in place the original tensor is unreachable.
+        orig_dtype = param.data.dtype
+        placeholder = torch.empty(0, dtype=orig_dtype, device=original_device)
         param.data = placeholder
         self._spills[id(param)] = _ParamSpill(
             param=param,
             cpu_storage=cpu_storage,
             original_device=original_device,
-            original_data=original_data,
+            original_data=None,  # GPU storage released; restore re-allocates
         )
 
     # ---- module-level gather/release hooks -----------------------------

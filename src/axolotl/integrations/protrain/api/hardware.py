@@ -122,9 +122,7 @@ def _resolve_device_index() -> int:
 
     visible = int(torch.cuda.device_count())
     if visible <= 0:
-        raise RuntimeError(
-            "ProTrain requires at least one visible CUDA device."
-        )
+        raise RuntimeError("ProTrain requires at least one visible CUDA device.")
     if not (0 <= local_rank < visible):
         LOG.warning(
             "ProTrain: LOCAL_RANK=%d out of visible CUDA range [0, %d); "
@@ -179,8 +177,20 @@ def build_hardware_profile(
 
     if device_index is None:
         device_index = _resolve_device_index()
-    elif int(torch.cuda.device_count()) <= 0:
-        raise RuntimeError("ProTrain requires at least one visible CUDA device.")
+    else:
+        if not isinstance(device_index, int) or isinstance(device_index, bool):
+            raise RuntimeError(
+                f"device_index must be an int, got {type(device_index).__name__}."
+            )
+        device_count = int(torch.cuda.device_count())
+        if device_count <= 0:
+            raise RuntimeError("ProTrain requires at least one visible CUDA device.")
+        if device_index < 0 or device_index >= device_count:
+            raise RuntimeError(
+                f"device_index={device_index} is out of range; expected an "
+                f"int in [0, {device_count - 1}] (torch.cuda.device_count()="
+                f"{device_count})."
+            )
 
     props = torch.cuda.get_device_properties(device_index)
     gpu_memory_bytes = int(props.total_memory)

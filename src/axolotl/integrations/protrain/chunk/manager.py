@@ -704,17 +704,6 @@ class ChunkManager:
         # dtype mix the chunk holds.
         _INTER_CHUNK_ALIGN = 16
 
-        # ``pin_memory=True`` requires an NVIDIA driver/runtime even when the
-        # tensor lives on host memory, so allocating pinned host buffers on a
-        # CPU-only box raises ``RuntimeError: Found no NVIDIA driver``. Gate
-        # every pinned-host allocation in this method on a single boolean
-        # so CPU-only test hosts (and other CUDA-less environments) can
-        # construct a ChunkManager without crashing. ``PinnedHostMemory``
-        # already takes the same care in its fallback path, but we still
-        # compute the flag here for the per-chunk in-flight scratch
-        # (sharded path uses an unpinned ``region_scratch``).
-        use_pinned_host = self.device.type == "cuda" and torch.cuda.is_available()
-
         # ---- Pass 1: planning ------------------------------------------
         # For each non-persistent chunk, compute everything we need to
         # know to slice the unified pinned pools later: per-param
@@ -932,13 +921,9 @@ class ChunkManager:
                     grad_pool_chunk_bytes += nbytes
 
             # Reserve aligned starting offsets in the unified pools.
-            param_pool_offset = _align_up(
-                total_param_pool_bytes, _INTER_CHUNK_ALIGN
-            )
+            param_pool_offset = _align_up(total_param_pool_bytes, _INTER_CHUNK_ALIGN)
             total_param_pool_bytes = param_pool_offset + param_pool_chunk_bytes
-            grad_pool_offset = _align_up(
-                total_grad_pool_bytes, _INTER_CHUNK_ALIGN
-            )
+            grad_pool_offset = _align_up(total_grad_pool_bytes, _INTER_CHUNK_ALIGN)
             total_grad_pool_bytes = grad_pool_offset + grad_pool_chunk_bytes
 
             chunk_plans.append(
@@ -1048,9 +1033,7 @@ class ChunkManager:
                 # Unpinned scratch: only used for the partition copy.
                 # Pinning would just waste pinned host memory because
                 # the buffer is released at the end of this iteration.
-                transient_full_chunk = torch.empty(
-                    chunk_bytes, dtype=torch.uint8
-                )
+                transient_full_chunk = torch.empty(chunk_bytes, dtype=torch.uint8)
 
             # ---- Per-param copy + rebind ----------------------------
             slots: list[_CpuParamSlot] = []
@@ -1170,9 +1153,7 @@ class ChunkManager:
                     # the trailing pad stays zero. This keeps peer
                     # ranks that receive the padded tail from seeing
                     # uninitialized bytes on the first ``gather``.
-                    region_scratch = torch.zeros(
-                        r_bytes_padded, dtype=torch.uint8
-                    )
+                    region_scratch = torch.zeros(r_bytes_padded, dtype=torch.uint8)
                     region_scratch.narrow(0, 0, r_bytes).copy_(
                         transient_full_chunk.narrow(0, r_chunk_off, r_bytes)
                     )
@@ -1303,8 +1284,7 @@ class ChunkManager:
                 pool.release_buffer(0)
             except Exception as exc:  # noqa: BLE001 — best-effort
                 LOG.debug(
-                    "ChunkManager._close_cpu_pools: release_buffer(0) failed "
-                    "on %s: %s",
+                    "ChunkManager._close_cpu_pools: release_buffer(0) failed on %s: %s",
                     attr,
                     exc,
                 )
@@ -1972,8 +1952,10 @@ class ChunkManager:
         # stream — the allocations would already land on the right heap
         # and the ``record_stream`` calls would be no-ops. This keeps
         # the CPU-only / synchronous-fallback paths zero-overhead.
-        wrap_alloc = on_cuda and cur_stream is not None and (
-            cur_stream != torch.cuda.default_stream(device=buf.device)
+        wrap_alloc = (
+            on_cuda
+            and cur_stream is not None
+            and (cur_stream != torch.cuda.default_stream(device=buf.device))
         )
 
         for region in shard_state.regions:

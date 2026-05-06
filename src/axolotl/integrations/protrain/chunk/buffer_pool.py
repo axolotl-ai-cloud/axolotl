@@ -112,9 +112,7 @@ class BufferPool:
         if self.device.type == "cuda" and torch.cuda.is_available():
             with SingleStreamAllocator():
                 self._buffers: list["torch.Tensor"] = [
-                    torch.empty(
-                        self.S_chunk, dtype=torch.uint8, device=self.device
-                    )
+                    torch.empty(self.S_chunk, dtype=torch.uint8, device=self.device)
                     for _ in range(self.n_buffer)
                 ]
         else:

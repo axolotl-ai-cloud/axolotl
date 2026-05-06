@@ -91,15 +91,26 @@ def select_bootstrap_config(
 ) -> tuple[CostConfig, "BlockStrategyMap"]:
     """Pick a conservative bootstrap config that's guaranteed to fit.
 
-    Spec: ``n_persist=N_chunk*0.5, n_buffer=4, n_swap=0,
-    n_checkpoint=N_block`` (paper §3.2 design — bias hard toward
-    memory savings so the chunked backward fits even when the cost
-    model's backward estimate was wrong).
+    Spec: ``n_persist=0``, ``n_swap=0``, ``n_checkpoint=N_block``,
+    ``n_buffer=min(layout.N_chunk, max(initial_result.cfg.n_buffer,
+    _min_n_buffer_for_layout(layout, n_persist=0)))``. This biases hard
+    toward memory savings (zero persistence, full activation
+    checkpointing) while keeping ``n_buffer`` large enough to satisfy
+    the layout's adjacent-block prefetch requirement and never
+    exceeding the total chunk count.
+
+    Lowering ``n_persist`` to zero (vs. carrying over the searcher's
+    higher-persistence pick) is what makes this a calibration baseline
+    for low-persistence offload configs — the phase-2 measurement is
+    later reused to correct the cost model's replay-time chunk-gather
+    estimate, which would be under-counted if we measured at high
+    persistence. ``n_buffer`` is floored at the searcher's pick so we
+    don't regress the prefetch window.
 
     Validates the candidate against ``estimate_peak``; if the peak
     exceeds capacity, fall back to the search's own first pick (which
     by construction passed the capacity gate). This second-line
-    defense covers degenerate models where even max-CKPT + half-
+    defense covers degenerate models where even max-CKPT + zero-
     persistent doesn't fit — those would already have crashed before
     phase-2, but be defensive.
     """
@@ -206,6 +217,14 @@ def measure_chunked_steady(
         raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
 
     with torch.cuda.device(device):
+        # Snapshot model + optimizer state BEFORE warmup so the
+        # measurement (which calls ``optimizer.step()`` and mutates
+        # parameters) is non-destructive: training resumes from the
+        # same initial state after the profiler returns. The snapshot
+        # itself is excluded from the timed region — captured before
+        # warmup, restored after the timed loop.
+        model_state = model.state_dict()
+        optim_state = optimizer.state_dict()
         # Start from a clean grad state so leftover grads from prior
         # trace work (e.g. the phase-1 profile pass) cannot pollute
         # the first warmup step's peak-memory and timing samples.
@@ -257,6 +276,15 @@ def measure_chunked_steady(
         bwd_median = statistics.median(bwd_times_s)
         step_median = statistics.median(step_times_s)
         peak_bytes = int(torch.cuda.max_memory_allocated(device))
+        # Restore the pre-measurement model + optimizer state so the
+        # profiler is non-destructive: ``optimizer.step()`` calls in
+        # warmup + timed loops mutated parameters and optimizer state.
+        # Synchronize first so any in-flight kernels referencing these
+        # tensors complete before we overwrite them.
+        torch.cuda.synchronize(device)
+        model.load_state_dict(model_state)
+        optimizer.load_state_dict(optim_state)
+        optimizer.zero_grad(set_to_none=True)
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

@@ -520,10 +520,13 @@ cpu_optim/chunk_<N>.pt:                    # one per non-persistent chunk; cpu_o
   torch.save(self._cpu_optim._optims[N].state_dict(), ...)
 ```
 
-Phase 2 extends with `protrain_rank: int` in metadata, per-chunk
-`regions[]` lists, and `cpu_optim/chunk_<N>_rank_<R>.pt` naming.
+Phase 2 extends with `saving_rank: int` and `protrain_save_mode:
+"replicated" | "sharded"` in metadata, a `regions_per_chunk` mapping
+(per-chunk persistent-id region lists keyed by chunk id), and
+`cpu_optim/chunk_<N>_rank_<R>.pt` naming for the sharded mode (Phase 1
+files keep the legacy `cpu_optim/chunk_<N>.pt` layout).
 
-`format_version` bumps when fields change. Today is v1.
+`format_version` bumps when fields change. Phase 1 is v1; Phase 2 is v2.
 
 ---
 

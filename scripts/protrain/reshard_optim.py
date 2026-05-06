@@ -99,8 +99,9 @@ def _build_argparser() -> argparse.ArgumentParser:
         "--dst",
         required=True,
         help=(
-            "Path to the destination directory to be created/overwritten "
-            "with the resharded checkpoint."
+            "Path to the destination directory for the resharded "
+            "checkpoint. Must either not exist or be an empty directory; "
+            "the resharder refuses to write into a non-empty path."
         ),
     )
     p.add_argument(

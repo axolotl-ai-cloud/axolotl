@@ -847,10 +847,7 @@ def estimate_runtime(
     # — identical numerics to before.
     if (
         trace.steady_bwd_chunked_wall_s > 0.0
-        and (
-            trace.phase2_n_checkpoint == 0
-            or trace.phase2_per_block_recompute_s > 0.0
-        )
+        and (trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0)
         and cfg.n_swap == 0
     ):
         # PHASE-2 BACKWARD OVERRIDE (TRACE_VERSION >= 10): the chunked
@@ -952,9 +949,7 @@ def estimate_runtime(
         # Paper Eq. 5 backward roofline is max(compute, comm) per chunk.
         # Persistent chunks have no PCIe traffic, so the per-chunk
         # contention model does not apply.
-        t_bwd_persistent_chunks = n_persist * max(
-            t_bwd_compute_per_chunk, nccl_reduce
-        )
+        t_bwd_persistent_chunks = n_persist * max(t_bwd_compute_per_chunk, nccl_reduce)
         t_bwd_nonpersistent_chunks = 0.0
         for cid in range(n_persist, layout.N_chunk):
             if cid >= cached_threshold:
@@ -963,9 +958,7 @@ def estimate_runtime(
                 comm = t_bwd_comm_per_chunk_uncached[cid]
             t_bwd_nonpersistent_chunks += max(t_bwd_compute_per_chunk, comm)
         t_bwd = (
-            t_bwd_persistent_chunks
-            + t_bwd_nonpersistent_chunks
-            + t_bwd_swap_prefetch
+            t_bwd_persistent_chunks + t_bwd_nonpersistent_chunks + t_bwd_swap_prefetch
         )
 
     # ----- Optimizer step ----------------------------------------------

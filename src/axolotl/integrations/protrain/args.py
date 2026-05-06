@@ -386,6 +386,12 @@ class ProTrainArgs(BaseModel):
         if not data.get("protrain_auto_memory"):
             return data
         plugins = data.get("plugins") or []
+        # Shape guard: if the user passed a malformed (non-sequence)
+        # ``plugins`` value, return ``data`` unchanged so Pydantic emits
+        # its standard field-type error rather than masking it with a
+        # misleading "missing plugin" ValueError below.
+        if not isinstance(plugins, (list, tuple)):
+            return data
         if not _has_protrain_plugin(plugins):
             raise ValueError(
                 "`protrain_auto_memory: true` requires the ProTrain plugin to be "

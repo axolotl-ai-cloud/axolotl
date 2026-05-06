@@ -178,6 +178,38 @@ def _reshard_region_state(
             region_bytes, elem_size, dst_world
         )
 
+    # All byte→numel conversions below use integer division. If any of
+    # these aren't exact multiples we'd silently truncate elements,
+    # which corrupts shards in subtle ways. Validate up-front and raise
+    # with the offending values so the failure is actionable.
+    if region_bytes % elem_size != 0:
+        raise RuntimeError(
+            f"reshard: region_bytes={region_bytes} is not divisible by "
+            f"elem_size={elem_size}"
+        )
+    if region_bytes_padded_old % elem_size != 0:
+        raise RuntimeError(
+            f"reshard: region_bytes_padded_old={region_bytes_padded_old} "
+            f"is not divisible by elem_size={elem_size}"
+        )
+    if region_bytes_padded_new % elem_size != 0:
+        raise RuntimeError(
+            f"reshard: region_bytes_padded_new={region_bytes_padded_new} "
+            f"is not divisible by elem_size={elem_size}"
+        )
+    if region_bytes_padded_old % src_world != 0:
+        raise RuntimeError(
+            f"reshard: region_bytes_padded_old={region_bytes_padded_old} "
+            f"is not divisible by src_world={src_world}; cannot split "
+            f"into equal per-rank shards"
+        )
+    if region_bytes_padded_new % dst_world != 0:
+        raise RuntimeError(
+            f"reshard: region_bytes_padded_new={region_bytes_padded_new} "
+            f"is not divisible by dst_world={dst_world}; cannot split "
+            f"into equal per-rank shards"
+        )
+
     expected_old_shard_numel = (region_bytes_padded_old // src_world) // elem_size
     for r, t in enumerate(per_rank_tensors):
         if t.numel() != expected_old_shard_numel:

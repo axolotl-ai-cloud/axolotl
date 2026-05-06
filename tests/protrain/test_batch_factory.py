@@ -301,7 +301,14 @@ def test_dummy_batch_preserves_causal_lm_shape():
 
 def test_register_custom_factory_overrides_default():
     """Users (or another integration) can register a custom factory."""
-    sentinel = {"input_ids": torch.zeros(1, 1, dtype=torch.long)}
+    # ``build_batch`` validates the registered factory's output (must be a
+    # dict containing 'labels') so the profiler can synthesize backward;
+    # the sentinel includes ``labels`` so the override-takes-precedence
+    # check stays focused on registry plumbing rather than the validator.
+    sentinel = {
+        "input_ids": torch.zeros(1, 1, dtype=torch.long),
+        "labels": torch.zeros(1, 1, dtype=torch.long),
+    }
 
     def _custom(model, bs, sl, dev):
         return sentinel
