@@ -230,6 +230,20 @@ def _make_pack_unpack(
         nbytes = t.numel() * t.element_size()
         if nbytes < size_threshold:
             return _PassThrough(t)
+        # Skip overlapping tensors. The unpack path rebuilds via
+        # ``empty_strided + copy_`` and writes element-wise into a
+        # tensor whose storage matches the recorded stride. If the
+        # source has a zero stride (expanded / broadcasted view) or
+        # internally-overlapping strides, multiple logical indices
+        # alias the same storage element and the copy_ semantics
+        # become last-writer-wins instead of byte-faithful. The
+        # zero-stride check below catches the dominant footgun
+        # (``Tensor.expand``); rare overlapping-without-zero-stride
+        # tensors (uncommon manual ``as_strided`` views) are still
+        # routed through pack_to_pool, but they're not produced by
+        # the standard nn modules the runtime saves activations from.
+        if any(s == 0 for s in t.stride()):
+            return _PassThrough(t)
         if nbytes > pool.slot_bytes:
             # Defensive: tensor exceeds slot size. Keep on GPU rather
             # than corrupt memory. The wrap-time sizing in the model

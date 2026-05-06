@@ -281,9 +281,13 @@ def measure_gpu_adam(
     device_idx:
         CUDA ordinal.
     n_params:
-        Scalar fp16 params in the synthetic model. 10M keeps state around
-        200 MB — outside L2 on any 3090-class GPU, so the measurement
-        reflects HBM bandwidth rather than L2 residency.
+        Scalar fp16 params in the synthetic model. The default 5M
+        (~5e6) yields ~100 MB of optimizer state — fp16 params + fp16
+        grads + fp32 master + fp32 exp_avg + fp32 exp_avg_sq totals
+        roughly 20 bytes/param × 5e6 = 100 MB. That's already outside
+        L2 on any 3090-class GPU (which carries a few MB of L2), so
+        the measurement reflects HBM bandwidth rather than L2
+        residency.
     n_iters:
         Timed step invocations. The first is a warmup, discarded.
 

@@ -665,9 +665,24 @@ def run_trace(
                     model.zero_grad(set_to_none=True)
                 del warm_out
                 torch.cuda.synchronize(device)
-                torch.cuda.empty_cache()
+                # Intentionally NOT calling ``torch.cuda.empty_cache()``
+                # here — empty_cache resets the caching allocator and
+                # invalidates the warm steady-state we're trying to
+                # establish. The next traced iter would then re-acquire
+                # storage from a cold allocator and the per-op deltas
+                # would mix steady-state work with allocator warm-up
+                # noise. Leaving cached blocks in place is the whole
+                # point of the warmup.
             except Exception as exc:  # pragma: no cover - defensive
                 LOG.debug("profiler warmup pass failed (%s); continuing cold", exc)
+                # On a warmup failure (typically OOM in a degenerate
+                # config), drop cached blocks so the steady-state
+                # measurement at least starts from a clean allocator
+                # rather than half-filled fragmented state.
+                try:
+                    torch.cuda.empty_cache()
+                except Exception:  # noqa: BLE001 — best-effort cleanup
+                    pass
                 break
 
     # --- steady-state (hook-less) wall-time measurement ---------------

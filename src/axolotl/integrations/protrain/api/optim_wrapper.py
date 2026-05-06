@@ -167,22 +167,35 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 
     # ---- LR-scheduler hyperparam forwarding -----------------------------
 
-    _FORWARDED_HYPERPARAM_KEYS = ("lr", "betas", "eps", "weight_decay")
+    # ``weight_decay`` is intentionally NOT forwarded:
+    # ``_split_optim_param_groups`` builds two inner param groups for
+    # the GPU/CPU adapters — the regular group with the user's
+    # ``weight_decay``, and a no-decay group with ``weight_decay=0``
+    # for bias / LayerNorm-family params (mirrors HF Trainer's
+    # ``get_decay_parameter_names`` semantics). Forwarding the
+    # facade's single ``weight_decay`` would clobber the no-decay
+    # group's 0 and apply weight decay to bias / norm params,
+    # changing training behavior. If a future scheduler needs to
+    # vary weight decay, it must thread per-inner-group values
+    # through; the facade-level wd is not a valid source for the
+    # multi-group case.
+    _FORWARDED_HYPERPARAM_KEYS = ("lr", "betas", "eps")
 
     def _forward_hyperparams_to_inner_optims(self) -> None:
         """Copy facade ``param_groups[0]`` hyperparams to each inner optim.
 
         ``torch.optim.lr_scheduler.LRScheduler.step()`` mutates
         ``self.param_groups[i]['lr']`` (and Adam-family schedulers may
-        also touch ``betas`` / ``eps`` / ``weight_decay``) on the
-        outer facade. The inner adapter optimizers
-        (``self._gpu_optim._optim`` and each entry in
-        ``self._cpu_optim._optims``) hold their own ``param_groups``
+        also touch ``betas`` / ``eps``) on the outer facade. The inner
+        adapter optimizers (``self._gpu_optim._optim`` and each entry
+        in ``self._cpu_optim._optims``) hold their own ``param_groups``
         list of dicts and never see those mutations, so without this
         forwarding step their ``step()`` keeps using the construction-
         time LR forever. Defensive: we only write keys that already
         exist on the inner group dict so this never invents new fields
-        the inner optim's update math doesn't read.
+        the inner optim's update math doesn't read. ``weight_decay`` is
+        explicitly excluded from the forwarded set — see the
+        ``_FORWARDED_HYPERPARAM_KEYS`` comment above.
         """
         if not self.param_groups:
             return

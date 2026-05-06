@@ -192,7 +192,19 @@ class ActivationSwapPool:
             # across it so concurrent acquire/release/close() callers cannot
             # race on the borrow accounting (which would either drift the
             # count or free the pinned region while a slot view is still live).
-            view = self._pinned.buffer(slot_id)
+            #
+            # Atomicity: if ``buffer()`` raises (e.g., the underlying
+            # ``PinnedHostMemory`` was closed between the ``_closed`` /
+            # ``_closing`` check above and here, or some allocator
+            # invariant trips), roll back the bookkeeping mutations
+            # before propagating so the pool isn't permanently leaking
+            # a slot id into the in-flight count.
+            try:
+                view = self._pinned.buffer(slot_id)
+            except BaseException:
+                self._inflight -= 1
+                self._free.append(slot_id)
+                raise
         return slot_id, view
 
     def release(self, slot_id: int) -> None:

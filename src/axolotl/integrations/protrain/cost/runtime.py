@@ -722,8 +722,19 @@ def estimate_runtime(
         nccl_gather = 0.0
         nccl_reduce = 0.0
     else:
+        # Multi-rank zero3-sharded path. ``_pick_nccl`` returns 0.0 if
+        # the table is empty or no entry matches ``layout.S_chunk``.
+        # A 0.0 cost here would silently underprice this candidate
+        # (Mode-C iter time should ALWAYS include gather + reduce
+        # collectives), so fail-closed: any 0.0 / empty-table case
+        # marks the candidate invalid via ``inf`` so the searcher
+        # skips it and the caller sees the trace gap and refreshes.
+        if not trace.nccl_gather_s or not trace.nccl_reduce_s:
+            return float("inf")
         nccl_gather = _pick_nccl(trace.nccl_gather_s, layout.S_chunk)
         nccl_reduce = _pick_nccl(trace.nccl_reduce_s, layout.S_chunk)
+        if nccl_gather <= 0.0 or nccl_reduce <= 0.0:
+            return float("inf")
 
     # Per-chunk comm-cost vectors. Each entry is the
     # :func:`_comm_time_chunk` cost evaluated at the per-chunk
