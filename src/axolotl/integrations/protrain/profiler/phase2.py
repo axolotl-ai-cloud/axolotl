@@ -166,7 +166,7 @@ def select_bootstrap_config(
     return initial_result.cfg, initial_result.block_map
 
 
-def _clone_state_dict(state):
+def _clone_state_dict(state, target_device=None):
     """Recursively clone every tensor in a (possibly nested) state_dict.
 
     ``Module.state_dict()`` and ``Optimizer.state_dict()`` both return
@@ -191,13 +191,43 @@ def _clone_state_dict(state):
     on the snapshot loses version info and silently drops any
     upgrade-on-load path. We rebuild via ``type(state)(...)`` and
     shallow-copy ``_metadata`` if present.
+
+    Parameters
+    ----------
+    state
+        The state-dict (or nested element) to clone.
+    target_device : torch.device | str | None
+        When set and the leaf is a tensor, the snapshot tensor is
+        relocated to ``target_device`` (``state.detach().to(target_device).clone()``)
+        so the snapshot does not duplicate GPU memory for state we
+        intend to keep on host. When ``None`` the snapshot preserves
+        the source tensor's device (the default — model state must be
+        snapshotted on-device to keep ``load_state_dict`` cheap).
+
+        IMPORTANT for optimizer state: ``Optimizer.load_state_dict``
+        casts the loaded per-parameter state tensors (e.g. Adam's
+        ``exp_avg`` / ``exp_avg_sq``) onto the matching parameter's
+        device automatically, so a CPU-resident snapshot is restorable
+        — but the cast happens via a ``.to(param.device)`` copy at
+        restore time, which means the GPU-side tensor is reallocated.
+        Callers that need a faithful restore without the device-cast
+        round-trip (e.g. tests asserting tensor identity) should pass
+        the parameter device. Callers minimizing GPU memory during
+        the timed region (the common case for ``measure_chunked_steady``)
+        should pass ``torch.device("cpu")`` so the snapshot lives on
+        host.
     """
     import torch
 
     if torch.is_tensor(state):
+        if target_device is not None:
+            return state.detach().to(target_device).clone()
         return state.detach().clone()
     if isinstance(state, dict):
-        cloned_items = {k: _clone_state_dict(v) for k, v in state.items()}
+        cloned_items = {
+            k: _clone_state_dict(v, target_device=target_device)
+            for k, v in state.items()
+        }
         # Preserve dict subclass identity (e.g. OrderedDict). For plain
         # ``dict`` inputs ``type(state)(...)`` is equivalent to ``dict(...)``.
         try:
@@ -222,7 +252,7 @@ def _clone_state_dict(state):
                 pass
         return cloned_dict
     if isinstance(state, (list, tuple)):
-        cloned = [_clone_state_dict(v) for v in state]
+        cloned = [_clone_state_dict(v, target_device=target_device) for v in state]
         return type(state)(cloned) if isinstance(state, tuple) else cloned
     return copy.deepcopy(state)
 
@@ -316,7 +346,17 @@ def measure_chunked_steady(
         # before we read parameters / optimizer state into the clone.
         torch.cuda.synchronize(device)
         model_state = _clone_state_dict(model.state_dict())
-        optim_state = _clone_state_dict(optimizer.state_dict())
+        # Snapshot optimizer state on host to avoid duplicating GPU
+        # memory during the timed region — for FusedAdam-style
+        # optimizers the per-param ``exp_avg`` / ``exp_avg_sq`` tensors
+        # are the same size as the params themselves, so an on-device
+        # snapshot doubles the optimizer-state footprint.
+        # ``Optimizer.load_state_dict`` casts the loaded state back to
+        # each parameter's device at restore time, so a CPU snapshot
+        # round-trips faithfully.
+        optim_state = _clone_state_dict(
+            optimizer.state_dict(), target_device=torch.device("cpu")
+        )
         # Start from a clean grad state so leftover grads from prior
         # trace work (e.g. the phase-1 profile pass) cannot pollute
         # the first warmup step's peak-memory and timing samples.

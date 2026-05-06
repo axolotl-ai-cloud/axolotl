@@ -416,7 +416,7 @@ def estimate_cpu_footprint(
     the runtime ``ActivationSwapPool`` raise ``RuntimeError`` whenever
     SWAP encountered a single saved tensor larger than the average.
     Sizing every slot to the full aggregate over-provisions the pool
-    by up to K× but guarantees any saved tensor fits any slot — see
+    by up to Kx but guarantees any saved tensor fits any slot — see
     the matching slot-sizing comment in
     ``api/model_wrapper.py::_construct_runtime`` for the runtime side.
     The term is **per-rank** and **NOT divided by gpu_count** — the
@@ -465,7 +465,7 @@ def estimate_cpu_footprint(
         the arithmetic here tracks the same ceiling).
     """
     # Non-persistent chunks are everything outside the augmented
-    # persistent set (prefix ∪ mandatory_persistent). Earlier this used
+    # persistent set (prefix union mandatory_persistent). Earlier this used
     # ``N_chunk - cfg.n_persist``, which double-counted any
     # ``layout.mandatory_persistent`` chunk as a CPU shard even though
     # the runtime never offloads it. With non-empty ``mandatory_persistent``
@@ -529,7 +529,7 @@ def model_state_present_bytes(
     ``layout.mandatory_persistent`` (chunks the block-granularity
     scheduler cannot gather on its own; pinned for runtime correctness,
     NOT chosen by the searcher). The cost charged here is therefore
-    ``len(prefix ∪ mandatory) * S_chunk * persistent_factor``, NOT
+    ``len(prefix union mandatory) * S_chunk * persistent_factor``, NOT
     ``cfg.n_persist * S_chunk * persistent_factor``.
 
     Sums the per-chunk persistent contribution (full fp16 + grads + fp32

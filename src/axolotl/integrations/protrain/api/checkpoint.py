@@ -693,10 +693,38 @@ def _verify_replicated_state_across_ranks(optim: Any, *, world_size: int) -> Non
     insurance against the corner case where DDP determinism fails
     (numerical drift, manual override, etc.) so neither save nor load
     silently propagates a rank-0-only view of optimizer state.
+
+    Deadlock guard: ``_hash_inner_state_dicts`` walks live optimizer
+    state and can raise (e.g. shape mismatch in a saved-state restore on
+    rank-0 only). If we proceeded straight to ``all_gather_object`` after
+    a local exception, the failed rank would unwind out and the peers
+    would block forever on the collective. We therefore (1) catch any
+    local hashing exception, (2) fold a 0/1 status flag through
+    ``_allreduce_status_or_raise`` so the cluster fails in lockstep, and
+    (3) only invoke ``all_gather_object`` once every rank confirms it
+    has a valid local hash.
     """
     if world_size <= 1 or not _dist_is_active():
         return
-    local_hash = _hash_inner_state_dicts(optim)
+    local_hash = ""
+    local_exc: BaseException | None = None
+    try:
+        local_hash = _hash_inner_state_dicts(optim)
+    except BaseException as exc:  # noqa: BLE001 - re-raised after collective
+        local_exc = exc
+    # Surface any rank's hashing failure cluster-wide BEFORE the
+    # all_gather_object so a rank-0-only exception cannot wedge the
+    # peers (they would otherwise block forever on the collective).
+    _allreduce_status_or_raise(
+        1 if local_exc is not None else 0,
+        op="verify-replicated-state (local hash)",
+    )
+    if local_exc is not None:
+        # Cluster sum was non-zero AND this rank is one of the failing
+        # ranks: re-raise the original exception so the actionable
+        # traceback is preserved (peers raise the generic cluster-wide
+        # error from ``_allreduce_status_or_raise``).
+        raise local_exc
     gathered: list[str] = [""] * world_size
     torch.distributed.all_gather_object(gathered, local_hash)
     rank0 = gathered[0]

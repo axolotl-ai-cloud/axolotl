@@ -344,7 +344,7 @@ class Scheduler:
         re-gather on its pre-hook.
 
         The buffer pool preserves the chunk's tag after ``release`` so
-        ``lookup_resident`` in backward still works (forward→backward
+        ``acquire_if_resident`` in backward still works (forward→backward
         reuse window, §3.1.1 + §5).
         """
         nxt = self._next_block_of(block_id)
@@ -371,7 +371,7 @@ class Scheduler:
         to cover the chunk-state path here.
 
         Fast path: if the chunk is still tagged in the buffer pool
-        (``lookup_resident`` returns non-None) the gather call is a
+        (``acquire_if_resident`` returns non-None) the gather call is a
         cheap re-tag + no-copy return. Otherwise the chunk manager
         re-gathers from the CPU shard with a fresh H2D copy.
 

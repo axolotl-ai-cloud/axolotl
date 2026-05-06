@@ -1878,11 +1878,11 @@ class ChunkManager:
         # is re-acquired for a different chunk (see BufferPool.acquire's
         # eviction branch). Consequently:
         #
-        # * If ``lookup_resident(chunk_id)`` returns a buffer, the slot's
-        #   bytes are still the SAME bytes the previous gather wrote
-        #   there — every rank's full-chunk reconstruction is intact and
-        #   we can skip both the H2D copy (replicated path) AND the
-        #   ``all_gather_into_tensor`` collective (sharded path).
+        # * If ``acquire_if_resident(chunk_id)`` returns a buffer, the
+        #   slot's bytes are still the SAME bytes the previous gather
+        #   wrote there — every rank's full-chunk reconstruction is
+        #   intact and we can skip both the H2D copy (replicated path)
+        #   AND the ``all_gather_into_tensor`` collective (sharded path).
         # * If it returns None, an intervening ``acquire`` for some
         #   other chunk evicted the tag (and overwrote the bytes); we
         #   take the full miss path below.
@@ -1892,14 +1892,13 @@ class ChunkManager:
         # all_gather is ~290MB of cross-PCIe motion at the 10-12 GB/s
         # NCCL ring ceiling. Skipping it costs nothing in correctness:
         # the sharded gather's only output is the full-chunk byte image
-        # in the pool buffer, and ``lookup_resident`` is the proof that
-        # image is still there.
-        resident_buf = self.buffer_pool.lookup_resident(chunk_id)
+        # in the pool buffer, and ``acquire_if_resident`` is the proof
+        # that image is still there. The lease taken here pairs with
+        # the matching ``release`` issued by the scheduler's
+        # ``post_block_*`` path / ``offload(chunk_id)``.
+        resident_buf = self.buffer_pool.acquire_if_resident(chunk_id)
         if resident_buf is not None:
-            # Re-claim the slot (idempotent if already in-use; pops the
-            # free list if it was released after forward).
-            buf = self.buffer_pool.acquire(chunk_id)
-            self._rebind_params_to_buffer(chunk_id, buf, needs_copy=False)
+            self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
             return
 
         # Cache miss: the slot was evicted or never populated. Acquire a

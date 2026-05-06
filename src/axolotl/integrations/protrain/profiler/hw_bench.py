@@ -576,9 +576,11 @@ def measure_nccl(
         )
         reduced = torch.zeros(elements_per_shard, dtype=torch.float32, device=device)
 
-        # Warmup
+        # Warmup. Use op=AVG to mirror ProTrain's sharded update path so the
+        # measured kernel cost reflects production (NCCL implements AVG as
+        # SUM + post-divide on the receive shard, slightly more expensive).
         for _ in range(n_warmup):
-            dist.reduce_scatter_tensor(reduced, full_payload)
+            dist.reduce_scatter_tensor(reduced, full_payload, op=dist.ReduceOp.AVG)
         torch.cuda.synchronize(device)
 
         # Timed — wrap event construction + record + synchronize in one
@@ -589,7 +591,7 @@ def measure_nccl(
             end = torch.cuda.Event(enable_timing=True)
             for _ in range(n_iters):
                 start.record()
-                dist.reduce_scatter_tensor(reduced, full_payload)
+                dist.reduce_scatter_tensor(reduced, full_payload, op=dist.ReduceOp.AVG)
                 end.record()
                 torch.cuda.synchronize(device)
                 reduce_times.append(start.elapsed_time(end) / 1000.0)

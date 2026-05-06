@@ -218,37 +218,49 @@ class BufferPool:
     def lookup_resident(self, chunk_id: ChunkId) -> "torch.Tensor | None":
         """Return the buffer if the chunk's data is still tagged in a slot.
 
-        Used by the backward pass to detect that forward's buffer was never
-        evicted — in which case no H2D re-gather is needed. Returns ``None``
-        if the tag has been overwritten by an intervening ``acquire``.
+        Lease-free *peek* — the returned buffer pointer is only safe to
+        read so long as no other ``acquire`` intervenes; if the slot
+        happens to be in the free list (lease==0), the very next
+        ``acquire()`` for a different chunk could evict the tag and
+        overwrite the bytes.
 
-        Lease semantics — IMPORTANT
-        ---------------------------
-        This is a *peek*: it does NOT take a lease on the slot. The returned
-        buffer pointer is only safe to read so long as no other ``acquire``
-        intervenes; if the slot happens to be in the free list (lease==0),
-        the very next ``acquire()`` for a different chunk could evict the
-        tag and overwrite the bytes.
-
-        The current callers honour this by either:
-
-        * immediately calling ``acquire(chunk_id)`` (or ``gather()``, which
-          calls ``acquire`` internally) on the same chunk_id, taking a real
-          lease before any other ``acquire`` can run on the same thread; or
-        * already holding an independent refcount on the chunk via the
-          chunk-manager's ``gather_for_backward`` / ``BackwardHandle``
-          machinery, which prevents ``offload`` from being scheduled
-          (and thus prevents ``acquire`` from claiming this slot for
-          a different chunk) for the duration of the backward unpack.
-
-        New callers MUST satisfy one of those two conditions, or use
-        ``acquire(chunk_id)`` directly to take a real lease. Treating the
-        return value as a long-lived borrow without one of those guarantees
-        is a use-after-evict race.
+        Prefer :meth:`acquire_if_resident` for any caller that intends to
+        actually read the buffer — it takes a real lease and pairs with
+        ``release(chunk_id)``, eliminating the eviction race while
+        preserving the "no eviction on miss" semantics.
         """
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
             return None
+        return self._buffers[slot]
+
+    def acquire_if_resident(self, chunk_id: ChunkId) -> "torch.Tensor | None":
+        """Lease-taking variant of :meth:`lookup_resident`.
+
+        On a tag hit, behaves exactly like :meth:`acquire` (increments
+        the slot's lease, removes the slot from the free list if present)
+        and returns the buffer. On a miss returns ``None`` *without*
+        evicting any other slot — the caller can then decide between a
+        full ``acquire`` (which evicts) or a different recovery path.
+
+        Pair every successful return with a matching ``release(chunk_id)``
+        once the caller is done reading the buffer; otherwise the slot
+        stays leased and cannot be recycled.
+
+        Use this instead of :meth:`lookup_resident` whenever you intend
+        to actually read the buffer's bytes — it closes the
+        peek-then-evict race window where another ``acquire`` between
+        the lookup and the read could re-tag the slot and overwrite the
+        data.
+        """
+        slot = self._tag_to_slot.get(chunk_id)
+        if slot is None:
+            return None
+        # Same lease-bookkeeping as the cache-hit fast path in ``acquire``.
+        # O(1) free-set discard — the deque may still carry the stale
+        # entry, but ``popleft`` filters via the set on the next miss.
+        self._free_set.discard(slot)
+        self._leases[slot] += 1
         return self._buffers[slot]
 
     # ---- introspection -------------------------------------------------

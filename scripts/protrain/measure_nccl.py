@@ -3,9 +3,15 @@
 Runs ``axolotl.integrations.protrain.profiler.hw_bench.measure_nccl`` under a
 proper distributed rendezvous and writes the resulting (gather, reduce)
 payload tables to a JSON file. Intended for offline calibration when no
-training loop is active — production traces capture NCCL inline because
-``run_trace`` is invoked per-rank from ``plugin.post_model_load`` after
-the trainer has already initialized the process group.
+training loop is active — ``plugin.post_model_load`` and ``run_trace``
+fire BEFORE the trainer's distributed rendezvous (or in single-rank /
+no-PG environments entirely), so they cannot themselves drive a
+collective benchmark. NCCL measurements are late-bound: they happen
+post-distributed-init via ``plugin.post_trainer_create``, which triggers
+``_remeasure_nccl_and_research`` on the freshly initialized process
+group. Production traces therefore capture NCCL inline only after dist
+init; this script fills the gap when that path is unavailable (offline
+calibration on a non-training host, or seeding the cache before a run).
 
 Two ways to invoke:
 

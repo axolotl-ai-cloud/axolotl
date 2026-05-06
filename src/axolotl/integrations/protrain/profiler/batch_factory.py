@@ -351,13 +351,21 @@ def seq2seq_lm_batch_factory(
         dtype=torch.long,
     )
     # Prefer the model's canonical helper, which encodes any
-    # checkpoint-specific quirks (e.g. T5's pad-token handling). Fall
-    # back to a manual right-shift with a best-effort start-token id
-    # for models that do not expose the helper.
+    # checkpoint-specific quirks (e.g. T5's pad-token handling). Some
+    # HF encoder-decoder configs expose the helper but raise inside it
+    # when ``decoder_start_token_id`` is unset (TypeError on the int
+    # cast, ValueError from the explicit guard) — fall through to the
+    # manual right-shift fallback in that case so the profiler can
+    # still build a usable batch.
     prepare = getattr(model, "prepare_decoder_input_ids_from_labels", None)
+    decoder_input_ids = None
     if callable(prepare):
-        decoder_input_ids = prepare(labels)
-    else:
+        try:
+            decoder_input_ids = prepare(labels)
+        except (TypeError, ValueError):
+            decoder_input_ids = None
+
+    if decoder_input_ids is None:
         cfg = getattr(model, "config", None)
         start_id = getattr(cfg, "decoder_start_token_id", None)
         if start_id is None:

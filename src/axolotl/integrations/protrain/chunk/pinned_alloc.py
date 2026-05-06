@@ -139,7 +139,22 @@ class PinnedHostMemory:
         self._closed = False
         self._fallback_tensor: "torch.Tensor | None" = None
         self._torch_tensor: "torch.Tensor | None" = None
+        # Reference holder for the original ``torch.frombuffer`` view
+        # over the cudaHostAlloc'd region, populated only on the precise-
+        # size path when ``self._torch_tensor`` is a separate
+        # ``torch.empty(pin_memory=True)`` fallback (see ``_init_cudart``).
+        # Keeps the ctypes buffer-protocol object alive so the
+        # cudaHostAlloc region stays accessible until ``close()`` /
+        # ``__del__`` runs ``cudaFreeHost``.
+        self._cudart_view: "torch.Tensor | None" = None
         self._is_precise_size: bool = False
+        # Whether the torch-visible view (``self._torch_tensor``) reports
+        # ``is_pinned() == True``. Set authoritatively by the init paths
+        # (``_init_cudart`` / ``_init_fallback``) once the tensor is
+        # constructed. A False value means ``copy_(..., non_blocking=True)``
+        # H2D copies sourcing from this region will silently degrade to
+        # blocking — see :attr:`is_pinned_recognised_by_torch`.
+        self._is_pinned_recognised_by_torch: bool = False
         # Per-slot borrow counts: ``{slot_idx: outstanding_borrows}``.
         # ``buffer(i)`` increments ``_live_borrows[i]``; ``release_buffer(i)``
         # decrements it (and prunes the key when it hits zero so ``close()``'s
@@ -182,7 +197,9 @@ class PinnedHostMemory:
             self._cudart = None
             self._ptr = 0
             self._torch_tensor = None
+            self._cudart_view = None
             self._is_precise_size = False
+            self._is_pinned_recognised_by_torch = False
             LOG.warning(
                 "PinnedHostMemory: ctypes cudaHostAlloc path failed (%s); "
                 "falling back to torch.empty(pin_memory=True).",
@@ -232,25 +249,76 @@ class PinnedHostMemory:
         # pinned host region. ``torch.frombuffer`` takes any object that
         # supports the buffer protocol and exposes it as a zero-copy tensor.
         buf = ArrayT.from_address(self._ptr)
-        self._torch_tensor = torch.frombuffer(buf, dtype=torch.uint8)
-        # The buffer-protocol path doesn't carry the ``pin_memory`` flag
-        # because PyTorch only sets that for allocations it made itself.
-        # The underlying memory IS pinned (we called cudaHostAlloc), just
-        # torch can't prove it. ``is_pinned()`` will therefore return False
-        # on this path despite the memory being physically pinned —
-        # consequently ``copy_(..., non_blocking=True)`` H2D copies that
-        # source from a slot view will silently fall back to BLOCKING
-        # behaviour, defeating the throughput rationale for cudaHostAlloc.
-        # We loudly warn at construction so callers don't get silent
-        # serialization, and expose ``is_pinned_recognised_by_torch``
-        # below for callers that want to gate non_blocking on the
-        # honest answer.
-        LOG.warning(
-            "PinnedHostMemory: cudaHostAlloc'd region is physically pinned, "
-            "but torch.frombuffer-built tensors report is_pinned()=False. "
-            "copy_(..., non_blocking=True) H2D from these slots will fall "
-            "back to blocking copies — see is_pinned_recognised_by_torch."
-        )
+        frombuffer_tensor = torch.frombuffer(buf, dtype=torch.uint8)
+
+        # Probe whether torch recognises the buffer-protocol view as
+        # pinned. The buffer-protocol path historically does NOT propagate
+        # the ``pin_memory`` flag — PyTorch only sets that for allocations
+        # it made itself, so ``is_pinned()`` returns False even though the
+        # memory IS pinned (we called cudaHostAlloc). ``copy_(...,
+        # non_blocking=True)`` H2D copies are gated on ``is_pinned()``;
+        # when False they silently fall back to BLOCKING, defeating the
+        # SWAP/OFFLOAD overlap model.
+        #
+        # Future PyTorch versions may carry the pinned flag through
+        # ``torch.frombuffer`` (or expose a setter); probe at runtime
+        # instead of hard-coding the limitation so the fast path
+        # activates the moment the runtime supports it.
+        try:
+            recognised = bool(frombuffer_tensor.is_pinned())
+        except Exception:  # noqa: BLE001 — be resilient to torch quirks
+            recognised = False
+
+        if recognised:
+            # Fast path: torch sees the region as pinned, so non_blocking
+            # H2D copies from slot views actually overlap. Use the
+            # zero-copy view directly.
+            self._torch_tensor = frombuffer_tensor
+            self._is_pinned_recognised_by_torch = True
+        else:
+            # Allocate a torch-managed pin_memory tensor as the
+            # torch-visible view so non_blocking H2D copies hit the
+            # async fast path. Copy the (currently zero) cudaHostAlloc
+            # region's bytes into it once at construction so any
+            # caller-visible state stays consistent.
+            #
+            # IMPORTANT: keep ``self._ptr`` and the cudaHostAlloc
+            # ownership unchanged — ``close()`` / ``__del__`` still free
+            # the region via ``cudaFreeHost``. The torch tensor below is
+            # a parallel torch-owned view used only for the data path;
+            # the cudaHostAlloc region stays live for as long as the
+            # PinnedHostMemory does (held by ``frombuffer_tensor``'s
+            # reference, kept alive via ``self._cudart_view``).
+            #
+            # Memory cost: this doubles the host-side footprint for the
+            # buffer pool (two pinned regions of ``total_bytes`` each).
+            # The fallback only triggers when the runtime can't expose
+            # the cudaHostAlloc region as pinned to torch — once that's
+            # fixed upstream, the recognised path above kicks in and
+            # there's no double allocation.
+            LOG.warning(
+                "PinnedHostMemory: torch.frombuffer view of the "
+                "cudaHostAlloc'd region reports is_pinned()=False on "
+                "this PyTorch build. Allocating a parallel "
+                "torch.empty(pin_memory=True) buffer so non_blocking "
+                "H2D copies actually overlap; doubles host-side pinned "
+                "footprint until upstream propagates the pin flag "
+                "through the buffer protocol."
+            )
+            torch_pinned = torch.empty(
+                self.total_bytes, dtype=torch.uint8, pin_memory=True
+            )
+            torch_pinned.copy_(frombuffer_tensor)
+            # Retain a reference to ``frombuffer_tensor`` so the ctypes
+            # buffer it views isn't GC'd while the cudaHostAlloc region
+            # is still owned by us — the region itself is freed by
+            # ``close()`` / ``__del__`` via ``cudaFreeHost``, but
+            # dropping the only Python reference to ``frombuffer_tensor``
+            # could let CPython release the underlying ctypes array
+            # earlier than expected. Cheap (one tensor object).
+            self._cudart_view = frombuffer_tensor
+            self._torch_tensor = torch_pinned
+            self._is_pinned_recognised_by_torch = False
 
     def _init_fallback(self) -> None:
         import torch
@@ -265,6 +333,9 @@ class PinnedHostMemory:
         )
         self._torch_tensor = self._fallback_tensor
         self._is_precise_size = False
+        # Torch built this tensor itself with ``pin_memory=...``, so it
+        # tracks the flag accurately. ``is_pinned()`` matches ``pin``.
+        self._is_pinned_recognised_by_torch = pin
 
     # ---- public API ----------------------------------------------------
 
@@ -278,24 +349,21 @@ class PinnedHostMemory:
         """True iff ``torch.is_pinned()`` on a slot view will return True.
 
         On the ctypes / ``cudaHostAlloc`` precise-size path this is
-        ``False`` — the memory IS pinned, but ``torch.frombuffer`` does
-        not propagate the ``pin_memory`` flag, so ``tensor.is_pinned()``
-        reports ``False`` and PyTorch's ``copy_(..., non_blocking=True)``
-        guard treats the source as pageable and silently falls back to
-        a blocking copy.
+        determined at construction by probing the ``torch.frombuffer``
+        view's ``is_pinned()``. Historically PyTorch did not propagate
+        the ``pin_memory`` flag through the buffer protocol so this
+        was ``False`` even though the memory IS pinned; in that case
+        ``_init_cudart`` allocates a parallel ``torch.empty(pin_memory=True)``
+        view as ``self._torch_tensor`` so non_blocking H2D copies hit the
+        async fast path. Either way, the value reported here matches what
+        ``buffer(i).is_pinned()`` returns.
 
-        On the ``torch.empty(pin_memory=True)`` fallback path (and on the
-        non-CUDA paged fallback) this matches whatever torch reports for
-        the underlying tensor — typically ``True`` on a CUDA host, but
-        we don't probe ``is_pinned()`` here because that would require
-        torch import at attribute-access time. Callers that need the
-        post-construction probe should call ``buffer(i).is_pinned()``
-        directly.
+        On the ``torch.empty(pin_memory=True)`` fallback path this
+        matches the ``pin_memory`` argument used to allocate the tensor
+        (``True`` on a CUDA host, ``False`` on a CPU-only host where
+        pinning is unavailable).
         """
-        # Only the ctypes path has the ``is_pinned()`` blind spot. The
-        # fallback path was constructed via ``torch.empty(pin_memory=...)``
-        # and torch knows about its own allocation.
-        return not self._is_precise_size
+        return self._is_pinned_recognised_by_torch
 
     def buffer(self, i: int) -> "torch.Tensor":
         """Return the ``i``-th slot as a 1D ``uint8`` tensor of length ``S_chunk``.
@@ -433,9 +501,13 @@ class PinnedHostMemory:
                 )
             self._closed = True
             # Drop torch views first so no tensor outlives the underlying
-            # memory.
+            # memory. ``_cudart_view`` (if populated) is the
+            # ``torch.frombuffer`` view of the cudaHostAlloc region —
+            # drop before ``cudaFreeHost`` so its underlying ctypes
+            # buffer-protocol object releases before we free the region.
             self._torch_tensor = None
             self._fallback_tensor = None
+            self._cudart_view = None
             if self._cudart is not None and self._ptr:
                 status = self._cudart.cudaFreeHost(ctypes.c_void_p(self._ptr))
                 if status != _CUDA_SUCCESS:

@@ -677,6 +677,24 @@ def estimate_runtime(
     # delta correction at ~line 741 therefore continues to subtract
     # only ``nccl_gather + h2d`` per delta cache hit; ``nccl_reduce``
     # is invariant in n_buffer and cancels out of the delta.
+    # World-mismatch fail-closed (CodeRabbit PR #19): a ZeRO-3 candidate
+    # on a multi-GPU host MUST consult an NCCL table captured at the
+    # matching world_size. If the trace was captured at a different world
+    # (e.g. world=1 trace fed into a world=4 candidate, or vice versa),
+    # the per-chunk collective payload schedule and the contention model
+    # both diverge from runtime reality. The previous behaviour silently
+    # zeroed nccl_gather / nccl_reduce in the ``trace.world <= 1`` branch
+    # — under-pricing every ZeRO-3 candidate by exactly the missing
+    # collective wall and steering the searcher toward configurations the
+    # measured fabric cannot actually achieve. Fail closed by returning
+    # ``inf`` so the candidate is rejected by the searcher's argmin.
+    # NOTE: this single early return also protects the two phase-2
+    # override paths below (forward override at ~line 819 and backward
+    # override at ~line 992), both of which read the same nccl_gather /
+    # nccl_reduce locals — fixing at the source keeps the guard
+    # consistent across all three downstream consumers.
+    if hw.zero3_shard and hw.gpu_count > 1 and trace.world != hw.gpu_count:
+        return float("inf")
     if not hw.zero3_shard or hw.gpu_count <= 1 or trace.world <= 1:
         nccl_gather = 0.0
         nccl_reduce = 0.0
