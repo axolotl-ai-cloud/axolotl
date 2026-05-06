@@ -108,6 +108,14 @@ _CPU_ADAM_FALLBACK: float = 8.0e9
 # that matches the 3090's sustained HBM BW.
 _GPU_ADAM_FALLBACK: float = 5.0e11
 
+# One-shot warning gates for ``estimate_runtime``. The function is called
+# inside the searcher's hot loop (once per candidate config), so an
+# unconditional ``LOG.warning`` would spam thousands of times for the same
+# missing trace field. These flags reset on a fresh process.
+_WARNED_MODEL_STATE_MISSING: bool = False
+_WARNED_CPU_ADAM_UNAVAILABLE: bool = False
+_WARNED_GPU_ADAM_FALLBACK: bool = False
+
 # Backward-vs-forward compute ratio when the trace has forward latencies but
 # no per-block backward split. The synthetic ``<backward>`` op records a
 # single aggregate latency; using that directly is more accurate than the
@@ -1165,17 +1173,20 @@ def estimate_runtime(
     if model_state_total <= 0:
         fp16_total = layout.N_chunk * layout.S_chunk
         if fp16_total > 0:
-            LOG.warning(
-                "estimate_runtime: trace.model_state_bytes is missing or "
-                "zero (%d); falling back to fp16 params-only total "
-                "%dB (N_chunk=%d * S_chunk=%d). Optimizer-step costs "
-                "will UNDER-count full Adam state — refresh the profiler "
-                "trace cache to restore fidelity.",
-                model_state_total,
-                fp16_total,
-                layout.N_chunk,
-                layout.S_chunk,
-            )
+            global _WARNED_MODEL_STATE_MISSING
+            if not _WARNED_MODEL_STATE_MISSING:
+                LOG.warning(
+                    "estimate_runtime: trace.model_state_bytes is missing or "
+                    "zero (%d); falling back to fp16 params-only total "
+                    "%dB (N_chunk=%d * S_chunk=%d). Optimizer-step costs "
+                    "will UNDER-count full Adam state — refresh the profiler "
+                    "trace cache to restore fidelity.",
+                    model_state_total,
+                    fp16_total,
+                    layout.N_chunk,
+                    layout.S_chunk,
+                )
+                _WARNED_MODEL_STATE_MISSING = True
         model_state_total = fp16_total
     if layout.N_chunk > 0:
         ms_per_chunk = max(model_state_total / layout.N_chunk, _MS_PER_CHUNK_FLOOR)
@@ -1196,24 +1207,30 @@ def estimate_runtime(
     if hw.cpu_adam_bytes_per_sec > 0.0:
         cpu_adam_bps = hw.cpu_adam_bytes_per_sec
     else:
-        LOG.warning(
-            "estimate_runtime: cpu_adam_bytes_per_sec=0 — treating CPU "
-            "Adam as unavailable (matches optim_wrapper's cpu_optim=None "
-            "path). Non-persistent chunks contribute 0 to t_cpu_optim. "
-            "Note that under this state non-persistent chunks are NOT "
-            "actually being stepped at runtime either; install/fix "
-            "DeepSpeed for full coverage."
-        )
+        global _WARNED_CPU_ADAM_UNAVAILABLE
+        if not _WARNED_CPU_ADAM_UNAVAILABLE:
+            LOG.warning(
+                "estimate_runtime: cpu_adam_bytes_per_sec=0 — treating CPU "
+                "Adam as unavailable (matches optim_wrapper's cpu_optim=None "
+                "path). Non-persistent chunks contribute 0 to t_cpu_optim. "
+                "Note that under this state non-persistent chunks are NOT "
+                "actually being stepped at runtime either; install/fix "
+                "DeepSpeed for full coverage."
+            )
+            _WARNED_CPU_ADAM_UNAVAILABLE = True
         cpu_adam_bps = 0.0  # sentinel — t_cpu_optim collapses to 0
 
     if hw.gpu_adam_bytes_per_sec > 0.0:
         gpu_adam_bps = hw.gpu_adam_bytes_per_sec
     else:
-        LOG.warning(
-            "estimate_runtime: gpu_adam_bytes_per_sec unavailable; using "
-            "fallback %.2e (re-run profiler for a calibrated rate)",
-            _GPU_ADAM_FALLBACK,
-        )
+        global _WARNED_GPU_ADAM_FALLBACK
+        if not _WARNED_GPU_ADAM_FALLBACK:
+            LOG.warning(
+                "estimate_runtime: gpu_adam_bytes_per_sec unavailable; using "
+                "fallback %.2e (re-run profiler for a calibrated rate)",
+                _GPU_ADAM_FALLBACK,
+            )
+            _WARNED_GPU_ADAM_FALLBACK = True
         gpu_adam_bps = _GPU_ADAM_FALLBACK
 
     t_gpu_optim = n_persist_eff * ms_per_chunk / gpu_adam_bps

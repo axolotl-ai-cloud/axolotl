@@ -356,7 +356,9 @@ class ActivationSwapPool:
             # full ``DEFAULT_CLOSE_DRAIN_TIMEOUT_S`` default.
             self.close(drain_timeout=0)
         except Exception:  # noqa: BLE001 — destructor must not throw
-            pass
+            # Surface teardown-time leaks at debug level so they're
+            # visible without breaking the destructor's no-throw contract.
+            LOG.debug("ActivationSwapPool.__del__ cleanup skipped", exc_info=True)
 
 
 __all__ = ["ActivationSwapPool", "DEFAULT_SLOTS_PER_BLOCK"]

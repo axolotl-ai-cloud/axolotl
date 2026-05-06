@@ -168,6 +168,17 @@ def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
     return min(cfg.n_swap + 1, n_nonpersist)
 
 
+# Per-layout reverse map cache. ``chunk_swap_overlap_count`` is called
+# once per chunk inside the searcher's hot loop, so the original
+# implementation that rescanned ``layout.block_to_chunks`` for every
+# lookup was O(N_block) per chunk. We memoize the chunk -> owner-blocks
+# map keyed on ``id(layout)``; ChunkLayout is a frozen dataclass so the
+# id is stable for its lifetime, and the search builds a single layout
+# per candidate enumeration. Cache entries are tiny dicts of ints so
+# leaving the entry around after the layout is GC'd is acceptable.
+_CHUNK_TO_OWNERS_CACHE: dict[int, dict[int, list[BlockId]]] = {}
+
+
 def _block_of_chunk(chunk_id: ChunkId, layout: ChunkLayout) -> list[BlockId]:
     """Return the block(s) owning ``chunk_id``.
 
@@ -179,13 +190,15 @@ def _block_of_chunk(chunk_id: ChunkId, layout: ChunkLayout) -> list[BlockId]:
     owners — defensive against fixtures and real layouts where a
     chunk straddles a block boundary.
     """
-    owners: list[BlockId] = []
-    for bid, cids in layout.block_to_chunks.items():
-        for cid in cids:
-            if int(cid) == int(chunk_id):
-                owners.append(bid)
-                break
-    return owners
+    layout_key = id(layout)
+    owners_map = _CHUNK_TO_OWNERS_CACHE.get(layout_key)
+    if owners_map is None:
+        owners_map = {}
+        for bid, cids in layout.block_to_chunks.items():
+            for cid in cids:
+                owners_map.setdefault(int(cid), []).append(bid)
+        _CHUNK_TO_OWNERS_CACHE[layout_key] = owners_map
+    return list(owners_map.get(int(chunk_id), ()))
 
 
 def chunk_swap_overlap_count(

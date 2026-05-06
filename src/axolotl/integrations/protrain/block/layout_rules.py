@@ -555,9 +555,9 @@ def block_id_path_map(model: nn.Module, trees: list[BlockTree]) -> dict[str, Blo
 
 
 __all__ = [
-    "assign_modes",
-    "discover_blocks",
     "BlockTree",
-    "flatten_block_trees",
+    "assign_modes",
     "block_id_path_map",
+    "discover_blocks",
+    "flatten_block_trees",
 ]

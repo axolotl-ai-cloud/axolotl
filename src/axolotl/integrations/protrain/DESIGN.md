@@ -131,7 +131,9 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 
 ### api/ (M4)
 
-- `model_wrapper.py` — `protrain_model_wrapper(model, model_config, hardware_profile) -> WrappedModel`. §1.
+- `model_wrapper.py`:
+  - `protrain_model_wrapper(model, model_config, hardware_profile, *, target_device=None) -> WrappedModel`. §1. The full-power entrypoint used by the plugin path (`post_model_load`).
+  - `auto_wrap(model, batch_size, seq_len, *, capacity_bytes=None, cpu_capacity_bytes=None, cache_dir=None) -> WrappedModel`. The drop-in entrypoint for callers who don't go through Axolotl's plugin pipeline (paper Figure 1 analogue). Auto-derives a `HardwareProfile` from live `torch.cuda` queries and calls `protrain_model_wrapper` under the hood; pair with `protrain_optimizer_wrapper(wrapped)` for the optimizer. Re-exported from the package root as `protrain.auto_wrap`. Covered by `tests/protrain/test_auto_wrap.py`.
 - `optim_wrapper.py` — `protrain_optimizer_wrapper(wrapped_model) -> Optimizer`. §1.
 
 ## Key Data Structures
@@ -249,7 +251,7 @@ Late-bind path: `plugin.post_trainer_create` calls `_remeasure_nccl_and_research
 
 #### Multi-GPU — Measured Throughput (4x 3090)
 
-Benchmark: fresh-init Llama-3B + LoRA r=8, bs=2 per rank, seq=256, fp16. 6 iterations per mode, 2 warm-up discarded, median of the remaining 4 is reported. GPUs 1, 4, 5, 7 on a PCIe-Gen3 test rig (no NVLink). Reproduce with `CUDA_VISIBLE_DEVICES=1,4,5,7 CUDA_DEVICE_ORDER=PCI_BUS_ID python scripts/benchmark_multi_gpu.py`; full JSON at `scripts/multi_gpu_benchmark_results.json`.
+Benchmark: fresh-init Llama-3B + LoRA r=8, bs=2 per rank, seq=256, fp16. 6 iterations per mode, 2 warm-up discarded, median of the remaining 4 is reported. GPUs 1, 4, 5, 7 on a PCIe-Gen3 test rig (no NVLink). Reproduce with `CUDA_VISIBLE_DEVICES=1,4,5,7 CUDA_DEVICE_ORDER=PCI_BUS_ID python scripts/benchmark_multi_gpu.py`; the script writes a full JSON dump to `scripts/multi_gpu_benchmark_results.json` (gitignored — generated locally on every run).
 
 | Mode | World | Throughput (samples/s) | Scaling vs 1-GPU | Per-rank GPU peak | Per-rank CPU pinned |
 |---|---|---|---|---|---|

@@ -96,18 +96,17 @@ The third is held back from the test suite until this design lands.
 Lift the "non-persistent ⇒ CKPT" rule for blocks the user (or
 searcher) explicitly opts into. In the new world, a block may be:
 
-| Param chunks | Block mode | Status today | Status after Option B |
+| Param chunks | Block mode | Status today | Status after Option B (shipped) |
 |---|---|---|---|
 | persistent | NONE | legal | legal (unchanged) |
 | persistent | CKPT | legal | legal (unchanged) |
 | persistent | SWAP | legal | legal (unchanged) |
 | non-persistent | CKPT | legal | legal (unchanged) |
-| non-persistent | NONE | **runtime-rejected** | **legal under new path** |
-| non-persistent | SWAP | runtime-rejected | (out of scope; see §6.6) |
+| non-persistent | NONE | runtime-rejected | **runtime-rejected (unchanged)** [^1] |
+| non-persistent | SWAP | runtime-rejected | legal via the SWAP × non-persistent fix |
+| non-persistent | OFFLOAD | n/a | **legal — the actual Option B mode** |
 
-The "non-persistent NONE" cell is the new feature. It enables the
-apples-to-apples DeepSpeed Stage-3 comparison and re-opens a swathe
-of the search space the v1 admissibility filter prunes.
+[^1]: The pre-decision draft below proposed making "non-persistent NONE" legal; the shipped contract instead introduced an explicit `BlockMode.OFFLOAD` so the runtime can re-gather chunks for backward without recompute. `BlockMode.NONE` × non-persistent therefore stays runtime-rejected — see `block/strategy.py` and the Option B description below for the actual semantics. The rest of this section (and §3 / §6) is preserved as historical context for the design rationale.
 
 ---
 

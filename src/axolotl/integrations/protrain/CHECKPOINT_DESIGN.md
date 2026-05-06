@@ -581,8 +581,10 @@ Phase 1 ship gate:
 - `test_save_drains_cpu_optim_before_snapshot`
 - `test_7b_lora_resume_matches_continuous` (slow suite)
 
-Phase 2 ship gate is its own test plan, written when Phase 2 is
-designed.
+Phase 2 has its own ship gate / test plan; see
+`CHECKPOINT_DESIGN_PHASE2.md` and the Phase 2 test set in
+`tests/protrain/test_optimizer_checkpoint.py` +
+`tests/protrain/test_world_size_reshard.py` for the captured suite.
 
 ---
 
