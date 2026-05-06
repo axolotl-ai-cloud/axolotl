@@ -285,7 +285,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
     original_peak: int,
     layout,
     chunk_manager,
-    n_buffer: int,
+    cfg,
     trace=None,
     block_map=None,
 ) -> int:
@@ -295,9 +295,14 @@ def _calibrate_peak_with_actual_chunk_bytes(
     are out-of-scope for M4.5 to fix inside ``cost/`` but can be
     corrected post-hoc here:
 
-    1. **Model state** — assumed to be ``n_persist * S_chunk``, but
+    1. **Model state** — assumed to be ``n_persist_eff * S_chunk *
+       persistent_factor + n_buffer * S_chunk * buffer_factor`` (see
+       :func:`cost.memory.model_state_present_bytes`), but persistent
        chunks pack greedily and typically sit at 80-90% of S_chunk.
-       Replace with the sum of actual chunk bytes.
+       Replace the persistent-side ``n_persist_eff * S_chunk`` aggregate
+       with the sum of actual per-chunk param bytes (still scaled by
+       ``persistent_factor`` to keep grads + fp32 master + Adam moments
+       accounted for under full FT).
 
     2. **Op-walk deltas under CKPT** — the estimator adds
        ``intra_op_delta[op] + inter_op_delta[op]`` at every op, using
@@ -311,6 +316,19 @@ def _calibrate_peak_with_actual_chunk_bytes(
     The alpha fragmentation factor is preserved — its whole purpose is
     to over-predict for OOM safety — but applied only to the corrected
     base.
+
+    Symmetry with the cost model
+    ----------------------------
+    The reverse-out below uses the SAME ``persistent_factor`` /
+    ``buffer_factor`` as :func:`model_state_present_bytes`, NOT the
+    legacy 1.0×-flat assumption. The previous implementation reversed
+    out only ``(n_persist + n_buffer) * S`` (params-only), which left
+    the per-chunk full-state multiplier hiding inside ``f_bm`` and then
+    re-added only the param bytes — under full FT (where
+    ``persistent_factor`` can be 4-7×) that systematically under-stated
+    calibrated peak by roughly ``(persistent_factor - 1) *
+    actual_persistent``. Mismatch was harmless under LoRA-with-frozen-
+    base (``persistent_factor ≈ 1``); now corrected for both regimes.
     """
     from axolotl.integrations.protrain.cost.memory import ALPHA_FRAGMENTATION
     from axolotl.integrations.protrain.types import BlockMode
@@ -319,14 +337,29 @@ def _calibrate_peak_with_actual_chunk_bytes(
     persistent_ids = set(int(c) for c in chunk_manager._persistent_ids)
     cb = _chunk_bytes(layout, chunk_manager)
 
-    # Actual persistent bytes (≤ n_persist * S_chunk).
+    # Actual persistent param bytes (≤ n_persist_eff * S_chunk). Scaled
+    # below by ``persistent_factor`` to recover full state.
     actual_persistent = sum(cb.get(cid, 0) for cid in persistent_ids)
-    # Buffer pool occupancy is accounted via ``buffer_bytes_eff`` below.
 
-    # Reverse out the cost-model's ``model_state_present`` term.
-    n_persist = len(persistent_ids)
+    # Mirror cost.memory.model_state_present_bytes so the reverse-out
+    # uses exactly what the cost model added. Inlined rather than
+    # imported because we need the per-factor breakdown to scale the
+    # *actual* persistent bytes — calling the helper directly would
+    # only give the aggregate.
+    n_persist_eff = len(persistent_ids)
+    n_buffer = max(0, min(int(cfg.n_buffer), layout.N_chunk - n_persist_eff))
+    fp16_total_bytes = layout.N_chunk * layout.S_chunk
+    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0) if trace else 0
+    if fp16_total_bytes > 0 and model_state_total > 0:
+        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
+    else:
+        persistent_factor = 1.0
+    buffer_factor = 2.0  # fp16 params (gathered) + fp16 grads (accumulated)
+
     alpha = ALPHA_FRAGMENTATION
-    original_model_state = (n_persist + n_buffer) * S
+    original_model_state = int(
+        n_persist_eff * S * persistent_factor + n_buffer * S * buffer_factor
+    )
     f_bm = max(0, int(original_peak / alpha) - original_model_state)
 
     # Rebuild F_bm from a more realistic activation model when a CKPT-
@@ -453,16 +486,30 @@ def _calibrate_peak_with_actual_chunk_bytes(
             (len(cids) for cids in layout.block_to_chunks.values()), default=1
         )
     effective_buffer_slots = min(n_buffer, 2 * max_chunks_per_block)
-    buffer_bytes_eff = effective_buffer_slots * S
-    calibrated_raw = actual_persistent + buffer_bytes_eff + f_bm
+    # Both terms now scaled by the cost-model's full-state factors so
+    # the calibrated peak is symmetric with what was reversed out
+    # above. ``persistent_factor`` recovers grads + fp32 master + Adam
+    # moments under full FT (~1.0× under LoRA-with-frozen-base);
+    # ``buffer_factor`` covers fp16 params + accumulated grads in the
+    # buffer pool's transient peak (paper Eq. 11).
+    buffer_bytes_eff = int(effective_buffer_slots * S * buffer_factor)
+    calibrated_persistent = int(actual_persistent * persistent_factor)
+    calibrated_raw = calibrated_persistent + buffer_bytes_eff + f_bm
     calibrated = int(calibration_alpha * calibrated_raw)
     if trace is not None and block_map is not None:
         phase2_peak = int(getattr(trace, "steady_phase2_peak_bytes", 0) or 0)
         if phase2_peak > 0:
             n_ckpt = sum(1 for m in block_map.values() if m is BlockMode.CKPT)
+            # Compare against ``cfg.n_persist`` (the search's chosen
+            # prefix), NOT the augmented runtime set length, because
+            # ``trace.phase2_n_persist`` was recorded at the same
+            # prefix-level meaning. Pre-Wave-2 the wrapper collapsed
+            # the augmented count back into ``cfg.n_persist`` so the
+            # comparison happened to work; after P4 the prefix is
+            # preserved end-to-end and we compare it directly.
             phase2_matches_cfg = (
-                n_persist == int(getattr(trace, "phase2_n_persist", -1))
-                and n_buffer == int(getattr(trace, "phase2_n_buffer", -1))
+                int(cfg.n_persist) == int(getattr(trace, "phase2_n_persist", -1))
+                and int(cfg.n_buffer) == int(getattr(trace, "phase2_n_buffer", -1))
                 and n_ckpt == int(getattr(trace, "phase2_n_checkpoint", -1))
             )
             if phase2_matches_cfg:
@@ -905,7 +952,7 @@ def _construct_runtime(
         original_peak=result.predicted_peak_bytes,
         layout=layout,
         chunk_manager=chunk_manager,
-        n_buffer=result.cfg.n_buffer,
+        cfg=result.cfg,
         trace=trace,
         block_map=result.block_map,
     )
@@ -2060,7 +2107,7 @@ def protrain_model_wrapper(
                     original_peak=new_result.predicted_peak_bytes,
                     layout=layout,
                     chunk_manager=chunk_manager,
-                    n_buffer=new_result.cfg.n_buffer,
+                    cfg=new_result.cfg,
                     trace=trace,
                     block_map=new_result.block_map,
                 )
