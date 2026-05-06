@@ -1170,6 +1170,7 @@ def _load_protrain_optim_dir(
         metadata.setdefault("protrain_save_mode", SAVE_MODE_REPLICATED)
         metadata.setdefault("saving_rank", 0)
         metadata.setdefault("protrain_world_size", 1)
+        metadata.setdefault("protrain_zero3_shard", False)
     elif fmt == SCHEMA_FORMAT_VERSION:
         if "protrain_save_mode" not in metadata:
             raise RuntimeError(

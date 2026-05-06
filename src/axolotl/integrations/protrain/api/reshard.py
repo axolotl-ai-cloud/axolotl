@@ -190,35 +190,38 @@ def _reshard_region_state(
     # these aren't exact multiples we'd silently truncate elements,
     # which corrupts shards in subtle ways. Validate up-front and raise
     # with the offending values so the failure is actionable.
+    #
+    # Critically, the per-rank shard numel computation is
+    # ``(region_bytes_padded // world) // elem_size``. Validating
+    # divisibility separately by ``elem_size`` and ``world`` is NOT
+    # sufficient: e.g. region_bytes_padded=12, elem_size=4, world=2 passes
+    # both checks (12 % 4 == 0, 12 % 2 == 0) yet ``(12 // 2) // 4 = 1.5
+    # → 1`` truncates half an element per rank. The combined divisor
+    # ``world * elem_size`` catches that case. ``_padded_region_bytes``
+    # already produces sizes divisible by ``world * elem_size``, but we
+    # accept caller-supplied paddings (typically from saved metadata) so
+    # the up-front guard remains load-bearing.
     if region_bytes % elem_size != 0:
         raise RuntimeError(
             f"reshard: region_bytes={region_bytes} is not divisible by "
             f"elem_size={elem_size}"
         )
-    if region_bytes_padded_old % elem_size != 0:
+    src_unit = src_world * elem_size
+    dst_unit = dst_world * elem_size
+    if region_bytes_padded_old % src_unit != 0:
         raise RuntimeError(
             f"reshard: region_bytes_padded_old={region_bytes_padded_old} "
-            f"is not divisible by elem_size={elem_size}"
+            f"is not divisible by src_world * elem_size ({src_unit}); "
+            f"cannot split into whole elements per rank"
         )
-    if region_bytes_padded_new % elem_size != 0:
+    if region_bytes_padded_new % dst_unit != 0:
         raise RuntimeError(
             f"reshard: region_bytes_padded_new={region_bytes_padded_new} "
-            f"is not divisible by elem_size={elem_size}"
-        )
-    if region_bytes_padded_old % src_world != 0:
-        raise RuntimeError(
-            f"reshard: region_bytes_padded_old={region_bytes_padded_old} "
-            f"is not divisible by src_world={src_world}; cannot split "
-            f"into equal per-rank shards"
-        )
-    if region_bytes_padded_new % dst_world != 0:
-        raise RuntimeError(
-            f"reshard: region_bytes_padded_new={region_bytes_padded_new} "
-            f"is not divisible by dst_world={dst_world}; cannot split "
-            f"into equal per-rank shards"
+            f"is not divisible by dst_world * elem_size ({dst_unit}); "
+            f"cannot split into whole elements per rank"
         )
 
-    expected_old_shard_numel = (region_bytes_padded_old // src_world) // elem_size
+    expected_old_shard_numel = region_bytes_padded_old // src_unit
     for r, t in enumerate(per_rank_tensors):
         if t.numel() != expected_old_shard_numel:
             raise RuntimeError(
@@ -243,7 +246,7 @@ def _reshard_region_state(
     full_new[:valid_numel] = valid_prefix
     del valid_prefix
 
-    new_shard_numel = (region_bytes_padded_new // dst_world) // elem_size
+    new_shard_numel = region_bytes_padded_new // dst_unit
     out: list[torch.Tensor] = []
     for r in range(dst_world):
         start = r * new_shard_numel

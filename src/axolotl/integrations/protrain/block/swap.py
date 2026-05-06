@@ -262,11 +262,20 @@ def _make_pack_unpack(
         # ``_CPUHandle`` being returned would otherwise leak the slot
         # for the rest of the run; release on every exceptional path
         # so the pool can't get artificially exhausted.
+        did_dma = False
         try:
             _swap_stream_wait_compute(t.device, swap_stream)
             with torch.cuda.stream(swap_stream):
                 slot_target = slot_view[:nbytes].view(t.dtype).reshape(t.shape)
                 slot_target.copy_(t.detach(), non_blocking=True)
+                # The async D2H is now enqueued on swap_stream. Any failure
+                # past this point must drain swap_stream BEFORE releasing
+                # the pinned slot; otherwise the allocator can hand the
+                # slot's pinned memory back out (or ``PinnedHostMemory.close``
+                # can ``cudaFreeHost`` it) while the in-flight copy is still
+                # writing to it, silently corrupting the next acquirer's
+                # data.
+                did_dma = True
                 # Tell the allocator: this storage is in use by swap_stream
                 # too, so don't reuse it until swap_stream catches up.
                 t.record_stream(swap_stream)
@@ -283,6 +292,11 @@ def _make_pack_unpack(
                 requires_grad=t.requires_grad,
             )
         except BaseException:
+            if did_dma:
+                # Block the host until the in-flight D2H retires so that
+                # ``pool.release`` (and any subsequent reuse / close) can't
+                # free the pinned region mid-transfer.
+                swap_stream.synchronize()
             pool.release(slot_id)
             raise
 
@@ -360,6 +374,10 @@ def _make_pack_unpack(
         # this, a single SWAP gate trip leaks the slot for the rest of
         # the run and the pool can stay artificially exhausted.
         second_borrow_acquired = False
+        # Declared outside the ``try`` so the ``finally`` clause can
+        # observe whether the async H2D was enqueued before an exception
+        # short-circuited the success-path synchronize.
+        h2d_done: "torch.cuda.Event | None" = None
         try:
             # ``handle.nbytes`` (numel × element_size) under-estimates the
             # actual storage when the strided buffer has gaps —
@@ -440,7 +458,6 @@ def _make_pack_unpack(
                     device=handle.device,
                 )
             _swap_stream_wait_compute(handle.device, handle.swap_stream)
-            h2d_done: "torch.cuda.Event | None" = None
             with torch.cuda.stream(handle.swap_stream):
                 slot_view = handle.pool._pinned.buffer(handle.slot_id)  # noqa: SLF001
                 second_borrow_acquired = True
@@ -488,9 +505,15 @@ def _make_pack_unpack(
             # ``with torch.cuda.stream`` block opened), then return
             # the acquire-time slot to the pool. Same-stream ordering
             # guards reuse on the success path; on the failure path
-            # the host-side ``synchronize`` above is skipped, but the
-            # exception propagates so no later kernel will read this
-            # slot anyway.
+            # the success-path host-side ``synchronize`` is skipped,
+            # so we re-do it here whenever the H2D was enqueued —
+            # otherwise the in-flight DMA would still be reading the
+            # pinned slot when ``release_buffer`` / ``release`` decrement
+            # the borrow counter, opening the same close-mid-DMA
+            # silent-corruption window the success path explicitly
+            # closes around line 498.
+            if h2d_done is not None:
+                h2d_done.synchronize()
             if second_borrow_acquired:
                 handle.pool._pinned.release_buffer(handle.slot_id)  # noqa: SLF001
             handle.pool.release(handle.slot_id)

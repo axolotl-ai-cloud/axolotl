@@ -65,7 +65,7 @@ def resolve_world_size_from_env() -> int:
     if raw is None:
         return 1
     try:
-        return max(1, int(raw))
+        world_size = int(raw)
     except ValueError as exc:
         # A malformed WORLD_SIZE alongside RANK / LOCAL_RANK indicates a
         # corrupted launcher env rather than a single-process run; silently
@@ -86,6 +86,26 @@ def resolve_world_size_from_env() -> int:
                 "world size while RANK / LOCAL_RANK is set."
             ) from exc
         return 1
+    # Apply the same RANK-aware policy to non-positive integers
+    # (``WORLD_SIZE=0`` / negative): silently collapsing those to 1 alongside
+    # a set RANK / LOCAL_RANK would mask a corrupted launcher env in exactly
+    # the same way a malformed string would. Only single-process developer
+    # shells (no rank vars set) get the soft fallback to 1.
+    if world_size < 1:
+        if (
+            os.environ.get("RANK") is not None
+            or os.environ.get("LOCAL_RANK") is not None
+        ):
+            LOG.error(
+                "ProTrain: WORLD_SIZE=%r is not >= 1 but RANK / LOCAL_RANK "
+                "is set; refusing to silently collapse a distributed run to 1.",
+                raw,
+            )
+            raise RuntimeError(
+                f"WORLD_SIZE={raw!r} must be >= 1 when RANK / LOCAL_RANK is set."
+            )
+        return 1
+    return world_size
 
 
 def _resolve_world_size() -> int:

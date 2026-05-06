@@ -504,8 +504,13 @@ def test_sizing_oversize_tensor_does_not_credit_undersized_candidate():
     When ``S_chunk < max_param_bytes`` and a single-tensor chunk overflows,
     ``_simulate_waste`` would naively report ``S_chunk - bytes < 0`` for that
     chunk. The clamp ``max(0, ...)`` prevents that from crediting the small
-    candidate, so the feasibility-filter fallback (pick the largest grid
-    entry) still selects sensibly when no candidate fits the largest tensor.
+    candidate. With all positive candidates kept in the search (no soft
+    feasibility-filter fallback), the simulator is the sole arbiter: under
+    the clamp every candidate produces an ``[oversize, small-tail]``
+    chunking and the small tail is the trailing chunk (excluded from waste
+    accounting), so all four candidates tie at zero waste. The tie-break
+    rule (prefer the larger ``S`` at equal waste) then picks
+    ``max(DEFAULT_GRID)``.
     """
     from axolotl.integrations.protrain.chunk.sizing import (
         DEFAULT_GRID,
@@ -521,11 +526,13 @@ def test_sizing_oversize_tensor_does_not_credit_undersized_candidate():
         cast(ParamId, "s1"): 10 * MB,
         cast(ParamId, "s2"): 10 * MB,
     }
-    # No candidate fits "huge"; fallback path picks max(DEFAULT_GRID).
+    # All candidates produce [300 MB oversize, 30 MB tail]; non-tail waste
+    # is clamp(S - 300) = 0 for every S, so the tie-break selects
+    # max(DEFAULT_GRID) (= 256 MB).
     picked = pick_S_chunk(param_bytes)
     assert picked == max(DEFAULT_GRID), (
-        f"with no feasible candidate the picker must fall back to the "
-        f"largest grid entry; got {picked}"
+        f"with every candidate tied at zero waste under the oversize clamp, "
+        f"the tie-break must pick max(DEFAULT_GRID); got {picked}"
     )
 
     # Sanity: _simulate_waste reports non-negative waste even when the chunk

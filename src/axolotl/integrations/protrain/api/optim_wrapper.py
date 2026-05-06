@@ -81,7 +81,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 
     # ---- step / zero_grad ----------------------------------------------
 
-    def step(self, closure: Any = None) -> Any:  # noqa: ARG002 — HF convention
+    def step(self, closure: Any = None) -> Any:
         """Drive both adapters then block on in-flight CPU futures.
 
         Persistent chunks: run the GPU step synchronously.
@@ -115,15 +115,34 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         (the lm_head / embed-tokens orphans above) get their reduce_scatter
         + CPU-Adam kick HERE, then the wait_cpu_optim_all() below drains
         them in the same window as the block-driven kicks.
+
+        Closure handling: ``torch.optim.Optimizer.step`` permits an
+        optional ``closure`` callable that re-evaluates the model and
+        returns the loss; per the PyTorch contract we call it under
+        :func:`torch.enable_grad` and return its result so LBFGS-style
+        optimizers / Trainer paths that pass a closure are not silently
+        broken. The replicated/offload paths rely on per-param
+        ``register_post_accumulate_grad_hook`` for the CPU-Adam kick, so
+        the orphan sweep below is gated on ``zero3_shard`` — running it
+        unconditionally would burn a no-op pass over every non-persistent
+        chunk on every step in the non-sharded paths.
         """
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
         # Orphan sweep: ensure every non-persistent chunk has been
         # reduced+offloaded before we wait. See the docstring above for
-        # why this is necessary in the sharded path.
+        # why this is necessary in the sharded path. Replicated/offload
+        # paths rely on per-param ``register_post_accumulate_grad_hook``
+        # so the sweep is unnecessary there.
         cm = self._chunk_manager
-        non_persist = getattr(cm, "_non_persistent_ids", None)
-        if non_persist:
-            for cid in list(non_persist):
-                cm.reduce_grads_and_offload(cid)
+        if getattr(cm, "zero3_shard", False):
+            non_persist = getattr(cm, "_non_persistent_ids", None)
+            if non_persist:
+                for cid in list(non_persist):
+                    cm.reduce_grads_and_offload(cid)
 
         if self._gpu_optim is not None:
             self._gpu_optim.step()
@@ -131,6 +150,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # grad offload enqueued these from the grad hooks; the orphan
         # sweep above enqueued the rest).
         self._chunk_manager.wait_cpu_optim_all()
+        return loss
 
     def zero_grad(self, set_to_none: bool = True) -> None:  # type: ignore[override]
         """Zero gradients on every adapter and any unrouted param-group entries."""

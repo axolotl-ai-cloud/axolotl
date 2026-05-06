@@ -90,8 +90,6 @@ def pick_S_chunk(
     if not candidates:
         raise ValueError("candidates must be non-empty")
 
-    sizes_in_order = list(model_state_bytes_per_param.values())
-
     # Default arguments mirror build_layout(empty block_spans, exec_order =
     # dict insertion order). These produce a plain greedy-fit simulation,
     # bit-for-bit equivalent to the previous heuristic when no block info
@@ -121,19 +119,9 @@ def pick_S_chunk(
     # clamp in place, smaller candidates remain legal members of the
     # search and the simulator's tie-break (prefer larger S at equal
     # waste) handles preference cleanly. We therefore keep ALL positive
-    # candidates in the search and only fall back to ``(max(candidates),)``
-    # when every candidate is smaller than the largest tensor — that
-    # fallback minimizes the single-tensor overflow chunk count while
-    # keeping the layout legal.
-    max_param_bytes = max(sizes_in_order, default=0)
-    if max_param_bytes > 0 and not any(S >= max_param_bytes for S in candidates):
-        LOG.debug(
-            "pick_S_chunk: no candidate >= max param tensor size (%d B); "
-            "falling back to the largest grid entry to minimize the "
-            "single-tensor overflow chunk count.",
-            max_param_bytes,
-        )
-        candidates = (max(candidates),)
+    # candidates in the search and let ``_simulate_waste`` plus the
+    # tie-break (prefer larger S at equal waste) decide — no soft
+    # feasibility-filter fallback is needed.
 
     best_S = candidates[0]
     best_waste = _simulate_waste(
