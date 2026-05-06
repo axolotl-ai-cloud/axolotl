@@ -187,6 +187,24 @@ class OnDemandTensorMgr:
             for _name, param in self.model.named_parameters():
                 self._spill_param_to_cpu(param, target_device)
 
+            # Enabled mode only spills/gathers parameters. Direct buffers
+            # that stay on CPU while inputs/params are on CUDA become a
+            # device-mismatch footgun in ``forward``. Fail fast with an
+            # actionable message rather than letting backward crash with
+            # a confusing secondary device-mismatch downstream. Extending
+            # the spill hooks to cover buffers is tracked separately;
+            # until then, the contract is "no CPU-resident buffers when
+            # target is CUDA".
+            if target_device is not None and target_device.type == "cuda":
+                for buffer_name, buffer in self.model.named_buffers():
+                    if getattr(buffer.device, "type", None) == "cpu":
+                        raise RuntimeError(
+                            f"OnDemandTensorMgr does not gather CPU buffer "
+                            f"{buffer_name!r}. Move buffers to the target "
+                            f"device or extend the spill hooks to cover "
+                            f"buffers."
+                        )
+
             for sub in self.model.modules():
                 # ``prepend=True`` on pre-hooks: the trace driver registers its
                 # own pre_forward (and pre_backward) hooks BEFORE we enter this
@@ -480,6 +498,19 @@ class OnDemandTensorMgr:
         # GPU-resident: copy GPU→CPU, keep original GPU tensor alive so
         # __exit__ can copy values back into the same StorageImpl that the
         # optimizer's state slots were keyed on.
+        #
+        # NOTE (CR 3192478323): retaining ``original_data`` keeps the
+        # original GPU storage allocated for the lifetime of the context,
+        # so peak GPU memory is NOT actually reduced for GPU-resident
+        # models — only CPU-resident models see the spill benefit. The
+        # profiler still measures correct *relative* deltas for op-walk
+        # peak attribution, so this is an efficiency limitation, not a
+        # correctness bug. A proper fix needs to release the original
+        # storage and re-key any optimizer state on restore (CodeRabbit
+        # tagged this "Heavy lift"); the existing GPU profile test
+        # (``test_on_demand_enabled_param_offload_and_restore``) validates
+        # byte-exact restore against this code path. Track via the
+        # CodeRabbit thread; do not silently raise here.
         try:
             cpu_storage = param.data.detach().to("cpu", copy=True)
             try:

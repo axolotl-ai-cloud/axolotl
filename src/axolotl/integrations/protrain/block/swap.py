@@ -132,18 +132,33 @@ _SWAP_HEADROOM_SAFETY_BYTES: int = 64 * 1024 * 1024
 _SWAP_MAX_DRAIN_RETRIES: int = 3
 
 
-def _swap_stream_wait_compute(swap_stream: "torch.cuda.Stream") -> None:
-    """Make ``swap_stream`` wait on the current (compute) stream."""
+def _swap_stream_wait_compute(
+    device: "torch.device", swap_stream: "torch.cuda.Stream"
+) -> None:
+    """Make ``swap_stream`` wait on the compute stream of ``device``.
+
+    The device argument is load-bearing: ``torch.cuda.current_stream()``
+    without a device follows the *ambient* current device, which under
+    multi-GPU / model-parallel runs can synchronize against a different
+    GPU's compute stream and race the D2H/H2D copy on this tensor's
+    real device.
+    """
     if swap_stream is None or not torch.cuda.is_available():
         return
-    swap_stream.wait_stream(torch.cuda.current_stream())
+    swap_stream.wait_stream(torch.cuda.current_stream(device=device))
 
 
-def _compute_stream_wait_swap(swap_stream: "torch.cuda.Stream") -> None:
-    """Make the current (compute) stream wait on ``swap_stream``."""
+def _compute_stream_wait_swap(
+    device: "torch.device", swap_stream: "torch.cuda.Stream"
+) -> None:
+    """Make the compute stream of ``device`` wait on ``swap_stream``.
+
+    See ``_swap_stream_wait_compute`` for why the device argument is
+    passed explicitly rather than relying on the ambient current device.
+    """
     if swap_stream is None or not torch.cuda.is_available():
         return
-    torch.cuda.current_stream().wait_stream(swap_stream)
+    torch.cuda.current_stream(device=device).wait_stream(swap_stream)
 
 
 @dataclass
@@ -241,26 +256,35 @@ def _make_pack_unpack(
             return _PassThrough(t)
 
         # Make the swap stream wait on the compute stream before
-        # reading ``t``.
-        _swap_stream_wait_compute(swap_stream)
-        with torch.cuda.stream(swap_stream):
-            slot_target = slot_view[:nbytes].view(t.dtype).reshape(t.shape)
-            slot_target.copy_(t.detach(), non_blocking=True)
-            # Tell the allocator: this storage is in use by swap_stream
-            # too, so don't reuse it until swap_stream catches up.
-            t.record_stream(swap_stream)
+        # reading ``t``. Device-scoped so the wait targets ``t``'s real
+        # device rather than the ambient current device (multi-GPU safe).
+        # Any failure between ``pool.acquire()`` succeeding and the
+        # ``_CPUHandle`` being returned would otherwise leak the slot
+        # for the rest of the run; release on every exceptional path
+        # so the pool can't get artificially exhausted.
+        try:
+            _swap_stream_wait_compute(t.device, swap_stream)
+            with torch.cuda.stream(swap_stream):
+                slot_target = slot_view[:nbytes].view(t.dtype).reshape(t.shape)
+                slot_target.copy_(t.detach(), non_blocking=True)
+                # Tell the allocator: this storage is in use by swap_stream
+                # too, so don't reuse it until swap_stream catches up.
+                t.record_stream(swap_stream)
 
-        return _CPUHandle(
-            pool=pool,
-            swap_stream=swap_stream,
-            slot_id=slot_id,
-            shape=tuple(t.shape),
-            stride=tuple(int(s) for s in t.stride()),
-            dtype=t.dtype,
-            device=t.device,
-            nbytes=nbytes,
-            requires_grad=t.requires_grad,
-        )
+            return _CPUHandle(
+                pool=pool,
+                swap_stream=swap_stream,
+                slot_id=slot_id,
+                shape=tuple(t.shape),
+                stride=tuple(int(s) for s in t.stride()),
+                dtype=t.dtype,
+                device=t.device,
+                nbytes=nbytes,
+                requires_grad=t.requires_grad,
+            )
+        except BaseException:
+            pool.release(slot_id)
+            raise
 
     def unpack_from_pool(handle):
         # Cold-path passthrough — return the original tensor unchanged.
@@ -328,124 +352,133 @@ def _make_pack_unpack(
         #      kernel-allocator OOM that blames the wrong layer; the
         #      raise here turns the cost model's zero-peak assumption
         #      into a checkable invariant.
-        required_bytes = handle.nbytes
-        total_safety = required_bytes + _SWAP_HEADROOM_SAFETY_BYTES
+        # The ``handle.slot_id`` was acquired by ``pack_to_pool``; this
+        # function owns its release. Wrap the entire body so the
+        # explicit headroom ``RuntimeError``, allocator failures, and
+        # copy failures all flow through ``pool.release`` (and
+        # ``release_buffer`` for the second borrow taken below) — without
+        # this, a single SWAP gate trip leaks the slot for the rest of
+        # the run and the pool can stay artificially exhausted.
+        second_borrow_acquired = False
+        try:
+            required_bytes = handle.nbytes
+            total_safety = required_bytes + _SWAP_HEADROOM_SAFETY_BYTES
 
-        free_bytes, _total = torch.cuda.mem_get_info(handle.device)
-        retries_remaining = _SWAP_MAX_DRAIN_RETRIES
-        drained = False
-        while free_bytes < total_safety and retries_remaining > 0:
-            torch.cuda.synchronize(handle.device)
             free_bytes, _total = torch.cuda.mem_get_info(handle.device)
-            retries_remaining -= 1
-            drained = True
+            retries_remaining = _SWAP_MAX_DRAIN_RETRIES
+            drained = False
+            while free_bytes < total_safety and retries_remaining > 0:
+                torch.cuda.synchronize(handle.device)
+                free_bytes, _total = torch.cuda.mem_get_info(handle.device)
+                retries_remaining -= 1
+                drained = True
 
-        if free_bytes < total_safety:
-            raise RuntimeError(
-                f"ProTrain SWAP gate: insufficient GPU headroom for "
-                f"activation swap-in on device {handle.device} after "
-                f"{_SWAP_MAX_DRAIN_RETRIES} sync-and-retry attempts. "
-                f"Need {required_bytes} bytes + "
-                f"{_SWAP_HEADROOM_SAFETY_BYTES} safety margin; have "
-                f"{free_bytes} free. The cost model assumed SWAP would "
-                f"not contribute to peak (paper §3.3 'swap-in only when "
-                f"memory available'); this configuration violates that "
-                f"invariant. Reduce n_swap or set n_swap=0 and re-run "
-                f"the searcher, or check whether parallel SWAP traffic "
-                f"from sibling unpacks is competing for the same "
-                f"headroom."
-            )
+            if free_bytes < total_safety:
+                raise RuntimeError(
+                    f"ProTrain SWAP gate: insufficient GPU headroom for "
+                    f"activation swap-in on device {handle.device} after "
+                    f"{_SWAP_MAX_DRAIN_RETRIES} sync-and-retry attempts. "
+                    f"Need {required_bytes} bytes + "
+                    f"{_SWAP_HEADROOM_SAFETY_BYTES} safety margin; have "
+                    f"{free_bytes} free. The cost model assumed SWAP would "
+                    f"not contribute to peak (paper §3.3 'swap-in only when "
+                    f"memory available'); this configuration violates that "
+                    f"invariant. Reduce n_swap or set n_swap=0 and re-run "
+                    f"the searcher, or check whether parallel SWAP traffic "
+                    f"from sibling unpacks is competing for the same "
+                    f"headroom."
+                )
 
-        if drained:
-            # Near-miss: the gate had to drain in-flight backward
-            # kernels to recover headroom. Surface to operators so
-            # repeated near-misses are visible before they tip into
-            # an actual raise.
-            LOG.warning(
-                "SWAP unpack: drained in-flight backward kernels to "
-                "recover headroom for swap-in on device %s "
-                "(need %d bytes + %d safety, have %d free after drain). "
-                "Repeated near-misses suggest n_swap is too high for "
-                "this configuration.",
-                handle.device,
-                required_bytes,
-                _SWAP_HEADROOM_SAFETY_BYTES,
-                free_bytes,
-            )
+            if drained:
+                # Near-miss: the gate had to drain in-flight backward
+                # kernels to recover headroom. Surface to operators so
+                # repeated near-misses are visible before they tip into
+                # an actual raise.
+                LOG.warning(
+                    "SWAP unpack: drained in-flight backward kernels to "
+                    "recover headroom for swap-in on device %s "
+                    "(need %d bytes + %d safety, have %d free after drain). "
+                    "Repeated near-misses suggest n_swap is too high for "
+                    "this configuration.",
+                    handle.device,
+                    required_bytes,
+                    _SWAP_HEADROOM_SAFETY_BYTES,
+                    free_bytes,
+                )
 
-        # App B.2: route the GPU activation buffer through the
-        # default-stream heap. The subsequent H2D copy runs on
-        # ``swap_stream`` for compute/copy overlap, but the allocation
-        # itself must come from the default heap so the caching
-        # allocator can reuse this region across iterations rather than
-        # pinning it to ``swap_stream``'s per-stream free-list. The
-        # ``gpu_buf.record_stream(handle.swap_stream)`` call inside the
-        # swap_stream context below ties the buffer's lifetime to the
-        # swap_stream's work so the allocator's free path waits for the
-        # H2D to retire — preventing the allocator-frees-mid-DMA
-        # silent-corruption window.
-        with SingleStreamAllocator():
-            gpu_buf = torch.empty_strided(
-                handle.shape,
-                handle.stride,
-                dtype=handle.dtype,
-                device=handle.device,
-            )
-        _swap_stream_wait_compute(handle.swap_stream)
-        h2d_done: "torch.cuda.Event | None" = None
-        with torch.cuda.stream(handle.swap_stream):
-            slot_view = handle.pool._pinned.buffer(handle.slot_id)  # noqa: SLF001
-            slot_src = (
-                slot_view[: handle.nbytes].view(handle.dtype).reshape(handle.shape)
-            )
-            gpu_buf.copy_(slot_src, non_blocking=True)
-            gpu_buf.record_stream(handle.swap_stream)
-            # Record an event on swap_stream that fires when the H2D
-            # copy above has completed. We use this below to gate the
-            # borrow release so the pinned slot stays "live" (from the
-            # allocator's perspective) until the DMA is actually done.
-            h2d_done = torch.cuda.Event()
-            h2d_done.record(handle.swap_stream)
-            # Drop our local references to the slot view BEFORE
-            # releasing the borrow that backs them. ``release_buffer``
-            # only decrements the borrow counter; the underlying
-            # storage stays alive while the DMA is in flight thanks to
-            # the event-gated release sequencing below.
-            del slot_view, slot_src
-        _compute_stream_wait_swap(handle.swap_stream)
+            # App B.2: route the GPU activation buffer through the
+            # default-stream heap. The subsequent H2D copy runs on
+            # ``swap_stream`` for compute/copy overlap, but the allocation
+            # itself must come from the default heap so the caching
+            # allocator can reuse this region across iterations rather than
+            # pinning it to ``swap_stream``'s per-stream free-list. The
+            # ``gpu_buf.record_stream(handle.swap_stream)`` call inside the
+            # swap_stream context below ties the buffer's lifetime to the
+            # swap_stream's work so the allocator's free path waits for the
+            # H2D to retire — preventing the allocator-frees-mid-DMA
+            # silent-corruption window.
+            with SingleStreamAllocator():
+                gpu_buf = torch.empty_strided(
+                    handle.shape,
+                    handle.stride,
+                    dtype=handle.dtype,
+                    device=handle.device,
+                )
+            _swap_stream_wait_compute(handle.device, handle.swap_stream)
+            h2d_done: "torch.cuda.Event | None" = None
+            with torch.cuda.stream(handle.swap_stream):
+                slot_view = handle.pool._pinned.buffer(handle.slot_id)  # noqa: SLF001
+                second_borrow_acquired = True
+                slot_src = (
+                    slot_view[: handle.nbytes].view(handle.dtype).reshape(handle.shape)
+                )
+                gpu_buf.copy_(slot_src, non_blocking=True)
+                gpu_buf.record_stream(handle.swap_stream)
+                # Record an event on swap_stream that fires when the H2D
+                # copy above has completed. We use this below to gate the
+                # borrow release so the pinned slot stays "live" (from the
+                # allocator's perspective) until the DMA is actually done.
+                h2d_done = torch.cuda.Event()
+                h2d_done.record(handle.swap_stream)
+                # Drop our local references to the slot view BEFORE
+                # releasing the borrow that backs them. ``release_buffer``
+                # only decrements the borrow counter; the underlying
+                # storage stays alive while the DMA is in flight thanks to
+                # the event-gated release sequencing below.
+                del slot_view, slot_src
+            _compute_stream_wait_swap(handle.device, handle.swap_stream)
 
-        # Block the host until the H2D copy has actually retired on
-        # the device. Only after the event has fired is it safe to
-        # decrement the pinned-allocator borrow counter, because that
-        # counter is the sole signal ``PinnedHostMemory.close()`` uses
-        # to decide whether ``cudaFreeHost`` is safe — releasing
-        # before the DMA finishes opens a window where a concurrent
-        # ``close()`` would free the pinned region mid-transfer and
-        # the H2D DMA would read freed memory (silent data corruption
-        # in the activation that backward then consumes).
-        #
-        # The host-side wait is acceptable here: backward is the
-        # consumer of the unpacked tensor and will already wait on
-        # swap_stream before the kernel that reads ``gpu_buf`` runs;
-        # this synchronize() simply pulls that wait to the host so
-        # the borrow accounting is honest. Pipelined throughput is
-        # unaffected as long as backward kernels keep the compute
-        # stream busy while the next unpack's H2D enqueues.
-        if h2d_done is not None:
-            h2d_done.synchronize()
-
-        # Now safe to release the borrow taken on the second
-        # ``buffer()`` call inside the swap-stream block above (the
-        # acquire-time borrow is released through ``pool.release``).
-        handle.pool._pinned.release_buffer(handle.slot_id)  # noqa: SLF001
-
-        # Return the slot to the pool. Same-stream ordering guards
-        # reuse: any future D2H against this slot will be enqueued
-        # on swap_stream and is therefore serialized after the
-        # just-completed H2D. The host-side synchronize above
-        # additionally ensures the borrow accounting reflects the
-        # true in-flight state for any concurrent ``close()``.
-        handle.pool.release(handle.slot_id)
+            # Block the host until the H2D copy has actually retired on
+            # the device. Only after the event has fired is it safe to
+            # decrement the pinned-allocator borrow counter, because that
+            # counter is the sole signal ``PinnedHostMemory.close()`` uses
+            # to decide whether ``cudaFreeHost`` is safe — releasing
+            # before the DMA finishes opens a window where a concurrent
+            # ``close()`` would free the pinned region mid-transfer and
+            # the H2D DMA would read freed memory (silent data corruption
+            # in the activation that backward then consumes).
+            #
+            # The host-side wait is acceptable here: backward is the
+            # consumer of the unpacked tensor and will already wait on
+            # swap_stream before the kernel that reads ``gpu_buf`` runs;
+            # this synchronize() simply pulls that wait to the host so
+            # the borrow accounting is honest. Pipelined throughput is
+            # unaffected as long as backward kernels keep the compute
+            # stream busy while the next unpack's H2D enqueues.
+            if h2d_done is not None:
+                h2d_done.synchronize()
+        finally:
+            # Release the second ``buffer()`` borrow if it was
+            # acquired (success path *and* failure path after the
+            # ``with torch.cuda.stream`` block opened), then return
+            # the acquire-time slot to the pool. Same-stream ordering
+            # guards reuse on the success path; on the failure path
+            # the host-side ``synchronize`` above is skipped, but the
+            # exception propagates so no later kernel will read this
+            # slot anyway.
+            if second_borrow_acquired:
+                handle.pool._pinned.release_buffer(handle.slot_id)  # noqa: SLF001
+            handle.pool.release(handle.slot_id)
 
         # Restore requires_grad flag if the original tensor had one.
         # Saved tensors that participated in autograd should preserve

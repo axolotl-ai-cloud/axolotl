@@ -336,9 +336,15 @@ def run_trace(
     # ``CUDA_VISIBLE_DEVICES`` masking a stale current device would silently
     # bind events to the wrong stream and produce bogus ``elapsed_time``
     # readings (mirrors the guards already used in ``hw_bench.py``).
-    device_idx = (
-        device.index if device.index is not None else torch.cuda.current_device()
-    )
+    # ``torch.cuda.current_device()`` raises when CUDA is unavailable; gate
+    # so the CPU-fallback paths below (lines 432-433, 494-497 etc.) can run.
+    # All consumers of ``device_idx`` are already inside ``if cuda_available``
+    # branches, so ``None`` here never reaches ``torch.cuda.device(...)``.
+    device_idx: int | None = None
+    if cuda_available:
+        device_idx = (
+            device.index if device.index is not None else torch.cuda.current_device()
+        )
 
     # Build an authoritative path -> global BlockId registry from
     # ``discover_blocks`` so encoder.block.0 vs decoder.block.0 don't

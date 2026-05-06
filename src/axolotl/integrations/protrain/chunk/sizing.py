@@ -1,9 +1,20 @@
 """S_chunk grid search over the {32, 64, 128, 256} MB grid (Appendix B.1).
 
-We simulate the layout for each candidate and pick the candidate that
-minimizes fragmentation waste — summed ``S_chunk - bytes_used`` across
-non-full chunks. The full simulation is identical to ``build_layout`` but
-without needing a model handle: the input is a ``{ParamId -> bytes}`` map.
+We score each candidate by a simple greedy-fit fragmentation heuristic
+(summed ``S_chunk - bytes_used`` across non-tail chunks) and pick the
+minimizer, breaking ties toward the larger candidate. The input is a
+``{ParamId -> bytes}`` map so this runs without a model handle.
+
+Note: ``_simulate_waste`` is a *heuristic* approximation of
+``build_layout``'s placement, NOT a full simulation. ``build_layout``
+honors block-sealing and block-contiguity rules (Appendix B.1) that the
+heuristic ignores, so the chosen ``S_chunk`` may diverge from the
+fragmentation-optimal one once the real layout is built. The grid is
+small (4 entries), the candidates are within a single order of
+magnitude, and the searcher's downstream cost model re-evaluates the
+selection — so the heuristic's accuracy is sufficient for grid
+selection. Treat ``pick_S_chunk`` as a coarse tie-break, not a
+paper-fidelity step.
 """
 
 from __future__ import annotations
@@ -76,21 +87,32 @@ def pick_S_chunk(
         )
     candidates = positive
 
-    # Filter out candidates smaller than the largest single param tensor:
-    # _simulate_waste counts ``max(0, S_chunk - b)`` per non-tail chunk, so
-    # any chunk whose sole occupant overflows ``S_chunk`` contributes *zero*
-    # waste and would let a too-small candidate win on a tie. Worse, splitting
-    # a single tensor across chunks isn't supported by build_layout. Drop
-    # those candidates up front so the search runs only over feasible sizes.
+    # Prefer candidates that can hold the largest single param tensor
+    # natively (S_chunk >= max_param_bytes): for such candidates,
+    # ``_simulate_waste`` accurately reflects fragmentation. For smaller
+    # candidates, any chunk whose sole occupant overflows ``S_chunk``
+    # would contribute *zero* waste under the heuristic and could let a
+    # too-small candidate win on a tie despite producing more chunks.
+    # However, ``build_layout`` *does* support placing an oversize tensor
+    # in its own chunk without splitting (see ``layout.py``: "A single
+    # param larger than ``S_chunk`` is placed on its own in a fresh
+    # chunk"). So if every candidate is smaller than the largest tensor
+    # (e.g. an LLM with a >256 MiB embedding under the default 32–256
+    # MiB grid), fall back to picking the *largest* candidate rather
+    # than raising — that minimizes the number of single-tensor overflow
+    # chunks while keeping the layout legal.
     max_param_bytes = max(sizes_in_order, default=0)
     feasible = tuple(S for S in candidates if S >= max_param_bytes)
-    if not feasible:
-        raise ValueError(
-            f"No candidate S_chunk >= max param tensor size "
-            f"({max_param_bytes} bytes); grid {candidates} is incompatible "
-            f"with this model — caller bug."
+    if feasible:
+        candidates = feasible
+    else:
+        LOG.debug(
+            "pick_S_chunk: no candidate >= max param tensor size (%d B); "
+            "falling back to the largest grid entry to minimize the "
+            "single-tensor overflow chunk count.",
+            max_param_bytes,
         )
-    candidates = feasible
+        candidates = (max(candidates),)
 
     best_S = candidates[0]
     best_waste = _simulate_waste(sizes_in_order, best_S)

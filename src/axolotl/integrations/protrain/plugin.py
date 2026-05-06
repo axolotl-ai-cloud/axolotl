@@ -815,37 +815,12 @@ class ProTrainPlugin(BasePlugin):
             weight_decay=float(args.weight_decay),
         )
 
-        # ``_ProTrainOptimizer.state_dict`` raises NotImplementedError
-        # (optim-state checkpointing is M6 scope). HF Trainer and
-        # Accelerate both call ``state_dict`` unconditionally — HF at
-        # checkpoint save (silenced via ``save_only_model=True`` in
-        # ``get_training_args``) and Accelerate at ``prepare`` time for
-        # device-placement (NOT silenced). Override the two methods on
-        # this instance with safe no-ops so the bring-up path survives
-        # without having to edit the api/ module (out-of-scope per the
-        # fix plan). The safe no-op returns an empty param-state dict
-        # preserving HF's ``{"param_groups": ...}`` shape so
-        # Accelerate's ``move_to_device(state_dict, ...)`` +
-        # ``load_state_dict(state_dict)`` round-trip does not crash.
-        def _empty_state_dict(_self=optim):  # type: ignore[misc]
-            return {
-                "state": {},
-                "param_groups": [
-                    {k: v for k, v in g.items() if k != "params"}
-                    | {"params": [i for i, _ in enumerate(g["params"])]}
-                    for g in _self.param_groups
-                ],
-            }
-
-        def _noop_load_state_dict(_state_dict, _self=optim):  # type: ignore[misc]
-            # Accelerate re-loads the same (device-moved) state we just
-            # returned — since neither adapter owns persistent state on
-            # the torch side, discarding it is safe for the M5 scope.
-            return None
-
-        optim.state_dict = _empty_state_dict  # type: ignore[method-assign]
-        optim.load_state_dict = _noop_load_state_dict  # type: ignore[method-assign]
-
+        # ``_ProTrainOptimizer.state_dict`` / ``load_state_dict`` already
+        # implement the empty-shell + discard-payload behavior that HF
+        # Trainer and Accelerate need at ``prepare`` time (see
+        # ``api/optim_wrapper.py``). The bring-up path that previously
+        # monkey-patched these methods on the instance was redundant once
+        # the class implementations landed.
         trainer.optimizer = optim
         LOG.info(
             "ProTrain: installed protrain_optimizer_wrapper on trainer.optimizer "

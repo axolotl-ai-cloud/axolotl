@@ -2,7 +2,7 @@
 
 Public surface:
 
-- ``BlockMode`` — activation strategy enum (re-exported from ``types.py``).
+- ``BlockMode`` — activation strategy enum (re-exported from ``strategy.py``).
 - ``wrap_block`` / ``unwrap_block`` — per-block mode dispatcher.
 - ``assign_modes`` — layout rules (swap-early, unopt-late, interleave).
 - ``discover_blocks`` — find the transformer-block trees on a model.

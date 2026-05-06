@@ -272,7 +272,6 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         # invalidates v17 traces lacking the offload axis.
         "phase2_n_offload": int(getattr(trace, "phase2_n_offload", 0)),
         "phase2_per_block_recompute_s": float(trace.phase2_per_block_recompute_s),
-        "steady_fwd_chunked_wall_s": float(trace.steady_fwd_chunked_wall_s),
         "block_tree_index": {
             str(int(k)): int(v) for k, v in trace.block_tree_index.items()
         },
