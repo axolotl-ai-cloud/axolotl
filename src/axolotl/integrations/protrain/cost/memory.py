@@ -281,6 +281,69 @@ def hot_iter_peak_cap(
     return None
 
 
+def apply_hot_iter_cap(
+    raw_peak: int,
+    model_state_present: int,
+    measured_cap: int | None,
+    layout: ChunkLayout,
+) -> int:
+    """Apply :func:`hot_iter_peak_cap` to ``raw_peak`` using layered decomposition.
+
+    ``measured_cap`` is the profiler's hook-less steady FORWARD peak
+    (``trace.steady_fwd_peak_bytes`` / max ``steady_fwd_block_peak_bytes``).
+    That capture happens BEFORE the optimizer is constructed — only fp16
+    params + the forward's max activation are resident at that moment.
+    Therefore the cap decomposes as
+    ``measured_cap = profile_time_model_state + measured_activation_cap``
+    where ``profile_time_model_state == layout.N_chunk * layout.S_chunk``
+    (full fp16 param set; on-demand mode skips this capture entirely so
+    the cap is ``None`` there and this helper short-circuits).
+
+    Layered cap (post-d908bf28 fix): cap ONLY the activation portion of
+    ``raw_peak``, leaving ``model_state_present`` (which can scale up to
+    ~8x for full FT through Adam state) intact through the cap. Applying
+    the cap to the full ``raw_peak`` (the pre-fix shape) silently erased
+    the per-chunk Adam-state contribution and produced ~90x under-
+    predictions on full-FT shapes (Codex confirmed: estimate_peak ~7 GB
+    vs. raw clamp ~78 MB on the same config).
+
+    Returns the post-cap raw_peak. When ``measured_cap is None`` returns
+    ``raw_peak`` unchanged so callers can use this helper unconditionally.
+
+    Used by both :func:`estimate_peak` (full op-walk path) and
+    :func:`axolotl.integrations.protrain.search.exhaustive.search`'s
+    inline F_bm fast path so the two sites cannot drift again.
+    """
+    if measured_cap is None:
+        return raw_peak
+    # Decompose raw_peak. Defensive max() guards degenerate traces where
+    # retained_none_bytes < model_state_present (op-walk skipped because
+    # no forward ops); the static fallback in estimate_peak already set
+    # raw_peak = model_state_present + retained_none_bytes, so the
+    # subtraction is non-negative in practice. The searcher's inline path
+    # constructs raw_peak as ``model_state_present + f_bm`` and f_bm is
+    # always non-negative, so this is also safe there.
+    op_walk_portion = max(0, raw_peak - model_state_present)
+    # Decompose measured_cap. The profiler ran with all params resident
+    # on GPU whenever this cap is populated — on-demand mode skips the
+    # entire steady-fwd capture (``profiler/trace.py::run_trace`` gates
+    # the per-block + aggregate measurement on ``not engage_on_demand``),
+    # so ``hot_iter_peak_cap`` returns ``None`` and the early-return
+    # above fires. Therefore the captured peak always includes
+    # ``N_chunk * S_chunk`` of resident fp16 params; subtract to recover
+    # the activation ceiling. Clamp at 0 so synthetic test traces
+    # (e.g. ``test_estimate_peak_uses_per_block_caps`` sets a per-block
+    # peak smaller than the layout's fp16 total) don't yield a negative
+    # cap — in that degenerate case the activation portion is pinned to
+    # 0 and raw_peak collapses to the model-state floor.
+    profile_time_model_state = layout.N_chunk * layout.S_chunk
+    measured_activation_cap = max(0, measured_cap - profile_time_model_state)
+    if op_walk_portion > measured_activation_cap:
+        op_walk_portion = measured_activation_cap
+    # Reassemble: model_state_present is preserved through the cap.
+    return model_state_present + op_walk_portion
+
+
 #: Pool sizing knobs mirrored from ``block.swap_pool.ActivationSwapPool``.
 #: The pool holds ``n_swap * SWAP_SLOTS_PER_BLOCK * SWAP_PREFETCH_DEPTH``
 #: activation slots, each sized to the worst-case single-saved-tensor
@@ -819,34 +882,11 @@ def estimate_peak(
     # alone (~2.36 GB).
     #
     # The fix bounds ONLY the activation portion, leaving the model-state
-    # term intact through the cap.
+    # term intact through the cap. Layered application is centralized in
+    # :func:`apply_hot_iter_cap` so this site and the searcher's inline
+    # fast path (search/exhaustive.py) cannot drift.
     measured_cap = hot_iter_peak_cap(trace, block_map, cfg, layout)
-    if measured_cap is not None:
-        # Decompose raw_peak. Defensive max() guards degenerate traces
-        # where retained_none_bytes < model_state_present (op-walk skipped
-        # because no forward ops); the static fallback above already set
-        # raw_peak = model_state_present + retained_none_bytes, so the
-        # subtraction is non-negative in practice.
-        op_walk_portion = max(0, raw_peak - model_state_present)
-        # Decompose measured_cap. The profiler ran with all params resident
-        # on GPU whenever this cap is populated — on-demand mode skips the
-        # entire steady-fwd capture (``profiler/trace.py::run_trace``
-        # gates the per-block + aggregate measurement on
-        # ``not engage_on_demand``), so ``hot_iter_peak_cap`` returns
-        # ``None`` and this branch is unreachable in that mode. Therefore
-        # the captured peak always includes ``N_chunk * S_chunk`` of
-        # resident fp16 params; subtract it to recover the activation
-        # ceiling. Clamp at 0 so synthetic test traces (e.g.
-        # ``test_estimate_peak_uses_per_block_caps`` sets a per-block peak
-        # smaller than the layout's fp16 total) don't yield a negative
-        # cap — in that degenerate case the activation portion is pinned
-        # to 0 and raw_peak collapses to the model-state floor.
-        profile_time_model_state = layout.N_chunk * layout.S_chunk
-        measured_activation_cap = max(0, measured_cap - profile_time_model_state)
-        if op_walk_portion > measured_activation_cap:
-            op_walk_portion = measured_activation_cap
-        # Reassemble: model_state_present is preserved through the cap.
-        raw_peak = model_state_present + op_walk_portion
+    raw_peak = apply_hot_iter_cap(raw_peak, model_state_present, measured_cap, layout)
 
     scaled = int(ALPHA_FRAGMENTATION * raw_peak)
     LOG.debug(

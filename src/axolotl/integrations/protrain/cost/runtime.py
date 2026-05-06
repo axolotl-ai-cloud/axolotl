@@ -700,7 +700,24 @@ def estimate_runtime(
     # on the trace SKU; cross-SKU calibration of the chunked
     # measurement requires re-running phase-2 on the new SKU rather
     # than scalar scaling.
-    if trace.steady_fwd_chunked_wall_s > 0.0:
+    #
+    # n_swap gating (paper §3.3 / commit e8f45fd7): the phase-2
+    # measurement was captured at ``cfg.n_swap = 0`` (see
+    # ``profiler/phase2.py::select_bootstrap_config`` line ~117), so
+    # the measured wall reflects forward time WITHOUT any SWAP-stream
+    # activation traffic competing with the chunk-prefetch stream.
+    # When a candidate is evaluated with ``cfg.n_swap > 0`` the
+    # measured wall does not include the per-chunk PCIe contention
+    # that swap traffic would actually impose on chunk prefetches —
+    # adding ``t_fwd_swap_transfer`` on top covers the swap-stream
+    # transfer itself but not the bandwidth derate on the affected
+    # chunks. Fall through to the analytical per-chunk path which
+    # consults ``chunk_bw_fwd[]`` (built above via
+    # :func:`effective_bw_for_chunk`) and applies the chunk-by-chunk
+    # SWAP contention model. For ``cfg.n_swap == 0`` candidates
+    # (the dominant case on PCIe Gen3 3090s per paper §3.1.2) the
+    # phase-2 path stays exactly as before — full speed, no derate.
+    if trace.steady_fwd_chunked_wall_s > 0.0 and cfg.n_swap == 0:
         t_fwd = trace.steady_fwd_chunked_wall_s + t_fwd_swap_transfer
     else:
         # Per-chunk forward roofline: max(compute per chunk, comm per chunk).
@@ -817,8 +834,24 @@ def estimate_runtime(
     # (``per_block_recompute_s`` is naturally 0 there) OR when both fields
     # are populated. Keeps the two consumers of ``steady_bwd_chunked_wall_s``
     # in lock-step on which traces qualify.
-    if trace.steady_bwd_chunked_wall_s > 0.0 and (
-        trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0
+    #
+    # n_swap gating (paper §3.3 / commit e8f45fd7): same rationale as
+    # the forward override above. The phase-2 backward measurement was
+    # captured at ``cfg.n_swap = 0`` (see
+    # ``profiler/phase2.py::select_bootstrap_config`` line ~117), so it
+    # does not include the per-chunk PCIe contention that swap traffic
+    # imposes on backward chunk prefetches. Candidates with
+    # ``cfg.n_swap > 0`` route to the analytical per-chunk path below
+    # which consults ``chunk_bw_bwd[]`` and applies the per-chunk
+    # contention derate. ``cfg.n_swap == 0`` stays on the phase-2 path
+    # — identical numerics to before.
+    if (
+        trace.steady_bwd_chunked_wall_s > 0.0
+        and (
+            trace.phase2_n_checkpoint == 0
+            or trace.phase2_per_block_recompute_s > 0.0
+        )
+        and cfg.n_swap == 0
     ):
         # PHASE-2 BACKWARD OVERRIDE (TRACE_VERSION >= 10): the chunked
         # backward wall already includes the measured chunk runtime and its

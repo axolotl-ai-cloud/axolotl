@@ -432,6 +432,7 @@ def search(
     # ``(n_persist + n_buffer) * S_chunk`` term, pre-alpha.
     from axolotl.integrations.protrain.cost.memory import (
         ALPHA_FRAGMENTATION,
+        apply_hot_iter_cap,
         block_tree_index_map,
         hot_iter_peak_cap,
         model_state_present_bytes,
@@ -492,24 +493,34 @@ def search(
                 # inner iterations per (n_swap, n_ckpt, n_offload).
                 #
                 # CAVEAT: this bound uses the uncapped ``F_bm`` raw-peak
-                # decomposition. The inner loop later applies
-                # ``hot_iter_peak_cap`` which can LOWER ``raw_peak`` when
-                # the per-block trace shows the F_bm op-walk overestimates
-                # the true hot-iter peak. When the cap fires
-                # (``raw_peak > hot_cap``), ``predicted_peak`` collapses to
-                # ``alpha * hot_cap`` — independent of (n_persist+n_buffer).
-                # If ``alpha * hot_cap <= capacity_bytes``, EVERY config
-                # with sum > max_sum (which the F_bm bound would prune)
-                # actually clears the GPU gate via the cap. Compute the cap
-                # once per (n_swap, n_ckpt) pair — it depends only on
-                # ``trace``, ``block_map``, and ``cfg.n_checkpoint``/
-                # ``cfg.n_swap`` (see ``cost/memory.py::hot_iter_peak_cap``;
-                # n_persist/n_buffer are not read) — and widen ``max_sum``
-                # to the natural ``N_chunk`` ceiling when the cap rescues
-                # the whole sum-axis. Probe cfg uses n_persist=n_buffer=0
-                # because those fields are unused by ``hot_iter_peak_cap``.
+                # decomposition. The inner loop later applies the LAYERED
+                # ``hot_iter_peak_cap`` (see ``apply_hot_iter_cap``) which
+                # caps only the activation portion of ``raw_peak``, leaving
+                # ``model_state_present`` intact through the cap. So when
+                # the cap fires the predicted peak becomes
+                # ``alpha * (model_state_present + min(op_walk_portion,
+                # measured_activation_cap))`` — STILL n_persist-dependent
+                # via ``model_state_present`` (which scales up to ~8x for
+                # full FT through Adam state).
+                #
+                # We can therefore widen ``max_sum`` to ``N_chunk`` only
+                # when the layered cap at the WORST-CASE model-state floor
+                # still fits in capacity. The worst case is "all chunks
+                # persistent" (n_persist = N_chunk, n_buffer = 0) which
+                # maximises ``model_state_present_bytes`` for any given
+                # trace. Probe cfg below uses n_persist=N_chunk so that
+                # ``_cap_dominates`` is sound under the layered cap.
+                # Pre-fix this used n_persist=0 — that probe ignored the
+                # Adam-state contribution and admitted high-n_persist
+                # configs the inner-loop layered gate then rejected,
+                # wasting iterations. Tightening to N_chunk preserves the
+                # widening shortcut where it's still sound (LoRA-shape
+                # traces where ``persistent_factor ~= 1.0``) and disables
+                # it for full-FT shapes where it never paid off anyway.
+                # ``hot_iter_peak_cap`` itself does not read n_persist/
+                # n_buffer; only the layered application does.
                 _cap_probe_cfg = CostConfig(
-                    n_persist=0,
+                    n_persist=bounds.N_chunk,
                     n_buffer=0,
                     n_swap=n_swap,
                     n_checkpoint=n_ckpt,
@@ -518,9 +529,24 @@ def search(
                 _hot_cap = hot_iter_peak_cap(
                     trace, block_map, _cap_probe_cfg, layout=layout
                 )
-                _cap_dominates = (
-                    _hot_cap is not None and int(alpha * _hot_cap) <= capacity_bytes
-                )
+                if _hot_cap is not None:
+                    _probe_model_state = model_state_present_bytes(
+                        _cap_probe_cfg, layout, trace
+                    )
+                    _probe_raw = apply_hot_iter_cap(
+                        # raw_peak floor at probe cfg: model_state_present
+                        # is the dominant term; F_bm contributes activation
+                        # bumps that the cap then bounds. Use the same
+                        # probe ``_hot_cap`` as ``measured_cap`` and a
+                        # large sentinel for raw_peak so the cap binds.
+                        _probe_model_state + _hot_cap,
+                        _probe_model_state,
+                        _hot_cap,
+                        layout,
+                    )
+                    _cap_dominates = int(alpha * _probe_raw) <= capacity_bytes
+                else:
+                    _cap_dominates = False
 
                 # F_bm depends on ``n_persist`` via the OFFLOAD-bump term:
                 # ``_block_map_peak_contribution`` charges ``S_chunk`` per
@@ -651,15 +677,21 @@ def search(
                         )
                         raw_peak = model_state_present + f_bm
                         # Apply the hot-iter ground-truth cap (v6+ traces with
-                        # per-block peaks). Mirrors the cap in
-                        # ``cost/memory.py::estimate_peak`` so the searcher
-                        # picks the same config ``estimate_peak`` would
-                        # validate, closing the F_bm-vs-estimate_peak gap.
+                        # per-block peaks). Goes through the shared layered
+                        # helper so this site and ``cost/memory.py::estimate_peak``
+                        # cannot drift — the cap is a forward-only profiler
+                        # measurement that does NOT include Adam state, so a
+                        # naive ``raw_peak = min(raw_peak, _cap)`` clamp
+                        # silently erased ``model_state_present`` and made the
+                        # searcher disagree with ``estimate_peak`` by ~90x on
+                        # full-FT shapes (Codex-confirmed regression after the
+                        # 909fc9ea fix landed in cost/memory.py only).
                         _cap = hot_iter_peak_cap(
                             trace, block_map, cfg, layout=layout
                         )
-                        if _cap is not None and raw_peak > _cap:
-                            raw_peak = _cap
+                        raw_peak = apply_hot_iter_cap(
+                            raw_peak, model_state_present, _cap, layout
+                        )
                         predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
                         if predicted_peak > capacity_bytes:
                             continue

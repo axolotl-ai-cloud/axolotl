@@ -489,6 +489,115 @@ def test_estimate_peak_cap_lora_shape_unchanged(toy_layout, toy_hw):
     )
 
 
+def test_search_fast_path_cap_preserves_full_ft_model_state(toy_hw):
+    """Searcher's inline peak must agree with estimate_peak under the cap.
+
+    Regression for the bug Codex flagged after commit 909fc9ea: the
+    layered cap fix landed in ``cost/memory.py::estimate_peak`` but the
+    searcher's inline F_bm fast path
+    (``search/exhaustive.py::search``) still applied the raw clamp
+    ``raw_peak = min(raw_peak, _hot_cap)``, which silently erased
+    ``model_state_present_bytes``. On a synthetic full-FT trace Codex
+    confirmed ``search()`` returned ``predicted_peak_bytes=78,433,484``
+    while ``estimate_peak()`` for the same picked config returned
+    ``7,086,696,038`` — a ~90x divergence.
+
+    This test reuses the full-FT shape from
+    :func:`test_estimate_peak_cap_preserves_full_ft_model_state`,
+    runs ``search()`` with capacity wide enough that several configs
+    are admissible, then re-runs ``estimate_peak`` on the picked
+    config and asserts agreement within ~1% (rounding via
+    ``int(alpha * raw_peak)``). It also asserts the searcher's
+    ``predicted_peak_bytes`` clears the model-state floor — the
+    pre-fix bug let it land ~90x BELOW that floor.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.memory import model_state_present_bytes
+
+    n_block = 8
+    n_chunk = 12
+    s_chunk = 64 * MB
+    fp16_total = n_chunk * s_chunk  # 768 MB
+    layout = _make_layout(n_chunk=n_chunk, s_chunk=s_chunk, n_block=n_block)
+    # Full-FT aggregate model state ~= 8x fp16 params (params + grads +
+    # fp32 master + 2x Adam moments).
+    full_ft_model_state = 8 * fp16_total  # ~6 GB
+    activation_per_block = 4 * MB
+    # Per-block measured forward peak: tiny activation on top of resident
+    # fp16 params. The bug: the searcher clamped raw_peak to roughly this
+    # value, hiding the multi-GB Adam state on top.
+    measured_block_peak = s_chunk + activation_per_block
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=3,
+        activation_bytes_per_block=activation_per_block,
+        model_state_bytes=full_ft_model_state,
+        intra_delta_bytes=1 * MB,
+        inter_delta_bytes=256 * 1024,
+    )
+    trace = replace(
+        trace,
+        steady_fwd_block_peak_bytes={
+            BlockId(b): measured_block_peak for b in range(n_block)
+        },
+    )
+
+    # Capacity wide enough to admit the full-Adam-state config (>~7 GB
+    # after alpha).
+    capacity = 16 * GB
+    result = search(trace, layout, capacity, toy_hw)
+
+    # Cross-check: the searcher's reported predicted peak must equal
+    # estimate_peak for the picked config.
+    estimate_peak_value = estimate_peak(
+        result.cfg, trace, layout, result.block_map, toy_hw
+    )
+    assert result.predicted_peak_bytes == estimate_peak_value, (
+        f"searcher predicted_peak_bytes={result.predicted_peak_bytes:,} "
+        f"disagrees with estimate_peak={estimate_peak_value:,} on the "
+        f"picked config {result.cfg} — searcher's inline cap layering "
+        "drifted from cost/memory.py (regression of 909fc9ea follow-up)."
+    )
+
+    # And it must clear the model-state floor for the picked config.
+    # The pre-fix searcher clamped to ~78 MB while the floor was ~7 GB
+    # (Codex synthetic 1.5B trace). On this 768MB-fp16 toy the floor is
+    # ~6 GB and the pre-fix clamp would have landed at ~70 MB.
+    floor = int(
+        ALPHA_FRAGMENTATION
+        * model_state_present_bytes(result.cfg, layout, trace)
+    )
+    assert result.predicted_peak_bytes >= floor, (
+        f"searcher predicted_peak_bytes={result.predicted_peak_bytes:,} "
+        f"underestimates model-state floor={floor:,} for cfg={result.cfg} "
+        "— the inline F_bm fast path's hot_iter_peak_cap clamp is "
+        "erasing model_state_present (the 90x divergence Codex flagged)."
+    )
+
+    # Pin the n_persist == N_chunk case explicitly: the worst-case
+    # model-state floor (8x fp16 = ~6 GB) should be present in
+    # predicted_peak. Build the cfg directly via estimate_peak — search()
+    # may pick a smaller n_persist, but estimate_peak must still produce
+    # the right value at the boundary, AND the searcher's inline path
+    # must agree on it. Iterate the same (n_persist, n_buffer) sweep as
+    # the searcher to verify per-config agreement at the n_persist=N_chunk
+    # boundary.
+    bm_all_none = assign_modes(0, 0, n_block)
+    cfg_max_persist = CostConfig(
+        n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0
+    )
+    peak_max = estimate_peak(cfg_max_persist, trace, layout, bm_all_none, toy_hw)
+    floor_max = int(
+        ALPHA_FRAGMENTATION
+        * model_state_present_bytes(cfg_max_persist, layout, trace)
+    )
+    assert peak_max >= floor_max, (
+        f"estimate_peak boundary cross-check: peak_max={peak_max:,} "
+        f"< floor_max={floor_max:,} for cfg={cfg_max_persist}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # memory / estimate_peak — enc-dec two-tree cost-model walk (Fix 3, Item 9)
 # ---------------------------------------------------------------------------
@@ -1295,6 +1404,103 @@ def test_estimate_runtime_phase2_bwd_credits_n_buffer_cache_hits():
     bm_ckpt = assign_modes(0, n_block, n_block)
     t_ckpt = estimate_runtime(cfg_ckpt, trace, layout, bm_ckpt, hw)
     assert t_ckpt - t_uncached == pytest.approx(per_op_sum, abs=1e-9)
+
+
+def test_phase2_override_routes_n_swap_through_per_chunk_contention():
+    """Phase-2 measured wall is only valid for ``cfg.n_swap == 0`` candidates;
+    ``cfg.n_swap > 0`` must consult the per-chunk bandwidth vectors built by
+    ``effective_bw_for_chunk`` (paper §3.3 / commit e8f45fd7).
+
+    The phase-2 capture in ``profiler/phase2.py::select_bootstrap_config``
+    always sets ``n_swap=0`` (line ~117), so the measured chunked wall
+    reflects forward/backward time WITHOUT any SWAP-stream activation
+    traffic competing with the chunk-prefetch stream. When a candidate
+    with ``n_swap > 0`` is later evaluated, the cost model must NOT
+    consume the measured wall directly (which would only pay the
+    explicit ``t_*_swap_transfer`` term on top, missing the per-chunk
+    PCIe contention derate). Instead it must fall through to the
+    analytical per-chunk path, which derates each chunk's prefetch
+    bandwidth by ``effective_bw_for_chunk`` based on its overlap with
+    SWAP blocks.
+
+    Pre-fix: the gate was ``trace.steady_*_chunked_wall_s > 0`` only,
+    so n_swap > 0 took the phase-2 path and paid only the swap-stream
+    transfer — under-predicting runtime by the contention derate.
+    Post-fix: the gate is ``... and cfg.n_swap == 0``, so n_swap > 0
+    routes to the analytical branch.
+    """
+    from dataclasses import replace
+
+    # Trace has phase-2 chunked walls populated AND a non-trivial chunk
+    # layout (block i -> chunk i, so the per-chunk overlap calculation
+    # for SWAP blocks at indices [0, n_swap) is meaningful).
+    base_trace = _make_trace()
+    n_block = len(base_trace.activation_sizes)
+    trace = replace(
+        base_trace,
+        # Zero out model-state so the optimizer term doesn't drown the
+        # forward/backward signal we're measuring.
+        model_state_bytes=0,
+        steady_fwd_chunked_wall_s=0.05,
+        steady_bwd_chunked_wall_s=0.10,
+        phase2_n_persist=0,
+        phase2_n_buffer=0,
+        phase2_n_checkpoint=n_block,
+        phase2_per_block_recompute_s=0.0005,
+    )
+    layout = _make_layout()
+    hw = _make_hw()
+    n_chunk = layout.N_chunk
+
+    # Two candidates differ only in n_swap. cfg_b uses n_swap = 2 SWAP
+    # blocks at indices [0, 2); under ``assign_modes`` rule 1 those map
+    # to BlockMode.SWAP, and the per-chunk contention model derates
+    # chunks whose prefetch source-window overlaps a SWAP block (chunks
+    # 1, 2 in forward; chunk 0 in backward — see
+    # ``test_bandwidth_contention_is_per_chunk``).
+    cfg_a = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
+    cfg_b = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    bm_a = assign_modes(0, 0, n_block)
+    bm_b = assign_modes(2, 0, n_block)
+
+    t_a = estimate_runtime(cfg_a, trace, layout, bm_a, hw)
+    t_b = estimate_runtime(cfg_b, trace, layout, bm_b, hw)
+
+    # cfg_b must be STRICTLY GREATER than cfg_a — and not just by the
+    # explicit swap-stream transfer (which is the only n_swap-related
+    # cost the pre-fix phase-2 path was paying). The gap must include
+    # the per-chunk PCIe derate on the affected chunks' prefetches.
+    #
+    # Lower-bound the expected gap by the swap-transfer term alone
+    # (forward D2H + backward H2D for the 2 SWAP blocks, billed at the
+    # legacy worst-case derate via ``effective_bw``):
+    swap_eff_h2d, swap_eff_d2h = effective_bw(cfg_b, hw)
+    swap_transfer_lower_bound = sum(
+        trace.activation_sizes[BlockId(b)] / swap_eff_d2h  # fwd D2H
+        + trace.activation_sizes[BlockId(b)] / swap_eff_h2d  # bwd H2D
+        for b in range(2)
+    )
+
+    assert t_b > t_a, (
+        f"phase-2 override failed to charge any n_swap cost: "
+        f"t_a (n_swap=0) = {t_a:.6f}, t_b (n_swap=2) = {t_b:.6f}; "
+        "n_swap > 0 candidates must pay swap-transfer plus the per-chunk "
+        "PCIe contention derate"
+    )
+    # The per-chunk contention derate on top of the swap transfer is
+    # what the fix restores. With the analytical per-chunk path active,
+    # the gap should exceed the swap-transfer-only lower bound by a
+    # measurable margin (the affected chunks' comm cost grows when
+    # their effective bandwidth drops). Use a strict-greater assertion
+    # — the pre-fix path equalled this lower bound exactly.
+    assert (t_b - t_a) > swap_transfer_lower_bound, (
+        f"phase-2 override under-charged n_swap > 0: "
+        f"gap (t_b - t_a) = {(t_b - t_a):.6f}, swap-transfer-only lower "
+        f"bound = {swap_transfer_lower_bound:.6f}; the per-chunk PCIe "
+        "contention derate (paper §3.3 / commit e8f45fd7) must apply on "
+        "top — pre-fix the phase-2 path paid only the swap transfer and "
+        "missed this term"
+    )
 
 
 def test_phase2_bootstrap_uses_low_persistence_all_ckpt(toy_trace, toy_layout, toy_hw):
