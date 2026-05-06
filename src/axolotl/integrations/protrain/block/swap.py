@@ -97,6 +97,7 @@ import torch
 from torch import nn
 
 from axolotl.integrations.protrain.block.strategy import BlockMode
+from axolotl.integrations.protrain.runtime.streams import SingleStreamAllocator
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -372,12 +373,24 @@ def _make_pack_unpack(
                 free_bytes,
             )
 
-        gpu_buf = torch.empty_strided(
-            handle.shape,
-            handle.stride,
-            dtype=handle.dtype,
-            device=handle.device,
-        )
+        # App B.2: route the GPU activation buffer through the
+        # default-stream heap. The subsequent H2D copy runs on
+        # ``swap_stream`` for compute/copy overlap, but the allocation
+        # itself must come from the default heap so the caching
+        # allocator can reuse this region across iterations rather than
+        # pinning it to ``swap_stream``'s per-stream free-list. The
+        # ``gpu_buf.record_stream(handle.swap_stream)`` call inside the
+        # swap_stream context below ties the buffer's lifetime to the
+        # swap_stream's work so the allocator's free path waits for the
+        # H2D to retire — preventing the allocator-frees-mid-DMA
+        # silent-corruption window.
+        with SingleStreamAllocator():
+            gpu_buf = torch.empty_strided(
+                handle.shape,
+                handle.stride,
+                dtype=handle.dtype,
+                device=handle.device,
+            )
         _swap_stream_wait_compute(handle.swap_stream)
         h2d_done: "torch.cuda.Event | None" = None
         with torch.cuda.stream(handle.swap_stream):
