@@ -161,12 +161,12 @@ def _build_packing_steps(
     for pid in param_sizes:
         if pid in placed:
             continue
-        bid = pid_owner.get(pid)
-        if bid is None:
+        tail_bid = pid_owner.get(pid)
+        if tail_bid is None:
             steps.append(("single", param_sizes[pid]))
             placed.add(pid)
             continue
-        pending = [q for q in block_spans[bid] if q not in placed]
+        pending = [q for q in block_spans[tail_bid] if q not in placed]
         steps.append(("block", [param_sizes[q] for q in pending]))
         placed.update(pending)
 
