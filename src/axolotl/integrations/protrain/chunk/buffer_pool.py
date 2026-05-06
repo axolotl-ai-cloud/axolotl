@@ -3,8 +3,10 @@
 A fixed pool of ``n_buffer`` GPU tensors of ``S_chunk`` bytes each. Every
 non-persistent chunk gather borrows a buffer; ``release`` returns it. Buffers
 carry a ``chunk_id`` tag so the backward pass can ask "is this chunk's data
-still resident in one of my buffers?" via :meth:`lookup_resident` — if yes,
-we skip the reload. §3.1.1 + §5.
+still resident in one of my buffers?" via :meth:`acquire_if_resident` (the
+lease-taking, race-safe API) — if yes, we skip the reload. §3.1.1 + §5.
+:meth:`lookup_resident` remains as a lease-free peek for boolean residency
+probes that don't read the buffer.
 
 Paired with :class:`~axolotl.integrations.protrain.chunk.pinned_alloc.PinnedHostMemory`
 for the host-side staging region of the same shape.
@@ -44,10 +46,15 @@ class BufferPool:
       tag is *preserved* so a subsequent :meth:`lookup_resident` still sees
       it; the buffer is only actually overwritten when it's re-acquired
       for a different chunk, at which point its tag is updated.
-    * :meth:`lookup_resident(chunk_id)` — ``None`` unless a buffer with a
-      matching tag exists; returns the buffer regardless of whether it's
-      currently in the free list (the backward pass uses this to skip
-      redundant H2D copies).
+    * :meth:`acquire_if_resident(chunk_id)` — ``None`` on miss; on hit
+      takes a lease and returns the leased buffer (race-safe against
+      concurrent eviction). The backward pass uses this to skip
+      redundant H2D copies. Pair with :meth:`release(chunk_id)`.
+    * :meth:`lookup_resident(chunk_id)` — lease-free peek for boolean
+      residency probes that don't dereference the returned buffer
+      (e.g. routing decisions). Returning a buffer here does NOT
+      protect against eviction; use :meth:`acquire_if_resident` if
+      you need to read.
 
     The "LRU-free" wording in the spec means: when multiple buffers are
     free and we must evict one, prefer the buffer least-recently released

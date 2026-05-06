@@ -100,7 +100,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 - `manager.py` — `class ChunkManager`; `gather(chunk_id)`, `offload(chunk_id)`, `mark_persistent(first_n)`. §3.1.1.
 - `buffer_pool.py` — `class BufferPool(n_buffer: int, S_chunk: int)`; `acquire() / release()`; carries forward-resident buffers into backward. §3.1.1, §5.
 - `pinned_alloc.py` — `pinned_alloc(n_buffer, S_chunk) -> HostMemory`. `ctypes` → `cudaHostAlloc` with exact byte count. App B.2.
-- `optim.py` — wraps `deepspeed.ops.adam.DeepSpeedCPUAdam` for non-persistent chunks, `apex.optimizers.FusedAdam` (or torch `FusedAdam`) for persistent. `step_async(chunk_id)` for CPU path to overlap GPU bwd. §5.
+- `optim.py` — wraps `deepspeed.ops.adam.DeepSpeedCPUAdam` for non-persistent chunks; for persistent chunks uses `apex.optimizers.FusedAdam` when available, falling back to `torch.optim.AdamW` (the non-fused torch optimizer — there is no `torch.optim.FusedAdam`). `step_async(chunk_id)` for CPU path to overlap GPU bwd. §5.
 
 ### block/ (M3)
 

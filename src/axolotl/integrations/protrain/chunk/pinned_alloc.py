@@ -318,7 +318,17 @@ class PinnedHostMemory:
             # earlier than expected. Cheap (one tensor object).
             self._cudart_view = frombuffer_tensor
             self._torch_tensor = torch_pinned
-            self._is_pinned_recognised_by_torch = False
+            # ``buffer()`` now returns slice views of ``torch_pinned``,
+            # which IS recognised as pinned by torch — surface that to
+            # callers via the capability flag. The flag describes the
+            # data path's actual behavior (``non_blocking=True`` H2D
+            # async-fast-path eligibility), NOT the underlying allocator
+            # source. Likewise, ``buffer()`` slices of ``torch.empty``
+            # land at PyTorch caching-allocator granularity (rounded),
+            # not the cudaHostAlloc precise size, so flip the
+            # precise-size flag too.
+            self._is_pinned_recognised_by_torch = True
+            self._is_precise_size = False
 
     def _init_fallback(self) -> None:
         import torch

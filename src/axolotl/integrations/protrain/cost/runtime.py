@@ -43,7 +43,7 @@ PCIe bandwidth contention (§3.3 / §A.1):
   (full PCIe when its prefetch window overlaps no SWAP block,
   derated proportionally to the overlap count otherwise), and sums
   the per-chunk comm cost. The earlier four-way split (cached vs.
-  uncached × affected vs. unaffected) is gone — replaced by a single
+  uncached x affected vs. unaffected) is gone — replaced by a single
   per-chunk loop that naturally handles both axes (the cached/
   uncached predicate is a simple ``cid >= n_chunk - n_buffer``
   check applied inside the loop).
@@ -620,7 +620,7 @@ def estimate_runtime(
     n_persist_eff = len(persistent_ids)
     # ``cfg.n_persist`` is the search-chosen prefix; the n_persist
     # phase-2 corrections below compute their delta against the
-    # *effective* (prefix ∪ mandatory) count via
+    # *effective* (prefix union mandatory) count via
     # ``layout.effective_persistent_ids``, so we don't need a clamped
     # prefix local here.
     n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist_eff))
@@ -860,7 +860,7 @@ def estimate_runtime(
         # would be the symmetric correction but the bootstrap is
         # constructed at the minimum-feasible n_persist (typically 0)
         # so candidates only go upward in practice.
-        # Use the EFFECTIVE persistent counts (prefix ∪ mandatory) so
+        # Use the EFFECTIVE persistent counts (prefix union mandatory) so
         # chunks already in ``mandatory_persistent`` aren't counted as
         # "newly persistent" when the prefix grows over them. The bootstrap
         # shares the same layout-invariant ``mandatory_persistent``, so:

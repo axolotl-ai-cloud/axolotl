@@ -306,7 +306,7 @@ which the plugin wraps via monkey-patch in `post_trainer_create`
 (no `on_load_checkpoint` callback exists).
 
 ```text
-1. Read metadata.json. Validate schema_version == 1.
+1. Read metadata.json. Validate format_version == 1.
 2. Validate world_size == 1 (Phase 1 single-rank guard). Else error.
 3. Validate zero3_shard == False. Else error.
 4. Compare persistent_ids against the current run's effective set:

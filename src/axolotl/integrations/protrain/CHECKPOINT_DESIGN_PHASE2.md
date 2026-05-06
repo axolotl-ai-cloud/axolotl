@@ -40,12 +40,15 @@ unchanged:
   defeats HF's hostile `map_location=device` default.
 * The save-size gate (`protrain_optim_save_max_bytes`, default 2 GiB)
   is preserved but no longer rank-local. Every rank enters the
-  pre-save preamble under `_allreduce_status_or_raise()` for lockstep
-  synchronization, but rank 0 owns the size estimate and the
-  skip/abort decision; ranks > 0 do not estimate independently and do
-  not early-return on their own. The single rank-0 decision is
-  broadcast to every rank via the same `_allreduce_status_or_raise()`
-  channel. See §4.4 for the broadcast protocol.
+  pre-save preamble under `_allreduce_status_or_raise()` (which
+  synchronizes preamble failures across ranks via an all-reduce of
+  a status code), but rank 0 owns the size estimate and the
+  skip/abort decision; ranks > 0 do not estimate independently and
+  do not early-return on their own. The single rank-0 decision is
+  then broadcast via `_broadcast_object_list_or_noop()` (a thin
+  wrapper around `torch.distributed.broadcast_object_list`) so every
+  rank sees the same skip/proceed verdict. See §4.4 for the
+  broadcast protocol.
 * Schema versioning via `format_version` — Phase 2 bumps to **v2**.
 * All save/load files live under
   `{checkpoint_dir}/protrain_optim/`. Per-rank file naming distinguishes

@@ -45,9 +45,22 @@ the two modes don't collide on disk.
 Hard validation on load: zero3_shard, layout signature, save_mode,
 and effective persistent_ids set must all match the current run. World
 size is allowed to differ between save and load in Mode-B (replicated
-state is shape-independent of world_size); Mode-C requires identical
-world_size since the shard arithmetic depends on it (cross-world-size
-resume needs a re-shard step that's out of scope for Phase 2). Mode-C
+state is shape-independent of world_size). Mode-C cross-world-size
+resume IS supported via two paths:
+
+* **Offline reshard CLI** (the canonical path):
+  ``scripts/protrain/reshard_optim.py`` rewrites the saved Mode-C
+  optim directory at the new world size before training resumes —
+  see ``api/reshard.py``.
+* **Online reshard on load** (opt-in): set
+  ``protrain_allow_online_reshard: true`` on ``ProTrainArgs``; the
+  load hook then performs the reshard in-process at resume time.
+  Off by default because the reshard is non-trivial work that
+  should be a deliberate operator decision.
+
+When neither path is enabled, Mode-C still requires identical
+world_size between save and load (the same hard error as Phase 2's
+original guard). Mode-C
 additionally requires the saved per-chunk dtype-region descriptors to
 exactly match the current run's region layout — a mismatch implies
 the saved bytes won't fit the rebuilt ``shard_param`` and we'd crash

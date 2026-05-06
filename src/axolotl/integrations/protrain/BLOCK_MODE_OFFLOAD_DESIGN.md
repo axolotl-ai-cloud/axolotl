@@ -397,18 +397,31 @@ class ChunkManager:
 
 ### 3.5 `block_map_runtime_admissible` update
 
-Replace the rule with:
+> **Update (post-ship):** the historical rule below required NONE
+> AND SWAP × non-persistent to be inadmissible. The shipped contract
+> (see §1.3 and §6.6) keeps NONE × non-persistent inadmissible but
+> makes **SWAP × non-persistent legal** via the inter-stream barrier
+> in ``runtime/scheduler.py::prefetch_chunks`` plus the SWAP × non-
+> persistent runtime fix. The rule that ships in
+> ``search/exhaustive.py::block_map_runtime_admissible`` is the
+> updated version below; the bullet listing was the pre-fix
+> formulation and is preserved here only as historical context.
+
+Replace the rule with (shipped):
 
 > A block is admissible iff:
 > * mode is `CKPT` (always safe; recompute re-binds storage), OR
 > * mode is `OFFLOAD` (new path; safe because the saved-tensor hook
 >   re-binds storage at backward), OR
-> * every chunk owned by the block is in the persistent set
->   (NONE / SWAP both safe in this case).
+> * mode is `SWAP` (legal even when non-persistent chunks are
+>   present, thanks to the shipped inter-stream barrier — see §6.6),
+>   OR
+> * every chunk owned by the block is in the persistent set (NONE
+>   safe in this case).
 >
-> Modes `NONE` and `SWAP` on a block with any non-persistent chunk
-> remain **inadmissible** — they would still capture saved tensors
-> that don't survive the post-forward offload.
+> Mode `NONE` on a block with any non-persistent chunk remains
+> **inadmissible** — it would still capture saved tensors that
+> don't survive the post-forward offload.
 
 In code (no implementation, illustration only):
 

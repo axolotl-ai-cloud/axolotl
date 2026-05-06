@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import copy
 import statistics
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from axolotl.integrations.protrain.types import (
     ChunkId,
@@ -322,7 +322,6 @@ def measure_chunked_steady(
     cpu_rng = torch.get_rng_state()
     cuda_rngs = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
 
-    model.train()
     # Bind every CUDA timing/memory API call to the model's device so a
     # future refactor that changes the current-device context between
     # plugin setup and measurement cannot silently measure the wrong GPU.
@@ -330,44 +329,51 @@ def measure_chunked_steady(
     if device.type != "cuda":
         raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
 
+    # Sentinels so the ``finally`` block knows which restore steps are
+    # safe to run even when an exception fires partway through the
+    # snapshot-and-warmup setup. Any operation that mutates caller-
+    # visible state (``model.train()``, ``state_dict`` clones,
+    # ``optimizer.zero_grad``) lives inside the ``try:`` so it can roll
+    # back cleanly on partial failure.
+    model_state: dict[str, Any] | None = None
+    optim_state: dict[str, Any] | None = None
     with torch.cuda.device(device):
-        # Snapshot model + optimizer state BEFORE warmup so the
-        # measurement (which calls ``optimizer.step()`` and mutates
-        # parameters) is non-destructive: training resumes from the
-        # same initial state after the profiler returns. The snapshot
-        # itself is excluded from the timed region — captured before
-        # warmup, restored after the timed loop.
-        #
-        # ``state_dict()`` returns *aliased* tensor references — the
-        # subsequent ``optimizer.step()`` calls would mutate those
-        # tensors in-place and silently advance the snapshot, so we
-        # deep-clone every tensor (independent storage) before warmup.
-        # Synchronize first so any in-flight kernels finish writing
-        # before we read parameters / optimizer state into the clone.
-        torch.cuda.synchronize(device)
-        model_state = _clone_state_dict(model.state_dict())
-        # Snapshot optimizer state on host to avoid duplicating GPU
-        # memory during the timed region — for FusedAdam-style
-        # optimizers the per-param ``exp_avg`` / ``exp_avg_sq`` tensors
-        # are the same size as the params themselves, so an on-device
-        # snapshot doubles the optimizer-state footprint.
-        # ``Optimizer.load_state_dict`` casts the loaded state back to
-        # each parameter's device at restore time, so a CPU snapshot
-        # round-trips faithfully.
-        optim_state = _clone_state_dict(
-            optimizer.state_dict(), target_device=torch.device("cpu")
-        )
-        # Start from a clean grad state so leftover grads from prior
-        # trace work (e.g. the phase-1 profile pass) cannot pollute
-        # the first warmup step's peak-memory and timing samples.
-        optimizer.zero_grad(set_to_none=True)
-        # Wrap warmup + timed loop in try/finally so an exception
-        # mid-measurement (OOM, NaN loss, kernel error) still rolls
-        # the model + optimizer back to the pre-measurement state.
-        # Without this the caller would inherit a partially-advanced
-        # optimizer + parameters that bear no relation to the
-        # checkpoint they handed in.
         try:
+            model.train()
+            # Snapshot model + optimizer state BEFORE warmup so the
+            # measurement (which calls ``optimizer.step()`` and
+            # mutates parameters) is non-destructive: training
+            # resumes from the same initial state after the profiler
+            # returns. The snapshot itself is excluded from the
+            # timed region — captured before warmup, restored after
+            # the timed loop.
+            #
+            # ``state_dict()`` returns *aliased* tensor references —
+            # the subsequent ``optimizer.step()`` calls would mutate
+            # those tensors in-place and silently advance the
+            # snapshot, so we deep-clone every tensor (independent
+            # storage) before warmup. Synchronize first so any
+            # in-flight kernels finish writing before we read
+            # parameters / optimizer state into the clone.
+            torch.cuda.synchronize(device)
+            model_state = _clone_state_dict(model.state_dict())
+            # Snapshot optimizer state on host to avoid duplicating
+            # GPU memory during the timed region — for FusedAdam-
+            # style optimizers the per-param ``exp_avg`` /
+            # ``exp_avg_sq`` tensors are the same size as the params
+            # themselves, so an on-device snapshot doubles the
+            # optimizer-state footprint.
+            # ``Optimizer.load_state_dict`` casts the loaded state
+            # back to each parameter's device at restore time, so a
+            # CPU snapshot round-trips faithfully.
+            optim_state = _clone_state_dict(
+                optimizer.state_dict(), target_device=torch.device("cpu")
+            )
+            # Start from a clean grad state so leftover grads from
+            # prior trace work (e.g. the phase-1 profile pass) cannot
+            # pollute the first warmup step's peak-memory and timing
+            # samples.
+            optimizer.zero_grad(set_to_none=True)
             # Warmup — discard timings.
             for _ in range(n_warmup):
                 out = model(**batch)
@@ -426,10 +432,19 @@ def measure_chunked_steady(
             # copies values into the live tensors, so as long as the
             # snapshot has independent storage (it does — see
             # ``_clone_state_dict``) the rollback is exact.
+            #
+            # Each restore is gated on the matching snapshot being
+            # populated: if e.g. ``_clone_state_dict(model.state_dict())``
+            # itself raised, ``model_state`` is still ``None`` and the
+            # mutating ``model.train()`` is the only state change we
+            # need to roll back (handled by the per-module training-
+            # flag restore at the bottom of this block).
             torch.cuda.synchronize(device)
-            model.load_state_dict(model_state)
-            optimizer.load_state_dict(optim_state)
-            optimizer.zero_grad(set_to_none=True)
+            if model_state is not None:
+                model.load_state_dict(model_state)
+            if optim_state is not None:
+                optimizer.load_state_dict(optim_state)
+                optimizer.zero_grad(set_to_none=True)
             torch.cuda.synchronize(device)
             # Restore RNG state + training flag AFTER the parameter /
             # optimizer rollback so the caller observes byte-identical
