@@ -345,6 +345,205 @@ def test_materialize_offload_mixed_dtype() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Test 2d: materialize_offload uses PinnedHostMemory with precise sizing (App B.2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+def test_materialize_offload_uses_precise_pinned_pool() -> None:
+    """The unified pinned pools' total bytes equal the SUM of per-chunk
+    aligned bytes — no power-of-2 round-up.
+
+    Paper App B.2 calls out that PyTorch's default ``CUDAHostAllocator``
+    rounds pinned allocations up to the next power of two. ProTrain's
+    custom :class:`PinnedHostMemory` allocates the exact byte count via
+    ``cudaHostAlloc``. ``materialize_offload`` uses ONE
+    ``PinnedHostMemory`` for the param shadow region and ONE for the
+    grad shadow region, sized to the precise sum of per-chunk aligned
+    bytes (params: ``chunk_bytes`` per chunk; grads: per-trainable-param
+    or per-region shard bytes).
+
+    This test:
+
+    1. Constructs a mixed-dtype chunk (fp16 + fp32) so the BUG 2
+       intra-chunk alignment fix is exercised under the new layout.
+    2. Calls ``materialize_offload``.
+    3. Asserts ``self._cpu_param_pool`` and ``self._cpu_grad_pool`` are
+       :class:`PinnedHostMemory` instances.
+    4. Independently recomputes the expected total aligned bytes for
+       params and grads, and asserts each pool's
+       ``total_bytes`` equals the sum of per-chunk aligned bytes plus
+       the inter-chunk 16-byte alignment padding (and crucially is NOT
+       a power of two for non-trivial sizes).
+    5. Asserts ``is_precise_size`` is True so we know the ctypes
+       ``cudaHostAlloc`` path engaged (and not the
+       ``torch.empty(pin_memory=True)`` fallback that would re-introduce
+       the round-up the test is meant to detect).
+    """
+    pytest.importorskip("torch")
+    import torch
+    from torch import nn
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+    torch.cuda.empty_cache()
+
+    # Mixed-dtype model: fp16 attention weight + fp32 norm scales,
+    # repeated across multiple "blocks" so several non-persistent
+    # chunks are populated. Hand-picked sizes so the per-chunk total
+    # is NOT a power of two — the assertion below would be vacuous if
+    # the input bytes happened to be a perfect power of two.
+    class MixedDtype(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            blocks: list[nn.Module] = []
+            for _ in range(3):
+                attn = nn.Linear(48, 48, bias=False).half()  # 48*48*2 = 4608 B
+                # Trailing fp32 norm forces the BUG 2 alignment pad
+                # into the pool's per-chunk byte plan.
+                norm = nn.LayerNorm(48).float()  # weight + bias = 48*4*2 = 384 B
+                layer = nn.Module()
+                layer.attn = attn  # type: ignore[attr-defined]
+                layer.norm = norm  # type: ignore[attr-defined]
+
+                def fwd(x: torch.Tensor, *, _layer=layer) -> torch.Tensor:
+                    y = _layer.attn(x.half())
+                    y = _layer.norm(y.float())
+                    return y
+
+                layer.forward = fwd  # type: ignore[assignment]
+                blocks.append(layer)
+            self.h = nn.ModuleList(blocks)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            for layer in self.h:
+                x = layer(x)
+            return x
+
+    torch.manual_seed(0)
+    model = MixedDtype().to("cuda")
+
+    # S_chunk just big enough to hold one block (4608 + small fp32 pad
+    # + 384 = ~5000 B). 8 KB is comfortably above that.
+    S_chunk = 1 << 13
+    mgr, layout, pool, host = _build_chunk_manager(
+        model, n_persist=0, S_chunk=S_chunk, n_buffer=2
+    )
+
+    # Independent ground truth for the per-chunk aligned-byte plan,
+    # mirroring materialize_offload's BUG 2 alignment pass.
+    def _per_chunk_aligned_bytes(param_ids: list) -> int:
+        offset = 0
+        for pid in param_ids:
+            p = dict(model.named_parameters()).get(str(pid))
+            if p is None:
+                continue
+            esz = int(p.element_size())
+            nbytes = int(p.numel()) * esz
+            if nbytes == 0:
+                continue
+            offset = ((offset + esz - 1) // esz) * esz
+            offset += nbytes
+        return offset
+
+    def _align_up(n: int, a: int) -> int:
+        return ((n + a - 1) // a) * a
+
+    _INTER_CHUNK_ALIGN = 16
+    expected_param_bytes = 0
+    expected_grad_bytes = 0
+    for cid_int in sorted(mgr._non_persistent_ids):
+        chunk_param_ids = layout.chunks[cid_int]
+        if not chunk_param_ids:
+            continue
+        chunk_bytes = _per_chunk_aligned_bytes(chunk_param_ids)
+        if chunk_bytes == 0:
+            continue
+        expected_param_bytes = (
+            _align_up(expected_param_bytes, _INTER_CHUNK_ALIGN) + chunk_bytes
+        )
+        # Replicated path: every trainable param contributes its full
+        # nbytes (no shard split). Sum across the chunk's params.
+        chunk_grad_bytes = 0
+        for pid in chunk_param_ids:
+            p = dict(model.named_parameters()).get(str(pid))
+            if p is None or not p.requires_grad:
+                continue
+            chunk_grad_bytes += int(p.numel()) * int(p.element_size())
+        expected_grad_bytes = (
+            _align_up(expected_grad_bytes, _INTER_CHUNK_ALIGN) + chunk_grad_bytes
+        )
+
+    # Sanity check: the byte total must NOT be a power of two — if it
+    # were, the ``not power-of-two`` assertion below would be vacuous.
+    assert expected_param_bytes & (expected_param_bytes - 1) != 0, (
+        f"expected_param_bytes={expected_param_bytes} happens to be a power "
+        "of two — pick a different model shape so the precise-size assertion "
+        "is meaningful"
+    )
+
+    mgr.materialize_offload()
+
+    # ---- Assertion 1: pools are PinnedHostMemory instances ------------
+    assert isinstance(mgr._cpu_param_pool, PinnedHostMemory), (
+        f"_cpu_param_pool should be PinnedHostMemory, got "
+        f"{type(mgr._cpu_param_pool).__name__}"
+    )
+    assert isinstance(mgr._cpu_grad_pool, PinnedHostMemory), (
+        f"_cpu_grad_pool should be PinnedHostMemory, got "
+        f"{type(mgr._cpu_grad_pool).__name__}"
+    )
+
+    # ---- Assertion 2: pool total_bytes is the exact sum, no round-up
+    assert mgr._cpu_param_pool.total_bytes == expected_param_bytes, (
+        f"param pool size {mgr._cpu_param_pool.total_bytes} != expected "
+        f"{expected_param_bytes} (sum of per-chunk aligned bytes); "
+        "App B.2 round-up regressed?"
+    )
+    assert mgr._cpu_grad_pool.total_bytes == expected_grad_bytes, (
+        f"grad pool size {mgr._cpu_grad_pool.total_bytes} != expected "
+        f"{expected_grad_bytes} (sum of per-chunk trainable-param aligned "
+        "bytes); App B.2 round-up regressed?"
+    )
+
+    # ---- Assertion 3: ctypes cudaHostAlloc path engaged ---------------
+    # If this assertion fails, the libcudart fallback to
+    # ``torch.empty(pin_memory=True)`` is in effect — that path goes
+    # through CUDAHostAllocator, which IS the round-up source the
+    # paper rejects. The test would still pass total_bytes (the
+    # fallback also uses the requested size as the request), but the
+    # paper-fidelity claim is broken.
+    assert mgr._cpu_param_pool.is_precise_size, (
+        "PinnedHostMemory fell back to torch.empty(pin_memory=True); "
+        "ctypes cudaHostAlloc path failed — App B.2 fidelity not honored"
+    )
+    assert mgr._cpu_grad_pool.is_precise_size, (
+        "grad pool fell back to torch.empty(pin_memory=True)"
+    )
+
+    # ---- Assertion 4: per-slot views still pass BUG 2 alignment -------
+    # Mirrored from test_materialize_offload_mixed_dtype: every slot's
+    # cpu_data and cpu_grad must round-trip through the dtype view
+    # without raising "offset is not aligned".
+    for cid_int in sorted(mgr._non_persistent_ids):
+        slots = mgr._cpu_slots.get(ChunkId(cid_int), [])
+        for slot in slots:
+            if slot.cpu_data is not None:
+                assert slot.cpu_data.dtype == slot.dtype
+                assert tuple(slot.cpu_data.shape) == tuple(slot.shape)
+            if slot.cpu_grad is not None:
+                assert slot.cpu_grad.dtype == slot.dtype
+                assert tuple(slot.cpu_grad.shape) == tuple(slot.shape)
+
+    mgr.uninstall()
+    host.close()
+    del pool
+
+
+# ---------------------------------------------------------------------------
 # Test 2c: param.data returns to empty-GPU placeholder between iterations (BUG 4)
 # ---------------------------------------------------------------------------
 

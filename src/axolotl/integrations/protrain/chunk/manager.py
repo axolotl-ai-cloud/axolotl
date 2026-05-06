@@ -98,6 +98,7 @@ if TYPE_CHECKING:
         CpuFusedAdamAdapter,
         GpuFusedAdamAdapter,
     )
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
 
 LOG = get_logger(__name__)
 
@@ -512,6 +513,22 @@ class ChunkManager:
         # appear in ``layout.chunks[chunk_id]``.
         self._cpu_slots: dict[ChunkId, list[_CpuParamSlot]] = {}
 
+        # App B.2 — custom pinned-memory allocator for the offload-time
+        # host shadows. PyTorch's ``pin_memory=True`` flows through
+        # ``CUDAHostAllocator`` which rounds up to the next power of two
+        # (paper App B.2 explicitly calls this out as wasteful). We
+        # instead allocate ONE precise-size :class:`PinnedHostMemory`
+        # region for every non-persistent chunk's param bytes, and ONE
+        # for every trainable param's grad shadow bytes — sized to the
+        # exact aligned-byte total — and slice per-chunk views out of
+        # them. Populated by :meth:`materialize_offload`; freed by
+        # :meth:`restore_to_gpu` (or the manager's GC fallback).
+        # ``None`` until materialize, or when the layout has no
+        # non-persistent chunks at all (all-persistent shape — no host
+        # shadows are needed).
+        self._cpu_param_pool: "PinnedHostMemory | None" = None
+        self._cpu_grad_pool: "PinnedHostMemory | None" = None
+
         # Per-chunk sharded state (ZeRO-3 path). Populated by
         # :meth:`materialize_offload` only when ``self.zero3_shard`` is
         # True and the chunk qualifies for sharding (homogeneous dtype).
@@ -610,19 +627,50 @@ class ChunkManager:
     def materialize_offload(self) -> int:
         """Physically move non-persistent chunks' params to pinned CPU memory.
 
-        For every non-persistent chunk:
+        Two-phase implementation (paper App B.2):
 
-        1. Sum the total byte footprint of its params (variable — a chunk
-           is at most ``S_chunk`` bytes but may be smaller, e.g. the
-           trailing chunk).
-        2. Allocate one pinned CPU tensor of that size (uint8 flat), then
-           partition it into per-param byte slots.
-        3. For each param: copy ``param.data`` (GPU) into its CPU slot,
-           then replace ``param.data`` with an empty GPU placeholder.
-        4. For each *trainable* (``requires_grad=True``) param: allocate
-           a pinned CPU grad shard of the same shape+dtype and register
-           a ``register_post_accumulate_grad_hook`` that drains the grad
-           to CPU on the fly (Gap 2).
+        1. **Planning pass.** Walk every non-persistent chunk and compute
+           its byte plan — per-param aligned byte offsets (BUG 2 fix
+           preserved per-chunk), the local ``chunk_bytes`` total, and
+           (under ``zero3_shard``) the per-region partition layout.
+           Compute the SUM of pinned-host bytes needed across every
+           chunk for params and (separately) for trainable grads.
+        2. **Allocation pass.** Allocate ONE
+           :class:`PinnedHostMemory` region for the param pool and ONE
+           for the grad pool — sized to the precise sum of per-chunk
+           aligned bytes. Then walk the plans again, slice per-chunk
+           views out of the unified pools, and populate
+           ``_cpu_slots`` / ``_chunk_shards`` / per-param grad shadows
+           on top of those views.
+
+        App B.2 paper-fidelity: PyTorch's ``torch.empty(pin_memory=True)``
+        routes through ``CUDAHostAllocator`` which rounds up to the next
+        power of two. ``PinnedHostMemory`` calls ``cudaHostAlloc``
+        directly via ctypes for an exact byte count, avoiding the
+        rounding waste. The two-pass structure is what lets us pre-size
+        the unified region precisely.
+
+        Inter-chunk alignment: each chunk's start offset within the
+        unified pool is padded up to a 16-byte boundary. 16 covers
+        every dtype up through fp64 (8-byte itemsize doubled for
+        future-proofing); the per-param BUG 2 alignment computed
+        WITHIN a chunk continues to use the chunk's max element size,
+        so the alignment guarantee carried by ``slot.byte_offset`` is
+        unchanged from the previous per-chunk-allocation layout. The
+        16-byte inter-chunk pad costs at most 15 bytes per chunk —
+        negligible vs. the per-power-of-2 round-up the App B.2
+        switch eliminates.
+
+        Per-chunk action (Pass 2):
+
+        * For each param: copy ``param.data`` (GPU) into its CPU slot
+          (a view into the unified param pool), then replace
+          ``param.data`` with an empty GPU placeholder.
+        * For each *trainable* param (replicated mode) OR each
+          trainable region (sharded mode): assign a view into the
+          unified grad pool as the grad shadow, and register a
+          ``register_post_accumulate_grad_hook`` that drains the
+          grad to CPU on the fly (Gap 2).
 
         Returns
         -------
@@ -632,9 +680,9 @@ class ChunkManager:
             offloaded param.
 
         Idempotent: a second call is a no-op (detected via
-        ``self._cpu_slots`` already being populated).
+        ``self._cpu_param_pool`` already being non-None).
         """
-        if self._cpu_slots:
+        if self._cpu_param_pool is not None or self._cpu_slots:
             LOG.debug(
                 "ChunkManager.materialize_offload: already materialized "
                 "(%d chunks), no-op",
@@ -642,24 +690,68 @@ class ChunkManager:
             )
             return 0
 
+        import math as _math
+
         import torch
+
+        from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+        # Inter-chunk alignment for slicing per-chunk byte ranges out of
+        # the unified pool. 16 bytes covers any dtype up to fp64 (8
+        # bytes) with a doubling for future-proofing — enough that the
+        # per-chunk byte-view ``narrow(0, chunk_start, chunk_bytes)``
+        # always lands on an element boundary regardless of which
+        # dtype mix the chunk holds.
+        _INTER_CHUNK_ALIGN = 16
 
         # ``pin_memory=True`` requires an NVIDIA driver/runtime even when the
         # tensor lives on host memory, so allocating pinned host buffers on a
         # CPU-only box raises ``RuntimeError: Found no NVIDIA driver``. Gate
         # every pinned-host allocation in this method on a single boolean
         # so CPU-only test hosts (and other CUDA-less environments) can
-        # construct a ChunkManager without crashing.
+        # construct a ChunkManager without crashing. ``PinnedHostMemory``
+        # already takes the same care in its fallback path, but we still
+        # compute the flag here for the per-chunk in-flight scratch
+        # (sharded path uses an unpinned ``region_scratch``).
         use_pinned_host = self.device.type == "cuda" and torch.cuda.is_available()
 
-        freed = 0
+        # ---- Pass 1: planning ------------------------------------------
+        # For each non-persistent chunk, compute everything we need to
+        # know to slice the unified pinned pools later: per-param
+        # aligned offsets, chunk_bytes, region partition (if sharded),
+        # trainable flags. No allocations yet.
+        #
+        # Each plan is a dict shaped like::
+        #
+        #   {
+        #     "cid": ChunkId,
+        #     "param_ids": list[ParamId],
+        #     "per_param_bytes": list[int],
+        #     "aligned_offsets": list[int],
+        #     "chunk_bytes": int,
+        #     "shardable": bool,
+        #     "region_plans": list[dict],  # populated iff shardable
+        #     "total_shard_bytes": int,    # sum across regions
+        #     "param_pool_offset": int,    # filled in Pass 2
+        #     "grad_pool_offset": int,     # filled in Pass 2 (replicated path)
+        #     "region_grad_offsets": list[int],  # filled in Pass 2 (sharded path)
+        #   }
+        chunk_plans: list[dict] = []
+        # Running totals for the unified pools.
+        total_param_pool_bytes = 0
+        total_grad_pool_bytes = 0
+
+        def _align_up(n: int, a: int) -> int:
+            """Round ``n`` up to the next multiple of ``a`` (a > 0)."""
+            return ((n + a - 1) // a) * a
+
         for cid_int in sorted(self._non_persistent_ids):
             cid = cast(ChunkId, cid_int)
             param_ids = self.layout.chunks[int(cid)]
             if not param_ids:
                 continue
 
-            # --- Step 1: compute the chunk's actual byte footprint ------
+            # Per-param byte sizes + element sizes (for BUG 2 alignment).
             # BUG 2 FIX: each param's byte_offset must be aligned to its
             # element_size, otherwise ``byte_view.view(dtype)`` raises
             # ``RuntimeError: offset is not aligned``. This bites when a
@@ -670,11 +762,10 @@ class ChunkManager:
             # an fp32 one. We pad each param's starting offset up to a
             # multiple of its element_size before laying it down; this
             # guarantees alignment for any dtype mix up to 8 bytes
-            # (fp64). The padding bytes stay zero (we allocated with
-            # ``torch.empty`` so technically uninitialized, but no code
-            # ever reads a padding region — the only readers are the
-            # per-param typed views and the per-param H2D copy which
-            # only touches ``nbytes``).
+            # (fp64). The padding bytes stay zero; no code ever reads a
+            # padding region — the only readers are the per-param typed
+            # views and the per-param H2D copy which only touches
+            # ``nbytes``.
             element_sizes: list[int] = []
             per_param_bytes: list[int] = []
             for pid in param_ids:
@@ -687,16 +778,13 @@ class ChunkManager:
                 per_param_bytes.append(nbytes)
                 element_sizes.append(int(param.element_size()))
 
-            # Running-offset computation with per-param alignment, so
-            # the actual chunk allocation size accounts for any padding
-            # gaps.
+            # Per-param aligned offsets within the chunk (BUG 2 fix).
             aligned_offsets: list[int] = []
             offset = 0
             for nbytes, esz in zip(per_param_bytes, element_sizes, strict=True):
                 if nbytes == 0 or esz == 0:
                     aligned_offsets.append(offset)
                     continue
-                # Round offset up to the next multiple of esz.
                 offset = ((offset + esz - 1) // esz) * esz
                 aligned_offsets.append(offset)
                 offset += nbytes
@@ -705,7 +793,7 @@ class ChunkManager:
             if chunk_bytes == 0:
                 continue
 
-            # --- Step 1b: decide shardability + compute dtype regions ----
+            # Decide shardability + compute dtype regions.
             # When ``zero3_shard`` is on we always try to shard — even
             # mixed-dtype chunks. The chunk is modelled as an ordered
             # list of maximal-length contiguous same-dtype regions;
@@ -714,12 +802,6 @@ class ChunkManager:
             # homogeneous chunk this reduces to a single region
             # spanning the whole chunk and behaves identically to the
             # pre-M7-followup path.
-            #
-            # Region layout is derived from the per-param aligned
-            # offsets computed above: walk params in order, start a
-            # new region whenever the dtype changes (or the first
-            # non-empty param is seen). Empty / missing params do not
-            # split regions — they simply contribute nothing.
             chunk_is_shardable = self.zero3_shard
             # list of (dtype, esize, start_off, end_off, is_trainable)
             dtype_regions: list[tuple] = []
@@ -744,15 +826,7 @@ class ChunkManager:
                     dtype_here = param.data.dtype
                     # CodeRabbit R07 fix: split regions on requires_grad
                     # in addition to dtype so each region is uniformly
-                    # trainable or uniformly frozen. Without this, a
-                    # mixed-trainability region's flat shard_param sees
-                    # frozen subranges as zero-grad data — Adam's
-                    # weight-decay / moment updates would still mutate
-                    # bytes the user wanted frozen (PEFT/LoRA, base-
-                    # weight freezing). Splitting here guarantees
-                    # ``shard_param.requires_grad`` is honest at the
-                    # region granularity that the CPU FusedAdam adapter
-                    # actually steps over.
+                    # trainable or uniformly frozen.
                     trainable_here = bool(param.requires_grad)
                     param_end = off + nbytes
                     if cur_dtype is None:
@@ -762,11 +836,6 @@ class ChunkManager:
                         cur_end = param_end
                         cur_trainable = trainable_here
                     elif dtype_here == cur_dtype and trainable_here == cur_trainable:
-                        # Extend the current region. If the per-param
-                        # aligned offset left a gap (can happen on
-                        # weird dtype sequences) the gap bytes remain
-                        # unused — the region's end is just the max
-                        # observed param_end.
                         if param_end > cur_end:
                             cur_end = param_end
                         if off < cur_start:
@@ -801,38 +870,10 @@ class ChunkManager:
             if chunk_is_shardable and not dtype_regions:
                 chunk_is_shardable = False
 
-            # --- Step 2: one pinned CPU allocation per chunk ------------
-            # We allocate fresh pinned memory rather than reusing the
-            # buffer_pool's pinned host region (that was sized to
-            # ``n_buffer * S_chunk`` for staging, not persistent storage —
-            # collisions mod n_buffer would corrupt data). Sizing is
-            # precise: ``chunk_bytes`` bytes exactly (including any
-            # per-param alignment padding).
-            #
-            # In the sharded path this full-chunk buffer is allocated
-            # ONLY to perform the initial full-chunk → per-region
-            # partition; after every region's per-rank shard is
-            # populated it is released. Each rank permanently holds
-            # only ``sum(region.shard_bytes)`` of pinned CPU storage
-            # per chunk.
-            #
-            # Region padding strategy: the chunk's data layout (param
-            # byte offsets) is NEVER relocated — params see the same
-            # aligned-offsets they always did, both in the CPU copy
-            # and in the GPU pool buffer. Instead, each region's
-            # gather/reduce collective runs into/out of a TRANSIENT
-            # per-collective scratch buffer of
-            # ``region_bytes_padded`` bytes, then the valid
-            # ``region_bytes`` prefix is copied in/out of the
-            # pool-buffer slice at the region's original chunk offset.
-            # This costs one extra GPU memcpy per region per gather
-            # but keeps the chunk-wide byte layout rigid and
-            # correctness-proof trivial.
+            # Compute per-region partition layout (sharded path).
             region_plans: list[dict] = []
             total_shard_bytes = 0
             if chunk_is_shardable:
-                import math as _math
-
                 for (
                     dtype_r,
                     esize_r,
@@ -861,18 +902,163 @@ class ChunkManager:
                     )
                     total_shard_bytes += shard_bytes_r
 
-            # Full-chunk buffer. For the sharded path we keep this
-            # allocation sized exactly to ``chunk_bytes`` — the same as
-            # the replicated path — because every region's padding is
-            # absorbed into the PER-REGION scratch buffer at
-            # gather/reduce time, not into the pool-buffer layout.
-            cpu_bytes = torch.empty(
-                chunk_bytes, dtype=torch.uint8, pin_memory=use_pinned_host
+            # ---- Pool-byte accounting --------------------------------
+            # Per-chunk param-pool footprint:
+            #   - Replicated path: ``chunk_bytes`` (full-chunk pinned).
+            #   - Sharded path:    ``total_shard_bytes`` (sum of per-rank
+            #     region shards). The full-chunk buffer is transient,
+            #     allocated unpinned at materialize time only to perform
+            #     the initial partition.
+            # Per-chunk grad-pool footprint:
+            #   - Replicated path: sum of ``nbytes`` across trainable
+            #     params (each gets its own shape-typed grad shadow).
+            #   - Sharded path:    sum of ``shard_bytes`` across
+            #     trainable regions.
+            param_pool_chunk_bytes = (
+                total_shard_bytes if chunk_is_shardable else chunk_bytes
+            )
+            grad_pool_chunk_bytes = 0
+            if chunk_is_shardable:
+                for plan in region_plans:
+                    if plan["is_trainable"]:
+                        grad_pool_chunk_bytes += plan["shard_bytes"]
+            else:
+                for pid, nbytes in zip(param_ids, per_param_bytes, strict=True):
+                    if nbytes == 0:
+                        continue
+                    p = self._params_by_id.get(pid)
+                    if p is None or not p.requires_grad:
+                        continue
+                    grad_pool_chunk_bytes += nbytes
+
+            # Reserve aligned starting offsets in the unified pools.
+            param_pool_offset = _align_up(
+                total_param_pool_bytes, _INTER_CHUNK_ALIGN
+            )
+            total_param_pool_bytes = param_pool_offset + param_pool_chunk_bytes
+            grad_pool_offset = _align_up(
+                total_grad_pool_bytes, _INTER_CHUNK_ALIGN
+            )
+            total_grad_pool_bytes = grad_pool_offset + grad_pool_chunk_bytes
+
+            chunk_plans.append(
+                {
+                    "cid": cid,
+                    "param_ids": param_ids,
+                    "per_param_bytes": per_param_bytes,
+                    "element_sizes": element_sizes,
+                    "aligned_offsets": aligned_offsets,
+                    "chunk_bytes": chunk_bytes,
+                    "shardable": chunk_is_shardable,
+                    "region_plans": region_plans,
+                    "total_shard_bytes": total_shard_bytes,
+                    "param_pool_offset": param_pool_offset,
+                    "param_pool_chunk_bytes": param_pool_chunk_bytes,
+                    "grad_pool_offset": grad_pool_offset,
+                    "grad_pool_chunk_bytes": grad_pool_chunk_bytes,
+                }
             )
 
-            # --- Step 3: copy + rebind param.data -----------------------
+        # ---- Pool allocation ------------------------------------------
+        # ONE precise-size :class:`PinnedHostMemory` per kind. The
+        # allocator calls ``cudaHostAlloc`` directly with the exact
+        # byte count — no power-of-2 round-up. ``n_buffer=1`` plus
+        # ``S_chunk=total_bytes`` gives a single big slot we slice
+        # per-chunk via ``narrow`` in the population pass.
+        #
+        # Empty-pool guard: if no non-persistent chunk needs param /
+        # grad bytes, skip the allocation. ``PinnedHostMemory`` rejects
+        # zero-byte slot sizes; the manager simply leaves the pool
+        # ``None`` and every downstream consumer sees an empty slot
+        # list / region list.
+        param_pool_buf: "torch.Tensor | None" = None
+        grad_pool_buf: "torch.Tensor | None" = None
+        if total_param_pool_bytes > 0:
+            self._cpu_param_pool = PinnedHostMemory(
+                n_buffer=1, S_chunk=total_param_pool_bytes
+            )
+            # Borrow slot 0 for the lifetime of this manager. Released
+            # via ``release_buffer(0)`` in :meth:`restore_to_gpu`'s
+            # teardown (or the manager's GC fallback) — see
+            # :meth:`_close_cpu_pools`.
+            param_pool_buf = self._cpu_param_pool.buffer(0)
+        if total_grad_pool_bytes > 0:
+            self._cpu_grad_pool = PinnedHostMemory(
+                n_buffer=1, S_chunk=total_grad_pool_bytes
+            )
+            grad_pool_buf = self._cpu_grad_pool.buffer(0)
+
+        # ---- Pass 2: population ---------------------------------------
+        # Walk the plans, slice per-chunk views out of the unified pools,
+        # populate slots / regions / grad shadows.
+        freed = 0
+        from torch import nn as _nn
+
+        for plan in chunk_plans:
+            cid = plan["cid"]
+            param_ids = plan["param_ids"]
+            per_param_bytes = plan["per_param_bytes"]
+            aligned_offsets = plan["aligned_offsets"]
+            chunk_bytes = plan["chunk_bytes"]
+            chunk_is_shardable = plan["shardable"]
+            region_plans = plan["region_plans"]
+            total_shard_bytes = plan["total_shard_bytes"]
+            param_pool_offset = plan["param_pool_offset"]
+            param_pool_chunk_bytes = plan["param_pool_chunk_bytes"]
+            grad_pool_offset = plan["grad_pool_offset"]
+            grad_pool_chunk_bytes = plan["grad_pool_chunk_bytes"]
+
+            # Per-chunk view into the param pool.
+            #   - Replicated: full-chunk byte tensor backed by pinned
+            #     memory; slot.cpu_data slices are views into it.
+            #   - Sharded:    per-rank shard region; per-region
+            #     ``cpu_shard_bytes`` are views into it. The full-chunk
+            #     image used for the initial partition is allocated
+            #     unpinned (transient) below.
+            assert param_pool_buf is not None or param_pool_chunk_bytes == 0
+            chunk_param_view: "torch.Tensor | None" = None
+            if param_pool_chunk_bytes > 0:
+                assert param_pool_buf is not None
+                chunk_param_view = param_pool_buf.narrow(
+                    0, param_pool_offset, param_pool_chunk_bytes
+                )
+            chunk_grad_view: "torch.Tensor | None" = None
+            if grad_pool_chunk_bytes > 0:
+                assert grad_pool_buf is not None
+                chunk_grad_view = grad_pool_buf.narrow(
+                    0, grad_pool_offset, grad_pool_chunk_bytes
+                )
+
+            # ---- Replicated path ------------------------------------
+            # ``chunk_param_view`` IS the full-chunk pinned bytes; per-
+            # param slot.cpu_data = chunk_param_view.narrow(byte_offset,
+            # nbytes).view(dtype).view(shape). Per-param grad shadow =
+            # chunk_grad_view.narrow(running_grad_offset, nbytes)
+            # .view(dtype).view(shape).
+            #
+            # ---- Sharded path ---------------------------------------
+            # ``chunk_param_view`` IS this rank's contiguous shard
+            # region (sum of per-region shard_bytes). Within it we
+            # carve per-region sub-ranges. The transient
+            # ``transient_chunk_bytes`` buffer below holds the full
+            # chunk image just long enough to perform the per-region
+            # partition (region_scratch → cpu_region_shard.copy_).
+            transient_full_chunk: "torch.Tensor | None" = None
+            if chunk_is_shardable:
+                # Unpinned scratch: only used for the partition copy.
+                # Pinning would just waste pinned host memory because
+                # the buffer is released at the end of this iteration.
+                transient_full_chunk = torch.empty(
+                    chunk_bytes, dtype=torch.uint8
+                )
+
+            # ---- Per-param copy + rebind ----------------------------
             slots: list[_CpuParamSlot] = []
             trainable_count = 0
+            # Per-trainable-param running offset into the chunk's grad
+            # view (replicated path only). Grad shadows are packed
+            # contiguously in the order they appear in the chunk.
+            grad_running_off = 0
             for pid, nbytes, off in zip(
                 param_ids, per_param_bytes, aligned_offsets, strict=True
             ):
@@ -886,10 +1072,16 @@ class ChunkManager:
                 numel = orig_data.numel()
                 element_size = orig_data.element_size()
 
-                # Slice of the pinned buffer for this param, reinterpret as
-                # the param's dtype, reshape to original shape. The copy is
-                # pinned→pageable with a GPU→CPU D2H.
-                cpu_view = cpu_bytes.narrow(0, off, nbytes)
+                # The per-param byte view is taken from EITHER the
+                # transient full-chunk buffer (sharded — partitioned
+                # away after this loop) OR the chunk's slice of the
+                # unified param pool (replicated — permanent storage).
+                if chunk_is_shardable:
+                    assert transient_full_chunk is not None
+                    cpu_view = transient_full_chunk.narrow(0, off, nbytes)
+                else:
+                    assert chunk_param_view is not None
+                    cpu_view = chunk_param_view.narrow(0, off, nbytes)
                 cpu_param = cpu_view.view(dtype).view(shape)
                 cpu_param.copy_(orig_data)
 
@@ -897,29 +1089,39 @@ class ChunkManager:
                 # placeholder of the same dtype.
                 param.data = self._empty_placeholder(dtype)
 
-                # Optional: pinned CPU grad buffer for trainable params.
-                # In the sharded path we do NOT allocate a per-param
-                # grad tensor — the shard-level grad buffer
-                # (``cpu_shard_grad_bytes``) covers every param's
-                # contribution to this rank's slice. Keeping
-                # ``cpu_grad=None`` for sharded slots disables the
-                # per-param-hook D2H in :meth:`_make_grad_offload_hook`
-                # (see the hook body's sharded-mode short-circuit).
+                # Pinned CPU grad shadow for trainable params (replicated
+                # only). In sharded mode the per-region shard buffer
+                # covers every trainable param's grad bytes, so the
+                # per-slot shadow stays ``None`` (and the per-param
+                # hook short-circuits to the counter-only path).
                 cpu_grad: "torch.Tensor | None" = None
                 if param.requires_grad:
                     trainable_count += 1
                     if not chunk_is_shardable:
-                        cpu_grad = torch.zeros(
-                            shape, dtype=dtype, pin_memory=use_pinned_host
+                        assert chunk_grad_view is not None
+                        # Slice the chunk's grad view at the running
+                        # offset, reshape to (dtype, shape). The view
+                        # shares storage with the unified grad pool;
+                        # writes through ``cpu_grad.copy_(...)`` land
+                        # directly in pinned memory.
+                        grad_byte_view = chunk_grad_view.narrow(
+                            0, grad_running_off, nbytes
                         )
+                        cpu_grad = grad_byte_view.view(dtype).view(shape)
+                        # Zero the freshly-allocated grad shadow — it
+                        # may be read by upstream consumers (reference
+                        # comparisons in tests, the first
+                        # accumulate-grad sequence) before any backward
+                        # has fired. Pre-zero to match the
+                        # ``torch.zeros`` semantics of the prior
+                        # per-param allocation.
+                        cpu_grad.zero_()
+                        grad_running_off += nbytes
 
-                # For sharded chunks ``slot.cpu_data`` points into the
-                # full-chunk transient buffer — but that buffer is
-                # about to be released. Set cpu_data=None on sharded
-                # slots; the only consumer (the H2D copy inside
-                # ``_rebind_params_to_buffer`` on the replicated path)
-                # never runs for sharded chunks (gather handles bytes
-                # through all_gather, not per-slot H2D).
+                # For sharded chunks ``slot.cpu_data`` is None — the
+                # bytes live in per-region shards across
+                # ``self._chunk_shards`` and the chunk_param_view
+                # holds those shards, not the full chunk.
                 slot_cpu_data: "torch.Tensor | None" = None
                 if not chunk_is_shardable:
                     slot_cpu_data = cpu_param
@@ -942,92 +1144,67 @@ class ChunkManager:
             self._grad_initial[cid] = trainable_count
             self._grad_remaining[cid] = trainable_count
 
-            # --- Step 3b: partition each region's bytes into rank-local shards
-            # Only applies to shardable chunks. After this block the
-            # full-chunk ``cpu_bytes`` tensor is no longer referenced
-            # (Python GC will reclaim it). Each region owns its own
-            # pinned shard + grad + shard_param; the full-chunk buffer
-            # is read REGION-BY-REGION through a transient padded
-            # scratch tensor so region_bytes_padded > region_bytes
-            # cases (trailing pad for world_size alignment) stay
-            # correct without disturbing the chunk's aggregate byte
-            # layout.
+            # ---- Sharded path: per-region shard partition + bookkeeping
             if chunk_is_shardable:
-                from torch import nn as _nn
+                assert transient_full_chunk is not None
+                assert chunk_param_view is not None  # holds per-region shards
 
                 regions: list[_DtypeRegion] = []
-                for plan in region_plans:
-                    r_dtype = plan["dtype"]
-                    r_esize = plan["esize"]
-                    r_chunk_off = plan["chunk_offset"]
-                    r_bytes = plan["region_bytes"]
-                    r_bytes_padded = plan["region_bytes_padded"]
-                    r_shard_bytes = plan["shard_bytes"]
-                    r_is_trainable = plan["is_trainable"]
+                # Per-region running offsets within the chunk's slice
+                # of the unified pools. Regions are packed contiguously
+                # in the order they were planned.
+                region_param_off = 0
+                region_grad_off = 0
+                for region_plan in region_plans:
+                    r_dtype = region_plan["dtype"]
+                    r_esize = region_plan["esize"]
+                    r_chunk_off = region_plan["chunk_offset"]
+                    r_bytes = region_plan["region_bytes"]
+                    r_bytes_padded = region_plan["region_bytes_padded"]
+                    r_shard_bytes = region_plan["shard_bytes"]
+                    r_is_trainable = region_plan["is_trainable"]
 
                     # Build the padded region image in a transient
                     # scratch buffer: copy the valid region_bytes from
-                    # cpu_bytes into [0, region_bytes), pad the tail
-                    # up to region_bytes_padded with zeros. This keeps
-                    # peer ranks that receive the padded tail from
-                    # seeing uninitialized bytes on the first
-                    # ``gather`` (the initial gather broadcasts every
-                    # rank's shard to everyone, so tail bytes on
-                    # rank W-1 end up in the pool buffer until a
-                    # subsequent training step overwrites them — but
-                    # the params' ``.data`` views never index into
-                    # padding, so correctness is preserved
-                    # regardless).
+                    # the full-chunk transient into [0, region_bytes),
+                    # the trailing pad stays zero. This keeps peer
+                    # ranks that receive the padded tail from seeing
+                    # uninitialized bytes on the first ``gather``.
                     region_scratch = torch.zeros(
-                        r_bytes_padded, dtype=torch.uint8, pin_memory=False
+                        r_bytes_padded, dtype=torch.uint8
                     )
                     region_scratch.narrow(0, 0, r_bytes).copy_(
-                        cpu_bytes.narrow(0, r_chunk_off, r_bytes)
+                        transient_full_chunk.narrow(0, r_chunk_off, r_bytes)
                     )
 
-                    # This rank's shard of the region.
+                    # This rank's shard of the region — VIEW into the
+                    # unified param pool, NOT a fresh allocation.
                     my_off = self.rank * r_shard_bytes
-                    cpu_region_shard = torch.empty(
-                        r_shard_bytes, dtype=torch.uint8, pin_memory=use_pinned_host
+                    cpu_region_shard = chunk_param_view.narrow(
+                        0, region_param_off, r_shard_bytes
                     )
                     cpu_region_shard.copy_(
                         region_scratch.narrow(0, my_off, r_shard_bytes)
                     )
+                    region_param_off += r_shard_bytes
+
                     # CodeRabbit R07 fix: only allocate the pinned grad
                     # shard for trainable regions. Frozen-only regions
                     # never receive a reduce/copy in
-                    # :meth:`reduce_grads_and_offload` (the trainability
-                    # gate there short-circuits before any grad work),
-                    # so the buffer would just waste pinned host memory
-                    # — and, worse, would be silently fed to Adam as
-                    # zero-grad data, letting weight-decay rewrite
-                    # frozen bytes. ``None`` here is the canonical
-                    # frozen-region marker.
+                    # :meth:`reduce_grads_and_offload`; binding a
+                    # zero-grad view as ``shard_param.grad`` would
+                    # let Adam's weight-decay rewrite frozen bytes.
                     cpu_region_grad: "torch.Tensor | None" = None
                     if r_is_trainable:
-                        cpu_region_grad = torch.zeros(
-                            r_shard_bytes,
-                            dtype=torch.uint8,
-                            pin_memory=use_pinned_host,
+                        assert chunk_grad_view is not None
+                        cpu_region_grad = chunk_grad_view.narrow(
+                            0, region_grad_off, r_shard_bytes
                         )
+                        cpu_region_grad.zero_()
+                        region_grad_off += r_shard_bytes
 
                     # Shard-level nn.Parameter for this region — one
                     # flat Adam step per region.
-                    #
-                    # CodeRabbit R07 fix: ``requires_grad`` is set from
-                    # the region's trainability (region segmentation
-                    # already split on this boundary, so every param
-                    # contributing bytes here shares one trainability
-                    # state). For frozen regions we leave
-                    # ``shard_param.grad = None`` so PyTorch's
-                    # ``Optimizer.step`` skip-clause (and DeepSpeed
-                    # CPUAdam's matching skip) keeps weight decay /
-                    # moment updates from touching the bytes — the
-                    # whole point of freezing is to avoid optimizer
-                    # state on those params, and the previous code
-                    # quietly broke that invariant by binding a
-                    # zero-grad view as ``shard_param.grad``. Trainable
-                    # regions retain the original behaviour.
                     shard_numel = r_shard_bytes // r_esize
                     shard_view = cpu_region_shard.view(r_dtype).view(shard_numel)
                     shard_param = _nn.Parameter(
@@ -1059,8 +1236,10 @@ class ChunkManager:
                     chunk_bytes=chunk_bytes,
                     shard_bytes=total_shard_bytes,
                 )
+                # ``transient_full_chunk`` falls out of scope here;
+                # Python GC reclaims its (unpinned) bytes.
 
-            # --- Step 4: per-param grad hooks for trainable params -----
+            # ---- Step 4: per-param grad hooks for trainable params ----
             # In sharded mode the hook still fires per-param — we need
             # the counter decrement so :meth:`reduce_grads_and_offload`
             # can tell when every param in the chunk has an accumulated
@@ -1075,13 +1254,69 @@ class ChunkManager:
                 )
                 self._grad_hook_handles.append(handle)
 
+        precise_param = (
+            self._cpu_param_pool.is_precise_size
+            if self._cpu_param_pool is not None
+            else True
+        )
+        precise_grad = (
+            self._cpu_grad_pool.is_precise_size
+            if self._cpu_grad_pool is not None
+            else True
+        )
         LOG.info(
             "ChunkManager.materialize_offload: offloaded %d non-persistent "
-            "chunks to pinned CPU memory, freed %.3f GB on GPU",
+            "chunks to pinned CPU memory (param_pool=%.3f GB, grad_pool=%.3f "
+            "GB; precise_size=%s/%s), freed %.3f GB on GPU",
             len(self._cpu_slots),
+            total_param_pool_bytes / 1e9,
+            total_grad_pool_bytes / 1e9,
+            precise_param,
+            precise_grad,
             freed / 1e9,
         )
         return freed
+
+    def _close_cpu_pools(self) -> None:
+        """Release the unified pinned-host param/grad pools.
+
+        Idempotent. Drops every PinnedHostMemory borrow held on
+        ``buffer(0)`` and calls ``close()`` on each pool. Called from
+        :meth:`restore_to_gpu` (deterministic teardown) and from the
+        manager's ``__del__`` (GC safety net via PinnedHostMemory's own
+        ``__del__``).
+
+        Lifetime hazard: every per-slot ``cpu_data`` / ``cpu_grad``
+        and per-region ``cpu_shard_bytes`` / ``cpu_shard_grad_bytes``
+        is a view into the unified pool. Callers MUST drop those views
+        (clear ``_cpu_slots`` / ``_chunk_shards``) BEFORE invoking
+        this method — otherwise the view tensors become dangling
+        pointers into freed pinned memory. ``restore_to_gpu`` does
+        this by calling ``_cpu_slots.clear()`` etc. AFTER copying the
+        bytes back to GPU.
+        """
+        for attr in ("_cpu_param_pool", "_cpu_grad_pool"):
+            pool = getattr(self, attr, None)
+            if pool is None:
+                continue
+            try:
+                pool.release_buffer(0)
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug(
+                    "ChunkManager._close_cpu_pools: release_buffer(0) failed "
+                    "on %s: %s",
+                    attr,
+                    exc,
+                )
+            try:
+                pool.close()
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug(
+                    "ChunkManager._close_cpu_pools: close() failed on %s: %s",
+                    attr,
+                    exc,
+                )
+            setattr(self, attr, None)
 
     def restore_to_gpu(self) -> int:
         """Inverse of :meth:`materialize_offload` — move every param back to GPU.
@@ -1337,7 +1572,10 @@ class ChunkManager:
         # Clear every dict that materialize_offload populated so the
         # next ChunkManager doesn't see stale entries (shouldn't happen
         # — restore_to_gpu is meant to precede this manager's GC — but
-        # be defensive).
+        # be defensive). Order matters: drop view-holding state
+        # (_cpu_slots, _chunk_shards) BEFORE attempting to close the
+        # unified pinned pools, otherwise per-slot / per-region views
+        # would be left as dangling pointers into freed pinned memory.
         self._cpu_slots.clear()
         self._chunk_shards.clear()
         self._persistent_buffers.clear()
@@ -1348,6 +1586,27 @@ class ChunkManager:
         # placeholders are unreferenced from torch's perspective. Drop
         # the dict so the next gather builds fresh ones if needed.
         self._empty_by_dtype.clear()
+
+        # Release + close the unified pinned pools.
+        #
+        # Lifetime contract: ``_cpu_slots`` and ``_chunk_shards`` were
+        # cleared above, so the manager no longer holds any narrow-view
+        # into the pools. The borrow we took at materialize time
+        # (``buffer(0)``) is released here, after which
+        # ``PinnedHostMemory.close()`` calls ``cudaFreeHost`` and the
+        # pinned region is reclaimed.
+        #
+        # Caveat: ``_DtypeRegion.shard_param`` tensors may still be
+        # held externally (e.g. by a CPU FusedAdam adapter constructed
+        # before restore). Since those views share storage with the
+        # pinned region, freeing it here would create a
+        # use-after-free at the optimizer's next read. Callers MUST
+        # tear down the optimizer (or any other consumer of the
+        # shard_params / cpu_data / cpu_grad views) BEFORE calling
+        # ``restore_to_gpu`` in the rebuild flow. Documented as a
+        # precondition of the bootstrap-then-rebuild loop in
+        # :meth:`materialize_offload`'s docstring.
+        self._close_cpu_pools()
 
         LOG.info(
             "ChunkManager.restore_to_gpu: moved %.3f GB back to standalone "
@@ -2290,6 +2549,22 @@ class ChunkManager:
     def __del__(self) -> None:  # noqa: D401
         try:
             self.uninstall()
+        except Exception:  # noqa: BLE001 — destructors must not throw
+            pass
+        try:
+            # GC safety net: release the unified pinned pools if
+            # ``restore_to_gpu`` was never called. By the time
+            # ``__del__`` fires, the manager's ``_cpu_slots`` /
+            # ``_chunk_shards`` dicts are about to be reclaimed too,
+            # so dropping the borrow + closing here is safe in the
+            # common single-owner case. If external code still holds
+            # shard_param / cpu_data views at GC time, the
+            # PinnedHostMemory destructor's "live borrows → leak"
+            # guard kicks in (no cudaFreeHost) — but our balanced
+            # release means the borrow IS already at zero, so the
+            # close proceeds. Document the lifetime hazard in
+            # :meth:`materialize_offload`.
+            self._close_cpu_pools()
         except Exception:  # noqa: BLE001 — destructors must not throw
             pass
 
