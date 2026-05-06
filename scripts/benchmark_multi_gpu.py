@@ -568,7 +568,9 @@ def main() -> int:
         # Single-rank baseline — isolate on CUDA_VISIBLE_DEVICES=1 so it
         # doesn't trip over the multi-rank env. world_size=1 means no
         # process group setup; same as running on a fresh shell.
-        print(f"\n[benchmark] single-rank baseline (GPU {single_visible})...", flush=True)
+        print(
+            f"\n[benchmark] single-rank baseline (GPU {single_visible})...", flush=True
+        )
         stats = _launch_mode(
             mode="single",
             world_size=1,

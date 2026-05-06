@@ -1740,12 +1740,8 @@ def test_swap_candidate_does_not_double_count_chunked_wall_compute():
 
     # Helper-level: with cfg.n_swap > 0, the helpers must return
     # the per-op / steady totals — NOT the chunked wall.
-    fwd_total_with, _, _ = _fwd_compute_time_from_trace(
-        trace_with_chunked, cfg_swap
-    )
-    fwd_total_no, _, _ = _fwd_compute_time_from_trace(
-        trace_no_chunked, cfg_swap
-    )
+    fwd_total_with, _, _ = _fwd_compute_time_from_trace(trace_with_chunked, cfg_swap)
+    fwd_total_no, _, _ = _fwd_compute_time_from_trace(trace_no_chunked, cfg_swap)
     assert fwd_total_with == pytest.approx(fwd_total_no, rel=1e-9), (
         f"forward helper leaked chunked wall to SWAP candidate: "
         f"with-chunked total = {fwd_total_with:.6f}, "

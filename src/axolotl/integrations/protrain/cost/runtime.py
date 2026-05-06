@@ -448,9 +448,7 @@ def _bwd_compute_time_from_trace(
     # wall.
     if (
         trace.steady_bwd_chunked_wall_s > 0.0
-        and (
-            trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0
-        )
+        and (trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0)
         and (cfg is None or cfg.n_swap == 0)
     ):
         bootstrap_recompute = (
@@ -861,9 +859,7 @@ def estimate_runtime(
     # from the profiler (preferred) or t_fwd * _BWD_FWD_COMPUTE_RATIO. On
     # top of that, CKPT blocks pay one extra forward per CKPT block (their
     # per-block compute time), and SWAP blocks add the activation prefetch.
-    t_bwd_compute_base = _bwd_compute_time_from_trace(
-        trace, t_fwd_compute_total, cfg
-    )
+    t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_total, cfg)
     t_bwd_recompute = 0.0
     t_bwd_swap_prefetch = 0.0
     # OFFLOAD chunk-gather wall (Option B §4.2) — accounting note.
