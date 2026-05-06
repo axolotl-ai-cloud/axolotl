@@ -281,7 +281,7 @@ Mirrors `plan.md`:
 
 ### Memory Allocation Strategy (App B.2 — WIRED)
 
-**Status: both App B.2 components are wired across the chunk manager and buffer pool. Activation-swap GPU allocations remain unwired (see "Known un-wired sites" below).**
+**Status: both App B.2 components are wired across the chunk manager, buffer pool, and SWAP unpack path.**
 
 App B.2 of the paper has **two distinct components**, each addressing a different allocator pathology:
 
@@ -301,6 +301,7 @@ App B.2 of the paper has **two distinct components**, each addressing a differen
   - `chunk/manager.py::_gather_sharded` — per-region `my_shard_gpu` and `gather_scratch` scratch tensors. **Critical wrap** — this method is called from `Scheduler._gather_on_prefetch_stream` inside `with torch.cuda.stream(self._prefetch_stream):`. Without the wrap, scratch tensors would land on the prefetch-stream heap and fragment the allocator. `record_stream(current_stream)` discipline applied: the scratch buffers are tied to whichever stream is actually consuming them (the prefetch stream in steady-state, the default stream in synchronous fallback).
   - `chunk/manager.py::_reduce_scatter_and_offload_shard` — per-region `region_grad` and `my_shard_grad_gpu` scratch tensors. Defensively wrapped with `record_stream`-when-needed: today this method runs on the default stream (called from `Scheduler.post_block_backward` which does not establish a stream context), so the wrap is a no-op there. Wrap kept so a future caller from a non-default stream stays correct without changes.
   - `chunk/manager.py::restore_to_gpu` — every per-slot, per-region, and persistent-chunk teardown allocation routes through a per-call `_alloc_empty(shape, dtype)` helper. Teardown runs on the default stream, so no `record_stream` needed.
+  - `block/swap.py::unpack_from_pool` — `gpu_buf` activation swap-in buffer wrapped in `SingleStreamAllocator()` (commit `55e47da5`). The existing `gpu_buf.record_stream(handle.swap_stream)` inside the swap-stream H2D context provides the required cross-stream lifetime tie. The wrap lands AFTER the SWAP gate's `mem_get_info` headroom check + `RuntimeError` raise (`3f74f80c`), so the gate's failure path is unaffected.
 
 - **`record_stream` discipline (contract for future contributors).** Any time you allocate a buffer inside `SingleStreamAllocator()` and then hand it to a non-default stream (prefetch stream, swap stream, etc.), you MUST call `buf.record_stream(non_default_stream)` immediately after exiting the allocator context. Skipping this is silent-data-corruption-class: the caching allocator will reuse the storage as soon as the default stream's pending work retires, even while the non-default stream is still reading or writing the bytes. Long-lived buffers (pool slots, persistent chunks, process-lived sentinels) are exempt — their lifetime is bounded by the manager, not by stream completion.
 
@@ -316,10 +317,6 @@ App B.2 of the paper has **two distinct components**, each addressing a differen
   - `block/swap_pool.py::ActivationSwapPool` — backing pinned-host region for activation swap slots (`n_swap × prefetch_depth × max_act_bytes`). One `PinnedHostMemory` per pool.
 
 - **Allocation sites still on `torch.empty(pin_memory=True)` (unintentional).** *None* in the wired ProTrain runtime as of this commit. If a follow-up adds a new pinned-host allocation site it should default to `PinnedHostMemory` for paper fidelity.
-
-#### Known un-wired GPU sites (deferred to follow-ups)
-
-- `block/swap.py::unpack_from_pool` — allocates `gpu_buf = torch.empty_strided(...)` for activation swap-in. Already does its own `record_stream(swap_stream)` discipline (so it's *not* dangerous re: cross-stream correctness), but the allocation itself happens before entering the swap-stream context, so it lands on whatever stream is current (typically the default one — also fine). Wiring this would require careful coordination with the SWAP gate added in commit `3f74f80c` (the `mem_get_info` headroom check is stream-agnostic, but the allocation's failure path interacts with the gate's drain/retry loop). Single-file scope kept this out of the present change. **Risk if left unwired:** none in the current code path because `unpack_from_pool` is invoked from default-stream context; the allocation already lands on the right heap. Track as a defensive follow-up rather than a correctness bug.
 
 #### Measurement status
 
