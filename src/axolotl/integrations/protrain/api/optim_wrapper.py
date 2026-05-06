@@ -11,12 +11,20 @@ Semantics:
   then blocks on every outstanding CPU Adam future so the non-persistent
   chunk updates have landed in their CPU shards before control returns.
 * ``zero_grad()`` — zeros grads on both adapters.
-* ``state_dict`` / ``load_state_dict`` — torch-side no-ops. The
-  adapters own their own state and persist it through the dedicated
-  ProTrain checkpoint hook (M5/M6); ``state_dict`` returns the empty
-  ``{"state": {}, "param_groups": [...]}`` shell HF Trainer +
-  Accelerate expect at ``prepare`` time, and ``load_state_dict``
-  accepts and silently discards the round-tripped payload.
+* ``state_dict`` — returns a hollow shell tagged with a
+  ``_protrain_hollow_state_dict`` marker, preserving the
+  ``{"state": ..., "param_groups": ...}`` shape HF Trainer +
+  Accelerate expect at ``prepare`` time. Real adapter moments are
+  persisted via the dedicated ProTrain checkpoint hook
+  (``api/checkpoint.py``), NOT through this method.
+* ``load_state_dict`` — silently no-ops when fed back the hollow
+  shell (Accelerate prepare round-trip, or a user
+  ``torch.save(state_dict()) → torch.load`` over the same wrapper).
+  Raises ``NotImplementedError`` on any OTHER payload (e.g.
+  state from a stock optimizer the user wants to migrate from), with
+  a pointer at the ProTrain checkpoint hook. This is option (b) from
+  ``CHECKPOINT_DESIGN.md`` §1.7 — the explicit-error variant chosen
+  to close the silent-no-op footgun for direct ``auto_wrap`` users.
 """
 
 from __future__ import annotations
@@ -248,15 +256,37 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
     # their own state and persist it through the dedicated ProTrain
     # checkpoint hook, so torch-side state is safely empty.
 
+    #: Sentinel key marking a state_dict produced by this class as a
+    #: hollow shell (CHECKPOINT_DESIGN.md §1.7 Option P). Lets
+    #: ``load_state_dict`` distinguish the safe round-trip case
+    #: (Accelerate ``prepare`` walk OR user ``torch.save(state_dict()) →
+    #: torch.load → load_state_dict``) from a payload from a different
+    #: optimizer that was incorrectly fed to this wrapper. The marker
+    #: is a plain bool so Accelerate's ``move_to_device`` / ``.to(...)``
+    #: walks ignore it.
+    _PROTRAIN_HOLLOW_MARKER_KEY = "_protrain_hollow_state_dict"
+
     def state_dict(self) -> dict[str, Any]:  # type: ignore[override]
         """Return an empty torch-side optimizer state.
 
         Real ProTrain optimizer state (per-shard moments held inside the
         CPU/GPU FusedAdam adapters) is saved by the dedicated checkpoint
-        callback, not through this method. We still preserve HF's
-        ``{"state": ..., "param_groups": ...}`` shape so Accelerate's
-        ``move_to_device(state_dict, ...)`` + ``load_state_dict`` round
-        trip at ``prepare`` time does not crash.
+        callback (see ``api/checkpoint.py``), NOT through this method.
+        We still preserve HF's ``{"state": ..., "param_groups": ...}``
+        shape so Accelerate's ``move_to_device(state_dict, ...)`` +
+        ``load_state_dict`` round trip at ``prepare`` time does not
+        crash. A ``_protrain_hollow_state_dict: True`` marker is added
+        so ``load_state_dict`` can recognise the round trip and silently
+        no-op (instead of raising on payloads it can't actually
+        consume).
+
+        IMPORTANT: this method does NOT serialise adapter moments. A
+        naive ``torch.save(optim.state_dict())`` / ``torch.load`` /
+        ``optim.load_state_dict(...)`` round trip will discard
+        per-parameter moments — the saved blob is the hollow shell.
+        Use the ProTrain checkpoint flow
+        (``_save_protrain_optim_dir`` / ``_load_protrain_optim_dir``,
+        wired via the ``post_trainer_create`` hook) for real persistence.
         """
         next_param_idx = 0
         param_groups: list[dict[str, Any]] = []
@@ -267,17 +297,55 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                 | {"params": list(range(next_param_idx, next_param_idx + n_params))}
             )
             next_param_idx += n_params
-        return {"state": {}, "param_groups": param_groups}
+        return {
+            self._PROTRAIN_HOLLOW_MARKER_KEY: True,
+            "state": {},
+            "param_groups": param_groups,
+        }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:  # type: ignore[override]
-        """Accept and discard torch-side state.
+        """Round-trip the hollow shell or fail loudly on foreign payloads.
 
-        The dedicated ProTrain load hook restores adapter state from the
-        checkpoint shard files; the torch-facing ``state_dict`` we just
-        returned is empty by construction, so silently dropping the
-        round-tripped payload is correct.
+        Accepts the hollow shell produced by ``state_dict()`` (Accelerate
+        ``prepare`` round-trip OR a user ``torch.save / torch.load``
+        sequence over the same wrapper) — that path silently no-ops,
+        consistent with the wrapper's documented contract that real
+        persistence flows through the dedicated ProTrain checkpoint
+        hook (``api/checkpoint.py``).
+
+        Any OTHER payload — e.g. a state_dict produced by a different
+        optimizer, or a real torch state_dict the user thinks should
+        restore — raises ``NotImplementedError`` with a pointer at
+        the dedicated checkpoint hook. Replacing the previous silent
+        no-op stops the footgun where users assumed
+        ``optim.load_state_dict(saved_blob)`` would restore moments.
         """
-        return None
+        if not isinstance(state_dict, dict):
+            raise NotImplementedError(
+                "_ProTrainOptimizer.load_state_dict requires a dict; got "
+                f"{type(state_dict).__name__}. Use the ProTrain checkpoint "
+                "hook (api/checkpoint.py::_load_protrain_optim_dir) for real "
+                "optimizer-state restore."
+            )
+        if state_dict.get(
+            self._PROTRAIN_HOLLOW_MARKER_KEY
+        ) is True and not state_dict.get("state"):
+            # Hollow shell round-trip — Accelerate prepare path or
+            # user ``torch.save(state_dict()) → torch.load →
+            # load_state_dict`` over the same wrapper. The shell has
+            # nothing to restore by construction; silent no-op is
+            # correct.
+            return None
+        raise NotImplementedError(
+            "_ProTrainOptimizer.load_state_dict cannot restore an arbitrary "
+            "torch optimizer state. The wrapper's public state_dict is a "
+            "hollow shell by design (CHECKPOINT_DESIGN.md §1.7 Option P) — "
+            "real per-shard FusedAdam moments are persisted via the "
+            "dedicated ProTrain checkpoint flow. Load via "
+            "api/checkpoint.py::_load_protrain_optim_dir (wired through "
+            "Trainer._load_optimizer_and_scheduler in post_trainer_create) "
+            "instead of torch.save / torch.load over state_dict."
+        )
 
     # ---- non-public snapshot of the REAL inner adapter state ------------
     #
