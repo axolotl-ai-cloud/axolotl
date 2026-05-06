@@ -584,7 +584,7 @@ def _extract_loss(out) -> "torch.Tensor":
 
 
 __all__ = [
+    "estimate_per_block_recompute_s",
     "measure_chunked_steady",
     "select_bootstrap_config",
-    "estimate_per_block_recompute_s",
 ]

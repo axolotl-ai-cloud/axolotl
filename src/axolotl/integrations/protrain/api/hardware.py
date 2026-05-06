@@ -258,6 +258,15 @@ def build_hardware_profile(
     else:
         world_size = _resolve_world_size()
 
+    # Reject non-bool ``zero3_shard`` explicitly: ``bool(...)`` would truthy-coerce
+    # non-empty strings, dicts, ints, etc. into ``True`` and silently mark a
+    # cluster as sharded when the caller passed something nonsensical.
+    if not isinstance(zero3_shard, bool):
+        raise TypeError(
+            f"zero3_shard must be a bool, got {type(zero3_shard).__name__}: "
+            f"{zero3_shard!r}"
+        )
+
     return HardwareProfile(
         gpu_sku=gpu_sku,
         gpu_memory_bytes=gpu_memory_bytes,
@@ -265,7 +274,7 @@ def build_hardware_profile(
         pcie_h2d_bps=DEFAULT_PCIE_BPS,
         pcie_d2h_bps=DEFAULT_PCIE_BPS,
         has_nvlink=False,
-        zero3_shard=bool(zero3_shard),
+        zero3_shard=zero3_shard,
     )
 
 

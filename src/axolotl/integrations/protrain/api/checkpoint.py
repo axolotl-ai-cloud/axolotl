@@ -437,30 +437,69 @@ def _estimate_optim_state_bytes(optim: Any) -> int:
     Pre-first-step the inner state dicts are empty and this returns 0
     — that's correct: there is no state to save yet, so any save would
     produce small placeholder files that can pass the gate.
+
+    Distributed cluster-wide accounting
+    -----------------------------------
+    Under Mode-C (sharded saves) each rank holds a different slice of
+    the CPU optimizer state, so summing only the LOCAL shard would let
+    every rank slip past ``protrain_optim_save_max_bytes`` while the
+    aggregate cluster-wide save still exceeds it. We split the walk
+    into two streams:
+
+    * ``replicated`` — bytes from ``optim._gpu_optim._optim``. This
+      adapter's state is rank-replicated (identical across ranks), so
+      each rank counts it once.
+    * ``local_shard`` — bytes from each entry in
+      ``optim._cpu_optim._optims``. These adapters hold rank-local
+      shards that DIFFER across ranks, so the cluster-wide total is
+      the sum across ranks.
+
+    When a process group is initialised, we all-reduce just
+    ``local_shard`` (sum) into ``global_sharded_bytes`` and return
+    ``replicated + global_sharded_bytes``. Single-rank / no-PG path
+    falls through with ``global_sharded_bytes == local_shard`` and the
+    legacy local-only sum is preserved.
     """
     import torch
 
-    total = 0
+    replicated = 0
+    local_shard = 0
 
-    def _add_inner(inner_optim: Any) -> None:
-        nonlocal total
+    def _add_inner(inner_optim: Any, accumulator: str) -> None:
+        nonlocal replicated, local_shard
+        delta = 0
         for state in getattr(inner_optim, "state", {}).values():
             for v in state.values():
                 if isinstance(v, torch.Tensor):
-                    total += int(v.numel()) * int(v.element_size())
+                    delta += int(v.numel()) * int(v.element_size())
+        if accumulator == "replicated":
+            replicated += delta
+        else:
+            local_shard += delta
 
     gpu_optim = getattr(optim, "_gpu_optim", None)
     if gpu_optim is not None:
         inner = getattr(gpu_optim, "_optim", None)
         if inner is not None:
-            _add_inner(inner)
+            _add_inner(inner, "replicated")
 
     cpu_optim = getattr(optim, "_cpu_optim", None)
     if cpu_optim is not None:
         for inner in getattr(cpu_optim, "_optims", {}).values():
-            _add_inner(inner)
+            _add_inner(inner, "local_shard")
 
-    return total
+    global_sharded_bytes = local_shard
+    try:
+        import torch.distributed as _dist
+
+        if _dist.is_available() and _dist.is_initialized():
+            shard_tensor = torch.tensor([local_shard], dtype=torch.long)
+            _dist.all_reduce(shard_tensor, op=_dist.ReduceOp.SUM)
+            global_sharded_bytes = int(shard_tensor.item())
+    except ImportError:
+        pass
+
+    return replicated + global_sharded_bytes
 
 
 def _build_regions_per_chunk(chunk_manager: Any) -> dict[str, list[dict[str, Any]]]:

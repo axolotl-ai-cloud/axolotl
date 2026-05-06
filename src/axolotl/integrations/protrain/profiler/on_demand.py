@@ -137,6 +137,14 @@ class OnDemandTensorMgr:
         self.disabled = disabled
         self.model = model
         self._spills: dict[int, _ParamSpill] = {}
+        # Active per-param gather ref-count, keyed on ``id(param)``.
+        # Tied ``Parameter`` objects are registered on multiple owning
+        # modules; pre/post hooks therefore fire once per owner. Without
+        # this counter, an inner module's post-release would clear the
+        # tied param's ``.data`` while the outer module still needs it.
+        # ``_pre_gather`` increments before re-gathering; ``_post_release``
+        # only resets the placeholder when the count drops to 0.
+        self._active_param_users: dict[int, int] = {}
         self._handles: list[Any] = []
         self._sthook_ctx: Any = None
         self._entered = False
@@ -383,6 +391,7 @@ class OnDemandTensorMgr:
                         _e,
                     )
         self._spills.clear()
+        self._active_param_users.clear()
 
     def __exit__(self, exc_type, exc, tb) -> None:
         """Remove hooks and restore parameters from their pinned-CPU spill copies."""
@@ -494,6 +503,7 @@ class OnDemandTensorMgr:
                         _e,
                     )
         self._spills.clear()
+        self._active_param_users.clear()
 
     # ---- spill / restore helpers ---------------------------------------
 
@@ -668,11 +678,23 @@ class OnDemandTensorMgr:
         return self._normalize_device(self.device)
 
     def _pre_gather(self, module: "nn.Module", inputs: Any) -> None:
-        """Copy the module's *direct* params from CPU to target_device before forward."""
+        """Copy the module's *direct* params from CPU to target_device before forward.
+
+        Tied params: hooks fire once per owning module. The first
+        owner's pre-hook actually gathers; nested owners just bump the
+        ref-count so the matching post-release defers placeholder reset
+        until every owner has finished. See ``_active_param_users``.
+        """
         target = self._gather_target_device()
         for param in module.parameters(recurse=False):
             spill = self._spills.get(id(param))
             if spill is None:
+                continue
+            pid = id(param)
+            users = self._active_param_users.get(pid, 0)
+            if users > 0:
+                # Already gathered by an outer owner; just increment.
+                self._active_param_users[pid] = users + 1
                 continue
             dest = target if target is not None else spill.original_device
             try:
@@ -698,9 +720,16 @@ class OnDemandTensorMgr:
                     # hiding the real gather error/OOM. Surface the real
                     # cause (CR 3191961010).
                     raise
+            self._active_param_users[pid] = 1
 
     def _post_release(self, module: "nn.Module", inputs: Any, output: Any) -> None:
-        """Replace the module's *direct* params with empty placeholders."""
+        """Replace the module's *direct* params with empty placeholders.
+
+        Tied params: only the OUTERMOST owner's post-release actually
+        clears ``.data``. Inner owners decrement the ref-count and
+        return — clearing while an outer owner still needs the param
+        would leave an empty placeholder for the remaining ops.
+        """
         import torch
 
         target = self._gather_target_device()
@@ -708,6 +737,14 @@ class OnDemandTensorMgr:
             spill = self._spills.get(id(param))
             if spill is None:
                 continue
+            pid = id(param)
+            users = self._active_param_users.get(pid, 0)
+            if users > 1:
+                # Outer owner(s) still need the gathered weight live.
+                self._active_param_users[pid] = users - 1
+                continue
+            # Last (or only) owner: drop the entry and reset the placeholder.
+            self._active_param_users.pop(pid, None)
             dest = target if target is not None else spill.original_device
             try:
                 placeholder = torch.empty(0, dtype=param.dtype, device=dest)

@@ -376,8 +376,18 @@ def _make_pack_unpack(
         second_borrow_acquired = False
         # Declared outside the ``try`` so the ``finally`` clause can
         # observe whether the async H2D was enqueued before an exception
-        # short-circuited the success-path synchronize.
+        # short-circuited the success-path synchronize. ``did_h2d`` is
+        # the coarse fallback signal: the moment we issue
+        # ``gpu_buf.copy_(..., non_blocking=True)`` the DMA may already be
+        # in flight; if a subsequent statement (``record_stream``,
+        # ``torch.cuda.Event()``, or ``h2d_done.record(...)``) raises
+        # BEFORE ``h2d_done`` is bound, the finally-block must still
+        # fence — otherwise we release the pinned slot mid-DMA. When
+        # ``h2d_done`` was recorded we do an event sync (cheap); when
+        # only ``did_h2d`` is set we fall back to a full swap_stream
+        # sync (coarser but still correct).
         h2d_done: "torch.cuda.Event | None" = None
+        did_h2d = False
         try:
             # ``handle.nbytes`` (numel × element_size) under-estimates the
             # actual storage when the strided buffer has gaps —
@@ -465,6 +475,13 @@ def _make_pack_unpack(
                     slot_view[: handle.nbytes].view(handle.dtype).reshape(handle.shape)
                 )
                 gpu_buf.copy_(slot_src, non_blocking=True)
+                # Mark the H2D as enqueued IMMEDIATELY: any failure between
+                # here and ``h2d_done.record(...)`` must still trigger a
+                # fence in ``finally``. ``record_stream`` could raise (e.g.
+                # under amp/allocator-stream regressions) and would
+                # otherwise leave a DMA in flight while ``finally``
+                # released the pinned slot.
+                did_h2d = True
                 gpu_buf.record_stream(handle.swap_stream)
                 # Record an event on swap_stream that fires when the H2D
                 # copy above has completed. We use this below to gate the
@@ -512,8 +529,20 @@ def _make_pack_unpack(
             # the borrow counter, opening the same close-mid-DMA
             # silent-corruption window the success path explicitly
             # closes around line 498.
+            #
+            # Three-tier fence:
+            #   1. ``h2d_done`` recorded → cheap event sync.
+            #   2. ``did_h2d`` only (the H2D was enqueued but a later
+            #      statement raised before the event was recorded /
+            #      bound) → fall back to a full swap_stream sync. This
+            #      is the coarse fence the CR diff calls for and is
+            #      load-bearing for correctness on the rare failure
+            #      path between ``copy_`` and ``h2d_done.record(...)``.
+            #   3. Neither → no DMA was issued; nothing to drain.
             if h2d_done is not None:
                 h2d_done.synchronize()
+            elif did_h2d:
+                handle.swap_stream.synchronize()
             if second_borrow_acquired:
                 handle.pool._pinned.release_buffer(handle.slot_id)  # noqa: SLF001
             handle.pool.release(handle.slot_id)

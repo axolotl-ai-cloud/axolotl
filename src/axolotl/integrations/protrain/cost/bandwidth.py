@@ -363,6 +363,15 @@ def effective_bw_for_chunk(
     tuple[float, float]
         ``(eff_h2d_bps, eff_d2h_bps)`` for this chunk.
     """
+    # Validate ``direction`` and ``prefetch_depth`` BEFORE the no-swap fast
+    # path. Otherwise invalid kwargs slip through silently in the dominant
+    # ``n_swap == 0`` case and only fail later when callers happen to enable
+    # swap, masking caller bugs and producing inconsistent error semantics.
+    if direction not in ("fwd", "bwd"):
+        raise ValueError(f"direction must be 'fwd' or 'bwd', got {direction!r}")
+    if prefetch_depth < 1:
+        raise ValueError(f"prefetch_depth must be >= 1, got {prefetch_depth!r}")
+
     # Fast path: no swap blocks anywhere → no chunk can overlap swap.
     if cfg.n_swap <= 0:
         return hw.pcie_h2d_bps, hw.pcie_d2h_bps

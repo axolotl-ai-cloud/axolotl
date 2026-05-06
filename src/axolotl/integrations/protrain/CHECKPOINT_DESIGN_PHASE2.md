@@ -528,31 +528,62 @@ class ProTrainOptimizerCheckpointCallback(TrainerCallback):
         if not _is_protrain_optimizer(optim):
             return control
 
-        checkpoint_dir = os.path.join(
-            args.output_dir, f"checkpoint-{state.global_step}"
-        )
-        if not os.path.isdir(checkpoint_dir):
-            return control
-
         chunk_manager = optim._chunk_manager
         zero3_shard = bool(getattr(chunk_manager, "zero3_shard", False))
         rank = int(getattr(args, "process_index", 0))
         world_size = int(getattr(args, "world_size", 1))
 
-        # Drain async CPU adam — every rank.
-        chunk_manager.wait_cpu_optim_all()
+        checkpoint_dir = os.path.join(
+            args.output_dir, f"checkpoint-{state.global_step}"
+        )
+        # NEVER early-return here: a rank that bails before the lockstep
+        # preamble (drain + status all-reduce) leaves peers wedged in
+        # `_allreduce_status_or_raise` / `_broadcast_object_list_or_noop` /
+        # the trailing barrier. Capture the missing-dir case as a flag
+        # that feeds into the existing `skip` decision below; every rank
+        # still reaches the same collectives in the same order.
+        checkpoint_dir_missing = rank == 0 and not os.path.isdir(checkpoint_dir)
 
-        # Estimate gate — rank 0 owns the estimate and skip/abort decision;
-        # ranks > 0 do NOT estimate independently. Every rank enters the
-        # preamble under _allreduce_status_or_raise() for lockstep, then
-        # rank-0's single decision is broadcast back to every rank.
-        if rank == 0:
-            estimate = _estimate_optim_state_bytes(optim)
-            skip_decision = [estimate > self._save_max_bytes]
-        else:
-            skip_decision = [False]  # placeholder, overwritten by broadcast
+        # ---------- 1-3. Pre-save preamble under lockstep protocol ----------
+        # Wrap drain + estimate (+ optional cross-rank verify) in a
+        # try/finally so any per-rank failure is converted into a
+        # synchronized status all-reduce. Every surviving rank then
+        # raises in lockstep instead of wedging downstream.
+        preamble_status = 0
+        skip = False
+        estimate = 0
+        try:
+            # 1. Drain async CPU adam — every rank.
+            chunk_manager.wait_cpu_optim_all()
+
+            # 2. Estimate gate — rank-0 owns the size estimate and
+            # skip/abort decision; ranks > 0 do NOT estimate independently.
+            # Missing-dir takes precedence over the size estimate.
+            if rank == 0:
+                if checkpoint_dir_missing:
+                    skip = True
+                else:
+                    estimate = _estimate_optim_state_bytes(optim)
+                    skip = estimate > self._save_max_bytes
+        except Exception:
+            preamble_status = 1
+            raise
+        finally:
+            # 3. Synchronize preamble status across ranks; raises on
+            # every rank if any rank had a setup error.
+            _allreduce_status_or_raise(
+                preamble_status, op="save (pre-save preamble)"
+            )
+
+        # 4. Broadcast rank-0's skip/abort decision to every rank.
+        skip_decision = [skip]
         _broadcast_object_list_or_noop(skip_decision, src=0)
         if skip_decision[0]:
+            # Every rank performs the FINAL conditional return based on
+            # the synchronized decision; barrier first so any rank that
+            # already entered the post-preamble collectives doesn't get
+            # stranded.
+            _barrier_or_noop()
             return control
 
         target = os.path.join(checkpoint_dir, PROTRAIN_OPTIM_DIRNAME)
