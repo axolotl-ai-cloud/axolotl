@@ -767,8 +767,55 @@ class OnDemandTensorMgr:
     def _post_release_bwd(
         self, module: "nn.Module", grad_input: Any, grad_output: Any
     ) -> None:
-        """Backward-post hook: release direct params after this module's bwd."""
-        # Reuse the forward-release logic; ``inputs``/``output`` unused there.
+        """Backward-post hook: release direct params after this module's bwd.
+
+        Caveat: ``register_full_backward_hook`` fires *prematurely* — before
+        the module's actual backward kernel runs — for modules whose inputs
+        do NOT require grad (e.g. ``nn.Embedding`` taking a ``LongTensor`` of
+        ``input_ids``). In that case PyTorch's ``BackwardHook`` calls the
+        user post-hook from within the *output* grad-fn callback (see
+        ``torch/utils/hooks.py:_BackwardHook.setup_output_hook`` — the
+        ``input_tensors_index is None`` branch warns and dispatches the
+        user post-hook immediately). If we release the param here, the
+        subsequent ``EmbeddingBackward`` runs against a length-0 placeholder
+        and ``AccumulateGrad`` fails with
+        ``"size of tensor a (0) must match the size of tensor b (...) at
+        non-singleton dimension 1"`` — the param-grad shape derived from the
+        live ``param.size()`` (now ``(0,)``) clashes with the real grad
+        produced by the embedding's saved-shape backward.
+
+        Detect the early-fire case by checking ``grad_input``: when no input
+        required grad, ``grad_input`` is a tuple of ``None`` entries (see
+        ``_pack_with_none([], [], n_inputs)`` in the hooks helper). Skip
+        the release in that case — the param will be released by
+        ``__exit__`` instead. Slightly inflates the post-trace peak (the
+        gathered weight stays live for the rest of backward) but preserves
+        correctness; the same modules are typically embeddings near the
+        leaves of the autograd graph so the residency overlap is bounded.
+        """
+        if grad_input is not None and isinstance(grad_input, tuple):
+            inputs_have_grad = any(g is not None for g in grad_input)
+            if not inputs_have_grad:
+                # Premature-fire path: PyTorch dispatched this post-hook
+                # from the output-grad callback because no input required
+                # grad. The module's own backward (which produces the
+                # param grads) hasn't run yet. Decrement the active-user
+                # ref-counts that ``_pre_gather_bwd`` incremented so a
+                # later ``__exit__`` doesn't double-release, but leave
+                # the gathered ``param.data`` in place so
+                # ``AccumulateGrad`` sees the real shape.
+                for param in module.parameters(recurse=False):
+                    pid = id(param)
+                    users = self._active_param_users.get(pid, 0)
+                    if users > 0:
+                        new_count = users - 1
+                        if new_count <= 0:
+                            self._active_param_users.pop(pid, None)
+                        else:
+                            self._active_param_users[pid] = new_count
+                return
+        # Normal path: inputs received gradients → module backward already
+        # ran → param grads are accumulated → safe to release.
         self._post_release(module, grad_input, grad_output)
 
     # ---- saved-tensors spill / restore ---------------------------------
