@@ -550,7 +550,7 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
             protrain_model_wrapper,
             protrain_optimizer_wrapper,
         )
-        from axolotl.integrations.protrain.types import HardwareProfile
+        from axolotl.integrations.protrain.types import ChunkId, HardwareProfile
 
         torch.manual_seed(1234)  # SAME seed across ranks so the
         # fresh-init weights are bit-identical on every rank — this is
@@ -717,14 +717,22 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
         else:
             all_sharded = True  # replicated mode: nothing to shard, vacuously true
         # Total non-persistent bytes (replicated-mode CPU footprint
-        # per rank). Uses ``layout.S_chunk`` as an upper bound on
-        # per-chunk bytes; matches the cost model's
-        # :func:`estimate_cpu_footprint` so the test's 1.5x tolerance
-        # is coherent with the searcher's accounting.
-        n_persist_effective = len(chunk_manager._persistent_ids)
-        total_non_persist = (
-            chunk_manager.layout.N_chunk - n_persist_effective
-        ) * chunk_manager.layout.S_chunk
+        # per rank). Uses the manager's actual per-chunk byte cache so
+        # oversize chunks (a single MLP weight larger than ``S_chunk``,
+        # see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1) contribute
+        # their true byte size — the previous ``N_chunk * S_chunk``
+        # heuristic underestimated for oversize layouts (Llama
+        # intermediate=6912 hidden=2560 bf16 MLP = 35.4 MB > 32 MB
+        # S_chunk) and tripped the 1.5x tolerance assertion below
+        # despite the shard-time bytes being correctly sized.
+        non_persistent_ids = [
+            ChunkId(i)
+            for i in range(chunk_manager.layout.N_chunk)
+            if ChunkId(i) not in chunk_manager._persistent_ids
+        ]
+        total_non_persist = sum(
+            chunk_manager._compute_chunk_bytes(cid) for cid in non_persistent_ids
+        )
 
         # Compute a cheap post-train param checksum: sum of abs values
         # of every trainable param's current .data. In sharded mode each
@@ -1112,9 +1120,13 @@ def test_protrain_4gpu_zero3_sharding(tmp_path) -> None:
     )
 
     # (2) Per-rank pinned CPU bytes in sharded mode should be
-    # roughly ``total_non_persist / world_size``. Allow allocator /
-    # alignment overhead up to 1.5x the expected shard bytes before
-    # flagging a regression.
+    # roughly ``2 * total_non_persist / world_size``. The factor of 2
+    # is because :meth:`ChunkManager.per_rank_cpu_bytes` sums BOTH
+    # the per-region param shard (``cpu_shard_bytes``) AND the per-
+    # region grad shard (``cpu_shard_grad_bytes``); for a fully-
+    # trainable model the grad bytes equal the param bytes. The 1.5x
+    # tolerance on top of that absorbs alignment / element-size
+    # padding.
     world_size = 4
     shard_cpu_bytes = shard_stats.get("per_rank_cpu_bytes", [])
     replicate_cpu_bytes = replicate_stats.get("per_rank_cpu_bytes", [])
@@ -1128,11 +1140,16 @@ def test_protrain_4gpu_zero3_sharding(tmp_path) -> None:
     print(f"  replicate per-rank CPU: {[b / 1e9 for b in replicate_cpu_bytes]} GB")
 
     if shard_cpu_bytes and total_np_shard > 0:
-        expected_shard_bytes = total_np_shard / world_size
+        # ``per_rank_cpu_bytes`` counts param + grad shards per rank;
+        # the factor of 2 in the denominator reflects that and keeps
+        # the 1.5x tolerance meaningful as a "alignment overhead"
+        # check rather than a units mismatch.
+        expected_shard_bytes = 2.0 * total_np_shard / world_size
         max_shard_bytes = max(shard_cpu_bytes)
         assert max_shard_bytes < 1.5 * expected_shard_bytes, (
             f"sharded per-rank CPU footprint {max_shard_bytes / 1e9:.3f} GB "
-            f"exceeds 1.5 * expected shard {expected_shard_bytes / 1e9:.3f} GB — "
+            f"exceeds 1.5 * expected shard {expected_shard_bytes / 1e9:.3f} GB "
+            "(2x = param shard + grad shard, divided across world_size) — "
             f"sharding may not be partitioning bytes as intended"
         )
 

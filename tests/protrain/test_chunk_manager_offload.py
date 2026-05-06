@@ -1724,3 +1724,493 @@ def test_sharded_snapshot_cpu_state_round_trip_2rank(tmp_path) -> None:
     if skip_files:
         reasons = [f.read_text().strip() for f in skip_files]
         pytest.skip(f"gloo does not support required collective(s): {reasons}")
+
+
+# ---------------------------------------------------------------------------
+# Oversize-chunk runtime path (BufferPool._large_buffers side-table)
+# ---------------------------------------------------------------------------
+#
+# These tests exercise the runtime fix for the oversize-chunk bug
+# documented in ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1: a single
+# param larger than ``S_chunk`` lives in its own chunk by layout (see
+# :func:`build_layout`'s "A single param larger than ``S_chunk`` is
+# placed on its own in a fresh chunk" rule), and the runtime must size
+# the gather buffer to the chunk's actual byte count rather than
+# ``S_chunk``. The :class:`BufferPool` learned a ``_large_buffers``
+# side-table that holds one-off exact-byte allocations for these
+# chunks; the manager plumbs ``chunk_bytes`` through every
+# ``acquire``/``release`` pair so the side-table is engaged
+# automatically when the chunk is oversize.
+
+
+def _oversize_model(hidden_small: int = 16, hidden_big: int = 4096):
+    """Build a tiny model where one Linear is much larger than the others.
+
+    Picking ``hidden_big = 4096`` and bf16 gives a single parameter
+    roughly 32 MB in size (4096 * 4096 * 2 bytes), comfortably above
+    the 16 MB S_chunk we use in the oversize tests below. The
+    surrounding layers are tiny so a chunk holding only the big
+    Linear's weight crosses the oversize threshold by itself.
+    """
+    import torch
+    from torch import nn
+
+    class _OversizeModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            # Tiny neighbours so the oversize chunk is the ONLY chunk
+            # whose chunk_bytes > S_chunk.
+            self.embed = nn.Linear(hidden_small, hidden_small, bias=False)
+            # Single big bf16 Linear — its .weight is the oversize param.
+            self.big = nn.Linear(hidden_big, hidden_big, bias=False).to(torch.bfloat16)
+            self.head = nn.Linear(hidden_small, hidden_small, bias=False)
+
+        def forward(self, x: "torch.Tensor") -> "torch.Tensor":  # noqa: D401
+            return self.head(self.embed(x))
+
+    torch.manual_seed(0)
+    return _OversizeModel()
+
+
+def _build_oversize_manager(model, S_chunk: int, n_buffer: int = 2):
+    """Build a ChunkManager where one chunk is oversize relative to ``S_chunk``."""
+    import torch
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.chunk.manager import ChunkManager
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+    block_spans: dict = {}
+    # Make the big Linear its own block — that mirrors the production
+    # layout for transformer MLP blocks where each layer's gate/up/down
+    # weight lands in its own block.
+    for name, _ in model.named_parameters():
+        if name.startswith("big."):
+            block_spans.setdefault(BlockId(0), []).append(ParamId(name))
+    exec_order = [ParamId(n) for n, _ in model.named_parameters()]
+    layout = build_layout(model, exec_order, S_chunk, block_spans)
+
+    host = PinnedHostMemory(n_buffer=n_buffer, S_chunk=layout.S_chunk)
+    pool = BufferPool(
+        n_buffer=n_buffer,
+        S_chunk=layout.S_chunk,
+        pinned_host=host,
+        device=torch.device("cuda"),
+    )
+    mgr = ChunkManager(
+        model=model,
+        layout=layout,
+        n_persist=0,
+        buffer_pool=pool,
+        cpu_optim=None,
+        gpu_optim=None,
+        device=torch.device("cuda"),
+    )
+    return mgr, layout, pool, host
+
+
+def _find_oversize_chunk(mgr, S_chunk: int):
+    """Return the ChunkId whose chunk_bytes exceeds ``S_chunk``."""
+    for cid_int in range(mgr.layout.N_chunk):
+        cid = ChunkId(cid_int)
+        if mgr._compute_chunk_bytes(cid) > S_chunk:  # noqa: SLF001
+            return cid
+    return None
+
+
+@pytest.mark.gpu
+def test_acquire_oversize_chunk_allocates_per_chunk_bytes() -> None:
+    """``BufferPool.acquire(cid, chunk_bytes=2*S_chunk)`` returns a buffer of
+    that exact size — drawn from the ``_large_buffers`` side-table, NOT a slot.
+
+    Direct unit-level proof of the new contract: the slot pool's
+    ``M_buffer = n_buffer * S_chunk`` ceiling is preserved for normal
+    chunks, while oversize chunks land in a separate dict keyed on
+    ChunkId. The slot lease counter is unchanged; ``num_free`` matches
+    the pre-acquire baseline.
+    """
+    import torch
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+    n_buffer = 2
+    s_chunk = 1 << 16  # 64 KB slots
+    pinned = PinnedHostMemory(n_buffer=n_buffer, S_chunk=s_chunk)
+    try:
+        pool = BufferPool(
+            n_buffer=n_buffer,
+            S_chunk=s_chunk,
+            pinned_host=pinned,
+            device=torch.device("cuda"),
+        )
+        baseline_free = pool.num_free
+        cid = ChunkId(0)
+        oversize_bytes = 2 * s_chunk
+        buf = pool.acquire(cid, chunk_bytes=oversize_bytes)
+
+        # The buffer is of the requested size, not S_chunk.
+        assert buf.numel() == oversize_bytes, (
+            f"expected oversize buffer of {oversize_bytes} bytes, got {buf.numel()}"
+        )
+        # Lives in the side-table, not in any pool slot.
+        assert cid in pool._large_buffers, (  # noqa: SLF001
+            "oversize chunk should appear in BufferPool._large_buffers"
+        )
+        assert pool._large_buffers[cid].data_ptr() == buf.data_ptr(), (  # noqa: SLF001
+            "side-table entry must be the SAME tensor returned by acquire()"
+        )
+        # Slot lease bookkeeping is untouched.
+        assert pool.num_free == baseline_free, (
+            f"oversize acquire must not consume a slot lease; "
+            f"num_free went from {baseline_free} to {pool.num_free}"
+        )
+        # And the chunk has no slot tag.
+        assert cid not in pool._tag_to_slot, (  # noqa: SLF001
+            "oversize chunk must not be tracked in the slot tag table"
+        )
+
+        # Release: drops from the side-table and does NOT touch slot state.
+        pool.release(cid)
+        assert cid not in pool._large_buffers, (  # noqa: SLF001
+            "release(cid) must drop the oversize buffer from _large_buffers"
+        )
+        assert pool.num_free == baseline_free, (
+            "release of oversize chunk must not push a phantom slot to free"
+        )
+    finally:
+        pinned.close()
+
+
+@pytest.mark.gpu
+def test_oversize_and_normal_chunks_coexist() -> None:
+    """Interleave normal and oversize gathers: the two state spaces stay disjoint.
+
+    Verifies that mixing oversize and normal chunks in the same
+    BufferPool keeps the slot lease counter accurate for normal chunks
+    and the side-table accurate for oversize chunks. ``release``
+    cleanup is independently correct for both.
+    """
+    import torch
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+    n_buffer = 4
+    s_chunk = 1 << 16
+    pinned = PinnedHostMemory(n_buffer=n_buffer, S_chunk=s_chunk)
+    try:
+        pool = BufferPool(
+            n_buffer=n_buffer,
+            S_chunk=s_chunk,
+            pinned_host=pinned,
+            device=torch.device("cuda"),
+        )
+
+        normal_a = ChunkId(0)
+        oversize_b = ChunkId(1)
+        normal_c = ChunkId(2)
+
+        baseline_free = pool.num_free
+        # Normal chunk → consumes a slot.
+        buf_a = pool.acquire(normal_a, chunk_bytes=s_chunk // 2)
+        assert buf_a.numel() == s_chunk
+        assert pool.num_free == baseline_free - 1, (
+            "normal acquire should drop one free slot"
+        )
+        assert normal_a in pool._tag_to_slot  # noqa: SLF001
+        assert normal_a not in pool._large_buffers  # noqa: SLF001
+
+        # Oversize chunk → goes to the side-table without touching slots.
+        buf_b = pool.acquire(oversize_b, chunk_bytes=3 * s_chunk)
+        assert buf_b.numel() == 3 * s_chunk
+        assert oversize_b in pool._large_buffers  # noqa: SLF001
+        assert pool.num_free == baseline_free - 1, (
+            "oversize acquire must not change slot lease state"
+        )
+        assert oversize_b not in pool._tag_to_slot  # noqa: SLF001
+
+        # Another normal chunk → consumes another slot.
+        buf_c = pool.acquire(normal_c, chunk_bytes=s_chunk // 4)
+        assert buf_c.numel() == s_chunk
+        assert pool.num_free == baseline_free - 2
+
+        # Releases peel the state spaces apart cleanly.
+        pool.release(oversize_b)
+        assert oversize_b not in pool._large_buffers  # noqa: SLF001
+        assert pool.num_free == baseline_free - 2, (
+            "oversize release must not affect slot lease counter"
+        )
+
+        pool.release(normal_a)
+        assert pool.num_free == baseline_free - 1
+        # Tag is preserved on slot release per the standard pool contract.
+        assert normal_a in pool._tag_to_slot  # noqa: SLF001
+
+        pool.release(normal_c)
+        assert pool.num_free == baseline_free
+    finally:
+        pinned.close()
+
+
+@pytest.mark.gpu
+def test_oversize_gather_lease_idempotent_within_active_window() -> None:
+    """Duplicate ``ChunkManager.gather()`` of an oversize chunk reuses the
+    existing ``_large_buffers`` entry — no double-allocation, no leaked bytes.
+
+    Mirrors the lease-idempotency contract introduced for normal
+    chunks in commit ``65da5802`` (``_active_chunks`` set in
+    ``gather()``): the second call must observe the chunk is already
+    active and return the same buffer pointer rather than re-entering
+    ``acquire``.
+    """
+    import torch
+
+    s_chunk = 1 << 22  # 4 MB
+    # hidden_big=2048, bf16 → 2048 * 2048 * 2 = 8 MB > 4 MB S_chunk.
+    model = _oversize_model(hidden_small=16, hidden_big=2048).cuda()
+    mgr, layout, pool, host = _build_oversize_manager(model, S_chunk=s_chunk)
+    try:
+        mgr.materialize_offload()
+        oversize_cid = _find_oversize_chunk(mgr, s_chunk)
+        assert oversize_cid is not None, (
+            "test fixture must produce at least one oversize chunk; "
+            f"chunk_bytes seen: "
+            f"{[mgr._compute_chunk_bytes(ChunkId(i)) for i in range(layout.N_chunk)]}"  # noqa: SLF001
+        )
+
+        # First gather: allocates the side-table entry.
+        mgr.gather(oversize_cid)
+        assert oversize_cid in pool._large_buffers, (  # noqa: SLF001
+            "first gather of oversize chunk must populate _large_buffers"
+        )
+        assert oversize_cid in mgr._active_chunks, (  # noqa: SLF001
+            "first gather must add chunk to manager._active_chunks"
+        )
+        first_ptr = pool._large_buffers[oversize_cid].data_ptr()  # noqa: SLF001
+
+        # Duplicate gather: must reuse the same buffer.
+        mgr.gather(oversize_cid)
+        assert oversize_cid in pool._large_buffers, (  # noqa: SLF001
+            "duplicate gather must not drop the side-table entry"
+        )
+        second_ptr = pool._large_buffers[oversize_cid].data_ptr()  # noqa: SLF001
+        assert first_ptr == second_ptr, (
+            "duplicate gather of oversize chunk must return SAME buffer "
+            "(lease-idempotency contract from commit 65da5802); got "
+            f"first={first_ptr} second={second_ptr}"
+        )
+
+        # Single offload returns the buffer; the next gather would
+        # re-allocate.
+        mgr.offload(oversize_cid)
+        assert oversize_cid not in pool._large_buffers, (  # noqa: SLF001
+            "offload(oversize) must drop the _large_buffers entry"
+        )
+        assert oversize_cid not in mgr._active_chunks, (  # noqa: SLF001
+            "offload must clear _active_chunks for the oversize chunk"
+        )
+    finally:
+        mgr.restore_to_gpu()
+        del pool
+        host.close()
+        del model
+        torch.cuda.empty_cache()
+
+
+def _worker_sharded_oversize_round_trip(
+    rank: int, world_size: int, tmpdir: str
+) -> None:
+    """Child process body: 2-rank sharded oversize gather→restore round-trip.
+
+    Builds a model whose single bf16 Linear's weight bytes exceed
+    ``S_chunk``, plus a small fp32 LayerNorm so the chunk has two
+    dtype regions and the per-region all_gather loop in
+    ``_gather_sharded`` actually engages. After
+    ``materialize_offload`` partitions the chunk across ranks,
+    ``restore_to_gpu`` reconstructs every rank's full chunk via
+    per-region ``all_gather_into_tensor`` and the post-restore param
+    bytes must equal the pre-offload snapshot bit-exactly.
+    """
+    import os as _os
+
+    import torch
+    import torch.distributed as dist
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.chunk.manager import ChunkManager
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", "29553")
+    dist.init_process_group(
+        backend="gloo",
+        init_method=f"file://{tmpdir}/rendezvous-oversize",
+        rank=rank,
+        world_size=world_size,
+    )
+
+    try:
+        # Same seed across ranks → identical fresh-init weights so
+        # the all_gather restore is comparing identical bytes.
+        torch.manual_seed(0)
+        from torch import nn
+
+        class _OversizeMixedLayer(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                # 256x256 bf16 = 128 KB — bigger than the 64 KB S_chunk
+                # below, so this Linear's weight forces the whole layer
+                # into an oversize chunk.
+                self.proj = nn.Linear(256, 256, bias=False).to(torch.bfloat16)
+                # Small fp32 norm gives the chunk a second dtype region
+                # so the per-region all_gather loop runs >1 collective.
+                self.norm = nn.LayerNorm(256).to(torch.float32)
+
+        layer = _OversizeMixedLayer()
+        model = nn.Module()
+        model.h = nn.ModuleList([layer])  # type: ignore[attr-defined]
+
+        block_spans: dict = {}
+        for name, _p in model.named_parameters():
+            block_spans.setdefault(BlockId(0), []).append(ParamId(name))  # type: ignore[index]
+        exec_order = [ParamId(n) for n, _ in model.named_parameters()]
+        # 64 KB S_chunk — every chunk holding the proj.weight (128 KB
+        # bf16) is oversize, exercising the side-table allocator + the
+        # _gather_sharded ``buf.narrow(0, region.chunk_offset,
+        # region.region_bytes)`` slice that previously crashed.
+        S_chunk = 1 << 16
+        layout = build_layout(model, exec_order, S_chunk, block_spans)
+
+        host = PinnedHostMemory(n_buffer=1, S_chunk=layout.S_chunk)
+        pool = BufferPool(
+            n_buffer=1,
+            S_chunk=layout.S_chunk,
+            pinned_host=host,
+            device=torch.device("cpu"),
+        )
+
+        pre_data = {
+            str(name): p.detach().clone() for name, p in model.named_parameters()
+        }
+
+        mgr = ChunkManager(
+            model=model,
+            layout=layout,
+            n_persist=0,
+            buffer_pool=pool,
+            cpu_optim=None,
+            gpu_optim=None,
+            device=torch.device("cpu"),
+            world_size=world_size,
+            rank=rank,
+            zero3_shard=True,
+        )
+
+        try:
+            mgr.materialize_offload()
+        except RuntimeError as exc:
+            if "gloo" in str(exc).lower():
+                with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+                    f.write(f"gloo-unsupported: {exc}\n")
+                return
+            raise
+
+        # Confirm the test exercises the oversize PATH, not just the
+        # oversize buffer-pool branch by accident: at least one chunk's
+        # recorded chunk_bytes must exceed S_chunk on every rank.
+        oversize_cids = [
+            ChunkId(i)
+            for i in range(layout.N_chunk)
+            if mgr._compute_chunk_bytes(ChunkId(i)) > S_chunk  # noqa: SLF001
+        ]
+        assert oversize_cids, (
+            f"rank {rank}: no chunk exceeds S_chunk={S_chunk}; "
+            "the test would otherwise pass via the slot path and not "
+            "exercise _large_buffers — adjust the fixture"
+        )
+        oversize_cid = oversize_cids[0]
+
+        # The oversize chunk engaged the sharded path; pick out its
+        # shard state to verify the multi-region (bf16 + fp32) split.
+        # We don't assert the *total* number of sharded chunks because
+        # the LayerNorm's small fp32 params land in their own (non-
+        # oversize) chunk that may also shard — what matters for this
+        # test is that the oversize chunk reassembles bit-exactly.
+        assert oversize_cid in mgr.sharded_chunk_ids(), (
+            f"rank {rank}: oversize chunk {oversize_cid} did not engage "
+            f"the sharded path; sharded_ids={mgr.sharded_chunk_ids()}"
+        )
+        shard_state = mgr._chunk_shards[oversize_cid]  # noqa: SLF001
+        assert len(shard_state.regions) >= 1, (
+            f"rank {rank}: expected >=1 dtype regions for oversize chunk, "
+            f"got {len(shard_state.regions)}"
+        )
+
+        try:
+            moved = mgr.restore_to_gpu()
+        except RuntimeError as exc:
+            if "not implemented" in str(exc).lower() or "gloo" in str(exc).lower():
+                with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+                    f.write(f"gloo-collective-unsupported: {exc}\n")
+                return
+            raise
+
+        assert moved > 0, f"rank {rank}: restore_to_gpu returned 0 bytes moved"
+
+        for name, p in model.named_parameters():
+            snap = pre_data[str(name)]
+            assert p.data.shape == snap.shape, f"rank {rank}: shape changed for {name}"
+            assert p.data.dtype == snap.dtype, f"rank {rank}: dtype changed for {name}"
+            assert torch.equal(p.data, snap), (
+                f"rank {rank}: param {name} bytes diverged across "
+                "oversize sharded materialize_offload -> restore_to_gpu round-trip"
+            )
+
+        host.close()
+        del pool
+
+    finally:
+        try:
+            dist.barrier()
+        except Exception:  # noqa: BLE001
+            pass
+        dist.destroy_process_group()
+
+
+@pytest.mark.slow
+@pytest.mark.gpu  # paired with the rest of the distributed lane
+def test_sharded_gather_with_oversize_chunk_2rank(tmp_path) -> None:
+    """2-rank gloo: sharded materialize→restore round-trip on an oversize chunk.
+
+    Sister test to :func:`test_sharded_restore_to_gpu_round_trip_2rank`
+    that drives the chunk's bytes above ``S_chunk`` so the runtime
+    exercises the new ``BufferPool._large_buffers`` side-table during
+    the per-region ``all_gather_into_tensor`` reassembly. Without the
+    side-table fix this test fails with the same ``RuntimeError:
+    start (0) + length (...) exceeds dimension size (S_chunk)``
+    observed in ``test_protrain_4gpu_zero3_sharding`` before the
+    oversize-chunk runtime fix landed.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.distributed.is_available():
+        pytest.skip("torch.distributed unavailable")
+
+    import torch.multiprocessing as mp
+
+    world_size = 2
+    mp.spawn(
+        _worker_sharded_oversize_round_trip,
+        args=(world_size, str(tmp_path)),
+        nprocs=world_size,
+        join=True,
+    )
+
+    skip_files = list(tmp_path.glob("rank*.skip"))
+    if skip_files:
+        reasons = [f.read_text().strip() for f in skip_files]
+        pytest.skip(f"gloo does not support required collective(s): {reasons}")
