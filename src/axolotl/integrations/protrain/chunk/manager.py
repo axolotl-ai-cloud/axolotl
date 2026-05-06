@@ -575,6 +575,23 @@ class ChunkManager:
         # ``_release_backward_handle`` once the last handle drops.
         self._deferred_offloads: set[ChunkId] = set()
 
+        # Set of non-persistent chunks the manager has gathered but not
+        # yet offloaded. Single-source-of-truth for "this chunk holds a
+        # buffer-pool lease taken by ``gather()``" so repeated, idempotent
+        # ``gather(cid)`` calls (e.g. the scheduler's
+        # ``ensure_block_resident`` + lookahead-prefetch pair, which call
+        # ``gather`` 2-3 times per chunk per forward window) don't each
+        # bump the pool's lease counter and exhaust the pool. The lease
+        # is bumped exactly once per active window — on the first
+        # gather; subsequent gathers within the window are tag-lookup
+        # only. Cleared in ``offload()`` when the buffer is actually
+        # released (NOT when offload is deferred behind a backward
+        # refcount). Without this set the pool's lease counter grows on
+        # every redundant gather and exhausts the pool around block
+        # ~6 in a 20-block, n_buffer=2, OFFLOAD-mode layout — see
+        # ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1 for the lifecycle.
+        self._active_chunks: set[ChunkId] = set()
+
         self.mark_persistent(n_persist)
 
     # ---- configuration -------------------------------------------------
@@ -1892,12 +1909,52 @@ class ChunkManager:
         # all_gather is ~290MB of cross-PCIe motion at the 10-12 GB/s
         # NCCL ring ceiling. Skipping it costs nothing in correctness:
         # the sharded gather's only output is the full-chunk byte image
-        # in the pool buffer, and ``acquire_if_resident`` is the proof
-        # that image is still there. The lease taken here pairs with
-        # the matching ``release`` issued by the scheduler's
+        # in the pool buffer, and the resident tag is the proof that
+        # image is still there. The lease taken here pairs with the
+        # matching ``release`` issued by the scheduler's
         # ``post_block_*`` path / ``offload(chunk_id)``.
+        #
+        # Lease-idempotency: ``gather(cid)`` is called multiple times
+        # per active window in steady state — the scheduler's
+        # ``pre_block_forward`` issues ``ensure_block_resident`` AND a
+        # lookahead-prefetch for the next block, both of which route
+        # through this method, and adjacent blocks sharing a chunk
+        # (block-contiguity rule §3.1.1) widen the redundancy further.
+        # The buffer pool's lease counter increments once per
+        # ``acquire`` / ``acquire_if_resident`` call, but the scheduler
+        # only issues ONE matching ``offload(cid)`` per chunk per active
+        # window, so without lease-idempotency the counter grows
+        # unboundedly and the pool exhausts (typically around block 6
+        # in a 20-block, n_buffer=2 OFFLOAD layout — see
+        # ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1). The
+        # ``_active_chunks`` set is the manager-level "this chunk
+        # already holds a gather-side lease" tracker: while a chunk is
+        # in the set we do tag-lookup-only re-gathers; on the
+        # first-gather (set miss) we take a real lease via
+        # ``acquire_if_resident`` (slot still tagged from a prior
+        # offload) or ``acquire`` (cache miss), and add the chunk to the
+        # set. ``offload()`` removes the chunk from the set only when it
+        # actually releases the buffer (NOT on the deferred path,
+        # because the lease is still held until the deferred offload
+        # drains).
+        if chunk_id in self._active_chunks:
+            # Already-active fast path: the chunk holds a single gather
+            # lease; rebind params from the still-tagged slot without
+            # touching the pool's lease counter. ``lookup_resident`` is
+            # the lease-free peek; the slot is guaranteed to be off the
+            # free list because we haven't called ``offload`` yet (which
+            # is what would have appended it).
+            resident_buf = self.buffer_pool.lookup_resident(chunk_id)
+            assert resident_buf is not None, (
+                f"chunk {chunk_id} marked active but pool has no resident "
+                "tag — _active_chunks invariant violated"
+            )
+            self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
+            return
+
         resident_buf = self.buffer_pool.acquire_if_resident(chunk_id)
         if resident_buf is not None:
+            self._active_chunks.add(chunk_id)
             self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
             return
 
@@ -1907,6 +1964,7 @@ class ChunkManager:
         # all_gathers in sharded mode or (b) per-slot H2D copies in
         # replicated mode.
         buf = self.buffer_pool.acquire(chunk_id)
+        self._active_chunks.add(chunk_id)
         if shard_state is not None:
             self._gather_sharded(chunk_id, buf, shard_state)
             self._rebind_params_to_buffer(chunk_id, buf, needs_copy=False)
@@ -2166,6 +2224,14 @@ class ChunkManager:
                 continue
             param.data = self._empty_placeholder(slot.dtype)
         self.buffer_pool.release(chunk_id)
+        # Symmetric with the ``_active_chunks.add`` in ``gather()``:
+        # the gather-side lease has been released, so the next gather
+        # for this chunk must re-acquire (and thus re-bump the pool's
+        # lease counter). Discard ONLY here — not on the deferred path
+        # above — because the deferred branch keeps the lease pinned
+        # via the BackwardHandle refcount and the eventual drain
+        # re-enters this method.
+        self._active_chunks.discard(chunk_id)
 
     def reduce_grads_and_offload(self, chunk_id: ChunkId) -> None:
         """Reduce-scatter grads and D2H-copy the chunk's grad shard back to CPU.

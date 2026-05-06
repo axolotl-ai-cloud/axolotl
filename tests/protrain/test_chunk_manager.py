@@ -1206,3 +1206,107 @@ def test_gather_skips_collective_on_pool_resident_hit(monkeypatch):
             mgr.uninstall()
     finally:
         host.close()
+
+
+def test_gather_is_lease_idempotent_within_active_window():
+    """Repeated ``gather(cid)`` while the chunk is active must not bump leases.
+
+    The scheduler's ``pre_block_forward`` calls ``gather`` 2-3 times per
+    chunk per active window — once via ``ensure_block_resident`` and
+    once or twice more via the lookahead-prefetch for the next block
+    (which is the same chunk under the block-contiguity rule when two
+    adjacent blocks share a chunk). The buffer pool's lease counter
+    increments on every ``acquire`` / ``acquire_if_resident`` call, but
+    only ONE matching ``offload(cid)`` fires per active window (in the
+    last owning block's ``post_block_forward``). If ``gather`` were not
+    lease-idempotent, the lease counter would grow without bound and
+    the pool would exhaust around block ~6 in a 20-block, n_buffer=2
+    OFFLOAD layout — see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1.
+
+    Invariant under test: after N back-to-back ``gather(cid)`` calls
+    followed by ONE ``offload(cid)``, the slot returns to the free
+    list (lease drops to zero). Tested directly against the buffer
+    pool's ``num_in_use`` counter and the ``_active_chunks`` tracker.
+    """
+    pytest.importorskip("torch")
+    import torch
+    from torch import nn
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.chunk.manager import ChunkManager
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+    from axolotl.integrations.protrain.types import ChunkId
+
+    torch.manual_seed(0)
+    layer = nn.Linear(4, 4, bias=True)
+    model = nn.Module()
+    model.h = nn.ModuleList([layer])  # type: ignore[attr-defined]
+
+    block_spans: dict[BlockId, list[ParamId]] = {}
+    for name, _ in model.named_parameters():
+        block_spans.setdefault(cast(BlockId, 0), []).append(cast(ParamId, name))
+    exec_order = [cast(ParamId, n) for n, _ in model.named_parameters()]
+    S_chunk = 1 << 14
+    layout = build_layout(model, exec_order, S_chunk, block_spans)
+    assert layout.N_chunk == 1
+
+    host = PinnedHostMemory(n_buffer=1, S_chunk=layout.S_chunk)
+    try:
+        pool = BufferPool(
+            n_buffer=1,
+            S_chunk=layout.S_chunk,
+            pinned_host=host,
+            device=torch.device("cpu"),
+        )
+        # n_persist=0: the chunk is non-persistent so gather() takes the
+        # buffer-pool path (the persistent early-return would mask the
+        # lease-bookkeeping under test).
+        mgr = ChunkManager(
+            model=model,
+            layout=layout,
+            n_persist=0,
+            buffer_pool=pool,
+            cpu_optim=None,
+            gpu_optim=None,
+            device=torch.device("cpu"),
+        )
+
+        try:
+            mgr.materialize_offload()
+            chunk_id = cast(ChunkId, 0)
+
+            # Five back-to-back gathers — emulates the scheduler's
+            # repeated lookahead/ensure-resident calls that exercised
+            # the bug in production.
+            for _ in range(5):
+                mgr.gather(chunk_id)
+
+            # The chunk is "active" in the manager's tracker exactly
+            # once, and the pool reports exactly one slot in use.
+            assert chunk_id in mgr._active_chunks
+            assert pool.num_in_use == 1, (
+                f"lease-idempotency regression: 5 gather() calls "
+                f"created {pool.num_in_use} buffer leases (expected 1)"
+            )
+
+            # One offload should fully release the slot — proving the
+            # scheduler's "one offload per active window" contract is
+            # honored by the manager.
+            mgr.offload(chunk_id)
+            assert chunk_id not in mgr._active_chunks
+            assert pool.num_in_use == 0, (
+                f"single offload() didn't release the slot — "
+                f"num_in_use={pool.num_in_use}"
+            )
+
+            # And the next gather/offload cycle still works (no stale
+            # state from the previous cycle).
+            mgr.gather(chunk_id)
+            assert pool.num_in_use == 1
+            mgr.offload(chunk_id)
+            assert pool.num_in_use == 0
+        finally:
+            mgr.uninstall()
+    finally:
+        host.close()
