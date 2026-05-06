@@ -27,6 +27,151 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
+# A placement step describes one atomic packing decision the chunk packer must
+# honor. We expose two flavours:
+#
+# * ``("single", size)`` — place a single non-block param via greedy fit. Seal
+#   the current chunk first iff the param wouldn't fit alongside whatever is
+#   already there. An oversize param (``size > S_chunk``) gets its own chunk.
+# * ``("block", [size_0, size_1, ...])`` — place a block's params contiguously.
+#   Seal the current chunk first iff the entire block wouldn't fit alongside
+#   whatever is already there. Once the block starts, individual params are
+#   placed via the same greedy fit so a block bigger than ``S_chunk`` spans
+#   consecutive chunks but no foreign param can interleave.
+#
+# Sharing this packer between :func:`build_layout` and the S_chunk grid search
+# is the paper-fidelity guarantee: the simulation's chunk count matches what
+# the layout actually produces. App B.1 says "ProTrain conducts a grid search
+# that simulates memory waste across various chunk sizes and selects the one
+# that minimizes it" — that simulation must reflect the placement rules.
+SingleStep = tuple[str, int]
+BlockStep = tuple[str, list[int]]
+PackingStep = tuple[str, object]  # union of SingleStep / BlockStep at runtime
+
+
+def _pack_chunks_with_block_rules(
+    steps: Sequence[PackingStep],
+    S_chunk: int,
+) -> list[int]:
+    """Return per-chunk byte usage following the block-aware placement rules.
+
+    Mirrors the inner placement loop of :func:`build_layout` exactly: starts
+    with one empty chunk, processes each step in order, and seals the current
+    chunk on overflow according to the same rules. The returned list is the
+    cumulative bytes assigned to each chunk in order — same length as the
+    chunk count :func:`build_layout` would have produced for the same step
+    stream, except for the trailing-empty-chunk trim which we replicate at
+    the end.
+    """
+    if S_chunk <= 0:
+        raise ValueError(f"S_chunk must be positive, got {S_chunk}")
+
+    chunk_bytes: list[int] = [0]
+
+    def _seal_and_open() -> None:
+        chunk_bytes.append(0)
+
+    def _place(size: int) -> None:
+        if chunk_bytes[-1] > 0 and chunk_bytes[-1] + size > S_chunk:
+            _seal_and_open()
+        chunk_bytes[-1] += size
+
+    for kind, payload in steps:
+        if kind == "single":
+            assert isinstance(payload, int)
+            _place(payload)
+        elif kind == "block":
+            assert isinstance(payload, list)
+            block_total = sum(payload)
+            if chunk_bytes[-1] > 0 and block_total > S_chunk - chunk_bytes[-1]:
+                # Seal-before-block: keep the block chunk-aligned when it
+                # won't fit alongside the current contents.
+                _seal_and_open()
+            for size in payload:
+                _place(size)
+        else:
+            raise ValueError(f"unknown packing step kind: {kind!r}")
+
+    # Drop a trailing empty chunk (matches build_layout's tail-trim).
+    while len(chunk_bytes) > 1 and chunk_bytes[-1] == 0:
+        chunk_bytes.pop()
+    return chunk_bytes
+
+
+def _build_packing_steps(
+    param_sizes: Mapping[ParamId, int],
+    exec_order: Sequence[ParamId],
+    block_spans: Mapping[BlockId, Sequence[ParamId]],
+) -> list[PackingStep]:
+    """Translate (exec_order, block_spans) into a packer step stream.
+
+    Replicates :func:`build_layout`'s exec-order walk: shared params kept at
+    first occurrence, block params gathered contiguously starting from the
+    block's first appearance, then any model params absent from exec_order
+    appended at the tail (with leftover-block-grouping the same way).
+    """
+    placed: set[ParamId] = set()
+    pid_to_block: dict[ParamId, BlockId | None] = {}
+    pid_owner: dict[ParamId, BlockId] = {}
+    for bid, params in block_spans.items():
+        for pid in params:
+            pid_owner[pid] = bid
+    for pid in exec_order:
+        pid_to_block[pid] = pid_owner.get(pid)
+
+    steps: list[PackingStep] = []
+    n = len(exec_order)
+    i = 0
+    while i < n:
+        pid = exec_order[i]
+        if pid in placed:
+            i += 1
+            continue
+        block_id = pid_to_block.get(pid)
+        if block_id is None:
+            steps.append(("single", param_sizes[pid]))
+            placed.add(pid)
+            i += 1
+            continue
+
+        # Gather every still-unplaced member of this block, exec-order first
+        # then any block params not in exec_order at all.
+        block_member_set = set(block_spans[block_id])
+        pending: list[ParamId] = []
+        seen_pending: set[ParamId] = set()
+        for j in range(i, n):
+            qpid = exec_order[j]
+            if (
+                qpid in block_member_set
+                and qpid not in placed
+                and qpid not in seen_pending
+            ):
+                pending.append(qpid)
+                seen_pending.add(qpid)
+        for qpid in block_spans[block_id]:
+            if qpid not in placed and qpid not in seen_pending:
+                pending.append(qpid)
+                seen_pending.add(qpid)
+
+        steps.append(("block", [param_sizes[q] for q in pending]))
+        placed.update(pending)
+        i += 1
+
+    # Tail: model params absent from exec_order. Same block-grouping rule.
+    for pid in param_sizes:
+        if pid in placed:
+            continue
+        bid = pid_owner.get(pid)
+        if bid is None:
+            steps.append(("single", param_sizes[pid]))
+            placed.add(pid)
+            continue
+        pending = [q for q in block_spans[bid] if q not in placed]
+        steps.append(("block", [param_sizes[q] for q in pending]))
+        placed.update(pending)
+
+    return steps
+
 
 def _param_bytes(model: "nn.Module") -> dict[ParamId, int]:
     """Return a {ParamId -> byte size} map for every named parameter in ``model``."""
@@ -279,11 +424,35 @@ def build_layout(
         bid: tuple(cids) for bid, cids in block_to_chunks.items()
     }
 
+    # Compute ``mandatory_persistent``: any chunk containing at least one
+    # param NOT referenced by any block in ``block_spans``. Such params
+    # live outside ``layout.block_to_chunks`` keys and are therefore
+    # never gathered by the block-granularity scheduler — pinning these
+    # chunks GPU-resident is the runtime-correctness invariant the paper
+    # implicitly assumes (the paper's persistent-set is a prefix
+    # ``[0, n_persist)``; the prefix happens to cover the embedding /
+    # final-norm chunks in the canonical Llama layout, but our
+    # exec-order placement can land them at any chunk index).
+    #
+    # Note: ``param_sizes`` keys span every named parameter in the model,
+    # so the difference ``param_sizes - block_referenced`` enumerates
+    # *every* non-block param (including those the profiler never
+    # touched).
+    nonblock_pids = set(param_sizes.keys()) - block_referenced
+    mandatory: set[ChunkId] = set()
+    for pid in nonblock_pids:
+        cid = param_to_chunk.get(pid)
+        if cid is not None:
+            mandatory.add(cid)
+    frozen_mandatory: frozenset[ChunkId] = frozenset(mandatory)
+
     LOG.debug(
-        "build_layout: N_chunk=%d S_chunk=%d bytes, block_spans=%d",
+        "build_layout: N_chunk=%d S_chunk=%d bytes, block_spans=%d "
+        "mandatory_persistent=%s",
         len(frozen_chunks),
         S_chunk,
         len(block_spans),
+        sorted(frozen_mandatory),
     )
 
     return ChunkLayout(
@@ -292,7 +461,14 @@ def build_layout(
         chunks=frozen_chunks,
         param_to_chunk=param_to_chunk,
         block_to_chunks=frozen_block_map,
+        mandatory_persistent=frozen_mandatory,
     )
 
 
 __all__ = ["build_layout"]
+
+# Internal helpers exposed for the S_chunk grid search (sizing.py) so the
+# simulation honors the same block-sealing/contiguity rules as build_layout.
+# Not part of the public surface.
+_pack_chunks_with_block_rules.__module__ = __name__
+_build_packing_steps.__module__ = __name__

@@ -159,7 +159,12 @@ def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
     """
     if cfg.n_swap <= 0:
         return 0
-    n_nonpersist = max(0, layout.N_chunk - cfg.n_persist)
+    # Mirror the rest of the cost model: the augmented persistent set
+    # ``{0..n_persist-1} ∪ mandatory_persistent`` defines the GPU-resident
+    # population, so the count of chunks subject to swap-induced PCIe
+    # contention is ``N_chunk - len(augmented)``.
+    n_persist_eff = len(layout.effective_persistent_ids(cfg.n_persist))
+    n_nonpersist = max(0, layout.N_chunk - n_persist_eff)
     return min(cfg.n_swap + 1, n_nonpersist)
 
 

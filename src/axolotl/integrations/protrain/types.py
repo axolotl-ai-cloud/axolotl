@@ -377,13 +377,49 @@ class ProfilerTrace:
 
 @dataclass(frozen=True)
 class ChunkLayout:
-    """Per-rank chunk assignment plus intra-chunk ordering. Output of M2 layout pass."""
+    """Per-rank chunk assignment plus intra-chunk ordering. Output of M2 layout pass.
+
+    ``mandatory_persistent`` records ChunkIds that the *runtime* must keep
+    GPU-resident regardless of the user-chosen prefix ``cfg.n_persist``.
+    These are typically chunks that contain at least one non-block param
+    (e.g. ``model.norm.weight`` in a Llama tail or an untied lm_head):
+    such params live outside any block's ``layout.block_to_chunks`` entry,
+    so the block-granularity scheduler never gathers them on a hook —
+    if offloaded they would be zero-sized when post-block forward consumes
+    them. Pinning them is a runtime correctness requirement, NOT part of
+    the search's prefix budget.
+
+    The paper's persistent-set is a prefix ``[0, n_persist)`` (line 188
+    of the source paper); ``mandatory_persistent`` is the local
+    integration's correctness extension. Cost model + search keep
+    ``cfg.n_persist`` strictly meaning "prefix length the search chose";
+    the runtime resident set is ``{0..n_persist-1} ∪ mandatory_persistent``.
+
+    The default is an empty frozenset so legacy ``ChunkLayout(...)``
+    constructions stay drop-in compatible.
+    """
 
     S_chunk: int  # bytes per chunk
     N_chunk: int  # total chunks
     chunks: tuple[tuple[ParamId, ...], ...]  # exec-order within each chunk
     param_to_chunk: dict[ParamId, ChunkId]
     block_to_chunks: dict[BlockId, tuple[ChunkId, ...]]
+    # Chunks that MUST stay GPU-resident regardless of n_persist; see
+    # docstring for the runtime-correctness motivation. ``frozenset`` so
+    # the layout stays hashable + immutable.
+    mandatory_persistent: frozenset[ChunkId] = field(default_factory=frozenset)
+
+    def effective_persistent_ids(self, n_persist: int) -> frozenset[ChunkId]:
+        """Return ``{0..n_persist-1} ∪ mandatory_persistent`` as a frozenset.
+
+        Single source of truth for "which chunks are GPU-resident under
+        ``n_persist``" so the searcher, cost model, and runtime construction
+        cannot disagree. Clamps ``n_persist`` defensively into
+        ``[0, N_chunk]``.
+        """
+        n = max(0, min(int(n_persist), int(self.N_chunk)))
+        prefix = {ChunkId(i) for i in range(n)}
+        return frozenset(prefix | set(self.mandatory_persistent))
 
 
 # ---------------------------------------------------------------------------

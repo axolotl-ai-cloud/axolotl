@@ -454,7 +454,15 @@ def estimate_cpu_footprint(
         dtype-aligned boundary by ``ChunkManager.materialize_offload``;
         the arithmetic here tracks the same ceiling).
     """
-    non_persist = max(0, layout.N_chunk - cfg.n_persist)
+    # Non-persistent chunks are everything outside the augmented
+    # persistent set (prefix ∪ mandatory_persistent). Earlier this used
+    # ``N_chunk - cfg.n_persist``, which double-counted any
+    # ``layout.mandatory_persistent`` chunk as a CPU shard even though
+    # the runtime never offloads it. With non-empty ``mandatory_persistent``
+    # this would over-charge the per-rank pinned-CPU budget by up to
+    # ``len(mandatory_persistent) * S_chunk``.
+    n_persist_eff = len(layout.effective_persistent_ids(cfg.n_persist))
+    non_persist = max(0, layout.N_chunk - n_persist_eff)
     # Under sharding each rank holds 1/gpu_count of each chunk. Ceiling
     # division is applied PER CHUNK so small chunks don't underreport
     # when ``S_chunk`` isn't divisible by ``gpu_count`` — summing
@@ -503,7 +511,16 @@ def model_state_present_bytes(
     layout: ChunkLayout,
     trace: ProfilerTrace,
 ) -> int:
-    """Resident model-state bytes for ``(n_persist, n_buffer)`` chunks.
+    """Resident model-state bytes for the runtime's persistent + buffer set.
+
+    The runtime persistent set is
+    ``layout.effective_persistent_ids(cfg.n_persist)`` —
+    the user-chosen prefix ``[0, n_persist)`` UNIONED with
+    ``layout.mandatory_persistent`` (chunks the block-granularity
+    scheduler cannot gather on its own; pinned for runtime correctness,
+    NOT chosen by the searcher). The cost charged here is therefore
+    ``len(prefix ∪ mandatory) * S_chunk * persistent_factor``, NOT
+    ``cfg.n_persist * S_chunk * persistent_factor``.
 
     Sums the per-chunk persistent contribution (full fp16 + grads + fp32
     master + Adam moments under full FT, just fp16 params under
@@ -520,8 +537,14 @@ def model_state_present_bytes(
     "params-only on GPU" assumption — strictly an UNDER-estimate for
     full FT) and emits a one-shot warning so the regression is visible.
     """
-    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
-    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
+    persistent_ids = layout.effective_persistent_ids(cfg.n_persist)
+    n_persist_eff = len(persistent_ids)
+    # n_buffer is bounded by the non-persistent chunk count (everything
+    # outside the augmented persistent set is eligible for buffer-pool
+    # caching). Earlier this was ``N_chunk - cfg.n_persist`` which
+    # over-counted available slots when ``mandatory_persistent`` was
+    # non-empty — a buffer slot for a mandatory chunk is dead weight.
+    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist_eff))
 
     fp16_total_bytes = layout.N_chunk * layout.S_chunk
     model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0)
@@ -551,7 +574,7 @@ def model_state_present_bytes(
     # transient buffers, accounted for separately by the runtime model).
     buffer_factor = 2.0
     return int(
-        n_persist * layout.S_chunk * persistent_factor
+        n_persist_eff * layout.S_chunk * persistent_factor
         + n_buffer * layout.S_chunk * buffer_factor
     )
 

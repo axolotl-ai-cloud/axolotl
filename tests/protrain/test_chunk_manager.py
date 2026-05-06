@@ -352,6 +352,175 @@ def test_sizing_picks_min_waste():
         assert picked in (32 * MB, 64 * MB, 128 * MB, 256 * MB)
 
 
+def test_sizing_simulation_matches_build_layout_with_blocks():
+    """``pick_S_chunk``'s simulation honors block-sealing exactly like ``build_layout``.
+
+    Closes the paper-fidelity gap (App B.1): the prior heuristic ignored
+    block-contiguity, so for a mixed (block + non-block) model the picked
+    S_chunk could diverge from the fragmentation-optimum the *real* layout
+    produces. With the shared packer the simulation is bit-for-bit equal.
+
+    Synthetic model:
+      * 1 non-block prefix param of 10 MB
+      * 2 transformer blocks, each 3 params of 30 MB (block_total = 90 MB)
+      * 1 non-block tail param of 5 MB
+
+    For S_chunk = 100 MB:
+      * naive greedy fit → [10+30+30+30=100][30+30+30=90][30+30+30+5=95] etc.
+      * block-aware fit → seal-before-block at the prefix:
+            chunk 0: prefix=10  (sealed before block 0 because 10+90>100)
+            chunk 1: block0=90  (90 fits alone, but next block won't fit)
+            chunk 2: block1=90 + tail=5
+        i.e. 3 chunks instead of 2; non-tail waste = 90 + 10 = 100 MB.
+    The legacy heuristic would have under-counted this cost.
+    """
+    pytest.importorskip("torch")
+    import torch
+    from torch import nn
+
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.chunk.sizing import (
+        DEFAULT_GRID,
+        _simulate_waste,
+        pick_S_chunk,
+    )
+
+    MB = 1 << 20
+
+    # Build a tiny synthetic model whose param sizes are easy to reason about.
+    # We use float32 (4B/elem) and pick numel so each tensor is exactly the
+    # target byte count.
+    def _param(num_bytes: int) -> nn.Parameter:
+        n_elems = num_bytes // 4
+        return nn.Parameter(torch.empty(n_elems, dtype=torch.float32))
+
+    class Synth(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.prefix = _param(10 * MB)
+            # Two "blocks" of 3 params each, 30 MB apiece (90 MB block total).
+            for b in range(2):
+                for p in range(3):
+                    self.register_parameter(f"b{b}_p{p}", _param(30 * MB))
+            self.tail = _param(5 * MB)
+
+    model = Synth()
+    param_bytes: dict[ParamId, int] = {
+        cast(ParamId, name): int(p.numel()) * int(p.element_size())
+        for name, p in model.named_parameters()
+    }
+    block_spans: dict[BlockId, list[ParamId]] = {
+        cast(BlockId, b): [cast(ParamId, f"b{b}_p{p}") for p in range(3)]
+        for b in range(2)
+    }
+    # Use named_parameters() iteration order as the synthetic exec order.
+    exec_order = list(param_bytes.keys())
+
+    # 1. For every grid candidate, _simulate_waste's chunk count must match
+    #    the number of chunks build_layout actually produces.
+    for S_chunk in DEFAULT_GRID:
+        if S_chunk < max(param_bytes.values()):
+            # Skip candidates the feasibility filter would drop — build_layout
+            # accepts them via the oversize-tensor path but the simulation is
+            # only meaningful for feasible candidates.
+            continue
+        layout = build_layout(model, exec_order, S_chunk, block_spans)
+        # Drive the simulation directly to compare chunk counts.
+        from axolotl.integrations.protrain.chunk.layout import (
+            _build_packing_steps,
+            _pack_chunks_with_block_rules,
+        )
+
+        steps = _build_packing_steps(param_bytes, exec_order, block_spans)
+        sim_bytes = _pack_chunks_with_block_rules(steps, S_chunk)
+        assert len(sim_bytes) == layout.N_chunk, (
+            f"S_chunk={S_chunk}: simulation chunk count {len(sim_bytes)} "
+            f"!= build_layout's {layout.N_chunk}"
+        )
+        # Per-chunk byte counts must also match the actual layout.
+        actual_bytes_per_chunk = [
+            sum(param_bytes[pid] for pid in chunk) for chunk in layout.chunks
+        ]
+        assert sim_bytes == actual_bytes_per_chunk, (
+            f"S_chunk={S_chunk}: simulation per-chunk bytes {sim_bytes} "
+            f"!= actual {actual_bytes_per_chunk}"
+        )
+
+    # 2. _simulate_waste with block info must give a different (higher) waste
+    #    for S_chunk=64 MB than the naive greedy version: under block-aware
+    #    rules, the 10 MB prefix forces a seal-before-block when block 0 (90
+    #    MB total) won't fit alongside it, so the prefix's chunk wastes
+    #    54 MB. The naive heuristic would have packed prefix+first-block
+    #    params together and avoided that seal.
+    S = 64 * MB
+    waste_with_blocks = _simulate_waste(param_bytes, exec_order, block_spans, S)
+    waste_no_blocks = _simulate_waste(param_bytes, exec_order, {}, S)
+    assert waste_with_blocks > waste_no_blocks, (
+        f"block-aware simulation should report MORE waste than naive greedy "
+        f"at S_chunk=64 MB (prefix forces an extra seal); got "
+        f"with={waste_with_blocks} vs without={waste_no_blocks}"
+    )
+
+    # 3. The grid pick from the block-aware simulation matches the S_chunk
+    #    that build_layout actually produces fewest non-tail-waste bytes for.
+    picked = pick_S_chunk(param_bytes, exec_order=exec_order, block_spans=block_spans)
+    # Compute the ground truth: minimum non-tail waste across feasible S.
+    feasible = tuple(S for S in DEFAULT_GRID if S >= max(param_bytes.values()))
+    truth_waste: dict[int, int] = {}
+    for S in feasible:
+        layout = build_layout(model, exec_order, S, block_spans)
+        per_chunk = [sum(param_bytes[pid] for pid in chunk) for chunk in layout.chunks]
+        truth_waste[S] = (
+            sum(max(0, S - b) for b in per_chunk[:-1]) if len(per_chunk) > 1 else 0
+        )
+    min_waste = min(truth_waste.values())
+    valid_picks = {S for S, w in truth_waste.items() if w == min_waste}
+    # Tie-break: largest among the minima.
+    expected = max(valid_picks)
+    assert picked == expected, (
+        f"pick_S_chunk picked {picked} but build_layout's actual non-tail "
+        f"waste is minimized at {expected} (truth: {truth_waste})"
+    )
+
+
+def test_sizing_oversize_tensor_does_not_credit_undersized_candidate():
+    """Oversize-tensor chunks must not give a too-small candidate negative waste.
+
+    When ``S_chunk < max_param_bytes`` and a single-tensor chunk overflows,
+    ``_simulate_waste`` would naively report ``S_chunk - bytes < 0`` for that
+    chunk. The clamp ``max(0, ...)`` prevents that from crediting the small
+    candidate, so the feasibility-filter fallback (pick the largest grid
+    entry) still selects sensibly when no candidate fits the largest tensor.
+    """
+    from axolotl.integrations.protrain.chunk.sizing import (
+        DEFAULT_GRID,
+        _simulate_waste,
+        pick_S_chunk,
+    )
+
+    MB = 1 << 20
+    # One huge param (300 MB > 256 MB max grid) plus several small ones.
+    param_bytes: dict[ParamId, int] = {
+        cast(ParamId, "huge"): 300 * MB,
+        cast(ParamId, "s0"): 10 * MB,
+        cast(ParamId, "s1"): 10 * MB,
+        cast(ParamId, "s2"): 10 * MB,
+    }
+    # No candidate fits "huge"; fallback path picks max(DEFAULT_GRID).
+    picked = pick_S_chunk(param_bytes)
+    assert picked == max(DEFAULT_GRID), (
+        f"with no feasible candidate the picker must fall back to the "
+        f"largest grid entry; got {picked}"
+    )
+
+    # Sanity: _simulate_waste reports non-negative waste even when the chunk
+    # holding "huge" overflows S_chunk.
+    waste = _simulate_waste(param_bytes, list(param_bytes.keys()), {}, 32 * MB)
+    assert waste >= 0, (
+        f"oversize-tensor chunk must not produce negative waste; got {waste}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # pinned_alloc.py — GPU-only
 # ---------------------------------------------------------------------------

@@ -77,14 +77,21 @@ def min_n_buffer_for(layout: ChunkLayout, n_persist: int) -> int:
     holds the current block's chunks resident while simultaneously prefetching
     the next block's chunks. For any non-persistent chunk to be reachable via
     the pool, the pool must be sized for the worst-case union across adjacent
-    block pairs. Persistent chunks (the first ``n_persist``) bypass the pool,
-    so we only count non-persistent contributions.
+    block pairs. Persistent chunks bypass the pool, so we only count
+    non-persistent contributions.
+
+    The runtime persistent set is
+    ``{0..n_persist-1} ∪ layout.mandatory_persistent`` — the user-chosen
+    prefix UNIONED with the layout-level mandatory pin set (chunks the
+    block-granularity scheduler cannot gather on its own). Using the
+    augmented set here matches the runtime's actual gather pattern:
+    mandatory chunks NEVER consume a buffer slot.
 
     Returns 0 when every chunk is persistent (``n_persist >= N_chunk``).
     """
-    if n_persist >= layout.N_chunk:
+    persistent: set[ChunkId] = set(layout.effective_persistent_ids(n_persist))
+    if len(persistent) >= layout.N_chunk:
         return 0
-    persistent: set[ChunkId] = {ChunkId(i) for i in range(n_persist)}
     block_ids = sorted(layout.block_to_chunks.keys())
     if not block_ids:
         # Sparse/degenerate layout: ``n_persist < N_chunk`` above means at
@@ -163,7 +170,14 @@ def block_map_runtime_admissible(
     chunk-residency cross-restrictions) and unblocks faster
     configurations the searcher previously could not reach.
     """
-    persistent = {ChunkId(i) for i in range(max(0, int(n_persist)))}
+    # The runtime persistent set is the prefix UNIONED with
+    # ``layout.mandatory_persistent`` — single-source via
+    # ``ChunkLayout.effective_persistent_ids`` so this admissibility
+    # predicate matches the actual residency the runtime will install.
+    # NONE blocks whose chunks are *all* in the augmented set remain
+    # admissible even when the search's prefix is shorter, which is
+    # the whole point of the mandatory pin.
+    persistent = set(layout.effective_persistent_ids(n_persist))
     for bid, chunks in layout.block_to_chunks.items():
         mode = block_map.get(bid, BlockMode.NONE)
         if (
@@ -294,7 +308,10 @@ def _block_map_peak_contribution(
     offload_bump_op: dict[int, int] = {}
     persistent_chunks: set[ChunkId] | None = None
     if n_persist is not None:
-        persistent_chunks = {ChunkId(i) for i in range(max(0, int(n_persist)))}
+        # Use the augmented persistent set (prefix ∪ mandatory_persistent)
+        # so OFFLOAD blocks whose chunks are *runtime-pinned* (not just
+        # search-prefixed) correctly suppress the gather bump.
+        persistent_chunks = set(layout.effective_persistent_ids(n_persist))
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
             continue
@@ -613,6 +630,11 @@ def search(
                 else:
                     f_bm_invariant = None
 
+                # The partition bound below uses
+                # ``len(prefix ∪ mandatory_persistent) + n_buffer <= N_chunk``
+                # — mandatory chunks always live on GPU and never consume
+                # a buffer-pool slot at runtime, so they must be counted
+                # against the partition budget alongside the prefix.
                 for n_persist in range(0, bounds.N_chunk + 1):
                     # Recompute ``f_bm`` per ``n_persist`` when OFFLOAD
                     # blocks exist — the OFFLOAD bump drops out for blocks
@@ -640,7 +662,16 @@ def search(
                     max_sum = max(0, min(max_sum, bounds.N_chunk))
 
                     # Max feasible n_buffer at this n_persist (partition + capacity).
-                    max_buffer = min(bounds.N_chunk - n_persist, max_sum - n_persist)
+                    # The partition bound is the *augmented* persistent count
+                    # (prefix ∪ mandatory) — mandatory chunks consume neither
+                    # a buffer slot nor a search-budget slot at runtime.
+                    persistent_count_aug = len(
+                        layout.effective_persistent_ids(n_persist)
+                    )
+                    max_buffer = min(
+                        bounds.N_chunk - persistent_count_aug,
+                        max_sum - persistent_count_aug,
+                    )
                     if max_buffer < 0:
                         # n_persist alone exceeds the capacity budget at
                         # this ``f_bm``. With OFFLOAD active, future

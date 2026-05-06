@@ -580,21 +580,34 @@ class ChunkManager:
     # ---- configuration -------------------------------------------------
 
     def mark_persistent(self, first_n: int) -> None:
-        """Tag chunks [0, first_n) as persistent; the rest as non-persistent.
+        """Tag chunks ``[0, first_n) ∪ layout.mandatory_persistent`` as persistent.
 
-        Idempotent — safe to call after a searcher re-pick at the start of a
-        new epoch. Allocations for already-materialized buffers are NOT
-        changed here (the first-time materialization happens lazily in
-        :meth:`gather` / :meth:`_ensure_persistent_buffer`), so repeated
-        calls with the same ``first_n`` are cheap.
+        ``first_n`` is the user-chosen prefix length (the search's
+        ``cfg.n_persist``). The runtime resident set augments the prefix
+        with ``layout.mandatory_persistent`` — chunks the block-
+        granularity scheduler cannot gather on its own (typically chunks
+        containing non-block params like ``model.norm.weight`` or an
+        untied ``lm_head``); see :class:`ChunkLayout` for the
+        runtime-correctness rationale.
+
+        Idempotent — safe to call after a searcher re-pick at the start
+        of a new epoch. Allocations for already-materialized buffers are
+        NOT changed here (the first-time materialization happens lazily
+        in :meth:`gather` / :meth:`_ensure_persistent_buffer`), so
+        repeated calls with the same ``first_n`` are cheap.
         """
         if first_n < 0 or first_n > self.layout.N_chunk:
             raise ValueError(
                 f"first_n={first_n} out of range [0, {self.layout.N_chunk}]"
             )
-        new_persistent_ids = {cast(ChunkId, i) for i in range(first_n)}
+        # Use ChunkLayout.effective_persistent_ids so the search /
+        # runtime / cost-model definitions of "persistent" are
+        # single-sourced.
+        new_persistent_ids = set(self.layout.effective_persistent_ids(first_n))
         new_non_persistent_ids = {
-            cast(ChunkId, i) for i in range(first_n, self.layout.N_chunk)
+            cast(ChunkId, i)
+            for i in range(self.layout.N_chunk)
+            if cast(ChunkId, i) not in new_persistent_ids
         }
         # CodeRabbit R2-04 fix: once chunks have been materialized into
         # CPU placeholder slots or persistent GPU buffers, the residency

@@ -533,9 +533,25 @@ def estimate_runtime(
     swap_eff_h2d, swap_eff_d2h = effective_bw(cfg, hw)
 
     # ----- Per-chunk comm / compute decomposition -----------------------
-    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))
-    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist))
-    n_nonpersist = max(0, layout.N_chunk - n_persist)
+    # ``cfg.n_persist`` is the prefix length the search chose. The
+    # *runtime* persistent set is the prefix UNIONED with
+    # ``layout.mandatory_persistent`` — chunks the block-granularity
+    # scheduler cannot gather on its own (typically chunks containing a
+    # non-block param, e.g. ``model.norm.weight``). Persistent chunks
+    # pay no PCIe traffic, so the comm/compute loops below must skip
+    # *every* chunk in the augmented set, not just the prefix.
+    persistent_ids: frozenset[ChunkId] = layout.effective_persistent_ids(cfg.n_persist)
+    n_persist_eff = len(persistent_ids)
+    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))  # search prefix
+    n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist_eff))
+    n_nonpersist = max(0, layout.N_chunk - n_persist_eff)
+    # Non-persistent chunk indices in ascending order — used as the
+    # iteration domain everywhere a "for cid in range(n_persist, N_chunk)"
+    # loop used to be. Includes mandatory-persistent chunks' complement,
+    # so the augmented set is honoured uniformly.
+    nonpersist_chunk_ids: list[int] = [
+        cid for cid in range(layout.N_chunk) if ChunkId(cid) not in persistent_ids
+    ]
 
     # Materialise per-chunk effective bandwidth vectors. Cached once
     # here (NOT inside ``_comm_time_chunk``) so the searcher's
@@ -547,7 +563,7 @@ def estimate_runtime(
     # for every chunk — identical numerics to the pre-contention path.
     chunk_bw_fwd: list[tuple[float, float] | None] = [None] * layout.N_chunk
     chunk_bw_bwd: list[tuple[float, float] | None] = [None] * layout.N_chunk
-    for cid in range(n_persist, layout.N_chunk):
+    for cid in nonpersist_chunk_ids:
         chunk_bw_fwd[cid] = effective_bw_for_chunk(
             ChunkId(cid), cfg, hw, layout, block_map, direction="fwd"
         )
@@ -608,7 +624,7 @@ def estimate_runtime(
     t_fwd_comm_per_chunk: list[float] = [0.0] * layout.N_chunk
     t_bwd_comm_per_chunk_cached: list[float] = [0.0] * layout.N_chunk
     t_bwd_comm_per_chunk_uncached: list[float] = [0.0] * layout.N_chunk
-    for cid in range(n_persist, layout.N_chunk):
+    for cid in nonpersist_chunk_ids:
         eff_h2d_fwd, eff_d2h_fwd = chunk_bw_fwd[cid]  # type: ignore[misc]
         eff_h2d_bwd, eff_d2h_bwd = chunk_bw_bwd[cid]  # type: ignore[misc]
         t_fwd_comm_per_chunk[cid] = _comm_time_chunk(
@@ -770,9 +786,9 @@ def estimate_runtime(
         # chunks, where ``comm[cid]`` is already the per-chunk derated
         # cost from the timeline-overlap model. Persistent chunks pay
         # only compute (no PCIe traffic).
-        t_fwd_persistent_chunks = n_persist * t_fwd_compute_per_chunk
+        t_fwd_persistent_chunks = n_persist_eff * t_fwd_compute_per_chunk
         t_fwd_nonpersistent_chunks = 0.0
-        for cid in range(n_persist, layout.N_chunk):
+        for cid in nonpersist_chunk_ids:
             t_fwd_nonpersistent_chunks += max(
                 t_fwd_compute_per_chunk, t_fwd_comm_per_chunk[cid]
             )
@@ -854,7 +870,7 @@ def estimate_runtime(
             n_offload_chunks += sum(
                 1
                 for cid in layout.block_to_chunks.get(bid, ())
-                if int(cid) >= n_persist
+                if ChunkId(int(cid)) not in persistent_ids
             )
 
     # No separate ``t_bwd_gather`` is added — see the OFFLOAD comment
@@ -916,7 +932,14 @@ def estimate_runtime(
         # was just ``nccl_gather`` and so under-credited buffer cache
         # hits in the phase-2 override path on PCIe-bound single-rank
         # configs.
-        n_nonpersist_bootstrap = max(0, layout.N_chunk - trace.phase2_n_persist)
+        # Bootstrap had the SAME ``layout.mandatory_persistent`` (it's a
+        # layout-level invariant, not a search axis), so the bootstrap's
+        # non-persistent count is computed off the augmented set too.
+        n_nonpersist_bootstrap = max(
+            0,
+            layout.N_chunk
+            - len(layout.effective_persistent_ids(trace.phase2_n_persist)),
+        )
         bootstrap_cached = min(trace.phase2_n_buffer, n_nonpersist_bootstrap)
         candidate_cached = min(n_buffer, n_nonpersist)
         delta_cached = candidate_cached - bootstrap_cached
@@ -1023,9 +1046,11 @@ def estimate_runtime(
         # Paper Eq. 5 backward roofline is max(compute, comm) per chunk.
         # Persistent chunks have no PCIe traffic, so the per-chunk
         # contention model does not apply.
-        t_bwd_persistent_chunks = n_persist * max(t_bwd_compute_per_chunk, nccl_reduce)
+        t_bwd_persistent_chunks = n_persist_eff * max(
+            t_bwd_compute_per_chunk, nccl_reduce
+        )
         t_bwd_nonpersistent_chunks = 0.0
-        for cid in range(n_persist, layout.N_chunk):
+        for cid in nonpersist_chunk_ids:
             if cid >= cached_threshold:
                 comm = t_bwd_comm_per_chunk_cached[cid]
             else:
@@ -1076,7 +1101,7 @@ def estimate_runtime(
         )
         gpu_adam_bps = _GPU_ADAM_FALLBACK
 
-    t_gpu_optim = n_persist * ms_per_chunk / gpu_adam_bps
+    t_gpu_optim = n_persist_eff * ms_per_chunk / gpu_adam_bps
     # In ZeRO-3/Mode-C, non-persistent chunks are sharded across ranks, so
     # each rank only Adam-steps ``1/world_size`` of every chunk. Without
     # this divide the CPU-optim cost was billed at ``world_size x`` actual

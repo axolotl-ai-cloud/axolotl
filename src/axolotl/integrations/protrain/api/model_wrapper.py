@@ -746,30 +746,38 @@ def _construct_runtime(
 
     # Compute the effective persistent set FIRST so the param
     # partitioning + the ChunkManager construction agree on which
-    # chunks are persistent. The non-block-chunk pin (added below to
-    # _persistent_ids) extends the set beyond the search's prefix
-    # ``[0, n_persist)`` — any non-block chunk at cid >= n_persist
-    # MUST land in the GPU optimizer's param list, not CPU FusedAdam,
-    # because materialize_offload only offloads chunks in
-    # ``_non_persistent_ids`` and the optim wrapper relies on those
-    # offloaded params for CPU adam. Without this hoist, a high-cid
-    # non-block chunk (e.g. an untied lm_head at the tail of N_chunk)
-    # would be misrouted to CPU adam against GPU-resident params.
-    param_is_in_block: dict[str, bool] = {
-        str(pid): False for pid in layout.param_to_chunk
-    }
-    for _bid, pids in _build_block_spans(model)[1].items():
-        for pid in pids:
-            param_is_in_block[str(pid)] = True
-    chunks_with_nonblock: set[ChunkId] = set()
-    for cid, pid_tuple in enumerate(layout.chunks):
-        for pid in pid_tuple:
-            if not param_is_in_block.get(str(pid), False):
-                chunks_with_nonblock.add(ChunkId(cid))
-                break
-    effective_persistent_ids: set[ChunkId] = {
-        ChunkId(i) for i in range(n_persist)
-    } | chunks_with_nonblock
+    # chunks are persistent.
+    #
+    # The runtime resident set is ``{0..n_persist-1} ∪
+    # layout.mandatory_persistent``. ``layout.mandatory_persistent`` is
+    # populated once by :func:`build_layout` and records every chunk
+    # containing at least one non-block param (e.g. ``model.norm.weight``,
+    # an untied ``lm_head``); the block-granularity scheduler cannot
+    # gather such chunks on its own, so they MUST stay GPU-resident.
+    # Any non-block chunk at ``cid >= n_persist`` MUST therefore land
+    # in the GPU optimizer's param list, not per-chunk CPU FusedAdam:
+    # ``materialize_offload`` only offloads chunks in
+    # ``_non_persistent_ids``, so a high-cid non-block chunk (e.g. an
+    # untied lm_head at the tail of N_chunk) would otherwise be routed
+    # to CPU adam against GPU-resident params.
+    #
+    # ``cfg.n_persist`` here is unchanged from the search's pick — it
+    # remains the *prefix length* the search chose, not a count of the
+    # full augmented set. ``ChunkManager.mark_persistent(n_persist)``
+    # honours ``layout.mandatory_persistent`` natively, so no in-place
+    # mutation of ``chunk_manager._persistent_ids`` is needed below.
+    effective_persistent_ids: frozenset[ChunkId] = layout.effective_persistent_ids(
+        n_persist
+    )
+    if layout.mandatory_persistent:
+        LOG.info(
+            "ProTrain: %d chunks %s pinned by layout.mandatory_persistent "
+            "(non-block params the block-granularity scheduler cannot "
+            "gather on its own); residency = prefix[0..%d) ∪ mandatory",
+            len(layout.mandatory_persistent),
+            sorted(layout.mandatory_persistent),
+            n_persist,
+        )
 
     # Partition params: persistent chunks get the GPU optimizer, the rest
     # get per-chunk CPU FusedAdam adapters keyed on ChunkId.
@@ -848,10 +856,11 @@ def _construct_runtime(
         zero3_shard=_zero3,
     )
 
-    # Pin non-block-containing chunks to the persistent set. The set
-    # was already computed above (effective_persistent_ids) so the
-    # param partitioning + GPU-optim build agree with the chunk
-    # manager's residency. Reasoning for the pin:
+    # The non-block-chunk pinning that earlier versions performed here
+    # in-place on ``chunk_manager._{,non_}persistent_ids`` is now built
+    # into ``ChunkManager.__init__`` via
+    # ``layout.effective_persistent_ids(n_persist)``. Reasoning for the
+    # pin (preserved here for the comment trail):
     #
     #   a) The block-granularity scheduler only knows about chunks
     #      listed in ``layout.block_to_chunks``. Pure non-block chunks
@@ -859,32 +868,28 @@ def _construct_runtime(
     #      never gathered by any hook; if offloaded they'd be
     #      zero-sized during forward.
     #   b) Mixed chunks (e.g. the last block's chunk that was greedy-
-    #      filled with the final model.norm.weight) ARE gathered by
+    #      filled with the final ``model.norm.weight``) ARE gathered by
     #      the block-post hook, but the block-post hook ALSO releases
     #      them since they're not in the next block's chunk set —
-    #      which leaves the non-block param (``model.norm.weight``)
-    #      empty by the time LlamaModel.forward calls
-    #      ``self.norm(...)`` after block 31's forward-post hook fires.
+    #      which leaves the non-block param empty by the time
+    #      ``LlamaModel.forward`` calls ``self.norm(...)`` after the
+    #      last block's forward-post hook fires.
     #
     # The fix in both cases is the same: keep chunks with any non-block
-    # param GPU-resident. Cost is bounded by ``S_chunk`` per such
-    # chunk; for Llama it's typically 2 chunks ≈ 256 MB.
-    extra = chunks_with_nonblock - chunk_manager._persistent_ids
-    if extra:
-        # Expand the persistent set in-place; mark_persistent takes a
-        # prefix length, so we instead mutate the internal set directly
-        # for this cross-cutting pin. effective_persistent_ids already
-        # accounts for these — this just propagates them to the
-        # chunk_manager whose __init__ only knew the prefix.
-        chunk_manager._persistent_ids |= extra
-        chunk_manager._non_persistent_ids -= extra
-        LOG.info(
-            "ProTrain: pinning %d chunks %s to persistent because they "
-            "contain non-block params the scheduler cannot gather on "
-            "its own",
-            len(extra),
-            sorted(extra),
-        )
+    # param GPU-resident. Cost is bounded by ``S_chunk`` per such chunk;
+    # for Llama it's typically 2 chunks ≈ 256 MB. Tracked via
+    # ``layout.mandatory_persistent``; surfaces to the search and cost
+    # model through ``ChunkLayout.effective_persistent_ids``.
+
+    # Sanity check: the chunk manager's runtime residency must match
+    # the partitioning we used to build ``persistent_params`` /
+    # ``cpu_params_per_chunk`` above. Drift here would silently misroute
+    # a chunk between GPU and CPU optimisers.
+    assert chunk_manager._persistent_ids == set(effective_persistent_ids), (
+        "ChunkManager residency drift: expected "
+        f"{sorted(effective_persistent_ids)}, got "
+        f"{sorted(chunk_manager._persistent_ids)}"
+    )
 
     # ---- peak-prediction calibration ------------------------------------
     # The cost/memory.py estimator approximates persistent model state as
@@ -911,10 +916,18 @@ def _construct_runtime(
             result.predicted_peak_bytes / (1 << 30),
             calibrated_peak / (1 << 30),
         )
-        effective_n_persist = len(chunk_manager._persistent_ids)
+        # ``cfg.n_persist`` continues to mean "prefix length the search
+        # chose". Earlier versions of this site collapsed it into
+        # ``len(chunk_manager._persistent_ids)`` — the augmented set
+        # including ``layout.mandatory_persistent`` — which made the
+        # value disagree with how every other consumer
+        # (``min_n_buffer_for``, ``model_state_present_bytes``,
+        # ``block_map_runtime_admissible``, telemetry) reads it. Now
+        # the augmented set is plumbed through ``layout.mandatory_persistent``;
+        # the prefix is preserved here verbatim.
         result = SearchResult(
             cfg=CostConfig(
-                n_persist=effective_n_persist,
+                n_persist=result.cfg.n_persist,
                 n_buffer=result.cfg.n_buffer,
                 n_swap=result.cfg.n_swap,
                 n_checkpoint=result.cfg.n_checkpoint,
@@ -1347,12 +1360,21 @@ def protrain_model_wrapper(
     blocks, block_spans = _build_block_spans(model)
     exec_order = _param_exec_order(model, block_spans, trace)
 
-    # Derive S_chunk from a {ParamId -> bytes} map.
+    # Derive S_chunk from a {ParamId -> bytes} map. Pass exec_order +
+    # block_spans so the grid-search simulation honors the same block-sealing
+    # / contiguity rules ``build_layout`` will use — App B.1 says ProTrain
+    # "simulates memory waste across various chunk sizes" and selects the
+    # one minimizing it; with the block info wired through, the simulation
+    # matches the actual layout placement bit-for-bit.
     param_bytes: dict[ParamId, int] = {
         cast(ParamId, name): int(p.numel()) * int(p.element_size())
         for name, p in model.named_parameters()
     }
-    s_chunk = pick_S_chunk(param_bytes)
+    s_chunk = pick_S_chunk(
+        param_bytes,
+        exec_order=exec_order,
+        block_spans=block_spans,
+    )
 
     layout = build_layout(
         model=model,
@@ -2014,18 +2036,16 @@ def protrain_model_wrapper(
                     )
             # Compare the SEARCH's raw pick (boot_cfg) against the
             # search's raw new pick (new_result.cfg) — NOT the
-            # calibrated boot_result.cfg. _construct_runtime's
-            # peak-calibration path widens cfg.n_persist to include the
-            # non-block-chunk pin set (typically +1-2 chunks beyond the
-            # search's raw pick), so boot_result.cfg.n_persist != boot_cfg.n_persist
-            # whenever any non-block chunk got pinned. Comparing
-            # against boot_result.cfg would treat that bookkeeping
-            # delta as a cfg change and trigger an unnecessary rebuild
-            # whose calibration produces the wrong peak (the new
-            # SearchResult's predicted_peak_bytes was estimated with
-            # the search's RAW n_persist, which is smaller than the
-            # rebuild's effective post-pinning n_persist, collapsing
-            # f_bm to 0 in the calibration arithmetic).
+            # calibrated boot_result.cfg. The two used to diverge
+            # because ``_construct_runtime`` widened ``cfg.n_persist``
+            # to ``len(_persistent_ids)`` (the prefix ∪ non-block-chunk
+            # pin set) post-calibration; that collapse has since been
+            # removed (the augmented set is now plumbed through
+            # ``layout.mandatory_persistent`` so the prefix is preserved
+            # verbatim), but we keep the comparison against ``boot_cfg``
+            # both for symmetry with the rest of the phase-2 flow and
+            # to be robust against any future calibration knob that
+            # might rewrite the cfg.
             #
             # ``mode_changed`` (set above on the auto path) also forces
             # a rebuild even when the cfg/block_map match — see the
@@ -2045,10 +2065,13 @@ def protrain_model_wrapper(
                     block_map=new_result.block_map,
                 )
                 if calibrated_peak != new_result.predicted_peak_bytes:
-                    effective_n_persist = len(chunk_manager._persistent_ids)
+                    # Preserve the search's prefix — see the matching
+                    # comment in ``_construct_runtime`` for why
+                    # ``len(_persistent_ids)`` (the augmented set) is
+                    # NOT a sound substitute for ``cfg.n_persist`` here.
                     new_result = SearchResult(
                         cfg=CostConfig(
-                            n_persist=effective_n_persist,
+                            n_persist=new_result.cfg.n_persist,
                             n_buffer=new_result.cfg.n_buffer,
                             n_swap=new_result.cfg.n_swap,
                             n_checkpoint=new_result.cfg.n_checkpoint,

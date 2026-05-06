@@ -1,25 +1,30 @@
 """S_chunk grid search over the {32, 64, 128, 256} MB grid (Appendix B.1).
 
-We score each candidate by a simple greedy-fit fragmentation heuristic
-(summed ``S_chunk - bytes_used`` across non-tail chunks) and pick the
-minimizer, breaking ties toward the larger candidate. The input is a
-``{ParamId -> bytes}`` map so this runs without a model handle.
+We score each candidate by simulating the *exact* packing rules
+:func:`build_layout` would apply (block-sealing and block-contiguity from
+§3.1.1) and selecting the S_chunk that minimizes the summed
+``S_chunk - bytes_used`` across non-tail chunks. Ties are broken toward the
+larger candidate so the layout uses fewer, larger chunks. The simulation
+matches :func:`build_layout`'s placement exactly: both call
+:func:`_pack_chunks_with_block_rules` from ``layout.py`` so the grid search
+chooses the same fragmentation-optimal S_chunk that the actual layout will
+produce — there is no heuristic skew between simulation and reality.
 
-Note: ``_simulate_waste`` is a *heuristic* approximation of
-``build_layout``'s placement, NOT a full simulation. ``build_layout``
-honors block-sealing and block-contiguity rules (Appendix B.1) that the
-heuristic ignores, so the chosen ``S_chunk`` may diverge from the
-fragmentation-optimal one once the real layout is built. The grid is
-small (4 entries), the candidates are within a single order of
-magnitude, and the searcher's downstream cost model re-evaluates the
-selection — so the heuristic's accuracy is sufficient for grid
-selection. Treat ``pick_S_chunk`` as a coarse tie-break, not a
-paper-fidelity step.
+The signature accepts an ``exec_order`` and ``block_spans`` so simulation can
+honor block-grouping. Callers that don't track blocks (legacy / tests) may
+omit them and the simulation degrades to plain greedy fit, which is the
+same answer ``build_layout`` would produce when ``block_spans`` is empty.
 """
 
 from __future__ import annotations
 
-from axolotl.integrations.protrain.types import ParamId
+from typing import Mapping, Sequence
+
+from axolotl.integrations.protrain.chunk.layout import (
+    _build_packing_steps,
+    _pack_chunks_with_block_rules,
+)
+from axolotl.integrations.protrain.types import BlockId, ParamId
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -28,34 +33,40 @@ LOG = get_logger(__name__)
 DEFAULT_GRID: tuple[int, ...] = (32 << 20, 64 << 20, 128 << 20, 256 << 20)
 
 
-def _simulate_waste(sizes_in_order: list[int], S_chunk: int) -> int:
-    """Return total fragmentation waste for a greedy-fit layout.
+def _simulate_waste(
+    param_sizes: Mapping[ParamId, int],
+    exec_order: Sequence[ParamId],
+    block_spans: Mapping[BlockId, Sequence[ParamId]],
+    S_chunk: int,
+) -> int:
+    """Return total fragmentation waste under the exact ``build_layout`` rules.
 
-    Mirrors the non-block-grouped ``build_layout`` inner loop: open a fresh
-    chunk once the next param wouldn't fit. The last chunk's trailing slack
-    is *not* counted as waste — it's just the natural tail and the caller
-    can't recover bytes by picking a different ``S_chunk``. Every earlier
-    chunk contributes ``S_chunk - bytes_used``.
+    Drives the same step-based packer :func:`build_layout` uses, then sums the
+    per-chunk slack ``S_chunk - bytes_used`` across every chunk except the
+    last. The trailing chunk's slack is excluded — it is the natural tail and
+    no choice of S_chunk recovers those bytes (a smaller S_chunk would just
+    spill into yet another chunk with its own slack).
     """
     if S_chunk <= 0:
         raise ValueError(f"S_chunk must be positive, got {S_chunk}")
 
-    chunk_bytes: list[int] = [0]
-    for sz in sizes_in_order:
-        cur = chunk_bytes[-1]
-        if cur > 0 and cur + sz > S_chunk:
-            chunk_bytes.append(0)
-        chunk_bytes[-1] += sz
-
+    steps = _build_packing_steps(param_sizes, exec_order, block_spans)
+    chunk_bytes = _pack_chunks_with_block_rules(steps, S_chunk)
     if len(chunk_bytes) <= 1:
         return 0
     # Exclude the tail chunk from waste accounting — its slack is inherent.
+    # Clamp negative values: an oversize tensor placed alone in its own chunk
+    # legitimately exceeds S_chunk (build_layout's "place oversize on own
+    # chunk" path), so ``S_chunk - bytes_used`` is negative and would
+    # erroneously *credit* the layout for the overflow.
     return sum(max(0, S_chunk - b) for b in chunk_bytes[:-1])
 
 
 def pick_S_chunk(
     model_state_bytes_per_param: dict[ParamId, int],
     candidates: tuple[int, ...] = DEFAULT_GRID,
+    exec_order: Sequence[ParamId] | None = None,
+    block_spans: Mapping[BlockId, Sequence[ParamId]] | None = None,
 ) -> int:
     """Pick the ``S_chunk`` from ``candidates`` minimizing fragmentation waste.
 
@@ -67,6 +78,11 @@ def pick_S_chunk(
     ``Mapping`` does not contract a stable iteration order, and the result
     of this function depends on it.
 
+    When ``exec_order`` and ``block_spans`` are supplied, the simulation
+    honors block-sealing/contiguity exactly as :func:`build_layout` does;
+    when omitted, the simulation degrades to plain greedy fit (which is what
+    ``build_layout`` itself does for an empty ``block_spans``).
+
     Ties are broken by picking the *larger* candidate — fewer chunks means
     less scheduler overhead and larger individual H2D transfers, both of
     which are strictly preferable at equal waste (App B.1 motivation).
@@ -75,6 +91,15 @@ def pick_S_chunk(
         raise ValueError("candidates must be non-empty")
 
     sizes_in_order = list(model_state_bytes_per_param.values())
+
+    # Default arguments mirror build_layout(empty block_spans, exec_order =
+    # dict insertion order). These produce a plain greedy-fit simulation,
+    # bit-for-bit equivalent to the previous heuristic when no block info
+    # is available.
+    if exec_order is None:
+        exec_order = list(model_state_bytes_per_param.keys())
+    if block_spans is None:
+        block_spans = {}
 
     # Drop non-positive candidates up front: _simulate_waste rejects them with
     # ValueError, and they're never meaningful S_chunk values. Filtering here
@@ -100,7 +125,11 @@ def pick_S_chunk(
     # (e.g. an LLM with a >256 MiB embedding under the default 32–256
     # MiB grid), fall back to picking the *largest* candidate rather
     # than raising — that minimizes the number of single-tensor overflow
-    # chunks while keeping the layout legal.
+    # chunks while keeping the layout legal. The exact-simulation path
+    # naturally handles oversize-tensor chunks (the ``max(0, ...)`` clamp
+    # in ``_simulate_waste`` prevents the negative-slack credit that would
+    # otherwise let an undersized candidate win), so this filter remains
+    # a soft preference rather than a hard requirement.
     max_param_bytes = max(sizes_in_order, default=0)
     feasible = tuple(S for S in candidates if S >= max_param_bytes)
     if feasible:
@@ -115,9 +144,11 @@ def pick_S_chunk(
         candidates = (max(candidates),)
 
     best_S = candidates[0]
-    best_waste = _simulate_waste(sizes_in_order, best_S)
+    best_waste = _simulate_waste(
+        model_state_bytes_per_param, exec_order, block_spans, best_S
+    )
     for S in candidates[1:]:
-        waste = _simulate_waste(sizes_in_order, S)
+        waste = _simulate_waste(model_state_bytes_per_param, exec_order, block_spans, S)
         if waste < best_waste or (waste == best_waste and S > best_S):
             best_S = S
             best_waste = waste
