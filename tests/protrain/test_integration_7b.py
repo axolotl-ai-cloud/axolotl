@@ -75,7 +75,7 @@ def test_protrain_7b_end_to_end() -> None:
     # accumulate on-GPU during .backward() faster than the current
     # chunk-level offload drain can clear them (a ZeRO-3-style per-param
     # post-grad hook would fix that, but is out of scope for M4). The
-    # aligned M5 YAML example (examples/protrain/3090-7b-lora.yml) also
+    # aligned M5 YAML example (examples/protrain/3090-8b-lora.yml) also
     # uses LoRA, so this test validates the same deployment shape.
     cfg = LlamaConfig(
         hidden_size=4096,

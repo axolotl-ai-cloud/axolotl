@@ -23,6 +23,7 @@ The actual measurement loop lives here; the wrapper plumbing
 
 from __future__ import annotations
 
+import copy
 import statistics
 from typing import TYPE_CHECKING
 
@@ -165,6 +166,35 @@ def select_bootstrap_config(
     return initial_result.cfg, initial_result.block_map
 
 
+def _clone_state_dict(state):
+    """Recursively clone every tensor in a (possibly nested) state_dict.
+
+    ``Module.state_dict()`` and ``Optimizer.state_dict()`` both return
+    *aliased references* to the live parameter / optimizer tensors —
+    iterating them and calling ``optimizer.step()`` mutates those
+    tensors in-place, so a bare snapshot is silently mutated by the
+    timed loop and ``load_state_dict()`` would restore from already-
+    advanced state. We walk the structure and ``.detach().clone()``
+    each tensor so the snapshot has independent storage; non-tensor
+    leaves (ints, floats, ``ParamGroup`` configs, etc.) are
+    ``copy.deepcopy``'d so dicts/lists also get independent identity.
+
+    Recurses through ``dict``/``list``/``tuple`` containers because
+    ``Optimizer.state_dict()`` is shaped
+    ``{"state": {param_id: {tensor_key: tensor, ...}}, "param_groups": [...]}``.
+    """
+    import torch
+
+    if torch.is_tensor(state):
+        return state.detach().clone()
+    if isinstance(state, dict):
+        return {k: _clone_state_dict(v) for k, v in state.items()}
+    if isinstance(state, (list, tuple)):
+        cloned = [_clone_state_dict(v) for v in state]
+        return type(state)(cloned) if isinstance(state, tuple) else cloned
+    return copy.deepcopy(state)
+
+
 def measure_chunked_steady(
     *,
     model: "nn.Module",
@@ -223,68 +253,90 @@ def measure_chunked_steady(
         # same initial state after the profiler returns. The snapshot
         # itself is excluded from the timed region — captured before
         # warmup, restored after the timed loop.
-        model_state = model.state_dict()
-        optim_state = optimizer.state_dict()
+        #
+        # ``state_dict()`` returns *aliased* tensor references — the
+        # subsequent ``optimizer.step()`` calls would mutate those
+        # tensors in-place and silently advance the snapshot, so we
+        # deep-clone every tensor (independent storage) before warmup.
+        # Synchronize first so any in-flight kernels finish writing
+        # before we read parameters / optimizer state into the clone.
+        torch.cuda.synchronize(device)
+        model_state = _clone_state_dict(model.state_dict())
+        optim_state = _clone_state_dict(optimizer.state_dict())
         # Start from a clean grad state so leftover grads from prior
         # trace work (e.g. the phase-1 profile pass) cannot pollute
         # the first warmup step's peak-memory and timing samples.
         optimizer.zero_grad(set_to_none=True)
-        # Warmup — discard timings.
-        for _ in range(n_warmup):
-            out = model(**batch)
-            loss = _extract_loss(out)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-        torch.cuda.synchronize(device)
-        torch.cuda.reset_peak_memory_stats(device)
-        # Re-zero after the peak-stats reset: warmup left grads at
-        # ``None`` already, but be explicit so the timed loop's first
-        # iteration always starts from the same grad state regardless
-        # of ``n_warmup``.
-        optimizer.zero_grad(set_to_none=True)
-
-        fwd_times_s: list[float] = []
-        bwd_times_s: list[float] = []
-        step_times_s: list[float] = []
-        for _ in range(n_iters):
-            fwd_start = torch.cuda.Event(enable_timing=True)
-            fwd_end = torch.cuda.Event(enable_timing=True)
-            bwd_start = torch.cuda.Event(enable_timing=True)
-            bwd_end = torch.cuda.Event(enable_timing=True)
-            step_end = torch.cuda.Event(enable_timing=True)
-
-            fwd_start.record()
-            out = model(**batch)
-            loss = _extract_loss(out)
-            fwd_end.record()
-
-            bwd_start.record()
-            loss.backward()
-            bwd_end.record()
-            optimizer.step()
-            step_end.record()
-
+        # Wrap warmup + timed loop in try/finally so an exception
+        # mid-measurement (OOM, NaN loss, kernel error) still rolls
+        # the model + optimizer back to the pre-measurement state.
+        # Without this the caller would inherit a partially-advanced
+        # optimizer + parameters that bear no relation to the
+        # checkpoint they handed in.
+        try:
+            # Warmup — discard timings.
+            for _ in range(n_warmup):
+                out = model(**batch)
+                loss = _extract_loss(out)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
             torch.cuda.synchronize(device)
-            fwd_times_s.append(fwd_start.elapsed_time(fwd_end) / 1000.0)
-            bwd_times_s.append(bwd_start.elapsed_time(bwd_end) / 1000.0)
-            step_times_s.append(bwd_end.elapsed_time(step_end) / 1000.0)
-
+            torch.cuda.reset_peak_memory_stats(device)
+            # Re-zero after the peak-stats reset: warmup left grads at
+            # ``None`` already, but be explicit so the timed loop's
+            # first iteration always starts from the same grad state
+            # regardless of ``n_warmup``.
             optimizer.zero_grad(set_to_none=True)
 
-        fwd_median = statistics.median(fwd_times_s)
-        bwd_median = statistics.median(bwd_times_s)
-        step_median = statistics.median(step_times_s)
-        peak_bytes = int(torch.cuda.max_memory_allocated(device))
-        # Restore the pre-measurement model + optimizer state so the
-        # profiler is non-destructive: ``optimizer.step()`` calls in
-        # warmup + timed loops mutated parameters and optimizer state.
-        # Synchronize first so any in-flight kernels referencing these
-        # tensors complete before we overwrite them.
-        torch.cuda.synchronize(device)
-        model.load_state_dict(model_state)
-        optimizer.load_state_dict(optim_state)
-        optimizer.zero_grad(set_to_none=True)
+            fwd_times_s: list[float] = []
+            bwd_times_s: list[float] = []
+            step_times_s: list[float] = []
+            for _ in range(n_iters):
+                fwd_start = torch.cuda.Event(enable_timing=True)
+                fwd_end = torch.cuda.Event(enable_timing=True)
+                bwd_start = torch.cuda.Event(enable_timing=True)
+                bwd_end = torch.cuda.Event(enable_timing=True)
+                step_end = torch.cuda.Event(enable_timing=True)
+
+                fwd_start.record()
+                out = model(**batch)
+                loss = _extract_loss(out)
+                fwd_end.record()
+
+                bwd_start.record()
+                loss.backward()
+                bwd_end.record()
+                optimizer.step()
+                step_end.record()
+
+                torch.cuda.synchronize(device)
+                fwd_times_s.append(fwd_start.elapsed_time(fwd_end) / 1000.0)
+                bwd_times_s.append(bwd_start.elapsed_time(bwd_end) / 1000.0)
+                step_times_s.append(bwd_end.elapsed_time(step_end) / 1000.0)
+
+                optimizer.zero_grad(set_to_none=True)
+
+            fwd_median = statistics.median(fwd_times_s)
+            bwd_median = statistics.median(bwd_times_s)
+            step_median = statistics.median(step_times_s)
+            peak_bytes = int(torch.cuda.max_memory_allocated(device))
+        finally:
+            # Restore the pre-measurement model + optimizer state so
+            # the profiler is non-destructive: ``optimizer.step()``
+            # calls in warmup + timed loops mutated parameters and
+            # optimizer state. Synchronize first so any in-flight
+            # kernels referencing these tensors complete before we
+            # overwrite them, and again after so the load is visible
+            # to the caller before we return. ``load_state_dict``
+            # copies values into the live tensors, so as long as the
+            # snapshot has independent storage (it does — see
+            # ``_clone_state_dict``) the rollback is exact.
+            torch.cuda.synchronize(device)
+            model.load_state_dict(model_state)
+            optimizer.load_state_dict(optim_state)
+            optimizer.zero_grad(set_to_none=True)
+            torch.cuda.synchronize(device)
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

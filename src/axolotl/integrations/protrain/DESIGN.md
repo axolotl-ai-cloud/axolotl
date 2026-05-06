@@ -186,7 +186,7 @@ Zero diffs to Axolotl core files. The entire Axolotl surface consumed:
 - `get_input_args` returns `ProTrainArgs` → pydantic merge handled by `axolotl/utils/schemas/config.py:1275` (`plugins:` field)
 - `post_model_load(cfg, model)` hook — wraps post-LoRA so frozen LoRA base params contribute to persistent-chunk memory only
 - `create_optimizer(cfg, trainer)` hook — returns ProTrain optimizer; `None` if disabled
-- Example YAML: `examples/protrain/3090-7b-lora.yml` — opts in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]`
+- Example YAML: `examples/protrain/3090-8b-lora.yml` — opts in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]`
 
 ## Cross-Module Dependency Graph
 

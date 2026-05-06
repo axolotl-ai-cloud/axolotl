@@ -137,6 +137,76 @@ def test_pool_invalid_args_raise() -> None:
         ActivationSwapPool(n_swap=1, slot_bytes=8, prefetch_depth=0)
 
 
+def test_pool_close_waits_for_inflight_drain() -> None:
+    """``close()`` blocks until in-flight slots are released, then returns.
+
+    Regression for the CodeRabbit L289 finding: if ``close()`` calls
+    ``_pinned.close()`` while a borrow is still live, the pinned
+    allocator raises and the pool was left ``_closing=True`` forever —
+    silently no-op'ing every later ``close()`` call. The fix waits for
+    ``_inflight == 0`` before freeing the pinned region.
+    """
+    import threading
+
+    pool = ActivationSwapPool(
+        n_swap=1, slot_bytes=8, prefetch_depth=2, slots_per_block=1
+    )
+    sid, _view = pool.acquire()
+    assert pool.inflight_count == 1
+
+    close_errors: list[BaseException] = []
+    close_done = threading.Event()
+
+    def _do_close() -> None:
+        try:
+            pool.close(drain_timeout=5.0, poll_interval=0.005)
+        except BaseException as exc:  # noqa: BLE001 — surface any failure
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    closer = threading.Thread(target=_do_close)
+    closer.start()
+    # Give the closer thread time to enter its drain wait loop. It must
+    # not finish until we release the slot.
+    assert not close_done.wait(timeout=0.1), (
+        "close() returned before the in-flight slot was released"
+    )
+
+    pool.release(sid)
+    assert close_done.wait(timeout=5.0), "close() did not return after release"
+    closer.join(timeout=1.0)
+
+    assert close_errors == [], f"close() raised: {close_errors!r}"
+    assert pool._closed is True  # noqa: SLF001 — verifying internal state
+
+
+def test_pool_close_drain_timeout_is_retryable() -> None:
+    """A drain-timeout in ``close()`` raises but leaves the pool retryable.
+
+    The original failure mode: a failing ``close()`` left ``_closing=True``,
+    so a subsequent ``close()`` short-circuited and the pinned region was
+    never freed. After the fix, ``close()`` rolls back ``_closing`` on
+    failure so the caller can retry once the borrow retires.
+    """
+    pool = ActivationSwapPool(
+        n_swap=1, slot_bytes=8, prefetch_depth=2, slots_per_block=1
+    )
+    sid, _view = pool.acquire()
+
+    # First close: drain never converges → RuntimeError.
+    with pytest.raises(RuntimeError, match="in-flight"):
+        pool.close(drain_timeout=0.05, poll_interval=0.005)
+    # ``_closing`` must have been rolled back so the pool is retryable.
+    assert pool._closing is False  # noqa: SLF001
+    assert pool._closed is False  # noqa: SLF001
+
+    # Now retire the slot and retry close — must succeed cleanly.
+    pool.release(sid)
+    pool.close(drain_timeout=1.0, poll_interval=0.005)
+    assert pool._closed is True  # noqa: SLF001
+
+
 # ---------------------------------------------------------------------------
 # SwappedBlock correctness — multi-step loss match vs. unwrapped reference
 # ---------------------------------------------------------------------------

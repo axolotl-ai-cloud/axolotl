@@ -1,4 +1,4 @@
-# ProTrain 7B/8B LoRA on a single RTX 3090 (24 GB)
+# ProTrain 8B LoRA on a single RTX 3090 (24 GB)
 #
 # Opts into the ProTrain plugin via `plugins:`. The plugin's post_model_load
 # hook wraps the model with the hierarchical chunk manager + interleaved
@@ -39,7 +39,7 @@ datasets:
   - path: tatsu-lab/alpaca
     type: alpaca
 val_set_size: 0.0
-output_dir: ./outputs/protrain-3090-7b-lora
+output_dir: ./outputs/protrain-3090-8b-lora
 
 sequence_len: 256          # small to keep activation memory low
 sample_packing: false

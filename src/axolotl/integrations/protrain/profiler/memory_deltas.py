@@ -126,9 +126,19 @@ class MemoryDeltaTracker:
         current = snap.allocated_bytes
         if self._last_end_bytes is None:
             self._last_end_bytes = current
+            # Reset the peak window so the *next* call's
+            # ``peak_allocated_bytes`` reflects this interval only, not
+            # whatever high-water mark accumulated before the tracker was
+            # first read.
+            self.reset()
             return 0
         delta = max(0, snap.peak_allocated_bytes - self._last_end_bytes)
         self._last_end_bytes = current
+        # Reset the peak window so subsequent ``delta_since_last`` calls
+        # measure a fresh interval. Without this, an interval that never
+        # exceeds the prior high-water mark would still report a stale
+        # positive delta.
+        self.reset()
         return delta
 
     def mark_end(self, end_bytes: int) -> None:

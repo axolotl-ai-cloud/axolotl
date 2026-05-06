@@ -284,6 +284,16 @@ def _validate_src_metadata(meta: dict[str, Any]) -> None:
             "save predates the offline reshard support — re-save under a "
             "newer ProTrain build to capture the raw layout fields."
         )
+    try:
+        src_world = int(meta["protrain_world_size"])
+    except Exception as exc:
+        raise RuntimeError(
+            "reshard: source metadata missing valid 'protrain_world_size'."
+        ) from exc
+    if src_world < 1:
+        raise RuntimeError(
+            f"reshard: invalid protrain_world_size={src_world}; expected >= 1."
+        )
 
 
 def _scan_src_chunks(src_dir: str, src_world: int) -> dict[int, list[str]]:

@@ -39,6 +39,7 @@ a block forward needs its own slot, so K cannot be 1 anymore.
 from __future__ import annotations
 
 import threading
+import time
 from typing import TYPE_CHECKING
 
 from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
@@ -55,6 +56,12 @@ LOG = get_logger(__name__)
 #: Bumped to 8 to cover unusual shapes (gated FFN, MoE) without
 #: exhausting the pool. Tunable via ``ActivationSwapPool(slots_per_block=...)``.
 DEFAULT_SLOTS_PER_BLOCK: int = 8
+
+#: Default seconds ``close()`` will wait for outstanding ``acquire()`` borrows
+#: to be returned via ``release()`` before giving up. Picked large enough that
+#: a normal backward sweep on the swap stream completes; tuned-down values are
+#: useful for unit tests. Override per-call via ``close(drain_timeout=...)``.
+DEFAULT_CLOSE_DRAIN_TIMEOUT_S: float = 30.0
 
 
 class ActivationSwapPool:
@@ -246,42 +253,88 @@ class ActivationSwapPool:
         with self._lock:
             return self._inflight
 
-    def close(self) -> None:
+    def close(
+        self,
+        drain_timeout: float = DEFAULT_CLOSE_DRAIN_TIMEOUT_S,
+        poll_interval: float = 0.01,
+    ) -> None:
         """Free the pinned region. Idempotent.
 
-        Two-phase teardown to close a corruption race that the original
-        single-flag design exposed:
+        Three-phase teardown:
 
         1. Under ``_lock``, flip ``_closing = True`` and drop the lock.
-           From this point, ``acquire()`` raises and ``release()`` is a
-           no-op, so no new borrow can sneak into the unlocked window.
-        2. Call ``_pinned.close()`` WITHOUT holding ``self._lock`` — it
+           From this point, ``acquire()`` raises so no new borrow can
+           sneak into the drain window. ``release()`` continues to
+           accept returns under ``_closing`` so outstanding borrows can
+           retire.
+        2. Wait (without holding ``_lock``) for ``_inflight == 0`` so
+           the pinned region has no live slot views before we free it.
+           If the drain does not complete inside ``drain_timeout``
+           seconds we *unset* ``_closing`` and raise ``RuntimeError`` —
+           leaving the pool retryable so the caller can resync the swap
+           stream / retire stragglers and try ``close()`` again.
+        3. Call ``_pinned.close()`` WITHOUT holding ``self._lock`` — it
            is on a separate lock-domain (its own bookkeeping, not part
            of this pool's free-list/inflight invariants), it may be
            slow, and dropping the lock keeps concurrent ``free_count`` /
-           ``inflight_count`` reads responsive during teardown.
-        3. Re-acquire ``_lock`` and flip ``_closed = True``, clearing
+           ``inflight_count`` reads responsive during teardown. If
+           ``_pinned.close()`` itself raises (e.g. a late borrow snuck
+           in despite the drain), we likewise unset ``_closing`` so the
+           caller can retry rather than be stuck with a permanently
+           half-closed pool that silently no-ops future ``close()``s.
+        4. Re-acquire ``_lock`` and flip ``_closed = True``, clearing
            the free-list / inflight counter.
 
-        ``_pinned.close()`` raises if any slot view is still borrowed
-        (its lifetime guard). With ``_closing = True`` already set,
-        ``release()`` is a no-op so the leaked borrows cannot be
-        returned and the pool is permanently dead — but we deliberately
-        let the exception propagate as a diagnostic. The caller's only
-        recovery is a fresh process; there is no retry path.
+        Parameters
+        ----------
+        drain_timeout:
+            Seconds to wait for ``_inflight`` to drain before raising.
+            Defaults to :data:`DEFAULT_CLOSE_DRAIN_TIMEOUT_S`. Tests
+            may pass a small value (e.g. ``0.05``) to exercise the
+            timeout path quickly.
+        poll_interval:
+            Sleep interval (seconds) between drain-counter checks.
         """
         with self._lock:
             if self._closed or self._closing:
                 return
-            # Block new acquires and short-circuit pending releases
-            # BEFORE we drop the lock for the (potentially slow)
-            # ``_pinned.close()`` call.
+            # Block new acquires BEFORE we drop the lock for the drain
+            # wait + (potentially slow) ``_pinned.close()`` call.
             self._closing = True
-        # ``_pinned.close()`` may raise if outstanding borrows remain.
-        # With ``_closing`` set above, ``release()`` is now a no-op so
-        # those borrows can never be returned. The propagated exception
-        # is informational; the pool is permanently dead either way.
-        self._pinned.close()
+        try:
+            # Wait for outstanding ``acquire()`` borrows to be retired
+            # via ``release()``. ``release()`` deliberately keeps
+            # decrementing ``_inflight`` while ``_closing`` is True so
+            # the counter can converge to zero here.
+            deadline = time.monotonic() + max(0.0, float(drain_timeout))
+            while True:
+                with self._lock:
+                    inflight = self._inflight
+                if inflight == 0:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"ActivationSwapPool.close: timed out after "
+                        f"{drain_timeout:.3f}s waiting for {inflight} "
+                        "in-flight slot(s) to drain. Caller is missing "
+                        "release() pairs or the swap stream has not "
+                        "synchronized — retry close() after stragglers "
+                        "retire."
+                    )
+                time.sleep(max(0.0, float(poll_interval)))
+            # Drain complete — now free the pinned region. If this still
+            # raises (e.g. a late borrow leaked through some other path),
+            # we treat ``close()`` as failed-and-retryable rather than
+            # silently no-op'ing on subsequent attempts.
+            self._pinned.close()
+        except BaseException:
+            # Failed close: roll back ``_closing`` so callers can retry
+            # after fixing the underlying cause. ``acquire()`` re-opens
+            # only because ``_closed`` is still False; the pinned region
+            # has not been freed.
+            with self._lock:
+                self._closing = False
+            raise
         with self._lock:
             self._closed = True
             self._free.clear()

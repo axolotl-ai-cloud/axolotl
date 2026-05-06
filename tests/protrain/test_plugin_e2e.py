@@ -10,7 +10,7 @@ Two tests live here:
   ``slow`` + ``gpu`` — it needs one free CUDA device.
 
 * ``test_plugin_e2e_7b_lora_smoke`` — wires the real
-  ``examples/protrain/3090-7b-lora.yml`` for manual validation.
+  ``examples/protrain/3090-8b-lora.yml`` for manual validation.
   Marked ``skip`` so CI does not need the 7B weight download.
 """
 
@@ -283,11 +283,11 @@ def test_plugin_e2e_tiny_llama(tmp_path: Path) -> None:
 @pytest.mark.slow
 @pytest.mark.gpu
 def test_plugin_e2e_7b_lora_smoke(tmp_path: Path) -> None:
-    """Smoke-test the real 3090-7b-lora.yml example.
+    """Smoke-test the real 3090-8b-lora.yml example.
 
     Equivalent to the CLI invocation::
 
-        axolotl train examples/protrain/3090-7b-lora.yml --max-steps 4
+        axolotl train examples/protrain/3090-8b-lora.yml --max-steps 4
 
     with ``output_dir`` rerouted to a pytest tmp_path. Skipped by
     default — set ``PROTRAIN_RUN_7B_E2E=1`` in the environment to run
@@ -319,7 +319,7 @@ def test_plugin_e2e_7b_lora_smoke(tmp_path: Path) -> None:
         Path(__file__).parent.parent.parent
         / "examples"
         / "protrain"
-        / "3090-7b-lora.yml"
+        / "3090-8b-lora.yml"
     )
     assert yaml_path.exists(), f"missing example yaml at {yaml_path}"
 

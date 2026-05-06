@@ -312,6 +312,93 @@ def test_discover_blocks_gpt2() -> None:
     assert len(trees[0].blocks) == 3
 
 
+def test_discover_blocks_peft_wrapped_enc_dec() -> None:
+    """PEFT/LoRA-wrapped enc-dec models route through ``base_model.model.*``.
+
+    Regression test for the case where ``_ENC_DEC_PATH_PAIRS`` only knew the
+    unwrapped ``encoder.*`` / ``decoder.*`` paths: a LoRA-wrapped T5 / BART
+    would fall back to the attention heuristic and surface only the first
+    ``ModuleList`` (encoder), silently dropping the decoder tree from block
+    numbering and scheduling. The fix is to add the wrapped variants
+    (``base_model.model.encoder.block`` / ``base_model.model.decoder.block``
+    for T5; ``encoder.layers`` / ``decoder.layers`` for BART) to the pairs
+    so both trees are discovered.
+
+    The test builds a fake PEFT-wrapped enc-dec module tree out of plain
+    ``nn.Module`` / ``nn.ModuleList`` instances — no ``transformers`` /
+    ``peft`` dependency — and asserts ``discover_blocks`` returns two
+    ``BlockTree`` entries with the right forward order and lengths.
+    """
+
+    class _FakeBlock(nn.Module):
+        """Stand-in for T5Block / BartEncoderLayer.
+
+        Exposes ``self_attn`` so the heuristic recognises it as a block too,
+        even though this test exercises the dotted-path resolution path.
+        """
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.self_attn = nn.Linear(4, 4)
+            self.mlp = nn.Linear(4, 4)
+
+    def _make_t5_like_inner(n_enc: int, n_dec: int) -> nn.Module:
+        """Inner T5-like model with encoder.block / decoder.block lists."""
+        inner = nn.Module()
+        inner.encoder = nn.Module()
+        inner.encoder.block = nn.ModuleList([_FakeBlock() for _ in range(n_enc)])
+        inner.decoder = nn.Module()
+        inner.decoder.block = nn.ModuleList([_FakeBlock() for _ in range(n_dec)])
+        return inner
+
+    def _make_bart_like_inner(n_enc: int, n_dec: int) -> nn.Module:
+        """Inner BART-like model with encoder.layers / decoder.layers lists."""
+        inner = nn.Module()
+        inner.encoder = nn.Module()
+        inner.encoder.layers = nn.ModuleList([_FakeBlock() for _ in range(n_enc)])
+        inner.decoder = nn.Module()
+        inner.decoder.layers = nn.ModuleList([_FakeBlock() for _ in range(n_dec)])
+        return inner
+
+    def _wrap_peft(inner: nn.Module) -> nn.Module:
+        """Mimic ``LoraModel`` wrapping: ``root.base_model.model -> inner``."""
+        root = nn.Module()
+        root.base_model = nn.Module()
+        root.base_model.model = inner
+        return root
+
+    # --- T5-like (encoder.block / decoder.block) -----------------------------
+    t5_root = _wrap_peft(_make_t5_like_inner(n_enc=3, n_dec=2))
+    trees = discover_blocks(t5_root)
+    assert len(trees) == 2, (
+        f"PEFT-wrapped T5 should surface 2 BlockTrees (encoder+decoder), "
+        f"got {len(trees)}: {trees}"
+    )
+    by_order = sorted(trees, key=lambda t: t.forward_order)
+    assert by_order[0].forward_order == 0
+    assert by_order[0].name == "base_model"
+    assert by_order[0].parent_path == "base_model.model.encoder.block"
+    assert len(by_order[0].blocks) == 3
+    assert by_order[1].forward_order == 1
+    assert by_order[1].parent_path == "base_model.model.decoder.block"
+    assert len(by_order[1].blocks) == 2
+
+    # --- BART-like (encoder.layers / decoder.layers) -------------------------
+    bart_root = _wrap_peft(_make_bart_like_inner(n_enc=4, n_dec=3))
+    trees = discover_blocks(bart_root)
+    assert len(trees) == 2, (
+        f"PEFT-wrapped BART should surface 2 BlockTrees (encoder+decoder), "
+        f"got {len(trees)}: {trees}"
+    )
+    by_order = sorted(trees, key=lambda t: t.forward_order)
+    assert by_order[0].forward_order == 0
+    assert by_order[0].parent_path == "base_model.model.encoder.layers"
+    assert len(by_order[0].blocks) == 4
+    assert by_order[1].forward_order == 1
+    assert by_order[1].parent_path == "base_model.model.decoder.layers"
+    assert len(by_order[1].blocks) == 3
+
+
 # ---------------------------------------------------------------------------
 # Full-sweep skeleton
 # ---------------------------------------------------------------------------

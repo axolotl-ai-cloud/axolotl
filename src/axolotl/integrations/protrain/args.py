@@ -40,7 +40,7 @@ LOG = get_logger(__name__)
 #
 # Only `axolotl.integrations.protrain.ProTrainPlugin` is accepted — that's
 # the form used by tests, the example config
-# (examples/protrain/3090-7b-lora.yml), and the docstrings in this file,
+# (examples/protrain/3090-8b-lora.yml), and the docstrings in this file,
 # and it's the only form that actually loads (the integration loader
 # rsplits on '.' for module/class). The bare module form
 # `axolotl.integrations.protrain` is intentionally REJECTED: it would

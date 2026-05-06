@@ -535,6 +535,19 @@ def main() -> int:
     keep_tmp = os.environ.get("PROTRAIN_BENCHMARK_KEEP_TMP", "") == "1"
 
     try:
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if not visible:
+            raise RuntimeError(
+                "Set CUDA_VISIBLE_DEVICES to a comma-separated list of the 4 GPUs to benchmark."
+            )
+        devices = [d.strip() for d in visible.split(",") if d.strip()]
+        if len(devices) != 4:
+            raise RuntimeError(
+                f"Expected exactly 4 visible GPUs, got {len(devices)}: {visible!r}"
+            )
+        single_visible = devices[0]
+        multi_visible = ",".join(devices)
+
         bs = 2
         seq = 256
         n_iters = 6
@@ -555,11 +568,11 @@ def main() -> int:
         # Single-rank baseline — isolate on CUDA_VISIBLE_DEVICES=1 so it
         # doesn't trip over the multi-rank env. world_size=1 means no
         # process group setup; same as running on a fresh shell.
-        print("\n[benchmark] single-rank baseline (GPU 1)...", flush=True)
+        print(f"\n[benchmark] single-rank baseline (GPU {single_visible})...", flush=True)
         stats = _launch_mode(
             mode="single",
             world_size=1,
-            cuda_visible="1",
+            cuda_visible=single_visible,
             bs=bs,
             seq=seq,
             n_iters=n_iters,
@@ -570,11 +583,14 @@ def main() -> int:
         results["single"] = _summarize("single", stats, n_warmup)
 
         for mode in ("ddp", "replicated", "zero3"):
-            print(f"\n[benchmark] {mode} world_size=4 (GPUs 1,4,5,7)...", flush=True)
+            print(
+                f"\n[benchmark] {mode} world_size=4 (GPUs {multi_visible})...",
+                flush=True,
+            )
             stats = _launch_mode(
                 mode=mode,
                 world_size=4,
-                cuda_visible="1,4,5,7",
+                cuda_visible=multi_visible,
                 bs=bs,
                 seq=seq,
                 n_iters=n_iters,
@@ -597,7 +613,7 @@ def main() -> int:
                 "n_iters": n_iters,
                 "n_warmup": n_warmup,
                 "dtype": "fp16",
-                "gpus": "1,4,5,7 (RTX 3090)",
+                "gpus": f"{multi_visible} (RTX 3090)",
             },
             "wall_clock_s": wall_s,
             "summaries": summaries,
@@ -608,7 +624,7 @@ def main() -> int:
 
         md = _render_markdown(summaries)
         print("\n" + "=" * 72)
-        print("ProTrain multi-GPU benchmark — 4x RTX 3090 (GPUs 1,4,5,7)")
+        print(f"ProTrain multi-GPU benchmark — 4x RTX 3090 (GPUs {multi_visible})")
         print("=" * 72)
         print(md)
         print()

@@ -197,7 +197,12 @@ def build_hardware_profile(
     gpu_sku = torch.cuda.get_device_name(device_index)
 
     if world_size_override is not None:
-        world_size = max(1, int(world_size_override))
+        if isinstance(world_size_override, bool) or int(world_size_override) < 1:
+            raise RuntimeError(
+                "world_size_override must be a positive int, got "
+                f"{world_size_override!r}."
+            )
+        world_size = int(world_size_override)
     else:
         world_size = _resolve_world_size()
 

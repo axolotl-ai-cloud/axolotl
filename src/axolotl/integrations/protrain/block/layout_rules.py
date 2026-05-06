@@ -222,6 +222,10 @@ _KNOWN_BLOCK_PATHS: tuple[str, ...] = (
     "base_model.layers",  # PEFT / LoRA-wrapped models (short form)
     "base_model.model.model.layers",  # PEFT + LlamaForCausalLM (LoraModel wraps CausalLM)
     "base_model.model.transformer.h",  # PEFT + GPT-2
+    "base_model.model.encoder.block",  # PEFT + T5 / FLAN-T5 encoder tree
+    "base_model.model.decoder.block",  # PEFT + T5 / FLAN-T5 decoder tree
+    "base_model.model.encoder.layers",  # PEFT + BART / mBART encoder tree
+    "base_model.model.decoder.layers",  # PEFT + BART / mBART decoder tree
     "encoder.block",  # T5 / FLAN-T5 encoder tree
     "decoder.block",  # T5 / FLAN-T5 decoder tree
     "encoder.layers",  # BART / mBART encoder tree
@@ -235,9 +239,21 @@ _KNOWN_BLOCK_PATHS: tuple[str, ...] = (
 # When matched, ``discover_blocks`` returns two ``BlockTree`` entries —
 # the encoder (forward_order=0) runs first; the decoder (forward_order=1)
 # consumes the encoder's last-layer hidden state via cross-attention.
+# PEFT/LoRA-wrapped enc-dec models route through ``base_model.model.*``
+# (LoraModel wraps the original model under ``.base_model.model``); without
+# the wrapped variants here, ``discover_blocks`` falls back to the heuristic
+# and silently drops the decoder tree from block numbering.
 _ENC_DEC_PATH_PAIRS: tuple[tuple[str, str], ...] = (
     ("encoder.block", "decoder.block"),  # T5 / FLAN-T5
     ("encoder.layers", "decoder.layers"),  # BART / mBART
+    (
+        "base_model.model.encoder.block",
+        "base_model.model.decoder.block",
+    ),  # PEFT + T5 / FLAN-T5
+    (
+        "base_model.model.encoder.layers",
+        "base_model.model.decoder.layers",
+    ),  # PEFT + BART / mBART
 )
 
 

@@ -797,3 +797,192 @@ def test_on_demand_intra_delta_excludes_gather(gpu_device, monkeypatch):
         f"pre-gather hook is firing AFTER the trace's pre_forward (regression "
         f"of the prepend=True fix)."
     )
+
+
+def test_delta_since_last_resets_peak_window_no_stale_carryover():
+    """``delta_since_last`` must reset the peak window between calls.
+
+    Without the reset, a high-water mark from a prior interval keeps
+    re-charging subsequent ``peak_allocated_bytes`` reads, so an
+    interval with zero allocation activity would still report a stale
+    positive delta. This test models the allocator with a tiny in-test
+    fake that respects ``reset_peak_memory_stats`` semantics, so it
+    runs on CPU-only hosts.
+    """
+    import types
+
+    from axolotl.integrations.protrain.profiler.memory_deltas import (
+        MemoryDeltaTracker,
+    )
+
+    tracker = MemoryDeltaTracker(device=None)
+
+    # Faithful model of the CUDA allocator's bookkeeping: ``current``
+    # tracks resident bytes, ``peak`` is the high-water mark since the
+    # last ``reset``. The scripted op story:
+    #   call 1: baseline (1024 resident, peak=1024)
+    #   between 1 and 2: an op spikes to 4096 then frees back to 1024
+    #   call 2: should report a 4096-1024 = 3072 delta
+    #   between 2 and 3: nothing happens
+    #   call 3: should report 0 because the prior call reset the peak
+    state = {"current": 1024, "peak": 1024}
+    reset_calls = {"n": 0}
+    # Indexed pre-call hooks: simulate any allocator activity that
+    # happened just before each ``delta_since_last`` invocation.
+    pre_call_events = [
+        lambda: None,  # before call 1
+        lambda: state.update(peak=max(state["peak"], 4096)),  # transient spike
+        lambda: None,  # before call 3 — no activity
+    ]
+    call_idx = {"n": 0}
+
+    def fake_stats(self):
+        # Run the pre-call event for this invocation, then surface state.
+        pre_call_events[call_idx["n"]]()
+        call_idx["n"] += 1
+        return {
+            "allocated_bytes.all.current": state["current"],
+            "allocated_bytes.all.peak": state["peak"],
+        }
+
+    def fake_reset(self):
+        reset_calls["n"] += 1
+        # ``torch.cuda.reset_peak_memory_stats`` clamps the peak down
+        # to current; future spikes raise it again.
+        state["peak"] = state["current"]
+
+    tracker._stats = types.MethodType(fake_stats, tracker)
+    tracker.reset = types.MethodType(fake_reset, tracker)
+
+    # Call 1: establishes baseline, returns 0, AND must reset the peak.
+    assert tracker.delta_since_last() == 0
+    assert reset_calls["n"] == 1, (
+        "first delta_since_last() must reset the peak window so the next "
+        "interval starts fresh"
+    )
+
+    # Call 2: observes the transient spike, returns the legitimate delta,
+    # and resets the peak again so call 3 doesn't see a stale 4096.
+    assert tracker.delta_since_last() == 4096 - 1024
+    assert reset_calls["n"] == 2
+
+    # Call 3: no new activity. Pre-fix this would return 4096-1024 = 3072
+    # because the high-water mark from call 2's interval lingered. Post-
+    # fix, the reset cleared peak back to current, so delta == 0.
+    assert tracker.delta_since_last() == 0
+    assert reset_calls["n"] == 3
+
+
+@pytest.mark.gpu
+def test_measure_chunked_steady_restores_model_and_optimizer_state(gpu_device):
+    """``measure_chunked_steady`` must roll back parameters + optimizer state.
+
+    Regression for the round-3 finding: the round-2 fix snapshotted via
+    ``state_dict()`` which returns *aliased* tensor references — the
+    warmup + timed loops' ``optimizer.step()`` calls then mutated those
+    tensors in place, so the snapshot tracked the live (mutated) values
+    and ``load_state_dict()`` restored from already-advanced state. The
+    fix is to deep-clone every tensor at snapshot time
+    (``_clone_state_dict`` walks model + optimizer state_dict() and
+    ``.detach().clone()``s each tensor) so restoration writes the true
+    pre-measurement values back into the live params.
+    """
+    import torch
+    from torch import nn
+
+    from axolotl.integrations.protrain.profiler.phase2 import measure_chunked_steady
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+
+    device = torch.device(f"cuda:{gpu_device}")
+
+    # Tiny linear model — small enough that a non-zero LR optimizer.step
+    # produces a numerically detectable parameter delta in one iteration,
+    # so any regression in the snapshot/restore plumbing fails loudly.
+    torch.manual_seed(0)
+    model = nn.Sequential(
+        nn.Linear(16, 32),
+        nn.ReLU(),
+        nn.Linear(32, 16),
+    ).to(device)
+    # Use a relatively large LR so step() shifts parameters by a clearly
+    # non-trivial amount — equality (rather than near-equality) on the
+    # pre/post comparison then proves the snapshot was independent.
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.1)
+
+    # Pre-call snapshot of param values, kept on CPU and detached so the
+    # step()s inside measure_chunked_steady cannot poison the reference.
+    pre_params = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+
+    # Tickle the optimizer so its state has Adam moment buffers populated
+    # before the snapshot — this exercises the recursive clone path
+    # (``optimizer.state_dict()['state']`` is nested) and ensures the
+    # restore round-trips both the param tensors AND the moment tensors.
+    optimizer.zero_grad(set_to_none=True)
+    seed_input = torch.randn(2, 16, device=device)
+    seed_loss = model(seed_input).sum()
+    seed_loss.backward()
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+
+    # Re-snapshot AFTER the seed step so the test's "pre" baseline is the
+    # state immediately before measure_chunked_steady is called.
+    pre_params = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+    pre_optim = {
+        pid: {k: v.detach().cpu().clone() for k, v in st.items() if torch.is_tensor(v)}
+        for pid, st in optimizer.state_dict()["state"].items()
+    }
+
+    # Build a forward batch that produces a backwards-able loss. The
+    # tiny module's forward returns a tensor; ``_extract_loss`` accepts a
+    # raw scalar tensor, so we wrap the module so loss = output.sum().
+    class _LossWrap(nn.Module):
+        def __init__(self, inner):
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, x):
+            return self.inner(x).sum()
+
+    wrapped = _LossWrap(model).to(device)
+    batch = {"x": torch.randn(4, 16, device=device)}
+
+    # ``measure_chunked_steady`` requires backward through ``wrapped``;
+    # only the inner module's params are in the optimizer, so the inner
+    # step() updates those (the wrap has no extra params).
+    fwd_s, bwd_s, step_s, peak = measure_chunked_steady(
+        model=wrapped,
+        batch=batch,
+        optimizer=optimizer,
+        n_warmup=2,
+        n_iters=2,
+    )
+
+    # Sanity: timings + peak must be populated and finite.
+    assert fwd_s > 0.0 and bwd_s > 0.0 and step_s >= 0.0
+    assert peak > 0
+
+    # Critical assertion: every parameter must be EXACTLY equal to the
+    # pre-call value. Pre-fix this fails because the aliased snapshot
+    # was mutated by warmup+timed step()s, so load_state_dict restored
+    # an already-advanced state.
+    post_params = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+    for k, pre in pre_params.items():
+        post = post_params[k]
+        assert torch.equal(pre, post), (
+            f"param {k!r} not restored after measure_chunked_steady: "
+            f"max abs diff = {(pre - post).abs().max().item():g}"
+        )
+
+    # Optimizer moments must also be exactly restored (Adam tracks
+    # ``exp_avg`` / ``exp_avg_sq`` per param; both are mutated by step()).
+    post_optim_state = optimizer.state_dict()["state"]
+    for pid, pre_state in pre_optim.items():
+        post_state = post_optim_state[pid]
+        for k, pre_t in pre_state.items():
+            post_t = post_state[k].detach().cpu()
+            assert torch.equal(pre_t, post_t), (
+                f"optimizer state[{pid}][{k!r}] not restored: "
+                f"max abs diff = {(pre_t - post_t).abs().max().item():g}"
+            )

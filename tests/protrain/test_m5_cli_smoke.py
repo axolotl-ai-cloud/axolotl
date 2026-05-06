@@ -15,7 +15,7 @@
 """M5 acceptance — end-to-end ``axolotl train`` CLI smoke test.
 
 Mirrors plan.md M5: single 3090 ``axolotl train
-examples/protrain/3090-7b-lora.yml --max-steps 20`` must (a) not OOM,
+examples/protrain/3090-8b-lora.yml --max-steps 20`` must (a) not OOM,
 (b) produce a decreasing loss across the 20 steps, (c) write a
 checkpoint to the configured ``output_dir``.
 
@@ -70,7 +70,7 @@ import pytest
 # whatever editable install the venv currently has registered.
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _SRC_DIR = _REPO_ROOT / "src"
-_YAML = _REPO_ROOT / "examples" / "protrain" / "3090-7b-lora.yml"
+_YAML = _REPO_ROOT / "examples" / "protrain" / "3090-8b-lora.yml"
 
 
 def _has_24gb_gpu() -> bool:

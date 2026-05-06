@@ -223,21 +223,39 @@ def _block_compute_time(trace: ProfilerTrace, block_id: BlockId) -> float:
 
 def _fwd_compute_time_from_trace(
     trace: ProfilerTrace,
+    cfg: CostConfig | None = None,
 ) -> tuple[float, dict[BlockId, float], bool]:
     """Return (total_fwd_compute_s, per_block_compute_s, used_measured).
 
     Preference order (highest first):
 
     1. **Phase-2 chunked forward measurement** (TRACE_VERSION ≥ 11): if
-       ``steady_fwd_chunked_wall_s > 0``, return it as the forward
-       total. The per-block distribution comes from the per-op path
-       (used by ``estimate_runtime`` for CKPT recompute accounting and
-       the per-chunk roofline split). Forward is approximately
+       ``steady_fwd_chunked_wall_s > 0`` AND ``cfg`` is None or
+       ``cfg.n_swap == 0``, return it as the forward total. The
+       per-block distribution comes from the per-op path (used by
+       ``estimate_runtime`` for CKPT recompute accounting and the
+       per-chunk roofline split). Forward is approximately
        config-independent at the cost-model level (no recompute on
        forward; differences in n_persist / n_buffer between bootstrap
        and candidate change comm overlap marginally), so the
-       measurement applies as the new baseline for ANY candidate cfg
-       the search evaluates.
+       measurement applies as the new baseline for ANY ``n_swap == 0``
+       candidate cfg the search evaluates.
+
+       n_swap gating (paper §3.3 / commit e8f45fd7 / CodeRabbit round-3):
+       the phase-2 bootstrap is captured at ``cfg.n_swap = 0`` (see
+       ``profiler/phase2.py::select_bootstrap_config``), so the chunked
+       wall encodes chunk-prefetch comm/overlap WITHOUT any SWAP-stream
+       activation traffic competing on PCIe. For ``cfg.n_swap > 0``
+       candidates the analytical per-chunk path in
+       :func:`estimate_runtime` reads the returned ``total`` and
+       distributes it as ``total / N_chunk`` per chunk, then sums
+       ``max(compute, per-chunk-comm)`` over non-persistent chunks —
+       returning the chunked wall here would inflate that sum because
+       the wall ALREADY includes chunked comm/overlap, which the
+       analytical path then re-adds via ``chunk_bw_fwd[]``. Gating the
+       override on ``cfg.n_swap == 0`` returns the per-op-derived
+       total (pre-override) for SWAP candidates so the analytical path
+       computes per-chunk contention correctly without double-counting.
     2. **Per-op-latency sum + hook-scale + roofline cap** (TRACE_VERSION
        ≥ 2): if the trace carries ``op_latencies``, apply the
        hook-dispatch calibration scale (``steady_fwd_wall_s /
@@ -254,7 +272,9 @@ def _fwd_compute_time_from_trace(
     Mirrors the precedence pattern of
     :func:`_bwd_compute_time_from_trace` (phase-2 chunked > steady
     unwrapped > heuristic), with the simplification that forward needs
-    no per-cfg adjustment because it doesn't recompute.
+    no per-cfg adjustment because it doesn't recompute. Both helpers
+    apply the same ``cfg.n_swap == 0`` gate on the chunked-wall
+    override.
     """
     per_block: dict[BlockId, float] = {}
     total = 0.0
@@ -330,7 +350,17 @@ def _fwd_compute_time_from_trace(
             # makes any downstream consumer that asks "what's the
             # forward compute total?" see the ground-truth
             # measurement.
-            if trace.steady_fwd_chunked_wall_s > 0.0:
+            #
+            # n_swap gate (CodeRabbit round-3): only override when
+            # cfg.n_swap == 0 (or cfg is None — back-compat for
+            # callers that don't pass cfg). For SWAP candidates we
+            # return the pre-override per-op total so the analytical
+            # per-chunk path can apply per-chunk contention without
+            # double-counting chunked comm/overlap that's baked into
+            # the chunked wall.
+            if trace.steady_fwd_chunked_wall_s > 0.0 and (
+                cfg is None or cfg.n_swap == 0
+            ):
                 total = trace.steady_fwd_chunked_wall_s
             return total, per_block, True
 
@@ -338,17 +368,22 @@ def _fwd_compute_time_from_trace(
     return roofline_total, roofline_per_block, False
 
 
-def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> float:
+def _bwd_compute_time_from_trace(
+    trace: ProfilerTrace,
+    t_fwd_total: float,
+    cfg: CostConfig | None = None,
+) -> float:
     """Return the aggregate backward compute time in seconds.
 
     Preference order:
 
     1. **Phase-2 chunked measurement** (TRACE_VERSION ≥ 10): if
-       ``steady_bwd_chunked_wall_s > 0`` AND ``phase2_per_block_recompute_s > 0``,
-       use the chunked measurement minus the bootstrap's recompute term.
-       This returns the **base** backward time (no recompute) — the
-       caller then adds the candidate ``block_map``'s recompute on top
-       in the same way as the v8 path. The translation is:
+       ``steady_bwd_chunked_wall_s > 0`` AND ``phase2_per_block_recompute_s > 0``
+       AND (``cfg`` is None or ``cfg.n_swap == 0``), use the chunked
+       measurement minus the bootstrap's recompute term. This returns
+       the **base** backward time (no recompute) — the caller then
+       adds the candidate ``block_map``'s recompute on top in the same
+       way as the v8 path. The translation is:
 
            base_bwd = steady_bwd_chunked_wall_s
                     - phase2_n_checkpoint * phase2_per_block_recompute_s
@@ -358,6 +393,20 @@ def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> fl
        when the bootstrap had every block CKPT'd and the model was
        essentially all-recompute already. Caller's per-cfg recompute
        term still adds the right amount on top.)
+
+       n_swap gating (paper §3.3 / commit e8f45fd7 / CodeRabbit
+       round-3): the phase-2 bootstrap is captured at ``cfg.n_swap = 0``
+       (see ``profiler/phase2.py::select_bootstrap_config``). For
+       ``cfg.n_swap > 0`` candidates the analytical per-chunk path in
+       :func:`estimate_runtime` reads the returned base, distributes
+       it as ``base / N_chunk`` per chunk, and sums ``max(compute,
+       per-chunk-comm)`` over non-persistent chunks — returning the
+       chunked-wall-derived base here would inflate that sum because
+       the wall ALREADY includes chunked comm/overlap, which the
+       analytical path then re-adds via ``chunk_bw_bwd[]``. The
+       ``cfg.n_swap == 0`` gate routes SWAP candidates to path 2/3
+       below so the analytical path computes per-chunk contention
+       correctly without double-counting.
 
     2. **Steady (unwrapped) measurement** (TRACE_VERSION ≥ 7): measured
        ``steady_bwd_wall_s / steady_fwd_wall_s`` ratio from the 4-iter
@@ -390,8 +439,19 @@ def _bwd_compute_time_from_trace(trace: ProfilerTrace, t_fwd_total: float) -> fl
     # Pre-fix this branch required ``per_block_recompute_s > 0`` and
     # silently rejected ``n_checkpoint=0`` bootstraps even though their
     # measurement is the cleanest possible base (no recompute baked in).
-    if trace.steady_bwd_chunked_wall_s > 0.0 and (
-        trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0
+    #
+    # n_swap gate (CodeRabbit round-3): only consume the chunked
+    # measurement when ``cfg.n_swap == 0`` (or ``cfg`` is None —
+    # back-compat for callers that don't pass cfg). For SWAP candidates
+    # fall through to path 2/3 so the analytical per-chunk path doesn't
+    # double-count chunked comm/overlap that's baked into the chunked
+    # wall.
+    if (
+        trace.steady_bwd_chunked_wall_s > 0.0
+        and (
+            trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0
+        )
+        and (cfg is None or cfg.n_swap == 0)
     ):
         bootstrap_recompute = (
             trace.phase2_n_checkpoint * trace.phase2_per_block_recompute_s
@@ -660,7 +720,7 @@ def estimate_runtime(
     # roofline proxy. SWAP blocks add activation H2D/D2H on top of compute.
     n_block = len(trace.activation_sizes)
     t_fwd_compute_total, per_block_compute, used_measured = (
-        _fwd_compute_time_from_trace(trace)
+        _fwd_compute_time_from_trace(trace, cfg)
     )
     if not used_measured:
         LOG.warning(
@@ -801,7 +861,9 @@ def estimate_runtime(
     # from the profiler (preferred) or t_fwd * _BWD_FWD_COMPUTE_RATIO. On
     # top of that, CKPT blocks pay one extra forward per CKPT block (their
     # per-block compute time), and SWAP blocks add the activation prefetch.
-    t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_total)
+    t_bwd_compute_base = _bwd_compute_time_from_trace(
+        trace, t_fwd_compute_total, cfg
+    )
     t_bwd_recompute = 0.0
     t_bwd_swap_prefetch = 0.0
     # OFFLOAD chunk-gather wall (Option B §4.2) — accounting note.

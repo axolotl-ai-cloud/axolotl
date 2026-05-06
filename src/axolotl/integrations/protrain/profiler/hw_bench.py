@@ -416,11 +416,10 @@ def measure_nccl(
     ``world_size == 1`` and the searcher's communication term collapses.
 
     Multi-rank path requires the caller to have already initialized
-    ``torch.distributed`` (any backend that supports the collectives below;
-    NCCL is the only one ProTrain actually targets, but Gloo will also
-    work for CPU-only smoke testing). Running under ``torchrun`` is the
-    standard way; ``scripts/protrain/measure_nccl.py`` is a standalone
-    driver that bootstraps a rendezvous on-demand.
+    ``torch.distributed`` with GPU-backed collectives. ProTrain targets
+    NCCL here, and this benchmark requires CUDA tensors. Running under
+    ``torchrun`` is the standard way; ``scripts/protrain/measure_nccl.py``
+    is a standalone driver that bootstraps a rendezvous on-demand.
 
     The benchmark uses ``all_gather_into_tensor`` (gather) and
     ``reduce_scatter_tensor`` (reduce) — these are the exact collectives

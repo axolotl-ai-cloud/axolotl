@@ -1234,7 +1234,7 @@ _MISTRAL_MODEC_WORKER_SCRIPT = textwrap.dedent(
         model = MistralForCausalLM(cfg).to(dtype=torch.bfloat16, device=device)
 
         # LoRA on q/k/v/o so the smoke mirrors the deployment shape we
-        # ship in examples/protrain/3090-7b-lora.yml. PEFT's adapter
+        # ship in examples/protrain/3090-8b-lora.yml. PEFT's adapter
         # layers prepend a dotted prefix that the chunk-manager block
         # discovery must still resolve to ``model.layers`` (via the
         # ``base_model.model.model.layers`` known path) — a regression

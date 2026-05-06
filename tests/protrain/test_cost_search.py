@@ -1671,6 +1671,144 @@ def test_phase2_n_persist_translation_clamps_at_zero():
     )
 
 
+def test_swap_candidate_does_not_double_count_chunked_wall_compute():
+    """Helper-level n_swap gate: ``_fwd_compute_time_from_trace`` /
+    ``_bwd_compute_time_from_trace`` must NOT return the chunked wall
+    as the compute total when ``cfg.n_swap > 0``.
+
+    CodeRabbit round-3 (PR #19, comment 3192673928): the SWAP fallback
+    path used to start from the phase-2 chunked wall because both
+    helpers unconditionally returned ``steady_*_chunked_wall_s`` when
+    populated. By the time ``estimate_runtime`` reached the analytical
+    per-chunk path (cfg.n_swap > 0 fall-through), ``t_fwd_compute_total``
+    and ``t_bwd_compute_base`` were already sourced from the chunked
+    wall, which already includes chunked comm/overlap. The analytical
+    path then re-added per-chunk comm via ``chunk_bw_*[]``, yielding
+    ``sum(max(chunked_wall/N_chunk, derated_comm))`` ≥ chunked_wall —
+    biasing SWAP configs upward.
+
+    Fix: gate the chunked-wall override at the helper level on
+    ``cfg is None or cfg.n_swap == 0``. SWAP candidates fall through to
+    the per-op (forward) / steady or heuristic (backward) paths, and
+    the analytical per-chunk path computes contention from a pure-
+    compute baseline.
+
+    This test verifies the gate by constructing a trace where the
+    chunked wall is set to a value much larger than the per-op compute
+    sum and asserting that for a SWAP candidate the cost-model output
+    matches the path that would be taken WITHOUT a chunked wall (i.e.,
+    the helpers fall through to op-latency-derived totals). Any output
+    bias from the chunked wall would show up as a difference between
+    the two estimates.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.runtime import (
+        _bwd_compute_time_from_trace,
+        _fwd_compute_time_from_trace,
+    )
+
+    base_trace = _make_trace()
+    n_block = len(base_trace.activation_sizes)
+    # Trace with phase-2 chunked walls populated (would normally
+    # activate the override).
+    trace_with_chunked = replace(
+        base_trace,
+        steady_fwd_chunked_wall_s=0.20,
+        steady_bwd_chunked_wall_s=0.50,
+        steady_bwd_wall_s=0.012,  # per-op-derived consistent backward
+        phase2_n_persist=0,
+        phase2_n_buffer=0,
+        phase2_n_checkpoint=n_block,
+        phase2_per_block_recompute_s=0.0005,
+    )
+    # Same trace but with chunked walls cleared — exercises the
+    # per-op/steady paths directly.
+    trace_no_chunked = replace(
+        trace_with_chunked,
+        steady_fwd_chunked_wall_s=0.0,
+        steady_bwd_chunked_wall_s=0.0,
+    )
+
+    # Build a SWAP candidate. n_swap=2 places SWAP at indices [0, 2);
+    # the analytical per-chunk path will derate chunks whose prefetch
+    # window overlaps the SWAP blocks.
+    cfg_swap = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    bm_swap = assign_modes(2, 0, n_block)
+    layout = _make_layout()
+    hw = _make_hw()
+
+    # Helper-level: with cfg.n_swap > 0, the helpers must return
+    # the per-op / steady totals — NOT the chunked wall.
+    fwd_total_with, _, _ = _fwd_compute_time_from_trace(
+        trace_with_chunked, cfg_swap
+    )
+    fwd_total_no, _, _ = _fwd_compute_time_from_trace(
+        trace_no_chunked, cfg_swap
+    )
+    assert fwd_total_with == pytest.approx(fwd_total_no, rel=1e-9), (
+        f"forward helper leaked chunked wall to SWAP candidate: "
+        f"with-chunked total = {fwd_total_with:.6f}, "
+        f"no-chunked total = {fwd_total_no:.6f}; expected helper to "
+        "return the same per-op-derived total in both cases when "
+        "cfg.n_swap > 0"
+    )
+    # Sanity: the value must NOT be the chunked wall.
+    assert fwd_total_with != pytest.approx(0.20, rel=1e-3), (
+        f"forward helper returned the chunked wall (0.20) for a SWAP "
+        f"candidate: total = {fwd_total_with:.6f}"
+    )
+
+    bwd_total_with = _bwd_compute_time_from_trace(
+        trace_with_chunked, fwd_total_with, cfg_swap
+    )
+    bwd_total_no = _bwd_compute_time_from_trace(
+        trace_no_chunked, fwd_total_no, cfg_swap
+    )
+    assert bwd_total_with == pytest.approx(bwd_total_no, rel=1e-9), (
+        f"backward helper leaked chunked wall to SWAP candidate: "
+        f"with-chunked base = {bwd_total_with:.6f}, "
+        f"no-chunked base = {bwd_total_no:.6f}; expected helper to "
+        "return the same steady/heuristic-derived base in both cases "
+        "when cfg.n_swap > 0"
+    )
+    # Sanity: NOT the chunked-wall-derived base
+    # (chunked_wall - bootstrap_recompute = 0.50 - 8 * 0.0005 = 0.496).
+    assert bwd_total_with != pytest.approx(0.496, rel=1e-3), (
+        f"backward helper returned the chunked-wall-derived base for "
+        f"a SWAP candidate: base = {bwd_total_with:.6f}"
+    )
+
+    # End-to-end: estimate_runtime with cfg.n_swap > 0 must produce
+    # the same result whether or not the trace has chunked walls
+    # populated. If the helpers leaked the chunked wall through to
+    # the analytical per-chunk path, the with-chunked output would be
+    # inflated (the chunked wall acts as an over-large compute floor
+    # in the per-chunk max(compute, comm) roofline).
+    t_with = estimate_runtime(cfg_swap, trace_with_chunked, layout, bm_swap, hw)
+    t_no = estimate_runtime(cfg_swap, trace_no_chunked, layout, bm_swap, hw)
+    assert t_with == pytest.approx(t_no, rel=1e-9), (
+        f"estimate_runtime double-counted chunked-wall compute on SWAP "
+        f"candidate: with-chunked t_iter = {t_with:.6f}, "
+        f"no-chunked t_iter = {t_no:.6f}; expected identical output "
+        "because the helper-level n_swap gate routes both traces "
+        "through the same per-op + analytical per-chunk path when "
+        "cfg.n_swap > 0"
+    )
+
+    # Also verify the n_swap == 0 path still consumes the chunked wall
+    # (the gate must NOT regress that case).
+    cfg_no_swap = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
+    fwd_total_no_swap, _, _ = _fwd_compute_time_from_trace(
+        trace_with_chunked, cfg_no_swap
+    )
+    assert fwd_total_no_swap == pytest.approx(0.20, rel=1e-9), (
+        f"n_swap == 0 branch failed to consume chunked wall: "
+        f"got {fwd_total_no_swap:.6f}, expected 0.20 "
+        "(steady_fwd_chunked_wall_s)"
+    )
+
+
 def test_phase2_bootstrap_uses_low_persistence_all_ckpt(toy_trace, toy_layout, toy_hw):
     """Phase-2 should measure the low-persistence offload family."""
     from axolotl.integrations.protrain.profiler.phase2 import (
