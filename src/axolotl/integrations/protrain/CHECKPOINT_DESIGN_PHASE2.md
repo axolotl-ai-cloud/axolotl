@@ -405,7 +405,7 @@ explicitly:
   same reshard logic runs in-process at load time. Rank-0 reshards
   into a temp dir under `<saved-protrain_optim>/.reshard_to_N<W>/`,
   every rank `dist.barrier()`s (the failure protocol mirrors the
-  Mode-C save's lockstep `_broadcast_status_or_raise` so a rank-0
+  Mode-C save's lockstep `_allreduce_status_or_raise` so a rank-0
   reshard failure surfaces on every rank, not just rank-0), and the
   load proceeds against the temp dir as if it were a natively-saved-
   at-N=W checkpoint. Cleanup runs after a successful load; failures

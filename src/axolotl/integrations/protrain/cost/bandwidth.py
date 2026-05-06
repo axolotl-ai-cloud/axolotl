@@ -284,7 +284,7 @@ def chunk_swap_overlap_count(
     if direction not in ("fwd", "bwd"):
         raise ValueError(f"direction must be 'fwd' or 'bwd', got {direction!r}")
     if prefetch_depth < 1:
-        return 0
+        raise ValueError(f"prefetch_depth must be >= 1, got {prefetch_depth!r}")
 
     owners = _block_of_chunk(chunk_id, layout)
     if not owners:

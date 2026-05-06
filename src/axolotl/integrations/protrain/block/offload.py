@@ -331,6 +331,18 @@ class OffloadedBlock(nn.Module):
             # pure activations are SWAP's domain, not ours.
             return t
 
+        # Persistent chunks never leave GPU, so the offload/re-gather
+        # round trip is wasted work — the saved-tensor table can hold
+        # the original tensor directly. Skip the ``_ParamHandle`` wrap
+        # for these. ``_unpack`` would have called
+        # ``gather_for_backward`` (a no-op for persistent chunks) and
+        # then sliced the chunk buffer to reconstruct the same tensor;
+        # passing ``t`` through avoids the indirection entirely. The
+        # offload-mode contract (saved tensors survive post-forward
+        # offload) only applies to non-persistent chunks.
+        if chunk_id in mgr._persistent_ids:  # noqa: SLF001
+            return t
+
         # Storage offset in BYTES from the start of the chunk's
         # storage. ``t.storage_offset()`` returns ELEMENTS of the
         # tensor's dtype, so multiply by element_size to get bytes —

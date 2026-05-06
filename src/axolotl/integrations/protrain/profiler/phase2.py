@@ -356,7 +356,17 @@ def measure_chunked_steady(
             # in-flight kernels finish writing before we read
             # parameters / optimizer state into the clone.
             torch.cuda.synchronize(device)
-            model_state = _clone_state_dict(model.state_dict())
+            # Snapshot model state on host as well, mirroring the
+            # optim-state path below — for a multi-GB model
+            # ``state_dict()`` clones to GPU would double the
+            # parameter footprint during the timed region.
+            # ``Module.load_state_dict`` copies values into the live
+            # parameters at restore time, so the saved CPU tensors
+            # land back on each parameter's original device — no
+            # device drift on rollback.
+            model_state = _clone_state_dict(
+                model.state_dict(), target_device=torch.device("cpu")
+            )
             # Snapshot optimizer state on host to avoid duplicating
             # GPU memory during the timed region — for FusedAdam-
             # style optimizers the per-param ``exp_avg`` /

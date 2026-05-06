@@ -98,6 +98,72 @@ def _pack_chunks_with_block_rules(
     return chunk_bytes
 
 
+def _validate_block_spans(
+    block_spans: Mapping[BlockId, Sequence[ParamId]],
+    param_sizes: Mapping[ParamId, int],
+) -> dict[ParamId, BlockId]:
+    """Cross-check ``block_spans`` against ``param_sizes`` and build owner map.
+
+    Shared validator used by both :func:`build_layout` (the real
+    placement path) and :func:`_build_packing_steps` (the S_chunk
+    sizing simulation). Without this shared helper the simulation
+    could happily run on spans the real layout would reject — the
+    ``S_chunk`` grid search would then return a value that doesn't
+    correspond to a layout the production code would accept.
+
+    Validations performed:
+
+    * **Per-block uniqueness**: a ``ParamId`` may not appear more
+      than once inside a single block's ``params`` list (would
+      double-count downstream).
+    * **No cross-block overlap**: a ``ParamId`` may not be claimed
+      by two different blocks (``_block_of`` would silently bind
+      it to the first claimant).
+    * **Existence**: every ``ParamId`` referenced by any block must
+      be present in ``param_sizes`` (i.e., a real model param).
+
+    Returns the validated ``{pid -> owner_bid}`` map so callers can
+    skip a redundant rebuild.
+    """
+    block_referenced: set[ParamId] = set()
+    pid_owner: dict[ParamId, BlockId] = {}
+    overlaps: dict[ParamId, list[BlockId]] = {}
+    for owner_bid, params in block_spans.items():
+        seen: set[ParamId] = set()
+        for pid in params:
+            if pid in seen:
+                raise ValueError(
+                    f"block_spans[{owner_bid!r}] lists param {pid!r} more than "
+                    "once; each ParamId must appear at most once per block"
+                )
+            seen.add(pid)
+            prior = pid_owner.get(pid)
+            if prior is not None and prior != owner_bid:
+                bucket = overlaps.setdefault(pid, [prior])
+                if owner_bid not in bucket:
+                    bucket.append(owner_bid)
+            else:
+                pid_owner[pid] = owner_bid
+            block_referenced.add(pid)
+    if overlaps:
+        overlap_sorted = sorted(
+            f"{pid!r} -> [{', '.join(repr(b) for b in bids)}]"
+            for pid, bids in overlaps.items()
+        )
+        raise ValueError(
+            "block_spans contains param(s) assigned to multiple blocks: "
+            + "; ".join(overlap_sorted)
+        )
+    missing_block_pids = block_referenced - param_sizes.keys()
+    if missing_block_pids:
+        missing_sorted = sorted(repr(p) for p in missing_block_pids)
+        raise KeyError(
+            f"block_spans references unknown param(s) {', '.join(missing_sorted)}; "
+            "not present in model.named_parameters()"
+        )
+    return pid_owner
+
+
 def _build_packing_steps(
     param_sizes: Mapping[ParamId, int],
     exec_order: Sequence[ParamId],
@@ -109,15 +175,17 @@ def _build_packing_steps(
     first occurrence, block params gathered contiguously starting from the
     block's first appearance, then any model params absent from exec_order
     appended at the tail (with leftover-block-grouping the same way).
+
+    Runs the same ``block_spans`` validation as :func:`build_layout`
+    via the shared :func:`_validate_block_spans` helper so the
+    sizing simulation cannot operate on spans that production
+    layout would reject.
     """
     placed: set[ParamId] = set()
-    pid_to_block: dict[ParamId, BlockId | None] = {}
-    pid_owner: dict[ParamId, BlockId] = {}
-    for bid, params in block_spans.items():
-        for pid in params:
-            pid_owner[pid] = bid
-    for pid in exec_order:
-        pid_to_block[pid] = pid_owner.get(pid)
+    pid_owner = _validate_block_spans(block_spans, param_sizes)
+    pid_to_block: dict[ParamId, BlockId | None] = {
+        pid: pid_owner.get(pid) for pid in exec_order
+    }
 
     steps: list[PackingStep] = []
     n = len(exec_order)
@@ -237,54 +305,14 @@ def build_layout(
                 "not present in model.named_parameters()"
             )
 
-    # Validate block_spans entries up front: every ParamId referenced by any
-    # block must exist in the model, and no ParamId may belong to two blocks.
-    # Without these checks, an unknown ParamId would be silently skipped on
-    # the per-iteration ``param_sizes[pid]`` lookup path (or worse, raise
-    # deep inside the placement loop with a confusing traceback), and an
-    # overlapping ParamId would be silently assigned to the first block by
-    # ``_block_of()`` so ``block_to_chunks`` would no longer reflect the
-    # caller's spans. Fail fast at the API boundary instead.
-    block_referenced: set[ParamId] = set()
-    pid_owner: dict[ParamId, BlockId] = {}
-    overlaps: dict[ParamId, list[BlockId]] = {}
-    for owner_bid, params in block_spans.items():
-        seen: set[ParamId] = set()
-        for pid in params:
-            # Within a single block, a duplicate ``pid`` would slip past
-            # the cross-block ``pid_owner`` check (since ``prior == owner_bid``
-            # falls through to the else branch) and double-count
-            # downstream. Reject duplicates explicitly here.
-            if pid in seen:
-                raise ValueError(
-                    f"block_spans[{owner_bid!r}] lists param {pid!r} more than "
-                    "once; each ParamId must appear at most once per block"
-                )
-            seen.add(pid)
-            prior = pid_owner.get(pid)
-            if prior is not None and prior != owner_bid:
-                bucket = overlaps.setdefault(pid, [prior])
-                if owner_bid not in bucket:
-                    bucket.append(owner_bid)
-            else:
-                pid_owner[pid] = owner_bid
-            block_referenced.add(pid)
-    if overlaps:
-        overlap_sorted = sorted(
-            f"{pid!r} -> [{', '.join(repr(b) for b in bids)}]"
-            for pid, bids in overlaps.items()
-        )
-        raise ValueError(
-            "block_spans contains param(s) assigned to multiple blocks: "
-            + "; ".join(overlap_sorted)
-        )
-    missing_block_pids = block_referenced - param_sizes.keys()
-    if missing_block_pids:
-        missing_sorted = sorted(repr(p) for p in missing_block_pids)
-        raise KeyError(
-            f"block_spans references unknown param(s) {', '.join(missing_sorted)}; "
-            "not present in model.named_parameters()"
-        )
+    # Cross-check ``block_spans`` against ``param_sizes``. Shared with
+    # ``_build_packing_steps`` so the S_chunk sizing simulation runs
+    # against the same admissibility rules as the real layout — see
+    # :func:`_validate_block_spans` for the per-block uniqueness +
+    # cross-block overlap + existence checks. Fail fast at the API
+    # boundary so the ``param_sizes[pid]`` / ``_block_of()`` paths
+    # below see only validated input.
+    pid_owner = _validate_block_spans(block_spans, param_sizes)
 
     chunks: list[list[ParamId]] = [[]]
     chunk_bytes: list[int] = [0]
@@ -453,7 +481,10 @@ def build_layout(
     # so the difference ``param_sizes - block_referenced`` enumerates
     # *every* non-block param (including those the profiler never
     # touched).
-    nonblock_pids = set(param_sizes.keys()) - block_referenced
+    # ``pid_owner`` was populated by ``_validate_block_spans`` and
+    # contains every ParamId claimed by any block; the difference vs.
+    # ``param_sizes`` is the set of non-block params.
+    nonblock_pids = set(param_sizes.keys()) - set(pid_owner.keys())
     mandatory: set[ChunkId] = set()
     for pid in nonblock_pids:
         cid = param_to_chunk.get(pid)

@@ -96,7 +96,7 @@ def _has_protrain_plugin(plugins) -> bool:
 # rather than copy-pasting the set. Keeping this in ``__all__`` also
 # documents the public-to-the-package contract: this constant + helper
 # are the answer to "which strings count as the ProTrain plugin id".
-__all__ = ["ProTrainArgs", "_PROTRAIN_PLUGIN_KEYS", "_has_protrain_plugin"]
+__all__ = ["ProTrainArgs", "_has_protrain_plugin", "_PROTRAIN_PLUGIN_KEYS"]
 
 
 class ProTrainArgs(BaseModel):

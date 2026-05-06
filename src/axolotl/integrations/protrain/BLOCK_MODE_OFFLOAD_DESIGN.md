@@ -423,12 +423,15 @@ Replace the rule with (shipped):
 > **inadmissible** — it would still capture saved tensors that
 > don't survive the post-forward offload.
 
-In code (no implementation, illustration only):
+In code (no implementation, illustration only — matches the
+shipped rule above; SWAP joins the fast-path family):
 
 ```python
 mode = block_map[bid]
-if mode in (CKPT, OFFLOAD):
+if mode in (CKPT, OFFLOAD, SWAP):
     return True
+# Only NONE remains: inadmissible if any chunk in the block is
+# non-persistent.
 return all(c in persistent for c in chunks_of(bid))
 ```
 

@@ -376,14 +376,26 @@ def _fwd_compute_time_from_trace(
             # per-chunk path can apply per-chunk contention without
             # double-counting chunked comm/overlap that's baked into
             # the chunked wall.
+            # Preserve the pre-override (per-op-derived) forward total
+            # so :func:`_bwd_compute_time_from_trace` can use it as the
+            # baseline when its phase-2 path is unavailable and it
+            # falls back to ``t_fwd * measured_ratio`` /
+            # ``t_fwd * _BWD_FWD_COMPUTE_RATIO``. Multiplying the
+            # CHUNKED wall by a per-op ratio is physically wrong (the
+            # chunked wall already bakes in PCIe round-trip overhead
+            # the ratio doesn't model), so the fallback bwd term reads
+            # this baseline instead of the override.
+            fwd_compute_base = total
             if trace.steady_fwd_chunked_wall_s > 0.0 and (
                 cfg is None or cfg.n_swap == 0
             ):
                 total = trace.steady_fwd_chunked_wall_s
-            return total, per_block, True
+            return total, per_block, True, fwd_compute_base
 
     # Fallback: pure roofline. No measurements available (empty op_latencies).
-    return roofline_total, roofline_per_block, False
+    # No override applies on this path, so ``fwd_compute_base`` equals
+    # ``total``.
+    return roofline_total, roofline_per_block, False, roofline_total
 
 
 def _bwd_compute_time_from_trace(
@@ -757,9 +769,12 @@ def estimate_runtime(
     # block when the profiler recorded them; otherwise the activation-size
     # roofline proxy. SWAP blocks add activation H2D/D2H on top of compute.
     n_block = len(trace.activation_sizes)
-    t_fwd_compute_total, per_block_compute, used_measured = (
-        _fwd_compute_time_from_trace(trace, cfg)
-    )
+    (
+        t_fwd_compute_total,
+        per_block_compute,
+        used_measured,
+        t_fwd_compute_base,
+    ) = _fwd_compute_time_from_trace(trace, cfg)
     if not used_measured:
         global _WARNED_APPROXIMATE_COMPUTE_PROXY
         if not _WARNED_APPROXIMATE_COMPUTE_PROXY:
@@ -776,6 +791,10 @@ def estimate_runtime(
     sku_scale = _sku_compute_scale(trace, hw)
     if sku_scale != 1.0:
         t_fwd_compute_total *= sku_scale
+        # Apply the SAME scale to the pre-override baseline so the
+        # backward fallback path's ``t_fwd_base * ratio`` lands on the
+        # same SKU as ``t_fwd_compute_total``.
+        t_fwd_compute_base *= sku_scale
         per_block_compute = {bid: v * sku_scale for bid, v in per_block_compute.items()}
         LOG.debug(
             "estimate_runtime: applied per-SKU compute scale %.3f (trace=%s "
@@ -913,7 +932,12 @@ def estimate_runtime(
     # from the profiler (preferred) or t_fwd * _BWD_FWD_COMPUTE_RATIO. On
     # top of that, CKPT blocks pay one extra forward per CKPT block (their
     # per-block compute time), and SWAP blocks add the activation prefetch.
-    t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_total, cfg)
+    # Pass the un-overridden forward baseline so backward path-2/3
+    # fallbacks (``t_fwd * ratio``) compute the right thing — the
+    # chunked-wall override on ``t_fwd_compute_total`` would inflate
+    # the bwd estimate via a multiplier that doesn't model the
+    # chunked-wall's PCIe overhead.
+    t_bwd_compute_base = _bwd_compute_time_from_trace(trace, t_fwd_compute_base, cfg)
     t_bwd_recompute = 0.0
     t_bwd_swap_prefetch = 0.0
     # OFFLOAD chunk-gather wall (Option B §4.2) — accounting note.

@@ -1189,7 +1189,7 @@ def test_fwd_compute_time_uses_phase2_chunked_fwd_when_present():
 
     # Without chunked fwd populated — total = per-op sum.
     trace_no = replace(base_trace, steady_fwd_chunked_wall_s=0.0)
-    total_no, per_block_no, used_no = _fwd_compute_time_from_trace(trace_no)
+    total_no, per_block_no, used_no, _ = _fwd_compute_time_from_trace(trace_no)
     assert used_no is True
     assert total_no == pytest.approx(per_op_sum, abs=1e-9), (
         f"v10 fallback should return per-op sum {per_op_sum}, got {total_no}"
@@ -1198,7 +1198,7 @@ def test_fwd_compute_time_uses_phase2_chunked_fwd_when_present():
     # With chunked fwd populated — total = chunked wall.
     chunked_fwd = 0.30
     trace_with = replace(base_trace, steady_fwd_chunked_wall_s=chunked_fwd)
-    total_with, per_block_with, used_with = _fwd_compute_time_from_trace(trace_with)
+    total_with, per_block_with, used_with, _ = _fwd_compute_time_from_trace(trace_with)
     assert used_with is True
     assert total_with == pytest.approx(chunked_fwd, abs=1e-9), (
         f"phase-2 fwd path should return chunked wall {chunked_fwd}, got {total_with}"
@@ -1750,8 +1750,8 @@ def test_swap_candidate_does_not_double_count_chunked_wall_compute():
 
     # Helper-level: with cfg.n_swap > 0, the helpers must return
     # the per-op / steady totals — NOT the chunked wall.
-    fwd_total_with, _, _ = _fwd_compute_time_from_trace(trace_with_chunked, cfg_swap)
-    fwd_total_no, _, _ = _fwd_compute_time_from_trace(trace_no_chunked, cfg_swap)
+    fwd_total_with, _, _, _ = _fwd_compute_time_from_trace(trace_with_chunked, cfg_swap)
+    fwd_total_no, _, _, _ = _fwd_compute_time_from_trace(trace_no_chunked, cfg_swap)
     assert fwd_total_with == pytest.approx(fwd_total_no, rel=1e-9), (
         f"forward helper leaked chunked wall to SWAP candidate: "
         f"with-chunked total = {fwd_total_with:.6f}, "
@@ -1805,7 +1805,7 @@ def test_swap_candidate_does_not_double_count_chunked_wall_compute():
     # Also verify the n_swap == 0 path still consumes the chunked wall
     # (the gate must NOT regress that case).
     cfg_no_swap = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
-    fwd_total_no_swap, _, _ = _fwd_compute_time_from_trace(
+    fwd_total_no_swap, _, _, _ = _fwd_compute_time_from_trace(
         trace_with_chunked, cfg_no_swap
     )
     assert fwd_total_no_swap == pytest.approx(0.20, rel=1e-9), (
