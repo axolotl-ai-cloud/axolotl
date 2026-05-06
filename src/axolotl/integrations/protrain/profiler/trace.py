@@ -932,7 +932,13 @@ def run_trace(
             bwd_slice = bwd_iter_s[N_STEADY_WARMUP:] if bwd_iter_s else []
             if bwd_slice:
                 steady_bwd_wall_s = statistics.median(bwd_slice)
-            torch.cuda.empty_cache()
+            # Intentionally NOT calling ``torch.cuda.empty_cache()`` here.
+            # The hooked trace runs immediately after this block and we
+            # want it to inherit the warm caching-allocator state we
+            # just established — emptying the cache would force the
+            # next iter to re-allocate from cold and inflate the
+            # ``hooked_fwd_wall_s`` reading + the traced peak relative
+            # to the steady-state baseline we just measured.
         except Exception as exc:  # pragma: no cover - defensive
             LOG.debug(
                 "profiler hook-less steady-state measurement failed (%s); "

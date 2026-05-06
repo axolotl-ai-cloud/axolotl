@@ -112,6 +112,42 @@ LOG = get_logger(__name__)
 SIZE_THRESHOLD_BYTES: int = 1 << 20  # 1 MiB
 
 
+def _is_non_overlapping_and_dense(t: "torch.Tensor") -> bool:
+    """Return True iff ``t``'s strided layout has no internal aliasing.
+
+    PyTorch 2.6+ exposes ``Tensor::is_non_overlapping_and_dense`` only
+    at the C++ level; the Python-level method varies across builds.
+    We reimplement the standard check so the SWAP pack path can gate
+    out tensors whose ``empty_strided + copy_`` round-trip would have
+    undefined semantics regardless of the build.
+
+    Algorithm: sort the (size, stride) pairs (excluding size-1 dims,
+    which don't constrain layout) by stride ascending. The tensor is
+    non-overlapping iff every prefix's product fits within the next
+    stride: for each pair ``(size_i, stride_i)`` after sorting,
+    ``stride_i >= product(size_j for j < i)``. Dense additionally
+    requires ``stride_0 == 1`` and ``stride_i == prefix_product``.
+    The two conditions together are the standard
+    "non-overlapping-and-dense" check used by the autograd engine and
+    by ``empty_strided`` callers. An empty tensor is trivially
+    non-overlapping-and-dense.
+    """
+    if t.numel() == 0:
+        return True
+    pairs = sorted(
+        ((s, st) for s, st in zip(t.shape, t.stride(), strict=True) if s > 1),
+        key=lambda p: p[1],
+    )
+    if not pairs:
+        return True
+    expected = 1
+    for size, stride in pairs:
+        if stride != expected:
+            return False
+        expected = stride * size
+    return True
+
+
 #: Safety margin reserved on top of the swap-in's own allocation when
 #: gating in :func:`unpack_from_pool`. Backward kernels enqueued *after*
 #: the headroom check may also allocate transients (workspace buffers,
@@ -230,19 +266,19 @@ def _make_pack_unpack(
         nbytes = t.numel() * t.element_size()
         if nbytes < size_threshold:
             return _PassThrough(t)
-        # Skip overlapping tensors. The unpack path rebuilds via
-        # ``empty_strided + copy_`` and writes element-wise into a
-        # tensor whose storage matches the recorded stride. If the
-        # source has a zero stride (expanded / broadcasted view) or
-        # internally-overlapping strides, multiple logical indices
-        # alias the same storage element and the copy_ semantics
-        # become last-writer-wins instead of byte-faithful. The
-        # zero-stride check below catches the dominant footgun
-        # (``Tensor.expand``); rare overlapping-without-zero-stride
-        # tensors (uncommon manual ``as_strided`` views) are still
-        # routed through pack_to_pool, but they're not produced by
-        # the standard nn modules the runtime saves activations from.
-        if any(s == 0 for s in t.stride()):
+        # Skip overlapping / non-dense tensors. The unpack path
+        # rebuilds via ``empty_strided + copy_`` and writes element-
+        # wise into a tensor whose storage matches the recorded
+        # stride. If the source has overlapping strides (zero stride
+        # for ``Tensor.expand``-style views, or internally-aliasing
+        # strides from custom ``as_strided`` views), multiple logical
+        # indices map to the same storage element and the ``copy_``
+        # semantics become last-writer-wins instead of byte-faithful.
+        # ``_is_non_overlapping_and_dense`` reimplements the standard
+        # PyTorch check (the C++-level method isn't reliably exposed
+        # at the Python level across PyTorch 2.6+ builds) so any
+        # non-dense or overlapping tensor falls back to ``_PassThrough``.
+        if not _is_non_overlapping_and_dense(t):
             return _PassThrough(t)
         if nbytes > pool.slot_bytes:
             # Defensive: tensor exceeds slot size. Keep on GPU rather

@@ -400,6 +400,8 @@ def test_post_model_load_idempotent_when_already_wrapped():
     """If ``cfg._protrain_wrapped`` is already set, skip both init + wrap."""
     pytest.importorskip("torch")
 
+    from types import SimpleNamespace
+
     import torch
 
     if not torch.cuda.is_available():
@@ -407,13 +409,19 @@ def test_post_model_load_idempotent_when_already_wrapped():
 
     from axolotl.integrations.protrain import plugin as plugin_mod
 
-    sentinel = object()
+    fake_model = torch.nn.Linear(4, 4)
+    # The idempotency guard checks ``existing._protrain_wrapped.model is
+    # model``: only the SAME model instance reuses the cached wrapper.
+    # Make the sentinel match that contract (a namespace carrying the
+    # incoming model under ``.model``) so the test exercises the
+    # same-model fast-path. A bare ``object()`` would trigger the
+    # different-model warn-and-rebuild branch instead.
+    sentinel = SimpleNamespace(model=fake_model)
     cfg = _FakeCfg(
         protrain_auto_memory=True,
         plugins=["axolotl.integrations.protrain.ProTrainPlugin"],
         _protrain_wrapped=sentinel,
     )
-    fake_model = torch.nn.Linear(4, 4)
 
     early_init_calls = []
     wrapper_calls = []

@@ -167,9 +167,17 @@ class BufferPool:
         # Fast path: chunk is already in a slot (possibly free, possibly in-use).
         slot = self._tag_to_slot.get(chunk_id)
         if slot is not None:
-            # O(1) free-set discard — the deque may still carry the
-            # stale entry, but ``popleft`` below filters via the set.
+            # Discard from the free set AND remove the stale node from
+            # the deque so the two stay consistent. ``deque.remove`` is
+            # O(N) but the buffer pool is small (n_buffer typically
+            # ≤ 32), so eager cleanup is cheaper in practice than
+            # letting stale nodes accumulate and re-pop them via the
+            # ``popleft`` filter loop on the next miss.
             self._free_set.discard(slot)
+            try:
+                self._free.remove(slot)
+            except ValueError:
+                pass
             self._leases[slot] += 1
             return self._buffers[slot]
 
@@ -264,9 +272,14 @@ class BufferPool:
         if slot is None:
             return None
         # Same lease-bookkeeping as the cache-hit fast path in ``acquire``.
-        # O(1) free-set discard — the deque may still carry the stale
-        # entry, but ``popleft`` filters via the set on the next miss.
+        # Discard from the free set AND remove the stale node from the
+        # deque so the two structures stay consistent (see ``acquire``
+        # for the rationale).
         self._free_set.discard(slot)
+        try:
+            self._free.remove(slot)
+        except ValueError:
+            pass
         self._leases[slot] += 1
         return self._buffers[slot]
 

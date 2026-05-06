@@ -238,8 +238,6 @@ class ActivationSwapPool:
                     slot_id,
                 )
                 return
-            self._free.append(slot_id)
-            self._inflight -= 1
             # Return the borrow to the underlying pinned allocator so its
             # close() guard knows the slot view is no longer live. The view
             # itself is dropped by the caller; ``record_stream`` keeps the
@@ -248,7 +246,16 @@ class ActivationSwapPool:
             # contract requires caller synchronization — so we hold
             # ``self._lock`` across it to keep ``_live_borrows`` consistent
             # with our slot lifetime under concurrent acquire/release/close().
+            #
+            # Atomicity: call ``release_buffer`` BEFORE marking the slot
+            # reusable. If the allocator call raises (e.g., the underlying
+            # ``PinnedHostMemory`` was closed mid-release), the slot
+            # bookkeeping stays in the in-flight state so a future
+            # ``acquire`` can't hand it out while the borrow accounting
+            # is still inconsistent.
             self._pinned.release_buffer(slot_id)
+            self._free.append(slot_id)
+            self._inflight -= 1
 
     @property
     def total_bytes(self) -> int:

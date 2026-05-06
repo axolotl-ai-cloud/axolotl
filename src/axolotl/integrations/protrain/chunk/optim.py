@@ -330,7 +330,12 @@ class GpuFusedAdamAdapter:
 
         try:
             from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
-        except ImportError as exc:
+        except (ImportError, RuntimeError) as exc:
+            # ``ImportError`` covers the missing-package case; ``RuntimeError``
+            # covers the increasingly common "apex installed but its CUDA
+            # extensions (e.g. ``amp_C``) won't load on this driver/torch
+            # combination" failure mode that escapes ``ImportError``. Both
+            # paths fall back to ``torch.optim.AdamW``.
             exc_repr = f"{type(exc).__name__}: {exc}"
             LOG.warning(
                 "apex.optimizers.FusedAdam import failure (%s); falling back to "

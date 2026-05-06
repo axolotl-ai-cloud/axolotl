@@ -203,11 +203,22 @@ def install_hooks(
     return handles
 
 
-def uninstall_hooks(handles: list["RemovableHandle"]) -> None:
+def uninstall_hooks(
+    handles: list["RemovableHandle"],
+    model: "nn.Module | None" = None,
+) -> None:
     """Remove every handle produced by :func:`install_hooks`.
 
     Safe to call multiple times — ``RemovableHandle.remove`` is
     idempotent in modern PyTorch.
+
+    When ``model`` is provided, also detaches OFFLOAD-mode runtime
+    references (chunk_manager / scheduler) from every
+    ``OffloadedBlock`` in the discovered block forest. This mirrors
+    the ``attach_runtime`` call ``install_hooks`` makes, leaving the
+    model in its pre-install state with no lingering ProTrain
+    runtime refs. Pre-existing callers that omit ``model`` retain
+    the old hook-handle-only teardown semantics.
     """
     failed: list["RemovableHandle"] = []
     for h in handles:
@@ -220,6 +231,17 @@ def uninstall_hooks(handles: list["RemovableHandle"]) -> None:
     # re-install pass can try again; clearing them unconditionally
     # would leak the only reference to a still-installed hook.
     handles[:] = failed
+
+    if model is not None:
+        for block in flatten_block_trees(discover_blocks(model)):
+            if isinstance(block, OffloadedBlock):
+                try:
+                    block.detach_runtime()
+                except Exception as exc:  # noqa: BLE001 — best-effort
+                    LOG.warning(
+                        "uninstall_hooks: OffloadedBlock.detach_runtime() failed: %s",
+                        exc,
+                    )
 
 
 __all__ = ["install_hooks", "uninstall_hooks"]

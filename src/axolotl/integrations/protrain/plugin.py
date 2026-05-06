@@ -560,12 +560,29 @@ class ProTrainPlugin(BasePlugin):
         # bootstrap). The wrapper itself is cheap-but-not-free to repeat
         # (re-measurement, allocator churn) and re-running it would
         # invalidate the chunk-manager handles already stashed on cfg.
-        if getattr(cfg, "_protrain_wrapped", None) is not None:
-            LOG.debug(
+        # Compare the stashed wrapper's wrapped model identity against
+        # the incoming ``model``: if a DIFFERENT model instance is
+        # being loaded (e.g., a test rebuilds the trainer from scratch
+        # against a fresh model on the same cfg), the previous wrapper
+        # state is stale and must NOT be reused — clear it and proceed
+        # with a fresh wrap. Same-model re-entry remains a no-op.
+        existing = getattr(cfg, "_protrain_wrapped", None)
+        if existing is not None:
+            existing_model = getattr(existing, "model", None)
+            if existing_model is model:
+                LOG.debug(
+                    "ProTrain: post_model_load called with _protrain_wrapped "
+                    "already populated for the same model; skipping re-wrap "
+                    "(idempotent path)."
+                )
+                return
+            LOG.warning(
                 "ProTrain: post_model_load called with _protrain_wrapped "
-                "already populated; skipping re-wrap (idempotent path)."
+                "populated for a DIFFERENT model instance; clearing the "
+                "stale wrapper and re-wrapping. (Test harness or "
+                "re-trainer-build path.)"
             )
-            return
+            cfg._protrain_wrapped = None  # type: ignore[attr-defined]
 
         from axolotl.integrations.protrain.api import protrain_model_wrapper
 
