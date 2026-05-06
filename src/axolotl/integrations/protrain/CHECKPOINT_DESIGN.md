@@ -585,45 +585,45 @@ designed.
 
 ---
 
-## 8. Open questions (after v2 corrections)
+## 8. Historical design notes (v2-shipped decisions)
 
-These are still open and need user direction before implementation
-begins. v1's questions §1–§5 were answered in the v2 corrections; the
-new set is:
+These were open questions during the v1 → v2 design pass; all five
+are now resolved and shipped. Captured here so readers don't dig
+through git history to find why each knob landed the way it did.
 
-1. **Save-size gate threshold default.** §2.7 proposes
-   `protrain_optim_save_max_bytes = 2 GiB` as the default cutoff that
-   blocks unintentional 84 GB writes for full-FT but lets every LoRA
-   pass. Is 2 GiB the right number? Smaller (e.g., 256 MiB) would be
-   more conservative; larger (e.g., 16 GiB) would let some small full-FT
-   models through.
+1. **Save-size gate threshold default — DECISION:**
+   `protrain_optim_save_max_bytes = 2 GiB` is the shipped default.
+   Blocks unintentional 84 GB writes for full-FT (typical 70B-class
+   model) and lets every LoRA pass without configuration. Operators
+   can override in YAML when full-FT saves are intentional.
 
-2. **Callback hook vs. trainer override.** ~~Use
-   `TrainerCallback.on_save` / `on_load_checkpoint` as the integration
-   point.~~ **REJECTED.** HF exposes
-   `state.best_model_checkpoint` but does not provide a reliable
-   `on_load_checkpoint` hook → patch
-   `Trainer._load_optimizer_and_scheduler` instead (see §1.8). Save
-   side still uses `TrainerCallback.on_save`.
+2. **Callback hook vs. trainer override — DECISION:** the save side
+   uses `TrainerCallback.on_save`; the load side patches
+   `Trainer._load_optimizer_and_scheduler` because HF does not
+   expose a reliable `on_load_checkpoint` hook (see §1.8 for the
+   monkey-patch contract).
 
-3. **Phase 1's `save_only_model` flip.** §2.5 keeps `save_only_model =
-   True` by default and only flips to `False` when
-   `protrain_save_optimizer_state=True` AND the size gate passes. Is
-   that the right precondition shape? Specifically: should the size
-   gate run at config time (before the trainer starts) or at every
-   save call (cheaper to defer; downside is the user only finds out
-   at first checkpoint that saves are being skipped)?
+3. **`save_only_model` flip precondition — DECISION:** `save_only_model =
+   True` by default. Flipped to `False` only when
+   `protrain_save_optimizer_state=True` AND the size gate passes,
+   evaluated **at every save call** (not at config time). The
+   per-call check pays a single broadcast in exchange for surfacing
+   skip decisions exactly when they happen — operators see the warning
+   in the same `on_save` log line that produced the decision.
 
-4. **Streaming as Phase 1.5 vs. follow-up.** §2.7 proposes shipping
-   the gate first and streaming later. If you'd rather the first impl
-   be streaming-from-the-start (cleaner story, but more work), say so
-   now.
+4. **Streaming — DEFERRED.** Phase 1 shipped the size gate; streaming
+   is a follow-up. The two-step shape held up under v2 review and the
+   gate alone covers the dominant failure mode (silent oversized
+   saves), so streaming is out of scope for the v2 ship and tracked
+   separately.
 
-5. **Option P vs Option Q for Accelerate `prepare` coexistence.**
-   §1.7 recommends Option P (keep the no-op patches; route real
-   save/load through a separate callback). Confirm this — Option Q is
-   in scope if you'd rather have the real `state_dict` be the only
-   path and accept the prepare-time HBM spike.
+5. **Accelerate `prepare` coexistence — DECISION:** Option P
+   (instance-level `state_dict` / `load_state_dict` no-op patches
+   stay; real save/load routes through the dedicated
+   `_save_protrain_optim_dir` / load-hook path). Option Q (real
+   `state_dict` as the only path, paying the prepare-time HBM spike)
+   was rejected because the spike crosses 24 GiB on the target 7B
+   workloads.
 
 ---
 

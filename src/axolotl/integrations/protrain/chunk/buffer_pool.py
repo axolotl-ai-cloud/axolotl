@@ -129,6 +129,13 @@ class BufferPool:
         self._tags: list[ChunkId | None] = [None] * self.n_buffer
         # FIFO free list → effectively LRU when combined with release-on-use.
         self._free: Deque[int] = deque(range(self.n_buffer))
+        # O(1) free-membership tracker paired with the deque. The deque
+        # preserves LRU ordering for popleft-eviction; ``_free_set`` lets
+        # us check / remove by slot id without scanning the deque (the
+        # cache-hit path's ``self._free.remove(slot)`` was O(n)). The
+        # deque can carry stale entries — they're filtered lazily on
+        # popleft via the membership check below.
+        self._free_set: set[int] = set(range(self.n_buffer))
         # Reverse map for O(1) resident lookup.
         self._tag_to_slot: dict[ChunkId, int] = {}
         # Per-slot lease refcount. ``acquire`` increments (cache hit) or sets
@@ -153,23 +160,27 @@ class BufferPool:
         # Fast path: chunk is already in a slot (possibly free, possibly in-use).
         slot = self._tag_to_slot.get(chunk_id)
         if slot is not None:
-            # Remove from the free list if present so we don't hand it out
-            # twice. If it's already in-use this is a no-op.
-            try:
-                self._free.remove(slot)
-            except ValueError:
-                pass
+            # O(1) free-set discard — the deque may still carry the
+            # stale entry, but ``popleft`` below filters via the set.
+            self._free_set.discard(slot)
             self._leases[slot] += 1
             return self._buffers[slot]
 
-        if not self._free:
+        if not self._free_set:
             raise RuntimeError(
                 f"BufferPool exhausted: all {self.n_buffer} buffers in use, "
                 f"cannot acquire for chunk {chunk_id}. Increase n_buffer "
                 "or release buffers before acquiring new ones."
             )
 
-        slot = self._free.popleft()
+        # Pop the oldest entry that's still in ``_free_set``. Stale
+        # entries (slots claimed by the cache-hit fast path above without
+        # the matching deque-rewrite) are skipped here in O(1) amortized.
+        while True:
+            slot = self._free.popleft()
+            if slot in self._free_set:
+                self._free_set.discard(slot)
+                break
         # Evict the previous tag's mapping.
         prev_tag = self._tags[slot]
         if prev_tag is not None:
@@ -199,7 +210,10 @@ class BufferPool:
             return
         # Append (not appendleft) to implement LRU-free: the oldest free
         # slot gets evicted first on the next ``acquire`` that misses.
+        # Mirror in ``_free_set`` so the cache-hit fast path can do an
+        # O(1) discard.
         self._free.append(slot)
+        self._free_set.add(slot)
 
     def lookup_resident(self, chunk_id: ChunkId) -> "torch.Tensor | None":
         """Return the buffer if the chunk's data is still tagged in a slot.
@@ -217,7 +231,9 @@ class BufferPool:
 
     @property
     def num_free(self) -> int:
-        return len(self._free)
+        # ``_free`` can carry stale entries (the lazy-cleanup path in
+        # ``acquire``); ``_free_set`` is the authoritative count.
+        return len(self._free_set)
 
     @property
     def num_in_use(self) -> int:

@@ -39,17 +39,18 @@ unchanged:
 * `map_location='cpu'` discipline for every `torch.load` call —
   defeats HF's hostile `map_location=device` default.
 * The save-size gate (`protrain_optim_save_max_bytes`, default 2 GiB)
-  is preserved but no longer rank-local: every rank computes its own
-  estimate, the pre-save preamble runs under
-  `_allreduce_status_or_raise()` for lockstep synchronization, and the
-  single skip-or-abort decision is broadcast from rank 0 to every
-  rank. No rank early-returns on its own. See §4.4 for the broadcast
-  protocol.
+  is preserved but no longer rank-local. Every rank enters the
+  pre-save preamble under `_allreduce_status_or_raise()` for lockstep
+  synchronization, but rank 0 owns the size estimate and the
+  skip/abort decision; ranks > 0 do not estimate independently and do
+  not early-return on their own. The single rank-0 decision is
+  broadcast to every rank via the same `_allreduce_status_or_raise()`
+  channel. See §4.4 for the broadcast protocol.
 * Schema versioning via `format_version` — Phase 2 bumps to **v2**.
 * All save/load files live under
   `{checkpoint_dir}/protrain_optim/`. Per-rank file naming distinguishes
   shards (see §2.1, §3.1).
-* `protrain_save_optimizer_state` flag stays. Phase 2 also introduces opt-in knobs `protrain_save_optim_verify_replicated` (replicated-state cross-rank verification), `protrain_allow_online_reshard` (online world-size resharding on load), and `protrain_optim_save_max_bytes` (per-rank save-size cap). All four flags continue to live on the per-rank config but are evaluated under the coordinated decision: the pre-save preamble runs under `_allreduce_status_or_raise()` synchronization, and the single skip/abort decision is broadcast from rank 0 to every rank. Defaults preserve Phase 1 behavior.
+* `protrain_save_optimizer_state` flag stays. Phase 2 also introduces opt-in knobs `protrain_save_optim_verify_replicated` (replicated-state cross-rank verification), `protrain_allow_online_reshard` (online world-size resharding on load), and `protrain_optim_save_max_bytes` (rank-0 size-estimate cap). All four flags live on every rank's config but are evaluated under the coordinated decision: every rank runs the pre-save preamble under `_allreduce_status_or_raise()`, rank 0 computes the single size estimate and skip/abort decision, and that decision is broadcast to every rank — no rank early-returns on its own. Defaults preserve Phase 1 behavior.
 
 ---
 

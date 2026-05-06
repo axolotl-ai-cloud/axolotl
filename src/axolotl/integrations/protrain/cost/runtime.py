@@ -600,7 +600,11 @@ def estimate_runtime(
     # *every* chunk in the augmented set, not just the prefix.
     persistent_ids: frozenset[ChunkId] = layout.effective_persistent_ids(cfg.n_persist)
     n_persist_eff = len(persistent_ids)
-    n_persist = max(0, min(cfg.n_persist, layout.N_chunk))  # search prefix
+    # ``cfg.n_persist`` is the search-chosen prefix; the n_persist
+    # phase-2 corrections below compute their delta against the
+    # *effective* (prefix ∪ mandatory) count via
+    # ``layout.effective_persistent_ids``, so we don't need a clamped
+    # prefix local here.
     n_buffer = max(0, min(cfg.n_buffer, layout.N_chunk - n_persist_eff))
     n_nonpersist = max(0, layout.N_chunk - n_persist_eff)
     # Non-persistent chunk indices in ascending order — used as the
@@ -817,7 +821,18 @@ def estimate_runtime(
         # would be the symmetric correction but the bootstrap is
         # constructed at the minimum-feasible n_persist (typically 0)
         # so candidates only go upward in practice.
-        delta_persist_fwd = max(0, n_persist - trace.phase2_n_persist)
+        # Use the EFFECTIVE persistent counts (prefix ∪ mandatory) so
+        # chunks already in ``mandatory_persistent`` aren't counted as
+        # "newly persistent" when the prefix grows over them. The bootstrap
+        # shares the same layout-invariant ``mandatory_persistent``, so:
+        #   delta = |effective(n_persist)| - |effective(phase2_n_persist)|
+        # collapses to the prefix delta when the prefix is disjoint from
+        # mandatory, but correctly under-counts when the candidate prefix
+        # absorbs mandatory chunks already counted in the bootstrap.
+        n_persist_eff_bootstrap = len(
+            layout.effective_persistent_ids(trace.phase2_n_persist)
+        )
+        delta_persist_fwd = max(0, n_persist_eff - n_persist_eff_bootstrap)
         fwd_h2d_per_chunk = layout.S_chunk / full_h2d if full_h2d > 0 else 0.0
         fwd_persist_save_per_chunk = nccl_gather + fwd_h2d_per_chunk
         t_fwd_persist_correction = -delta_persist_fwd * fwd_persist_save_per_chunk
@@ -1059,7 +1074,14 @@ def estimate_runtime(
         # newly-persistent chunks are far from the bootstrap's
         # ``n_swap=0`` placement (no SWAP blocks anywhere in the
         # bootstrap), so per-chunk effective bandwidth IS ``full_*``.
-        delta_persist_bwd = max(0, n_persist - trace.phase2_n_persist)
+        # See the matching forward block: delta is computed over the
+        # *effective* persistent set so mandatory_persistent chunks
+        # already counted in the bootstrap aren't credited again when
+        # the candidate prefix absorbs them.
+        n_persist_eff_bootstrap_bwd = len(
+            layout.effective_persistent_ids(trace.phase2_n_persist)
+        )
+        delta_persist_bwd = max(0, n_persist_eff - n_persist_eff_bootstrap_bwd)
         bwd_h2d_per_chunk = layout.S_chunk / full_h2d if full_h2d > 0 else 0.0
         bwd_d2h_per_chunk = (
             layout.S_chunk / hw.pcie_d2h_bps if hw.pcie_d2h_bps > 0 else 0.0

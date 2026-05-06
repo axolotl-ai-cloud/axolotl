@@ -16,7 +16,7 @@ Two intentional deviations from the original plan, both ratified after M5 review
 src/axolotl/integrations/protrain/
 ├── __init__.py                  # re-exports ProTrainArgs + ProTrainPlugin
 ├── DESIGN.md                    # this file
-├── plugin.py                    # BasePlugin subclass: get_input_args / post_model_load / create_optimizer
+├── plugin.py                    # BasePlugin subclass: get_input_args / post_model_load / post_trainer_create
 ├── args.py                      # ProTrainArgs pydantic model + DS/FSDP mutex validator
 ├── types.py                     # shared dataclasses (ProfilerTrace, ChunkLayout, ...)
 ├── profiler/
@@ -60,7 +60,7 @@ src/axolotl/integrations/protrain/
 └── api/
     ├── __init__.py
     ├── model_wrapper.py         # protrain_model_wrapper() — called from plugin.post_model_load
-    └── optim_wrapper.py         # protrain_optimizer_wrapper() — called from plugin.create_optimizer
+    └── optim_wrapper.py         # protrain_optimizer_wrapper() — called from plugin.post_trainer_create
 ```
 
 ## Module Specs
@@ -185,7 +185,7 @@ Zero diffs to Axolotl core files. The entire Axolotl surface consumed:
 - `BasePlugin` subclass at `src/axolotl/integrations/protrain/plugin.py`
 - `get_input_args` returns `ProTrainArgs` → pydantic merge handled by `axolotl/utils/schemas/config.py:1275` (`plugins:` field)
 - `post_model_load(cfg, model)` hook — wraps post-LoRA so frozen LoRA base params contribute to persistent-chunk memory only
-- `create_optimizer(cfg, trainer)` hook — returns ProTrain optimizer; `None` if disabled
+- `post_trainer_create(cfg, trainer)` hook — installs the ProTrain optimizer on `trainer.optimizer` (Axolotl's `OptimizerMixin.create_optimizer` does NOT dispatch to `PluginManager.create_optimizer`, so `post_trainer_create` is the canonical install point)
 - Example YAML: `examples/protrain/3090-8b-lora.yml` — opts in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]`
 
 ## Cross-Module Dependency Graph
