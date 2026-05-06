@@ -783,12 +783,30 @@ def run_trace(
         # (gradient compute + activation rematerialization for CKPT
         # blocks, plus saved-tensor unpack for SWAP). The whole-iter
         # backward peak is recovered from ``iter_bwd_block_peaks`` after
-        # ``loss.backward()`` completes — same strategy used for the
-        # forward to keep the hot pre-hook path read-free.
+        # ``loss.backward()`` completes.
+        #
+        # Asymmetry vs. forward: in forward, lm_head + loss compute
+        # happens AFTER the last block, so the trailing
+        # ``max_memory_allocated`` read post-iter captures their peak
+        # (no block_pre reset between last block and end-of-forward).
+        # In backward, lm_head + CE-loss bwd happens BEFORE the first
+        # block's bwd_pre — the first ``_bwd_pre`` reset would clobber
+        # that peak. To preserve it, ``_bwd_pre`` reads
+        # ``max_memory_allocated`` IMMEDIATELY BEFORE resetting and
+        # rolls the reading into ``iter_bwd_pre_peaks``, capturing any
+        # pre-block-bwd peak (lm_head, CE, embedding-grad reductions
+        # that fire late, etc.). One extra allocator read per block
+        # per backward — negligible relative to the backward kernel
+        # cost itself.
         iter_bwd_block_peaks: list[int] = []
+        iter_bwd_pre_peaks: list[int] = []
 
         def _make_bwd_pre(_dev):
             def _bwd_pre(_mod, _grad_output):
+                # Capture cumulative peak BEFORE the reset so peaks from
+                # bwd ops that ran prior to this block (lm_head, CE
+                # loss, neighbouring blocks' transients) are not lost.
+                iter_bwd_pre_peaks.append(int(torch.cuda.max_memory_allocated(_dev)))
                 torch.cuda.reset_peak_memory_stats(_dev)
 
             return _bwd_pre
@@ -875,6 +893,7 @@ def run_trace(
                         # already on GPU at this moment, but no transient
                         # bwd allocations yet).
                         iter_bwd_block_peaks.clear()
+                        iter_bwd_pre_peaks.clear()
                         torch.cuda.reset_peak_memory_stats(device)
                         with torch.cuda.device(device_idx):
                             pre_sb = torch.cuda.Event(enable_timing=True)
@@ -887,16 +906,27 @@ def run_trace(
                         bwd_iter_s.append(pre_sb.elapsed_time(post_sb) / 1000.0)
                         # Whole-iter backward peak: ``max_memory_allocated``
                         # at this point is "peak since the last per-block
-                        # backward hook reset" (the LAST block's bwd
-                        # window), so pair it with ``max(iter_bwd_block_peaks)``
-                        # to recover the iter peak — same pattern used
-                        # for the forward.
+                        # backward hook reset" (the FIRST block's bwd
+                        # window in module order, which fires LAST in
+                        # backward). Combine with:
+                        #   - ``max(iter_bwd_block_peaks)`` — per-block
+                        #     post-hook peaks
+                        #   - ``max(iter_bwd_pre_peaks)`` — pre-hook
+                        #     readings that captured the peak
+                        #     accumulated BEFORE that block's bwd window
+                        #     (lm_head + CE loss bwd run before the
+                        #     last-block-in-module-order's bwd_pre)
+                        # to recover the iter's true high-water mark.
                         whole_bwd_iter_peak = (
                             max(iter_bwd_block_peaks) if iter_bwd_block_peaks else 0
+                        )
+                        bwd_pre_peak = (
+                            max(iter_bwd_pre_peaks) if iter_bwd_pre_peaks else 0
                         )
                         steady_bwd_peak_bytes = max(
                             steady_bwd_peak_bytes,
                             whole_bwd_iter_peak,
+                            bwd_pre_peak,
                             int(torch.cuda.max_memory_allocated(device)),
                         )
                         model.zero_grad(set_to_none=True)
