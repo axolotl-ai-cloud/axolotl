@@ -1206,7 +1206,7 @@ def protrain_model_wrapper(
     seq_len: int,
     capacity_bytes: int | None = None,
     cpu_capacity_bytes: int | None = None,
-    cache_dir: str | None = None,  # noqa: ARG001 — reserved for future cache redirection
+    cache_dir: str | None = None,
     force_all_persistent: bool = False,
     n_persist_override: int | None = None,
     n_buffer_override: int | None = None,
@@ -1256,9 +1256,11 @@ def protrain_model_wrapper(
         evaluable; auto-mode then picks between feasible cfgs that
         already passed both gates.
     cache_dir:
-        Reserved. Profiler cache directory resolution currently lives
-        in ``profiler.cache._cache_root`` via the ``XDG_CACHE_HOME`` env
-        var.
+        Override the profiler cache root. When provided (non-None) the
+        profiler stores / loads traces under
+        ``<cache_dir>/protrain/profiler``, taking precedence over the
+        ``XDG_CACHE_HOME`` env var. When ``None`` (default), resolution
+        falls back to ``profiler.cache._cache_root`` (XDG-style).
     force_all_persistent:
         When True, skip the exhaustive searcher and synthesize a
         ``SearchResult`` that forces every chunk to stay GPU-resident
@@ -1420,7 +1422,7 @@ def protrain_model_wrapper(
         sku=_sku(device),
         world=hardware_profile.gpu_count,
     )
-    trace = load_cached_trace(cache_key)
+    trace = load_cached_trace(cache_key, cache_dir=cache_dir)
     if trace is None:
         import sys as _sys
 
@@ -1472,7 +1474,7 @@ def protrain_model_wrapper(
             f"{len(trace.activation_sizes)} blocks\n"
         )
         _sys.stderr.flush()
-        save_cached_trace(cache_key, trace)
+        save_cached_trace(cache_key, trace, cache_dir=cache_dir)
     else:
         LOG.info("ProTrain profiler cache hit for %s", cache_key.fingerprint()[:12])
 
@@ -2077,7 +2079,7 @@ def protrain_model_wrapper(
                 phase2_per_block_recompute_s=per_block_recompute_s,
             )
             try:
-                save_cached_trace(cache_key, new_trace)
+                save_cached_trace(cache_key, new_trace, cache_dir=cache_dir)
             except OSError as exc:
                 LOG.warning(
                     "Phase-2: failed to persist updated trace (%s); the "
@@ -2320,6 +2322,9 @@ def protrain_model_wrapper(
     )
     wrapped._hardware_profile = hardware_profile  # type: ignore[attr-defined]
     wrapped._cache_key = cache_key  # type: ignore[attr-defined]
+    # Carry the user-supplied cache_dir so post_trainer_create's NCCL
+    # re-measure path can persist the spliced trace under the same root.
+    wrapped._cache_dir = cache_dir  # type: ignore[attr-defined]
     return wrapped
 
 
@@ -2364,9 +2369,10 @@ def auto_wrap(
         hard feasibility filter. ``None`` auto-derives from
         ``psutil.virtual_memory()`` inside the wrapper.
     cache_dir : str | None
-        Profiler cache directory override. Currently reserved — the
-        profiler reads ``XDG_CACHE_HOME`` directly; passed through for
-        forward compatibility.
+        Override the profiler cache root. When provided, traces are
+        stored / loaded under ``<cache_dir>/protrain/profiler``, taking
+        precedence over ``XDG_CACHE_HOME``. ``None`` falls back to the
+        XDG-style default.
 
     Returns
     -------

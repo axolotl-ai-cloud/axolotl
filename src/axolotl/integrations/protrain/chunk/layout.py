@@ -179,8 +179,21 @@ def _build_packing_steps(
     Runs the same ``block_spans`` validation as :func:`build_layout`
     via the shared :func:`_validate_block_spans` helper so the
     sizing simulation cannot operate on spans that production
-    layout would reject.
+    layout would reject. ``exec_order`` is also validated up front
+    against ``param_sizes`` (matching :func:`build_layout`) so a
+    profiler trace that references unknown params surfaces a
+    ``KeyError`` here instead of silently producing a degenerate
+    sizing decision via ``param_sizes[pid]`` further down.
     """
+    # Validate exec_order entries up front — wording matches
+    # ``build_layout`` so callers see a single error contract.
+    for pid in exec_order:
+        if pid not in param_sizes:
+            raise KeyError(
+                f"exec_order references unknown param {pid!r}; "
+                "not present in model.named_parameters()"
+            )
+
     placed: set[ParamId] = set()
     pid_owner = _validate_block_spans(block_spans, param_sizes)
     pid_to_block: dict[ParamId, BlockId | None] = {

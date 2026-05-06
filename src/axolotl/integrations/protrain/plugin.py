@@ -337,7 +337,11 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         world=world_size,
     )
     try:
-        save_cached_trace(new_key, new_trace)
+        save_cached_trace(
+            new_key,
+            new_trace,
+            cache_dir=getattr(wrapped, "_cache_dir", None),
+        )
     except OSError as exc:
         LOG.warning(
             "ProTrain: failed to persist updated trace to cache (%s); "

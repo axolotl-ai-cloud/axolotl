@@ -282,41 +282,49 @@ class PinnedHostMemory:
             # region's bytes into it once at construction so any
             # caller-visible state stays consistent.
             #
-            # IMPORTANT: keep ``self._ptr`` and the cudaHostAlloc
-            # ownership unchanged — ``close()`` / ``__del__`` still free
-            # the region via ``cudaFreeHost``. The torch tensor below is
-            # a parallel torch-owned view used only for the data path;
-            # the cudaHostAlloc region stays live for as long as the
-            # PinnedHostMemory does (held by ``frombuffer_tensor``'s
-            # reference, kept alive via ``self._cudart_view``).
-            #
-            # Memory cost: this doubles the host-side footprint for the
-            # buffer pool (two pinned regions of ``total_bytes`` each).
-            # The fallback only triggers when the runtime can't expose
-            # the cudaHostAlloc region as pinned to torch — once that's
-            # fixed upstream, the recognised path above kicks in and
-            # there's no double allocation.
+            # The cudaHostAlloc region is now redundant — ``torch_pinned``
+            # owns the only host buffer the data path will ever touch. We
+            # used to keep the cudaHostAlloc region alive for the lifetime
+            # of the allocator (anchored via ``self._cudart_view`` =
+            # ``frombuffer_tensor``), which doubled the host-side pinned
+            # footprint forever. Instead, after copying the (zero-filled)
+            # bytes into ``torch_pinned``, drop the ctypes view, free the
+            # cudaHostAlloc region with ``cudaFreeHost``, and clear
+            # ``self._ptr`` / ``self._cudart`` so ``close()`` / ``__del__``
+            # know there's nothing left to free. ``torch_pinned`` becomes
+            # the sole owner of the host pinned buffer.
             LOG.warning(
                 "PinnedHostMemory: torch.frombuffer view of the "
                 "cudaHostAlloc'd region reports is_pinned()=False on "
                 "this PyTorch build. Allocating a parallel "
                 "torch.empty(pin_memory=True) buffer so non_blocking "
-                "H2D copies actually overlap; doubles host-side pinned "
-                "footprint until upstream propagates the pin flag "
-                "through the buffer protocol."
+                "H2D copies actually overlap, then freeing the original "
+                "cudaHostAlloc region so host-side pinned footprint "
+                "stays single-counted."
             )
             torch_pinned = torch.empty(
                 self.total_bytes, dtype=torch.uint8, pin_memory=True
             )
             torch_pinned.copy_(frombuffer_tensor)
-            # Retain a reference to ``frombuffer_tensor`` so the ctypes
-            # buffer it views isn't GC'd while the cudaHostAlloc region
-            # is still owned by us — the region itself is freed by
-            # ``close()`` / ``__del__`` via ``cudaFreeHost``, but
-            # dropping the only Python reference to ``frombuffer_tensor``
-            # could let CPython release the underlying ctypes array
-            # earlier than expected. Cheap (one tensor object).
-            self._cudart_view = frombuffer_tensor
+            # Drop the ctypes-backed torch view first so its buffer-
+            # protocol reference releases before ``cudaFreeHost`` tears
+            # down the underlying region.
+            del frombuffer_tensor
+            del buf
+            free_status = cudart.cudaFreeHost(ctypes.c_void_p(self._ptr))
+            if free_status != _CUDA_SUCCESS:
+                LOG.warning(
+                    "cudaFreeHost (post-fallback handover) returned status=%d; "
+                    "leaking the original cudaHostAlloc region",
+                    free_status,
+                )
+            # Sentinel state: ``_ptr == 0`` and ``_cudart is None`` tell
+            # ``close()`` / ``__del__`` the cudaHostAlloc region has
+            # already been released so they must NOT call ``cudaFreeHost``
+            # on a stale address.
+            self._ptr = 0
+            self._cudart = None
+            self._cudart_view = None
             self._torch_tensor = torch_pinned
             # ``buffer()`` now returns slice views of ``torch_pinned``,
             # which IS recognised as pinned by torch — surface that to

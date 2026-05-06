@@ -63,8 +63,8 @@ plugins:
 
 # -- ProTrain knobs (see axolotl.integrations.protrain.args.ProTrainArgs) --
 protrain_auto_memory: true
-# Leave auto-mode on (default); the plugin picks the right mode.
-# protrain_auto_mode: true   # default — the selector handles it
+# Keep explicit for reproducibility across future default changes.
+protrain_auto_mode: true
 # protrain_force_all_persistent: true   # explicit override (only honoured when protrain_auto_mode=false)
 
 gradient_accumulation_steps: 1

@@ -208,12 +208,21 @@ class OnDemandTensorMgr:
             # target is CUDA".
             if target_device is not None and target_device.type == "cuda":
                 for buffer_name, buffer in self.model.named_buffers():
-                    if getattr(buffer.device, "type", None) == "cpu":
+                    # Strict device equality (not just CPU vs CUDA) so a
+                    # buffer pinned to a DIFFERENT CUDA index than the
+                    # target (e.g. caller dispatches to ``cuda:0`` but
+                    # ``register_buffer`` left this one on ``cuda:1``)
+                    # also fails fast — otherwise the device mismatch
+                    # would surface deep inside a forward kernel as an
+                    # opaque "expected all tensors to be on the same
+                    # device" runtime error.
+                    if getattr(buffer, "device", None) != target_device:
                         raise RuntimeError(
-                            f"OnDemandTensorMgr does not gather CPU buffer "
-                            f"{buffer_name!r}. Move buffers to the target "
-                            f"device or extend the spill hooks to cover "
-                            f"buffers."
+                            f"OnDemandTensorMgr: buffer {buffer_name!r} on "
+                            f"{getattr(buffer, 'device', None)!r} is not on "
+                            f"target_device {target_device!r}. Move the buffer "
+                            "to the target device or extend the spill hooks "
+                            "to cover buffers."
                         )
 
             for sub in self.model.modules():

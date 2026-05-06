@@ -242,8 +242,19 @@ def _block_compute_time(trace: ProfilerTrace, block_id: BlockId) -> float:
 def _fwd_compute_time_from_trace(
     trace: ProfilerTrace,
     cfg: CostConfig | None = None,
-) -> tuple[float, dict[BlockId, float], bool]:
-    """Return (total_fwd_compute_s, per_block_compute_s, used_measured).
+) -> tuple[float, dict[BlockId, float], bool, float]:
+    """Return (total_fwd_compute_s, per_block_compute_s, used_measured, fwd_compute_base_s).
+
+    The 4-tuple's last element ``fwd_compute_base_s`` is the un-overridden
+    per-op-derived forward total — i.e., ``total`` BEFORE any phase-2
+    chunked-wall override on path 1 below is applied.
+    :func:`_bwd_compute_time_from_trace` consumes this as the fallback
+    baseline when its phase-2 path is unavailable: multiplying the
+    chunked wall by a per-op ratio is physically wrong (the chunked wall
+    already bakes in PCIe round-trip overhead the ratio doesn't model),
+    so the bwd fallback reads this pre-override baseline instead.
+    On the pure-roofline fallback (no measured ``op_latencies``) the
+    base equals the returned roofline total.
 
     Preference order (highest first):
 

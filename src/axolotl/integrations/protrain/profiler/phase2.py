@@ -376,9 +376,29 @@ def measure_chunked_steady(
             # ``Optimizer.load_state_dict`` casts the loaded state
             # back to each parameter's device at restore time, so a
             # CPU snapshot round-trips faithfully.
-            optim_state = _clone_state_dict(
-                optimizer.state_dict(), target_device=torch.device("cpu")
-            )
+            #
+            # ProTrain's ``_ProTrainOptimizer.state_dict`` is a hollow
+            # ``{"state": {}, "param_groups": [...]}`` shell BY DESIGN
+            # (CHECKPOINT_DESIGN.md §1.7 Option P): Accelerate's
+            # ``prepare`` round-trips the snapshot through
+            # ``move_to_device`` and a full snapshot would push every
+            # CPU FusedAdam moment to GPU. The hollow shell makes the
+            # public ``load_state_dict`` a no-op too — so the rollback
+            # below would silently leak any moments the timed loop
+            # mutated. Use the non-public snapshot/restore pair the
+            # ProTrain wrapper exposes specifically for this consumer
+            # (it walks the inner FusedAdam adapters directly). The
+            # ``hasattr`` guard preserves stock-torch-optimizer
+            # compatibility for non-ProTrain measurement paths.
+            if hasattr(optimizer, "_protrain_snapshot_inner_state"):
+                optim_state = _clone_state_dict(
+                    optimizer._protrain_snapshot_inner_state(),
+                    target_device=torch.device("cpu"),
+                )
+            else:
+                optim_state = _clone_state_dict(
+                    optimizer.state_dict(), target_device=torch.device("cpu")
+                )
             # Start from a clean grad state so leftover grads from
             # prior trace work (e.g. the phase-1 profile pass) cannot
             # pollute the first warmup step's peak-memory and timing
@@ -453,7 +473,15 @@ def measure_chunked_steady(
             if model_state is not None:
                 model.load_state_dict(model_state)
             if optim_state is not None:
-                optimizer.load_state_dict(optim_state)
+                # Mirror the snapshot path: route through the
+                # ProTrain non-public restore helper when present so
+                # the inner FusedAdam adapters actually receive the
+                # moments back (the public ``load_state_dict`` is a
+                # no-op by design — see the snapshot block above).
+                if hasattr(optimizer, "_protrain_restore_inner_state"):
+                    optimizer._protrain_restore_inner_state(optim_state)
+                else:
+                    optimizer.load_state_dict(optim_state)
                 optimizer.zero_grad(set_to_none=True)
             torch.cuda.synchronize(device)
             # Restore RNG state + training flag AFTER the parameter /

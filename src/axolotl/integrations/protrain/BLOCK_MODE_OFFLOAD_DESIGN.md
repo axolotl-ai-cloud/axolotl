@@ -609,8 +609,12 @@ What we may want to ADD as telemetry-only (no cost-model effect):
 
 * **`test_admissibility_under_offload_rule`** — pure function test
   for the updated `block_map_runtime_admissible`. Covers all 4×3
-  cells (chunk-persistence × block-mode); verifies new OFFLOAD cell
-  passes admissibility and SWAP-on-non-persistent still rejects.
+  cells (chunk-persistence × block-mode); verifies the new
+  OFFLOAD-on-non-persistent cell passes admissibility, that
+  SWAP-on-non-persistent is now also legal (post the §§1.3 / 3.5 /
+  6.6 SWAP × non-persistent lift — saved tensors live in a
+  pinned-CPU pool decoupled from `param.data`), and that
+  NONE-on-non-persistent remains rejected.
 
 * **`test_assign_modes_with_offload`** — extend
   `tests/protrain/block/test_layout_rules.py`. Verify the new

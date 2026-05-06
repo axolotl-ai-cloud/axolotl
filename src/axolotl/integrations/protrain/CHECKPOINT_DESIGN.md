@@ -307,8 +307,8 @@ which the plugin wraps via monkey-patch in `post_trainer_create`
 
 ```text
 1. Read metadata.json. Validate format_version == 1.
-2. Validate world_size == 1 (Phase 1 single-rank guard). Else error.
-3. Validate zero3_shard == False. Else error.
+2. Validate protrain_world_size == 1 (Phase 1 single-rank guard). Else error.
+3. Validate protrain_zero3_shard == False. Else error.
 4. Compare persistent_ids against the current run's effective set:
    - If different AND Option A in effect (§8.1): hard error,
      suggest passing the saved set as override.

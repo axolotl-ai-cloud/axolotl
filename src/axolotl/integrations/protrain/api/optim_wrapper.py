@@ -216,6 +216,72 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         """
         return None
 
+    # ---- non-public snapshot of the REAL inner adapter state ------------
+    #
+    # The public ``state_dict``/``load_state_dict`` above are intentionally
+    # hollow: HF Trainer + Accelerate's ``prepare`` round-trips the
+    # optimizer state through ``move_to_device(state_dict, gpu)``, and a
+    # full snapshot would silently push every CPU FusedAdam moment tensor
+    # to the GPU, ballooning HBM (CHECKPOINT_DESIGN.md §1.7 Option P).
+    #
+    # Phase-2 measurement also needs to roll back optimizer state across a
+    # timed loop, but it neither serializes nor moves devices — it just
+    # captures and restores the moments on the same process. We expose a
+    # private snapshot/restore pair for that consumer; callers that don't
+    # know about it (Accelerate, Trainer) keep getting the hollow shell.
+    def _protrain_snapshot_inner_state(self) -> dict[str, Any]:
+        """Snapshot the REAL inner adapter state (not the hollow public shell).
+
+        Captures the underlying ``torch.optim.Optimizer.state_dict()`` of
+        each adapter's wrapped optimizer:
+
+        * ``"gpu"`` — ``self._gpu_optim._optim.state_dict()`` for the
+          persistent-chunk FusedAdam, or ``None`` when there is no GPU
+          adapter (or its inner optim is itself ``None`` for an empty
+          persistent set).
+        * ``"cpu_per_chunk"`` — mapping ``ChunkId -> state_dict`` for each
+          per-chunk DeepSpeedCPUAdam in ``self._cpu_optim._optims``.
+
+        Intended for the phase-2 profiler's snapshot-and-rollback path
+        (see ``profiler/phase2.py::measure_chunked_steady``); the public
+        ``state_dict`` MUST stay hollow for the Accelerate
+        ``move_to_device`` round-trip.
+        """
+        gpu_state: dict[str, Any] | None = None
+        if self._gpu_optim is not None:
+            inner = self._gpu_optim._optim
+            if inner is not None:
+                gpu_state = inner.state_dict()
+        cpu_state_per_chunk: dict[ChunkId, dict[str, Any]] = {}
+        if self._cpu_optim is not None:
+            for cid, inner in self._cpu_optim._optims.items():
+                cpu_state_per_chunk[cid] = inner.state_dict()
+        return {"gpu": gpu_state, "cpu_per_chunk": cpu_state_per_chunk}
+
+    def _protrain_restore_inner_state(self, snapshot: dict[str, Any]) -> None:
+        """Restore inner-adapter state previously captured by the snapshot helper.
+
+        Companion to :meth:`_protrain_snapshot_inner_state`. Calls
+        ``load_state_dict`` on each inner ``torch.optim.Optimizer`` —
+        unlike the public ``load_state_dict`` (which is a no-op so
+        Accelerate's ``prepare``-time payload round-trips harmlessly),
+        this routes the captured moments back into the adapters that
+        actually own training state.
+        """
+        gpu_state = snapshot.get("gpu")
+        if (
+            gpu_state is not None
+            and self._gpu_optim is not None
+            and self._gpu_optim._optim is not None
+        ):
+            self._gpu_optim._optim.load_state_dict(gpu_state)
+        cpu_state_per_chunk = snapshot.get("cpu_per_chunk") or {}
+        if self._cpu_optim is not None and cpu_state_per_chunk:
+            for cid, inner in self._cpu_optim._optims.items():
+                inner_state = cpu_state_per_chunk.get(cid)
+                if inner_state is not None:
+                    inner.load_state_dict(inner_state)
+
 
 # HF Trainer's ``get_decay_parameter_names`` excludes bias and norm-layer
 # parameters from weight decay by default; if we collapse everything into

@@ -473,13 +473,26 @@ def estimate_cpu_footprint(
     # ``len(mandatory_persistent) * S_chunk``.
     n_persist_eff = len(layout.effective_persistent_ids(cfg.n_persist))
     non_persist = max(0, layout.N_chunk - n_persist_eff)
-    # Under sharding each rank holds 1/gpu_count of each chunk. Ceiling
-    # division is applied PER CHUNK so small chunks don't underreport
-    # when ``S_chunk`` isn't divisible by ``gpu_count`` — summing
-    # ``total_bytes`` first and dividing once would round only at the
-    # aggregate, undercounting the trailing-rank padding by up to
-    # ``non_persist - 1`` bytes.
-    per_rank_divisor = hw.gpu_count if hw.zero3_shard else 1
+    # Under sharding each rank holds 1/world of each chunk — ZeRO-3
+    # partitions across the FULL distributed world, not just the GPUs
+    # on the local node. ``hw.gpu_count`` is the LOCAL device count
+    # (typically the GPUs on this node) and would under-divide the
+    # per-rank shard in any multi-node config, materially overstating
+    # the per-rank pinned CPU footprint and pessimizing the searcher's
+    # feasibility gate. ``trace.world`` is the world size recorded at
+    # profile time (resolved from ``torch.distributed`` if initialized,
+    # else 1), which is the correct partitioning denominator. Fall
+    # back to ``hw.gpu_count`` when no trace is supplied — that path
+    # is single-node by construction (the trace-less callers are pre-
+    # search ballparks). Ceiling division is applied PER CHUNK so
+    # small chunks don't underreport when ``S_chunk`` isn't divisible
+    # by ``per_rank_divisor`` — summing ``total_bytes`` first and
+    # dividing once would round only at the aggregate, undercounting
+    # the trailing-rank padding by up to ``non_persist - 1`` bytes.
+    if hw.zero3_shard:
+        per_rank_divisor = trace.world if trace is not None else hw.gpu_count
+    else:
+        per_rank_divisor = 1
     per_rank_divisor = max(1, per_rank_divisor)
     per_chunk_sharded = (layout.S_chunk + per_rank_divisor - 1) // per_rank_divisor
     chunk_term = non_persist * per_chunk_sharded

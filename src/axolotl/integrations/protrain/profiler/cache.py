@@ -172,15 +172,27 @@ class ProfilerCacheKey:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _cache_root() -> Path:
-    """Resolve ``$XDG_CACHE_HOME/protrain/profiler`` or ``~/.cache/protrain/profiler``."""
+def _cache_root(cache_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Resolve the profiler cache root.
+
+    When ``cache_dir`` is provided (non-None) it wins over the XDG fallback,
+    so users can override via ``protrain_cache_dir`` in YAML / the wrapper
+    kwarg without having to mutate ``XDG_CACHE_HOME`` globally. When None,
+    falls back to ``$XDG_CACHE_HOME/protrain/profiler`` or
+    ``~/.cache/protrain/profiler``.
+    """
+    if cache_dir is not None:
+        return Path(cache_dir) / _CACHE_SUBDIR
     xdg = os.environ.get("XDG_CACHE_HOME")
     base = Path(xdg) if xdg else Path.home() / ".cache"
     return base / _CACHE_SUBDIR
 
 
-def _path_for(key: ProfilerCacheKey) -> Path:
-    return _cache_root() / f"{key.fingerprint()}.json"
+def _path_for(
+    key: ProfilerCacheKey,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    return _cache_root(cache_dir) / f"{key.fingerprint()}.json"
 
 
 # ---------------------------------------------------------------------------
@@ -379,9 +391,16 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     )
 
 
-def load_cached_trace(key: ProfilerCacheKey) -> ProfilerTrace | None:
-    """Load a previously-saved trace, or ``None`` if the key misses."""
-    path = _path_for(key)
+def load_cached_trace(
+    key: ProfilerCacheKey,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> ProfilerTrace | None:
+    """Load a previously-saved trace, or ``None`` if the key misses.
+
+    ``cache_dir`` overrides the XDG fallback when provided; see
+    :func:`_cache_root` for resolution semantics.
+    """
+    path = _path_for(key, cache_dir)
     if not path.exists():
         return None
     try:
@@ -423,11 +442,19 @@ def load_cached_trace(key: ProfilerCacheKey) -> ProfilerTrace | None:
         return None
 
 
-def save_cached_trace(key: ProfilerCacheKey, trace: ProfilerTrace) -> Path:
-    """Persist ``trace`` under ``key``. Returns the on-disk path."""
-    root = _cache_root()
+def save_cached_trace(
+    key: ProfilerCacheKey,
+    trace: ProfilerTrace,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Persist ``trace`` under ``key``. Returns the on-disk path.
+
+    ``cache_dir`` overrides the XDG fallback when provided; see
+    :func:`_cache_root` for resolution semantics.
+    """
+    root = _cache_root(cache_dir)
     root.mkdir(parents=True, exist_ok=True)
-    path = _path_for(key)
+    path = _path_for(key, cache_dir)
     data = _trace_to_dict(trace)
     # Per-rank unique temp via mkstemp(dir=path.parent) so two ranks racing
     # on the same key can't clobber each other's in-flight writes; os.replace
