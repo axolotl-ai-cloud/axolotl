@@ -57,7 +57,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import re
 import shutil
@@ -111,7 +110,15 @@ def _layout_signature_from_fingerprint(fingerprint: dict[str, Any]) -> str:
 
 
 def _padded_region_bytes(region_bytes: int, elem_size: int, world_size: int) -> int:
-    """``ceil(region_bytes / lcm(elem_size, world_size)) * lcm(...)``.
+    """Pad ``region_bytes`` so each rank owns a whole number of elements.
+
+    Computes the element count first (``ceil(region_bytes / elem_size)``),
+    rounds it up to a multiple of ``world_size`` so per-rank shards are
+    element-aligned, then converts back to bytes. The previous formulation
+    padded directly in bytes via ``lcm(elem_size, world_size)``, which can
+    produce sizes that don't align to whole elements per rank when
+    ``gcd(elem_size, world_size) > 1`` (e.g. elem_size=4, world_size=8:
+    pad_unit=8 bytes splits into 1-byte shards, half an element each).
 
     Mirrors the formula in ``ChunkManager.materialize_offload`` (chunk/
     manager.py around the ``region_plans`` block). Must stay
@@ -119,8 +126,9 @@ def _padded_region_bytes(region_bytes: int, elem_size: int, world_size: int) -> 
     against the runtime's ``region_bytes_padded`` and any drift would
     trip the regions_per_chunk validation.
     """
-    pad_unit = (elem_size * world_size) // math.gcd(elem_size, world_size)
-    return ((region_bytes + pad_unit - 1) // pad_unit) * pad_unit
+    elem_count = (region_bytes + elem_size - 1) // elem_size
+    padded_elems = ((elem_count + world_size - 1) // world_size) * world_size
+    return padded_elems * elem_size
 
 
 def _reshard_region_state(

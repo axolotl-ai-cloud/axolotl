@@ -112,29 +112,21 @@ def pick_S_chunk(
         )
     candidates = positive
 
-    # Prefer candidates that can hold the largest single param tensor
-    # natively (S_chunk >= max_param_bytes): for such candidates,
-    # ``_simulate_waste`` accurately reflects fragmentation. For smaller
-    # candidates, any chunk whose sole occupant overflows ``S_chunk``
-    # would contribute *zero* waste under the heuristic and could let a
-    # too-small candidate win on a tie despite producing more chunks.
-    # However, ``build_layout`` *does* support placing an oversize tensor
-    # in its own chunk without splitting (see ``layout.py``: "A single
-    # param larger than ``S_chunk`` is placed on its own in a fresh
-    # chunk"). So if every candidate is smaller than the largest tensor
-    # (e.g. an LLM with a >256 MiB embedding under the default 32–256
-    # MiB grid), fall back to picking the *largest* candidate rather
-    # than raising — that minimizes the number of single-tensor overflow
-    # chunks while keeping the layout legal. The exact-simulation path
-    # naturally handles oversize-tensor chunks (the ``max(0, ...)`` clamp
-    # in ``_simulate_waste`` prevents the negative-slack credit that would
-    # otherwise let an undersized candidate win), so this filter remains
-    # a soft preference rather than a hard requirement.
+    # ``build_layout`` supports placing an oversize tensor in its own
+    # chunk without splitting (see ``layout.py``: "A single param larger
+    # than ``S_chunk`` is placed on its own in a fresh chunk"), and
+    # ``_simulate_waste`` already models that path correctly: the
+    # ``max(0, S_chunk - bytes_used)`` clamp prevents an oversize chunk
+    # from crediting a too-small candidate with negative waste. With the
+    # clamp in place, smaller candidates remain legal members of the
+    # search and the simulator's tie-break (prefer larger S at equal
+    # waste) handles preference cleanly. We therefore keep ALL positive
+    # candidates in the search and only fall back to ``(max(candidates),)``
+    # when every candidate is smaller than the largest tensor — that
+    # fallback minimizes the single-tensor overflow chunk count while
+    # keeping the layout legal.
     max_param_bytes = max(sizes_in_order, default=0)
-    feasible = tuple(S for S in candidates if S >= max_param_bytes)
-    if feasible:
-        candidates = feasible
-    else:
+    if max_param_bytes > 0 and not any(S >= max_param_bytes for S in candidates):
         LOG.debug(
             "pick_S_chunk: no candidate >= max param tensor size (%d B); "
             "falling back to the largest grid entry to minimize the "

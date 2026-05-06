@@ -1,6 +1,6 @@
 ## Purpose
 
-This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 5-axis cost model (`n_persist`, `n_buffer`, `n_swap`, `n_checkpoint`, `n_offload` — the OFFLOAD axis was added by Option B / `BLOCK_MODE_OFFLOAD_DESIGN.md`), and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation is opt-in via `plugins: [axolotl.integrations.protrain.ProTrainPlugin]` in the user YAML (the only spelling the pydantic validator in `args.py` accepts — see `_PROTRAIN_PLUGIN_KEYS`); mutual exclusion with `deepspeed:` and `fsdp:` is enforced by the same validator.
+This package is a from-scratch Python implementation of the ProTrain memory manager (MLSys 2026, arXiv 2406.08334), shipped as an **Axolotl plugin** (`BasePlugin` subclass). It owns per-rank memory policy on top of ZeRO-3: hierarchical chunk management for model states (params / grads / optim states), interleaved block management for activations, a memory-aware profiler, a 5-axis cost model (`n_persist`, `n_buffer`, `n_swap`, `n_checkpoint`, `n_offload` — the OFFLOAD axis was added by Option B / `BLOCK_MODE_OFFLOAD_DESIGN.md`), and an automatic searcher. It does NOT own data parallelism collectives (delegates to `torch.distributed`), training-loop control flow, trainer orchestration, TP/PP, FP8, or any changes to Axolotl core files. Activation requires BOTH `plugins: [axolotl.integrations.protrain.ProTrainPlugin]` in the user YAML (the only spelling the pydantic validator in `args.py` accepts — see `_PROTRAIN_PLUGIN_KEYS`) AND `protrain_auto_memory: true` (default `false` in `ProTrainArgs`); listing the plugin alone registers the args schema but leaves the runtime hooks dormant, so a config that omits `protrain_auto_memory: true` is a no-op. Mutual exclusion with `deepspeed:` and `fsdp:` is enforced by the same validator.
 
 ## Workstream-shape ratifications (drift from `plan.md`)
 
@@ -77,8 +77,8 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 
 ### args.py (M5)
 
-- `class ProTrainArgs(BaseModel)` — fields: `protrain_auto_memory: bool = True`, optional manual knob overrides `protrain_n_persist / n_buffer / n_swap / n_checkpoint` for debugging, `protrain_cache_dir: Path | None`.
-- `model_validator` — rejects `plugins: [...protrain...]` + (`deepspeed` set) or (`fsdp` / `fsdp_config` set). Pattern cloned from `integrations/spectrum/args.py:32-47`.
+- `class ProTrainArgs(BaseModel)` — fields: `protrain_auto_memory: bool = False` (master enable; the plugin's `post_model_load` / `post_trainer_create` hooks early-return when this is `False`, so listing the plugin alone is a no-op until the user explicitly opts in), optional manual knob overrides `protrain_n_persist / n_buffer / n_swap / n_checkpoint` for debugging, `protrain_cache_dir: Path | None`.
+- `model_validator` — enforces the dual gate (the plugin must be listed AND `protrain_auto_memory: true` must be set for runtime activation) and rejects `plugins: [...protrain...]` + `protrain_auto_memory: true` + (`deepspeed` set) or (`fsdp` / `fsdp_config` set). Pattern cloned from `integrations/spectrum/args.py:32-47`.
 
 ### profiler/ (M1)
 

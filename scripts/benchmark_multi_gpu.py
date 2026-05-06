@@ -422,7 +422,7 @@ def _launch_mode(
     script_path.write_text(_WORKER_SCRIPT)
     log_path = work_dir / f"worker_{mode}.log"
     with log_path.open("w") as log_f:
-        proc = subprocess.Popen(  # nosec B603
+        proc = subprocess.Popen(  # nosec B603  # noqa: S603
             [sys.executable, str(script_path)],
             env=env,
             stdout=log_f,

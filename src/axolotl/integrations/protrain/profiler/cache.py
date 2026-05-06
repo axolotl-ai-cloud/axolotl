@@ -279,6 +279,7 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         },
         "compute_rate_tflops": float(trace.compute_rate_tflops),
         "trainable_param_fraction": float(trace.trainable_param_fraction),
+        "steady_fwd_chunked_wall_s": float(trace.steady_fwd_chunked_wall_s),
         "steady_bwd_chunked_wall_s": float(trace.steady_bwd_chunked_wall_s),
         "steady_step_overlap_s": float(trace.steady_step_overlap_s),
         "steady_phase2_peak_bytes": int(trace.steady_phase2_peak_bytes),

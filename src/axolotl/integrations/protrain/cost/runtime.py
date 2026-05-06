@@ -1091,12 +1091,19 @@ def estimate_runtime(
         # (already evaluated at the chunk's per-chunk effective
         # bandwidth above).
         n_cached = min(n_buffer, n_nonpersist)
-        # Cached chunks are the LAST ``n_cached`` non-persistent chunks
-        # (chunks ``[N_chunk - n_cached, N_chunk)``). This matches the
-        # buffer pool's LRU residency invariant: the most-recently-used
-        # chunks at the end of forward are the ones still resident
-        # when backward starts walking blocks in reverse.
-        cached_threshold = layout.N_chunk - n_cached
+        # Cached chunks are the LAST ``n_cached`` entries of
+        # ``nonpersist_chunk_ids`` (the most-recently-used non-persistent
+        # chunks at the end of forward — the ones still resident when
+        # backward starts walking blocks in reverse). After Wave 2 P4
+        # ``nonpersist_chunk_ids`` may have HOLES (e.g. ``[1, 4, 5]`` if
+        # ``mandatory_persistent={2, 3}`` and ``n_persist=1``), so the
+        # cached set is NOT simply ``cid >= N_chunk - n_cached`` — that
+        # check would mis-identify which chunks are buffer-cached when
+        # the augmented persistent set is non-contiguous. Take the suffix
+        # of ``nonpersist_chunk_ids`` directly.
+        cached_ids: set[int] = (
+            set(nonpersist_chunk_ids[-n_cached:]) if n_cached > 0 else set()
+        )
 
         # Persistent chunks: paper Eq. 6 first branch — only the
         # reduce-scatter collective contributes to comm (no gather, no
@@ -1109,7 +1116,7 @@ def estimate_runtime(
         )
         t_bwd_nonpersistent_chunks = 0.0
         for cid in nonpersist_chunk_ids:
-            if cid >= cached_threshold:
+            if cid in cached_ids:
                 comm = t_bwd_comm_per_chunk_cached[cid]
             else:
                 comm = t_bwd_comm_per_chunk_uncached[cid]

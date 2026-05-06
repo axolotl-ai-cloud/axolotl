@@ -703,8 +703,6 @@ class ChunkManager:
             )
             return 0
 
-        import math as _math
-
         import torch
 
         from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
@@ -884,12 +882,20 @@ class ChunkManager:
                     trainable_r,
                 ) in dtype_regions:
                     region_bytes = end_off - start_off
-                    pad_unit = (esize_r * self.world_size) // _math.gcd(
-                        esize_r, self.world_size
-                    )
-                    region_bytes_padded = (
-                        (region_bytes + pad_unit - 1) // pad_unit
-                    ) * pad_unit
+                    # Pad in element space so each rank owns a whole
+                    # number of elements. The previous formula padded in
+                    # bytes via ``lcm(esize, world_size)``, which split
+                    # mid-element when ``gcd(esize, world_size) > 1``
+                    # (e.g. esize=4, world_size=8 → pad_unit=8 bytes,
+                    # 1 byte/rank = ½ element). Must stay byte-compatible
+                    # with ``api/reshard.py::_padded_region_bytes``: the
+                    # loader's regions_per_chunk match recomputes this and
+                    # any drift trips the layout-signature check.
+                    elem_count = (region_bytes + esize_r - 1) // esize_r
+                    padded_elems = (
+                        (elem_count + self.world_size - 1) // self.world_size
+                    ) * self.world_size
+                    region_bytes_padded = padded_elems * esize_r
                     shard_bytes_r = region_bytes_padded // self.world_size
                     region_plans.append(
                         {

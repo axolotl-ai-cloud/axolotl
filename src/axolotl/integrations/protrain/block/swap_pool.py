@@ -296,8 +296,16 @@ class ActivationSwapPool:
             Sleep interval (seconds) between drain-counter checks.
         """
         with self._lock:
-            if self._closed or self._closing:
+            if self._closed:
                 return
+            if self._closing:
+                # A concurrent ``close()`` is mid-drain. Surface the race
+                # rather than silently no-op'ing — the caller can decide
+                # whether to retry, await the in-flight close via its own
+                # synchronization, or treat it as an error.
+                raise RuntimeError(
+                    "ActivationSwapPool.close: close in progress on another thread"
+                )
             # Block new acquires BEFORE we drop the lock for the drain
             # wait + (potentially slow) ``_pinned.close()`` call.
             self._closing = True
@@ -342,7 +350,11 @@ class ActivationSwapPool:
 
     def __del__(self) -> None:  # noqa: D401
         try:
-            self.close()
+            # Best-effort non-blocking cleanup. ``__del__`` runs during GC
+            # / interpreter teardown where blocking on a 30s drain would
+            # stall shutdown; explicit ``close()`` callers still get the
+            # full ``DEFAULT_CLOSE_DRAIN_TIMEOUT_S`` default.
+            self.close(drain_timeout=0)
         except Exception:  # noqa: BLE001 — destructor must not throw
             pass
 

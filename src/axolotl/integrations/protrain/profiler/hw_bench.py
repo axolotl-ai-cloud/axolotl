@@ -306,35 +306,61 @@ def measure_gpu_adam(
     )
     param.grad = torch.randn(n_params, dtype=torch.float16, device=device)
 
-    optim = None
-    try:
+    # Try each backend candidate in priority order. A backend is selected
+    # only if BOTH construction AND warmup succeed, so a runtime-bad
+    # backend (e.g. fused AdamW that builds but explodes on first step
+    # due to GPU/driver mismatch) falls through to the next candidate
+    # rather than poisoning the whole measurement with 0.0.
+    def _try_apex() -> torch.optim.Optimizer:
         from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
 
-        optim = FusedAdam([param], lr=1e-4)
-        backend = "apex.FusedAdam"
-    except Exception:  # noqa: BLE001 - apex missing OR build mismatch
-        pass
+        return FusedAdam([param], lr=1e-4)
+
+    def _try_torch_fused() -> torch.optim.Optimizer:
+        # torch.optim.FusedAdam is a nightly-only alias; the stable
+        # name is AdamW with fused=True on CUDA.
+        return torch.optim.AdamW([param], lr=1e-4, fused=True)
+
+    def _try_torch_stock() -> torch.optim.Optimizer:
+        return torch.optim.AdamW([param], lr=1e-4)
+
+    candidates = [
+        ("apex.FusedAdam", _try_apex),
+        ("torch.optim.AdamW(fused=True)", _try_torch_fused),
+        ("torch.optim.AdamW", _try_torch_stock),
+    ]
+
+    optim = None
+    backend = ""
+    for name, build in candidates:
+        try:
+            candidate = build()
+            # Warmup + JIT — must run on the same backend we plan to time.
+            candidate.step()
+            torch.cuda.synchronize(device)
+        except Exception as exc:  # noqa: BLE001 - any failure → next backend
+            LOG.debug(
+                "measure_gpu_adam: backend=%s failed (%s); trying next", name, exc
+            )
+            # Discard the half-initialized optimizer + its state so the
+            # next candidate starts from a clean slate.
+            try:
+                del candidate  # type: ignore[possibly-unused-variable]
+            except UnboundLocalError:
+                pass
+            continue
+        optim = candidate
+        backend = name
+        break
 
     if optim is None:
-        try:
-            # torch.optim.FusedAdam is a nightly-only alias; the stable
-            # name is AdamW with fused=True on CUDA. Try that.
-            optim = torch.optim.AdamW([param], lr=1e-4, fused=True)
-            backend = "torch.optim.AdamW(fused=True)"
-        except (TypeError, RuntimeError):
-            # Older torch, or GPU without fused kernel support.
-            optim = torch.optim.AdamW([param], lr=1e-4)
-            backend = "torch.optim.AdamW"
+        LOG.warning(
+            "measure_gpu_adam: no Adam backend succeeded (apex / fused AdamW / "
+            "stock AdamW all failed); returning 0.0"
+        )
+        return 0.0
 
     LOG.debug("measure_gpu_adam: backend=%s", backend)
-
-    # Warmup + JIT.
-    try:
-        optim.step()
-        torch.cuda.synchronize(device)
-    except Exception as exc:  # noqa: BLE001 - defensive
-        LOG.warning("measure_gpu_adam: warmup step failed (%s); returning 0.0", exc)
-        return 0.0
 
     iter_s: list[float] = []
     # Bind events + record + synchronize to ``device_idx`` so they don't
@@ -639,14 +665,18 @@ def measure_compute_rate(
     device = torch.device(f"cuda:{device_idx}")
     a = torch.randn(matrix_size, matrix_size, dtype=torch.float16, device=device)
     b = torch.randn(matrix_size, matrix_size, dtype=torch.float16, device=device)
+    # Preallocate the output tensor BEFORE the timed loop. ``a @ b``
+    # would allocate a fresh ``c`` every iteration, contaminating the
+    # GEMM timing with allocator overhead — particularly bad when the
+    # caching allocator hits a fragmentation cliff. ``torch.matmul(a, b,
+    # out=c)`` writes into the preallocated buffer with no allocation
+    # on the hot path.
+    c = torch.empty(matrix_size, matrix_size, dtype=torch.float16, device=device)
 
     # Warmup
-    c = None
     for _ in range(n_warmup):
-        c = a @ b
+        torch.matmul(a, b, out=c)
     torch.cuda.synchronize(device)
-    if c is not None:
-        del c
 
     # Timed — bind events + record + synchronize to ``device_idx`` so they
     # don't latch onto a stale ``current_device()`` under multi-GPU / masking.
@@ -656,7 +686,7 @@ def measure_compute_rate(
         end = torch.cuda.Event(enable_timing=True)
         for _ in range(n_iters):
             start.record()
-            c = a @ b
+            torch.matmul(a, b, out=c)
             end.record()
             torch.cuda.synchronize(device)
             iter_s.append(start.elapsed_time(end) / 1000.0)
