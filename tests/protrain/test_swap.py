@@ -1206,7 +1206,15 @@ def test_swap_gate_message_names_invariant_and_remediation(monkeypatch) -> None:
     msg = str(excinfo.value)
     assert "ProTrain SWAP gate" in msg
     assert "n_swap" in msg, "message must suggest n_swap reduction"
-    assert str(handle.nbytes) in msg, "message must surface the byte deficit"
+    # The gate computes ``required_bytes`` from the strided storage extent
+    # (max_offset+1) × itemsize — not ``handle.nbytes`` — because
+    # ``torch.empty_strided`` allocates the full strided buffer. For
+    # shape=(8,) stride=(1,) fp32 that's 8 × 4 = 32 bytes. Assert this
+    # required_bytes value appears so operators see the real deficit.
+    expected_required_bytes = 8 * torch.float32.itemsize
+    assert str(expected_required_bytes) in msg, (
+        "message must surface the byte deficit (required_bytes from strided extent)"
+    )
     assert "safety margin" in msg, "message must surface the safety margin"
 
     pool.close()
