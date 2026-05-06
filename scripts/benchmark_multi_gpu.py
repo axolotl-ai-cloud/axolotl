@@ -31,15 +31,20 @@ Each mode runs 6 iterations; iterations 0..1 are warm-up and discarded;
 the median of iterations 2..5 is used.
 
 Intentional CUDA environment handling:
-    - ``CUDA_VISIBLE_DEVICES=1,4,5,7`` (the 4 unused 3090s on this rig)
+    - ``CUDA_VISIBLE_DEVICES=<four_device_list>`` (any 4 GPUs on the host;
+      e.g. ``0,1,2,3`` or ``1,4,5,7`` for a mixed-SKU rig where you want
+      to pin the run to a specific subset)
     - ``CUDA_DEVICE_ORDER=PCI_BUS_ID`` — propagated into child
       subprocesses because torch's default FASTEST_FIRST re-orders the
-      visible set by SM count on the mixed-SKU test host and would
-      silently route ranks to non-3090 silicon.
+      visible set by SM count on mixed-SKU hosts and would silently route
+      ranks to non-target silicon.
 
 Usage:
-    CUDA_VISIBLE_DEVICES=1,4,5,7 CUDA_DEVICE_ORDER=PCI_BUS_ID \
+    CUDA_VISIBLE_DEVICES=<four_device_list> CUDA_DEVICE_ORDER=PCI_BUS_ID \
         python scripts/benchmark_multi_gpu.py
+
+    Any 4-device CUDA_VISIBLE_DEVICES list works (the script reads the
+    visible-device count at runtime; it does not hard-code device ids).
 
 Writes:
     scripts/multi_gpu_benchmark_results.json

@@ -943,9 +943,12 @@ satisfied prior to the M5 ship listed in the header.
 * **Saved-tensors-hooks** — `torch.autograd.graph.saved_tensors_hooks`
   context manager; a (pack, unpack) pair that intercepts every
   saved tensor inside the context.
-* **`block_map_runtime_admissible`** — current validator in
-  `search/exhaustive.py` that enforces the v1 "non-persistent ⇒ CKPT"
-  rule. Updated by Option B to allow OFFLOAD too.
+* **`block_map_runtime_admissible`** — validator in
+  `search/exhaustive.py`. The v1 historical rule was "non-persistent ⇒
+  CKPT" (only `CKPT` admissible on non-persistent blocks). The shipped
+  rule (see §§1.3, 3.5, 6.6) admits `CKPT`, `OFFLOAD`, **and** `SWAP`
+  on non-persistent blocks, and rejects only `NONE` on non-persistent
+  blocks. Symbols: `block_map_runtime_admissible`, `OFFLOAD`, `SWAP`.
 * **Backward handle** — RAII helper introduced by Option B; bumps a
   refcount on a chunk buffer slot to keep it alive across the
   backward window.

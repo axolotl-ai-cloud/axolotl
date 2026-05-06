@@ -132,6 +132,19 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
+        # Forward LR-scheduler-driven hyperparam updates from the facade's
+        # public ``param_groups`` (which torch ``LRScheduler`` mutates) into
+        # the inner adapters' wrapped torch ``Optimizer.param_groups`` —
+        # they are independent dict objects and would otherwise see stale
+        # values. We only copy keys that already exist on each inner
+        # group so we never invent hyperparams the inner optim doesn't
+        # understand. The facade has exactly one outer group with the
+        # full param list (see ``__init__``), so we use group 0 as the
+        # source of truth. ``GpuFusedAdamAdapter`` exposes its inner via
+        # ``._optim`` (single optimizer); ``CpuFusedAdamAdapter`` keeps
+        # one inner per chunk under ``._optims``.
+        self._forward_hyperparams_to_inner_optims()
+
         # Orphan sweep: ensure every non-persistent chunk has been
         # reduced+offloaded before we wait. See the docstring above for
         # why this is necessary in the sharded path. Replicated/offload
@@ -151,6 +164,43 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # sweep above enqueued the rest).
         self._chunk_manager.wait_cpu_optim_all()
         return loss
+
+    # ---- LR-scheduler hyperparam forwarding -----------------------------
+
+    _FORWARDED_HYPERPARAM_KEYS = ("lr", "betas", "eps", "weight_decay")
+
+    def _forward_hyperparams_to_inner_optims(self) -> None:
+        """Copy facade ``param_groups[0]`` hyperparams to each inner optim.
+
+        ``torch.optim.lr_scheduler.LRScheduler.step()`` mutates
+        ``self.param_groups[i]['lr']`` (and Adam-family schedulers may
+        also touch ``betas`` / ``eps`` / ``weight_decay``) on the
+        outer facade. The inner adapter optimizers
+        (``self._gpu_optim._optim`` and each entry in
+        ``self._cpu_optim._optims``) hold their own ``param_groups``
+        list of dicts and never see those mutations, so without this
+        forwarding step their ``step()`` keeps using the construction-
+        time LR forever. Defensive: we only write keys that already
+        exist on the inner group dict so this never invents new fields
+        the inner optim's update math doesn't read.
+        """
+        if not self.param_groups:
+            return
+        src = self.param_groups[0]
+
+        def _push(inner_optim) -> None:
+            if inner_optim is None:
+                return
+            for inner_group in inner_optim.param_groups:
+                for key in self._FORWARDED_HYPERPARAM_KEYS:
+                    if key in src and key in inner_group:
+                        inner_group[key] = src[key]
+
+        if self._gpu_optim is not None:
+            _push(getattr(self._gpu_optim, "_optim", None))
+        if self._cpu_optim is not None:
+            for inner in getattr(self._cpu_optim, "_optims", {}).values():
+                _push(inner)
 
     def zero_grad(self, set_to_none: bool = True) -> None:  # type: ignore[override]
         """Zero gradients on every adapter and any unrouted param-group entries."""

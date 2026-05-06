@@ -284,12 +284,17 @@ def test_remeasure_splices_nccl_and_keeps_search_result_when_unchanged(
     )
 
 
-def test_remeasure_stashes_post_nccl_result_when_cfg_changes(tmp_path, monkeypatch):
-    """Different cfg post-NCCL: search_result is NOT overwritten — the post-NCCL
-    plan is stashed on ``wrapped.post_nccl_search_result`` for telemetry while
-    ``search_result`` continues to reflect the actually-installed runtime
-    (chunk_manager / scheduler / hooks are wired to the bootstrap config and
-    cannot be rebuilt mid-flight). Per CodeRabbit PR #15 R3190190419.
+def test_remeasure_raises_when_cfg_changes(tmp_path, monkeypatch):
+    """Different cfg post-NCCL: helper raises RuntimeError so training halts.
+
+    Per CodeRabbit PR #19: continuing under the bootstrap plan when the
+    accurate (post-NCCL) search picks a different cfg is a silent
+    correctness drift — the chunk_manager / scheduler / hooks / optimizer
+    state slots are already wired for the bootstrap plan and cannot be
+    rebuilt mid-flight, so we must fail fast and direct the user to fix
+    the early-dist-init path. The post-NCCL plan is still stashed on
+    ``wrapped.post_nccl_search_result`` BEFORE the raise so callers can
+    introspect both plans from the exception's caller.
     """
     pytest.importorskip("torch")
 
@@ -321,18 +326,26 @@ def test_remeasure_stashes_post_nccl_result_when_cfg_changes(tmp_path, monkeypat
     for p in patches:
         p.start()
     try:
-        updated, changed = plugin_mod._remeasure_nccl_and_research(wrapped)
+        with pytest.raises(RuntimeError) as exc_info:
+            plugin_mod._remeasure_nccl_and_research(wrapped)
     finally:
         for p in patches:
             p.stop()
 
-    assert (updated, changed) == (True, True)
+    # The error message must mention both cfgs so callers / tests can
+    # introspect, and point at the early-dist-init fix.
+    msg = str(exc_info.value)
+    assert "late NCCL re-search" in msg
+    assert "bootstrap cfg" in msg
+    assert "post-NCCL cfg" in msg
+    assert "ddp_backend" in msg or "launcher" in msg
     # Live runtime state untouched — search_result/_trace continue to reflect
     # the installed (bootstrap) plan because chunk_manager/scheduler/hooks/
     # optimizer slots cannot be rebuilt mid-flight.
     assert wrapped.search_result is orig_search_result
     assert wrapped.search_result is not different_result
-    # The post-NCCL plan is published on telemetry-only fields.
+    # The post-NCCL plan is published on telemetry-only fields BEFORE the
+    # raise, so post-mortem inspection sees both plans.
     assert getattr(wrapped, "post_nccl_search_result", None) is different_result
     # chunk_manager preserved — the spec is explicit that we must not
     # rebuild it post-research (optimizer state slots are wired into the

@@ -444,8 +444,8 @@ from `tests/protrain/test_chunk_manager_offload.py` for consistency.
 | `test_state_dict_round_trip_with_offload` | Mixed config: both GPU and CPU inner state survive round-trip |
 | `test_save_format_layout_one_file_per_chunk` | Save produces metadata.json + gpu_optim.pt + cpu_optim/chunk_*.pt with the right names |
 | `test_save_uses_map_location_cpu_on_load` | Mock torch.load, verify map_location='cpu' is passed every call |
-| `test_load_rejects_world_size_mismatch` | metadata.world_size=2 with current=1 → RuntimeError |
-| `test_load_rejects_zero3_mismatch` | metadata.zero3_shard=true with current=false → RuntimeError |
+| `test_load_rejects_world_size_mismatch` | metadata.protrain_world_size=2 with current=1 → RuntimeError |
+| `test_load_rejects_zero3_mismatch` | metadata.protrain_zero3_shard=true with current=false → RuntimeError |
 | `test_load_rejects_persistent_ids_mismatch` | metadata.persistent_ids != current effective set → RuntimeError |
 | `test_load_rejects_layout_signature_mismatch` | metadata.layout_signature differs → RuntimeError |
 | `test_load_warns_on_lr_change` | Change lr between save/load → log warning, load succeeds |

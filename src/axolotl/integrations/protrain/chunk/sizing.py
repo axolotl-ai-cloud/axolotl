@@ -99,16 +99,17 @@ def pick_S_chunk(
     if block_spans is None:
         block_spans = {}
 
-    # Drop non-positive candidates up front: _simulate_waste rejects them with
-    # ValueError, and they're never meaningful S_chunk values. Filtering here
-    # keeps the baseline-selection invariant ``candidates[0] > 0`` so we never
-    # hand a zero/negative size to _simulate_waste below.
-    positive = tuple(S for S in candidates if S > 0)
-    if not positive:
+    # Fail-fast on non-positive candidates: zero/negative S_chunk values are
+    # never meaningful (``_simulate_waste`` rejects them with ValueError, and
+    # the baseline-selection invariant ``candidates[0] > 0`` would be violated
+    # silently). Surface them rather than filtering them out so callers
+    # passing a malformed grid see the bug immediately.
+    non_positive = tuple(S for S in candidates if S <= 0)
+    if non_positive:
         raise ValueError(
-            f"candidates must contain at least one positive S_chunk; got {candidates}"
+            "candidates must all be positive S_chunk values; got non-positive "
+            f"entries {non_positive} in {candidates}"
         )
-    candidates = positive
 
     # ``build_layout`` supports placing an oversize tensor in its own
     # chunk without splitting (see ``layout.py``: "A single param larger

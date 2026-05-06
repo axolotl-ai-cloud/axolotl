@@ -309,7 +309,25 @@ class GpuFusedAdamAdapter:
         self._optim = self._build_optim(param_list)
 
     def _build_optim(self, params: list["nn.Parameter"]) -> Any:
-        """Return Apex ``FusedAdam`` if importable, else ``torch.optim.AdamW``."""
+        """Return Apex ``FusedAdam`` if importable and instantiable, else ``torch.optim.AdamW``.
+
+        Both the import and the ``FusedAdam(...)`` instantiation are guarded:
+        a broken Apex install (e.g. CUDA extensions missing) can raise
+        ``RuntimeError``/``AttributeError``/``AssertionError`` from
+        ``__init__`` rather than ``ImportError``. Any failure routes to the
+        torch.optim.AdamW fallback so the wrapper does not crash.
+        """
+        import torch
+
+        def _fallback_adamw() -> Any:
+            return torch.optim.AdamW(
+                params,
+                lr=self.lr,
+                betas=self.betas,
+                eps=self.eps,
+                weight_decay=self.weight_decay,
+            )
+
         try:
             from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
         except ImportError as exc:
@@ -321,24 +339,26 @@ class GpuFusedAdamAdapter:
                 exc_repr,
             )
             del exc
+            return _fallback_adamw()
 
-            import torch
-
-            return torch.optim.AdamW(
+        try:
+            return FusedAdam(
                 params,
                 lr=self.lr,
                 betas=self.betas,
                 eps=self.eps,
                 weight_decay=self.weight_decay,
             )
-
-        return FusedAdam(
-            params,
-            lr=self.lr,
-            betas=self.betas,
-            eps=self.eps,
-            weight_decay=self.weight_decay,
-        )
+        except Exception as exc:  # noqa: BLE001 — apex can raise non-ImportError on broken installs
+            LOG.warning(
+                "apex.optimizers.FusedAdam instantiation failure (%r); "
+                "falling back to torch.optim.AdamW for the persistent-chunk "
+                "optimizer. Install Apex with working CUDA extensions for the "
+                "paper-configured fused kernel.",
+                exc,
+            )
+            del exc
+            return _fallback_adamw()
 
     # ---- step interface -------------------------------------------------
 

@@ -18,6 +18,7 @@ from axolotl.integrations.protrain.profiler.cache import (
     save_cached_trace,
 )
 from axolotl.integrations.protrain.profiler.hw_bench import (
+    measure_compute_rate,
     measure_cpu_adam,
     measure_gpu_adam,
     measure_nccl,
@@ -56,6 +57,7 @@ __all__ = [
     "build_batch",
     "detect_task_type",
     "load_cached_trace",
+    "measure_compute_rate",
     "measure_cpu_adam",
     "measure_gpu_adam",
     "measure_nccl",

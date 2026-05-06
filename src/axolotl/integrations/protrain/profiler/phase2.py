@@ -549,7 +549,9 @@ def estimate_per_block_recompute_s(trace: "ProfilerTrace", n_block: int) -> floa
 
     if n_block <= 0:
         return 0.0
-    t_fwd_total, per_block_compute, _used_measured = _fwd_compute_time_from_trace(trace)
+    t_fwd_total, per_block_compute, _used_measured, _fwd_compute_base = (
+        _fwd_compute_time_from_trace(trace)
+    )
     if per_block_compute:
         # Mean of measured per-block times — this is what the cost
         # model adds per CKPT block via ``per_block_compute.get(bid)``.

@@ -371,32 +371,46 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         # ``dist.init_process_group`` in ``post_model_load``), the late
         # re-search should normally be a no-op: the trace already
         # carries real NCCL tables and the search runs on accurate cost
-        # inputs. Hitting this branch implies either the early init was
-        # skipped (custom backend, single-rank → multi-rank weirdness)
-        # or the late path is plumbed against a different PG. Logged at
-        # DEBUG since it's expected-rare under the new flow; bump to
-        # INFO/WARN locally if you're debugging the late-bind path.
-        LOG.debug(
+        # inputs. Hitting this branch means the accurate NCCL search
+        # picked a different plan than the bootstrap, but the
+        # chunk_manager / scheduler / hooks (and the optimizer state
+        # slots that ride on them) are already wired for the bootstrap
+        # config and cannot be rebuilt mid-flight. Continuing under the
+        # bootstrap plan would silently train under a config the
+        # accurate search no longer endorses (CR PR #19); fail-fast
+        # instead so the user fixes the early-dist-init path. Telemetry
+        # is still stashed so tests / post-mortem inspection can read
+        # both plans off the WrappedModel before the exception unwinds.
+        LOG.warning(
             "ProTrain: post-NCCL search picked a different config than "
             "the bootstrap prediction. cfg %s -> %s; stashing the "
             "post-NCCL plan on WrappedModel.post_nccl_search_result for "
-            "telemetry and LEAVING search_result/_trace untouched so "
-            "they continue to reflect the installed runtime "
-            "(chunk_manager / scheduler / hooks are already wired for "
-            "the bootstrap config; the optimizer state slots ride on "
-            "those, so we cannot rebuild mid-flight). The running step "
-            "uses the bootstrap config; future runs will hit the "
-            "multi-rank cache and pick the new config from the start. "
-            "Reaching this branch suggests early dist init was skipped "
-            "— check cfg.ddp_backend / launcher env.",
+            "telemetry. Reaching this branch suggests early dist init "
+            "was skipped — check cfg.ddp_backend / launcher env.",
             wrapped.search_result.cfg,
             new_result.cfg,
         )
         # Telemetry-only: keep the late-search outputs visible to
-        # callers (tests, dynamic re-tuning) without overwriting the
-        # live runtime contract reported via ``search_result``/``_trace``.
+        # callers (tests, dynamic re-tuning) BEFORE we raise, so the
+        # raised exception's caller can introspect both plans.
         wrapped.post_nccl_search_result = new_result  # type: ignore[attr-defined]
         wrapped.post_nccl_trace = new_trace  # type: ignore[attr-defined]
+        raise RuntimeError(
+            "ProTrain: late NCCL re-search picked a different plan than "
+            "the bootstrap. Continuing would silently train under a "
+            "config the accurate search no longer endorses (the "
+            "chunk_manager / scheduler / hooks / optimizer state slots "
+            "are already wired for the bootstrap plan and cannot be "
+            "rebuilt mid-flight).\n"
+            f"  bootstrap cfg: {wrapped.search_result.cfg}\n"
+            f"  post-NCCL cfg: {new_result.cfg}\n"
+            "Fix: ensure the process group is initialized BEFORE "
+            "``post_model_load`` runs so the bootstrap trace captures "
+            "real NCCL tables (check cfg.ddp_backend and your launcher "
+            "env — torchrun / accelerate launch normally bring the PG "
+            "up early). The post-NCCL plan is stashed on "
+            "``WrappedModel.post_nccl_search_result`` for inspection."
+        )
     else:
         LOG.info(
             "ProTrain: post-NCCL re-run picked the same config; "

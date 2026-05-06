@@ -386,11 +386,15 @@ class ProTrainArgs(BaseModel):
         if not data.get("protrain_auto_memory"):
             return data
         plugins = data.get("plugins") or []
-        # Shape guard: if the user passed a malformed (non-sequence)
+        # Shape guard: if the user passed a malformed (non-iterable)
         # ``plugins`` value, return ``data`` unchanged so Pydantic emits
         # its standard field-type error rather than masking it with a
-        # misleading "missing plugin" ValueError below.
-        if not isinstance(plugins, (list, tuple)):
+        # misleading "missing plugin" ValueError below. The accepted
+        # iterable set mirrors :func:`_has_protrain_plugin` so a
+        # programmatic ``set`` / ``frozenset`` config doesn't return
+        # early here while ``_has_protrain_plugin`` would happily check
+        # it.
+        if not isinstance(plugins, (list, tuple, set, frozenset)):
             return data
         if not _has_protrain_plugin(plugins):
             raise ValueError(

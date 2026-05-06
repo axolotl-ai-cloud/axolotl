@@ -206,7 +206,7 @@ class OnDemandTensorMgr:
             # the spill hooks to cover buffers is tracked separately;
             # until then, the contract is "no CPU-resident buffers when
             # target is CUDA".
-            if target_device is not None and target_device.type == "cuda":
+            if target_device is not None:
                 for buffer_name, buffer in self.model.named_buffers():
                     # Strict device equality (not just CPU vs CUDA) so a
                     # buffer pinned to a DIFFERENT CUDA index than the

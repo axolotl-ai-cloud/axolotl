@@ -1,9 +1,14 @@
 """Gradient-checkpointing wrapper for a single transformer block.
 
-CKPT mode in the ProTrain three-way block strategy (§3.1.2). The wrapper
-defers to ``torch.utils.checkpoint.checkpoint`` with ``use_reentrant=False``
-so activations for the wrapped block are dropped after forward and
+This wrapper implements the **CKPT path only** (it is no longer the
+"three-way" entry point). It defers to
+``torch.utils.checkpoint.checkpoint`` with ``use_reentrant=False`` so
+activations for the wrapped block are dropped after forward and
 recomputed during backward.
+
+The no-recompute equivalent for non-persistent param chunks lives in
+``BlockMode.OFFLOAD`` (see ``block/offload.py``); SWAP/NONE live in
+their own modules. This file is the CKPT wrapper exclusively.
 
 Kwargs handling
 ---------------
