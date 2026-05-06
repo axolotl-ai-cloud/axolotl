@@ -318,9 +318,13 @@ def build_layout(
                 bucket.append(cid)
 
     # Build fast inverse: which block (if any) owns each ParamId.
-    pid_to_block: dict[ParamId, BlockId | None] = {}
-    for pid in exec_order:
-        pid_to_block[pid] = _block_of(pid, block_spans)
+    # ``pid_owner`` was populated above while walking ``block_spans`` and
+    # is the authoritative source — reuse it via ``.get()`` (returns
+    # ``None`` for unaffiliated params) rather than rescanning
+    # ``block_spans`` once per pid.
+    pid_to_block: dict[ParamId, BlockId | None] = {
+        pid: pid_owner.get(pid) for pid in exec_order
+    }
 
     # Pre-compute the exec-order sequence of first occurrences of each block's
     # params. We need this to apply the "pack the whole block together" rule:

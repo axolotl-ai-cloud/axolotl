@@ -221,6 +221,30 @@ class BufferPool:
         Used by the backward pass to detect that forward's buffer was never
         evicted — in which case no H2D re-gather is needed. Returns ``None``
         if the tag has been overwritten by an intervening ``acquire``.
+
+        Lease semantics — IMPORTANT
+        ---------------------------
+        This is a *peek*: it does NOT take a lease on the slot. The returned
+        buffer pointer is only safe to read so long as no other ``acquire``
+        intervenes; if the slot happens to be in the free list (lease==0),
+        the very next ``acquire()`` for a different chunk could evict the
+        tag and overwrite the bytes.
+
+        The current callers honour this by either:
+
+        * immediately calling ``acquire(chunk_id)`` (or ``gather()``, which
+          calls ``acquire`` internally) on the same chunk_id, taking a real
+          lease before any other ``acquire`` can run on the same thread; or
+        * already holding an independent refcount on the chunk via the
+          chunk-manager's ``gather_for_backward`` / ``BackwardHandle``
+          machinery, which prevents ``offload`` from being scheduled
+          (and thus prevents ``acquire`` from claiming this slot for
+          a different chunk) for the duration of the backward unpack.
+
+        New callers MUST satisfy one of those two conditions, or use
+        ``acquire(chunk_id)`` directly to take a real lease. Treating the
+        return value as a long-lived borrow without one of those guarantees
+        is a use-after-evict race.
         """
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:

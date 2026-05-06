@@ -142,8 +142,20 @@ class MemoryDeltaTracker:
         return delta
 
     def mark_end(self, end_bytes: int) -> None:
-        """Record the ``allocated_bytes`` at the end of an op, for inter-op delta."""
+        """Record the ``allocated_bytes`` at the end of an op, for inter-op delta.
+
+        Also resets the device-side peak window so the *next* interval's
+        ``peak_allocated_bytes`` reflects post-``mark_end`` activity only.
+        Without this reset, a subsequent ``delta_since_last`` (or any
+        consumer reading ``peak_allocated_bytes``) would see the high-
+        water mark from the previous interval bleed into the new one,
+        attributing earlier transient allocations to the wrong op.
+        """
         self._last_end_bytes = end_bytes
+        # Mirror the peak-window invariant that ``delta_since_last``
+        # maintains: advancing the baseline must coincide with a peak
+        # reset so the next interval starts from a fresh high-water mark.
+        self.reset()
 
     @property
     def last_end_bytes(self) -> int:

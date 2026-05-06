@@ -277,7 +277,18 @@ def measure_chunked_steady(
     # loop calls ``model.train()`` and consumes random samples (e.g.
     # via dropout / data ordering), both of which would otherwise
     # leak into the caller's subsequent steps.
-    was_training = model.training
+    # Snapshot per-module training flags BEFORE ``model.train()`` flips
+    # them all. Without this, submodules that the caller had
+    # individually placed in eval() — frozen LoRA backbones,
+    # BatchNorm/Dropout in inference mode for partially-frozen
+    # finetuning, MoE expert subsets, etc. — get incorrectly stuck in
+    # train() after the function returns, because a top-level-only
+    # rollback via ``model.train()`` / ``model.eval()`` recurses and
+    # clobbers the previously-eval submodules. Keyed by ``id(m)`` so
+    # we don't rely on module hashability. This snapshot supersedes
+    # the older ``was_training = model.training`` single-flag capture:
+    # the per-module pass already covers the root module.
+    module_training: dict[int, bool] = {id(m): m.training for m in model.modules()}
     cpu_rng = torch.get_rng_state()
     cuda_rngs = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
 
@@ -388,8 +399,25 @@ def measure_chunked_steady(
             torch.set_rng_state(cpu_rng)
             if cuda_rngs is not None:
                 torch.cuda.set_rng_state_all(cuda_rngs)
-            if not was_training:
-                model.eval()
+            # Restore per-module training flags AFTER the state_dict +
+            # RNG rollback so the module-level state lands last and
+            # nothing the rollback runs (e.g. autograd kernels invoked
+            # by ``load_state_dict``) can re-flip flags. This is the
+            # canonical restore — it covers the top-level module and
+            # every submodule independently, so the caller observes
+            # byte-identical mode state to what they handed in
+            # (frozen-eval submodules stay eval, etc.).
+            for m in model.modules():
+                saved = module_training.get(id(m))
+                if saved is None:
+                    # New module attached during measurement (vanishingly
+                    # rare — would imply the timed region rebuilt the
+                    # graph). Leave whatever ``model.train()`` set it to.
+                    continue
+                if saved:
+                    m.train()
+                else:
+                    m.eval()
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

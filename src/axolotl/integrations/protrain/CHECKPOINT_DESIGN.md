@@ -523,9 +523,12 @@ cpu_optim/chunk_<N>.pt:                    # one per non-persistent chunk; cpu_o
 
 Phase 2 extends with `saving_rank: int` and `protrain_save_mode:
 "replicated" | "sharded"` in metadata, a `regions_per_chunk` mapping
-(per-chunk persistent-id region lists keyed by chunk id), and
-`cpu_optim/chunk_<N>_rank_<R>.pt` naming for the sharded mode (Phase 1
-files keep the legacy `cpu_optim/chunk_<N>.pt` layout).
+(stringified `ChunkId` → ordered list of region descriptor objects with
+fields `chunk_offset`, `region_bytes`, `region_bytes_padded`,
+`shard_bytes`, and `dtype`; see `CHECKPOINT_DESIGN_PHASE2.md` §3.2 for
+the full schema diff), and `cpu_optim/chunk_<N>_rank_<R>.pt` naming for
+the sharded mode (Phase 1 files keep the legacy `cpu_optim/chunk_<N>.pt`
+layout).
 
 `format_version` bumps when fields change. Phase 1 is v1; Phase 2 is v2.
 

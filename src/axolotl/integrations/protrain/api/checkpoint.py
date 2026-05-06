@@ -748,6 +748,14 @@ def _save_protrain_optim_dir(
         world_size = _current_world_size()
     zero3_shard = bool(getattr(chunk_manager, "zero3_shard", False))
 
+    # Drain any in-flight async CPU Adam futures BEFORE estimating size
+    # so the size-gate sees the post-step state. Otherwise a queue full
+    # of pending futures could leave inner _optims state dicts empty/
+    # smaller than reality, producing a stale estimate that bypasses
+    # ``protrain_optim_save_max_bytes`` and proceeds to a write that
+    # would have been gated. Every rank drains its own queue.
+    chunk_manager.wait_cpu_optim_all()
+
     estimate = _estimate_optim_state_bytes(optim)
     # The callback already runs a rank-0-broadcast size-gate before
     # calling here (see ProTrainOptimizerCheckpointCallback.on_save),
@@ -768,11 +776,6 @@ def _save_protrain_optim_dir(
             save_max_bytes / 1024**3,
         )
         return False
-
-    # Drain any in-flight async CPU Adam futures so we snapshot a
-    # consistent post-step state, not a half-applied one. Every rank
-    # drains its own queue.
-    chunk_manager.wait_cpu_optim_all()
 
     target = os.path.join(output_dir, PROTRAIN_OPTIM_DIRNAME)
 

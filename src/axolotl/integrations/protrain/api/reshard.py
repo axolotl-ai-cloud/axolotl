@@ -24,11 +24,14 @@ Two callers consume it:
 
 Per-region resharding maths (paper's ZeRO-3 sharding rule):
 
-* Each region holds ``region_bytes`` of valid state plus padding to
-  ``region_bytes_padded = ceil(region_bytes / lcm(elem_size, W)) *
-  lcm(elem_size, W)`` so ``shard_bytes = region_bytes_padded / W`` is
-  a clean element-aligned slice. The valid prefix length
-  ``region_bytes / element_size`` is independent of W.
+* Each region holds ``region_bytes`` of valid state plus padding so
+  every rank owns a whole number of elements. The pad rule operates in
+  element space: ``region_elements = ceil(region_bytes / elem_size)``,
+  ``region_elements_padded = ceil(region_elements / W) * W``,
+  ``region_bytes_padded = region_elements_padded * elem_size``, and
+  ``shard_bytes = region_bytes_padded / W``. Each rank's slice is
+  therefore exactly ``region_elements_padded / W`` whole elements. The
+  valid prefix length ``region_bytes / elem_size`` is independent of W.
 * For each region, concatenate the N1 saved per-rank ``exp_avg`` (and
   ``exp_avg_sq``) tensors → flat tensor of length
   ``region_bytes_padded_old / elem_size``.

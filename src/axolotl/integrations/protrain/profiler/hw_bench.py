@@ -290,8 +290,12 @@ def measure_gpu_adam(
     Returns
     -------
     float
-        Throughput in bytes/sec (n_params * 20 / median_iter_s). 0.0 if
-        no Adam implementation is constructible.
+        Throughput in bytes/sec (n_params * 20 / median_iter_s). Returns
+        0.0 on (a) CUDA outage / unavailable on this device, (b) every
+        candidate backend failing warmup or measurement, or (c) the
+        whole fallback chain failing to construct any Adam
+        implementation. Callers must treat 0.0 as "throughput unknown
+        / unmeasurable" rather than "GPU Adam is unsupported".
     """
     if n_iters < 1:
         raise ValueError(f"measure_gpu_adam: n_iters must be >= 1, got {n_iters}")

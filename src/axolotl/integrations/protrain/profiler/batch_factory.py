@@ -452,6 +452,14 @@ def build_batch(
         returned dict always contains a ``labels`` entry so the profiler
         can synthesize a backward pass without further inspection.
     """
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or batch_size <= 0
+    ):
+        raise ValueError(f"batch_size must be a positive int, got {batch_size!r}")
+    if not isinstance(seq_len, int) or isinstance(seq_len, bool) or seq_len <= 0:
+        raise ValueError(f"seq_len must be a positive int, got {seq_len!r}")
     if task_type is None:
         task_type = detect_task_type(model)
     factory = get_factory(task_type)

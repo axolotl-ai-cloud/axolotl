@@ -237,8 +237,20 @@ class PinnedHostMemory:
         # because PyTorch only sets that for allocations it made itself.
         # The underlying memory IS pinned (we called cudaHostAlloc), just
         # torch can't prove it. ``is_pinned()`` will therefore return False
-        # on this path despite the memory being physically pinned. Callers
-        # inspecting ``_is_precise_size`` know we're on the ctypes path.
+        # on this path despite the memory being physically pinned —
+        # consequently ``copy_(..., non_blocking=True)`` H2D copies that
+        # source from a slot view will silently fall back to BLOCKING
+        # behaviour, defeating the throughput rationale for cudaHostAlloc.
+        # We loudly warn at construction so callers don't get silent
+        # serialization, and expose ``is_pinned_recognised_by_torch``
+        # below for callers that want to gate non_blocking on the
+        # honest answer.
+        LOG.warning(
+            "PinnedHostMemory: cudaHostAlloc'd region is physically pinned, "
+            "but torch.frombuffer-built tensors report is_pinned()=False. "
+            "copy_(..., non_blocking=True) H2D from these slots will fall "
+            "back to blocking copies — see is_pinned_recognised_by_torch."
+        )
 
     def _init_fallback(self) -> None:
         import torch
@@ -261,6 +273,30 @@ class PinnedHostMemory:
         """True iff the underlying bytes == exactly ``n_buffer * S_chunk``."""
         return self._is_precise_size
 
+    @property
+    def is_pinned_recognised_by_torch(self) -> bool:
+        """True iff ``torch.is_pinned()`` on a slot view will return True.
+
+        On the ctypes / ``cudaHostAlloc`` precise-size path this is
+        ``False`` — the memory IS pinned, but ``torch.frombuffer`` does
+        not propagate the ``pin_memory`` flag, so ``tensor.is_pinned()``
+        reports ``False`` and PyTorch's ``copy_(..., non_blocking=True)``
+        guard treats the source as pageable and silently falls back to
+        a blocking copy.
+
+        On the ``torch.empty(pin_memory=True)`` fallback path (and on the
+        non-CUDA paged fallback) this matches whatever torch reports for
+        the underlying tensor — typically ``True`` on a CUDA host, but
+        we don't probe ``is_pinned()`` here because that would require
+        torch import at attribute-access time. Callers that need the
+        post-construction probe should call ``buffer(i).is_pinned()``
+        directly.
+        """
+        # Only the ctypes path has the ``is_pinned()`` blind spot. The
+        # fallback path was constructed via ``torch.empty(pin_memory=...)``
+        # and torch knows about its own allocation.
+        return not self._is_precise_size
+
     def buffer(self, i: int) -> "torch.Tensor":
         """Return the ``i``-th slot as a 1D ``uint8`` tensor of length ``S_chunk``.
 
@@ -271,6 +307,21 @@ class PinnedHostMemory:
         with :meth:`release_buffer`. ``close()`` will refuse to free the
         underlying pinned region while any borrow is still outstanding
         (see the class docstring for the use-after-free hazard).
+
+        Pinned-recognition limitation
+        -----------------------------
+        On the precise-size ctypes / ``cudaHostAlloc`` path the returned
+        tensor's ``is_pinned()`` reports ``False`` even though the
+        underlying memory is physically pinned (``torch.frombuffer``
+        does not propagate ``pin_memory``). This means
+        ``dst_gpu.copy_(slot_view, non_blocking=True)`` will silently
+        degrade to a blocking copy — torch's ``non_blocking`` fast path
+        is gated on ``is_pinned()``, not on whether the OS marked the
+        page as pinned. Callers that depend on overlap of H2D with
+        compute MUST consult :attr:`is_pinned_recognised_by_torch` and
+        either accept the blocking fallback or use the
+        ``torch.empty(pin_memory=True)`` fallback path (precise-size off)
+        where torch's bookkeeping is intact.
         """
         with self._lock:
             if self._closed:
