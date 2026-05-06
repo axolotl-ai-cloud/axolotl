@@ -337,6 +337,21 @@ def measure_chunked_steady(
     # back cleanly on partial failure.
     model_state: dict[str, Any] | None = None
     optim_state: dict[str, Any] | None = None
+    # Mode-C correctness gap: ``state_dict()`` only sees what's reachable
+    # through ``param.data``. After the chunk manager's
+    # ``materialize_offload`` runs, every non-persistent param's
+    # ``param.data`` is an empty placeholder — the real weights live in
+    # ``chunk_manager._cpu_slots`` (replicated) or
+    # ``chunk_manager._chunk_shards`` (sharded). The optimizer step
+    # below mutates those CPU bytes directly via the gather→step→offload
+    # cycle, and ``load_state_dict(model_state)`` would no-op for those
+    # weights — leaving the params permanently advanced past the
+    # caller's pre-measurement state. Use the chunk manager's
+    # snapshot/restore helpers when the optimizer is a ProTrain wrapper
+    # (the only path where the chunk-manager rollback is needed); the
+    # ``hasattr`` guard preserves stock-torch-optimizer compatibility.
+    chunk_state: dict[Any, Any] | None = None
+    chunk_manager = getattr(optimizer, "_chunk_manager", None)
     with torch.cuda.device(device):
         try:
             model.train()
@@ -399,6 +414,18 @@ def measure_chunked_steady(
                 optim_state = _clone_state_dict(
                     optimizer.state_dict(), target_device=torch.device("cpu")
                 )
+            # Snapshot the chunk manager's pinned-host param shadows for
+            # every non-persistent chunk. The ``Module.state_dict()``
+            # snapshot above misses these — see the comment by the
+            # ``chunk_state`` declaration. ``snapshot_cpu_state`` returns
+            # plain (unpinned) host clones, so the snapshot adds RAM
+            # equal to the offloaded-chunk byte total but keeps GPU
+            # untouched. ``getattr`` covers older managers that pre-date
+            # the helper (none in tree, but defensive).
+            if chunk_manager is not None and hasattr(
+                chunk_manager, "snapshot_cpu_state"
+            ):
+                chunk_state = chunk_manager.snapshot_cpu_state()
             # Start from a clean grad state so leftover grads from
             # prior trace work (e.g. the phase-1 profile pass) cannot
             # pollute the first warmup step's peak-memory and timing
@@ -472,6 +499,20 @@ def measure_chunked_steady(
             torch.cuda.synchronize(device)
             if model_state is not None:
                 model.load_state_dict(model_state)
+            # Restore the chunk-manager CPU-shadow bytes BEFORE the
+            # optimizer state restore. Order doesn't strictly matter
+            # for correctness — the two snapshots cover disjoint
+            # storage (model weights vs. Adam moments) — but keeping
+            # the parameter rollback (state_dict + chunk_state)
+            # adjacent makes the data-flow pairing easier to read.
+            # Skip cleanly when the manager isn't a ProTrain wrapper
+            # or the snapshot was never taken (chunk_state None).
+            if (
+                chunk_state is not None
+                and chunk_manager is not None
+                and hasattr(chunk_manager, "restore_cpu_state")
+            ):
+                chunk_manager.restore_cpu_state(chunk_state)
             if optim_state is not None:
                 # Mirror the snapshot path: route through the
                 # ProTrain non-public restore helper when present so

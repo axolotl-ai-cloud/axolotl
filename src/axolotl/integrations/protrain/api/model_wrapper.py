@@ -467,32 +467,35 @@ def _calibrate_peak_with_actual_chunk_bytes(
     #     full-finetune it's ~model size.
     #   - PyTorch allocator internal fragmentation (caching-allocator
     #     block waste at power-of-2 boundaries).
-    #   - Scheduler prefetch window: Scheduler.pre_block_forward can
-    #     temporarily hold ``current + next`` block's worth of chunks;
-    #     ``effective_buffer_slots`` below bounds this but doesn't
-    #     fully eliminate the transient.
+    #   - Scheduler prefetch lookahead lease pattern: while the current
+    #     block executes, ``Scheduler.pre_block_forward`` may have
+    #     leased the next block's chunks too, so up to
+    #     ``2 * max_chunks_per_block`` slots are *concurrently in-use*
+    #     at a block boundary. This is a lease-concurrency property,
+    #     NOT a footprint property — the pool keeps all ``n_buffer``
+    #     slots allocated regardless. Modelling the lease window as
+    #     a separate transient term (independent of the buffer-pool
+    #     base) is future work; for now the paper-alpha 1.10 absorbs it.
     # Closing any of these at cost/memory.py would let us drop the
     # wrapper-level 1.05 — until then, the two alphas stay independent.
     calibration_alpha = min(alpha, 1.05)
-    # Buffer pool slots: ProTrain prefetches the next block's chunks
-    # while the current block runs (see
-    # runtime/scheduler.Scheduler.pre_block_forward) — peak concurrent
-    # buffer occupancy is ``current + next block`` worth of chunks,
-    # bounded above by ``n_buffer`` but typically less. Use that tighter
-    # bound.
-    max_chunks_per_block = 1
-    if layout.block_to_chunks:
-        max_chunks_per_block = max(
-            (len(cids) for cids in layout.block_to_chunks.values()), default=1
-        )
-    effective_buffer_slots = min(n_buffer, 2 * max_chunks_per_block)
-    # Both terms now scaled by the cost-model's full-state factors so
-    # the calibrated peak is symmetric with what was reversed out
-    # above. ``persistent_factor`` recovers grads + fp32 master + Adam
-    # moments under full FT (~1.0× under LoRA-with-frozen-base);
+    # Buffer pool slots: ``BufferPool.__init__`` pre-allocates ALL
+    # ``n_buffer`` flat S_chunk-byte GPU buffers up front (see
+    # ``chunk/buffer_pool.py``) and holds them for the wrapper's
+    # lifetime — slots only return to the allocator at pool teardown,
+    # not when individual chunks release. The buffer-pool footprint is
+    # therefore ``n_buffer * S_chunk * buffer_factor`` at all times,
+    # matching what :func:`cost.memory.model_state_present_bytes`
+    # charges (paper Eq. 11's ``M_buffer * n_buffer``). Earlier
+    # revisions clamped this to ``min(n_buffer, 2 * max_chunks_per_block)``
+    # under the (incorrect) belief that only the concurrently-leased
+    # slots counted; that confused lease concurrency with
+    # pre-allocated footprint and systematically under-counted the
+    # buffer term, making ``predicted_peak_bytes`` read optimistic —
+    # the opposite of the OOM-safety intent.
     # ``buffer_factor`` covers fp16 params + accumulated grads in the
     # buffer pool's transient peak (paper Eq. 11).
-    buffer_bytes_eff = int(effective_buffer_slots * S * buffer_factor)
+    buffer_bytes_eff = int(n_buffer * S * buffer_factor)
     calibrated_persistent = int(actual_persistent * persistent_factor)
     calibrated_raw = calibrated_persistent + buffer_bytes_eff + f_bm
     calibrated = int(calibration_alpha * calibrated_raw)

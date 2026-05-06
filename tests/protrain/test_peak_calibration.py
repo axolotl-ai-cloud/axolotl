@@ -113,9 +113,11 @@ def test_calibrate_peak_scales_persistent_by_full_state_factor() -> None:
     F_BM = 5000  # synthetic "fragmentation + activations + deltas" residual
     alpha = ALPHA_FRAGMENTATION  # 1.10
 
-    # Layout default: BlockId(0) -> 2 chunks, BlockId(1) -> 1 chunk; max=2.
-    # effective_buffer_slots = min(n_buffer=1, 2*2) = 1.
-    effective_buffer_slots = 1
+    # Buffer-pool footprint = n_buffer * S * buffer_factor (matches
+    # what ``BufferPool.__init__`` pre-allocates and what
+    # ``model_state_present_bytes`` charges; not clamped to a
+    # prefetch window — the pool reserves every slot for the
+    # wrapper's lifetime).
     buffer_factor = 2.0  # mirrors model_state_present_bytes
     n_persist_eff = 2  # prefix; layout has no mandatory_persistent here
 
@@ -166,7 +168,7 @@ def test_calibrate_peak_scales_persistent_by_full_state_factor() -> None:
         1.05
         * (
             actual_persistent * 1.0
-            + effective_buffer_slots * layout.S_chunk * buffer_factor
+            + cfg.n_buffer * layout.S_chunk * buffer_factor
             + F_BM
         )
     )
@@ -204,7 +206,9 @@ def test_calibrate_peak_lora_path_unchanged_from_pre_fix() -> None:
     )
     # Fully packed chunks (1024 each) → actual_persistent = 2 * 1024 = 2048,
     # equal to the cost-model upper bound.
-    # effective_buffer_slots = 1, buffer_factor = 2.0 → 2048 buffer bytes.
+    # Buffer-pool footprint = n_buffer * S * buffer_factor
+    #   = 1 * 1024 * 2.0 = 2048 bytes (matches what BufferPool actually
+    #   reserves; not clamped to a prefetch window).
     # Calibrated = 1.05 * (2048 + 2048 + 1000) = 1.05 * 5096 = 5350.
     expected = int(1.05 * (2048 + 2048 + 1000))
     assert abs(calibrated - expected) <= 5, (

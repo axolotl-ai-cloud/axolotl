@@ -80,7 +80,7 @@ Paper references: §1 (parallelism foundation), §2A (chunks), §5
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from axolotl.integrations.protrain.types import (
     ChunkId,
@@ -2743,6 +2743,131 @@ class ChunkManager:
                 if s.cpu_grad is not None:
                     total += s.numel * s.element_size
         return total
+
+    # ---- CPU-state snapshot / restore (phase-2 rollback support) -------
+
+    def snapshot_cpu_state(self) -> dict[ChunkId, dict[str, Any]]:
+        """Deep-clone the CPU-resident weight bytes for every non-persistent chunk.
+
+        After :meth:`materialize_offload` runs, every non-persistent
+        parameter's ``param.data`` is an empty placeholder — the real
+        weights live in this manager's pinned-host shadows
+        (``_cpu_slots[cid][i].cpu_data`` for replicated chunks,
+        ``_chunk_shards[cid].regions[r].cpu_shard_bytes`` for sharded
+        chunks). ``state_dict()`` only sees what's reachable through
+        ``param.data``, so a model-level snapshot for a Mode-C run is
+        EMPTY for offloaded params — and an ``optimizer.step()`` between
+        snapshot and restore mutates those CPU bytes in place, with no
+        way to roll them back.
+
+        This helper closes that gap. It walks every non-persistent
+        chunk, deep-copies (``detach().clone()``) the pinned-host weight
+        tensors, and returns a dict keyed by chunk id. Pair with
+        :meth:`restore_cpu_state` in a try/finally for non-destructive
+        measurement loops (the phase-2 profiler).
+
+        Persistent chunks are intentionally NOT captured here — their
+        weights live in standalone GPU storage reachable through
+        ``param.data`` and so are already covered by
+        ``Module.state_dict()``.
+
+        The returned dict is independent of manager state — it's safe
+        to mutate the CPU shadows after the call without disturbing
+        the snapshot, and the snapshot itself outlives the manager
+        (subject to the usual GC rules; the cloned tensors are plain
+        unpinned host tensors).
+
+        Returns
+        -------
+        dict[ChunkId, dict[str, Any]]
+            Mapping ``chunk_id -> {"slots": [tensor, ...] | None,
+            "regions": [tensor, ...] | None}``. ``slots`` is populated
+            for replicated chunks (one cloned tensor per slot, ``None``
+            for slots whose ``cpu_data`` was ``None``). ``regions`` is
+            populated for sharded chunks (one cloned ``cpu_shard_bytes``
+            per region). Exactly one of the two keys is non-``None`` for
+            any given chunk; both ``None`` is possible for an empty
+            chunk and is treated as a no-op on restore.
+        """
+        snap: dict[ChunkId, dict[str, Any]] = {}
+        for cid in sorted(self._non_persistent_ids):
+            entry: dict[str, Any] = {"slots": None, "regions": None}
+            shard_state = self._chunk_shards.get(cid)
+            if shard_state is not None:
+                # Sharded path: clone every region's per-rank CPU shard.
+                # Frozen-only regions still hold weights — clone them
+                # too so the restore is exact regardless of trainability
+                # (a future grad-flag flip wouldn't silently leave
+                # frozen weights at their post-step values).
+                region_snaps: list["torch.Tensor"] = []
+                for region in shard_state.regions:
+                    region_snaps.append(region.cpu_shard_bytes.detach().clone())
+                entry["regions"] = region_snaps
+            slots = self._cpu_slots.get(cid)
+            if slots is not None and shard_state is None:
+                # Replicated path: clone every slot's pinned cpu_data.
+                # Some slots may have ``cpu_data is None`` in the
+                # sharded fallback (see _CpuParamSlot's docstring), but
+                # we already routed those above via ``shard_state``.
+                slot_snaps: list["torch.Tensor | None"] = []
+                for slot in slots:
+                    if slot.cpu_data is None:
+                        slot_snaps.append(None)
+                    else:
+                        slot_snaps.append(slot.cpu_data.detach().clone())
+                entry["slots"] = slot_snaps
+            snap[cid] = entry
+        return snap
+
+    def restore_cpu_state(self, snapshot: dict[ChunkId, dict[str, Any]]) -> None:
+        """Inverse of :meth:`snapshot_cpu_state` — copy bytes back in place.
+
+        Walks every chunk in ``snapshot`` and, for each captured tensor,
+        invokes ``copy_`` into the live pinned-host shadow. Storage is
+        reused: callers can rely on the post-restore CPU views being the
+        same tensor objects (and the same pinned pool slices) as before
+        the snapshot — no rebind of slot / region tensors is needed,
+        and any optimizer / grad bookkeeping that holds references to
+        those tensors stays valid.
+
+        Missing chunks are silently skipped (the snapshot was taken
+        under a different chunk partition — e.g. across a
+        materialize→restore→re-materialize cycle in tests). Per-slot
+        ``None`` entries are also skipped (the corresponding live slot
+        had ``cpu_data is None`` when captured; nothing to restore).
+
+        Parameters
+        ----------
+        snapshot
+            The dict returned by a previous :meth:`snapshot_cpu_state`
+            call against this manager.
+        """
+        for cid, entry in snapshot.items():
+            shard_state = self._chunk_shards.get(cid)
+            region_snaps = entry.get("regions")
+            if region_snaps is not None and shard_state is not None:
+                # Sharded restore: write each region's clone back into
+                # the live pinned shard. ``len`` mismatch would imply
+                # the manager was rebuilt under a different layout
+                # between snapshot and restore — defensive skip rather
+                # than crash, mirroring the missing-cid skip above.
+                if len(region_snaps) != len(shard_state.regions):
+                    continue
+                for region, region_snap in zip(
+                    shard_state.regions, region_snaps, strict=True
+                ):
+                    region.cpu_shard_bytes.copy_(region_snap)
+                continue
+            slot_snaps = entry.get("slots")
+            slots = self._cpu_slots.get(cid)
+            if slot_snaps is None or slots is None:
+                continue
+            if len(slot_snaps) != len(slots):
+                continue
+            for slot, slot_snap in zip(slots, slot_snaps, strict=True):
+                if slot_snap is None or slot.cpu_data is None:
+                    continue
+                slot.cpu_data.copy_(slot_snap)
 
     # ---- internals -----------------------------------------------------
 

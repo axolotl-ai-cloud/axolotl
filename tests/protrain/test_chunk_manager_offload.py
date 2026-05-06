@@ -1345,3 +1345,163 @@ def test_sharded_restore_to_gpu_requires_initialized_distributed() -> None:
     mgr.uninstall()
     host.close()
     del pool
+
+
+# ---------------------------------------------------------------------------
+# snapshot_cpu_state / restore_cpu_state — phase-2 measurement rollback path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+def test_snapshot_cpu_state_restores_mutated_pinned_bytes() -> None:
+    """``snapshot_cpu_state`` must capture, and ``restore_cpu_state`` must reinstate,
+    the pinned-host bytes that back every non-persistent param.
+
+    Phase-2 correctness regression: ``measure_chunked_steady`` snapshots
+    model state via ``model.state_dict()`` before its timed loop and
+    rolls it back via ``model.load_state_dict()`` afterward. But
+    ``materialize_offload`` rebinds every non-persistent param's
+    ``param.data`` to an empty placeholder — the real weights live in
+    :attr:`ChunkManager._cpu_slots` (replicated path) — so
+    ``state_dict()`` only sees empty tensors for those params and the
+    rollback is a no-op. The timed loop's ``optimizer.step()`` then
+    leaves the CPU shadows permanently mutated past the caller's
+    pre-measurement state.
+
+    This test reproduces the bug end-to-end: materialize a manager,
+    snapshot via the new helper, mutate one CPU slot's bytes by +1.0
+    (simulating an in-place Adam update), restore via the new helper,
+    then call ``restore_to_gpu`` and verify every param's GPU bytes
+    match the pre-snapshot reference. Without the snapshot/restore
+    pair this assertion fails by exactly the +1.0 perturbation.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    n_layers = 4
+    model = _tiny_model(hidden=hidden, n_layers=n_layers).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+
+    # Reference: snapshot every parameter's original bytes BEFORE any
+    # offload so we can compare against the post-restore state.
+    reference: dict[str, torch.Tensor] = {
+        name: p.detach().clone() for name, p in model.named_parameters()
+    }
+
+    mgr, layout, pool, host = _build_chunk_manager(model, n_persist=1, S_chunk=S_chunk)
+    freed = mgr.materialize_offload()
+    assert freed > 0, "test setup: expected non-persistent bytes to be freed"
+
+    # Pick a non-persistent chunk to mutate. The chunk's pinned CPU
+    # shadow lives in ``_cpu_slots[cid][i].cpu_data``.
+    non_persist = sorted(mgr._non_persistent_ids)
+    assert non_persist, "test setup: need at least one non-persistent chunk"
+    target_cid = non_persist[0]
+    slots = mgr._cpu_slots[target_cid]
+    assert slots, f"test setup: chunk {target_cid} has no slots"
+    mutated_slot = next((s for s in slots if s.cpu_data is not None), None)
+    assert mutated_slot is not None, (
+        "test setup: replicated chunk should have at least one slot with cpu_data"
+    )
+
+    # Snapshot via the new helper. This must clone the bytes
+    # (independent storage) — otherwise the in-place mutation below
+    # would silently advance the snapshot too and the restore would be
+    # a no-op for the wrong reason.
+    snap = mgr.snapshot_cpu_state()
+    assert target_cid in snap, "snapshot must include every non-persistent chunk"
+
+    # Mutate the live pinned tensor IN PLACE — exactly what
+    # ``optimizer.step()`` does in the offload path
+    # (``_ensure_cpu_grads_attached`` repoints param.data at the CPU
+    # shadow and Adam writes through it).
+    pre_mutation = mutated_slot.cpu_data.detach().clone()
+    mutated_slot.cpu_data.add_(1.0)
+    assert not torch.equal(mutated_slot.cpu_data, pre_mutation), (
+        "test setup: in-place add_ should have mutated the pinned tensor"
+    )
+
+    # Restore via the new helper. The pinned tensor's storage is reused
+    # — ``copy_`` writes back into the same buffer the snapshot sliced
+    # out of — so any optimizer / grad bookkeeping aliased to it stays
+    # consistent.
+    mgr.restore_cpu_state(snap)
+    assert torch.equal(mutated_slot.cpu_data, pre_mutation), (
+        "restore_cpu_state failed to roll back the in-place mutation"
+    )
+
+    # End-to-end check: gather persistent chunks, restore_to_gpu, then
+    # compare every param against the pre-offload reference. Without
+    # snapshot/restore_cpu_state this assertion fails by exactly +1.0
+    # for the mutated slot's params.
+    for cid_int in sorted(mgr._persistent_ids):
+        mgr.gather(cast(ChunkId, cid_int))
+    moved = mgr.restore_to_gpu()
+    assert moved > 0, "restore_to_gpu reported 0 bytes moved — should be > 0"
+    for name, p in model.named_parameters():
+        assert torch.equal(p.data, reference[name]), (
+            f"param {name} bytes diverged across snapshot+mutate+restore round-trip "
+            "— restore_cpu_state did not restore the pinned bytes"
+        )
+
+    host.close()
+    del pool
+
+
+@pytest.mark.gpu
+def test_snapshot_cpu_state_independent_storage() -> None:
+    """Snapshot tensors must have storage independent of the live pinned views.
+
+    A naive snapshot that shares storage with the pinned shadows would
+    be silently advanced by an ``optimizer.step()`` between snapshot
+    and restore — defeating the rollback. Mutate the snapshot AFTER
+    the call and confirm the live pinned tensor is unchanged.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    n_layers = 4
+    model = _tiny_model(hidden=hidden, n_layers=n_layers).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+
+    mgr, layout, pool, host = _build_chunk_manager(model, n_persist=1, S_chunk=S_chunk)
+    mgr.materialize_offload()
+
+    non_persist = sorted(mgr._non_persistent_ids)
+    target_cid = non_persist[0]
+    slots = mgr._cpu_slots[target_cid]
+    live_slot = next(s for s in slots if s.cpu_data is not None)
+    pre_value = live_slot.cpu_data.detach().clone()
+
+    snap = mgr.snapshot_cpu_state()
+    snap_tensors = snap[target_cid]["slots"]
+    assert snap_tensors is not None, (
+        "replicated chunk should populate the 'slots' key in the snapshot"
+    )
+    snap_tensor = next(t for t in snap_tensors if t is not None)
+
+    # Mutate the snapshot — must not touch the live pinned tensor.
+    snap_tensor.add_(7.5)
+    assert torch.equal(live_slot.cpu_data, pre_value), (
+        "snapshot tensor shares storage with the live pinned shadow — "
+        "snapshot must be deep-cloned"
+    )
+
+    # Cleanup.
+    for cid_int in sorted(mgr._persistent_ids):
+        mgr.gather(cast(ChunkId, cid_int))
+    mgr.restore_to_gpu()
+    host.close()
+    del pool
