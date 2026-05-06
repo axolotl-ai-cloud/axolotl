@@ -98,6 +98,73 @@ def _build_chunk_manager_cpu(model, n_persist: int):
     return mgr, layout, pool, host
 
 
+def _attach_real_cpu_optim_or_write_skip(mgr, layout, model, tmpdir, rank):
+    """Attach a real :class:`CpuFusedAdamAdapter` to ``mgr``, or write a skip.
+
+    The chunk manager's ``reduce_grads_and_offload`` / per-param hook
+    paths require a CPU optimizer when any chunk is offloaded — without
+    one the offloaded master weights would never advance, so the manager
+    raises (CodeRabbit R2-05 fail-fast). To exercise those code paths
+    end-to-end the workers wire up a real ``CpuFusedAdamAdapter`` over
+    DeepSpeed's ``DeepSpeedCPUAdam``.
+
+    On rigs where DeepSpeed's CPU Adam C++ extension can't be built (CUDA
+    toolchain mismatch without ``DS_SKIP_CUDA_CHECK=1``), we drop a
+    ``.skip`` file in ``tmpdir`` so the parent ``mp.spawn`` test can
+    downgrade to a pytest skip — matching the existing
+    "gloo-unsupported" sentinel pattern in the M7 sharded workers.
+
+    Returns the constructed adapter (or ``None`` if a skip was written).
+    Caller is responsible for ``.shutdown()``.
+    """
+    import os as _os
+
+    from axolotl.integrations.protrain.chunk.optim import CpuFusedAdamAdapter
+    from axolotl.integrations.protrain.types import ChunkId
+
+    # Build the per-chunk param list the same way ``optim_wrapper.py``
+    # does: for sharded chunks pass the per-region ``shard_param`` (Adam
+    # consumes the rank's flat shard tensor, one nn.Parameter per dtype
+    # region); for replicated chunks pass the original nn.Parameters
+    # since the CPU step is repointed onto ``slot.cpu_data`` at run time.
+    cpu_params_per_chunk: dict[ChunkId, list] = {}
+    name_to_param = dict(model.named_parameters())
+    for cid_int in sorted(getattr(mgr, "_non_persistent_ids", [])):
+        cid = cast(ChunkId, cid_int)
+        shard_state = mgr._chunk_shards.get(cid)
+        if shard_state is not None and shard_state.regions:
+            cpu_params_per_chunk[cid] = [r.shard_param for r in shard_state.regions]
+        else:
+            params = [
+                name_to_param[str(pid)]
+                for pid in layout.chunks[int(cid)]
+                if str(pid) in name_to_param
+            ]
+            if params:
+                cpu_params_per_chunk[cid] = params
+
+    if not cpu_params_per_chunk:
+        return None
+
+    try:
+        cpu_optim = CpuFusedAdamAdapter(
+            params_per_chunk=cpu_params_per_chunk,
+            lr=1e-4,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface as a skip sentinel
+        # Mirrors the gloo-collective-unsupported pattern: the parent
+        # spawn test reads any ``rank*.skip`` file and downgrades to a
+        # pytest.skip so the test fails neither silently nor noisily on
+        # rigs without a working DeepSpeedCPUAdam build.
+        _os.makedirs(tmpdir, exist_ok=True)
+        with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+            f.write(f"deepspeed-cpu-adam-unavailable: {type(exc).__name__}: {exc}\n")
+        return None
+
+    mgr.cpu_optim = cpu_optim
+    return cpu_optim
+
+
 def _worker_reduce_grads_and_offload(rank: int, world_size: int, tmpdir: str) -> None:
     """Child process body for the gloo test.
 
@@ -132,6 +199,17 @@ def _worker_reduce_grads_and_offload(rank: int, world_size: int, tmpdir: str) ->
         model_a = _tiny_cpu_model()
         mgr_a, layout_a, pool_a, host_a = _build_chunk_manager_cpu(model_a, n_persist=0)
         mgr_a.materialize_offload()
+
+        # Wire up a real DeepSpeedCPUAdam so the per-param grad hook's
+        # ``cpu_optim.step_async`` call has a target to drive. The
+        # manager raises if it reaches the offload step path with
+        # ``cpu_optim is None`` (CodeRabbit R2-05 fail-fast — silently
+        # skipping the step would mask stale offloaded weights).
+        cpu_optim_a = _attach_real_cpu_optim_or_write_skip(
+            mgr_a, layout_a, model_a, tmpdir, rank
+        )
+        if cpu_optim_a is None:
+            return
 
         # Gather the chunk so param.data is GPU-... er, CPU-buffer-
         # resident with the right shape, then plant rank-specific grads.
@@ -172,6 +250,14 @@ def _worker_reduce_grads_and_offload(rank: int, world_size: int, tmpdir: str) ->
                 hook = mgr_a._make_grad_offload_hook(cid, slot)
                 hook(param)
 
+        # The hook fired ``step_async`` on the CPU optim; wait for the
+        # worker thread before reading ``slot.cpu_grad`` so any future
+        # exception from the optim worker surfaces here rather than at
+        # process teardown. Adam reads ``param.grad`` and writes
+        # ``param.data`` — the grad shard is intentionally not zeroed,
+        # so the assertion against the AVG remains valid post-step.
+        mgr_a.wait_cpu_optim_all()
+
         # Every CPU grad shard must now hold the cross-rank MEAN.
         for cid_int in sorted(mgr_a._non_persistent_ids):
             cid = cast(ChunkId, cid_int)
@@ -192,6 +278,7 @@ def _worker_reduce_grads_and_offload(rank: int, world_size: int, tmpdir: str) ->
                     f"got min={obs.min().item()} max={obs.max().item()}"
                 )
 
+        cpu_optim_a.shutdown()
         mgr_a.uninstall()
         host_a.close()
         del pool_a
@@ -287,6 +374,14 @@ def test_reduce_grads_and_offload_distributed(tmp_path) -> None:
         nprocs=world_size,
         join=True,
     )
+
+    # If any rank wrote a ``.skip`` file because DeepSpeedCPUAdam (or a
+    # gloo collective) wasn't available, downgrade to a skip — the test
+    # body otherwise can't exercise the offload step.
+    skip_files = list(tmp_path.glob("rank*.skip"))
+    if skip_files:
+        reasons = [f.read_text().strip() for f in skip_files]
+        pytest.skip(f"required dependency unavailable: {reasons}")
 
 
 # ---------------------------------------------------------------------------
@@ -435,7 +530,22 @@ def _worker_zero3_sharded_roundtrip(rank: int, world_size: int, tmpdir: str) -> 
         for _n, p in model.named_parameters():
             p.grad = torch.full_like(p.data, float(rank))
 
+        # Wire up a real DeepSpeedCPUAdam over the per-region
+        # ``shard_param`` set so the sharded reduce_scatter/offload path
+        # has a CPU optimizer to drive (CodeRabbit R2-05 fail-fast).
+        # Skip via sentinel file when DeepSpeedCPUAdam isn't buildable.
+        cpu_optim = _attach_real_cpu_optim_or_write_skip(
+            mgr, layout, model, tmpdir, rank
+        )
+        if cpu_optim is None:
+            return
+
         mgr.reduce_grads_and_offload(ChunkId(0))
+        # The shard grad assertion below reads ``shard_param.grad`` —
+        # Adam consumes that grad inside the worker thread but does not
+        # zero it (only ``zero_grad`` clears it). Wait for the in-flight
+        # step so any worker exception surfaces here.
+        mgr.wait_cpu_optim_all()
 
         # The rank's CPU shard grad, reinterpreted as the region's
         # dtype (fp16 for this homogeneous chunk), should be uniformly
@@ -460,6 +570,7 @@ def _worker_zero3_sharded_roundtrip(rank: int, world_size: int, tmpdir: str) -> 
             f"max={obs.max().item()}"
         )
 
+        cpu_optim.shutdown()
         mgr.uninstall()
         host.close()
 
@@ -660,7 +771,17 @@ def _worker_zero3_sharded_roundtrip_mixed_dtype(
         for _n, p in model.named_parameters():
             p.grad = torch.full_like(p.data, float(rank))
 
+        # Wire up a real DeepSpeedCPUAdam over the per-region
+        # ``shard_param`` set so the sharded reduce_scatter/offload path
+        # has a CPU optimizer to drive (CodeRabbit R2-05 fail-fast).
+        cpu_optim = _attach_real_cpu_optim_or_write_skip(
+            mgr, layout, model, tmpdir, rank
+        )
+        if cpu_optim is None:
+            return
+
         mgr.reduce_grads_and_offload(ChunkId(0))
+        mgr.wait_cpu_optim_all()
 
         expected_mean = sum(range(world_size)) / float(world_size)
         for region in shard_state.regions:
@@ -676,6 +797,7 @@ def _worker_zero3_sharded_roundtrip_mixed_dtype(
                 f"min={obs.min().item()} max={obs.max().item()}"
             )
 
+        cpu_optim.shutdown()
         mgr.uninstall()
         host.close()
 
