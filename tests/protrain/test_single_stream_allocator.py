@@ -231,13 +231,13 @@ def test_buffer_pool_slots_allocated_from_default_heap():
 
 def test_constructible_without_cuda_no_warning_no_op():
     """``SingleStreamAllocator()`` on a CPU-only host is a clean no-op."""
-    from axolotl.integrations.protrain.runtime.streams import SingleStreamAllocator
-
     # The constructor must not raise even if torch.cuda.is_available() is False
     # (CI lanes without a GPU). Whether CUDA is present or not, the
     # construction is silent — the previous one-time UserWarning is gone now
     # that production callers exist.
     import warnings
+
+    from axolotl.integrations.protrain.runtime.streams import SingleStreamAllocator
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

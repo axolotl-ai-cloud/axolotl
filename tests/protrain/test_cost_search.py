@@ -419,7 +419,9 @@ def test_estimate_peak_cap_preserves_full_ft_model_state(toy_layout, toy_hw):
     bm = assign_modes(0, 0, n_block)
     peak = estimate_peak(cfg, trace, layout, bm, toy_hw)
 
-    expected_min = int(ALPHA_FRAGMENTATION * model_state_present_bytes(cfg, layout, trace))
+    expected_min = int(
+        ALPHA_FRAGMENTATION * model_state_present_bytes(cfg, layout, trace)
+    )
     # Sanity-check the synthetic invariant before asserting the fix.
     assert expected_min > 4 * GB, (
         f"test setup error: expected_min={expected_min / 1e9:.3f}GB; should "
@@ -565,8 +567,7 @@ def test_search_fast_path_cap_preserves_full_ft_model_state(toy_hw):
     # (Codex synthetic 1.5B trace). On this 768MB-fp16 toy the floor is
     # ~6 GB and the pre-fix clamp would have landed at ~70 MB.
     floor = int(
-        ALPHA_FRAGMENTATION
-        * model_state_present_bytes(result.cfg, layout, trace)
+        ALPHA_FRAGMENTATION * model_state_present_bytes(result.cfg, layout, trace)
     )
     assert result.predicted_peak_bytes >= floor, (
         f"searcher predicted_peak_bytes={result.predicted_peak_bytes:,} "
@@ -589,8 +590,7 @@ def test_search_fast_path_cap_preserves_full_ft_model_state(toy_hw):
     )
     peak_max = estimate_peak(cfg_max_persist, trace, layout, bm_all_none, toy_hw)
     floor_max = int(
-        ALPHA_FRAGMENTATION
-        * model_state_present_bytes(cfg_max_persist, layout, trace)
+        ALPHA_FRAGMENTATION * model_state_present_bytes(cfg_max_persist, layout, trace)
     )
     assert peak_max >= floor_max, (
         f"estimate_peak boundary cross-check: peak_max={peak_max:,} "
@@ -1450,7 +1450,6 @@ def test_phase2_override_routes_n_swap_through_per_chunk_contention():
     )
     layout = _make_layout()
     hw = _make_hw()
-    n_chunk = layout.N_chunk
 
     # Two candidates differ only in n_swap. cfg_b uses n_swap = 2 SWAP
     # blocks at indices [0, 2); under ``assign_modes`` rule 1 those map
@@ -1704,35 +1703,35 @@ def test_bandwidth_contention_is_per_chunk():
 
     # Forward overlap counts: chunk b's prefetch source is block b-1.
     # block 0 = SWAP, block 1 = SWAP, blocks 2..7 = NONE.
-    assert chunk_swap_overlap_count(
-        ChunkId(0), layout, block_map, direction="fwd"
-    ) == 0  # no source (first block)
-    assert chunk_swap_overlap_count(
-        ChunkId(1), layout, block_map, direction="fwd"
-    ) == 1  # source = block 0 (SWAP)
-    assert chunk_swap_overlap_count(
-        ChunkId(2), layout, block_map, direction="fwd"
-    ) == 1  # source = block 1 (SWAP)
-    assert chunk_swap_overlap_count(
-        ChunkId(3), layout, block_map, direction="fwd"
-    ) == 0  # source = block 2 (NONE)
-    assert chunk_swap_overlap_count(
-        ChunkId(7), layout, block_map, direction="fwd"
-    ) == 0  # source = block 6 (NONE)
+    assert (
+        chunk_swap_overlap_count(ChunkId(0), layout, block_map, direction="fwd") == 0
+    )  # no source (first block)
+    assert (
+        chunk_swap_overlap_count(ChunkId(1), layout, block_map, direction="fwd") == 1
+    )  # source = block 0 (SWAP)
+    assert (
+        chunk_swap_overlap_count(ChunkId(2), layout, block_map, direction="fwd") == 1
+    )  # source = block 1 (SWAP)
+    assert (
+        chunk_swap_overlap_count(ChunkId(3), layout, block_map, direction="fwd") == 0
+    )  # source = block 2 (NONE)
+    assert (
+        chunk_swap_overlap_count(ChunkId(7), layout, block_map, direction="fwd") == 0
+    )  # source = block 6 (NONE)
 
     # Backward overlap counts: chunk b's prefetch source is block b+1.
-    assert chunk_swap_overlap_count(
-        ChunkId(0), layout, block_map, direction="bwd"
-    ) == 1  # source = block 1 (SWAP)
-    assert chunk_swap_overlap_count(
-        ChunkId(1), layout, block_map, direction="bwd"
-    ) == 0  # source = block 2 (NONE)
-    assert chunk_swap_overlap_count(
-        ChunkId(2), layout, block_map, direction="bwd"
-    ) == 0  # source = block 3 (NONE)
-    assert chunk_swap_overlap_count(
-        ChunkId(7), layout, block_map, direction="bwd"
-    ) == 0  # no successor
+    assert (
+        chunk_swap_overlap_count(ChunkId(0), layout, block_map, direction="bwd") == 1
+    )  # source = block 1 (SWAP)
+    assert (
+        chunk_swap_overlap_count(ChunkId(1), layout, block_map, direction="bwd") == 0
+    )  # source = block 2 (NONE)
+    assert (
+        chunk_swap_overlap_count(ChunkId(2), layout, block_map, direction="bwd") == 0
+    )  # source = block 3 (NONE)
+    assert (
+        chunk_swap_overlap_count(ChunkId(7), layout, block_map, direction="bwd") == 0
+    )  # no successor
 
     # Effective bandwidth: chunk 2 is derated in forward, chunk 7 is
     # never derated. Full bandwidth: hw.pcie_h2d_bps. Derated:
@@ -1755,7 +1754,11 @@ def test_bandwidth_contention_is_per_chunk():
     for cid in range(n_chunk):
         for direction in ("fwd", "bwd"):
             h2d, d2h = effective_bw_for_chunk(
-                ChunkId(cid), cfg_no_swap, hw, layout, block_map_none,
+                ChunkId(cid),
+                cfg_no_swap,
+                hw,
+                layout,
+                block_map_none,
                 direction=direction,
             )
             assert h2d == hw.pcie_h2d_bps
@@ -1764,20 +1767,26 @@ def test_bandwidth_contention_is_per_chunk():
     # n_swap == N_block boundary: every block is SWAP, so every
     # non-edge chunk has at least one SWAP source in both directions.
     block_map_all_swap = {BlockId(b): BlockMode.SWAP for b in range(n_block)}
-    cfg_all_swap = CostConfig(
-        n_persist=0, n_buffer=0, n_swap=n_block, n_checkpoint=0
-    )
+    cfg_all_swap = CostConfig(n_persist=0, n_buffer=0, n_swap=n_block, n_checkpoint=0)
     # Chunks 1..7 in forward (chunk 0 has no source) and chunks 0..6
     # in backward (chunk 7 has no source) all see overlap=1.
     for cid in range(1, n_chunk):
         h2d, _ = effective_bw_for_chunk(
-            ChunkId(cid), cfg_all_swap, hw, layout, block_map_all_swap,
+            ChunkId(cid),
+            cfg_all_swap,
+            hw,
+            layout,
+            block_map_all_swap,
             direction="fwd",
         )
         assert h2d == pytest.approx(hw.pcie_h2d_bps / 1.5)
     for cid in range(0, n_chunk - 1):
         h2d, _ = effective_bw_for_chunk(
-            ChunkId(cid), cfg_all_swap, hw, layout, block_map_all_swap,
+            ChunkId(cid),
+            cfg_all_swap,
+            hw,
+            layout,
+            block_map_all_swap,
             direction="bwd",
         )
         assert h2d == pytest.approx(hw.pcie_h2d_bps / 1.5)

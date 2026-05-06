@@ -974,9 +974,7 @@ def test_swap_gate_message_names_invariant_and_remediation(monkeypatch) -> None:
         requires_grad=False,
     )
 
-    monkeypatch.setattr(
-        torch.cuda, "mem_get_info", lambda _dev=None: (1024, 1 << 40)
-    )
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda _dev=None: (1024, 1 << 40))
 
     pack, unpack = swap_mod._make_pack_unpack(
         pool, swap_stream, swap_mod.SIZE_THRESHOLD_BYTES
