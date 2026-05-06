@@ -1149,8 +1149,36 @@ def estimate_runtime(
 
     # ----- Optimizer step ----------------------------------------------
     # Model-state bytes per chunk = model_state_bytes / N_chunk.
+    # When ``trace.model_state_bytes`` is missing/zero (older trace caches),
+    # falling back to 0 makes ``t_gpu_optim`` / ``t_cpu_optim`` free and
+    # biases the searcher's argmin toward configs that should be expensive.
+    # Mirror the memory-side fallback in
+    # :func:`cost.memory.model_state_present_bytes`: substitute the fp16
+    # params-only upper bound from the layout
+    # (``layout.N_chunk * layout.S_chunk``) and emit a one-shot warning so
+    # the regression is visible. The fp16 bound is a strict UNDER-estimate
+    # of the real model-state footprint (params only — no grads / fp32
+    # master / Adam moments) but it's strictly better than 0 and matches
+    # the same fallback policy used on the memory side.
+    _MS_PER_CHUNK_FLOOR = 1.0  # bytes — guard against zero-rate divides
+    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0)
+    if model_state_total <= 0:
+        fp16_total = layout.N_chunk * layout.S_chunk
+        if fp16_total > 0:
+            LOG.warning(
+                "estimate_runtime: trace.model_state_bytes is missing or "
+                "zero (%d); falling back to fp16 params-only total "
+                "%dB (N_chunk=%d * S_chunk=%d). Optimizer-step costs "
+                "will UNDER-count full Adam state — refresh the profiler "
+                "trace cache to restore fidelity.",
+                model_state_total,
+                fp16_total,
+                layout.N_chunk,
+                layout.S_chunk,
+            )
+        model_state_total = fp16_total
     if layout.N_chunk > 0:
-        ms_per_chunk = trace.model_state_bytes / layout.N_chunk
+        ms_per_chunk = max(model_state_total / layout.N_chunk, _MS_PER_CHUNK_FLOOR)
     else:
         ms_per_chunk = 0.0
 

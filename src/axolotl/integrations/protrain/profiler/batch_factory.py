@@ -319,6 +319,14 @@ def seq2seq_lm_batch_factory(
     ``decoder_start_token_id``. We keep encoder and decoder lengths
     equal because the profiler's cache key only carries a single
     ``seq_len``; a future extension can split this if needed.
+
+    We also synthesize ``decoder_input_ids`` explicitly here. Models
+    whose config has ``decoder_start_token_id is None`` (a small but
+    real subset — some custom checkpoints, encoder-only-style heads
+    pretending to be seq2seq) raise ``ValueError`` inside the model's
+    own ``shift_tokens_right`` helper, breaking the profile loop. We
+    right-shift ``labels`` ourselves and substitute ``0`` when the
+    model lacks a configured start token.
     """
     import torch
 
@@ -338,9 +346,22 @@ def seq2seq_lm_batch_factory(
         device=device,
         dtype=torch.long,
     )
+    # Right-shift labels along the seq dim to build decoder_input_ids:
+    # drop the last column, prepend ``decoder_start_token_id`` (or 0 if
+    # the model has no configured start token).
+    decoder_start_token_id = getattr(
+        getattr(model, "config", None), "decoder_start_token_id", None
+    )
+    if decoder_start_token_id is None:
+        decoder_start_token_id = 0
+    decoder_input_ids = torch.empty_like(labels)
+    decoder_input_ids[:, 0] = int(decoder_start_token_id)
+    if seq_len > 1:
+        decoder_input_ids[:, 1:] = labels[:, :-1]
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
+        "decoder_input_ids": decoder_input_ids,
         "labels": labels,
     }
 

@@ -117,8 +117,12 @@ explicitly with a load-time check beats letting torch's
 
 The save flow per rank:
 1. Drain in-flight CPU adam (`wait_cpu_optim_all` — already in Phase 1).
-2. Compute estimate, validate scope (world_size > 1 or zero3_shard
-   are now valid in Phase 2).
+2. Enter the pre-save preamble under `_allreduce_status_or_raise()`
+   for cross-rank lockstep; rank 0 computes the size estimate and
+   owns the skip/abort decision (validating scope: world_size > 1 or
+   zero3_shard are now valid in Phase 2). The single rank-0 decision
+   is broadcast back to every rank — ranks > 0 do not estimate
+   independently. See §4.4.
 3. Write own files (rank-0: metadata + persistent state; sharded:
    own shard files).
 4. `dist.barrier()` to make sure all rank shards are on disk before
@@ -185,7 +189,12 @@ unambiguous and lets a future shape (e.g., partial-rank save) coexist.
 
 ```text
 1. All ranks: drain wait_cpu_optim_all().
-2. All ranks: compute estimate, check scope (zero3_shard==False here).
+2. All ranks: enter the pre-save preamble under
+   _allreduce_status_or_raise() for lockstep sync. Rank 0 computes the
+   single size estimate and skip/abort decision (zero3_shard==False
+   here); ranks > 0 do NOT estimate independently. The decision is
+   broadcast back to every rank via the same channel — all save or
+   none do. See §4.4.
 3. If args.process_index == 0:
      a. Compute layout signature.
      b. Write metadata.json with protrain_save_mode="replicated".
@@ -307,7 +316,14 @@ alignment differences.
 
 ```text
 1. All ranks: drain wait_cpu_optim_all().
-2. All ranks: compute estimate, check scope (zero3_shard==True here).
+2. All ranks: enter the pre-save preamble under
+   _allreduce_status_or_raise() for lockstep sync. Rank 0 owns the
+   single size estimate and skip/abort decision (zero3_shard==True
+   here); ranks > 0 do NOT estimate independently. The decision is
+   broadcast to every rank — all save or none do. This is critical
+   for Mode-C: a per-rank gate could let rank-0 write metadata while
+   rank-1 silently skipped its shards, producing an unloadable
+   partial checkpoint. See §4.4.
 3. If args.process_index == 0:
      - Compute layout signature.
      - Write metadata.json with protrain_save_mode="sharded" and
@@ -523,9 +539,15 @@ class ProTrainOptimizerCheckpointCallback(TrainerCallback):
         # Drain async CPU adam — every rank.
         chunk_manager.wait_cpu_optim_all()
 
-        # Estimate gate — broadcast from rank-0 for cross-rank consistency.
-        estimate = _estimate_optim_state_bytes(optim)
-        skip_decision = [estimate > self._save_max_bytes]
+        # Estimate gate — rank 0 owns the estimate and skip/abort decision;
+        # ranks > 0 do NOT estimate independently. Every rank enters the
+        # preamble under _allreduce_status_or_raise() for lockstep, then
+        # rank-0's single decision is broadcast back to every rank.
+        if rank == 0:
+            estimate = _estimate_optim_state_bytes(optim)
+            skip_decision = [estimate > self._save_max_bytes]
+        else:
+            skip_decision = [False]  # placeholder, overwritten by broadcast
         _broadcast_object_list_or_noop(skip_decision, src=0)
         if skip_decision[0]:
             return control

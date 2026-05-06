@@ -89,10 +89,6 @@ class BufferPool:
         # Local import so the module can be imported without torch present.
         import torch
 
-        from axolotl.integrations.protrain.runtime.streams import (
-            SingleStreamAllocator,
-        )
-
         self.n_buffer = int(n_buffer)
         self.S_chunk = int(S_chunk)
         self.pinned_host = pinned_host
@@ -110,6 +106,10 @@ class BufferPool:
         # pool and they only return to the allocator at pool teardown,
         # by which point every consuming stream has drained.
         if self.device.type == "cuda" and torch.cuda.is_available():
+            from axolotl.integrations.protrain.runtime.streams import (
+                SingleStreamAllocator,
+            )
+
             with SingleStreamAllocator():
                 self._buffers: list["torch.Tensor"] = [
                     torch.empty(self.S_chunk, dtype=torch.uint8, device=self.device)

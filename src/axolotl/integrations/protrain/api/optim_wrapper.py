@@ -200,33 +200,41 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 # HF Trainer's ``get_decay_parameter_names`` excludes bias and norm-layer
 # parameters from weight decay by default; if we collapse everything into
 # a single global ``weight_decay`` here we silently change training behavior
-# relative to the stock Trainer path. The token list below mirrors HF's
-# name-based filter (``bias``, ``LayerNorm``, ``RMSNorm``, ``.norm.``,
-# ``_norm``) and is matched case-insensitively against
-# ``model.named_parameters()`` names.
-_HF_NO_DECAY_NAME_TOKENS: tuple[str, ...] = (
-    "bias",
-    "layernorm",
-    "rmsnorm",
-    ".norm.",
-    "_norm",
-)
+# relative to the stock Trainer path. HF's actual filter checks the parent
+# MODULE type (``nn.LayerNorm`` and any class whose name contains "Norm" —
+# RMSNorm, GroupNorm, etc.) and the parameter-name suffix ``"bias"``. Pure
+# name-token matching (the previous implementation) silently missed
+# LayerNorm-style weights that don't carry a ``norm`` infix in their dotted
+# parameter name (e.g. ``ln_1.weight`` on a GPT-2 block, where ``ln_1`` is
+# an ``nn.LayerNorm`` but the parameter name itself contains no "norm"
+# token).
 
 
 def _collect_no_decay_param_ids(module: "nn.Module") -> set[int]:
     """Return ``id(p)`` for every parameter HF Trainer would put in the no-decay group.
 
-    Mirrors :func:`transformers.trainer_pt_utils.get_decay_parameter_names`
-    by filtering parameter NAMES against
-    ``_HF_NO_DECAY_NAME_TOKENS``. Name-based matching (case-insensitive)
-    catches both LayerNorm/RMSNorm modules and bias terms — the same set
-    that the upstream Trainer puts in its ``weight_decay=0.0`` group.
+    Mirrors :meth:`transformers.Trainer.get_decay_parameter_names` —
+    excluding parameters whose parent module is :class:`nn.LayerNorm`
+    (or any class with ``Norm`` in its name, case-insensitive — RMSNorm,
+    GroupNorm, etc.) OR whose parameter name ends with ``"bias"`` (case-
+    insensitive). We do NOT depend on
+    :func:`transformers.trainer_pt_utils.get_decay_parameter_names` —
+    that symbol is not stably exposed across HF versions (it lives on
+    the :class:`Trainer` instance), and a hard import would couple this
+    file to a private import path. The module-walk below produces the
+    same set without that dependency.
     """
+    from torch import nn
+
     no_decay: set[int] = set()
-    for name, param in module.named_parameters():
-        lname = name.lower()
-        if any(tok in lname for tok in _HF_NO_DECAY_NAME_TOKENS):
-            no_decay.add(id(param))
+    for mod_name, mod in module.named_modules():
+        is_norm_module = (
+            isinstance(mod, nn.LayerNorm) or "norm" in type(mod).__name__.lower()
+        )
+        for param_name, param in mod.named_parameters(recurse=False):
+            full_name = f"{mod_name}.{param_name}" if mod_name else param_name
+            if is_norm_module or full_name.lower().endswith("bias"):
+                no_decay.add(id(param))
     return no_decay
 
 

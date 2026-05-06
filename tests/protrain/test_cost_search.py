@@ -1558,8 +1558,14 @@ def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
     trace = replace(
         base_trace,
         # Drop model-state to avoid CPU/GPU optim costs swamping the
-        # forward/backward signal at low n_persist.
-        model_state_bytes=0,
+        # forward/backward signal at low n_persist. We use a 1-byte
+        # sentinel rather than 0 — the cost model now falls back to the
+        # fp16-params-only upper bound (``N_chunk * S_chunk``) when
+        # ``model_state_bytes <= 0`` to avoid silently free optim costs
+        # (CR PR #19), and that fallback would otherwise dominate the
+        # wall budget here. A 1-byte total keeps the optim term at
+        # ``1B / N_chunk / adam_bps`` ≈ 0 without tripping the fallback.
+        model_state_bytes=1,
         steady_fwd_chunked_wall_s=chunked_fwd,
         steady_bwd_chunked_wall_s=chunked_bwd,
         phase2_n_persist=0,
@@ -1649,7 +1655,11 @@ def test_phase2_n_persist_translation_clamps_at_zero():
     # the clamp behavior is observable end-to-end.
     trace = replace(
         base_trace,
-        model_state_bytes=0,
+        # 1-byte sentinel — see CR PR #19 fix: ``model_state_bytes <= 0``
+        # now triggers the fp16-params-only fallback so optim cost is no
+        # longer silently zero. A 1-byte total keeps the optim contribution
+        # negligible without tripping the fallback path.
+        model_state_bytes=1,
         steady_fwd_chunked_wall_s=1e-6,
         steady_bwd_chunked_wall_s=1e-6,
         phase2_n_persist=0,

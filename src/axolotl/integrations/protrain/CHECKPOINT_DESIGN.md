@@ -279,9 +279,10 @@ via plugin during `post_trainer_create`. It implements:
   off the trainer (via `kwargs['optimizer']` or stored ref), checks
   the `protrain_save_optimizer_state` config. If false → skip. If true
   → write to `args.output_dir/checkpoint-{state.global_step}/protrain_optim/`.
-- **`on_load_checkpoint`** (or hook into `Trainer._load_optimizer_and_scheduler`
-  via override): on resume, load from that directory and call our real
-  load.
+- **Resume/load path:** the shipped implementation hooks into
+  `Trainer._load_optimizer_and_scheduler` via a monkey-patch / override
+  installed in `post_trainer_create`. The previously-considered
+  `on_load_checkpoint` callback variant is not used.
 
 Inside the callback's save:
 ```text

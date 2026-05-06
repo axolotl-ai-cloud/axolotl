@@ -134,7 +134,7 @@ def _self_spawn(world_size: int, extra_args: list[str]) -> int:
         *extra_args,
     ]
     print("[self-spawn]", " ".join(cmd), file=sys.stderr)
-    return subprocess.call(cmd)  # nosec B603 — argv built from sys.executable + this script's own __file__
+    return subprocess.call(cmd)  # nosec B603  # noqa: S603 — argv built from sys.executable + this script's own __file__
 
 
 def main() -> None:

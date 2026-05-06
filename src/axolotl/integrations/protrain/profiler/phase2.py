@@ -182,13 +182,45 @@ def _clone_state_dict(state):
     Recurses through ``dict``/``list``/``tuple`` containers because
     ``Optimizer.state_dict()`` is shaped
     ``{"state": {param_id: {tensor_key: tensor, ...}}, "param_groups": [...]}``.
+
+    Mapping-type preservation: ``Module.state_dict()`` returns an
+    ``OrderedDict`` subclass that carries a ``_metadata`` attribute
+    (per-module version info, used by ``load_state_dict`` for
+    backward-compat upgrades). A naive ``dict(...)`` rebuild strips
+    both the subclass identity and ``_metadata``, so ``load_state_dict``
+    on the snapshot loses version info and silently drops any
+    upgrade-on-load path. We rebuild via ``type(state)(...)`` and
+    shallow-copy ``_metadata`` if present.
     """
     import torch
 
     if torch.is_tensor(state):
         return state.detach().clone()
     if isinstance(state, dict):
-        return {k: _clone_state_dict(v) for k, v in state.items()}
+        cloned_items = {k: _clone_state_dict(v) for k, v in state.items()}
+        # Preserve dict subclass identity (e.g. OrderedDict). For plain
+        # ``dict`` inputs ``type(state)(...)`` is equivalent to ``dict(...)``.
+        try:
+            cloned_dict = type(state)(cloned_items)
+        except TypeError:
+            # Fallback: subclass constructor doesn't accept a single
+            # mapping arg (rare custom dicts). Rebuild as a plain dict.
+            cloned_dict = dict(cloned_items)
+        # ``_metadata`` is not part of the dict's items — it's set as a
+        # plain attribute by ``Module.state_dict()`` and read back by
+        # ``load_state_dict``. Shallow-copy preserves the per-module
+        # version dict's identity contract without re-cloning tensors
+        # (it doesn't contain any).
+        metadata = getattr(state, "_metadata", None)
+        if metadata is not None:
+            try:
+                cloned_dict._metadata = copy.copy(metadata)  # type: ignore[attr-defined]
+            except (AttributeError, TypeError):
+                # Some mapping subclasses reject arbitrary attribute
+                # assignment — silently drop _metadata in that case
+                # rather than crash the snapshot.
+                pass
+        return cloned_dict
     if isinstance(state, (list, tuple)):
         cloned = [_clone_state_dict(v) for v in state]
         return type(state)(cloned) if isinstance(state, tuple) else cloned

@@ -51,6 +51,13 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+#: Module-level latch: ``model_state_present_bytes`` is called once per
+#: candidate inside the search loop, so emitting the stale-trace warning
+#: directly would fire it once per candidate (search spaces are O(10²)+).
+#: Gate the warning on this flag so it fires exactly once per process.
+_STALE_TRACE_WARNING_EMITTED = False
+
+
 #: Eq. 11 fragmentation factor — applied as a final multiplier on the
 #: raw op-walk peak. Treated as a module-level constant so tests can
 #: import it explicitly for sanity checks.
@@ -559,15 +566,22 @@ def model_state_present_bytes(
         # behaviour).
         persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
     else:
-        LOG.warning(
-            "model_state_present_bytes: trace.model_state_bytes is missing "
-            "or zero (model_state_bytes=%d, fp16_total=%dB); falling back "
-            "to the legacy n_persist*S_chunk multiplier. The peak estimate "
-            "will UNDER-count full optimizer state — refresh the profiler "
-            "trace cache (TRACE_VERSION bump) to restore Eq. 11 fidelity.",
-            model_state_total,
-            fp16_total_bytes,
-        )
+        # Warn-once gate: this function runs inside the search loop, so a
+        # bare ``LOG.warning`` would fire once per candidate. The latch is
+        # process-scoped — fine for a single search invocation; tests
+        # that need to re-trigger the warning can reset the flag explicitly.
+        global _STALE_TRACE_WARNING_EMITTED
+        if not _STALE_TRACE_WARNING_EMITTED:
+            LOG.warning(
+                "model_state_present_bytes: trace.model_state_bytes is missing "
+                "or zero (model_state_bytes=%d, fp16_total=%dB); falling back "
+                "to the legacy n_persist*S_chunk multiplier. The peak estimate "
+                "will UNDER-count full optimizer state — refresh the profiler "
+                "trace cache (TRACE_VERSION bump) to restore Eq. 11 fidelity.",
+                model_state_total,
+                fp16_total_bytes,
+            )
+            _STALE_TRACE_WARNING_EMITTED = True
         persistent_factor = 1.0
     # Buffer slot during backward = fp16 params (gathered) + fp16 grads
     # (accumulated). 2.0 is a strict upper bound on the buffer pool's

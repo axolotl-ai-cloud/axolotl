@@ -115,7 +115,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 ### cost/ (M4)
 
 - `runtime.py` — `estimate_runtime(cfg, trace, layout) -> float`. Implements **Eqs. 2–7**: `T_iter = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)`, per-chunk `max(compute, comm)` roofline. §3.3, App A.1.
-- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (α = 1.10 fragmentation). Bumps at first op of each CKPT block. §3.3, App A.2.
+- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (α = 1.10 fragmentation). Bumps are added at the first op of each `BlockMode.CKPT` block (recompute) and additionally at the first op of each `BlockMode.OFFLOAD` block (Option B backward gather), so both block types contribute to the per-block backward memory bump. §3.3, App A.2.
 - `bandwidth.py` — `effective_bw(cfg, hw) -> float`. Derates prefetch BW when `n_swap > 0`. §3.3.
 
 ### search/ (M4)
