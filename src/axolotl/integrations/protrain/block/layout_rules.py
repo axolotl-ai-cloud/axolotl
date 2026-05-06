@@ -427,9 +427,18 @@ def discover_blocks(model: nn.Module) -> list[BlockTree]:
                 len(enc),
                 len(dec),
             )
-            # Tree name is the first dotted segment ("encoder", "decoder").
-            enc_name = enc_path.split(".")[0]
-            dec_name = dec_path.split(".")[0]
+            # Tree name should be "encoder" / "decoder" — search the
+            # dotted segments rather than blindly taking ``[0]``, which
+            # would yield the wrong wrapper name (e.g. ``base_model``)
+            # for paths like ``base_model.model.encoder.block``.
+            enc_segments = enc_path.split(".")
+            dec_segments = dec_path.split(".")
+            enc_name = next(
+                (s for s in enc_segments if s == "encoder"), enc_segments[0]
+            )
+            dec_name = next(
+                (s for s in dec_segments if s == "decoder"), dec_segments[0]
+            )
             return [
                 BlockTree(
                     name=enc_name,

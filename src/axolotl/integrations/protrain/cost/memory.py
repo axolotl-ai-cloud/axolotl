@@ -101,9 +101,12 @@ def _tree_index_for_path(module_path: str) -> int:
     / ``decoder.layers``. Future enc-dec families with non-``encoder``/
     ``decoder`` naming would need explicit handling.
     """
-    if module_path.startswith("encoder.") or module_path == "encoder":
+    normalized = module_path.removeprefix("base_model.model.").removeprefix(
+        "base_model."
+    )
+    if normalized.startswith("encoder.") or normalized == "encoder":
         return 0
-    if module_path.startswith("decoder.") or module_path == "decoder":
+    if normalized.startswith("decoder.") or normalized == "decoder":
         return 1
     return 0
 

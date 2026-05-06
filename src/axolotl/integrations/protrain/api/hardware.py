@@ -66,7 +66,25 @@ def resolve_world_size_from_env() -> int:
         return 1
     try:
         return max(1, int(raw))
-    except ValueError:
+    except ValueError as exc:
+        # A malformed WORLD_SIZE alongside RANK / LOCAL_RANK indicates a
+        # corrupted launcher env rather than a single-process run; silently
+        # collapsing to 1 there would misreport a distributed run, so raise
+        # explicitly. Fall back to 1 only when neither rank var is set
+        # (matches a single-process developer shell).
+        if (
+            os.environ.get("RANK") is not None
+            or os.environ.get("LOCAL_RANK") is not None
+        ):
+            LOG.error(
+                "ProTrain: WORLD_SIZE=%r is not an integer but RANK / LOCAL_RANK "
+                "is set; refusing to silently collapse a distributed run to 1.",
+                raw,
+            )
+            raise RuntimeError(
+                f"WORLD_SIZE={raw!r} is not a valid integer; cannot resolve "
+                "world size while RANK / LOCAL_RANK is set."
+            ) from exc
         return 1
 
 
@@ -197,12 +215,26 @@ def build_hardware_profile(
     gpu_sku = torch.cuda.get_device_name(device_index)
 
     if world_size_override is not None:
-        if isinstance(world_size_override, bool) or int(world_size_override) < 1:
+        # Reject bool first — ``isinstance(True, int)`` is True in Python so
+        # ``int(True) == 1`` would otherwise sneak past the validation.
+        if isinstance(world_size_override, bool):
             raise RuntimeError(
                 "world_size_override must be a positive int, got "
                 f"{world_size_override!r}."
             )
-        world_size = int(world_size_override)
+        try:
+            ws_int = int(world_size_override)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(
+                "world_size_override must be a positive int, got "
+                f"{world_size_override!r}."
+            ) from exc
+        if ws_int < 1:
+            raise RuntimeError(
+                "world_size_override must be a positive int, got "
+                f"{world_size_override!r}."
+            )
+        world_size = ws_int
     else:
         world_size = _resolve_world_size()
 

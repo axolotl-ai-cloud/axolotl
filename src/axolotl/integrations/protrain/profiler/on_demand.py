@@ -498,6 +498,14 @@ class OnDemandTensorMgr:
         """
         import torch
 
+        # Tied/shared ``Parameter`` objects can be reached via multiple
+        # module paths; if we already spilled this exact object, return
+        # early. A second pass would see ``.data`` already replaced with
+        # the empty placeholder (numel==0), and would clobber the valid
+        # ``cpu_storage`` recorded in ``self._spills`` with that placeholder.
+        if id(param) in self._spills:
+            return
+
         original_device = param.device
 
         if original_device.type == "cpu":

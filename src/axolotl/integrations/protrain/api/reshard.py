@@ -483,7 +483,8 @@ def reshard_mode_c_shards(
         ]
         for region_idx, region_meta in enumerate(regs):
             region_bytes = int(region_meta["region_bytes"])
-            elem_size_int = _DTYPE_NAME_TO_TORCH[region_meta["dtype"]].itemsize
+            expected_dtype = _DTYPE_NAME_TO_TORCH[region_meta["dtype"]]
+            elem_size_int = expected_dtype.itemsize
             saved_padded_old = int(region_meta["region_bytes_padded"])
             new_padded = new_regions[str(cid)][region_idx]["region_bytes_padded"]
 
@@ -494,6 +495,18 @@ def reshard_mode_c_shards(
                 # Defensive: ensure all are 1-D (they should be — the
                 # shard_param's flat storage view).
                 per_rank_inputs = [t.flatten() for t in per_rank_inputs]
+                # Validate dtype against saved metadata before resharding;
+                # a mismatch here would silently corrupt optimizer state
+                # because ``_reshard_region_state`` uses ``elem_size_int``
+                # (derived from metadata) for its byte-stride maths.
+                for r_idx, tensor in enumerate(per_rank_inputs):
+                    if tensor.dtype != expected_dtype:
+                        raise ValueError(
+                            f"reshard: chunk {cid} region {region_idx} "
+                            f"state_key {state_key!r} rank {r_idx} dtype "
+                            f"{tensor.dtype} does not match metadata dtype "
+                            f"{expected_dtype}"
+                        )
                 new_slices = _reshard_region_state(
                     per_rank_inputs,
                     region_bytes=region_bytes,
@@ -509,17 +522,87 @@ def reshard_mode_c_shards(
                     )
 
             # Replicate ``step`` and any other per-region scalars from
-            # rank-0 (they're guaranteed identical across saving ranks
-            # since DeepSpeedCPUAdam steps in lockstep within a chunk).
-            for k, v in per_rank_state_dicts[0]["state"][region_idx].items():
+            # rank-0 — they're guaranteed identical across saving ranks
+            # since DeepSpeedCPUAdam steps in lockstep within a chunk.
+            # Validate that invariant explicitly: silently copying rank 0
+            # would otherwise mask drift caused by partial-save bugs or
+            # source-shard corruption.
+            rank0_region = per_rank_state_dicts[0]["state"][region_idx]
+            for r_other in range(1, src_world):
+                other_region = per_rank_state_dicts[r_other]["state"][region_idx]
+                if set(other_region.keys()) != set(rank0_region.keys()):
+                    raise ValueError(
+                        f"reshard: chunk {cid} region {region_idx} state keys "
+                        f"differ between rank 0 ({sorted(rank0_region.keys())}) "
+                        f"and rank {r_other} ({sorted(other_region.keys())})"
+                    )
+            for k, v in rank0_region.items():
                 if k in ("exp_avg", "exp_avg_sq"):
                     continue
+                for r_other in range(1, src_world):
+                    other_v = per_rank_state_dicts[r_other]["state"][region_idx][k]
+                    if isinstance(v, torch.Tensor) or isinstance(other_v, torch.Tensor):
+                        if not (
+                            isinstance(v, torch.Tensor)
+                            and isinstance(other_v, torch.Tensor)
+                            and torch.equal(v, other_v)
+                        ):
+                            raise ValueError(
+                                f"reshard: chunk {cid} region {region_idx} "
+                                f"non-moment state key {k!r} differs between "
+                                f"rank 0 and rank {r_other}"
+                            )
+                    elif v != other_v:
+                        raise ValueError(
+                            f"reshard: chunk {cid} region {region_idx} "
+                            f"non-moment state key {k!r} differs between "
+                            f"rank 0 ({v!r}) and rank {r_other} ({other_v!r})"
+                        )
                 for r2 in range(target_world_size):
                     # Clone tensors per-rank so mutations don't propagate.
                     val = v.clone() if isinstance(v, torch.Tensor) else v
                     new_per_rank_states[r2].setdefault(region_idx, {})[k] = val
 
+        # ``param_groups`` is rank-replicated; verify before reusing rank 0.
         param_groups = per_rank_state_dicts[0]["param_groups"]
+        for r_other in range(1, src_world):
+            other_pg = per_rank_state_dicts[r_other]["param_groups"]
+            if len(other_pg) != len(param_groups):
+                raise ValueError(
+                    f"reshard: chunk {cid} param_groups length differs "
+                    f"between rank 0 ({len(param_groups)}) and rank "
+                    f"{r_other} ({len(other_pg)})"
+                )
+            for pg_idx, (pg0, pg_other) in enumerate(
+                zip(param_groups, other_pg, strict=True)
+            ):
+                if set(pg0.keys()) != set(pg_other.keys()):
+                    raise ValueError(
+                        f"reshard: chunk {cid} param_groups[{pg_idx}] keys "
+                        f"differ between rank 0 ({sorted(pg0.keys())}) and "
+                        f"rank {r_other} ({sorted(pg_other.keys())})"
+                    )
+                for pk, pv in pg0.items():
+                    pv_other = pg_other[pk]
+                    if isinstance(pv, torch.Tensor) or isinstance(
+                        pv_other, torch.Tensor
+                    ):
+                        if not (
+                            isinstance(pv, torch.Tensor)
+                            and isinstance(pv_other, torch.Tensor)
+                            and torch.equal(pv, pv_other)
+                        ):
+                            raise ValueError(
+                                f"reshard: chunk {cid} param_groups[{pg_idx}] "
+                                f"key {pk!r} tensor differs between rank 0 and "
+                                f"rank {r_other}"
+                            )
+                    elif pv != pv_other:
+                        raise ValueError(
+                            f"reshard: chunk {cid} param_groups[{pg_idx}] key "
+                            f"{pk!r} differs between rank 0 ({pv!r}) and rank "
+                            f"{r_other} ({pv_other!r})"
+                        )
 
         # Write new per-rank shard files.
         for r2 in range(target_world_size):

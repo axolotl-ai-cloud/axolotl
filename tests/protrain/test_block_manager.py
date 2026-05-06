@@ -376,10 +376,13 @@ def test_discover_blocks_peft_wrapped_enc_dec() -> None:
     )
     by_order = sorted(trees, key=lambda t: t.forward_order)
     assert by_order[0].forward_order == 0
-    assert by_order[0].name == "base_model"
+    # Tree name is derived from the actual encoder/decoder segment in the
+    # dotted path, not the outer wrapper (PEFT's ``base_model``).
+    assert by_order[0].name == "encoder"
     assert by_order[0].parent_path == "base_model.model.encoder.block"
     assert len(by_order[0].blocks) == 3
     assert by_order[1].forward_order == 1
+    assert by_order[1].name == "decoder"
     assert by_order[1].parent_path == "base_model.model.decoder.block"
     assert len(by_order[1].blocks) == 2
 
@@ -392,9 +395,11 @@ def test_discover_blocks_peft_wrapped_enc_dec() -> None:
     )
     by_order = sorted(trees, key=lambda t: t.forward_order)
     assert by_order[0].forward_order == 0
+    assert by_order[0].name == "encoder"
     assert by_order[0].parent_path == "base_model.model.encoder.layers"
     assert len(by_order[0].blocks) == 4
     assert by_order[1].forward_order == 1
+    assert by_order[1].name == "decoder"
     assert by_order[1].parent_path == "base_model.model.decoder.layers"
     assert len(by_order[1].blocks) == 3
 

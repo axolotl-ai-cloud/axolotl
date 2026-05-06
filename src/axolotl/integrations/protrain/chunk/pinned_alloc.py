@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import threading
 from typing import TYPE_CHECKING
 
 from axolotl.utils.logging import get_logger
@@ -120,6 +121,18 @@ class PinnedHostMemory:
         self.n_buffer = int(n_buffer)
         self.S_chunk = int(S_chunk)
         self.total_bytes = self.n_buffer * self.S_chunk
+
+        # Reentrant lock guarding the shared lifecycle state below
+        # (``_closed``, ``_torch_tensor``, ``_fallback_tensor``,
+        # ``_live_borrows``). ``buffer`` / ``release_buffer`` / ``close``
+        # may be called from different threads under the swap pipeline
+        # (e.g. a worker doing H2D copies vs. the trainer thread tearing
+        # the allocator down) and the check-then-use sequences (``if not
+        # self._closed`` followed by ``self._torch_tensor.narrow(...)``,
+        # for example) must be atomic to avoid racing teardown.
+        # ``RLock`` so a method holding the lock can call another locked
+        # method on the same instance without deadlocking.
+        self._lock = threading.RLock()
 
         self._cudart: ctypes.CDLL | None = None
         self._ptr: int = 0  # device-facing pointer value (host-side VA)
@@ -259,15 +272,16 @@ class PinnedHostMemory:
         underlying pinned region while any borrow is still outstanding
         (see the class docstring for the use-after-free hazard).
         """
-        if self._closed:
-            raise RuntimeError("PinnedHostMemory is closed")
-        if not 0 <= i < self.n_buffer:
-            raise IndexError(f"buffer index {i} out of range [0, {self.n_buffer})")
-        assert self._torch_tensor is not None
-        start = i * self.S_chunk
-        view = self._torch_tensor.narrow(0, start, self.S_chunk)
-        self._live_borrows[i] = self._live_borrows.get(i, 0) + 1
-        return view
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("PinnedHostMemory is closed")
+            if not 0 <= i < self.n_buffer:
+                raise IndexError(f"buffer index {i} out of range [0, {self.n_buffer})")
+            assert self._torch_tensor is not None
+            start = i * self.S_chunk
+            view = self._torch_tensor.narrow(0, start, self.S_chunk)
+            self._live_borrows[i] = self._live_borrows.get(i, 0) + 1
+            return view
 
     def release_buffer(self, i: int) -> None:
         """Decrement the borrow count for slot ``i``.
@@ -287,20 +301,22 @@ class PinnedHostMemory:
                 self.n_buffer,
             )
             return
-        count = self._live_borrows.get(i, 0)
-        if count <= 0:
-            LOG.warning(
-                "PinnedHostMemory.release_buffer(%d): no outstanding borrow "
-                "for that slot; double-release?",
-                i,
-            )
-            return
-        if count == 1:
-            # Prune so ``_live_borrows`` is empty iff every slot is released —
-            # makes ``close()``'s check a simple truthiness test on the dict.
-            del self._live_borrows[i]
-        else:
-            self._live_borrows[i] = count - 1
+        with self._lock:
+            count = self._live_borrows.get(i, 0)
+            if count <= 0:
+                LOG.warning(
+                    "PinnedHostMemory.release_buffer(%d): no outstanding borrow "
+                    "for that slot; double-release?",
+                    i,
+                )
+                return
+            if count == 1:
+                # Prune so ``_live_borrows`` is empty iff every slot is
+                # released — makes ``close()``'s check a simple truthiness
+                # test on the dict.
+                del self._live_borrows[i]
+            else:
+                self._live_borrows[i] = count - 1
 
     # ---- introspection helpers (additive; backwards compatible) -----------
 
@@ -313,7 +329,8 @@ class PinnedHostMemory:
         """
         if not 0 <= i < self.n_buffer:
             return 0
-        return self._live_borrows.get(i, 0)
+        with self._lock:
+            return self._live_borrows.get(i, 0)
 
     def live_slots(self) -> list[int]:
         """Return slot indices with at least one outstanding borrow.
@@ -322,7 +339,8 @@ class PinnedHostMemory:
         pipeline's event-based release flow, which needs to enumerate which
         slots are still in flight.
         """
-        return list(self._live_borrows.keys())
+        with self._lock:
+            return list(self._live_borrows.keys())
 
     @property
     def total_live_borrows(self) -> int:
@@ -332,7 +350,8 @@ class PinnedHostMemory:
         any external caller that only cared about "is anything still
         borrowed" — though :meth:`live_slots` is preferred for new code.
         """
-        return sum(self._live_borrows.values())
+        with self._lock:
+            return sum(self._live_borrows.values())
 
     def close(self) -> None:
         """Free the pinned allocation. Idempotent.
@@ -349,27 +368,29 @@ class PinnedHostMemory:
         borrows remain (to avoid use-after-free), and only frees when
         no borrows are outstanding.
         """
-        if self._closed:
-            return
-        if self._live_borrows:
-            outstanding = sum(self._live_borrows.values())
-            slots = sorted(self._live_borrows.keys())
-            raise RuntimeError(
-                f"PinnedHostMemory.close(): {outstanding} slot view(s) "
-                f"still borrowed across slots {slots}; release them via "
-                "release_buffer() before close() to avoid use-after-free "
-                "on the pinned region."
-            )
-        self._closed = True
-        # Drop torch views first so no tensor outlives the underlying memory.
-        self._torch_tensor = None
-        self._fallback_tensor = None
-        if self._cudart is not None and self._ptr:
-            status = self._cudart.cudaFreeHost(ctypes.c_void_p(self._ptr))
-            if status != _CUDA_SUCCESS:
-                LOG.warning("cudaFreeHost returned status=%d", status)
-            self._ptr = 0
-            self._cudart = None
+        with self._lock:
+            if self._closed:
+                return
+            if self._live_borrows:
+                outstanding = sum(self._live_borrows.values())
+                slots = sorted(self._live_borrows.keys())
+                raise RuntimeError(
+                    f"PinnedHostMemory.close(): {outstanding} slot view(s) "
+                    f"still borrowed across slots {slots}; release them via "
+                    "release_buffer() before close() to avoid use-after-free "
+                    "on the pinned region."
+                )
+            self._closed = True
+            # Drop torch views first so no tensor outlives the underlying
+            # memory.
+            self._torch_tensor = None
+            self._fallback_tensor = None
+            if self._cudart is not None and self._ptr:
+                status = self._cudart.cudaFreeHost(ctypes.c_void_p(self._ptr))
+                if status != _CUDA_SUCCESS:
+                    LOG.warning("cudaFreeHost returned status=%d", status)
+                self._ptr = 0
+                self._cudart = None
 
     def __del__(self) -> None:  # noqa: D401
         # Destructors must not throw, so the borrow guard in ``close()``
@@ -386,19 +407,32 @@ class PinnedHostMemory:
         # when no borrows remain do we proceed to the deterministic
         # ``close()`` free.
         try:
-            if self._closed:
-                return
-            if self._live_borrows:
-                LOG.warning(
-                    "PinnedHostMemory.__del__: %d slot view(s) still borrowed "
-                    "across slots %s at GC time; leaking pinned region until "
-                    "process exit to avoid dangling-pointer use-after-free. "
-                    "Caller is missing release_buffer() pairs — fix the "
-                    "ownership bug and call close() explicitly.",
-                    sum(self._live_borrows.values()),
-                    sorted(self._live_borrows.keys()),
-                )
-                return
+            # ``_lock`` may not exist if __init__ raised before its
+            # creation. ``getattr`` with a no-op fallback keeps the
+            # destructor robust to partial construction failures.
+            lock = getattr(self, "_lock", None)
+            if lock is not None:
+                lock.acquire()
+            try:
+                if self._closed:
+                    return
+                if self._live_borrows:
+                    LOG.warning(
+                        "PinnedHostMemory.__del__: %d slot view(s) still "
+                        "borrowed across slots %s at GC time; leaking pinned "
+                        "region until process exit to avoid dangling-pointer "
+                        "use-after-free. Caller is missing release_buffer() "
+                        "pairs — fix the ownership bug and call close() "
+                        "explicitly.",
+                        sum(self._live_borrows.values()),
+                        sorted(self._live_borrows.keys()),
+                    )
+                    return
+            finally:
+                if lock is not None:
+                    lock.release()
+            # ``close()`` re-acquires the lock; release before calling so
+            # the RLock count returns to zero cleanly.
             self.close()
         except Exception:  # noqa: BLE001 — destructors must not throw
             LOG.exception("Error during PinnedHostMemory.__del__ cleanup")

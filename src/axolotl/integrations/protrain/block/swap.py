@@ -361,7 +361,22 @@ def _make_pack_unpack(
         # the run and the pool can stay artificially exhausted.
         second_borrow_acquired = False
         try:
-            required_bytes = handle.nbytes
+            # ``handle.nbytes`` (numel × element_size) under-estimates the
+            # actual storage when the strided buffer has gaps —
+            # ``torch.empty_strided(shape, stride, ...)`` allocates storage
+            # sized to the full strided extent (``max_offset + 1`` elements),
+            # not just ``numel × element_size``. Compute the true extent so
+            # the headroom check matches what the allocator below requests.
+            element_size = handle.dtype.itemsize
+            if handle.shape:
+                max_offset = sum(
+                    (s - 1) * st
+                    for s, st in zip(handle.shape, handle.stride, strict=True)
+                )
+                storage_numel = max_offset + 1
+            else:
+                storage_numel = 1
+            required_bytes = storage_numel * element_size
             total_safety = required_bytes + _SWAP_HEADROOM_SAFETY_BYTES
 
             free_bytes, _total = torch.cuda.mem_get_info(handle.device)

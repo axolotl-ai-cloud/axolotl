@@ -249,7 +249,18 @@ def build_layout(
     pid_owner: dict[ParamId, BlockId] = {}
     overlaps: dict[ParamId, list[BlockId]] = {}
     for owner_bid, params in block_spans.items():
+        seen: set[ParamId] = set()
         for pid in params:
+            # Within a single block, a duplicate ``pid`` would slip past
+            # the cross-block ``pid_owner`` check (since ``prior == owner_bid``
+            # falls through to the else branch) and double-count
+            # downstream. Reject duplicates explicitly here.
+            if pid in seen:
+                raise ValueError(
+                    f"block_spans[{owner_bid!r}] lists param {pid!r} more than "
+                    "once; each ParamId must appear at most once per block"
+                )
+            seen.add(pid)
             prior = pid_owner.get(pid)
             if prior is not None and prior != owner_bid:
                 bucket = overlaps.setdefault(pid, [prior])

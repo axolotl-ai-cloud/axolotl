@@ -557,113 +557,88 @@ class ProTrainPlugin(BasePlugin):
         # ``measure_nccl`` internally) sees the live PG.
         _early_init_dist_for_nccl(cfg)
 
-        # ---- Move model to cuda:LOCAL_RANK if needed --------------------
-        # ``protrain_model_wrapper`` reads
-        # ``next(model.parameters()).device`` to seed the profiler
-        # tracker, which calls ``torch.cuda.memory_stats(device)`` —
-        # that raises ``ValueError: Expected a cuda device`` when the
-        # device is CPU. Under ``accelerate launch`` (the path
-        # ``axolotl train`` takes for single-GPU runs), Axolotl's
-        # ``choose_device`` deliberately sets ``cfg.device_map = None``
-        # when ``ACCELERATE_USE_*`` env vars are present (see
-        # ``utils/config/__init__.py``); HF Trainer relies on
-        # ``Accelerator.prepare`` later in the bootstrap to move the
-        # model. By that point our ``post_model_load`` has already
-        # fired with the model still on CPU. The in-process
-        # ``axolotl.train.train`` path doesn't hit this because no
-        # ``ACCELERATE_USE_*`` env vars are set, so ``device_map`` falls
-        # to ``"auto"`` and the model is GPU-resident at load time.
-        # We close the gap by moving the model ourselves; idempotent
-        # when already on the target device. The gate also catches the
-        # case where the model is already on CUDA but on the *wrong*
-        # ordinal (e.g. left on ``cuda:0`` while ``LOCAL_RANK=2``) — we
-        # pin it to ``cuda:LOCAL_RANK`` so the profiler reads memory
-        # stats from the device this rank will actually train on.
+        # ---- Compute target device for the wrapper (hint, no move) -----
+        # Per-rank target device that downstream GPU allocations
+        # (BufferPool, ChunkManager, profiler) should use, computed
+        # exclusively from ``LOCAL_RANK`` + visible CUDA device count.
+        # We do NOT call ``model.to(target)`` here — eagerly
+        # materializing the full model on a single device defeats the
+        # ProTrain chunk-offload promise (paper §3.1) and the failed-
+        # ``to()`` rescue path that previously swallowed ``RuntimeError``
+        # was a footgun: it left the wrapper running on a still-CPU
+        # model whose downstream ``next(model.parameters()).device``
+        # read would seed every GPU-side allocation against the wrong
+        # device. Instead, the target is threaded through to
+        # ``protrain_model_wrapper`` as an explicit kwarg; the wrapper
+        # takes responsibility for placement under its own OOM-aware
+        # path. Model-mapped (``hf_device_map``) loads are handled by
+        # passing ``target_device=None`` so the wrapper falls back to
+        # the model's existing device-map placement.
         import os as _os
 
+        target_device = None
         try:
             import torch as _torch
-
-            current_device = next(model.parameters()).device
-        except (StopIteration, ImportError):
-            current_device = None
+        except ImportError:
             _torch = None  # type: ignore[assignment]
-        if (
-            current_device is not None
-            and _torch is not None
-            and _torch.cuda.is_available()
-        ):
-            # Defensive parse: a non-numeric LOCAL_RANK would raise here
-            # and abort plugin init before the safer fallback in
-            # _build_hardware_profile() runs; a negative would slip
-            # through as cuda:-1. Mirror the same try/except + range
-            # guard used at _build_hardware_profile().
-            raw_local_rank = _os.environ.get("LOCAL_RANK", "0")
-            try:
-                local_rank = int(raw_local_rank)
-            except ValueError:
-                LOG.warning(
-                    "ProTrain: invalid LOCAL_RANK=%r; falling back to current CUDA device.",
-                    raw_local_rank,
+        if _torch is not None and _torch.cuda.is_available():
+            # Skip on device-mapped (``accelerate``-dispatched) loads.
+            # The device map already pins each shard to a CUDA ordinal,
+            # so the wrapper inherits the right placement from the
+            # model's parameters; computing a single target_device
+            # would either be wrong (forces collapse) or redundant.
+            hf_device_map = getattr(model, "hf_device_map", None)
+            if hf_device_map:
+                LOG.info(
+                    "ProTrain: model has hf_device_map=%s; deferring "
+                    "device selection to the wrapper (target_device=None).",
+                    hf_device_map,
                 )
-                local_rank = _torch.cuda.current_device()
-            visible = _torch.cuda.device_count()
-            # ``current_device.index`` is ``None`` for a bare
-            # ``torch.device("cuda")`` without an explicit ordinal
-            # (resolves to the current device at runtime); treat that as
-            # "wrong ordinal" so we pin it to ``cuda:LOCAL_RANK``.
-            on_wrong_cuda = current_device.type == "cuda" and (
-                current_device.index is None or current_device.index != local_rank
-            )
-            needs_move = current_device.type != "cuda" or on_wrong_cuda
-            if not needs_move:
-                pass  # already on cuda:local_rank, no-op
-            elif 0 <= local_rank < visible:
-                target = f"cuda:{local_rank}"
-                # Skip the move on device-mapped (``accelerate``-dispatched)
-                # loads — ``model.to()`` on a model with an ``hf_device_map``
-                # collapses the per-module placement and can OOM by
-                # materializing the full model on a single device. The
-                # device map already pins each shard to a CUDA ordinal,
-                # so the profiler's ``next(model.parameters()).device``
-                # read will report the correct device anyway.
-                hf_device_map = getattr(model, "hf_device_map", None)
-                if hf_device_map:
+            else:
+                # Defensive parse: a non-numeric LOCAL_RANK would raise
+                # here and abort plugin init before the safer fallback
+                # in _build_hardware_profile() runs; a negative would
+                # slip through as cuda:-1. Mirror the same try/except +
+                # range guard used at _build_hardware_profile().
+                raw_local_rank = _os.environ.get("LOCAL_RANK", "0")
+                try:
+                    local_rank = int(raw_local_rank)
+                except ValueError:
+                    LOG.warning(
+                        "ProTrain: invalid LOCAL_RANK=%r; falling back to current CUDA device.",
+                        raw_local_rank,
+                    )
+                    local_rank = _torch.cuda.current_device()
+                visible = _torch.cuda.device_count()
+                if 0 <= local_rank < visible:
+                    target_device = _torch.device("cuda", local_rank)
+                    # Stash on the model as a lightweight metadata hint
+                    # so downstream callers that bypass the kwarg path
+                    # (e.g. plugin-less direct callers reaching the
+                    # wrapper through a third-party harness) can still
+                    # read the intended target.
+                    try:
+                        model._protrain_target_device = target_device  # type: ignore[attr-defined]
+                    except (AttributeError, TypeError):
+                        # Frozen / __slots__ models — the kwarg path
+                        # below is the canonical handoff anyway.
+                        pass
                     LOG.info(
-                        "ProTrain: model has hf_device_map=%s; skipping "
-                        "pre-wrap move to %s to preserve device-mapped "
-                        "placement.",
-                        hf_device_map,
-                        target,
+                        "ProTrain: target_device=%s (LOCAL_RANK=%d, visible=%d) — "
+                        "actual placement deferred to the wrapper / Accelerate.prepare.",
+                        target_device,
+                        local_rank,
+                        visible,
                     )
                 else:
-                    LOG.info(
-                        "ProTrain: model is on %s; moving to %s before wrap "
-                        "(post_model_load fired pre-Accelerate.prepare).",
-                        current_device,
-                        target,
+                    LOG.warning(
+                        "ProTrain: CUDA available but LOCAL_RANK=%d is out of "
+                        "range for visible device count %d (CUDA_VISIBLE_DEVICES "
+                        "masking?); leaving target_device unset, the wrapper will "
+                        "infer from the model's current placement.",
+                        local_rank,
+                        visible,
                     )
-                    try:
-                        model.to(target)
-                    except RuntimeError as exc:
-                        # OOM or device-mapped collapse — log and defer to
-                        # Accelerate.prepare rather than aborting the run.
-                        LOG.warning(
-                            "ProTrain: model.to(%s) failed (%s); deferring "
-                            "placement to Accelerate.prepare.",
-                            target,
-                            exc,
-                        )
-            else:
-                LOG.warning(
-                    "ProTrain: model is on %s and CUDA is available, but "
-                    "LOCAL_RANK=%d is out of range for visible device count "
-                    "%d (CUDA_VISIBLE_DEVICES masking?); skipping pre-wrap "
-                    "model.to() and deferring placement to Accelerate.prepare.",
-                    current_device,
-                    local_rank,
-                    visible,
-                )
 
         hw = _build_hardware_profile(cfg)
 
@@ -713,6 +688,7 @@ class ProTrainPlugin(BasePlugin):
             n_offload_override=n_offload_override,
             zero3_shard=zero3_shard,
             auto_mode=bool(auto_mode),
+            target_device=target_device,
         )
 
         # Stash on cfg so post_trainer_create (which only receives cfg +

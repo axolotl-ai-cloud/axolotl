@@ -615,7 +615,7 @@ def main() -> int:
                 "n_iters": n_iters,
                 "n_warmup": n_warmup,
                 "dtype": "fp16",
-                "gpus": f"{multi_visible} (RTX 3090)",
+                "gpus": multi_visible,
             },
             "wall_clock_s": wall_s,
             "summaries": summaries,
@@ -626,7 +626,7 @@ def main() -> int:
 
         md = _render_markdown(summaries)
         print("\n" + "=" * 72)
-        print(f"ProTrain multi-GPU benchmark — 4x RTX 3090 (GPUs {multi_visible})")
+        print(f"ProTrain multi-GPU benchmark (GPUs {multi_visible})")
         print("=" * 72)
         print(md)
         print()

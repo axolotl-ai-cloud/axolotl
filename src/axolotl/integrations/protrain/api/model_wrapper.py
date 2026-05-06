@@ -1215,6 +1215,7 @@ def protrain_model_wrapper(
     n_offload_override: int | None = None,
     zero3_shard: bool | None = None,
     auto_mode: bool = False,
+    target_device: "torch.device | str | int | None" = None,
 ) -> WrappedModel:
     """Compose the ProTrain runtime around a standard ``nn.Module``.
 
@@ -1307,6 +1308,21 @@ def protrain_model_wrapper(
         vs. 3.64x DDP on PCIe Gen3 4x 3090 when the model fits on GPU).
         Default is False on this direct entry point; the plugin sets it
         to True via ``ProTrainArgs.protrain_auto_mode``.
+    target_device:
+        Explicit per-rank target device for downstream GPU allocations
+        (BufferPool, ChunkManager, profiler). When provided, all
+        GPU-side state is allocated on this device and the model is
+        moved here before profiling if it isn't already. Takes
+        precedence over the ``model._protrain_target_device``
+        metadata hint and over ``next(model.parameters()).device``.
+        Pass ``None`` (default) to fall back to the hint or to the
+        model's existing placement — the latter is the legacy contract
+        for callers that hand in an already-placed model. The plugin
+        path computes this from ``LOCAL_RANK`` so each rank's chunks
+        land on its own GPU; ``None`` is also passed when
+        ``hf_device_map`` is set so the wrapper inherits the
+        device-mapped placement instead of collapsing it onto a
+        single device.
 
     Returns
     -------
@@ -1317,11 +1333,72 @@ def protrain_model_wrapper(
     """
     import torch
 
-    # Pick the device from the model; fall back to cuda:0.
+    # ---- Device resolution -----------------------------------------------
+    # Precedence:
+    #   1. Explicit ``target_device`` kwarg (the plugin's preferred path —
+    #      computed from LOCAL_RANK before any model placement happens).
+    #   2. ``model._protrain_target_device`` metadata hint (lightweight
+    #      handoff for callers that bypass the kwarg path).
+    #   3. ``next(model.parameters()).device`` — back-compat fallback for
+    #      callers that hand in an already-placed model and don't supply
+    #      a hint.
+    #   4. ``cuda:0`` if CUDA is available, else ``cpu``.
+    #
+    # The plugin no longer calls ``model.to()`` in ``post_model_load`` —
+    # that was a footgun that either (a) eagerly materialized the full
+    # model on a single device (defeating the chunk-offload promise) or
+    # (b) silently swallowed an OOM and left the wrapper running on a
+    # CPU model whose downstream allocations seeded the wrong device.
+    # The wrapper now owns placement: when the model is on CPU but the
+    # caller-supplied target is CUDA, we move the model here, with a
+    # try/except that surfaces an actionable error rather than returning
+    # a half-wired WrappedModel. The on-demand profiler path
+    # (``OnDemandTensorMgr``) handles the "model exceeds device memory"
+    # case downstream — see ``run_trace``'s ``engage_on_demand`` gate.
+    resolved_target: torch.device | None = None
+    if target_device is not None:
+        resolved_target = torch.device(target_device)
+    else:
+        attr_target = getattr(model, "_protrain_target_device", None)
+        if attr_target is not None:
+            resolved_target = torch.device(attr_target)
+
     try:
-        device = next(model.parameters()).device
+        model_device = next(model.parameters()).device
     except StopIteration:
+        model_device = None
+
+    if resolved_target is not None:
+        device = resolved_target
+    elif model_device is not None:
+        device = model_device
+    else:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    # If the caller asked for a CUDA target but the model is on a
+    # different device (typically CPU under ``accelerate launch``, where
+    # ``post_model_load`` fires before ``Accelerator.prepare()``), move
+    # it now. ``hf_device_map``-loads pass ``target_device=None`` from
+    # the plugin, so this branch only fires for the in-process and
+    # accelerate-launch single-rank paths the plugin is actually
+    # responsible for placing. We do NOT silently catch OOM here — a
+    # failure on this move has no safe automatic recovery (downstream
+    # GPU-side allocations would be wrong-sized for the actual device
+    # state); the trainer-level catch handles it as an unrecoverable
+    # config error with full context.
+    if (
+        device.type == "cuda"
+        and model_device is not None
+        and model_device != device
+        and getattr(model, "hf_device_map", None) is None
+    ):
+        LOG.info(
+            "ProTrain: moving model from %s to %s before profiling "
+            "(target_device hint).",
+            model_device,
+            device,
+        )
+        model.to(device)
 
     # Gradient checkpointing + HF KV cache leads to recompute-time shape
     # mismatches (cache grows across calls; the recompute call sees a

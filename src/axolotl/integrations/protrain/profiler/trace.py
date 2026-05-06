@@ -264,12 +264,15 @@ def run_trace(
         LOG.warning("measure_cpu_adam failed (%s); recording 0.0", exc)
         cpu_adam_bps = 0.0
     try:
-        dev_idx_for_bench = (
-            device.index if device.index is not None else torch.cuda.current_device()
-        )
-        gpu_adam_bps = (
-            measure_gpu_adam(dev_idx_for_bench) if cuda_available_for_bench else 0.0
-        )
+        if cuda_available_for_bench:
+            dev_idx_for_bench = (
+                device.index
+                if device.index is not None
+                else torch.cuda.current_device()
+            )
+            gpu_adam_bps = measure_gpu_adam(dev_idx_for_bench)
+        else:
+            gpu_adam_bps = 0.0
     except Exception as exc:  # pragma: no cover - defensive
         LOG.warning("measure_gpu_adam failed (%s); recording 0.0", exc)
         gpu_adam_bps = 0.0
@@ -1127,10 +1130,15 @@ def run_trace(
     # copy engines are unaffected by the earlier Adam microbenchmarks and
     # running PCIe post-trace matches the pre-v3 measurement ordering.
     try:
-        dev_idx = (
-            device.index if device.index is not None else torch.cuda.current_device()
-        )
-        pcie_h2d_bps, pcie_d2h_bps = measure_pcie(dev_idx)
+        if cuda_available:
+            dev_idx = (
+                device.index
+                if device.index is not None
+                else torch.cuda.current_device()
+            )
+            pcie_h2d_bps, pcie_d2h_bps = measure_pcie(dev_idx)
+        else:
+            pcie_h2d_bps = pcie_d2h_bps = 0.0
     except Exception as exc:  # pragma: no cover - defensive, GPU-only
         LOG.warning("measure_pcie failed (%s); recording zeros", exc)
         pcie_h2d_bps = pcie_d2h_bps = 0.0
@@ -1154,12 +1162,15 @@ def run_trace(
     # can scale per-op latencies. Same-SKU runs see ratio ≈ 1.0 and the
     # calibration is a no-op. Recorded post-PCIe so allocator state is settled.
     try:
-        dev_idx_for_compute = (
-            device.index if device.index is not None else torch.cuda.current_device()
-        )
-        compute_rate_tflops = (
-            measure_compute_rate(dev_idx_for_compute) if cuda_available else 0.0
-        )
+        if cuda_available:
+            dev_idx_for_compute = (
+                device.index
+                if device.index is not None
+                else torch.cuda.current_device()
+            )
+            compute_rate_tflops = measure_compute_rate(dev_idx_for_compute)
+        else:
+            compute_rate_tflops = 0.0
     except Exception as exc:  # pragma: no cover - defensive
         LOG.warning(
             "measure_compute_rate failed (%s); recording 0.0 — cost model "
