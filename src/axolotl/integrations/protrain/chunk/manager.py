@@ -592,6 +592,22 @@ class ChunkManager:
         # ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.7 / §5.1 for the lifecycle.
         self._active_chunks: set[ChunkId] = set()
 
+        # Per-chunk physical byte size (post-alignment) — the value the
+        # buffer pool needs to size an oversize-chunk allocation
+        # correctly. Populated lazily: ``materialize_offload`` fills in
+        # entries for every non-persistent chunk it materializes, and
+        # ``_compute_chunk_bytes`` fills in persistent-chunk entries on
+        # first ``gather``. Empty in the all-persistent / never-gathered
+        # construction paths.
+        #
+        # When a chunk's value here exceeds ``layout.S_chunk`` the
+        # manager treats it as oversize: the gather/offload paths route
+        # the buffer pool acquire/release through the side-table branch
+        # documented in :class:`BufferPool`. Models with no oversize
+        # chunks see this dict populated with values <= S_chunk and the
+        # oversize branches stay dormant.
+        self._chunk_bytes_by_id: dict[ChunkId, int] = {}
+
         self.mark_persistent(n_persist)
 
     # ---- configuration -------------------------------------------------
@@ -1028,6 +1044,12 @@ class ChunkManager:
             param_pool_chunk_bytes = plan["param_pool_chunk_bytes"]
             grad_pool_offset = plan["grad_pool_offset"]
             grad_pool_chunk_bytes = plan["grad_pool_chunk_bytes"]
+
+            # Cache the per-chunk physical byte size so ``gather`` can
+            # plumb it through ``BufferPool.acquire`` / ``release`` when
+            # the chunk is oversize (chunk_bytes > S_chunk). Persistent
+            # chunks fill this in lazily via ``_compute_chunk_bytes``.
+            self._chunk_bytes_by_id[cid] = chunk_bytes
 
             # Per-chunk view into the param pool.
             #   - Replicated: full-chunk byte tensor backed by pinned
@@ -1597,6 +1619,12 @@ class ChunkManager:
         self._persistent_buffers.clear()
         self._grad_initial.clear()
         self._grad_remaining.clear()
+        # The cached per-chunk byte sizes are recomputable from the
+        # layout, but ``materialize_offload`` populates this dict as
+        # part of its planning pass; clear here so a fresh manager
+        # built on the same model under a new layout doesn't see
+        # stale entries keyed on a now-invalid ``ChunkId`` space.
+        self._chunk_bytes_by_id.clear()
         # Empty placeholders are still referenced by params we just
         # rebound — the rebind dropped the param.data reference, so the
         # placeholders are unreferenced from torch's perspective. Drop
@@ -1630,6 +1658,46 @@ class ChunkManager:
             moved / 1e9,
         )
         return moved
+
+    def _compute_chunk_bytes(self, chunk_id: ChunkId) -> int:
+        """Return the physical byte size of ``chunk_id``'s param payload.
+
+        Mirrors the per-chunk aligned-offset pass that
+        :meth:`materialize_offload` runs in its planning loop: walk
+        ``layout.chunks[cid]`` in order, pad each param's start offset
+        up to its element_size for the BUG 2 alignment fix, sum
+        ``numel * element_size``. Used by the buffer-pool acquire/
+        release plumbing to detect oversize chunks (chunk_bytes >
+        S_chunk) and by :meth:`_ensure_persistent_buffer` to size the
+        long-lived persistent buffer correctly even when the chunk
+        contains a single oversize param.
+
+        Cached in ``self._chunk_bytes_by_id`` on first call so
+        repeated lookups (every gather/offload of a persistent chunk)
+        stay O(1).
+        """
+        cached = self._chunk_bytes_by_id.get(chunk_id)
+        if cached is not None:
+            return cached
+        param_ids = self.layout.chunks[int(chunk_id)]
+        offset = 0
+        for pid in param_ids:
+            param = self._params_by_id.get(pid)
+            if param is None:
+                continue
+            nbytes = int(param.numel()) * int(param.element_size())
+            if nbytes == 0:
+                continue
+            esz = int(param.element_size())
+            # Match the BUG 2 alignment rule from materialize_offload's
+            # planning loop: pad the running offset up to a multiple of
+            # this param's element_size so a subsequent typed view at
+            # this byte offset doesn't trip ``RuntimeError: offset is
+            # not aligned``.
+            offset = ((offset + esz - 1) // esz) * esz
+            offset += nbytes
+        self._chunk_bytes_by_id[chunk_id] = offset
+        return offset
 
     def _empty_placeholder(self, dtype: "torch.dtype") -> "torch.Tensor":
         """Return a zero-element GPU tensor of ``dtype`` (cached per dtype)."""
@@ -1952,6 +2020,12 @@ class ChunkManager:
             self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
             return
 
+        # Resolve the chunk's physical byte size — only consequential
+        # when it exceeds ``layout.S_chunk`` (oversize chunk path) but
+        # always cheap thanks to the ``_chunk_bytes_by_id`` cache that
+        # ``materialize_offload`` populated.
+        chunk_bytes = self._compute_chunk_bytes(chunk_id)
+
         resident_buf = self.buffer_pool.acquire_if_resident(chunk_id)
         if resident_buf is not None:
             self._active_chunks.add(chunk_id)
@@ -1963,7 +2037,16 @@ class ChunkManager:
         # list is non-empty), then either (a) issue per-region
         # all_gathers in sharded mode or (b) per-slot H2D copies in
         # replicated mode.
-        buf = self.buffer_pool.acquire(chunk_id)
+        #
+        # Oversize chunks (chunk_bytes > S_chunk): the
+        # ``BufferPool.acquire`` plumbing routes through the
+        # ``_large_buffers`` side-table and returns a buffer of exactly
+        # ``chunk_bytes`` bytes — large enough for the
+        # ``buf.narrow(0, region.chunk_offset, region.region_bytes)``
+        # call in ``_gather_sharded`` to land entirely inside the
+        # buffer. Normal chunks pass through to the slot pool with
+        # zero behavior change.
+        buf = self.buffer_pool.acquire(chunk_id, chunk_bytes=chunk_bytes)
         self._active_chunks.add(chunk_id)
         if shard_state is not None:
             self._gather_sharded(chunk_id, buf, shard_state)
@@ -2960,16 +3043,27 @@ class ChunkManager:
         # the buffer-pool slots and the rest of the chunk-manager state.
         # No ``record_stream`` needed (long-lived, no cross-stream
         # release race).
+        #
+        # Oversize-chunk handling: a persistent chunk whose param
+        # payload exceeds ``layout.S_chunk`` (e.g. a 35MB MLP weight
+        # under a 32MB S_chunk on a Llama-7B with intermediate=6912)
+        # would overflow the buffer's narrow() slices. Use the larger
+        # of S_chunk and the chunk's actual byte size so the buffer is
+        # always at least big enough to hold every region's bytes.
+        # For normal chunks ``_compute_chunk_bytes`` returns a value
+        # <= S_chunk and the ``max`` is a no-op.
+        chunk_bytes = self._compute_chunk_bytes(chunk_id)
+        buf_bytes = max(int(self.layout.S_chunk), int(chunk_bytes))
         if self.device.type == "cuda" and torch.cuda.is_available():
             with SingleStreamAllocator():
                 buf = torch.empty(
-                    self.layout.S_chunk,
+                    buf_bytes,
                     dtype=torch.uint8,
                     device=self.device,
                 )
         else:
             buf = torch.empty(
-                self.layout.S_chunk,
+                buf_bytes,
                 dtype=torch.uint8,
                 device=self.device,
             )

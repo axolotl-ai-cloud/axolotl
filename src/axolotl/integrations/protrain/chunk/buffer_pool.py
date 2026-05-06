@@ -10,6 +10,46 @@ probes that don't read the buffer.
 
 Paired with :class:`~axolotl.integrations.protrain.chunk.pinned_alloc.PinnedHostMemory`
 for the host-side staging region of the same shape.
+
+Oversize-chunk side-table (§3 + paper-fidelity addon)
+-----------------------------------------------------
+The paper's :math:`M_{buffer} = n_{buffer} \\times S_{chunk}` footprint
+ceiling (Eq. 11) refers to the *slot pool* — ``n_buffer`` uniform-size
+buffers that host normal chunks. The layout builder, however, supports
+placing a single param larger than ``S_chunk`` in its own chunk
+(``layout.py``: "A single param larger than ``S_chunk`` is placed on its
+own in a fresh chunk"); the S_chunk picker accepts these (sizing.py
+clamps oversize-chunk waste at 0 — it knows the chunks will be oversize
+and is OK with that). To handle them at runtime without violating the
+slot-uniform invariant, this pool keeps a separate
+:attr:`_large_buffers` dict, keyed on ``ChunkId``, holding one-off
+exact-byte allocations for chunks where ``chunk_bytes > S_chunk``.
+
+Oversize allocations:
+
+* Do NOT compete for slot leases — they don't pop from ``_free`` and
+  don't increment ``_leases``. The slot pool's lease-counter invariants
+  are unaffected.
+* Pass through :class:`SingleStreamAllocator` like the slot pool itself
+  so they land on the default-stream heap. This means the running
+  reserved-bytes total can transiently exceed ``n_buffer * S_chunk`` by
+  the sum of currently-resident oversize-chunk bytes; this is documented
+  in the cost model as the OFFLOAD-mode runtime overhead. The
+  alternative — allocating off the default heap with a ``record_stream``
+  cleanup — would force every gather/release to drag a stream-event
+  through the per-chunk control flow with no correctness benefit.
+* Are released (dropped from the dict) on :meth:`release`, NOT preserved
+  for forward→backward H2D-skip reuse. The slot-pool tag-preserving
+  optimization buys an avoided H2D for normal chunks at the cost of
+  keeping their bytes resident; oversize chunks would pay the same cost
+  in proportionally more bytes, so we drop them eagerly. The scheduler's
+  ``_active_chunks`` lease-idempotency contract (manager.py) handles
+  duplicate gathers within a single active window, so the
+  reuse-on-release hit is bounded.
+* Are completely transparent when no oversize chunks exist — every code
+  path through this module short-circuits when ``chunk_bytes <= S_chunk``
+  (or is omitted), so models without oversize chunks behave identically
+  to the pre-oversize implementation.
 """
 
 from __future__ import annotations
@@ -153,9 +193,23 @@ class BufferPool:
         # it, allowing a subsequent miss to overwrite live data.
         self._leases: list[int] = [0] * self.n_buffer
 
+        # Oversize-chunk side-table — see the module docstring's
+        # "Oversize-chunk side-table" section. Each entry holds one
+        # exact-byte uint8 GPU tensor for a chunk whose ``chunk_bytes``
+        # exceeds ``self.S_chunk``. Empty in the common case (no
+        # oversize chunks), which keeps the normal slot-pool path
+        # zero-overhead. Membership is the implicit "lease" — there's
+        # only ever one caller of an oversize buffer at a time within
+        # an active window (the manager's ``_active_chunks`` set is
+        # the single-writer guard), so we don't need a separate
+        # refcount the way slots do.
+        self._large_buffers: dict[ChunkId, "torch.Tensor"] = {}
+
     # ---- core ops ------------------------------------------------------
 
-    def acquire(self, chunk_id: ChunkId) -> "torch.Tensor":
+    def acquire(
+        self, chunk_id: ChunkId, chunk_bytes: int | None = None
+    ) -> "torch.Tensor":
         """Return a buffer holding ``chunk_id``; allocate from the free list if needed.
 
         If the chunk is already resident and its slot is in the free list,
@@ -163,7 +217,66 @@ class BufferPool:
         If the chunk isn't resident we evict the LRU free slot, re-tag it
         with ``chunk_id``, and return it (the caller is responsible for the
         H2D copy that follows).
+
+        When ``chunk_bytes is not None and chunk_bytes > self.S_chunk``
+        the chunk is "oversize": we route it to the per-chunk
+        :attr:`_large_buffers` side-table instead of the slot pool. See
+        the module docstring's "Oversize-chunk side-table" section for
+        the full contract. Oversize allocations do NOT consume slot
+        leases, so passing ``chunk_bytes`` with a tiny value is a no-op
+        from the slot pool's perspective — the pool's
+        ``M_buffer = n_buffer * S_chunk`` paper-Eq. 11 ceiling stays
+        valid for the slot pool itself.
         """
+        # Oversize fast path: route through the side-table BEFORE
+        # touching any slot state. This keeps the slot lease counter,
+        # free-set, and tag table identical to a model with no oversize
+        # chunks — the path here is invisible to the slot machinery.
+        if chunk_bytes is not None and chunk_bytes > self.S_chunk:
+            existing = self._large_buffers.get(chunk_id)
+            if existing is not None:
+                # Lease-idempotent within an active window: the
+                # ChunkManager's ``_active_chunks`` set is what gates
+                # duplicate gathers from re-entering this branch in
+                # steady-state, so reaching here with an existing
+                # entry is the legitimate "two prefetch sites
+                # converged on the same chunk" case. Return the same
+                # tensor; no double-allocation.
+                if existing.numel() != chunk_bytes:
+                    # Defensive — should never happen because chunk
+                    # bytes are a function of layout + dtype which are
+                    # immutable for a given manager lifetime. If a
+                    # caller drifted, surface it loudly rather than
+                    # silently returning a wrong-size buffer.
+                    raise RuntimeError(
+                        f"BufferPool: oversize buffer for chunk {chunk_id} "
+                        f"already allocated at {existing.numel()} bytes; "
+                        f"caller requested {chunk_bytes} bytes"
+                    )
+                return existing
+            # First-time allocation for this oversize chunk. Route
+            # through ``SingleStreamAllocator`` so the bytes land on
+            # the default-stream heap — same App B.2 contract the
+            # slot pool itself observes (constructor above). The
+            # allocation can transiently push reserved bytes above
+            # ``n_buffer * S_chunk`` by ``chunk_bytes`` worth of
+            # bytes; this is the documented oversize cost.
+            import torch
+
+            if self.device.type == "cuda" and torch.cuda.is_available():
+                from axolotl.integrations.protrain.runtime.streams import (
+                    SingleStreamAllocator,
+                )
+
+                with SingleStreamAllocator():
+                    buf = torch.empty(
+                        chunk_bytes, dtype=torch.uint8, device=self.device
+                    )
+            else:
+                buf = torch.empty(chunk_bytes, dtype=torch.uint8, device=self.device)
+            self._large_buffers[chunk_id] = buf
+            return buf
+
         # Fast path: chunk is already in a slot (possibly free, possibly in-use).
         slot = self._tag_to_slot.get(chunk_id)
         if slot is not None:
@@ -212,7 +325,21 @@ class BufferPool:
 
         Silently no-op if the chunk isn't currently held — callers can
         release unconditionally without special-casing the persistent path.
+
+        Oversize chunks (entries in :attr:`_large_buffers`) are dropped
+        from the side-table here — there's no slot to return and no tag
+        to preserve. This forfeits the forward→backward H2D-skip
+        optimization for oversize chunks (the next gather will re-allocate
+        and re-copy), but the bytes saved by freeing eagerly outweigh the
+        rare reuse hit.
         """
+        # Oversize fast path: free the side-table buffer eagerly. Done
+        # BEFORE the slot-pool path because the two state spaces are
+        # disjoint by construction (an oversize chunk never made it
+        # into ``_tag_to_slot``).
+        large = self._large_buffers.pop(chunk_id, None)
+        if large is not None:
+            return
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
             return
@@ -243,7 +370,14 @@ class BufferPool:
         actually read the buffer — it takes a real lease and pairs with
         ``release(chunk_id)``, eliminating the eviction race while
         preserving the "no eviction on miss" semantics.
+
+        Oversize chunks: a present entry in :attr:`_large_buffers` is
+        always safe to read — there's no concurrent eviction path
+        because oversize buffers are dropped only at :meth:`release`.
         """
+        large = self._large_buffers.get(chunk_id)
+        if large is not None:
+            return large
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
             return None
@@ -267,7 +401,15 @@ class BufferPool:
         peek-then-evict race window where another ``acquire`` between
         the lookup and the read could re-tag the slot and overwrite the
         data.
+
+        Oversize chunks: a hit in :attr:`_large_buffers` returns the
+        buffer with no extra bookkeeping. Membership IS the lease — only
+        :meth:`release` drops the entry, and oversize allocations cannot
+        be evicted by an unrelated ``acquire``.
         """
+        large = self._large_buffers.get(chunk_id)
+        if large is not None:
+            return large
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
             return None
