@@ -598,10 +598,28 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
         # exercises the sharded path. We set n_persist=2 (keep the
         # first two chunks — embed + first block — on GPU so the
         # scheduler has something to run; the rest get CPU-offloaded
-        # and sharded), n_buffer=2 (enough to hold two concurrent
-        # chunks during the forward prefetch), n_swap=0, n_checkpoint=0
-        # (keep activations GPU-resident; the test is about model-state
-        # offload, not activation offload).
+        # and sharded), n_buffer=10 (= scheduler floor for this layout —
+        # see below), n_swap=0, n_checkpoint=0 (keep activations
+        # GPU-resident; the test is about model-state offload, not
+        # activation offload).
+        #
+        # n_buffer floor rationale (paper §3.4 / App B.2): the
+        # scheduler's lookahead prefetch holds the current block's
+        # chunks resident while concurrently prefetching the next
+        # block's chunks, so the buffer pool must be sized for the
+        # worst-case union across adjacent block pairs (see
+        # ``min_n_buffer_for`` in
+        # src/axolotl/integrations/protrain/search/exhaustive.py). For
+        # this Llama config (hidden=2560, intermediate=6912) each
+        # transformer block is ~158 MB bf16, which is too large to
+        # fit two-blocks-per-256-MB-chunk; ``pick_S_chunk`` selects
+        # the 32 MB grid point, which slices each block into 5
+        # chunks. Adjacent block pairs are disjoint (5 + 5 = 10
+        # unique chunks), so the floor is exactly 10. Picking
+        # n_buffer=10 is the smallest value that satisfies the
+        # validator and still leaves N_chunk - n_persist - n_buffer
+        # = 133 - 2 - 10 = 121 chunks CPU-resident, preserving the
+        # sharded-path engagement the test asserts on.
         #
         # M5 (Option B / OFFLOAD): with n_checkpoint=0 the non-persistent
         # tail blocks would sit in NONE mode, which the runtime contract
@@ -630,7 +648,7 @@ _ZERO3_WORKER_SCRIPT = textwrap.dedent(
             capacity_bytes=20 * (1 << 30),
             force_all_persistent=False,
             n_persist_override=2,
-            n_buffer_override=2,
+            n_buffer_override=10,
             n_swap_override=0,
             n_checkpoint_override=0,
             n_offload_override=n_block_estimate,
@@ -1269,6 +1287,23 @@ _MISTRAL_MODEC_WORKER_SCRIPT = textwrap.dedent(
         # cfg.num_hidden_layers, which is 4 for this tiny-Mistral). All
         # blocks become OFFLOAD; persistent blocks tolerate it
         # vacuously. See BLOCK_MODE_OFFLOAD_DESIGN.md §5.1.
+        #
+        # n_buffer floor rationale (paper §3.4 / App B.2): the
+        # scheduler's lookahead prefetch needs current+next block's
+        # non-persistent chunks resident simultaneously (see
+        # ``min_n_buffer_for`` in
+        # src/axolotl/integrations/protrain/search/exhaustive.py). The
+        # original docstring claims this is a tiny model (~3M params)
+        # whose chunk count fits in n_buffer=2, but with LoRA-on-
+        # q/k/v/o adapter weights the model is ~250 MB bf16 and each
+        # transformer block (~63 MB + adapters) is too big to fit
+        # two-blocks-per-256-MB-chunk against waste minimisation —
+        # ``pick_S_chunk`` selects 32 MB and slices each block into 4
+        # chunks. Disjoint adjacent-block unions give 4 + 4 = 8 unique
+        # chunks, so n_buffer=8 is the minimum the validator accepts.
+        # Total resident = n_persist + n_buffer = 9 of 19 chunks; the
+        # remaining 10 stay CPU-resident and sharded, preserving the
+        # Mode-C engagement the test asserts.
         n_block_estimate = int(cfg.num_hidden_layers)
         wrapped = protrain_model_wrapper(
             model,
@@ -1279,7 +1314,7 @@ _MISTRAL_MODEC_WORKER_SCRIPT = textwrap.dedent(
             capacity_bytes=20 * (1 << 30),
             force_all_persistent=False,
             n_persist_override=1,
-            n_buffer_override=2,
+            n_buffer_override=8,
             n_swap_override=0,
             n_checkpoint_override=0,
             n_offload_override=n_block_estimate,
