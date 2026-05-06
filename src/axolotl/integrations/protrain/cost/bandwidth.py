@@ -59,6 +59,8 @@ swap-bandwidth identification.
 
 from __future__ import annotations
 
+import weakref
+
 from axolotl.integrations.protrain.types import (
     BlockId,
     BlockMode,
@@ -173,10 +175,21 @@ def n_affected_chunks(cfg: CostConfig, layout: ChunkLayout) -> int:
 # implementation that rescanned ``layout.block_to_chunks`` for every
 # lookup was O(N_block) per chunk. We memoize the chunk -> owner-blocks
 # map keyed on ``id(layout)``; ChunkLayout is a frozen dataclass so the
-# id is stable for its lifetime, and the search builds a single layout
-# per candidate enumeration. Cache entries are tiny dicts of ints so
-# leaving the entry around after the layout is GC'd is acceptable.
+# id is stable for its lifetime.
+#
+# ``id()`` values are recycled by CPython once a layout is GC'd, so a
+# new ``ChunkLayout`` could otherwise pick up a stale cache entry from
+# a freed object. ``ChunkLayout`` carries ``dict`` fields and is not
+# hashable, which rules out ``WeakKeyDictionary``. Instead we register
+# a ``weakref.finalize`` callback at insertion time: when the layout
+# is GC'd, the finalizer evicts its cache entry by id, eliminating the
+# stale-key window.
 _CHUNK_TO_OWNERS_CACHE: dict[int, dict[int, list[BlockId]]] = {}
+
+
+def _evict_chunk_owners_cache(layout_key: int) -> None:
+    """Drop the cache entry keyed on ``layout_key`` (called from a finalizer)."""
+    _CHUNK_TO_OWNERS_CACHE.pop(layout_key, None)
 
 
 def _block_of_chunk(chunk_id: ChunkId, layout: ChunkLayout) -> list[BlockId]:
@@ -198,6 +211,12 @@ def _block_of_chunk(chunk_id: ChunkId, layout: ChunkLayout) -> list[BlockId]:
             for cid in cids:
                 owners_map.setdefault(int(cid), []).append(bid)
         _CHUNK_TO_OWNERS_CACHE[layout_key] = owners_map
+        # Auto-evict the cache entry when the layout is garbage
+        # collected so a recycled ``id()`` cannot resurface stale
+        # data on a future, unrelated layout. ``finalize`` holds only
+        # a weak reference to the layout, so registering the callback
+        # does not extend its lifetime.
+        weakref.finalize(layout, _evict_chunk_owners_cache, layout_key)
     return list(owners_map.get(int(chunk_id), ()))
 
 

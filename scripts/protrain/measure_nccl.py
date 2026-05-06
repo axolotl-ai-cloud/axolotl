@@ -61,7 +61,7 @@ def _run_as_rank() -> None:
 
     from axolotl.integrations.protrain.profiler.hw_bench import measure_nccl
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--output",
         default=None,
@@ -70,7 +70,7 @@ def _run_as_rank() -> None:
     )
     parser.add_argument("--n-iters", type=int, default=8)
     parser.add_argument("--n-warmup", type=int, default=2)
-    args, _unknown = parser.parse_known_args()
+    args = parser.parse_args()
 
     if rank == 0:
         print(
@@ -143,7 +143,7 @@ def main() -> None:
         return
 
     # Self-spawn path: parse --world-size, hand off to torchrun.
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--world-size",
         type=int,
@@ -152,7 +152,13 @@ def main() -> None:
     )
     parser.add_argument("--n-iters", type=int, default=8)
     parser.add_argument("--n-warmup", type=int, default=2)
-    args, extra = parser.parse_known_args()
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Path to write JSON results. Defaults to "
+        "``scripts/nccl_results_world<N>.json``.",
+    )
+    args = parser.parse_args()
     if args.world_size is None or args.world_size < 1:
         parser.error(
             "--world-size is required when running outside torchrun "
@@ -175,30 +181,26 @@ def main() -> None:
             "n_iters": args.n_iters,
             "n_warmup": args.n_warmup,
         }
-        # When --output is in extra args we honour it; otherwise default name.
-        # Accept both ``--output /path`` and ``--output=/path`` forms.
-        out_path = Path("scripts/nccl_results_world1.json")
-        for i, tok in enumerate(extra):
-            if tok.startswith("--output="):
-                out_path = Path(tok.split("=", 1)[1])
-                break
-            if tok == "--output" and i + 1 < len(extra):
-                out_path = Path(extra[i + 1])
-                break
+        out_path = Path(
+            args.output
+            if args.output is not None
+            else "scripts/nccl_results_world1.json"
+        )
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(out, indent=2, sort_keys=True))
         print(f"wrote {out_path} (empty tables — single-rank)", file=sys.stderr)
         return
 
     # Forward calibration knobs to the spawned ranks so multi-rank runs
-    # honour the same --n-iters / --n-warmup values parsed here.
+    # honour the same --n-iters / --n-warmup / --output values parsed here.
     forwarded = [
         "--n-iters",
         str(args.n_iters),
         "--n-warmup",
         str(args.n_warmup),
-        *extra,
     ]
+    if args.output is not None:
+        forwarded.extend(["--output", args.output])
     rc = _self_spawn(args.world_size, forwarded)
     sys.exit(rc)
 

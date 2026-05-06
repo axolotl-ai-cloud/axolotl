@@ -269,7 +269,12 @@ def measure_gpu_adam(
     Uses the same fallback chain as
     :class:`axolotl.integrations.protrain.chunk.optim.GpuFusedAdamAdapter`:
     ``apex.optimizers.FusedAdam`` first (paper-cited), then
-    ``torch.optim.AdamW`` (stock). Returns 0.0 only on a CUDA outage.
+    ``torch.optim.AdamW(fused=True)``, then stock ``torch.optim.AdamW``.
+    Returns 0.0 in either of two cases: (a) a CUDA outage (``torch.cuda``
+    not available on this device), or (b) a full fallback-chain failure
+    where every Adam backend fails to construct OR fails its warmup
+    step. Callers must treat 0.0 as "throughput unknown / unmeasurable"
+    rather than "GPU Adam is unsupported".
 
     Parameters
     ----------

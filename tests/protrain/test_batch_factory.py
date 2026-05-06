@@ -317,7 +317,14 @@ def test_register_custom_factory_overrides_default():
         register_factory(TASK_CAUSAL_LM, _custom)
         model = _make_causal_model()
         batch = build_batch(model, 2, 8, "cpu")
-        assert batch is sentinel
+        # ``build_batch`` normalises the factory output via
+        # ``dict(batch)`` so it can validate ``Mapping`` subclasses
+        # uniformly; identity is therefore not preserved, but the
+        # contents must round-trip exactly.
+        assert isinstance(batch, dict)
+        assert batch.keys() == sentinel.keys()
+        for k, v in sentinel.items():
+            assert batch[k] is v
     finally:
         reset_factories()
 

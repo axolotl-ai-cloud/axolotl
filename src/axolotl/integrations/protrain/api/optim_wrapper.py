@@ -475,11 +475,24 @@ def protrain_optimizer_wrapper(
     cpu_params_per_chunk: dict[ChunkId, list["nn.Parameter"]] = {}
 
     for cid, chunk_param_ids in enumerate(layout.chunks):
-        chunk_params = [
-            chunk_manager._params_by_id[pid]
-            for pid in chunk_param_ids
-            if pid in chunk_manager._params_by_id
+        # Fail fast on unresolvable pids: silently dropping them produced
+        # partial freezing (a chunk's optimizer would only step the params
+        # that happened to be registered) and wedged debugging because the
+        # symptom appeared far downstream as "no gradient update on
+        # weight X". Raise here so the user sees the exact chunk and pid.
+        missing_ids = [
+            pid for pid in chunk_param_ids if pid not in chunk_manager._params_by_id
         ]
+        if missing_ids:
+            raise ValueError(
+                f"chunk cid={cid} references param ids {missing_ids} that are "
+                "not registered in ChunkManager._params_by_id; cannot build "
+                "per-chunk optimizer (would silently skip these params). "
+                "Known pids: "
+                f"{sorted(chunk_manager._params_by_id.keys())[:8]}"
+                f"{'...' if len(chunk_manager._params_by_id) > 8 else ''}"
+            )
+        chunk_params = [chunk_manager._params_by_id[pid] for pid in chunk_param_ids]
         if cid in persistent_ids:
             persistent_params.extend(chunk_params)
         else:

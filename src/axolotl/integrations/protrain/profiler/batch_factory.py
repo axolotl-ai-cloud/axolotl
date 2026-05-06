@@ -36,7 +36,8 @@ the profiler without a translation layer.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Callable
 
 from axolotl.utils.logging import get_logger
 
@@ -325,8 +326,11 @@ def seq2seq_lm_batch_factory(
     real subset — some custom checkpoints, encoder-only-style heads
     pretending to be seq2seq) raise ``ValueError`` inside the model's
     own ``shift_tokens_right`` helper, breaking the profile loop. We
-    right-shift ``labels`` ourselves and substitute ``0`` when the
-    model lacks a configured start token.
+    prefer the model's canonical
+    ``prepare_decoder_input_ids_from_labels`` helper when present
+    (BART, T5, EncoderDecoderModel, ...) so we benefit from any
+    model-specific shift logic; otherwise we right-shift ``labels``
+    ourselves with a best-effort start-token id.
     """
     import torch
 
@@ -346,18 +350,28 @@ def seq2seq_lm_batch_factory(
         device=device,
         dtype=torch.long,
     )
-    # Right-shift labels along the seq dim to build decoder_input_ids:
-    # drop the last column, prepend ``decoder_start_token_id`` (or 0 if
-    # the model has no configured start token).
-    decoder_start_token_id = getattr(
-        getattr(model, "config", None), "decoder_start_token_id", None
-    )
-    if decoder_start_token_id is None:
-        decoder_start_token_id = 0
-    decoder_input_ids = torch.empty_like(labels)
-    decoder_input_ids[:, 0] = int(decoder_start_token_id)
-    if seq_len > 1:
-        decoder_input_ids[:, 1:] = labels[:, :-1]
+    # Prefer the model's canonical helper, which encodes any
+    # checkpoint-specific quirks (e.g. T5's pad-token handling). Fall
+    # back to a manual right-shift with a best-effort start-token id
+    # for models that do not expose the helper.
+    prepare = getattr(model, "prepare_decoder_input_ids_from_labels", None)
+    if callable(prepare):
+        decoder_input_ids = prepare(labels)
+    else:
+        cfg = getattr(model, "config", None)
+        start_id = getattr(cfg, "decoder_start_token_id", None)
+        if start_id is None:
+            start_id = getattr(cfg, "bos_token_id", None)
+        if start_id is None:
+            start_id = getattr(cfg, "eos_token_id", None)
+        if start_id is None:
+            start_id = getattr(cfg, "pad_token_id", None)
+        if start_id is None:
+            start_id = 0
+        decoder_input_ids = torch.empty_like(labels)
+        decoder_input_ids[:, 0] = int(start_id)
+        if seq_len > 1:
+            decoder_input_ids[:, 1:] = labels[:, :-1]
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
@@ -443,15 +457,19 @@ def build_batch(
     factory = get_factory(task_type)
     batch = factory(model, batch_size, seq_len, device)
     factory_id = getattr(factory, "__qualname__", None) or repr(factory)
-    if not isinstance(batch, dict):
+    if not isinstance(batch, Mapping):
         raise TypeError(
             f"batch_factory for task_type={task_type!r} ({factory_id}) "
-            f"must return a dict, got {type(batch).__name__}"
+            f"must return a mapping, got {type(batch).__name__}"
         )
+    # Normalize ``Mapping`` subclasses (e.g. ``BatchEncoding``) into a
+    # plain ``dict`` so the rest of the function (and downstream
+    # consumers expecting ``dict`` semantics) keep working unchanged.
+    batch = dict(batch)
     if "labels" not in batch:
         raise ValueError(
             f"batch_factory for task_type={task_type!r} ({factory_id}) "
-            f"returned a dict without a 'labels' key; the profiler "
+            f"returned a mapping without a 'labels' key; the profiler "
             f"requires 'labels' to synthesize a backward pass "
             f"(got keys: {sorted(batch.keys())!r})"
         )

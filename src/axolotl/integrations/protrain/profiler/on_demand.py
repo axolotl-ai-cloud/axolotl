@@ -557,6 +557,28 @@ class OnDemandTensorMgr:
             except Exception:  # noqa: BLE001 - pinning is best-effort
                 self._n_pin_failures += 1
         except Exception as exc:  # noqa: BLE001 - defensive
+            # Spill failed: the param is still on ``original_device``.
+            # If the manager's gather destination differs from the
+            # param's current device, leaving the param here is a
+            # silent correctness bug — subsequent gather calls assume
+            # the spill happened and will fetch a stale tensor on the
+            # wrong device. Fail fast so the caller can recover.
+            #
+            # When ``target_device == original_device`` (in-place
+            # pinning case where the spill is purely a pinning
+            # optimization), best-effort warn-and-return preserves the
+            # legacy behavior — the param ends up where it would have
+            # been gathered anyway, just unpinned.
+            if target_device is not None and target_device != original_device:
+                LOG.error(
+                    "OnDemandTensorMgr: failed to spill param to CPU (%s); "
+                    "param is on %s but gather target is %s — propagating "
+                    "to avoid a silent device-mismatch downstream.",
+                    exc,
+                    original_device,
+                    target_device,
+                )
+                raise
             LOG.warning(
                 "OnDemandTensorMgr: failed to spill param to CPU (%s); "
                 "leaving on GPU. Profile peak will be inflated for this param.",

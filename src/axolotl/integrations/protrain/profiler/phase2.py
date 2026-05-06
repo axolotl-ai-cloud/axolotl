@@ -270,6 +270,17 @@ def measure_chunked_steady(
             "Phase-2 measurement requires CUDA; got torch.cuda.is_available() == False"
         )
 
+    # Capture caller-visible state BEFORE flipping into train mode so
+    # the rollback at the end of the timed region restores the model
+    # to exactly what the caller handed in: training-mode flag, CPU
+    # RNG state, and CUDA RNG state on every visible device. The timed
+    # loop calls ``model.train()`` and consumes random samples (e.g.
+    # via dropout / data ordering), both of which would otherwise
+    # leak into the caller's subsequent steps.
+    was_training = model.training
+    cpu_rng = torch.get_rng_state()
+    cuda_rngs = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+
     model.train()
     # Bind every CUDA timing/memory API call to the model's device so a
     # future refactor that changes the current-device context between
@@ -369,6 +380,16 @@ def measure_chunked_steady(
             optimizer.load_state_dict(optim_state)
             optimizer.zero_grad(set_to_none=True)
             torch.cuda.synchronize(device)
+            # Restore RNG state + training flag AFTER the parameter /
+            # optimizer rollback so the caller observes byte-identical
+            # state to what they handed in. Order matters: the
+            # state_dict restore above can run kernels that consume
+            # RNG, so RNG must be restored last.
+            torch.set_rng_state(cpu_rng)
+            if cuda_rngs is not None:
+                torch.cuda.set_rng_state_all(cuda_rngs)
+            if not was_training:
+                model.eval()
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

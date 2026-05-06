@@ -115,6 +115,9 @@ _GPU_ADAM_FALLBACK: float = 5.0e11
 _WARNED_MODEL_STATE_MISSING: bool = False
 _WARNED_CPU_ADAM_UNAVAILABLE: bool = False
 _WARNED_GPU_ADAM_FALLBACK: bool = False
+_WARNED_SKU_SCALE_CLAMPED: bool = False
+_WARNED_HOOK_SCALE_CLAMPED: bool = False
+_WARNED_APPROXIMATE_COMPUTE_PROXY: bool = False
 
 # Backward-vs-forward compute ratio when the trace has forward latencies but
 # no per-block backward split. The synthetic ``<backward>`` op records a
@@ -161,16 +164,20 @@ def _sku_compute_scale(trace: ProfilerTrace, hw: HardwareProfile) -> float:
         return 1.0
     raw = trace.compute_rate_tflops / hw.gpu_compute_tflops
     if raw < _SKU_SCALE_MIN or raw > _SKU_SCALE_MAX:
-        LOG.warning(
-            "SKU compute-rate scale out of sane range (%.3f = trace %.1f / "
-            "live %.1f TFLOPS); clamping to [%.2f, %.2f]. Treat with "
-            "suspicion — likely a measurement glitch on one of the two SKUs.",
-            raw,
-            trace.compute_rate_tflops,
-            hw.gpu_compute_tflops,
-            _SKU_SCALE_MIN,
-            _SKU_SCALE_MAX,
-        )
+        global _WARNED_SKU_SCALE_CLAMPED
+        if not _WARNED_SKU_SCALE_CLAMPED:
+            LOG.warning(
+                "SKU compute-rate scale out of sane range (%.3f = trace %.1f / "
+                "live %.1f TFLOPS); clamping to [%.2f, %.2f]. Treat with "
+                "suspicion — likely a measurement glitch on one of the two SKUs. "
+                "(further occurrences suppressed)",
+                raw,
+                trace.compute_rate_tflops,
+                hw.gpu_compute_tflops,
+                _SKU_SCALE_MIN,
+                _SKU_SCALE_MAX,
+            )
+            _WARNED_SKU_SCALE_CLAMPED = True
     return max(_SKU_SCALE_MIN, min(_SKU_SCALE_MAX, raw))
 
 
@@ -194,15 +201,18 @@ def _hook_scale_factor(trace: ProfilerTrace) -> float:
         return 1.0
     raw = trace.steady_fwd_wall_s / trace.hooked_fwd_wall_s
     if raw > _HOOK_SCALE_MAX or raw < _HOOK_SCALE_MIN:
-        LOG.warning(
-            "hook-scale ratio out of sane range (%.3f = steady %.4fs / hooked "
-            "%.4fs); clamping to [%.2f, %.2f]",
-            raw,
-            trace.steady_fwd_wall_s,
-            trace.hooked_fwd_wall_s,
-            _HOOK_SCALE_MIN,
-            _HOOK_SCALE_MAX,
-        )
+        global _WARNED_HOOK_SCALE_CLAMPED
+        if not _WARNED_HOOK_SCALE_CLAMPED:
+            LOG.warning(
+                "hook-scale ratio out of sane range (%.3f = steady %.4fs / hooked "
+                "%.4fs); clamping to [%.2f, %.2f] (further occurrences suppressed)",
+                raw,
+                trace.steady_fwd_wall_s,
+                trace.hooked_fwd_wall_s,
+                _HOOK_SCALE_MIN,
+                _HOOK_SCALE_MAX,
+            )
+            _WARNED_HOOK_SCALE_CLAMPED = True
     return max(_HOOK_SCALE_MIN, min(_HOOK_SCALE_MAX, raw))
 
 
@@ -733,10 +743,13 @@ def estimate_runtime(
         _fwd_compute_time_from_trace(trace, cfg)
     )
     if not used_measured:
-        LOG.warning(
-            "ProTrain: using approximate compute-rate proxy; re-run profiler "
-            "for measured latencies"
-        )
+        global _WARNED_APPROXIMATE_COMPUTE_PROXY
+        if not _WARNED_APPROXIMATE_COMPUTE_PROXY:
+            LOG.warning(
+                "ProTrain: using approximate compute-rate proxy; re-run profiler "
+                "for measured latencies (further occurrences suppressed)"
+            )
+            _WARNED_APPROXIMATE_COMPUTE_PROXY = True
 
     # Per-SKU compute-rate calibration. When the cached trace was captured
     # on a different SKU than the live training device (e.g. trace from

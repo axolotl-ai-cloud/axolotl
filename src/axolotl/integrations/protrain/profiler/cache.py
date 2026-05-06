@@ -387,7 +387,10 @@ def load_cached_trace(key: ProfilerCacheKey) -> ProfilerTrace | None:
     try:
         with path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # ``UnicodeDecodeError`` fires before ``json.JSONDecodeError`` when
+        # the cache file is not valid UTF-8 (e.g. truncated/corrupted on
+        # disk); treat it as a cache miss with the same warning path.
         LOG.warning("profiler cache miss due to read error at %s: %s", path, exc)
         return None
     if not isinstance(data, dict):

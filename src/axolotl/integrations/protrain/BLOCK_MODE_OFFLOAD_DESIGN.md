@@ -731,15 +731,35 @@ between phases" question.
 
 ### 6.6 SWAP-on-non-persistent
 
+> **Update (post-design):** the combination "block uses SWAP wrapper
+> AND its chunks are non-persistent" is **now legal** via the SWAP ×
+> non-persistent runtime fix. The `block_map_runtime_admissible`
+> validator was relaxed (see `block/strategy.py` and the
+> admissibility note at §3.5) and the runtime scheduler now
+> stream-orders SWAP D2H reads ahead of any subsequent prefetch H2D
+> writes on the same pinned-pool buffers, making the combination
+> byte-safe (see `runtime/scheduler.py` — the `prefetch_chunks`
+> docstring spells out why this barrier is correctness-load-bearing
+> for SWAP × non-persistent). The table at §1.3 reflects this new
+> status. The original v1-deferral rationale below is preserved for
+> historical context.
+
 The combination "block uses SWAP wrapper AND its chunks are
-non-persistent" is left **out of scope** for v1 of this design.
-Reasons:
+non-persistent" was originally left **out of scope** for v1 of this
+design. Reasons (historical):
 * The SWAP wrapper offloads activations to CPU; OFFLOAD-equivalent
   param handling on top would create two independent CPU-pinned
   paths in the same block, multiplying complexity.
 * The use case is narrow (only really matters when both activations
   AND params are too big to keep resident, which on the 3090 target
   rig usually means "use a smaller model").
+
+The shipped lift did not require the OFFLOAD-context-nesting approach
+sketched below — the SWAP pool is already the activation-persistence
+mechanism, fully independent of `param.data` rebinding, so adding a
+single inter-stream barrier (SWAP-stream → prefetch-stream) was
+sufficient. The nested-context approach is therefore unused, but is
+retained here as the original sketch:
 
 If a future workstream wants this combination, it will compose the
 SWAP saved-tensors-hooks context with the OFFLOAD context (nested
