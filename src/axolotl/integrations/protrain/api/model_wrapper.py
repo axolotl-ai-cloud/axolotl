@@ -651,20 +651,51 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 # degraded fixture) or non-positive, we fall back to
                 # the additive formula to preserve legacy behaviour.
                 if phase2_analytical_peak > 0:
-                    calibration_ratio = phase2_peak / float(phase2_analytical_peak)
-                    # Hard lower bound: ``phase2_peak``. We cannot
-                    # predict the production cfg uses LESS GPU than
-                    # what the boot cfg was measured to use, because
-                    # the boot cfg pre-search exercises a structurally-
-                    # cheaper (smaller resident set) configuration.
-                    # Production peak monotonically dominates the
-                    # measurement-anchored boot peak modulo allocator
-                    # noise.
-                    multiplicative_floor = max(
-                        int(prod_analytical_peak * calibration_ratio),
+                    # Cfg-delta floor (alpha-stripped additive form).
+                    #
+                    # The previous additive formula ``phase2_peak +
+                    # (prod_anal - phase2_anal)`` over-counted because
+                    # both ``prod_anal`` and ``phase2_anal`` include
+                    # the multiplicative ``ALPHA_FRAGMENTATION = 1.10``
+                    # safety factor — so the delta carries an alpha-
+                    # scaled component that, when added to the un-
+                    # scaled measurement ``phase2_peak``, inflated the
+                    # floor by the bias residue ``(α - 1) * raw_delta``
+                    # for cfgs where ``raw_peak >> phase2_raw_peak``
+                    # (e.g. boot fully-offload, production mostly-
+                    # persistent — observed at +25.5% on 7B-LoRA).
+                    #
+                    # The fix: strip ALPHA out of the delta before
+                    # adding it to the measurement anchor. Both
+                    # analytical peaks are scaled by the same alpha,
+                    # so dividing the delta by alpha recovers the
+                    # raw cfg-sensitivity the cost model would predict
+                    # WITHOUT the fragmentation safety factor — which
+                    # is what we want to add to a measured (un-alpha'd)
+                    # baseline. The alpha safety is preserved
+                    # asymmetrically through the under-predict +5%
+                    # margin below.
+                    #
+                    # Reduces to ``floor = phase2_peak`` when
+                    # ``prod_anal == phase2_anal`` (same cfg case)
+                    # exactly like the additive formulation. For the
+                    # 7B-LoRA test:
+                    #
+                    #     phase2_peak ≈ 1.76 GB,
+                    #     phase2_anal ≈ 2.80 GB,
+                    #     prod_anal ≈ 19.20 GB
+                    #     additive floor = 1.76 + 16.40 = 18.16 GB
+                    #     alpha-stripped delta = 16.40 / 1.10 = 14.91 GB
+                    #     alpha-stripped floor = 1.76 + 14.91 = 16.67 GB
+                    #     vs. actual peak 15.30 GB → 8.9% over (PASS).
+                    delta_raw = (prod_analytical_peak - phase2_analytical_peak) / float(
+                        ALPHA_FRAGMENTATION
+                    )
+                    delta_raw = max(0.0, delta_raw)
+                    calibrated_floor = max(
+                        int(phase2_peak + delta_raw),
                         phase2_peak,
                     )
-                    calibrated_floor = multiplicative_floor
                 else:
                     delta = max(0, prod_analytical_peak - phase2_analytical_peak)
                     calibrated_floor = int(phase2_peak + delta)
