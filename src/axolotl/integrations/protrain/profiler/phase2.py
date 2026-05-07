@@ -379,8 +379,52 @@ def measure_chunked_steady(
             # parameters at restore time, so the saved CPU tensors
             # land back on each parameter's original device — no
             # device drift on rollback.
+            #
+            # Mode-C / PEFT correctness: filter out entries whose live
+            # tensor is the zero-element offloaded placeholder
+            # (``param.data = empty(0)`` after
+            # ``ChunkManager.materialize_offload``). Including those
+            # keys is doubly wrong:
+            #
+            #   * The placeholder carries no real bytes — the actual
+            #     weights live in ``chunk_manager._cpu_slots`` /
+            #     ``_chunk_shards`` and are restored via the
+            #     ``chunk_state`` path below; snapshotting the
+            #     placeholder ADDS NOTHING to the rollback contract.
+            #   * On restore, ``Module.load_state_dict`` shape-checks
+            #     each entry. A snapshot captured AT empty-placeholder
+            #     time but a live param momentarily rebound to its
+            #     real GPU buffer (e.g. the last timed step left a
+            #     chunk gathered, or a PEFT-wrapped backbone has
+            #     adapter modules whose ``state_dict`` walks see the
+            #     gathered shape) raises
+            #     ``RuntimeError: Error(s) in loading state_dict for
+            #     PeftModelForCausalLM: size mismatch for ...``.
+            #
+            # Filtering here keeps the rollback minimal: only
+            # GPU-resident persistent / LoRA-adapter / non-chunked
+            # tensors round-trip through ``state_dict()`` (where they
+            # belong); offloaded chunks round-trip via ``chunk_state``
+            # (where their bytes actually live). Pair this with
+            # ``strict=False`` on the restore so the skipped keys
+            # don't trip ``load_state_dict``'s missing-keys check.
+            #
+            # ``v.numel() > 0`` is the placeholder filter:
+            # ``_empty_placeholder`` returns ``torch.empty(0)`` exactly,
+            # so a non-trivial parameter cannot collide with the
+            # filter. Buffers whose source-of-truth is ``param.data``
+            # already-empty (rare but valid — e.g. a deliberate empty
+            # tensor in a checkpoint) are also skipped, but that's
+            # benign: if the live tensor is empty before AND after
+            # the timed loop, there is nothing to restore.
+            full_state = model.state_dict()
+            filtered_state = {
+                k: v
+                for k, v in full_state.items()
+                if not torch.is_tensor(v) or v.numel() > 0
+            }
             model_state = _clone_state_dict(
-                model.state_dict(), target_device=torch.device("cpu")
+                filtered_state, target_device=torch.device("cpu")
             )
             # Snapshot optimizer state on host to avoid duplicating
             # GPU memory during the timed region — for FusedAdam-
@@ -498,7 +542,29 @@ def measure_chunked_steady(
             # flag restore at the bottom of this block).
             torch.cuda.synchronize(device)
             if model_state is not None:
-                model.load_state_dict(model_state)
+                # ``strict=False`` because the snapshot is intentionally
+                # filtered — offloaded chunks' empty-placeholder
+                # ``param.data`` entries are skipped at snapshot time
+                # (their real bytes round-trip via ``chunk_state``).
+                # ``Module.load_state_dict(strict=False)`` returns a
+                # ``_IncompatibleKeys`` namedtuple of
+                # ``(missing_keys, unexpected_keys)``; missing keys
+                # here are by-construction the offloaded set and are
+                # NOT a bug, but unexpected keys WOULD signal a real
+                # contract violation (the live model gained keys
+                # during measurement) — surface those as a debug log
+                # so a future regression is visible in trace output
+                # without crashing the measurement.
+                _result = model.load_state_dict(model_state, strict=False)
+                if _result.unexpected_keys:
+                    LOG.debug(
+                        "Phase-2 state_dict restore: %d unexpected keys "
+                        "(first 3: %s); the live model gained keys "
+                        "during the timed loop. Investigate if this is "
+                        "not a one-shot module-rebuild artefact.",
+                        len(_result.unexpected_keys),
+                        _result.unexpected_keys[:3],
+                    )
             # Restore the chunk-manager CPU-shadow bytes BEFORE the
             # optimizer state restore. Order doesn't strictly matter
             # for correctness — the two snapshots cover disjoint
