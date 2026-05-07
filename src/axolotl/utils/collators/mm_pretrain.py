@@ -38,6 +38,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
     skip_bad_images: bool = False
     max_image_pixels: int = _DEFAULT_MAX_IMAGE_PIXELS
     max_images_per_row: int = _DEFAULT_MAX_IMAGES_PER_ROW
+    add_eos_token: bool = True
 
     _image_family_token_ids: set[int] = field(init=False, default_factory=set)
     _base_dir_real: Optional[str] = field(init=False, default=None)
@@ -210,6 +211,10 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                         f"Row {i}, image {j}: path must be str, got "
                         f"{type(rp).__name__}."
                     )
+            # Processor re-tokenizes below, discarding the encoder's EOS — re-append.
+            if self.add_eos_token and self.tokenizer.eos_token:
+                if not mm_text.endswith(self.tokenizer.eos_token):
+                    mm_text = mm_text + self.tokenizer.eos_token
             texts.append(mm_text)
             loaded = self._load_images_for_row(raw_paths, row_index=i)
             if self.skip_bad_images and len(loaded) != len(raw_paths):
