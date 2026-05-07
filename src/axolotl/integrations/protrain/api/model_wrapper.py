@@ -516,7 +516,56 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 and n_ckpt == int(getattr(trace, "phase2_n_checkpoint", -1))
             )
             if phase2_matches_cfg:
-                calibrated = min(calibrated, int(1.05 * phase2_peak))
+                # BUG 4 FIX: phase-2 measurement is the ground-truth
+                # CUDA peak under the actual runtime config. The
+                # cost-model's analytical estimate (``calibrated``)
+                # has structural error in both directions:
+                #
+                #   * OVER-PREDICT — the op-walk's α=1.10 fragmentation
+                #     factor + activation roofline + pessimistic
+                #     buffer sizing combine into a conservative upper
+                #     bound. When phase-2 measures BELOW prediction,
+                #     we trust the measurement and lower ``calibrated``
+                #     so the search picks throughput-optimal configs
+                #     rather than getting starved by a phantom ceiling.
+                #
+                #   * UNDER-PREDICT — when activation deltas land in a
+                #     gap of the trace (e.g. a fused kernel the
+                #     profiler couldn't time per-op) or the buffer-pool
+                #     transient peak exceeds the ``buffer_factor``
+                #     model, the cost model can read OPTIMISTIC. The
+                #     pre-fix logic only had a ``min(...)`` ceiling
+                #     here, so when ``phase2_peak > calibrated`` it
+                #     was a no-op — the search continued operating on
+                #     an under-confident prediction and the OOM-safety
+                #     invariant (``predicted_peak >= 0.95 * actual``)
+                #     could fail at the headline 7B integration test
+                #     even though phase-2 had already measured the
+                #     actual peak directly. Symptom: the test fails
+                #     with ``peak UNDER-predict: predicted X GB <
+                #     actual Y GB`` despite phase-2 fields populated.
+                #
+                # The two-sided fix here applies a measurement-
+                # anchored window: when phase-2 measured ABOVE
+                # prediction, RAISE ``calibrated`` to ``phase2_peak ×
+                # (1 + safety_margin)`` so the search sees a
+                # prediction the actual peak cannot exceed under the
+                # same runtime config (within the safety margin's
+                # measurement noise window). The 5% margin matches
+                # the test's 5% slack on the OOM-safety invariant
+                # (``predicted_peak >= actual_peak * 0.95``) — phase-2
+                # is a per-iter median over five timed iterations, so
+                # its noise floor on a same-SKU rig is well below 5%.
+                _PHASE2_SAFETY_MARGIN = 0.05
+                phase2_floor = int((1.0 + _PHASE2_SAFETY_MARGIN) * phase2_peak)
+                if phase2_peak > calibrated:
+                    calibrated = phase2_floor
+                else:
+                    # Cost model over-estimated the actual peak. Trust
+                    # the measurement-anchored ceiling but keep the
+                    # 5% margin around it (kept symmetric with the
+                    # under-predict raise above).
+                    calibrated = min(calibrated, phase2_floor)
     return calibrated
 
 

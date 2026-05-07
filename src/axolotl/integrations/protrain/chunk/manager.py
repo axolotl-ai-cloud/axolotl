@@ -1866,6 +1866,27 @@ class ChunkManager:
         was expected. The CPU shard continues to hold the post-step
         weights; the next :meth:`gather` H2D-copies them into the GPU
         buffer.
+
+        Symmetric with :meth:`_ensure_cpu_grads_attached`: only repoint
+        ``.data`` for *trainable* slots. Frozen params were never
+        rebound to CPU by ``_ensure_cpu_grads_attached`` (that path
+        skips them — see its docstring for the PEFT chunk-sharing
+        rationale), so their live ``.data`` is whatever the main
+        thread last bound (either the gathered GPU buffer view, or
+        the empty GPU placeholder if the main thread already ran
+        ``offload(cid)``). Touching them here would race the main
+        thread's still-pending backward kernels: this callback runs on
+        the CPU-Adam worker thread the moment ``DeepSpeedCPUAdam.step()``
+        returns, which on a chunk that drained its trainable grads
+        EARLY in its block's backward (large LoRA-adapter param count
+        relative to the block's frozen-weight backward FLOPs) can
+        complete while frozen-weight ``MulBackward`` / matmul backward
+        kernels are still in flight on the main stream — those
+        kernels saved a reference to the live ``nn.Parameter`` at
+        recompute time, so ``param.data = empty_placeholder`` here
+        shrinks the storage they were going to read and trips
+        ``RuntimeError: size of tensor a (N) must match size of
+        tensor b (0)`` (paper §3.2 phase-2 measurement loop crash).
         """
         cm = self
         captured_cid = chunk_id
@@ -1875,6 +1896,15 @@ class ChunkManager:
             for slot in slots:
                 param = cm._params_by_id.get(slot.param_id)
                 if param is None:
+                    continue
+                # Only repoint slots whose live ``.data`` was actually
+                # rebound to CPU by ``_ensure_cpu_grads_attached`` (i.e.
+                # trainable slots). Frozen params kept their GPU
+                # placeholder / buffer view; the main-thread ``offload``
+                # owns their lifecycle, and worker-thread mutation here
+                # would race in-flight backward kernels — see the
+                # docstring above.
+                if not param.requires_grad:
                     continue
                 param.data = cm._empty_placeholder(slot.dtype)
                 # Also clear grad: we've consumed it in the CPU step,
@@ -1892,20 +1922,49 @@ class ChunkManager:
         objects (see ``protrain_optimizer_wrapper``). For the CPU step to
         consume the drained grads, we temporarily:
 
-        * Point each param's ``.data`` at its CPU shard (so Adam updates
-          the CPU master in place).
-        * Point each param's ``.grad`` at its CPU grad shard.
+        * Point each *trainable* param's ``.data`` at its CPU shard (so
+          Adam updates the CPU master in place).
+        * Point each *trainable* param's ``.grad`` at its CPU grad shard.
 
         This matches DeepSpeed's CPU-offload pattern where the optimizer
         holds param references but those references are repointed at CPU
         storage for the step's duration. ``gather`` will re-point ``.data``
         back at the GPU buffer after the step (the CPU shard's updated
         bytes flow back via the gather's H2D copy).
+
+        Frozen params (``requires_grad=False``) are intentionally left
+        on their current GPU buffer view. The CPU Adam step skips them
+        (``param.grad is None`` so DeepSpeedCPUAdam's update math
+        no-ops), and rebinding their ``.data`` to a CPU tensor mid-
+        backward is actively harmful: PEFT models pack frozen backbone
+        params (e.g. RMSNorm/layernorm weights, base ``Linear.weight``
+        on LoRA-targeted modules) into the same chunk as the trainable
+        LoRA adapter weights. The chunk's ``_grad_remaining`` counter
+        only tracks trainable-param drains, so it can hit zero — and
+        fire this method — while the chunk's frozen params still have
+        outstanding ``MulBackward`` / matmul backward kernels that
+        captured the (then-GPU) ``param`` reference at recompute time.
+        ``param.data = slot.cpu_data`` mutates the live Parameter
+        object's storage in place, so the still-pending backward
+        kernels read CPU bytes and trip
+        ``RuntimeError: Expected all tensors to be on the same device``
+        (paper §3.2 phase-2 measurement loop crash on PEFT + low-
+        persistence offload). Restricting the rebind to trainable
+        params keeps the CPU-Adam-prep contract intact while letting
+        the still-in-flight autograd kernels see the same GPU tensor
+        they were given at forward.
         """
         slots = self._cpu_slots.get(chunk_id, [])
         for slot in slots:
             param = self._params_by_id.get(slot.param_id)
             if param is None:
+                continue
+            # Skip frozen params: they have no CPU Adam step to prepare
+            # for, and rebinding their .data to CPU storage races the
+            # backward kernels that captured the parameter at recompute
+            # time. See the docstring above for the PEFT-chunk-sharing
+            # rationale.
+            if not param.requires_grad:
                 continue
             # Swap .data to point at the CPU master so the CPU Adam kernel
             # has somewhere to read/write. This is a view of pinned memory;
