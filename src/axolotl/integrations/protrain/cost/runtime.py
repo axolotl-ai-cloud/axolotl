@@ -4,7 +4,8 @@ Implements the per-chunk runtime model from the paper. The communication
 sub-terms map directly onto numbered equations; the compute and optimizer
 sub-terms are described in prose in App A.1 but not numbered:
 
-    T_iter    = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)      [Eq. 2]
+    T_iter    = T_fwd + T_bwd + T_gpu_optim
+                + max(0, T_cpu_optim - T_bwd)                      [Eq. 2, post-52af384d]
     T_fwd     = sum_chunks  max(T_compute_chunk, T_comm_chunk)     [Eq. 3]
     T_bwd     = sum_chunks  max(T_compute_chunk + T_recomp_chunk,
                                 T_comm_chunk)                      [Eq. 5]
@@ -23,8 +24,15 @@ Key accounting rules (summary §3.3, paper §3.3.1):
 - Buffer-cached chunks skip re-gather in backward but still pay
   ``T_reduce`` and the D2H grad-offload — gather is amortised by the
   cache; reduce always happens when the chunk's grads finalize.
-- CPU-Adam overlaps GPU backward; only exposed if ``T_cpu_optim`` exceeds
-  ``T_bwd + T_gpu_optim``.
+- CPU-Adam overlaps GPU backward up to ``T_bwd``; the residual tail
+  ``max(0, T_cpu_optim - T_bwd)`` lands on the iteration's critical
+  path additively. Pre-52af384d the runtime treated step_async as
+  truly fire-and-forget so the paper's ``max(T_bwd + T_gpu_optim,
+  T_cpu_optim)`` form was correct; after 52af384d
+  ``ChunkManager.gather`` waits for the chunk's CPU-Adam future
+  before rebinding ``param.data`` (closes a SIGSEGV race in the AVX
+  kernel), serializing whenever ``T_cpu_adam_per_chunk`` exceeds
+  ``T_bwd_per_chunk`` and adding the excess to T_iter directly.
 - CKPT blocks add a recomputation-compute term to backward.
 - SWAP blocks add CPU<->GPU activation transfer on both sides.
 - For single-rank (``world == 1``) or replicated layouts
@@ -914,7 +922,54 @@ def estimate_runtime(
         )
         delta_persist_fwd = max(0, n_persist_eff - n_persist_eff_bootstrap)
         fwd_h2d_per_chunk = layout.S_chunk / full_h2d if full_h2d > 0 else 0.0
-        fwd_persist_save_per_chunk = nccl_gather + fwd_h2d_per_chunk
+        fwd_persist_theoretical_per_chunk = nccl_gather + fwd_h2d_per_chunk
+        # CALIBRATED PER-CHUNK SAVINGS (post 52af384d serialization fix):
+        # The pre-fix correction subtracted ``delta_persist *
+        # (nccl_gather + S_chunk/full_h2d)`` — the THEORETICAL maximum
+        # saving per persistent chunk. That is correct only when every
+        # bootstrap chunk was 100% PCIe-bound (compute fully hidden by
+        # comm under the per-chunk roofline). When the chunk roofline
+        # is partially compute-bound (e.g. LoRA where forward compute is
+        # cheap but per-chunk compute still partially overlaps PCIe),
+        # the saving per chunk is less than full PCIe — the chunk's
+        # bootstrap cost was ``max(compute, pcie)`` ≈ pcie + some
+        # compute overlap savings, not pure pcie.
+        #
+        # Cap the per-chunk saving at the EMPIRICAL per-non-persistent-
+        # chunk overhead derived from the bootstrap measurement. The
+        # bootstrap wall decomposes as
+        #   wall ≈ compute_baseline + n_nonpersist_bootstrap * overhead_per_chunk
+        # where ``overhead_per_chunk`` captures unmasked PCIe + gather
+        # latency per chunk. Solving for overhead and capping the
+        # theoretical save at that empirical value gives:
+        #   effective_save = min(theoretical_save, empirical_overhead)
+        # which collapses correctly in both limits:
+        #   * chunks PCIe-bound  (theoretical ≈ empirical): identical to
+        #     the pre-fix subtraction
+        #   * chunks compute-bound (empirical ≈ 0): no saving credited,
+        #     so persisting compute-bound chunks doesn't artificially
+        #     deflate ``t_fwd``
+        # Pre-fix on the 7B+LoRA case (32 OFFLOAD chunks, 103 of 130
+        # chunks newly-persistent in the candidate) the theoretical
+        # subtraction over-credited the saving by ~10x and collapsed
+        # ``t_fwd`` from a measured 1.0s wall down to ~2ms when actual
+        # would still pay PCIe traffic for the 27 remaining non-persistent
+        # chunks.
+        n_nonpersist_bootstrap_fwd = max(0, layout.N_chunk - n_persist_eff_bootstrap)
+        if n_nonpersist_bootstrap_fwd > 0:
+            empirical_fwd_overhead_per_chunk = max(
+                0.0,
+                (trace.steady_fwd_chunked_wall_s - t_fwd_compute_base)
+                / n_nonpersist_bootstrap_fwd,
+            )
+            fwd_persist_save_per_chunk = min(
+                fwd_persist_theoretical_per_chunk, empirical_fwd_overhead_per_chunk
+            )
+        else:
+            # No non-persistent chunks in bootstrap (degenerate — bootstrap
+            # was fully persistent). Fall back to theoretical saving;
+            # delta_persist_fwd is zero in that case anyway.
+            fwd_persist_save_per_chunk = fwd_persist_theoretical_per_chunk
         t_fwd_persist_correction = -delta_persist_fwd * fwd_persist_save_per_chunk
         t_fwd = max(
             0.0,
@@ -1171,7 +1226,81 @@ def estimate_runtime(
         bwd_d2h_per_chunk = (
             layout.S_chunk / hw.pcie_d2h_bps if hw.pcie_d2h_bps > 0 else 0.0
         )
-        bwd_persist_save_per_chunk = nccl_gather + bwd_h2d_per_chunk + bwd_d2h_per_chunk
+        bwd_persist_theoretical_per_chunk = (
+            nccl_gather + bwd_h2d_per_chunk + bwd_d2h_per_chunk
+        )
+        # CALIBRATED PER-CHUNK SAVINGS — mirrors the forward correction
+        # above. Cap the theoretical per-persistent-chunk save at the
+        # empirical per-non-persistent-chunk backward overhead derived
+        # from the bootstrap measurement. See the forward block for the
+        # full rationale.
+        #
+        # Decompose the bootstrap chunked backward wall as:
+        #   wall ≈ bwd_compute_floor + bootstrap_recompute
+        #          + n_nonpersist_bootstrap * overhead_bwd
+        # where ``bwd_compute_floor`` is a config-independent compute
+        # baseline (the unwrapped ``steady_bwd_wall_s`` if measured —
+        # captured BEFORE the chunked runtime engaged so it has no
+        # chunk-prefetch overhead — else fall back to the path-2/3
+        # heuristic from ``_bwd_compute_time_from_trace`` via
+        # ``t_fwd_compute_base * measured_ratio``).
+        # Solving for overhead:
+        #   overhead_bwd = max(0, (wall - bwd_compute_floor
+        #                          - bootstrap_recompute)
+        #                          / n_nonpersist_bootstrap)
+        # and capping ``min(theoretical, overhead_bwd)`` collapses
+        # correctly in both PCIe-bound and compute-bound limits.
+        # ``t_bwd_compute_base`` from ``_bwd_compute_time_from_trace``
+        # path 1 returns ``chunked_wall - bootstrap_recompute`` (which
+        # bakes in chunked overhead) and is NOT a clean compute floor;
+        # we re-derive the floor here from the unwrapped trace fields.
+        bootstrap_recompute_bwd = (
+            trace.phase2_n_checkpoint * trace.phase2_per_block_recompute_s
+        )
+        n_nonpersist_bootstrap_bwd = max(
+            0, layout.N_chunk - n_persist_eff_bootstrap_bwd
+        )
+        # Config-independent backward compute floor. The unwrapped
+        # ``steady_bwd_wall_s`` is captured pre-chunk-manager and so
+        # carries no chunk overhead; on traces that ran the chunked
+        # backward only (steady wall absent / OOMed) fall back to
+        # ``t_fwd_compute_base * measured_ratio`` (path-2 heuristic from
+        # ``_bwd_compute_time_from_trace``) or the LoRA/full-FT prior.
+        if trace.steady_bwd_wall_s > 0.0:
+            bwd_compute_floor = trace.steady_bwd_wall_s
+        elif trace.steady_fwd_wall_s > 0.0 and t_fwd_compute_base > 0.0:
+            measured_ratio = max(
+                1.0,
+                min(
+                    3.0,
+                    trace.steady_bwd_wall_s / trace.steady_fwd_wall_s
+                    if trace.steady_bwd_wall_s > 0.0
+                    else (
+                        1.0
+                        if 0.0 < trace.trainable_param_fraction < 0.05
+                        else _BWD_FWD_COMPUTE_RATIO
+                    ),
+                ),
+            )
+            bwd_compute_floor = t_fwd_compute_base * measured_ratio
+        else:
+            bwd_compute_floor = 0.0
+        if n_nonpersist_bootstrap_bwd > 0:
+            empirical_bwd_overhead_per_chunk = max(
+                0.0,
+                (
+                    trace.steady_bwd_chunked_wall_s
+                    - bwd_compute_floor
+                    - bootstrap_recompute_bwd
+                )
+                / n_nonpersist_bootstrap_bwd,
+            )
+            bwd_persist_save_per_chunk = min(
+                bwd_persist_theoretical_per_chunk,
+                empirical_bwd_overhead_per_chunk,
+            )
+        else:
+            bwd_persist_save_per_chunk = bwd_persist_theoretical_per_chunk
         t_bwd_persist_correction = -delta_persist_bwd * bwd_persist_save_per_chunk
 
         t_bwd = max(
@@ -1370,8 +1499,45 @@ def estimate_runtime(
     # a ~19% over-prediction residual on 7B-LoRA candidates with high
     # n_persist.
 
-    # Eq. 2: T_iter = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)
-    t_iter = t_fwd + max(t_bwd + t_gpu_optim, t_cpu_optim)
+    # T_iter under the post-52af384d gather/CPU-Adam serialization model:
+    #
+    #   T_iter = T_fwd + T_bwd + T_gpu_optim + max(0, T_cpu_optim - T_bwd)
+    #
+    # Pre-52af384d the runtime treated CpuFusedAdamAdapter.step_async as
+    # truly fire-and-forget — the worker thread mutated ``param.data``
+    # in the background while ``loss.backward()`` advanced. Under that
+    # model the paper's Eq. 2 (``T_iter = T_fwd + max(T_bwd +
+    # T_gpu_optim, T_cpu_optim)``) was correct: any CPU-Adam wall short
+    # of T_bwd was perfectly hidden, and only the residual tail
+    # ``max(0, T_cpu_optim - T_bwd)`` showed up at the end of the iter.
+    #
+    # ``ChunkManager.gather`` now calls ``cpu_optim.wait(chunk_id)``
+    # before rebinding ``param.data`` (commit 52af384d — closed a SIGSEGV
+    # race in the AVX kernel). This serializes whenever
+    # ``T_cpu_adam_per_chunk > T_bwd_per_chunk``: gather blocks the main
+    # thread until the worker finishes that chunk's optim step, and the
+    # excess CPU-Adam wall lands on the iteration's critical path
+    # additively rather than being masked by ``max(...)``.
+    #
+    # The new formula ``T_bwd + T_gpu_optim + max(0, T_cpu_optim - T_bwd)``
+    # collapses correctly in both limits:
+    #   * T_cpu_optim >> T_bwd  (heavy CPU-Adam work; e.g. full-finetune,
+    #     OFFLOAD-mode at high n_nonpersist):
+    #     T_iter ≈ T_fwd + T_bwd + T_gpu_optim + (T_cpu_optim - T_bwd)
+    #            ≈ T_fwd + T_cpu_optim + T_gpu_optim
+    #     i.e. CPU-Adam serializes onto the critical path, which matches
+    #     the post-52af384d gather/wait semantics.
+    #   * T_cpu_optim <= T_bwd  (light CPU-Adam work; e.g. LoRA where the
+    #     trainable fraction is tiny and CPU-Adam wall is negligible):
+    #     T_iter = T_fwd + T_bwd + T_gpu_optim + 0
+    #     identical to the pre-fix ``max`` formula in this regime —
+    #     bwd→cpu-adam overlap is preserved when there is no excess.
+    # The pre-fix ``max`` model in the heavy-CPU regime under-predicted
+    # by exactly ``T_bwd`` (the formula was ``T_fwd + T_cpu_optim``
+    # vs. the correct ``T_fwd + T_bwd + T_cpu_optim``-tail), feeding
+    # the searcher a phantom-discount that picked offload-heavy configs
+    # whose actual wall the runtime would never deliver.
+    t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
 
     LOG.debug(
         "estimate_runtime: cfg=%s t_fwd=%.4fs t_bwd=%.4fs t_gpu_opt=%.4fs "

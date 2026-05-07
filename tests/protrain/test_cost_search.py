@@ -1629,16 +1629,26 @@ def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
 
 def test_phase2_n_persist_translation_clamps_at_zero():
     """The n_persist correction must clamp the corrected wall at 0.0 so a
-    pathologically small bootstrap measurement (or pathologically large
-    PCIe round-trip estimate) cannot drive ``t_fwd`` / ``t_bwd``
-    negative.
+    pathologically small bootstrap measurement cannot drive ``t_fwd`` /
+    ``t_bwd`` negative.
 
-    This mirrors the existing ``t_bwd_buffer_correction`` clamp pattern
-    (paper App A.1 cost-model invariant: predicted iter time is
-    non-negative). The clamp also covers the degenerate edge case where
-    a noisy bootstrap underestimates the true chunked wall and the
-    full-sweep correction at ``n_persist=N_chunk`` would otherwise
-    yield a negative prediction.
+    Paper App A.1 cost-model invariant: predicted iter time is
+    non-negative. This test exercises the degenerate edge case where the
+    bootstrap measurement is at the floor of trace noise and a
+    full-persistence candidate's correction must not push the predicted
+    wall below zero.
+
+    Calibrated per-chunk savings (post 52af384d serialization fix): the
+    saving is capped at ``min(theoretical_pcie, empirical_overhead)``
+    where empirical = ``max(0, wall - compute_floor) / n_nonpersist_bs``.
+    When the bootstrap wall is below the compute floor (1 µs vs. ~8 ms
+    of measured op latencies in this fixture), ``empirical`` clamps to
+    0 and the per-persistent-chunk saving is therefore 0 — the
+    candidate's ``t_fwd`` / ``t_bwd`` collapse to the bootstrap wall
+    itself (1 µs each). The non-negativity invariant still holds via
+    the ``max(0.0, ...)`` clamp on the persist-correction sum, and
+    ``t_iter`` lands at the bootstrap-wall floor (microseconds), not
+    artificially inflated by an over-aggressive theoretical save.
     """
     from dataclasses import replace
 
@@ -1648,17 +1658,8 @@ def test_phase2_n_persist_translation_clamps_at_zero():
     n_block = len(base_trace.activation_sizes)
     layout = _make_layout()
     n_chunk = layout.N_chunk
-    # Bootstrap walls intentionally far smaller than the full sweep
-    # save (N_chunk * (gather + h2d)). Drives the correction below zero
-    # before clamping. ``phase2_n_checkpoint=0`` + all-NONE candidate
-    # ``block_map`` keeps the recompute term out of the wall budget so
-    # the clamp behavior is observable end-to-end.
     trace = replace(
         base_trace,
-        # 1-byte sentinel — see CR PR #19 fix: ``model_state_bytes <= 0``
-        # now triggers the fp16-params-only fallback so optim cost is no
-        # longer silently zero. A 1-byte total keeps the optim contribution
-        # negligible without tripping the fallback path.
         model_state_bytes=1,
         steady_fwd_chunked_wall_s=1e-6,
         steady_bwd_chunked_wall_s=1e-6,
@@ -1671,13 +1672,14 @@ def test_phase2_n_persist_translation_clamps_at_zero():
     bm = assign_modes(0, 0, n_block)
     cfg_full = CostConfig(n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0)
     t_full = estimate_runtime(cfg_full, trace, layout, bm, hw)
-    # Both walls clamp at 0; t_iter = 0 + max(0 + 0, 0) = 0.
-    assert t_full == pytest.approx(0.0, abs=1e-9), (
-        f"n_persist correction must clamp at 0 when savings exceed measured "
-        f"wall: got t_iter={t_full:.9f}, expected 0.0 "
-        f"(bootstrap walls were 1e-6 — less than even one chunk's PCIe "
-        "round-trip — so the all-persistent correction would otherwise "
-        "drive t_iter negative)"
+    # Non-negativity invariant: t_iter must be >= 0. Empirical-overhead
+    # cap collapses the saving to 0 when wall < compute_floor, so the
+    # bootstrap wall floors itself (no negative drift). Microsecond-
+    # scale upper bound covers t_fwd + t_bwd (1e-6 each) plus t_gpu_optim
+    # / t_cpu_optim (sub-nanosecond from the 1-byte model state).
+    assert 0.0 <= t_full < 1e-3, (
+        f"n_persist correction must keep t_iter non-negative and bounded "
+        f"by the bootstrap wall when savings clamp to 0: got t_iter={t_full:.9f}"
     )
 
 
