@@ -348,6 +348,46 @@ class ProfilerTrace:
     # (per-op-latency sum with hook scale + roofline cap).
     steady_fwd_chunked_wall_s: float = 0.0
 
+    # ----- Phase-2 analytical-baseline calibration (TRACE_VERSION 20) -----
+    #
+    # When phase-2 measures the bootstrap config's wall and peak it gives
+    # us a measurement-anchored *absolute* time/size scale at one cfg
+    # point. To translate that to a different production cfg whose
+    # ``cfg.n_swap > 0`` (or whose chunked-wall override is otherwise
+    # gated off), the cost model needs to know what its own analytical
+    # path WOULD have predicted at the bootstrap cfg — that is the
+    # baseline against which the measurement-vs-analytical RATIO is
+    # well-defined and can be carried across cfgs.
+    #
+    # ``phase2_iter_s`` is the measured fwd+bwd+step iter wall at the
+    # bootstrap cfg (sum of medians from ``measure_chunked_steady``).
+    # ``phase2_analytical_iter_s`` is the analytical (non-phase-2)
+    # ``estimate_runtime`` prediction at the SAME bootstrap cfg,
+    # captured pre-splice so the chunked-wall override does not
+    # short-circuit the analytical path.
+    # The cost model derives a multiplicative scale
+    # ``α = phase2_iter_s / phase2_analytical_iter_s`` and applies it to
+    # any analytical-path prediction. When the analytical path is not
+    # taken (e.g. ``cfg.n_swap == 0`` and chunked walls populated) α is
+    # not consulted — the chunked-wall override is already absolute.
+    #
+    # ``phase2_analytical_peak_bytes`` plays the analogous role for peak
+    # memory: ``estimate_peak`` evaluated at the bootstrap cfg pre-splice.
+    # Combined with the measured ``steady_phase2_peak_bytes`` it lets the
+    # post-search peak calibration apply a CFG-DELTA correction
+    # (``floor = phase2_peak + max(0, peak_analytical(prod_cfg)
+    # - phase2_analytical_peak_bytes)``) so the measurement-anchored
+    # floor stays in force even when the searcher picks a production
+    # cfg different from the bootstrap.
+    #
+    # All three fields default to 0 / 0.0 — that is the "no phase-2
+    # baseline available" sentinel that collapses both calibrations to
+    # their pre-refactor behaviour (no α scaling on the runtime side;
+    # only the same-cfg measurement window on the peak side).
+    phase2_iter_s: float = 0.0
+    phase2_analytical_iter_s: float = 0.0
+    phase2_analytical_peak_bytes: int = 0
+
     # ----- Block -> tree-index registry (TRACE_VERSION 16) -----
     #
     # Maps each global ``BlockId`` to its forward-order tree index

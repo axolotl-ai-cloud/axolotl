@@ -288,6 +288,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
     cfg,
     trace=None,
     block_map=None,
+    hw=None,
 ) -> int:
     """Recompute ``predicted_peak_bytes`` using actual chunk bytes + CKPT correction.
 
@@ -515,48 +516,61 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 and int(cfg.n_buffer) == int(getattr(trace, "phase2_n_buffer", -1))
                 and n_ckpt == int(getattr(trace, "phase2_n_checkpoint", -1))
             )
+
+            # Cfg-delta peak floor (TRACE_VERSION 20): when the
+            # production cfg differs from the bootstrap, the same-cfg
+            # ``phase2_peak`` is no longer the right anchor — a cfg
+            # with a longer persistent prefix or fewer CKPT blocks
+            # legitimately allocates MORE GPU bytes than the bootstrap
+            # measured. The pre-refactor gate only fired when cfgs
+            # matched, leaving the analytical ``calibrated`` to drift
+            # un-anchored on every other cfg (~7.4% under-predict
+            # observed on 7B-LoRA at the OFFLOAD lane).
+            #
+            # The cfg-delta formula uses the analytical peak model as
+            # the sensitivity oracle: ``estimate_peak`` is the same
+            # function the searcher minimises, so its delta between
+            # two cfgs IS the model's view of how peak should change
+            # with the cfg axes. Phase-2 supplies the measurement-
+            # anchored absolute scale at one cfg point; the analytical
+            # delta translates that scale to any other cfg:
+            #
+            #   floor = phase2_peak
+            #         + max(0, peak_analytical(prod_cfg)
+            #                - phase2_analytical_peak_bytes)
+            #
+            # Reduces to ``floor == phase2_peak`` when prod_cfg ==
+            # boot_cfg (identical analytical peaks → delta == 0),
+            # preserving the original same-cfg behaviour. The ``max(.,
+            # 0)`` keeps the floor monotone non-decreasing in cfg
+            # complexity — a smaller analytical peak at production cfg
+            # would imply the runtime should under-spend vs. the
+            # bootstrap, but the bootstrap's measurement is itself a
+            # lower bound on what that production cfg could consume
+            # (the runtime may still take the more expensive path on
+            # the fly), so we don't lower the floor below the
+            # measurement.
+            #
+            # Anti-hack guards:
+            #   * When the analytical baseline is missing (older
+            #     trace, in-process degraded fixture) the formula
+            #     collapses to ``floor = phase2_peak`` — same
+            #     behaviour as the original same-cfg gate.
+            #   * The 5% measurement-noise margin is preserved
+            #     symmetrically: above the floor we leave ``calibrated``
+            #     alone (analytical can over-predict for OOM safety);
+            #     below the floor we raise to ``floor`` (so the
+            #     OOM-safety invariant ``predicted >= 0.95 * actual``
+            #     survives the analytical-floor case too).
+            #   * When ``hw`` is None (legacy callers — should never
+            #     fire from in-tree call sites once the threading is
+            #     complete) we fall back to the same-cfg gate so
+            #     nothing regresses silently.
+            _PHASE2_SAFETY_MARGIN = 0.05
+            phase2_analytical_peak = int(
+                getattr(trace, "phase2_analytical_peak_bytes", 0) or 0
+            )
             if phase2_matches_cfg:
-                # BUG 4 FIX: phase-2 measurement is the ground-truth
-                # CUDA peak under the actual runtime config. The
-                # cost-model's analytical estimate (``calibrated``)
-                # has structural error in both directions:
-                #
-                #   * OVER-PREDICT — the op-walk's α=1.10 fragmentation
-                #     factor + activation roofline + pessimistic
-                #     buffer sizing combine into a conservative upper
-                #     bound. When phase-2 measures BELOW prediction,
-                #     we trust the measurement and lower ``calibrated``
-                #     so the search picks throughput-optimal configs
-                #     rather than getting starved by a phantom ceiling.
-                #
-                #   * UNDER-PREDICT — when activation deltas land in a
-                #     gap of the trace (e.g. a fused kernel the
-                #     profiler couldn't time per-op) or the buffer-pool
-                #     transient peak exceeds the ``buffer_factor``
-                #     model, the cost model can read OPTIMISTIC. The
-                #     pre-fix logic only had a ``min(...)`` ceiling
-                #     here, so when ``phase2_peak > calibrated`` it
-                #     was a no-op — the search continued operating on
-                #     an under-confident prediction and the OOM-safety
-                #     invariant (``predicted_peak >= 0.95 * actual``)
-                #     could fail at the headline 7B integration test
-                #     even though phase-2 had already measured the
-                #     actual peak directly. Symptom: the test fails
-                #     with ``peak UNDER-predict: predicted X GB <
-                #     actual Y GB`` despite phase-2 fields populated.
-                #
-                # The two-sided fix here applies a measurement-
-                # anchored window: when phase-2 measured ABOVE
-                # prediction, RAISE ``calibrated`` to ``phase2_peak ×
-                # (1 + safety_margin)`` so the search sees a
-                # prediction the actual peak cannot exceed under the
-                # same runtime config (within the safety margin's
-                # measurement noise window). The 5% margin matches
-                # the test's 5% slack on the OOM-safety invariant
-                # (``predicted_peak >= actual_peak * 0.95``) — phase-2
-                # is a per-iter median over five timed iterations, so
-                # its noise floor on a same-SKU rig is well below 5%.
-                _PHASE2_SAFETY_MARGIN = 0.05
                 phase2_floor = int((1.0 + _PHASE2_SAFETY_MARGIN) * phase2_peak)
                 if phase2_peak > calibrated:
                     calibrated = phase2_floor
@@ -566,6 +580,42 @@ def _calibrate_peak_with_actual_chunk_bytes(
                     # 5% margin around it (kept symmetric with the
                     # under-predict raise above).
                     calibrated = min(calibrated, phase2_floor)
+            elif phase2_analytical_peak > 0 and hw is not None:
+                # Cfg-delta path. Compute the analytical peak at the
+                # production cfg using the exact same function the
+                # searcher minimises (``cost.memory.estimate_peak``)
+                # so the model + production sides see consistent
+                # numbers. Local import to keep the wrapper's
+                # eager-import surface narrow.
+                from axolotl.integrations.protrain.cost.memory import (
+                    estimate_peak as _estimate_peak,
+                )
+
+                prod_analytical_peak = int(
+                    _estimate_peak(cfg, trace, layout, block_map, hw)
+                )
+                delta = max(0, prod_analytical_peak - phase2_analytical_peak)
+                calibrated_floor = int(phase2_peak + delta)
+                # Apply the same two-sided splice as the same-cfg
+                # branch: under-predict → raise to floor (with safety
+                # margin); over-predict → keep ``calibrated`` (it's
+                # already the conservative side of the cost model and
+                # OOM safety dominates).
+                floor_with_margin = int(
+                    (1.0 + _PHASE2_SAFETY_MARGIN) * calibrated_floor
+                )
+                if calibrated < calibrated_floor:
+                    calibrated = floor_with_margin
+                # Ceiling: keep the analytical estimate from drifting
+                # too far above the cfg-delta-anchored floor. The 5%
+                # margin matches the OOM-safety bound used by the
+                # same-cfg branch above; without a ceiling here a
+                # systematically over-conservative analytical peak
+                # would over-report ``predicted_peak`` and fail the
+                # 10% over-predict tolerance even when the runtime
+                # actually fits well within ``calibrated_floor``.
+                else:
+                    calibrated = min(calibrated, floor_with_margin)
     return calibrated
 
 
@@ -1007,6 +1057,7 @@ def _construct_runtime(
         cfg=result.cfg,
         trace=trace,
         block_map=result.block_map,
+        hw=hardware_profile,
     )
     if calibrated_peak != result.predicted_peak_bytes:
         LOG.info(
@@ -2117,6 +2168,53 @@ def protrain_model_wrapper(
             # call it pre- or post-splice. We call it pre-splice to
             # mirror the v10 ordering and keep the splice block compact.
             per_block_recompute_s = estimate_per_block_recompute_s(trace, n_block)
+
+            # Phase-2 analytical baselines (TRACE_VERSION 20). Capture
+            # what the analytical (non-phase-2) cost-model paths would
+            # have predicted at the bootstrap cfg BEFORE we splice the
+            # measured chunked walls into the trace. These two values
+            # are consumed by:
+            #
+            #   * ``cost.runtime.estimate_runtime`` to derive
+            #     α = phase2_iter_s / phase2_analytical_iter_s and scale
+            #     analytical-path predictions when the production cfg
+            #     bypasses the chunked-wall override (e.g. ``n_swap > 0``).
+            #   * ``_calibrate_peak_with_actual_chunk_bytes`` to apply
+            #     a cfg-delta peak floor
+            #     ``floor = phase2_peak +
+            #              max(0, peak_analytical(prod) - phase2_analytical_peak)``
+            #     when the searcher's pick differs from the bootstrap.
+            #
+            # The analytical iter call uses the PRE-splice trace by
+            # construction here — its ``steady_fwd_chunked_wall_s`` /
+            # ``steady_bwd_chunked_wall_s`` are still 0.0 so the
+            # ``estimate_runtime`` chunked-wall override gates fall
+            # through to the analytical roofline path. Calling it on the
+            # spliced trace would short-circuit on the override and
+            # return the measurement, defeating the calibration.
+            #
+            # Cost-model imports are local to keep the wrapper's
+            # eager-import surface narrow (the cost module pulls in the
+            # whole searcher transitively).
+            from axolotl.integrations.protrain.cost.memory import (
+                estimate_peak as _estimate_peak,
+            )
+            from axolotl.integrations.protrain.cost.runtime import (
+                estimate_runtime as _estimate_runtime,
+            )
+
+            phase2_analytical_iter_s_val = float(
+                _estimate_runtime(
+                    boot_cfg, trace, layout, boot_block_map, hardware_profile
+                )
+            )
+            phase2_analytical_peak_bytes_val = int(
+                _estimate_peak(
+                    boot_cfg, trace, layout, boot_block_map, hardware_profile
+                )
+            )
+            phase2_iter_s_val = float(fwd_s + bwd_s + step_s)
+
             from dataclasses import replace as _replace
 
             new_trace = _replace(
@@ -2129,6 +2227,9 @@ def protrain_model_wrapper(
                 phase2_n_buffer=boot_result.cfg.n_buffer,
                 phase2_n_checkpoint=boot_result.cfg.n_checkpoint,
                 phase2_per_block_recompute_s=per_block_recompute_s,
+                phase2_iter_s=phase2_iter_s_val,
+                phase2_analytical_iter_s=phase2_analytical_iter_s_val,
+                phase2_analytical_peak_bytes=phase2_analytical_peak_bytes_val,
             )
             try:
                 save_cached_trace(cache_key, new_trace, cache_dir=cache_dir)
@@ -2241,6 +2342,7 @@ def protrain_model_wrapper(
                     cfg=new_result.cfg,
                     trace=trace,
                     block_map=new_result.block_map,
+                    hw=hardware_profile,
                 )
                 if calibrated_peak != new_result.predicted_peak_bytes:
                     # Preserve the search's prefix — see the matching

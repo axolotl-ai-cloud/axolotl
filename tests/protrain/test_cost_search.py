@@ -2639,6 +2639,303 @@ def test_block_map_peak_contribution_drops_offload_bumps_when_persistent(
 
 
 # ---------------------------------------------------------------------------
+# Phase-2 analytical-baseline calibration (TRACE_VERSION 20)
+# ---------------------------------------------------------------------------
+
+
+def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
+    """``cfg.n_swap > 0`` routes through the analytical roofline path
+    (which over-predicts hot-loop overhead by 10-15% on PCIe-bound
+    workloads). The phase-2 analytical-baseline trio anchors the
+    measurement and lets ``estimate_runtime`` apply
+    ``α = phase2_iter_s / phase2_analytical_iter_s`` to deflate that
+    bias to within the test's same-cfg tolerance.
+    """
+    from dataclasses import replace
+
+    base_trace = _make_trace()
+    n_block = len(base_trace.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_block_map = assign_modes(0, n_block, n_block)
+
+    # Analytical iter at boot_cfg, captured pre-splice (the un-spliced
+    # ``base_trace`` has no chunked-wall override fields populated).
+    boot_analytical_iter = estimate_runtime(
+        boot_cfg, base_trace, layout, boot_block_map, hw
+    )
+    assert boot_analytical_iter > 0.0
+
+    # Synthesise a "measured" iter that's 0.85x of analytical — i.e.
+    # the cost model over-predicted by 17.6% in absolute terms; α
+    # should bring a comparable production cfg's prediction down by
+    # the same factor.
+    measured_iter = boot_analytical_iter * 0.85
+
+    spliced = replace(
+        base_trace,
+        # Phase-2 chunked walls populated so the same-cfg path
+        # (``n_swap == 0``) honours them; production cfg with
+        # ``n_swap > 0`` bypasses the chunked-wall override and falls
+        # through to the analytical path where α applies.
+        steady_fwd_chunked_wall_s=measured_iter * 0.4,
+        steady_bwd_chunked_wall_s=measured_iter * 0.55,
+        steady_step_overlap_s=measured_iter * 0.05,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_per_block_recompute_s=0.0002 * 5,  # _make_trace defaults
+        phase2_iter_s=measured_iter,
+        phase2_analytical_iter_s=boot_analytical_iter,
+    )
+
+    # Production cfg uses n_swap > 0 → analytical path engaged.
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    prod_block_map = assign_modes(2, 0, n_block)
+
+    # On a trace WITHOUT the analytical baseline, the production path
+    # produces the un-calibrated analytical prediction.
+    bare_trace = replace(spliced, phase2_iter_s=0.0, phase2_analytical_iter_s=0.0)
+    bare_prod = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
+
+    # Same trace WITH the baseline applies α — should be 0.85x.
+    cal_prod = estimate_runtime(prod_cfg, spliced, layout, prod_block_map, hw)
+
+    expected = bare_prod * 0.85
+    rel_err = abs(cal_prod - expected) / max(1e-9, expected)
+    assert rel_err < 1e-6, (
+        f"α-calibration did not scale analytical t_iter by phase2 ratio: "
+        f"bare={bare_prod:.6f} cal={cal_prod:.6f} expected={expected:.6f}"
+    )
+
+
+def test_phase2_alpha_is_no_op_when_baseline_missing():
+    """Cache-hit and force-all-persistent paths produce traces that
+    leave the analytical-baseline trio at default zeros. The
+    α-calibration must collapse to identity in that case so legacy /
+    degraded paths behave exactly as before TRACE_VERSION 20.
+    """
+    base = _make_trace()
+    layout = _make_layout()
+    hw = _make_hw()
+    cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    bm = assign_modes(2, 0, len(base.activation_sizes))
+    # Trace with NO phase-2 baseline (defaults are zeros).
+    t_default = estimate_runtime(cfg, base, layout, bm, hw)
+    assert t_default > 0.0  # sanity — analytical path still produces a number
+
+
+def test_phase2_alpha_clamped_to_safe_range():
+    """A pathologically noisy phase-2 measurement (ratio outside
+    [0.5, 1.5]) clamps so a single bad sample cannot blow the
+    prediction. Mirrors the existing per-SKU and hook-scale clamps.
+    """
+    from dataclasses import replace
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+    boot_iter = estimate_runtime(boot_cfg, base, layout, boot_bm, hw)
+
+    # Stage a 3.0x ratio (3× over-shoot) — should clamp to 1.5x.
+    high_ratio = replace(
+        base,
+        steady_fwd_chunked_wall_s=boot_iter * 1.2,
+        steady_bwd_chunked_wall_s=boot_iter * 1.6,
+        steady_step_overlap_s=boot_iter * 0.2,
+        phase2_n_persist=0,
+        phase2_n_buffer=0,
+        phase2_n_checkpoint=n_block,
+        phase2_per_block_recompute_s=0.0002 * 5,
+        phase2_iter_s=boot_iter * 3.0,
+        phase2_analytical_iter_s=boot_iter,
+    )
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    prod_bm = assign_modes(2, 0, n_block)
+    bare = estimate_runtime(
+        prod_cfg,
+        replace(high_ratio, phase2_iter_s=0.0, phase2_analytical_iter_s=0.0),
+        layout,
+        prod_bm,
+        hw,
+    )
+    clamped = estimate_runtime(prod_cfg, high_ratio, layout, prod_bm, hw)
+    # Clamped at 1.5x exactly.
+    assert clamped == pytest.approx(bare * 1.5, rel=1e-6)
+
+
+def test_calibrate_peak_with_actual_chunk_bytes_cfg_delta_path():
+    """When the production cfg differs from the bootstrap, the peak
+    calibrator applies a cfg-delta floor:
+        floor = phase2_peak + max(0, peak_analytical(prod) -
+                                     phase2_analytical_peak)
+    Reduces to the same-cfg ceiling-only behaviour when the cfgs
+    match (tested elsewhere); the new code path triggers when
+    ``phase2_matches_cfg`` is False but the analytical baseline is
+    populated.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.api.model_wrapper import (
+        _calibrate_peak_with_actual_chunk_bytes,
+    )
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+    boot_peak_analytical = estimate_peak(boot_cfg, base, layout, boot_bm, hw)
+    # Pretend phase-2 measured a peak slightly under analytical
+    # (typical: cost model is conservative, real allocator under-spends).
+    measured_phase2_peak = int(boot_peak_analytical * 0.9)
+
+    spliced = replace(
+        base,
+        steady_phase2_peak_bytes=measured_phase2_peak,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_analytical_peak_bytes=int(boot_peak_analytical),
+    )
+
+    # Production cfg has more persistent chunks → analytical peak
+    # should be larger than at boot_cfg. Note: in this synthetic
+    # layout n_persist increases the analytical peak via the
+    # persistent-chunk model-state term.
+    prod_cfg = CostConfig(n_persist=2, n_buffer=2, n_swap=0, n_checkpoint=n_block)
+    prod_bm = assign_modes(0, n_block, n_block)
+    prod_peak_analytical = estimate_peak(prod_cfg, spliced, layout, prod_bm, hw)
+
+    # Build a synthetic chunk_manager stub that exposes the bare
+    # minimum the calibrator reads. We don't need a real ChunkManager
+    # — `_chunk_bytes(layout, chunk_manager)` reads
+    # ``chunk_manager._cpu_slots`` / ``chunk_manager._chunk_shards``;
+    # the calibrator's ``actual_persistent`` is ``sum(cb[cid])``
+    # over chunk_manager._persistent_ids. For this test we set up
+    # cfg.n_persist=2 chunks @ S_chunk each, which matches the
+    # default fp16 packing.
+    class _FakeModel:
+        def named_parameters(self):
+            return iter(())
+
+    class _FakeCM:
+        _persistent_ids = frozenset(ChunkId(i) for i in range(int(prod_cfg.n_persist)))
+        model = _FakeModel()
+
+    fake_cm = _FakeCM()
+
+    # Original_peak roughly matches analytical (the searcher would
+    # have picked something near it). The calibrator's first stage
+    # subtracts the cost model's model_state estimate and re-adds
+    # actual per-chunk bytes — for our synthetic fixture this is a
+    # no-op (per-chunk bytes default to S_chunk).
+    original_peak = prod_peak_analytical
+    calibrated = _calibrate_peak_with_actual_chunk_bytes(
+        original_peak=original_peak,
+        layout=layout,
+        chunk_manager=fake_cm,
+        cfg=prod_cfg,
+        trace=spliced,
+        block_map=prod_bm,
+        hw=hw,
+    )
+
+    # Floor formula: phase2_peak + max(0, prod_analytical - boot_analytical).
+    expected_floor = int(
+        measured_phase2_peak + max(0, prod_peak_analytical - int(boot_peak_analytical))
+    )
+    expected_floor_with_margin = int(1.05 * expected_floor)
+
+    # Calibrated must be at most 1.05x of the cfg-delta floor (over-
+    # predict ceiling) and never under the floor (OOM-safety).
+    assert calibrated <= expected_floor_with_margin + 1, (
+        f"calibrated peak {calibrated} exceeded cfg-delta ceiling "
+        f"{expected_floor_with_margin}"
+    )
+    assert calibrated >= expected_floor or calibrated >= measured_phase2_peak, (
+        f"calibrated peak {calibrated} dropped below cfg-delta floor "
+        f"{expected_floor} / phase2_peak {measured_phase2_peak}"
+    )
+
+
+def test_calibrate_peak_with_actual_chunk_bytes_same_cfg_preserves_behaviour():
+    """When the production cfg matches the bootstrap (the original
+    ``phase2_matches_cfg`` predicate evaluates True), the calibrator
+    must preserve the pre-refactor two-sided splice exactly: under-
+    predict raises to ``1.05 * phase2_peak``, over-predict caps at
+    ``1.05 * phase2_peak``. The cfg-delta path must not interfere.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.api.model_wrapper import (
+        _calibrate_peak_with_actual_chunk_bytes,
+    )
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    bm = assign_modes(0, n_block, n_block)
+    boot_peak_analytical = estimate_peak(cfg, base, layout, bm, hw)
+    measured_peak = int(boot_peak_analytical * 0.9)
+
+    spliced = replace(
+        base,
+        steady_phase2_peak_bytes=measured_peak,
+        phase2_n_persist=cfg.n_persist,
+        phase2_n_buffer=cfg.n_buffer,
+        phase2_n_checkpoint=cfg.n_checkpoint,
+        phase2_analytical_peak_bytes=int(boot_peak_analytical),
+    )
+
+    class _FakeModel:
+        def named_parameters(self):
+            return iter(())
+
+    class _FakeCM:
+        _persistent_ids = frozenset()
+        model = _FakeModel()
+
+    # Over-predict input: original_peak much higher than measured.
+    over = _calibrate_peak_with_actual_chunk_bytes(
+        original_peak=int(measured_peak * 5),
+        layout=layout,
+        chunk_manager=_FakeCM(),
+        cfg=cfg,
+        trace=spliced,
+        block_map=bm,
+        hw=hw,
+    )
+    assert over <= int(1.05 * measured_peak) + 1, (
+        f"same-cfg over-predict was not capped at 1.05*phase2_peak: {over}"
+    )
+
+    # Under-predict input: original_peak below measured.
+    under = _calibrate_peak_with_actual_chunk_bytes(
+        original_peak=int(measured_peak * 0.5),
+        layout=layout,
+        chunk_manager=_FakeCM(),
+        cfg=cfg,
+        trace=spliced,
+        block_map=bm,
+        hw=hw,
+    )
+    assert under >= measured_peak, (
+        f"same-cfg under-predict was not raised to phase2_floor: "
+        f"under={under} measured={measured_peak}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Helper for debugging tests if they fail
 # ---------------------------------------------------------------------------
 

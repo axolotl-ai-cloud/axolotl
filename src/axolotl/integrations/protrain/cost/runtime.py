@@ -883,7 +883,10 @@ def estimate_runtime(
     # SWAP contention model. For ``cfg.n_swap == 0`` candidates
     # (the dominant case on PCIe Gen3 3090s per paper §3.1.2) the
     # phase-2 path stays exactly as before — full speed, no derate.
+    fwd_used_phase2_override = False
+    bwd_used_phase2_override = False
     if trace.steady_fwd_chunked_wall_s > 0.0 and cfg.n_swap == 0:
+        fwd_used_phase2_override = True
         # n_persist translation (paper App A.1 Eq. 4, lines 988-1001):
         # the bootstrap measurement was captured at
         # ``trace.phase2_n_persist`` (typically 0 — see
@@ -1113,6 +1116,7 @@ def estimate_runtime(
         and (trace.phase2_n_checkpoint == 0 or trace.phase2_per_block_recompute_s > 0.0)
         and cfg.n_swap == 0
     ):
+        bwd_used_phase2_override = True
         # PHASE-2 BACKWARD OVERRIDE (TRACE_VERSION >= 10): the chunked
         # backward wall already includes the measured chunk runtime and its
         # real comm/compute overlap. After translating out the bootstrap
@@ -1538,6 +1542,76 @@ def estimate_runtime(
     # the searcher a phantom-discount that picked offload-heavy configs
     # whose actual wall the runtime would never deliver.
     t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
+
+    # ----- Phase-2 analytical-path α-calibration (TRACE_VERSION 20) -----
+    #
+    # When the analytical per-chunk roofline path was taken for either
+    # forward or backward (the dominant case is ``cfg.n_swap > 0``,
+    # where both phase-2 chunked-wall overrides above are gated off),
+    # the prediction inherits the roofline's structural over-estimate
+    # of the chunked-runtime hot loop. The roofline assumes
+    # max(compute, comm) per chunk under fully non-overlapping
+    # gather/H2D/D2H, but the real runtime overlaps gather streams
+    # with compute and amortises some PCIe transfers across the chunk
+    # buffer's LRU residency. Pre-refactor this surfaced as ~13%
+    # over-prediction on production cfgs with ``n_swap > 0`` (7B-LoRA
+    # OFFLOAD lane, see commit a4415439).
+    #
+    # The phase-2 measurement at the bootstrap cfg gives us an
+    # absolute time scale at one cfg point; taking the analytical
+    # prediction at the SAME bootstrap cfg (captured pre-splice and
+    # stored on the trace as ``phase2_analytical_iter_s``) gives us
+    # what the analytical path WOULD have predicted there. The ratio
+    #
+    #   α = phase2_iter_s / phase2_analytical_iter_s
+    #
+    # is the calibration scale: how much to deflate (or, in principle,
+    # inflate) the analytical-path absolute prediction to match the
+    # measurement-anchored time scale. The per-chunk roofline keeps
+    # its correct *shape* across cfgs (bandwidth derate, n_persist,
+    # n_buffer, n_checkpoint, n_swap all flow through unchanged); α
+    # corrects only the *constant*. This is the same "absolute time
+    # scale ≠ analytical time scale, but the ratio is stable across
+    # cfgs" pattern used by ``_sku_compute_scale`` for cross-SKU
+    # calibration.
+    #
+    # Anti-hack guards:
+    #   * α applies ONLY on the analytical path (either fwd or bwd
+    #     bypassed the phase-2 override). When BOTH overrides fired
+    #     (``cfg.n_swap == 0`` and chunked walls populated) the
+    #     prediction is already measurement-anchored and α would
+    #     double-correct.
+    #   * α is a no-op when phase-2 didn't run (``phase2_iter_s == 0``
+    #     or ``phase2_analytical_iter_s <= 0``) — the cache-hit and
+    #     ``force_all_persistent`` / ``all_overrides_set`` paths
+    #     therefore preserve pre-refactor behaviour.
+    #   * The ratio is clamped to [0.5, 1.5] to keep a single noisy
+    #     measurement from blowing the prediction up. The phase-2
+    #     median-of-five iter wall has a noise floor around 5%; ratios
+    #     outside that are almost certainly a structural bug
+    #     (pre-splice trace already had phase-2 fields populated, etc.)
+    #     and treating them as a clamp + warn is safer than letting
+    #     them propagate.
+    used_analytical_path = (not fwd_used_phase2_override) or (
+        not bwd_used_phase2_override
+    )
+    if (
+        used_analytical_path
+        and trace.phase2_iter_s > 0.0
+        and trace.phase2_analytical_iter_s > 0.0
+    ):
+        alpha = trace.phase2_iter_s / trace.phase2_analytical_iter_s
+        alpha_clamped = max(0.5, min(1.5, alpha))
+        t_iter_pre = t_iter
+        t_iter = t_iter * alpha_clamped
+        LOG.debug(
+            "estimate_runtime: phase-2 α-calibration applied "
+            "(α=%.3f clamped=%.3f, %.4fs -> %.4fs)",
+            alpha,
+            alpha_clamped,
+            t_iter_pre,
+            t_iter,
+        )
 
     LOG.debug(
         "estimate_runtime: cfg=%s t_fwd=%.4fs t_bwd=%.4fs t_gpu_opt=%.4fs "

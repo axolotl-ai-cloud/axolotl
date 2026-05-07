@@ -145,7 +145,16 @@ _CACHE_SUBDIR = Path("protrain") / "profiler"
 # v18 traces have these at 0 / empty so the cost model would silently
 # regress to its analytical bwd estimate — bumping the schema forces a
 # re-profile so the measurement is captured and consumed.
-TRACE_VERSION = 19
+# Version 20 adds the phase-2 analytical-baseline trio
+# (``phase2_iter_s``, ``phase2_analytical_iter_s``,
+# ``phase2_analytical_peak_bytes``) used by the cost model to apply a
+# measurement-anchored α calibration to analytical-path runtime
+# predictions and a cfg-delta peak floor when the production cfg
+# differs from the bootstrap. v19 cached traces lack these fields, so
+# the cost model would silently lose both calibrations — bumping
+# invalidates them and forces a fresh phase-2 capture that records the
+# analytical baselines.
+TRACE_VERSION = 20
 
 
 @dataclass(frozen=True)
@@ -304,6 +313,20 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         # invalidates v17 traces lacking the offload axis.
         "phase2_n_offload": int(getattr(trace, "phase2_n_offload", 0)),
         "phase2_per_block_recompute_s": float(trace.phase2_per_block_recompute_s),
+        # ``phase2_iter_s`` / ``phase2_analytical_iter_s`` /
+        # ``phase2_analytical_peak_bytes`` (TRACE_VERSION 20) anchor the
+        # cost model's α-calibration on the analytical path and the
+        # cfg-delta peak floor. ``getattr`` keeps the writer defensive
+        # against ``ProfilerTrace`` builds that haven't yet exposed the
+        # fields — the version bump still invalidates v19 entries that
+        # lacked them.
+        "phase2_iter_s": float(getattr(trace, "phase2_iter_s", 0.0)),
+        "phase2_analytical_iter_s": float(
+            getattr(trace, "phase2_analytical_iter_s", 0.0)
+        ),
+        "phase2_analytical_peak_bytes": int(
+            getattr(trace, "phase2_analytical_peak_bytes", 0)
+        ),
         "block_tree_index": {
             str(int(k)): int(v) for k, v in trace.block_tree_index.items()
         },
@@ -338,6 +361,20 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
             BlockId(int(k)): int(v)
             for k, v in data.get("steady_bwd_block_peak_bytes", {}).items()
         }
+    # Phase-2 analytical-baseline trio (TRACE_VERSION 20). Same
+    # field-presence guard as the older optional fields above so an
+    # in-tree builder lagging the schema doesn't turn a fresh-version
+    # hit into an unexpected-kwarg cache miss.
+    if "phase2_iter_s" in _trace_field_names:
+        extra["phase2_iter_s"] = float(data.get("phase2_iter_s", 0.0))
+    if "phase2_analytical_iter_s" in _trace_field_names:
+        extra["phase2_analytical_iter_s"] = float(
+            data.get("phase2_analytical_iter_s", 0.0)
+        )
+    if "phase2_analytical_peak_bytes" in _trace_field_names:
+        extra["phase2_analytical_peak_bytes"] = int(
+            data.get("phase2_analytical_peak_bytes", 0)
+        )
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={
