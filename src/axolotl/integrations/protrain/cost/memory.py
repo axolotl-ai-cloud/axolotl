@@ -58,6 +58,83 @@ LOG = get_logger(__name__)
 _STALE_TRACE_WARNING_EMITTED = False
 
 
+def _saved_tensor_bytes_per_block(trace: ProfilerTrace) -> dict[BlockId, int]:
+    """Per-block saved-for-backward bytes proxy from steady-state forward peaks.
+
+    ``trace.activation_sizes[bid]`` records ONLY the block's OUTPUT tensor
+    bytes (~2 MB on 7B Llama). The actual saved-tensor footprint a block
+    leaves resident across forward (Q/K/V/output projections + MLP
+    intermediate states + attention scores) is ~30x larger (~60 MB on
+    7B Llama). When the cap subtracts ``activation_sizes`` for CKPT/SWAP
+    blocks it under-credits the savings by exactly that factor, leaving
+    the predicted peak insensitive to ``n_checkpoint`` (the headline 7B
+    test sees a 13% over-prediction that's ~30x explained by this gap).
+
+    Reconstruct a more faithful per-block proxy from
+    ``steady_fwd_block_peak_bytes`` — the block-level
+    ``max_memory_allocated`` snapshots taken during the hook-less steady
+    forward (peak counter reset between blocks). Within each block's
+    window, ``peak[bid] = allocated_at_block_start + intra_op_peak``, and
+    ``allocated_at_block_start`` rises monotonically with cumulative
+    saved-tensor bytes of preceding blocks. So ``peak[bid] - peak[bid-1]``
+    ≈ block ``bid-1``'s saved-tensor bytes (intra peaks cancel under a
+    uniform-block assumption). We attribute that forward difference to
+    block ``bid-1`` and use the median forward difference as a fallback
+    for block 0 (no predecessor to diff against).
+
+    Returns a dict mapping ``BlockId -> bytes``. Falls back to
+    ``trace.activation_sizes[bid]`` for any block where the per-block
+    peak data is missing or yields a non-positive delta. Empty when
+    neither source is populated.
+    """
+    deltas: dict[BlockId, int] = {}
+    per_block_peak = getattr(trace, "steady_fwd_block_peak_bytes", None) or {}
+    activation_sizes = trace.activation_sizes or {}
+    if not per_block_peak:
+        return {BlockId(int(bid)): int(sz) for bid, sz in activation_sizes.items()}
+
+    # Sort by block id to walk in forward order. ``steady_fwd_block_peak_bytes``
+    # is keyed by ``BlockId`` (NewType over int) — coerce defensively to int
+    # to handle pickled traces that may have lost the type wrapper.
+    sorted_bids = sorted((BlockId(int(b)) for b in per_block_peak.keys()))
+    if not sorted_bids:
+        return {BlockId(int(bid)): int(sz) for bid, sz in activation_sizes.items()}
+
+    forward_diffs: list[int] = []
+    for prev_bid, cur_bid in zip(sorted_bids, sorted_bids[1:], strict=False):
+        prev_peak = int(per_block_peak.get(prev_bid, 0))
+        cur_peak = int(per_block_peak.get(cur_bid, 0))
+        diff = cur_peak - prev_peak
+        if diff > 0:
+            forward_diffs.append(diff)
+            # Forward difference attributes the cumulative-allocated rise
+            # between prev and cur to the bytes prev_bid deposited.
+            deltas[prev_bid] = diff
+
+    # Last block has no successor to diff against. Use the median of the
+    # observed forward diffs as a robust fallback. When ``forward_diffs``
+    # is empty (single block, or every diff was non-positive — unusual
+    # but possible if profiling captured a non-uniform steady state),
+    # fall back to ``activation_sizes`` for every block.
+    if forward_diffs:
+        import statistics
+
+        median_diff = int(statistics.median(forward_diffs))
+        last_bid = sorted_bids[-1]
+        if last_bid not in deltas:
+            deltas[last_bid] = median_diff
+
+    # Fill any remaining gaps from ``activation_sizes`` (e.g. blocks that
+    # appear in ``activation_sizes`` but not in ``steady_fwd_block_peak_bytes``,
+    # or blocks where the forward diff was zero / negative).
+    for bid_raw, act_sz in activation_sizes.items():
+        bid = BlockId(int(bid_raw))
+        if bid not in deltas:
+            deltas[bid] = int(act_sz)
+
+    return deltas
+
+
 #: Eq. 11 fragmentation factor — applied as a final multiplier on the
 #: raw op-walk peak. Treated as a module-level constant so tests can
 #: import it explicitly for sanity checks.
@@ -317,27 +394,51 @@ def hot_iter_peak_cap(
         # addresses: predicted peak identical for n_checkpoint=1 and
         # n_checkpoint=9 even though actual peak drops with k).
         #
-        # Anti-hack guard: ``activation_sizes[bid]`` is the block's
-        # OUTPUT-bytes proxy (residual stream + logits), which is the
-        # paper-faithful upper bound on the per-block delta between
-        # NONE and CKPT (CKPT retains the input but discards the
-        # internal saved tensors; output ≈ input via the residual
-        # connection so the saving ≈ activation_bytes - input_bytes ≈
-        # the per-block aggregate the op-walk also charges to NONE
-        # blocks). Match the op-walk's convention so cap and op-walk
-        # agree on the n_checkpoint sensitivity. Floor the result at
-        # ``model_state`` plus the recompute bump so over-aggressive
-        # subtraction can't drive the cap below the operational floor.
+        # Magnitude proxy (Fix 2). ``activation_sizes[bid]`` is the
+        # block's OUTPUT-bytes proxy (residual stream + logits, ~2 MB
+        # on 7B Llama) — too small by ~30x for the savings calculation:
+        # the actual saved-tensor footprint a NONE block leaves resident
+        # (Q/K/V/output projections + MLP intermediate states + attention
+        # scores) is ~60 MB on 7B Llama. Subtracting the output-only
+        # proxy makes the cap shrink by ~2 MB per CKPT block when the
+        # actual production peak shrinks by ~60 MB per CKPT block — a
+        # 30x miscalibration that surfaces as a 13% over-prediction on
+        # the headline 7B test (9 blocks checkpointed: predicted drops
+        # 18 MB, actual drops ~540 MB).
+        #
+        # Use the per-block forward-peak deltas via
+        # :func:`_saved_tensor_bytes_per_block` as the savings proxy:
+        # those deltas measure the cumulative-allocated rise between
+        # adjacent blocks during the hook-less steady forward, which IS
+        # the saved-for-backward residency the production runtime
+        # actually frees when the block is wrapped for CKPT/SWAP. Falls
+        # back to ``activation_sizes`` per-block when per-block peak
+        # data is missing (older traces; gaps in capture) so this fix
+        # is a strict upgrade over the previous behaviour — the cap
+        # tightens for any trace carrying ``steady_fwd_block_peak_bytes``
+        # without breaking callers that don't.
+        #
+        # ``ckpt_recomp_bump`` continues to use ``activation_sizes`` —
+        # that term models the per-block recomputation peak during
+        # backward (paper §3.3: "one block at a time, serially"), where
+        # the dominant cost is the block's output materialization in
+        # the recomp window. Saved-for-backward bytes are released
+        # before the recomp window opens, so the larger
+        # saved-tensor-bytes proxy doesn't apply here. Only the
+        # savings (what NONE retains across the whole forward but CKPT
+        # / SWAP do not) need the larger proxy.
+        saved_bytes_proxy = _saved_tensor_bytes_per_block(trace)
         ckpt_swap_savings = 0
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
             mode = block_map.get(bid, BlockMode.NONE)
+            block_saved = int(saved_bytes_proxy.get(bid, act_sz))
             if mode is BlockMode.CKPT:
                 if act_sz > ckpt_recomp_bump:
                     ckpt_recomp_bump = act_sz
-                ckpt_swap_savings += act_sz
+                ckpt_swap_savings += block_saved
             elif mode is BlockMode.SWAP:
-                ckpt_swap_savings += act_sz
+                ckpt_swap_savings += block_saved
             elif mode is BlockMode.OFFLOAD:
                 has_offload = True
         offload_bump = layout.S_chunk if (has_offload and layout is not None) else 0
@@ -1054,6 +1155,7 @@ def estimate_peak(
 
 __all__ = [
     "ALPHA_FRAGMENTATION",
+    "_saved_tensor_bytes_per_block",
     "block_tree_index_map",
     "cross_attn_persist_bytes",
     "estimate_cpu_footprint",

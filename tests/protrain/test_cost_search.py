@@ -416,6 +416,164 @@ def test_estimate_peak_cap_shrinks_with_n_checkpoint(toy_layout, toy_hw):
     )
 
 
+def test_saved_tensor_bytes_per_block_uses_steady_fwd_deltas():
+    """Fix 2: the per-block savings proxy must reflect peak deltas, not
+    output bytes.
+
+    The pre-Fix-2 cap used ``trace.activation_sizes[bid]`` (block OUTPUT
+    bytes — ~2 MB on 7B Llama) as the savings proxy when subtracting
+    CKPT/SWAP retained activations from the all-NONE ceiling. The actual
+    saved-tensor footprint per transformer block (Q/K/V/output projections
+    + MLP intermediate states + attention scores) is ~30x larger, so the
+    cap shrunk by ~2 MB per CKPT block when the actual production peak
+    shrunk by ~60 MB per block — surfacing as a 13% over-prediction at
+    n_checkpoint=9 on the 7B end-to-end test.
+
+    The new helper ``_saved_tensor_bytes_per_block`` derives the proxy
+    from ``steady_fwd_block_peak_bytes`` per-block deltas. Verify the
+    magnitude is materially larger than ``activation_sizes`` when peak
+    deltas are populated.
+    """
+    from axolotl.integrations.protrain.cost.memory import (
+        _saved_tensor_bytes_per_block,
+    )
+
+    n_block = 8
+    activation_bytes_per_block = 2 * MB  # block-output bytes (small)
+    saved_per_block = 60 * MB  # full saved-for-backward residency
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=3,
+        activation_bytes_per_block=activation_bytes_per_block,
+    )
+    # Cumulative per-block peak: each successive block adds
+    # ``saved_per_block`` to the residency carried into its own forward
+    # window. Profile-time model-state baseline omitted from this synthetic
+    # trace — the helper only consumes the inter-block deltas.
+    per_block_peaks = {
+        BlockId(b): saved_per_block * (b + 1) for b in range(n_block)
+    }
+    from dataclasses import replace
+
+    trace = replace(trace, steady_fwd_block_peak_bytes=per_block_peaks)
+
+    proxy = _saved_tensor_bytes_per_block(trace)
+    # Every block (except possibly the last) should derive its proxy from
+    # the forward peak diff = ``saved_per_block``. The last block falls
+    # back to the median diff which is also ``saved_per_block``.
+    for b in range(n_block):
+        assert proxy[BlockId(b)] == saved_per_block, (
+            f"block {b} proxy {proxy[BlockId(b)] / 1e6:.1f}MB should equal "
+            f"per-block delta {saved_per_block / 1e6:.1f}MB"
+        )
+    # The proxy is materially larger than activation_sizes — the headline
+    # magnitude fix.
+    assert proxy[BlockId(0)] > 10 * activation_bytes_per_block
+
+
+def test_saved_tensor_bytes_per_block_falls_back_to_activation_sizes():
+    """The helper must degrade gracefully when peak data is missing or
+    sparse.
+
+    Older traces (cached before TRACE_VERSION ≥ 6) may lack
+    ``steady_fwd_block_peak_bytes`` entirely. Newer traces may have only a
+    subset (e.g. backward profiling failed mid-iter and partial deltas were
+    cleared). In either case the helper must return ``activation_sizes`` as
+    a non-None fallback so downstream callers never see missing keys.
+    """
+    from axolotl.integrations.protrain.cost.memory import (
+        _saved_tensor_bytes_per_block,
+    )
+
+    n_block = 4
+    activation_bytes_per_block = 8 * MB
+    trace = _make_trace(
+        n_block=n_block,
+        activation_bytes_per_block=activation_bytes_per_block,
+    )
+    # Empty per-block peak dict.
+    proxy = _saved_tensor_bytes_per_block(trace)
+    for b in range(n_block):
+        assert proxy[BlockId(b)] == activation_bytes_per_block
+
+    # All-equal per-block peaks (no positive diffs): the helper falls
+    # back to activation_sizes for every block.
+    from dataclasses import replace
+
+    trace = replace(
+        trace,
+        steady_fwd_block_peak_bytes={BlockId(b): 100 * MB for b in range(n_block)},
+    )
+    proxy = _saved_tensor_bytes_per_block(trace)
+    for b in range(n_block):
+        assert proxy[BlockId(b)] == activation_bytes_per_block
+
+
+def test_estimate_peak_uses_saved_tensor_proxy_for_savings(toy_layout, toy_hw):
+    """Fix 2: with all blocks CKPT, the cap must shrink by at least half
+    the cumulative saved-tensor proxy.
+
+    Construct a trace where ``activation_sizes`` is small (output bytes,
+    paper-faithful for the recompute bump) but ``steady_fwd_block_peak_bytes``
+    deltas reveal a much larger saved-tensor footprint per block. Verify
+    the predicted peak at n_checkpoint = N_block is at least half of
+    ``sum(saved_proxy)`` smaller than at n_checkpoint = 0 — proves the cap
+    consumes the larger proxy for savings, not the small ``activation_sizes``.
+    """
+    from axolotl.integrations.protrain.cost.memory import (
+        _saved_tensor_bytes_per_block,
+    )
+
+    n_block = 16
+    activation_bytes_per_block = 2 * MB  # small output
+    saved_per_block = 60 * MB  # large saved-for-backward
+    huge_intra = 4 * GB  # ensures cap binds
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=4,
+        activation_bytes_per_block=activation_bytes_per_block,
+        intra_delta_bytes=huge_intra,
+    )
+    profile_model_state = toy_layout.N_chunk * toy_layout.S_chunk
+    # Per-block peaks: cumulative saved_per_block on top of the model state.
+    per_block_peaks = {
+        BlockId(b): profile_model_state + (b + 1) * saved_per_block
+        for b in range(n_block)
+    }
+    from dataclasses import replace
+
+    trace = replace(trace, steady_fwd_block_peak_bytes=per_block_peaks)
+
+    # Sanity: the helper resolves to saved_per_block for every block.
+    proxy = _saved_tensor_bytes_per_block(trace)
+    total_saved = sum(proxy.values())
+    assert total_saved >= n_block * saved_per_block * 0.9  # 10% slack
+
+    cfg_none = CostConfig(n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=0)
+    bm_none = assign_modes(0, 0, n_block)
+    peak_none = estimate_peak(cfg_none, trace, toy_layout, bm_none, toy_hw)
+
+    cfg_all_ckpt = CostConfig(
+        n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=n_block
+    )
+    bm_all_ckpt = assign_modes(0, n_block, n_block)
+    peak_all_ckpt = estimate_peak(
+        cfg_all_ckpt, trace, toy_layout, bm_all_ckpt, toy_hw
+    )
+
+    # Drop must be at least half the saved proxy total. The recomp bump
+    # (~activation_bytes_per_block, the single max CKPT block's output)
+    # is added back, but it's tiny relative to total_saved (1/30x scale)
+    # so the bound is comfortable.
+    expected_min_drop = int(0.5 * total_saved)
+    actual_drop = peak_none - peak_all_ckpt
+    assert actual_drop >= expected_min_drop, (
+        f"all-CKPT peak should drop by at least {expected_min_drop / 1e6:.0f}MB; "
+        f"got {actual_drop / 1e6:.0f}MB (peak_none={peak_none / 1e9:.2f}GB, "
+        f"peak_all_ckpt={peak_all_ckpt / 1e9:.2f}GB)"
+    )
+
+
 def test_estimate_peak_per_block_cap_respects_under_predict_floor(toy_layout, toy_hw):
     """Per-block cap must not under-predict when the op-walk is tighter.
 
