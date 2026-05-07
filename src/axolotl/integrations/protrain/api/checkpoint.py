@@ -1927,13 +1927,23 @@ def _make_callback_class():
                 chunk_manager.wait_cpu_optim_all()
 
                 # ---------- 2. Estimate-gate (rank-0 decides) ----------
+                # ``_estimate_optim_state_bytes`` issues a cluster-wide
+                # ``all_reduce`` to sum Mode-C per-rank shard sizes, so
+                # EVERY rank must enter it in lockstep — calling it only
+                # on rank-0 would leave non-zero ranks ahead of rank-0's
+                # all_reduce and the next collective (the preamble
+                # ``_allreduce_status_or_raise`` below) would mis-pair,
+                # leaving rank-0 wedged in its all_reduce while non-zero
+                # ranks proceed to the broadcast. Always run the estimate
+                # on every rank; the skip/log decision is rank-0-only.
+                estimate = _estimate_optim_state_bytes(raw)
                 if rank == 0:
                     if checkpoint_dir_missing:
                         # Missing-dir takes precedence: skip without
-                        # estimating (the dir we'd write to isn't
-                        # there). Log here so the warning still fires
-                        # exactly once on rank-0, matching the prior
-                        # early-return behavior.
+                        # using the estimate (the dir we'd write to
+                        # isn't there). Log here so the warning still
+                        # fires exactly once on rank-0, matching the
+                        # prior early-return behavior.
                         skip = True
                         LOG.warning(
                             "ProTrainOptimizerCheckpointCallback.on_save: "
@@ -1942,7 +1952,6 @@ def _make_callback_class():
                             checkpoint_dir,
                         )
                     else:
-                        estimate = _estimate_optim_state_bytes(raw)
                         skip = estimate > self._save_max_bytes
                     if skip and not checkpoint_dir_missing:
                         LOG.warning(
