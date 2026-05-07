@@ -1634,8 +1634,14 @@ def estimate_runtime(
         # synthetic test still applies α=0.85 as designed; the
         # 7B-LoRA case has α=0.579 below the cutoff and gets clamped.
         N_block_eff = max(1, len(trace.activation_sizes))
-        boot_ckpt_dominant = int(trace.phase2_n_checkpoint) / N_block_eff > 0.5
-        prod_drops_ckpt = int(cfg.n_checkpoint) == 0
+        boot_ckpt_density = int(trace.phase2_n_checkpoint) / N_block_eff
+        prod_ckpt_density = int(cfg.n_checkpoint) / N_block_eff
+        # Boot dominant + prod sparse: prod's CKPT density is at most a
+        # quarter of boot's (catches the 7B-LoRA cycle-6 case where
+        # boot=32/32=1.0 but prod=1/32=0.03; previous strict ``== 0``
+        # check missed prod=1).
+        boot_ckpt_dominant = boot_ckpt_density > 0.5
+        prod_drops_ckpt = prod_ckpt_density <= boot_ckpt_density / 4.0
         deflation_unsafe = boot_ckpt_dominant and prod_drops_ckpt and alpha < 0.85
         if deflation_unsafe:
             alpha_clamped = max(1.0, min(1.5, alpha))
