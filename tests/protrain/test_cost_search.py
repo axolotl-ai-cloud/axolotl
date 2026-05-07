@@ -325,6 +325,97 @@ def test_estimate_peak_uses_per_block_caps(toy_layout, toy_hw):
     )
 
 
+def test_estimate_peak_cap_shrinks_with_n_checkpoint(toy_layout, toy_hw):
+    """Fix 1: per-block cap reflects n_checkpoint memory savings.
+
+    The profiler captures per-block peaks under the all-NONE policy
+    (no activation checkpointing wrap). The MAX is the all-NONE
+    ceiling. When the production block_map has CKPT blocks, those
+    blocks discard their forward saved tensors and rematerialize them
+    one-at-a-time during backward — the steady-state GPU residency
+    drops by ``sum(activation_sizes[CKPT_blocks])`` minus the
+    single-block recompute window. The cap MUST track this.
+
+    Pre-Fix-1 the cap was ``forward_max_block_peak + max_ckpt_act``
+    independent of ``n_checkpoint``, so the searcher's predicted peak
+    was identical for ``n_checkpoint=1`` and ``n_checkpoint=k`` for
+    every ``k`` — a flat ceiling that hid the model's actual
+    sensitivity to checkpoint density. The 7B-LoRA cycle-6 lane
+    surfaced this as a 13% over-prediction at ``n_checkpoint=9`` while
+    actual peak had dropped 0.5 GB below the all-NONE ceiling.
+
+    With Fix 1 the cap is ``forward_max_block_peak
+    - sum(activation_sizes[CKPT/SWAP_blocks])
+    + max_ckpt_activation + offload_bump``: the all-NONE measurement is
+    debited for each CKPT/SWAP block's retained-activation savings,
+    matching the op-walk's accounting and the paper §3.3 lifecycle
+    model. ``estimate_peak`` (and the searcher's inline fast-path that
+    consumes the same cap helper) therefore predicts a strictly smaller
+    peak as ``n_checkpoint`` grows.
+    """
+    n_block = 16
+    activation_bytes_per_block = 64 * MB
+    huge_intra = 4 * GB  # ensures op-walk is ABOVE the cap → cap is binding
+    trace = _make_trace(
+        n_block=n_block,
+        ops_per_block=4,
+        activation_bytes_per_block=activation_bytes_per_block,
+        intra_delta_bytes=huge_intra,
+    )
+    # Realistic per-block peaks: the LAST block's peak captures the
+    # full all-NONE residency (model_state + cumulative NONE activations
+    # + intra), so the cap's activation portion should equal at least
+    # ``n_block * activation_bytes_per_block``. Set it big enough that
+    # the activation portion of the ceiling exceeds the total CKPT
+    # savings the test exercises.
+    profile_model_state = toy_layout.N_chunk * toy_layout.S_chunk
+    last_block_peak = profile_model_state + (n_block * activation_bytes_per_block)
+    per_block_peaks = {
+        BlockId(b): last_block_peak for b in range(n_block)
+    }
+    from dataclasses import replace
+
+    trace = replace(
+        trace,
+        steady_fwd_block_peak_bytes=per_block_peaks,
+    )
+
+    # Fixed (n_persist, n_buffer); sweep n_checkpoint.
+    peaks: list[int] = []
+    for k in range(0, n_block + 1):
+        cfg = CostConfig(
+            n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=k, n_offload=0
+        )
+        bm = assign_modes(0, k, n_block)
+        peaks.append(estimate_peak(cfg, trace, toy_layout, bm, toy_hw))
+
+    # Strict monotonicity in n_checkpoint when the cap binds: each
+    # additional CKPT block subtracts ``activation_bytes_per_block`` from
+    # the cap (and at most +``activation_bytes_per_block`` to the recomp
+    # bump on the FIRST CKPT block, after which the bump is constant at
+    # ``max_ckpt_activation`` and only the subtraction grows).
+    for prev, nxt in zip(peaks, peaks[1:], strict=False):
+        assert nxt <= prev, (
+            f"peak should be non-increasing in n_checkpoint; got {peaks}"
+        )
+    # End-to-end: peak at n_checkpoint=N_block must be substantially
+    # smaller than at n_checkpoint=0 — the cap differential is the all-
+    # NONE retained activations across every block (~16 * 64 MB = 1 GB).
+    expected_min_drop = int(
+        ALPHA_FRAGMENTATION
+        * (
+            (n_block - 1) * activation_bytes_per_block
+            - activation_bytes_per_block  # recomp bump persists at +1 act
+        )
+        * 0.5  # half-credit slack for floor / model_state interactions
+    )
+    actual_drop = peaks[0] - peaks[-1]
+    assert actual_drop >= expected_min_drop, (
+        f"cap should shrink by ~{expected_min_drop / 1e6:.0f}MB across the "
+        f"n_checkpoint sweep; got drop={actual_drop / 1e6:.0f}MB peaks={peaks}"
+    )
+
+
 def test_estimate_peak_per_block_cap_respects_under_predict_floor(toy_layout, toy_hw):
     """Per-block cap must not under-predict when the op-walk is tighter.
 

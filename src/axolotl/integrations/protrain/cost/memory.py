@@ -287,16 +287,84 @@ def hot_iter_peak_cap(
             )
         ckpt_recomp_bump = 0
         has_offload = False
+        # n_checkpoint / n_swap savings (Fix 1).
+        #
+        # The per-block peaks in ``steady_fwd_block_peak_bytes`` /
+        # ``steady_bwd_block_peak_bytes`` were captured under the
+        # profiler's hook-less steady run, which does NOT wrap blocks
+        # for activation checkpointing — every block's forward retains
+        # its full saved-tensor set as if mode were NONE. The block
+        # post-hook fires AFTER that block's forward, so the LAST
+        # block's per-block peak ≈ profile-time model state +
+        # cumulative_NONE(all_blocks) + intra_last. ``forward_max_block_peak``
+        # is therefore the all-NONE peak ceiling.
+        #
+        # When the production block_map has CKPT or SWAP blocks, those
+        # blocks' activation bytes are NOT retained at runtime peak:
+        #   * CKPT block discards its forward saved tensors and
+        #     rematerializes them at backward (one block at a time);
+        #     the recompute window contributes ``ckpt_recomp_bump`` which
+        #     we add back below.
+        #   * SWAP block evicts its saved tensors to a pinned-CPU pool
+        #     and the pool slot is decoupled from GPU residency; the
+        #     paper §3.3 treats SWAP as zero steady-state GPU peak.
+        #
+        # Subtract their ``activation_sizes`` aggregate from the all-NONE
+        # ceiling so the cap shrinks linearly with n_checkpoint and n_swap,
+        # tracking the actual GPU residency the production runtime delivers.
+        # Without this subtraction the cap is a flat all-NONE ceiling that
+        # over-predicts equally for every n_checkpoint > 0 (the bug Fix 1
+        # addresses: predicted peak identical for n_checkpoint=1 and
+        # n_checkpoint=9 even though actual peak drops with k).
+        #
+        # Anti-hack guard: ``activation_sizes[bid]`` is the block's
+        # OUTPUT-bytes proxy (residual stream + logits), which is the
+        # paper-faithful upper bound on the per-block delta between
+        # NONE and CKPT (CKPT retains the input but discards the
+        # internal saved tensors; output ≈ input via the residual
+        # connection so the saving ≈ activation_bytes - input_bytes ≈
+        # the per-block aggregate the op-walk also charges to NONE
+        # blocks). Match the op-walk's convention so cap and op-walk
+        # agree on the n_checkpoint sensitivity. Floor the result at
+        # ``model_state`` plus the recompute bump so over-aggressive
+        # subtraction can't drive the cap below the operational floor.
+        ckpt_swap_savings = 0
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
             mode = block_map.get(bid, BlockMode.NONE)
             if mode is BlockMode.CKPT:
                 if act_sz > ckpt_recomp_bump:
                     ckpt_recomp_bump = act_sz
+                ckpt_swap_savings += act_sz
+            elif mode is BlockMode.SWAP:
+                ckpt_swap_savings += act_sz
             elif mode is BlockMode.OFFLOAD:
                 has_offload = True
         offload_bump = layout.S_chunk if (has_offload and layout is not None) else 0
-        return forward_max_block_peak + ckpt_recomp_bump + offload_bump
+        # Floor the activation portion at zero (subtract-back guards): if
+        # the cumulative ``ckpt_swap_savings`` exceed the gap between the
+        # all-NONE ceiling and the profile-time model state, treat the
+        # activation portion as zero. ``apply_hot_iter_cap`` re-attaches
+        # ``model_state_present`` on top — so the final cap collapses to
+        # the model-state baseline + the ckpt_recomp bump in the limit
+        # where every block is CKPT/SWAP.
+        profile_time_model_state = (
+            layout.N_chunk * layout.S_chunk if layout is not None else 0
+        )
+        # The all-NONE ceiling decomposes into model-state + activation
+        # portion; only the activation portion shrinks with CKPT/SWAP.
+        # Clamp the savings so they cannot drive the cap below the
+        # model-state floor. Then add back the recomp / gather bumps.
+        all_none_activation_ceiling = max(
+            0, forward_max_block_peak - profile_time_model_state
+        )
+        capped_savings = min(ckpt_swap_savings, all_none_activation_ceiling)
+        return (
+            profile_time_model_state
+            + (all_none_activation_ceiling - capped_savings)
+            + ckpt_recomp_bump
+            + offload_bump
+        )
     # Aggregate fallback path. ``steady_bwd_peak_bytes`` (TRACE_VERSION
     # ≥ 19) typically exceeds ``steady_fwd_peak_bytes`` because backward
     # holds grads + saved activations simultaneously. Take the max so
