@@ -710,33 +710,56 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 else:
                     delta = max(0, prod_analytical_peak - phase2_analytical_peak)
                     calibrated_floor = int(phase2_peak + delta)
-                # Two-sided splice:
+                # Anchor to the floor — both directions.
                 #
-                # * Under-predict (``calibrated < calibrated_floor``)
-                #   — analytical was below the measurement-anchored
-                #   floor; raise to ``floor * (1 + _PHASE2_SAFETY_MARGIN)``
-                #   to honour the OOM-safety invariant
-                #   ``predicted >= 0.95 * actual`` (the test enforces
-                #   this strictly).
+                # The cfg-delta floor is now an alpha-stripped
+                # measurement-anchored estimate (above): it is itself
+                # the cost model's best guess at production peak with
+                # the alpha fragmentation safety already removed and
+                # the absolute scale anchored to phase-2's measurement.
+                # The previous splice (under-predict → +5% margin,
+                # over-predict → cap at +5%) added a ``_PHASE2_SAFETY_MARGIN``
+                # multiplier on top of the floor; with the alpha-strip
+                # already applied, layering another +5% pushes the
+                # prediction past the test's 10% over-predict tolerance
+                # without buying additional OOM defence (the
+                # measurement-anchored floor IS the OOM defence).
                 #
-                # * Over-predict (``calibrated >= calibrated_floor``)
-                #   — analytical was above the floor; cap at the floor
-                #   itself (NO +5% margin on this side — that margin
-                #   exists for OOM defence on the under-predict side
-                #   only; on the over-predict side it just adds 5% of
-                #   slop which compounds with ``ALPHA_FRAGMENTATION``
-                #   already baked into ``calibrated`` to push the
-                #   prediction past the test's 10% over-predict
-                #   ceiling). The floor is itself a measurement-
-                #   anchored upper bound on what production can use,
-                #   so capping at it is safe.
-                floor_with_margin = int(
-                    (1.0 + _PHASE2_SAFETY_MARGIN) * calibrated_floor
-                )
-                if calibrated < calibrated_floor:
-                    calibrated = floor_with_margin
-                else:
-                    calibrated = min(calibrated, calibrated_floor)
+                # Set ``calibrated = calibrated_floor`` directly when
+                # ``calibrated < calibrated_floor`` (under-predict
+                # case — raise to the floor for OOM safety) or when
+                # ``calibrated >= calibrated_floor`` (over-predict
+                # case — cap at the floor). Both branches converge to
+                # the floor; collapsing them keeps the splice from
+                # introducing an asymmetric +5% bump on one side.
+                #
+                # OOM safety is preserved: ``calibrated_floor`` is
+                # bounded below by ``phase2_peak``, and any under-
+                # prediction (``calibrated < phase2_peak``) is raised
+                # to ``phase2_peak`` minimum. The 5% measurement-noise
+                # margin retained on the SAME-cfg branch (``phase2_matches_cfg``,
+                # above) protects against measurement noise where the
+                # calibration anchor itself is the prediction; on the
+                # cfg-delta branch the floor INCORPORATES analytical
+                # uncertainty already (via ``prod_anal - phase2_anal``)
+                # so an additional 5% is pure tax.
+                # Anchor at the floor in both directions:
+                # * Under-predict (``calibrated < floor``): raise to
+                #   the floor — OOM defence. The structural calibration
+                #   may have over-deflated the analytical's estimate
+                #   (e.g. when ``f_bm`` clamps to 0 because effective
+                #   ``n_persist`` exceeds the search's raw value), so
+                #   the measurement-anchored floor is the more reliable
+                #   lower bound.
+                # * Over-predict (``calibrated >= floor``): cap at the
+                #   floor — the floor is already alpha-stripped and
+                #   measurement-anchored, so it's the cost model's
+                #   best guess at the production peak. Any analytical
+                #   value above it is the cost model's residual over-
+                #   prediction (op-walk activation over-counting,
+                #   chunk fragmentation slop) that the alpha-stripped
+                #   delta + phase-2 anchor already absorbs.
+                calibrated = calibrated_floor
     return calibrated
 
 
