@@ -793,11 +793,87 @@ def search(
                         if not math.isfinite(predicted_iter_s):
                             n_runtime_rejected += 1
                             continue
-                        if predicted_iter_s < best_iter_s:
+                        # Stability-aware tie-break.
+                        #
+                        # Phase-2 timing measurements have a 5-sample-median
+                        # noise floor around 5%. With strict ``<`` replacement
+                        # the searcher's pick can flip between consecutive
+                        # runs whenever two cfgs land within that noise band:
+                        # the runtime ranking re-orders, the searcher promotes
+                        # whichever cfg got the lucky measurement, and the 7B
+                        # integration test sees different ``n_checkpoint``
+                        # picks across nominally identical reruns. The
+                        # underlying cost ranking has no real preference
+                        # between near-tied cfgs — we just need the picker to
+                        # be deterministic when the analytical model can't
+                        # tell them apart.
+                        #
+                        # Replace with a near-tie-aware comparator: a cfg
+                        # only displaces the incumbent if it's BOTH
+                        # measurably faster (>= 1% improvement, which is
+                        # below the noise floor — anything below that is
+                        # "tied") OR strictly faster AND the tie-break
+                        # prefers it. The tie-break prefers cfgs that are
+                        # more robust to small cost perturbations:
+                        #
+                        #   1. lower ``n_checkpoint`` — fewer recompute
+                        #      blocks → less measurement-dependent runtime
+                        #      sensitivity (CKPT recompute wall scales
+                        #      with the chunked phase-2 wall, the most
+                        #      noisy term in the model).
+                        #   2. higher ``n_persist`` — more chunks pinned
+                        #      on GPU avoids the gather/H2D path entirely,
+                        #      which removes the noisiest bandwidth-derate
+                        #      term from the runtime model.
+                        #   3. lower ``n_buffer`` — among same-(persist,
+                        #      ckpt) pairs the smaller buffer is the more
+                        #      conservative pick.
+                        #
+                        # Outcome: when two cfgs predict iter times within
+                        # 1% of each other, the same cfg is picked
+                        # deterministically across runs. When they're
+                        # MEASURABLY different (> 1% gap), the faster cfg
+                        # always wins as before. The 1% threshold is well
+                        # below the cost-model's claimed accuracy floor
+                        # (~5% same-SKU same-rig variance per the 7B
+                        # integration test docstring), so we never lose a
+                        # genuine speed win to the tie-break.
+                        _NEAR_TIE_RATIO = 0.01
+                        if best_cfg is None:
                             best_iter_s = predicted_iter_s
                             best_cfg = cfg
                             best_block_map = block_map
                             best_peak = predicted_peak
+                        else:
+                            improvement = best_iter_s - predicted_iter_s
+                            if improvement >= best_iter_s * _NEAR_TIE_RATIO:
+                                # Measurably faster — always replace.
+                                best_iter_s = predicted_iter_s
+                                best_cfg = cfg
+                                best_block_map = block_map
+                                best_peak = predicted_peak
+                            elif improvement > 0:
+                                # Within the noise band but strictly faster.
+                                # Apply tie-break: prefer (lower n_ckpt,
+                                # higher n_persist, lower n_buffer) tuple.
+                                # Lexicographic tuple comparison: smaller
+                                # tuple wins → use ``-n_persist`` to invert
+                                # n_persist into a "smaller-is-better" axis.
+                                cur_key = (
+                                    cfg.n_checkpoint,
+                                    -cfg.n_persist,
+                                    cfg.n_buffer,
+                                )
+                                best_key = (
+                                    best_cfg.n_checkpoint,
+                                    -best_cfg.n_persist,
+                                    best_cfg.n_buffer,
+                                )
+                                if cur_key < best_key:
+                                    best_iter_s = predicted_iter_s
+                                    best_cfg = cfg
+                                    best_block_map = block_map
+                                    best_peak = predicted_peak
 
     if best_cfg is None or best_block_map is None:
         # Disambiguate the failure mode for the caller. If every fully
