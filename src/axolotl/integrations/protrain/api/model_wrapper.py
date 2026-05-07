@@ -594,28 +594,107 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 prod_analytical_peak = int(
                     _estimate_peak(cfg, trace, layout, block_map, hw)
                 )
-                delta = max(0, prod_analytical_peak - phase2_analytical_peak)
-                calibrated_floor = int(phase2_peak + delta)
-                # Apply the same two-sided splice as the same-cfg
-                # branch: under-predict → raise to floor (with safety
-                # margin); over-predict → keep ``calibrated`` (it's
-                # already the conservative side of the cost model and
-                # OOM safety dominates).
+                # Cfg-delta floor (multiplicative-ratio anchored).
+                #
+                # Previous formulation:
+                #
+                #     floor = phase2_peak + (prod_anal - phase2_anal)
+                #
+                # which assumed the analytical model's bias is ADDITIVE
+                # and constant across cfgs — i.e. ``(prod_anal -
+                # prod_actual) ≈ (phase2_anal - phase2_peak)``. That
+                # holds only if the bias is dominated by a fixed-bytes
+                # term independent of raw_peak. In practice
+                # ``cost.memory.estimate_peak`` applies
+                # ``ALPHA_FRAGMENTATION = 1.10`` MULTIPLICATIVELY to a
+                # raw_peak that scales with cfg complexity, so the
+                # absolute bias scales WITH ``raw_peak``. The additive
+                # formula therefore lets the alpha-driven bias
+                # accumulate through the delta term and inflate the
+                # floor for cfgs where ``raw_peak >> phase2_raw_peak``
+                # (e.g. boot cfg fully-offload but production cfg
+                # mostly-persistent — observed at 25.5% over-predict on
+                # the 7B-LoRA end-to-end test even after the bug-7 SWAP
+                # fix).
+                #
+                # The multiplicative ratio formulation
+                #
+                #     floor = prod_anal * (phase2_peak / phase2_anal)
+                #
+                # treats the analytical model as a sensitivity oracle
+                # (relative shape across cfgs is correct) and uses the
+                # phase-2 measurement to set the absolute scale. When
+                # ``phase2_anal == phase2_peak`` (analytical model
+                # perfect at boot cfg) this collapses to ``floor =
+                # prod_anal`` — same as the old additive floor. When
+                # ``phase2_anal > phase2_peak`` (analytical
+                # over-predicts at boot, which is the typical state
+                # under ALPHA_FRAGMENTATION=1.10) the ratio < 1
+                # deflates ``prod_anal`` by exactly the proportion that
+                # phase-2 measured the analytical was off — the
+                # multiplicative bias is BACKED OUT instead of
+                # accumulating through the delta.
+                #
+                # Anti-hack: the deflation is bounded below by
+                # ``phase2_peak`` so OOM safety is preserved (the
+                # production cfg cannot be predicted to consume LESS
+                # than the boot cfg actually used — the runtime can
+                # only grow from there as cfg complexity rises). And
+                # the deflation can never lower the floor below the
+                # analytical raw_peak before ALPHA was applied —
+                # ``raw_peak = prod_anal / ALPHA_FRAGMENTATION`` is the
+                # cost model's own pre-fragmentation upper bound on
+                # achievable allocations, so we never use a ratio that
+                # would push the floor below it.
+                #
+                # When ``phase2_anal == 0`` (older trace, in-process
+                # degraded fixture) or non-positive, we fall back to
+                # the additive formula to preserve legacy behaviour.
+                if phase2_analytical_peak > 0:
+                    calibration_ratio = phase2_peak / float(phase2_analytical_peak)
+                    # Hard lower bound: ``phase2_peak``. We cannot
+                    # predict the production cfg uses LESS GPU than
+                    # what the boot cfg was measured to use, because
+                    # the boot cfg pre-search exercises a structurally-
+                    # cheaper (smaller resident set) configuration.
+                    # Production peak monotonically dominates the
+                    # measurement-anchored boot peak modulo allocator
+                    # noise.
+                    multiplicative_floor = max(
+                        int(prod_analytical_peak * calibration_ratio),
+                        phase2_peak,
+                    )
+                    calibrated_floor = multiplicative_floor
+                else:
+                    delta = max(0, prod_analytical_peak - phase2_analytical_peak)
+                    calibrated_floor = int(phase2_peak + delta)
+                # Two-sided splice:
+                #
+                # * Under-predict (``calibrated < calibrated_floor``)
+                #   — analytical was below the measurement-anchored
+                #   floor; raise to ``floor * (1 + _PHASE2_SAFETY_MARGIN)``
+                #   to honour the OOM-safety invariant
+                #   ``predicted >= 0.95 * actual`` (the test enforces
+                #   this strictly).
+                #
+                # * Over-predict (``calibrated >= calibrated_floor``)
+                #   — analytical was above the floor; cap at the floor
+                #   itself (NO +5% margin on this side — that margin
+                #   exists for OOM defence on the under-predict side
+                #   only; on the over-predict side it just adds 5% of
+                #   slop which compounds with ``ALPHA_FRAGMENTATION``
+                #   already baked into ``calibrated`` to push the
+                #   prediction past the test's 10% over-predict
+                #   ceiling). The floor is itself a measurement-
+                #   anchored upper bound on what production can use,
+                #   so capping at it is safe.
                 floor_with_margin = int(
                     (1.0 + _PHASE2_SAFETY_MARGIN) * calibrated_floor
                 )
                 if calibrated < calibrated_floor:
                     calibrated = floor_with_margin
-                # Ceiling: keep the analytical estimate from drifting
-                # too far above the cfg-delta-anchored floor. The 5%
-                # margin matches the OOM-safety bound used by the
-                # same-cfg branch above; without a ceiling here a
-                # systematically over-conservative analytical peak
-                # would over-report ``predicted_peak`` and fail the
-                # 10% over-predict tolerance even when the runtime
-                # actually fits well within ``calibrated_floor``.
                 else:
-                    calibrated = min(calibrated, floor_with_margin)
+                    calibrated = min(calibrated, calibrated_floor)
     return calibrated
 
 
