@@ -1906,6 +1906,15 @@ class ChunkManager:
                 # docstring above.
                 if not param.requires_grad:
                     continue
+                # Defensive: skip a trainable slot that's still on GPU
+                # (the per-param hook didn't fire — e.g. the param's
+                # gradient path was pruned this iteration). Without the
+                # guard, repointing a GPU-resident param to an empty
+                # GPU placeholder would still be safe, but skipping
+                # mirrors the offload() invariant that only CPU-bound
+                # trainable slots round-trip through this callback.
+                if param.data.device.type != "cpu":
+                    continue
                 param.data = cm._empty_placeholder(slot.dtype)
                 # Also clear grad: we've consumed it in the CPU step,
                 # and leaving param.grad pointing at the CPU grad shard
