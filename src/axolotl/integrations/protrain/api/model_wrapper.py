@@ -696,6 +696,17 @@ def _calibrate_peak_with_actual_chunk_bytes(
                         int(phase2_peak + delta_raw),
                         phase2_peak,
                     )
+                    LOG.info(
+                        "ProTrain peak cfg-delta: phase2_peak=%.2f GB "
+                        "phase2_anal=%.2f GB prod_anal=%.2f GB "
+                        "delta_raw=%.2f GB floor=%.2f GB calibrated=%.2f GB",
+                        phase2_peak / (1 << 30),
+                        phase2_analytical_peak / (1 << 30),
+                        prod_analytical_peak / (1 << 30),
+                        delta_raw / (1 << 30),
+                        calibrated_floor / (1 << 30),
+                        calibrated / (1 << 30),
+                    )
                 else:
                     delta = max(0, prod_analytical_peak - phase2_analytical_peak)
                     calibrated_floor = int(phase2_peak + delta)
