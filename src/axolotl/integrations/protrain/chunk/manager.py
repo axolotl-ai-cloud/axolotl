@@ -2023,6 +2023,36 @@ class ChunkManager:
             "all-persistent layouts must early-return above"
         )
 
+        # BUG 5 FIX: race between async CPU-Adam worker and main-thread gather.
+        # ``reduce_grads_and_offload`` / the per-param hook enqueue
+        # ``cpu_optim.step_async(chunk_id, ..., post_step=_repoint)`` for
+        # this chunk. The worker thread reads ``param.data`` (CPU-bound)
+        # inside ``DeepSpeedCPUAdam.step()`` and then calls into the AVX
+        # C++ kernel using its data_ptr. If the main thread enters
+        # ``gather(chunk_id)`` while the worker is still mid-step (because
+        # autograd's reverse walk reaches a saved tensor referencing this
+        # chunk and triggers ``gather_for_backward(chunk_id)``), the
+        # ``_rebind_params_to_buffer`` below will reassign ``param.data``
+        # to a GPU view UNDERNEATH the worker. DeepSpeed's step loop then
+        # reads ``p.data`` for the next param iteration and passes a GPU
+        # data_ptr into the CPU AVX kernel → SIGSEGV (cpu_adam_impl.cpp
+        # OMP region dereferences GPU device memory as host memory). The
+        # post_step ``_repoint`` callback rebinds ``param.data`` back to
+        # the empty CPU placeholder; ``wait(chunk_id)`` blocks until that
+        # has run, so by the time we proceed every trainable slot is
+        # safely re-bound and we can install the GPU views below without
+        # racing the worker. Persistent chunks early-return above and
+        # never get a step_async, so this wait is a no-op for them.
+        #
+        # ``getattr`` rather than direct attribute access so test doubles
+        # / non-async cpu_optim stubs that don't implement ``wait`` don't
+        # fail here — they don't have a worker thread to race against.
+        cpu_optim = self.cpu_optim
+        if cpu_optim is not None:
+            wait_fn = getattr(cpu_optim, "wait", None)
+            if wait_fn is not None:
+                wait_fn(chunk_id)
+
         shard_state = self._chunk_shards.get(chunk_id)
 
         # Forward→backward reuse fast path (paper §3.1.1: "buffer-cached
