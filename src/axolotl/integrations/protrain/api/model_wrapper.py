@@ -1224,16 +1224,98 @@ def _construct_runtime(
         # Worst-case activation bytes across the swap-band. Reading from
         # ``trace.activation_sizes`` (per-block) keeps this aligned with
         # the cost model's ``estimate_cpu_footprint`` accounting.
+        #
+        # ``trace.activation_sizes[bid]`` records only the BLOCK OUTPUT
+        # bytes (residual stream at the block boundary). The SWAP wrapper
+        # via ``saved_tensors_hooks`` saves EVERY tensor PyTorch's
+        # autograd retains for backward — including:
+        #
+        #   * Linear-layer weight tensors (``F.linear`` saves ``weight``
+        #     for the input-grad recompute), which for transformer FFNs
+        #     can dwarf the block-output size (Llama-7B's gate/up_proj
+        #     weight = hidden_size × intermediate_size ≈ 86 MB at bf16,
+        #     vs. block output of 2 MB at bs=1 seq=256).
+        #   * Attention probabilities upcast to fp32, intermediate FFN
+        #     activations, etc.
+        #
+        # Sizing the slot to ``activation_sizes[bid]`` (block-output) is
+        # too small: at runtime the SWAP pack hook hits an oversize
+        # tensor, logs ``ERROR _swap pack: tensor of N bytes exceeds pool
+        # slot M bytes — keeping on GPU``, and silently degrades to
+        # identity. The activation never moves to CPU, so the cost
+        # model's SWAP-credit becomes a phantom (the searcher believes
+        # SWAP saves GPU memory but at runtime it doesn't), and the
+        # selected cfg over-predicts the achievable peak.
+        #
+        # The fix below computes a worst-case upper bound on a single
+        # saved tensor across all SWAP blocks by union-ing three
+        # candidate sources, all of which are observed to fit-in-slot
+        # constraints in practice:
+        #
+        #   1. ``trace.activation_sizes[bid]`` — covers the residual
+        #      stream / output activation case (always at least one
+        #      saved tensor at block boundary).
+        #   2. The largest ``intra_op_delta`` for any forward op inside
+        #      the block — covers per-op transient peaks (e.g. attention
+        #      score upcast). The trace already records this per op
+        #      keyed by ``op_id``; we pick the max within ops attributed
+        #      to this block_id.
+        #   3. The largest individual parameter tensor in the wrapped
+        #      block — covers the saved-weight case for ``F.linear``
+        #      backward. We walk the block's ``parameters()`` directly
+        #      because the trace doesn't break out per-param sizes.
+        #
+        # This is still an upper bound (not all params or all transient
+        # ops produce SAVED tensors specifically) but it cannot
+        # under-size — every individual saved tensor inside a SWAP block
+        # is dominated by one of the three terms.
         max_act_bytes = 0
+        max_param_bytes = 0
+        max_intra_delta_bytes = 0
+        swap_block_ids: set[int] = set()
         for bid, mode in result.block_map.items():
             if mode is _BM_swap.SWAP:
+                swap_block_ids.add(int(bid))
                 act = trace.activation_sizes.get(bid, 0)
                 if act > max_act_bytes:
                     max_act_bytes = int(act)
-        if max_act_bytes <= 0:
+        # Largest single-op intra delta among forward ops attributed to
+        # any SWAP block. ``intra_op_delta`` is keyed by op_id; cross-ref
+        # via ``op_records``/``op_order`` to get block_id and direction.
+        if swap_block_ids:
+            for op in trace.op_order:
+                if not op.is_forward:
+                    continue
+                if op.block_id is None:
+                    continue
+                if int(op.block_id) not in swap_block_ids:
+                    continue
+                delta = int(trace.intra_op_delta.get(op.op_id, 0))
+                if delta > max_intra_delta_bytes:
+                    max_intra_delta_bytes = delta
+        # Largest individual parameter tensor in any SWAP block. Walk
+        # each wrapped block's ``parameters()``; the wrap_block step
+        # above replaces the original block with a SwappedBlock whose
+        # ``.block`` attribute holds the inner module — recurse via
+        # ``parameters()`` to cover both pre- and post-wrap states.
+        for idx, block in enumerate(blocks):
+            if int(idx) not in swap_block_ids:
+                continue
+            inner = getattr(block, "block", block)
+            for p in inner.parameters(recurse=True):
+                pb = int(p.numel() * p.element_size())
+                if pb > max_param_bytes:
+                    max_param_bytes = pb
+        slot_bytes_required = max(
+            int(max_act_bytes),
+            int(max_intra_delta_bytes),
+            int(max_param_bytes),
+        )
+        if slot_bytes_required <= 0:
             LOG.warning(
                 "ProTrain: result.cfg.n_swap=%d but no SWAP block has "
-                "non-zero activation_sizes; skipping swap-pool construction",
+                "non-zero activation_sizes/params; skipping swap-pool "
+                "construction",
                 result.cfg.n_swap,
             )
         else:
@@ -1245,27 +1327,9 @@ def _construct_runtime(
                 SWAP_PREFETCH_DEPTH,
             )
 
-            # Each slot must be large enough for the worst-case single
-            # saved tensor inside any SWAP block. The trace records only
-            # the per-block AGGREGATE (sum across all saved tensors) —
-            # there is no per-tensor breakdown. The previous formula
-            # ``ceil(aggregate / slots_per_block)`` modelled a uniform
-            # split, but real transformer blocks have skewed tensor
-            # distributions (the residual stream alone can dominate
-            # ~1/3-1/2 of the aggregate while small Q/K projections
-            # share the remainder). When SWAP encounters a saved tensor
-            # larger than the AVERAGE-derived slot, ``slot_view.view(
-            # dtype).copy_(tensor)`` raises ``RuntimeError`` at runtime.
-            # Until per-tensor profiling lands, size every slot to the
-            # full per-block aggregate. The pool is over-provisioned
-            # (worst case ~K× larger than necessary) but cannot fail at
-            # runtime regardless of the saved-tensor size distribution.
-            # The cost model in ``cost/memory.estimate_cpu_footprint``
-            # uses the same formula so the searcher's CPU gate stays
-            # aligned with the actual runtime allocation.
             slots_per_block = DEFAULT_SLOTS_PER_BLOCK
             # Floor at 1 byte to satisfy the pool's positive-size invariant.
-            per_slot = max(1, int(max_act_bytes))
+            per_slot = max(1, slot_bytes_required)
             swap_pool = ActivationSwapPool(
                 n_swap=result.cfg.n_swap,
                 slot_bytes=per_slot,
@@ -1277,10 +1341,15 @@ def _construct_runtime(
                 if getattr(block, "_protrain_wrapped_mode", None) is _BM_swap.SWAP:
                     block.attach_runtime(swap_pool, scheduler.swap_stream)
             LOG.info(
-                "ProTrain: SWAP pool wired — %d slots × %d bytes = %.2f MB pinned",
+                "ProTrain: SWAP pool wired — %d slots × %d bytes = %.2f MB "
+                "pinned (slot sized from max(act=%.2f MB, intra_op=%.2f MB, "
+                "param=%.2f MB))",
                 swap_pool.n_slot,
                 swap_pool.slot_bytes,
                 swap_pool.total_bytes / (1 << 20),
+                max_act_bytes / (1 << 20),
+                max_intra_delta_bytes / (1 << 20),
+                max_param_bytes / (1 << 20),
             )
 
     # ---- 6. install hooks ----------------------------------------------
