@@ -43,16 +43,14 @@ class MultiModalChatDataCollator(DataCollatorMixin):
         # Initialize batch
         messages = [ex["messages"] for ex in examples]
 
-        batch = dict(
-            self.processing_strategy.processor.apply_chat_template(
-                messages,
-                add_generation_prompt=False,
-                tokenize=True,
-                return_tensors="pt",
-                padding=True,
-                return_dict=True,
-                chat_template=self.processing_strategy.chat_template,
-            )
+        batch = self.processing_strategy.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=False,
+            tokenize=True,
+            return_tensors="pt",
+            return_dict=True,
+            chat_template=self.processing_strategy.chat_template,
+            processor_kwargs={"padding": True},
         )
 
         # Process the labels
