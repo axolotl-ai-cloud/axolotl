@@ -56,6 +56,46 @@ def test_measure_cpu_adam_returns_sensible_rate():
     assert rate <= 1e12, f"CPU Adam rate {rate:.2e} B/s is implausibly high"
 
 
+def test_measure_cpu_adam_restores_global_del_attribute():
+    """The ``__del__`` monkey-patch installed inside ``measure_cpu_adam``
+    must NOT leak onto ``DeepSpeedCPUAdam`` after the function returns.
+
+    Production training constructs DeepSpeedCPUAdam via the
+    ``CpuFusedAdamAdapter`` AFTER the profiler runs its hardware
+    microbenchmarks. If the patched ``__del__`` survived past
+    ``measure_cpu_adam`` it would silently swallow legitimate finaliser
+    errors in production training optimizers, masking real bugs.
+
+    Verified by snapshotting ``DeepSpeedCPUAdam.__dict__["__del__"]``
+    before and after the call (identity comparison — the original is a
+    function object defined in DeepSpeed; our patched ``_safe_del`` is a
+    fresh closure created on each call).
+
+    Skips if DeepSpeedCPUAdam is unavailable on this host — the warning
+    path inside ``measure_cpu_adam`` returns before any monkey-patch
+    happens, so there is nothing to verify.
+    """
+    try:
+        from deepspeed.ops.adam import DeepSpeedCPUAdam
+    except Exception:  # noqa: BLE001 - import OR JIT compile failure
+        pytest.skip("DeepSpeedCPUAdam unavailable on this host")
+
+    sentinel = object()
+    pre = DeepSpeedCPUAdam.__dict__.get("__del__", sentinel)
+
+    # Drive the function. We tolerate either a measured rate OR 0.0
+    # (constructor failure) — both paths must restore __del__.
+    measure_cpu_adam(n_params=1000, n_iters=2)
+
+    post = DeepSpeedCPUAdam.__dict__.get("__del__", sentinel)
+    assert post is pre, (
+        "measure_cpu_adam left DeepSpeedCPUAdam.__del__ in a different state "
+        f"than it found it (was={pre!r}, now={post!r}). The global monkey-"
+        "patch leaked past the function boundary, which would silently "
+        "swallow finaliser errors in production training optimizers."
+    )
+
+
 @pytest.mark.gpu
 def test_measure_gpu_adam_returns_sensible_rate(gpu_device):
     """Measured GPU-Adam throughput must be in a plausible HBM-BW range.

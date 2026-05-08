@@ -4,11 +4,103 @@ per-SKU compute rate."""
 from __future__ import annotations
 
 import statistics
+import threading
 import time
+from contextlib import contextmanager
+from typing import Iterator
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+# Serializes the global ``DeepSpeedCPUAdam.__del__`` monkey-patch installed
+# inside :func:`measure_cpu_adam` so two concurrent callers can't race each
+# other into observing a half-restored class attribute. The patch is still
+# globally visible to OTHER threads while the lock is held — see the docstring
+# of :func:`_patched_deepspeed_cpu_adam_del` for the rationale and the
+# tradeoff vs. a forked-subprocess isolation strategy.
+_CPU_ADAM_DEL_PATCH_LOCK = threading.Lock()
+
+
+@contextmanager
+def _patched_deepspeed_cpu_adam_del(deepspeed_cpu_adam_cls: type) -> Iterator[None]:
+    """Install a partial-init-safe ``__del__`` on ``DeepSpeedCPUAdam`` for the
+    duration of the context, restoring the original on exit.
+
+    Why this exists
+    ---------------
+    ``DeepSpeedCPUAdam.__del__`` calls ``self.ds_opt_adam.destroy_adam(...)``
+    unconditionally. When the constructor raises BEFORE ``ds_opt_adam`` is
+    set (common on dev rigs with CUDA toolchain mismatch), every GC pass
+    raises ``AttributeError`` from the finaliser. Python's unraisable-exception
+    handler fires, pytest's warning-capture hook intercepts it, and the
+    resulting traceback transitively pins autograd tensors from any
+    ``ProfilerTrace``'s traced forward pass (observed as +50 MB
+    ``memory_allocated`` on tiny-GPT2 in suite-level runs). Neutralising the
+    finaliser locally before construction is the cleanest way to avoid this.
+
+    Why a lock + monkey-patch instead of a subprocess
+    -------------------------------------------------
+    The cleaner alternative — running ``measure_cpu_adam`` in a child
+    process — does not work in practice:
+
+    * ``multiprocessing.get_context("fork")`` fails with "Cannot re-initialize
+      CUDA in forked subprocess" because callers (notably
+      ``profiler/trace.py``) routinely have CUDA initialised in the parent
+      before the benchmark runs, and ``DeepSpeedCPUAdam``'s op-builder load
+      path touches ``torch.cuda.*`` even though the optimizer itself is CPU-
+      only.
+    * ``multiprocessing.get_context("spawn")`` works in principle but adds
+      multi-second Python + torch + DeepSpeed import overhead per call, on
+      top of the JIT-compile cost that DeepSpeedCPUAdam pays the first time
+      ``CPUAdamBuilder().load()`` runs in a fresh interpreter. That cost
+      dominates the whole microbenchmark and breaks the lightweight-probe
+      contract callers rely on.
+
+    The lock therefore serialises only concurrent ``measure_cpu_adam``
+    invocations against each other; OTHER threads in the same process that
+    instantiate ``DeepSpeedCPUAdam`` while the benchmark is running can
+    still observe the patched ``__del__``. This matches the original
+    behaviour but with race-free attribute restoration. ProTrain's
+    profiling pipeline calls ``measure_cpu_adam`` once per trace from the
+    main thread before any production training optimizer is constructed,
+    so the residual exposure window is closed in practice.
+
+    Parameters
+    ----------
+    deepspeed_cpu_adam_cls:
+        The ``DeepSpeedCPUAdam`` class (passed in instead of imported here
+        so the import error path stays in the caller).
+    """
+    with _CPU_ADAM_DEL_PATCH_LOCK:
+        sentinel = object()
+        original = deepspeed_cpu_adam_cls.__dict__.get("__del__", sentinel)
+
+        def _safe_del(self: object) -> None:
+            try:
+                if hasattr(self, "ds_opt_adam") and original is not sentinel:
+                    original(self)  # type: ignore[misc, operator]
+            except Exception:  # noqa: BLE001 - suppress silently; dev-rig safety
+                pass
+
+        deepspeed_cpu_adam_cls.__del__ = _safe_del  # type: ignore[attr-defined]
+        try:
+            yield
+        finally:
+            # Restore the EXACT prior state: if the class did not define
+            # ``__del__`` natively (rare; current DeepSpeed always does) we
+            # delete our override so attribute lookup falls through. If it
+            # did, we re-bind the original function object back onto the
+            # class — re-bind to the *original* class attribute, not a
+            # captured bound method, to avoid leaking stale ``self`` refs.
+            if original is sentinel:
+                try:
+                    del deepspeed_cpu_adam_cls.__del__  # type: ignore[attr-defined]
+                except AttributeError:
+                    pass
+            else:
+                deepspeed_cpu_adam_cls.__del__ = original  # type: ignore[attr-defined]
 
 
 # Reference compute rate (TFLOPS, fp16) used to scale per-SKU calibration ratios
@@ -161,29 +253,13 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
     import torch
     from torch import nn
 
-    # DeepSpeedCPUAdam's ``__del__`` method calls
-    # ``self.ds_opt_adam.destroy_adam(...)`` unconditionally; when the
-    # constructor raises before ``ds_opt_adam`` is set (common on dev
-    # rigs with CUDA toolchain mismatch), ``__del__`` raises
-    # AttributeError on every GC pass. Python's unraisable-exception
-    # handler fires, pytest's warning-capture hook intercepts it, and
-    # the resulting traceback transitively pins autograd tensors from
-    # the ProfilerTrace's traced forward pass (observed as +50 MB
-    # ``memory_allocated`` on tiny-GPT2 in suite-level runs).
-    # Neutralise the broken ``__del__`` before we try to instantiate so
-    # any failed construction GC's cleanly.
-    _orig_del = getattr(DeepSpeedCPUAdam, "__del__", None)
-
-    def _safe_del(self: object) -> None:
-        try:
-            if hasattr(self, "ds_opt_adam"):
-                _orig_del(self)  # type: ignore[misc]
-        except Exception:  # noqa: BLE001 - suppress silently; dev-rig safety
-            pass
-
-    DeepSpeedCPUAdam.__del__ = _safe_del  # type: ignore[attr-defined]
-
-    try:
+    # The ``__del__`` monkey-patch is scoped to a context manager that is
+    # serialised on a module-level lock so concurrent ``measure_cpu_adam``
+    # callers can't race each other into a half-restored class attribute.
+    # See ``_patched_deepspeed_cpu_adam_del`` for the rationale and the
+    # tradeoff vs. a forked-subprocess isolation strategy (fork after
+    # parent CUDA-init fails; spawn adds prohibitive startup overhead).
+    with _patched_deepspeed_cpu_adam_del(DeepSpeedCPUAdam):
         # Synthetic fp16 param + fp16 grad on CPU; DeepSpeedCPUAdam allocates
         # fp32 master + two fp32 momenta internally on first step.
         param = nn.Parameter(
@@ -245,20 +321,6 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
             pass
         del optim, param
         return float(bps)
-    finally:
-        # Restore the original ``__del__`` so that callers (and the rest of
-        # the test session) see DeepSpeedCPUAdam's real finaliser instead of
-        # our locally-patched ``_safe_del``. We unconditionally restore even
-        # when the original was ``None`` (i.e. the class did not define a
-        # ``__del__`` before we monkey-patched it) by deleting our override
-        # so attribute lookup falls through to ``object.__del__``.
-        if _orig_del is None:
-            try:
-                del DeepSpeedCPUAdam.__del__  # type: ignore[attr-defined]
-            except AttributeError:
-                pass
-        else:
-            DeepSpeedCPUAdam.__del__ = _orig_del  # type: ignore[attr-defined]
 
 
 def measure_gpu_adam(
