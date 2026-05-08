@@ -388,6 +388,57 @@ class ProfilerTrace:
     phase2_analytical_iter_s: float = 0.0
     phase2_analytical_peak_bytes: int = 0
 
+    # ----- Phase-2 PER-COMPONENT analytical-baseline calibration (TRACE_VERSION 21) -----
+    #
+    # The single-scalar α (``phase2_iter_s / phase2_analytical_iter_s``)
+    # collapses three independent calibration scales — fwd, bwd, optim —
+    # into one ratio anchored at the bootstrap cfg. That works only when
+    # the production cfg has the same fwd/bwd/optim bias profile as boot;
+    # when they differ structurally (e.g. boot is CKPT-dominant +
+    # PCIe-comm-dominant, prod uses high n_persist with cached chunks),
+    # a single scalar over- or under-corrects components whose individual
+    # bias profiles diverge. Pre-refactor this surfaced as ~20% iter
+    # under-prediction on 2B-LoRA while 7B-LoRA passed at ~8%, and
+    # forced an asymmetric structure-match gate that suppressed any
+    # deflation outside boot's exact shape.
+    #
+    # The per-component fix decomposes α into three independent scales:
+    #
+    #   αfwd = phase2_fwd_s  / phase2_analytical_fwd_s
+    #   αbwd = phase2_bwd_s  / phase2_analytical_bwd_s
+    #   αopt = phase2_step_s / phase2_analytical_step_s    (= analytical
+    #                                                         t_gpu_optim
+    #                                                         + t_cpu_optim
+    #                                                         at boot)
+    #
+    # Each scale calibrates against the matching analytical component, so
+    # cfg-shape changes that move the fwd/bwd/optim balance no longer
+    # destabilise the prediction — the scales carry component-by-component
+    # rather than as a lumped ratio. This makes α<1 deflation safe (each
+    # scale corrects only the component it was measured against), so the
+    # structure-match gate from the single-α era is dropped.
+    #
+    # ``phase2_fwd_s`` / ``phase2_bwd_s`` / ``phase2_step_s`` are the
+    # measured medians from ``measure_chunked_steady`` at the bootstrap
+    # cfg. The three ``phase2_analytical_*_s`` companions are the
+    # analytical (non-phase-2) component predictions at the SAME bootstrap
+    # cfg, captured pre-splice so the chunked-wall override does not
+    # short-circuit the analytical path.
+    #
+    # All six default to 0.0 — the "no per-component baseline available"
+    # sentinel. When any component baseline is zero, the cost model falls
+    # back to the single-α path (``phase2_iter_s / phase2_analytical_iter_s``)
+    # if those legacy fields are populated, or to no calibration otherwise.
+    # Cached traces from TRACE_VERSION <= 20 are invalidated by the
+    # version bump on cache.py; in-memory traces constructed without these
+    # fields fall through gracefully via the same zero-sentinel collapse.
+    phase2_fwd_s: float = 0.0
+    phase2_bwd_s: float = 0.0
+    phase2_step_s: float = 0.0
+    phase2_analytical_fwd_s: float = 0.0
+    phase2_analytical_bwd_s: float = 0.0
+    phase2_analytical_step_s: float = 0.0
+
     # ----- Block -> tree-index registry (TRACE_VERSION 16) -----
     #
     # Maps each global ``BlockId`` to its forward-order tree index

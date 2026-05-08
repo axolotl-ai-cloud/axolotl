@@ -154,7 +154,18 @@ _CACHE_SUBDIR = Path("protrain") / "profiler"
 # the cost model would silently lose both calibrations — bumping
 # invalidates them and forces a fresh phase-2 capture that records the
 # analytical baselines.
-TRACE_VERSION = 20
+# Version 21 decomposes the single α into per-component scales by
+# capturing the measured (``phase2_fwd_s`` / ``phase2_bwd_s`` /
+# ``phase2_step_s``) and analytical (``phase2_analytical_fwd_s`` /
+# ``phase2_analytical_bwd_s`` / ``phase2_analytical_step_s``) components
+# at the bootstrap cfg. The cost model derives αfwd / αbwd / αopt
+# independently per component, generalising the calibration across
+# cfg-shape changes that made the lumped α brittle. v20 traces lack
+# the per-component fields, so the cost model would fall back to the
+# single-α legacy path that under-predicted iter time by ~20% on
+# 2B-LoRA — bumping forces a fresh phase-2 capture that records the
+# component decomposition.
+TRACE_VERSION = 21
 
 
 @dataclass(frozen=True)
@@ -327,6 +338,23 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_analytical_peak_bytes": int(
             getattr(trace, "phase2_analytical_peak_bytes", 0)
         ),
+        # Per-component phase-2 baselines (TRACE_VERSION 21). Same
+        # ``getattr`` defensive guard as the older optional fields above
+        # so an in-tree builder lagging the schema doesn't break the
+        # writer; the version bump still invalidates v20 entries that
+        # lacked the component decomposition.
+        "phase2_fwd_s": float(getattr(trace, "phase2_fwd_s", 0.0)),
+        "phase2_bwd_s": float(getattr(trace, "phase2_bwd_s", 0.0)),
+        "phase2_step_s": float(getattr(trace, "phase2_step_s", 0.0)),
+        "phase2_analytical_fwd_s": float(
+            getattr(trace, "phase2_analytical_fwd_s", 0.0)
+        ),
+        "phase2_analytical_bwd_s": float(
+            getattr(trace, "phase2_analytical_bwd_s", 0.0)
+        ),
+        "phase2_analytical_step_s": float(
+            getattr(trace, "phase2_analytical_step_s", 0.0)
+        ),
         "block_tree_index": {
             str(int(k)): int(v) for k, v in trace.block_tree_index.items()
         },
@@ -375,6 +403,20 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
         extra["phase2_analytical_peak_bytes"] = int(
             data.get("phase2_analytical_peak_bytes", 0)
         )
+    # Per-component phase-2 baselines (TRACE_VERSION 21). Same field-
+    # presence guard as the older optional fields above so an in-tree
+    # builder lagging the schema doesn't turn a fresh-version hit into
+    # an unexpected-kwarg cache miss.
+    for _fname in (
+        "phase2_fwd_s",
+        "phase2_bwd_s",
+        "phase2_step_s",
+        "phase2_analytical_fwd_s",
+        "phase2_analytical_bwd_s",
+        "phase2_analytical_step_s",
+    ):
+        if _fname in _trace_field_names:
+            extra[_fname] = float(data.get(_fname, 0.0))
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={

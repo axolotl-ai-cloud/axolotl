@@ -230,17 +230,16 @@ def test_protrain_2b_lora_smoke() -> None:
         f"actual {actual_peak / 1e9:.2f} GB"
     )
     assert peak_err < 0.10, f"peak prediction off by {peak_err * 100:.1f}%"
-    # Runtime tolerance: 25% on the 2B smoke (vs 10% on the 7B headline).
+    # Runtime tolerance: 10%, identical to the 7B headline.
     #
-    # The 2B smoke runs the analytical-path cost model with phase-2 α
-    # calibration anchored at the boot cfg. The α-deflation suppression
-    # gate (commit 8554116b) prevents under-prediction on the 7B-LoRA
-    # workload but the resulting prediction still under-counts iter time
-    # at smaller Llama scales (~20% on hidden=2048 / 12 layers / LoRA r=8).
-    # The 25% bound here catches gross prediction drift while accepting
-    # the documented small-scale calibration looseness; the 7B headline
-    # remains the strict (10%) accuracy gate. Tightening this would
-    # require per-scale α calibration, which is follow-up work.
-    assert runtime_err < 0.25, (
+    # The 2B smoke runs the analytical-path cost model with phase-2
+    # per-component α calibration: the boot's measured fwd / bwd / step
+    # walls each calibrate the matching analytical component
+    # independently, so the calibration generalises across cfg shapes
+    # (n_persist, n_checkpoint, n_swap density) without the structural
+    # bias the single-scalar α suffered on small scales. With per-
+    # component α the 2B smoke reaches the same 10% iter accuracy as
+    # the 7B headline.
+    assert runtime_err < 0.10, (
         f"runtime prediction off by {runtime_err * 100:.1f}% — iter_s_all={iter_s_all}"
     )

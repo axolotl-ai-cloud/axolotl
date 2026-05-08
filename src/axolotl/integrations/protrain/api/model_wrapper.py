@@ -2531,6 +2531,7 @@ def protrain_model_wrapper(
                 estimate_peak as _estimate_peak,
             )
             from axolotl.integrations.protrain.cost.runtime import (
+                _estimate_runtime_components,
                 estimate_runtime as _estimate_runtime,
             )
 
@@ -2539,6 +2540,41 @@ def protrain_model_wrapper(
                     boot_cfg, trace, layout, boot_block_map, hardware_profile
                 )
             )
+            # Per-component analytical decomposition at boot cfg
+            # (TRACE_VERSION 21). The per-component α calibration in
+            # ``_compose_t_iter_with_alpha_calibration`` derives three
+            # independent scales — αfwd / αbwd / αopt — from the
+            # measured-vs-analytical ratios at the boot cfg. The
+            # measured side is ``(fwd_s, bwd_s, step_s)`` from
+            # ``measure_chunked_steady`` above; the analytical side is
+            # the same components evaluated on the pre-splice trace
+            # (which still has zeroed ``steady_*_chunked_wall_s`` so
+            # the analytical roofline path is taken) at the boot cfg.
+            (
+                t_fwd_boot,
+                t_bwd_boot,
+                t_gpu_optim_boot,
+                t_cpu_optim_boot,
+                _fwd_used_boot,
+                _bwd_used_boot,
+            ) = _estimate_runtime_components(
+                boot_cfg, trace, layout, boot_block_map, hardware_profile
+            )
+            # Combine GPU-Adam + CPU-Adam into a single analytical
+            # "step" baseline matching the measured ``step_s`` window
+            # (which spans the post-bwd optimizer step including the
+            # async-CPU-Adam wait-and-rebind serialization). The
+            # serialised t_iter formula composes
+            # ``t_gpu_optim + max(0, t_cpu_optim - t_bwd)`` so the
+            # measured step wall ≈ t_gpu_optim + (CPU-Adam tail). For
+            # calibration we use the simpler additive
+            # ``t_gpu_optim + t_cpu_optim`` as the analytical-step
+            # denominator — the αopt ratio absorbs the bwd-overlap
+            # difference uniformly so it's consistent with how αopt
+            # is applied in :func:`_compose_t_iter_with_alpha_calibration`.
+            phase2_analytical_fwd_s_val = float(t_fwd_boot)
+            phase2_analytical_bwd_s_val = float(t_bwd_boot)
+            phase2_analytical_step_s_val = float(t_gpu_optim_boot + t_cpu_optim_boot)
             phase2_analytical_peak_bytes_val = int(
                 _estimate_peak(
                     boot_cfg, trace, layout, boot_block_map, hardware_profile
@@ -2561,6 +2597,13 @@ def protrain_model_wrapper(
                 phase2_iter_s=phase2_iter_s_val,
                 phase2_analytical_iter_s=phase2_analytical_iter_s_val,
                 phase2_analytical_peak_bytes=phase2_analytical_peak_bytes_val,
+                # Per-component baselines (TRACE_VERSION 21).
+                phase2_fwd_s=float(fwd_s),
+                phase2_bwd_s=float(bwd_s),
+                phase2_step_s=float(step_s),
+                phase2_analytical_fwd_s=phase2_analytical_fwd_s_val,
+                phase2_analytical_bwd_s=phase2_analytical_bwd_s_val,
+                phase2_analytical_step_s=phase2_analytical_step_s_val,
             )
             try:
                 save_cached_trace(cache_key, new_trace, cache_dir=cache_dir)

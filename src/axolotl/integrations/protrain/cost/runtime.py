@@ -151,6 +151,20 @@ _HOOK_SCALE_MAX: float = 1.0
 _SKU_SCALE_MIN: float = 0.5
 _SKU_SCALE_MAX: float = 2.0
 
+# Sentinel returned by :func:`_estimate_runtime_components` when a
+# candidate cfg is structurally infeasible (world-mismatched NCCL trace,
+# CPU-Adam unavailable + n_nonpersist > 0, etc.). The wrapper
+# :func:`estimate_runtime` propagates this as ``float('inf')`` so the
+# searcher's argmin rejects the candidate.
+_INF_COMPONENTS: tuple[float, float, float, float, bool, bool] = (
+    float("inf"),
+    float("inf"),
+    float("inf"),
+    float("inf"),
+    False,
+    False,
+)
+
 
 def _sku_compute_scale(trace: ProfilerTrace, hw: HardwareProfile) -> float:
     """Return the trace-vs-live compute-rate ratio, clamped.
@@ -618,6 +632,211 @@ def estimate_runtime(
     """Estimate wall-clock iteration time in seconds.
 
     See module docstring for the equations and accounting rules.
+
+    Wraps :func:`_estimate_runtime_components` and composes the four
+    per-component times into the post-52af384d serialised iter wall.
+    The phase-2 per-component α calibration is applied here (after the
+    component decomposition) so callers that only need the lumped wall
+    get the calibrated value without having to re-compose components
+    themselves.
+    """
+    t_fwd, t_bwd, t_gpu_optim, t_cpu_optim, fwd_used_phase2, bwd_used_phase2 = (
+        _estimate_runtime_components(cfg, trace, layout, block_map, hw)
+    )
+    if t_fwd == float("inf") or t_bwd == float("inf"):
+        # Infeasible cfg sentinel (e.g. cpu_adam unavailable + n_nonpersist > 0).
+        # The components helper can return inf via t_cpu_optim — propagate it.
+        return float("inf")
+    if t_cpu_optim == float("inf"):
+        return float("inf")
+    return _compose_t_iter_with_alpha_calibration(
+        cfg=cfg,
+        trace=trace,
+        t_fwd=t_fwd,
+        t_bwd=t_bwd,
+        t_gpu_optim=t_gpu_optim,
+        t_cpu_optim=t_cpu_optim,
+        fwd_used_phase2_override=fwd_used_phase2,
+        bwd_used_phase2_override=bwd_used_phase2,
+    )
+
+
+# Per-component α-calibration clamp bounds (TRACE_VERSION 21). Each
+# component scale is calibrated against its matching analytical
+# component, so deflation (α < 1) is no longer the dangerous direction
+# the single-α gate had to suppress — αfwd reflects fwd-vs-analytical-fwd,
+# αbwd reflects bwd-vs-analytical-bwd, etc. A symmetric [0.5, 2.0]
+# window is wide enough to capture the typical per-component bias
+# (+/-30% on chunked-runtime overhead, +/-20% on optim Adam serialization)
+# while still catching pathological measurement noise. Values outside
+# [0.3, 3.0] indicate a structural measurement bug — log a warning so
+# the regression is visible (the brief's "anti-hack guard" — diagnose
+# rather than clamp away).
+_PHASE2_ALPHA_CLAMP_MIN: float = 0.5
+_PHASE2_ALPHA_CLAMP_MAX: float = 2.0
+_PHASE2_ALPHA_NOISE_FLOOR: float = 0.3
+_PHASE2_ALPHA_NOISE_CEILING: float = 3.0
+_WARNED_PHASE2_ALPHA_NOISY: bool = False
+
+
+def _clamp_alpha(alpha: float, name: str) -> float:
+    """Clamp a per-component α to [0.5, 2.0]; warn once if outside [0.3, 3.0].
+
+    The wider [0.3, 3.0] noise envelope is a diagnostic only — values that
+    cross it usually indicate measurement noise dominating signal (e.g. a
+    cold cuBLAS handle, a chunk-manager LRU still settling), not a real
+    bias. We still clamp at [0.5, 2.0] to keep the prediction bounded,
+    but emit a one-shot warning so a regression in phase-2 measurement
+    quality is visible without spamming the log.
+    """
+    if alpha < _PHASE2_ALPHA_NOISE_FLOOR or alpha > _PHASE2_ALPHA_NOISE_CEILING:
+        global _WARNED_PHASE2_ALPHA_NOISY
+        if not _WARNED_PHASE2_ALPHA_NOISY:
+            LOG.warning(
+                "estimate_runtime: phase-2 per-component α %s = %.3f is "
+                "outside the noise envelope [%.2f, %.2f] — measurement noise "
+                "may be dominating signal. Clamping to [%.2f, %.2f]; "
+                "investigate phase-2 measurement variance if predictions "
+                "regress.",
+                name,
+                alpha,
+                _PHASE2_ALPHA_NOISE_FLOOR,
+                _PHASE2_ALPHA_NOISE_CEILING,
+                _PHASE2_ALPHA_CLAMP_MIN,
+                _PHASE2_ALPHA_CLAMP_MAX,
+            )
+            _WARNED_PHASE2_ALPHA_NOISY = True
+    return max(_PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, alpha))
+
+
+def _compose_t_iter_with_alpha_calibration(
+    *,
+    cfg: CostConfig,
+    trace: ProfilerTrace,
+    t_fwd: float,
+    t_bwd: float,
+    t_gpu_optim: float,
+    t_cpu_optim: float,
+    fwd_used_phase2_override: bool,
+    bwd_used_phase2_override: bool,
+) -> float:
+    """Compose t_iter from per-component times, applying phase-2 α calibration.
+
+    Three calibration scales — αfwd, αbwd, αopt — are derived from the
+    bootstrap cfg's measured-vs-analytical component ratios. Each scale
+    is applied to the corresponding production-cfg component before
+    composing the iter wall. When a component used the phase-2
+    chunked-wall override (its prediction already absorbs the
+    measurement at the bootstrap cfg), its α is skipped — applying it
+    would double-correct.
+
+    The composition formula matches the post-52af384d serialised model:
+
+        T_iter = αfwd*T_fwd + αbwd*T_bwd + αopt*T_gpu_optim
+                 + max(0, αopt*T_cpu_optim - αbwd*T_bwd)
+
+    where the final ``max`` term captures the gather/CPU-Adam
+    serialization tail. Both factors inside the ``max`` use their
+    matching α scales so the serialization condition stays consistent
+    with the un-calibrated formula in the no-phase-2-trace fallback.
+    """
+    # Per-component baselines available — use the per-component path.
+    has_per_component = (
+        getattr(trace, "phase2_analytical_fwd_s", 0.0) > 0.0
+        and getattr(trace, "phase2_analytical_bwd_s", 0.0) > 0.0
+        and getattr(trace, "phase2_analytical_step_s", 0.0) > 0.0
+        and getattr(trace, "phase2_fwd_s", 0.0) > 0.0
+        and getattr(trace, "phase2_bwd_s", 0.0) > 0.0
+        and getattr(trace, "phase2_step_s", 0.0) > 0.0
+    )
+    if has_per_component:
+        a_fwd = _clamp_alpha(trace.phase2_fwd_s / trace.phase2_analytical_fwd_s, "αfwd")
+        a_bwd = _clamp_alpha(trace.phase2_bwd_s / trace.phase2_analytical_bwd_s, "αbwd")
+        a_opt = _clamp_alpha(
+            trace.phase2_step_s / trace.phase2_analytical_step_s, "αopt"
+        )
+        # When a component used the phase-2 chunked-wall override, its
+        # prediction is already measurement-anchored at the boot cfg —
+        # applying α would double-correct. The override only fires when
+        # ``cfg.n_swap == 0`` (boot's exact shape), so on that path the
+        # cfg matches boot and α ≈ 1 anyway, but skipping is the
+        # correct guard.
+        a_fwd_eff = 1.0 if fwd_used_phase2_override else a_fwd
+        a_bwd_eff = 1.0 if bwd_used_phase2_override else a_bwd
+        # Optim has no override path — αopt always applies.
+        t_fwd_cal = a_fwd_eff * t_fwd
+        t_bwd_cal = a_bwd_eff * t_bwd
+        t_gpu_cal = a_opt * t_gpu_optim
+        t_cpu_cal = a_opt * t_cpu_optim
+        t_iter = t_fwd_cal + t_bwd_cal + t_gpu_cal + max(0.0, t_cpu_cal - t_bwd_cal)
+        LOG.debug(
+            "estimate_runtime: phase-2 per-component α applied "
+            "(αfwd=%.3f αbwd=%.3f αopt=%.3f, "
+            "fwd_override=%s bwd_override=%s, "
+            "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs -> t_iter=%.4fs)",
+            a_fwd,
+            a_bwd,
+            a_opt,
+            fwd_used_phase2_override,
+            bwd_used_phase2_override,
+            t_fwd_cal,
+            t_bwd_cal,
+            t_gpu_cal,
+            t_cpu_cal,
+            t_iter,
+        )
+        return t_iter
+    # No per-component baselines available. Fall back to the single-α
+    # legacy path when the lumped baselines are populated (cached traces
+    # from TRACE_VERSION 20 invalidate via the version bump on cache.py
+    # so this path mainly serves in-memory traces constructed without
+    # the per-component fields — e.g. some unit-test fixtures). Keep
+    # the same symmetric [0.5, 2.0] clamp as the per-component path.
+    t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
+    used_analytical_path = (not fwd_used_phase2_override) or (
+        not bwd_used_phase2_override
+    )
+    if (
+        used_analytical_path
+        and getattr(trace, "phase2_iter_s", 0.0) > 0.0
+        and getattr(trace, "phase2_analytical_iter_s", 0.0) > 0.0
+    ):
+        alpha = _clamp_alpha(
+            trace.phase2_iter_s / trace.phase2_analytical_iter_s, "α(legacy-single)"
+        )
+        t_iter_pre = t_iter
+        t_iter = t_iter * alpha
+        LOG.debug(
+            "estimate_runtime: phase-2 single-α (legacy fallback) applied "
+            "(α=%.3f, %.4fs -> %.4fs)",
+            alpha,
+            t_iter_pre,
+            t_iter,
+        )
+    return t_iter
+
+
+def _estimate_runtime_components(
+    cfg: CostConfig,
+    trace: ProfilerTrace,
+    layout: ChunkLayout,
+    block_map: BlockStrategyMap,
+    hw: HardwareProfile,
+) -> tuple[float, float, float, float, bool, bool]:
+    """Compute the four runtime components (no calibration applied).
+
+    Returns ``(t_fwd, t_bwd, t_gpu_optim, t_cpu_optim, fwd_used_phase2,
+    bwd_used_phase2)``. The two booleans flag whether forward/backward
+    consumed the phase-2 chunked-wall override (in which case those
+    components are already measurement-anchored at the bootstrap cfg
+    and the per-component α should not be applied to them).
+
+    Returning components rather than the lumped iter wall lets the
+    phase-2 splice in :mod:`api.model_wrapper` capture the analytical
+    decomposition at the bootstrap cfg pre-splice, which is what the
+    per-component α calibration ratios need as denominators.
+
+    See module docstring for the equations and accounting rules.
     """
     # Per-chunk timeline-overlap bandwidth (paper §3.3 — "identify the
     # affected chunks, and use the reduced bandwidth instead"):
@@ -725,7 +944,7 @@ def estimate_runtime(
     # nccl_reduce locals — fixing at the source keeps the guard
     # consistent across all three downstream consumers.
     if hw.zero3_shard and hw.gpu_count > 1 and trace.world != hw.gpu_count:
-        return float("inf")
+        return _INF_COMPONENTS
     if not hw.zero3_shard or hw.gpu_count <= 1 or trace.world <= 1:
         nccl_gather = 0.0
         nccl_reduce = 0.0
@@ -738,11 +957,11 @@ def estimate_runtime(
         # marks the candidate invalid via ``inf`` so the searcher
         # skips it and the caller sees the trace gap and refreshes.
         if not trace.nccl_gather_s or not trace.nccl_reduce_s:
-            return float("inf")
+            return _INF_COMPONENTS
         nccl_gather = _pick_nccl(trace.nccl_gather_s, layout.S_chunk)
         nccl_reduce = _pick_nccl(trace.nccl_reduce_s, layout.S_chunk)
         if nccl_gather <= 0.0 or nccl_reduce <= 0.0:
-            return float("inf")
+            return _INF_COMPONENTS
 
     # Per-chunk comm-cost vectors. Each entry is the
     # :func:`_comm_time_chunk` cost evaluated at the per-chunk
@@ -1463,7 +1682,7 @@ def estimate_runtime(
         # e.g. small LoRA fits) remain feasible because no CPU step is
         # required at runtime.
         if n_nonpersist > 0:
-            return float("inf")
+            return _INF_COMPONENTS
         t_cpu_optim = 0.0
     else:
         t_cpu_optim = n_nonpersist * (ms_per_chunk / cpu_shard_divisor) / cpu_adam_bps
@@ -1541,174 +1760,25 @@ def estimate_runtime(
     # vs. the correct ``T_fwd + T_bwd + T_cpu_optim``-tail), feeding
     # the searcher a phantom-discount that picked offload-heavy configs
     # whose actual wall the runtime would never deliver.
-    t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
-
-    # ----- Phase-2 analytical-path α-calibration (TRACE_VERSION 20) -----
-    #
-    # When the analytical per-chunk roofline path was taken for either
-    # forward or backward (the dominant case is ``cfg.n_swap > 0``,
-    # where both phase-2 chunked-wall overrides above are gated off),
-    # the prediction inherits the roofline's structural over-estimate
-    # of the chunked-runtime hot loop. The roofline assumes
-    # max(compute, comm) per chunk under fully non-overlapping
-    # gather/H2D/D2H, but the real runtime overlaps gather streams
-    # with compute and amortises some PCIe transfers across the chunk
-    # buffer's LRU residency. Pre-refactor this surfaced as ~13%
-    # over-prediction on production cfgs with ``n_swap > 0`` (7B-LoRA
-    # OFFLOAD lane, see commit a4415439).
-    #
-    # The phase-2 measurement at the bootstrap cfg gives us an
-    # absolute time scale at one cfg point; taking the analytical
-    # prediction at the SAME bootstrap cfg (captured pre-splice and
-    # stored on the trace as ``phase2_analytical_iter_s``) gives us
-    # what the analytical path WOULD have predicted there. The ratio
-    #
-    #   α = phase2_iter_s / phase2_analytical_iter_s
-    #
-    # is the calibration scale: how much to deflate (or, in principle,
-    # inflate) the analytical-path absolute prediction to match the
-    # measurement-anchored time scale. The per-chunk roofline keeps
-    # its correct *shape* across cfgs (bandwidth derate, n_persist,
-    # n_buffer, n_checkpoint, n_swap all flow through unchanged); α
-    # corrects only the *constant*. This is the same "absolute time
-    # scale ≠ analytical time scale, but the ratio is stable across
-    # cfgs" pattern used by ``_sku_compute_scale`` for cross-SKU
-    # calibration.
-    #
-    # Anti-hack guards:
-    #   * α applies ONLY on the analytical path (either fwd or bwd
-    #     bypassed the phase-2 override). When BOTH overrides fired
-    #     (``cfg.n_swap == 0`` and chunked walls populated) the
-    #     prediction is already measurement-anchored and α would
-    #     double-correct.
-    #   * α is a no-op when phase-2 didn't run (``phase2_iter_s == 0``
-    #     or ``phase2_analytical_iter_s <= 0``) — the cache-hit and
-    #     ``force_all_persistent`` / ``all_overrides_set`` paths
-    #     therefore preserve pre-refactor behaviour.
-    #   * The ratio is clamped to [0.5, 1.5] to keep a single noisy
-    #     measurement from blowing the prediction up. The phase-2
-    #     median-of-five iter wall has a noise floor around 5%; ratios
-    #     outside that are almost certainly a structural bug
-    #     (pre-splice trace already had phase-2 fields populated, etc.)
-    #     and treating them as a clamp + warn is safer than letting
-    #     them propagate.
-    used_analytical_path = (not fwd_used_phase2_override) or (
-        not bwd_used_phase2_override
-    )
-    if (
-        used_analytical_path
-        and trace.phase2_iter_s > 0.0
-        and trace.phase2_analytical_iter_s > 0.0
-    ):
-        alpha = trace.phase2_iter_s / trace.phase2_analytical_iter_s
-        # Asymmetric clamp on cfg-structure mismatch.
-        #
-        # The phase-2 boot cfg is CKPT-dominant (``select_bootstrap_config``
-        # picks ``n_checkpoint = n_block``) while production cfgs that
-        # land on the analytical path have ``n_swap > 0`` and may have
-        # any ``n_checkpoint`` value (the LoRA tests range from 0 to
-        # 17 on a 32-block model). The boot's α conflates two bias
-        # sources:
-        #
-        #   (1) Hot-loop / chunked-runtime overhead bias — affects
-        #       fwd, base bwd, optim. Roughly proportional to those
-        #       terms; carries cleanly to any cfg.
-        #   (2) Per-block CKPT recompute roofline bias — only present
-        #       for blocks that are CKPT'd. The boot's analytical
-        #       carries ``N_block × phase2_per_block_recompute_s`` of
-        #       recompute time, which can over-predict the real
-        #       chunked-runtime recompute by 30-50% (per-op-derived
-        #       per-block compute > real per-block recompute kernel
-        #       time on the chunked stream). This bias is structurally
-        #       proportional to ``cfg.n_checkpoint`` and does NOT
-        #       carry to a prod cfg with fewer CKPT'd blocks.
-        #
-        # Failure modes:
-        #   * 7B-LoRA boot α=0.579, prod (n_swap=1, n_checkpoint=9 or
-        #     17) — applying α deflates prod's t_iter from ~0.33s
-        #     (close to actual) to ~0.18s (46% under actual). The
-        #     pre-fix gate (boot density > 0.5 AND prod density <=
-        #     boot/4 AND α < 0.85) failed at prod=9 (density 0.28 >
-        #     0.25) and at prod=17 (density 0.53 > 0.25), letting
-        #     deflation through.
-        #
-        # Fix: suppress deflation whenever prod's CKPT density is
-        # materially lower than boot's (``prod_density < boot_density``
-        # with a small noise margin) AND α is in the deep-deflation
-        # regime (``α < 0.85``). When suppressed, α is clamped to
-        # ``[1.0, 1.5]`` so we INFLATE but never deflate. This is
-        # asymmetric on purpose: on this analytical path, deflation
-        # is the dangerous direction (predicting faster than reality
-        # makes the searcher pick configs the runtime can't deliver),
-        # while inflation only over-predicts iter time, which the
-        # searcher can absorb via the threshold.
-        #
-        # The synthetic tests
-        # ``test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive``
-        # (α=0.85, above the 0.85 cutoff) and
-        # ``test_phase2_alpha_clamped_to_safe_range`` (α=3.0, inflation
-        # regime) both have α >= 0.85 and bypass the suppression — so
-        # their behaviour is preserved as documented.
-        # Suppress deflation whenever the prod cfg's CKPT structure
-        # differs materially from boot's. ``select_bootstrap_config``
-        # picks ``n_checkpoint = N_block`` (CKPT-dominant) and
-        # ``n_persist = 0`` (comm-dominant) — the analytical
-        # over-prediction at boot is anchored to that combination.
-        # Production cfgs that the searcher picks differ on at least
-        # one axis (different ``n_checkpoint``, ``n_persist > 0`` to
-        # exploit caching, etc.), so the boot's α reflects a bias
-        # that doesn't carry: deflating the prod prediction by the
-        # boot's α-ratio drops it well under the actual chunked-
-        # runtime wall. The ``n_persist`` axis is the dominant
-        # structural mismatch on PCIe-bound 3090 lanes (where the
-        # boot's PCIe-overestimate vanishes for any cfg that
-        # persists most chunks).
-        #
-        # Conservative direction: only INFLATE on α calibration. A
-        # deflated prediction picks configs the runtime can't deliver
-        # at the predicted speed (the searcher's argmin gravitates
-        # toward whichever cfg gets the most deflation, which is the
-        # one that least matches boot — the worst possible signal).
-        # An inflated prediction is benign: the searcher only
-        # over-estimates iter time, and the threshold absorbs it.
-        #
-        # Cfg-structure match check: deflation is permitted only when
-        # the prod cfg shares boot's CKPT density to within 1 block
-        # AND boot's n_persist (the "same shape as boot" axis). Any
-        # other prod cfg gets clamped to [1.0, 1.5] (inflation only).
-        cfg_matches_boot = (
-            int(cfg.n_persist) == int(trace.phase2_n_persist)
-            and abs(int(cfg.n_checkpoint) - int(trace.phase2_n_checkpoint)) <= 1
-            and int(cfg.n_swap) == 0
-        )
-        if cfg_matches_boot:
-            alpha_clamped = max(0.5, min(1.5, alpha))
-        else:
-            alpha_clamped = max(1.0, min(1.5, alpha))
-        t_iter_pre = t_iter
-        t_iter = t_iter * alpha_clamped
-        LOG.debug(
-            "estimate_runtime: phase-2 α-calibration applied "
-            "(α=%.3f clamped=%.3f, %.4fs -> %.4fs)",
-            alpha,
-            alpha_clamped,
-            t_iter_pre,
-            t_iter,
-        )
-
     LOG.debug(
-        "estimate_runtime: cfg=%s t_fwd=%.4fs t_bwd=%.4fs t_gpu_opt=%.4fs "
-        "t_cpu_opt=%.4fs -> t_iter=%.4fs",
+        "estimate_runtime_components: cfg=%s t_fwd=%.4fs t_bwd=%.4fs "
+        "t_gpu_opt=%.4fs t_cpu_opt=%.4fs",
         cfg,
         t_fwd,
         t_bwd,
         t_gpu_optim,
         t_cpu_optim,
-        t_iter,
     )
     # Silence unused n_block — kept for debug/extension symmetry.
     _ = n_block
-    return t_iter
+    return (
+        t_fwd,
+        t_bwd,
+        t_gpu_optim,
+        t_cpu_optim,
+        fwd_used_phase2_override,
+        bwd_used_phase2_override,
+    )
 
 
 __all__ = ["estimate_runtime"]
