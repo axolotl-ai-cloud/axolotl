@@ -1539,7 +1539,10 @@ class ComplexValidationMixin:
 
             try:
                 import transformers.modeling_flash_attention_utils
-                from transformers.utils import is_flash_attn_greater_or_equal
+                from transformers.utils import (
+                    is_flash_attn_greater_or_equal,
+                    is_flash_attn_greater_or_equal_2_10,
+                )
 
                 transformers.modeling_flash_attention_utils._flash_supports_window = (
                     True
@@ -1553,6 +1556,11 @@ class ComplexValidationMixin:
                 sys.modules[
                     "transformers.modeling_flash_attention_utils"
                 ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                sys.modules[
+                    "transformers.modeling_flash_attention_utils"
+                ].is_flash_attn_greater_or_equal_2_10 = (
+                    is_flash_attn_greater_or_equal_2_10
+                )
                 import ring_flash_attn  # noqa: F401  # Required after monkey-patching
             except ImportError as exception:
                 raise ImportError(
