@@ -1507,6 +1507,116 @@ def test_snapshot_cpu_state_independent_storage() -> None:
     del pool
 
 
+@pytest.mark.gpu
+def test_restore_cpu_state_releases_active_lease_before_invalidate() -> None:
+    """``restore_cpu_state`` must clean up orphan slot leases before invalidating tags.
+
+    Regression for the phase-2 7B integration crash:
+    ``RuntimeError: BufferPool.invalidate_tag: cannot invalidate
+    chunk_id=N while slot M has 1 active lease(s)``. Phase-2's timed
+    fwd→bwd→step loop can leave a chunk in ``_active_chunks`` with
+    its buffer-pool lease still held — concretely on a LoRA-on-frozen-
+    backbone 7B layout with a low-persistence CKPT bootstrap, where an
+    orphan chunk (params outside any block-discovered transformer
+    block) is gathered for forward but never goes through the
+    block-backward hook that would have driven
+    ``reduce_grads_and_offload → offload`` to drop the lease.
+
+    The CR round-2 guard on :meth:`BufferPool.invalidate_tag` (raise
+    on active lease so a future ``release(chunk_id)`` cannot silently
+    no-op against an orphaned mapping) is correct in isolation, but
+    ``restore_cpu_state`` was reaching it with a non-empty
+    ``_active_chunks`` set on real-world layouts. The fix is in
+    ``restore_cpu_state`` itself: force-offload any restored chunks
+    that are still gathered (drops the lease, repoints param.data,
+    updates the storage-ptr lookup, and discards from
+    ``_active_chunks`` — exactly what the missed block-backward hook
+    would have done) BEFORE invalidating the tags. This preserves
+    the CR guard's value for OTHER callers while making the phase-2
+    rollback path bulletproof against orphan-lease layouts.
+
+    Test shape mirrors the synthetic reproducer: gather a non-
+    persistent chunk to take a slot lease, snapshot, mutate the CPU
+    shadow, then call ``restore_cpu_state``. Pre-fix this raises
+    ``RuntimeError`` from ``invalidate_tag``; post-fix the call
+    returns cleanly with the slot lease dropped to zero.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    n_layers = 4
+    model = _tiny_model(hidden=hidden, n_layers=n_layers).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+
+    mgr, layout, pool, host = _build_chunk_manager(model, n_persist=1, S_chunk=S_chunk)
+    mgr.materialize_offload()
+
+    non_persist = sorted(mgr._non_persistent_ids)
+    assert non_persist, "test setup: need at least one non-persistent chunk"
+    target_cid = cast(ChunkId, non_persist[0])
+
+    # Take an active lease without a matching release — simulates the
+    # orphan-chunk path in phase-2 where the block-backward hook
+    # never fires.
+    mgr.gather(target_cid)
+    assert target_cid in mgr._active_chunks, (
+        "test setup: gather() should have added the chunk to _active_chunks"
+    )
+    slot = pool._tag_to_slot.get(target_cid)
+    assert slot is not None, (
+        "test setup: gather() should have tagged a buffer-pool slot"
+    )
+    assert pool._leases[slot] == 1, (
+        f"test setup: gather() should have taken exactly one lease, "
+        f"got {pool._leases[slot]}"
+    )
+
+    # Snapshot + mutate + restore. Pre-fix the restore would crash
+    # inside ``invalidate_tag``'s active-lease guard.
+    snap = mgr.snapshot_cpu_state()
+    slots = mgr._cpu_slots[target_cid]
+    mutated_slot = next((s for s in slots if s.cpu_data is not None), None)
+    assert mutated_slot is not None, (
+        "test setup: replicated chunk should have at least one slot with cpu_data"
+    )
+    mutated_slot.cpu_data.add_(1.0)
+
+    # The actual call under test — must not raise.
+    mgr.restore_cpu_state(snap)
+
+    # Post-restore invariants: the orphan lease was dropped, the
+    # tag was invalidated (so the next gather re-copies from the
+    # restored CPU shadow), and the chunk is no longer "active" on
+    # the manager.
+    assert pool._leases[slot] == 0, (
+        f"orphan lease not released by restore_cpu_state: leases[{slot}]="
+        f"{pool._leases[slot]}"
+    )
+    assert pool._tag_to_slot.get(target_cid) is None, (
+        "tag for restored chunk was not invalidated — next gather() would "
+        "skip the H2D re-copy and observe stale GPU bytes"
+    )
+    assert target_cid not in mgr._active_chunks, (
+        "_active_chunks still contains the restored chunk — the next "
+        "gather() would hit the already-active fast-path against a slot "
+        "whose tag has been invalidated and trip the invariant assert"
+    )
+
+    # Cleanup — gather every persistent chunk and restore_to_gpu so
+    # the pinned host pool drops its borrow before we close it.
+    for cid_int in sorted(mgr._persistent_ids):
+        mgr.gather(cast(ChunkId, cid_int))
+    mgr.restore_to_gpu()
+    host.close()
+    del pool
+
+
 def _worker_sharded_snapshot_restore_round_trip(
     rank: int, world_size: int, tmpdir: str
 ) -> None:

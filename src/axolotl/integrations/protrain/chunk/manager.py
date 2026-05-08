@@ -3118,6 +3118,39 @@ class ChunkManager:
                     continue
                 slot.cpu_data.copy_(slot_snap)
             restored_cids.append(cid)
+        # Force-offload any chunks the timed window left gathered before
+        # we invalidate their resident tags. Phase-2's measurement loop
+        # runs ``optimizer.step()`` + ``zero_grad`` before reaching this
+        # ``finally`` path, so in the regular block-driven case every
+        # non-persistent chunk has already gone through
+        # ``post_block_backward → reduce_grads_and_offload → offload``
+        # and held no lease. But on real-world layouts a chunk can
+        # survive that drain with an active lease — concretely, an
+        # orphan chunk whose params live outside any
+        # block-discovered transformer block (LoRA-on-frozen-backbone
+        # 7B with a CKPT bootstrap, where the lm_head/embed pin a
+        # pool slot through forward without ever firing a
+        # block-backward hook to release it). Skipping the cleanup
+        # would trip ``BufferPool.invalidate_tag``'s active-lease
+        # guard (CR round 2) below, masking the legitimate caller's
+        # restore. ``offload(cid)`` is the canonical lease-release path:
+        # it drops the buffer-pool lease, nulls the GPU param.data
+        # placeholders, deregisters the storage-ptr reverse lookup,
+        # and discards from ``_active_chunks`` — exactly the cleanup
+        # the missed block-backward hook would have done. Persistent
+        # chunks early-return inside ``offload`` (no lease to drop);
+        # chunks that have no slot to release are also a no-op there.
+        # Sharded restored chunks follow the same path — their
+        # buffer-pool lease bookkeeping is identical regardless of
+        # the per-region sharding.
+        if self.buffer_pool is not None and restored_cids:
+            # Snapshot the active set first because ``offload`` mutates
+            # ``_active_chunks`` mid-iteration (its ``discard`` runs
+            # inside the loop body).
+            still_active = [cid for cid in restored_cids if cid in self._active_chunks]
+            for cid in still_active:
+                self.offload(cid)
+
         # Invalidate any GPU residency tagged for the restored chunks
         # in the buffer pool. Without this, a subsequent ``gather()``
         # could observe a still-resident GPU buffer (tagged with the
@@ -3143,7 +3176,12 @@ class ChunkManager:
                 # snapshot/restore path is the only call site that
                 # rolls CPU bytes backward without going through
                 # ``release()``, so this is the only place we need
-                # the tag-only invalidation primitive.
+                # the tag-only invalidation primitive. The
+                # ``offload`` cleanup pass above already dropped any
+                # active lease the timed window left behind — by the
+                # time we reach this loop every restored chunk's slot
+                # has lease==0, so ``invalidate_tag``'s active-lease
+                # guard (CR round 2) does not fire.
                 self.buffer_pool.invalidate_tag(cid)
 
     # ---- internals -----------------------------------------------------
