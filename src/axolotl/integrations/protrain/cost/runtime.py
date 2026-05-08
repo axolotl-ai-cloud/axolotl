@@ -678,6 +678,21 @@ _PHASE2_ALPHA_NOISE_FLOOR: float = 0.3
 _PHASE2_ALPHA_NOISE_CEILING: float = 3.0
 _WARNED_PHASE2_ALPHA_NOISY: bool = False
 
+# Residual-α clamp bounds (TRACE_VERSION 22). The residual scales the
+# per-component-composed iter to absorb whole-iter overheads (Python
+# hook dispatch, kernel launch latency, NCCL handshake) the analytical
+# baseline does not model. The natural regime is α_residual ≥ 1 — the
+# analytical model under-counts overhead, never over-counts it — so
+# the inflate side is wider ([0.8, 2.0]) than per-component bounds.
+# Values outside [0.5, 5.0] indicate measurement noise OR a missing
+# per-component term; we still clamp at [0.8, 2.0] to keep the
+# prediction bounded but warn once so the regression is visible.
+_PHASE2_RESIDUAL_CLAMP_MIN: float = 0.8
+_PHASE2_RESIDUAL_CLAMP_MAX: float = 2.0
+_PHASE2_RESIDUAL_NOISE_FLOOR: float = 0.5
+_PHASE2_RESIDUAL_NOISE_CEILING: float = 5.0
+_WARNED_PHASE2_RESIDUAL_NOISY: bool = False
+
 
 def _clamp_alpha(alpha: float, name: str) -> float:
     """Clamp a per-component α to [0.5, 2.0]; warn once if outside [0.3, 3.0].
@@ -707,6 +722,45 @@ def _clamp_alpha(alpha: float, name: str) -> float:
             )
             _WARNED_PHASE2_ALPHA_NOISY = True
     return max(_PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, alpha))
+
+
+def _clamp_residual_alpha(alpha: float) -> float:
+    """Clamp the residual whole-iter α to [0.8, 2.0]; warn once if outside [0.5, 5.0].
+
+    The residual captures whole-iter overhead the analytical model
+    doesn't see (Python hook dispatch, kernel launch latency, NCCL
+    handshake, etc.). Its natural range is ≥ 1 — the analytical model
+    under-counts overhead, it does not over-count it — but we keep a
+    modest deflate floor (0.8) so a slight per-component over-fit at
+    boot doesn't compound into a systematic over-prediction at prod.
+    The inflate ceiling (2.0) covers genuine missing overhead in the
+    typical 7B-32-block regime; values outside [0.5, 5.0] indicate
+    measurement noise OR a structural per-component miscalibration —
+    we still clamp to keep the prediction bounded but warn once so the
+    regression is visible (the brief's "anti-hack guard").
+    """
+    if (
+        alpha < _PHASE2_RESIDUAL_NOISE_FLOOR
+        or alpha > _PHASE2_RESIDUAL_NOISE_CEILING
+    ):
+        global _WARNED_PHASE2_RESIDUAL_NOISY
+        if not _WARNED_PHASE2_RESIDUAL_NOISY:
+            LOG.warning(
+                "estimate_runtime: phase-2 residual α = %.3f is outside the "
+                "noise envelope [%.2f, %.2f] — either phase-2 iter measurement "
+                "is noisy or a per-component term is missing. Clamping to "
+                "[%.2f, %.2f]; investigate phase-2 measurement quality if "
+                "predictions regress.",
+                alpha,
+                _PHASE2_RESIDUAL_NOISE_FLOOR,
+                _PHASE2_RESIDUAL_NOISE_CEILING,
+                _PHASE2_RESIDUAL_CLAMP_MIN,
+                _PHASE2_RESIDUAL_CLAMP_MAX,
+            )
+            _WARNED_PHASE2_RESIDUAL_NOISY = True
+    return max(
+        _PHASE2_RESIDUAL_CLAMP_MIN, min(_PHASE2_RESIDUAL_CLAMP_MAX, alpha)
+    )
 
 
 def _compose_t_iter_with_alpha_calibration(
@@ -769,20 +823,49 @@ def _compose_t_iter_with_alpha_calibration(
         t_gpu_cal = a_opt * t_gpu_optim
         t_cpu_cal = a_opt * t_cpu_optim
         t_iter = t_fwd_cal + t_bwd_cal + t_gpu_cal + max(0.0, t_cpu_cal - t_bwd_cal)
+
+        # Residual whole-iter α (TRACE_VERSION 22). Per-component α
+        # corrects fwd/bwd/optim bias *within each component* — by
+        # construction it does not absorb whole-iter overheads (Python
+        # hook dispatch, kernel launch latency, NCCL handshake, etc.)
+        # that the analytical baseline doesn't model. The residual α
+        # is calibrated at boot from the SAME phase2_iter_s
+        # measurement and is multiplied onto the per-component
+        # composition — it collapses to 1.0 (no-op) when per-component
+        # already explains the boot iter, and inflates the prediction
+        # when there's genuine missing overhead (the 7B-LoRA regime).
+        #
+        # Anchor (``phase2_per_comp_pred_iter_s``) is captured at the
+        # phase-2 splice site as the per-component formula's prediction
+        # at the boot cfg under the same αfwd/αbwd/αopt. When the
+        # anchor is absent (legacy traces or in-memory fixtures lacking
+        # it) we fall back to no-op residual α — matches the
+        # post-refactor pre-fix baseline.
+        anchor = float(getattr(trace, "phase2_per_comp_pred_iter_s", 0.0))
+        measured = float(getattr(trace, "phase2_iter_s", 0.0))
+        if anchor > 0.0 and measured > 0.0:
+            a_residual = _clamp_residual_alpha(measured / max(anchor, 1e-9))
+        else:
+            a_residual = 1.0
+        t_iter_pre_residual = t_iter
+        t_iter = a_residual * t_iter
         LOG.debug(
             "estimate_runtime: phase-2 per-component α applied "
-            "(αfwd=%.3f αbwd=%.3f αopt=%.3f, "
+            "(αfwd=%.3f αbwd=%.3f αopt=%.3f, α_residual=%.3f, "
             "fwd_override=%s bwd_override=%s, "
-            "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs -> t_iter=%.4fs)",
+            "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
+            "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
             a_fwd,
             a_bwd,
             a_opt,
+            a_residual,
             fwd_used_phase2_override,
             bwd_used_phase2_override,
             t_fwd_cal,
             t_bwd_cal,
             t_gpu_cal,
             t_cpu_cal,
+            t_iter_pre_residual,
             t_iter,
         )
         return t_iter

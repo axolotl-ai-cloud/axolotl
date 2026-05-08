@@ -3268,6 +3268,189 @@ def test_phase2_alpha_deflation_safe_under_per_component_calibration():
         prev = t_k
 
 
+def test_alpha_residual_compensates_for_unmodeled_overhead():
+    """Residual α captures whole-iter overhead the analytical model
+    does not see (Python hook dispatch, kernel launch latency, NCCL
+    handshake, etc.) — the bias that the per-component decomposition
+    structurally cannot absorb because per-component α only corrects
+    *within* each component.
+
+    Synthetic regime: per-component α all = 1.0 (analytical exactly
+    matches measured per-component AT BOOT) but the analytical iter
+    is half the measured iter — i.e. the boot's per-component
+    composition predicts ~0.5 × phase2_iter_s and the residual α
+    must be ≈ 2.0 to bring the prediction back to actual.
+    """
+    from dataclasses import replace
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+
+    # Per-component analytical decomposition at boot.
+    from axolotl.integrations.protrain.cost.runtime import (
+        _estimate_runtime_components,
+    )
+
+    boot_t_fwd, boot_t_bwd, boot_t_gpu, boot_t_cpu, _, _ = _estimate_runtime_components(
+        boot_cfg, base, layout, boot_bm, hw
+    )
+    boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
+
+    # Per-component α all = 1.0 (measured == analytical per-component)
+    # so the per-component composition's boot prediction equals the
+    # analytical lumped iter (no per-component-bias correction).
+    boot_per_comp_pred = (
+        boot_t_fwd
+        + boot_t_bwd
+        + boot_t_gpu
+        + max(0.0, boot_t_cpu - boot_t_bwd)
+    )
+    # Stage measured phase-2 iter at 2.0 × per-component prediction
+    # — the missing whole-iter overhead the residual α must absorb.
+    target_residual = 2.0
+    measured_iter = target_residual * boot_per_comp_pred
+
+    spliced = replace(
+        base,
+        steady_fwd_chunked_wall_s=boot_t_fwd,
+        steady_bwd_chunked_wall_s=boot_t_bwd,
+        steady_step_overlap_s=boot_step,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_per_block_recompute_s=0.0002 * 5,
+        # Per-component baselines — measured == analytical → α = 1.0.
+        phase2_fwd_s=boot_t_fwd,
+        phase2_bwd_s=boot_t_bwd,
+        phase2_step_s=boot_step,
+        phase2_analytical_fwd_s=boot_t_fwd,
+        phase2_analytical_bwd_s=boot_t_bwd,
+        phase2_analytical_step_s=boot_step,
+        # Anchor: per-component composition's boot prediction.
+        phase2_per_comp_pred_iter_s=boot_per_comp_pred,
+        # Whole-iter measurement: 2.0 × the anchor → residual α = 2.0.
+        phase2_iter_s=measured_iter,
+    )
+
+    # Production cfg routes through the analytical path
+    # (``n_swap > 0``) so per-component α and residual α both apply.
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    prod_bm = assign_modes(2, 0, n_block)
+
+    bare = estimate_runtime(
+        prod_cfg,
+        replace(
+            spliced,
+            phase2_fwd_s=0.0,
+            phase2_bwd_s=0.0,
+            phase2_step_s=0.0,
+            phase2_analytical_fwd_s=0.0,
+            phase2_analytical_bwd_s=0.0,
+            phase2_analytical_step_s=0.0,
+            phase2_iter_s=0.0,
+            phase2_analytical_iter_s=0.0,
+            phase2_per_comp_pred_iter_s=0.0,
+        ),
+        layout,
+        prod_bm,
+        hw,
+    )
+    cal = estimate_runtime(prod_cfg, spliced, layout, prod_bm, hw)
+
+    # Per-component α all = 1.0 → composed iter equals bare.
+    # Residual α = 2.0 → cal == 2.0 × bare.
+    assert cal == pytest.approx(target_residual * bare, rel=1e-3), (
+        f"residual α should scale per-component prediction by {target_residual}: "
+        f"bare={bare:.6f} cal={cal:.6f} expected={target_residual * bare:.6f}"
+    )
+
+
+def test_alpha_residual_no_op_when_per_component_explains_boot():
+    """Residual α collapses to 1.0 when the per-component composition
+    already explains the boot iter exactly — no whole-iter overhead
+    bias to correct. Must reduce to a no-op so the residual does not
+    over-fit on workloads where it should not engage.
+    """
+    from dataclasses import replace
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+
+    from axolotl.integrations.protrain.cost.runtime import (
+        _estimate_runtime_components,
+    )
+
+    boot_t_fwd, boot_t_bwd, boot_t_gpu, boot_t_cpu, _, _ = _estimate_runtime_components(
+        boot_cfg, base, layout, boot_bm, hw
+    )
+    boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
+
+    boot_per_comp_pred = (
+        boot_t_fwd
+        + boot_t_bwd
+        + boot_t_gpu
+        + max(0.0, boot_t_cpu - boot_t_bwd)
+    )
+    # Measured iter == per-component prediction → residual α = 1.0.
+    measured_iter = boot_per_comp_pred
+
+    spliced = replace(
+        base,
+        steady_fwd_chunked_wall_s=boot_t_fwd,
+        steady_bwd_chunked_wall_s=boot_t_bwd,
+        steady_step_overlap_s=boot_step,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_per_block_recompute_s=0.0002 * 5,
+        phase2_fwd_s=boot_t_fwd,
+        phase2_bwd_s=boot_t_bwd,
+        phase2_step_s=boot_step,
+        phase2_analytical_fwd_s=boot_t_fwd,
+        phase2_analytical_bwd_s=boot_t_bwd,
+        phase2_analytical_step_s=boot_step,
+        phase2_per_comp_pred_iter_s=boot_per_comp_pred,
+        phase2_iter_s=measured_iter,
+    )
+
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    prod_bm = assign_modes(2, 0, n_block)
+
+    bare = estimate_runtime(
+        prod_cfg,
+        replace(
+            spliced,
+            phase2_fwd_s=0.0,
+            phase2_bwd_s=0.0,
+            phase2_step_s=0.0,
+            phase2_analytical_fwd_s=0.0,
+            phase2_analytical_bwd_s=0.0,
+            phase2_analytical_step_s=0.0,
+            phase2_iter_s=0.0,
+            phase2_analytical_iter_s=0.0,
+            phase2_per_comp_pred_iter_s=0.0,
+        ),
+        layout,
+        prod_bm,
+        hw,
+    )
+    cal = estimate_runtime(prod_cfg, spliced, layout, prod_bm, hw)
+
+    # Residual α ≈ 1.0 → cal ≈ bare (per-component α all 1.0 too).
+    assert cal == pytest.approx(bare, rel=1e-3), (
+        f"residual α must be a no-op when per-component explains boot: "
+        f"bare={bare:.6f} cal={cal:.6f}"
+    )
+
+
 def test_calibrate_peak_with_actual_chunk_bytes_cfg_delta_path():
     """When the production cfg differs from the bootstrap, the peak
     calibrator applies a cfg-delta floor:

@@ -2582,6 +2582,66 @@ def protrain_model_wrapper(
             )
             phase2_iter_s_val = float(fwd_s + bwd_s + step_s)
 
+            # Per-component-prediction anchor (TRACE_VERSION 22) for
+            # the residual-α multiplier. Compute what the per-component
+            # formula in :func:`_compose_t_iter_with_alpha_calibration`
+            # WOULD predict at the boot cfg under the same αfwd /
+            # αbwd / αopt values that the cost model derives from the
+            # measured-vs-analytical ratios above. Crucially, this
+            # anchor uses the analytical-path composition (αfwd and
+            # αbwd both applied) — NOT the chunked-wall-override path
+            # the boot cfg's ``n_swap == 0`` would normally trigger —
+            # because the residual α generalises across cfgs that DO
+            # take the analytical path (any prod cfg with ``n_swap >
+            # 0``). At boot the override and analytical paths agree
+            # within αfwd/αbwd ≈ 1 anyway since the αs are calibrated
+            # *against* the boot measurement; the residual captures
+            # whatever whole-iter overhead bias remains after that
+            # per-component correction.
+            #
+            # Clamp αs to match the runtime composer's clamp so the
+            # anchor stays consistent with what the production path
+            # actually applies (otherwise an out-of-clamp boot ratio
+            # would skew the residual).
+            from axolotl.integrations.protrain.cost.runtime import (
+                _PHASE2_ALPHA_CLAMP_MAX,
+                _PHASE2_ALPHA_CLAMP_MIN,
+            )
+
+            def _clamp_for_anchor(x: float) -> float:
+                return max(
+                    _PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, x)
+                )
+
+            if (
+                phase2_analytical_fwd_s_val > 0.0
+                and phase2_analytical_bwd_s_val > 0.0
+                and phase2_analytical_step_s_val > 0.0
+            ):
+                a_fwd_boot = _clamp_for_anchor(
+                    float(fwd_s) / phase2_analytical_fwd_s_val
+                )
+                a_bwd_boot = _clamp_for_anchor(
+                    float(bwd_s) / phase2_analytical_bwd_s_val
+                )
+                a_opt_boot = _clamp_for_anchor(
+                    float(step_s) / phase2_analytical_step_s_val
+                )
+                t_fwd_anchor = a_fwd_boot * float(t_fwd_boot)
+                t_bwd_anchor = a_bwd_boot * float(t_bwd_boot)
+                t_gpu_anchor = a_opt_boot * float(t_gpu_optim_boot)
+                t_cpu_anchor = a_opt_boot * float(t_cpu_optim_boot)
+                phase2_per_comp_pred_iter_s_val = float(
+                    t_fwd_anchor
+                    + t_bwd_anchor
+                    + t_gpu_anchor
+                    + max(0.0, t_cpu_anchor - t_bwd_anchor)
+                )
+            else:
+                # Per-component baselines unavailable — leave the
+                # anchor zero so the residual α collapses to no-op.
+                phase2_per_comp_pred_iter_s_val = 0.0
+
             from dataclasses import replace as _replace
 
             new_trace = _replace(
@@ -2604,6 +2664,8 @@ def protrain_model_wrapper(
                 phase2_analytical_fwd_s=phase2_analytical_fwd_s_val,
                 phase2_analytical_bwd_s=phase2_analytical_bwd_s_val,
                 phase2_analytical_step_s=phase2_analytical_step_s_val,
+                # Residual-α anchor (TRACE_VERSION 22).
+                phase2_per_comp_pred_iter_s=phase2_per_comp_pred_iter_s_val,
             )
             try:
                 save_cached_trace(cache_key, new_trace, cache_dir=cache_dir)

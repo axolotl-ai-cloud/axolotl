@@ -439,6 +439,47 @@ class ProfilerTrace:
     phase2_analytical_bwd_s: float = 0.0
     phase2_analytical_step_s: float = 0.0
 
+    # ----- Phase-2 RESIDUAL whole-iter overhead anchor (TRACE_VERSION 22) -----
+    #
+    # Per-component α (TRACE_VERSION 21) corrects fwd/bwd/optim bias
+    # *within each component* — its strength is generalising the
+    # measurement to a production cfg with a different fwd/bwd/optim
+    # balance (different ``n_persist`` / ``n_swap`` / ``n_checkpoint``).
+    # Its weakness is that the analytical baseline does not model
+    # whole-iter overheads (Python hook dispatch, kernel launch latency,
+    # NCCL handshake, allocator churn between fwd and bwd, etc.) that
+    # scale roughly linearly with ``N_block`` rather than with any
+    # individual component. The previous single-α calibration absorbed
+    # those overheads accidentally because it scaled the whole iter; the
+    # per-component decomposition by construction does not.
+    #
+    # ``phase2_per_comp_pred_iter_s`` records what the per-component-α
+    # composition (using the SAME αfwd / αbwd / αopt values derived at
+    # boot) WOULD predict at the boot cfg. The cost model then derives
+    #
+    #     α_residual = phase2_iter_s / phase2_per_comp_pred_iter_s
+    #
+    # at boot and multiplies it onto every per-component prediction at
+    # production cfgs. By construction α_residual collapses to 1.0 when
+    # the per-component formula already explains the boot iter — i.e.
+    # whole-iter overhead is fully captured by the components — so the
+    # residual is a no-op on workloads where it should be. When the
+    # analytical model systematically under-counts whole-iter overhead
+    # (the 7B-LoRA regression: ~50% bias on 32-block PEFT), α_residual
+    # > 1.0 inflates the prediction back toward the measurement.
+    #
+    # Bounds [0.8, 2.0] (wider on the inflate side than per-component's
+    # [0.5, 2.0]) reflect that residual α captures genuine missing
+    # overhead, not measurement noise — the natural regime is α ≥ 1.
+    #
+    # Default 0.0 means "no residual baseline available"; the cost
+    # model collapses to per-component-only behaviour (the post-
+    # refactor baseline). Cached traces from TRACE_VERSION ≤ 21 lack
+    # the field and load with the default; TRACE_VERSION 22 forces a
+    # fresh phase-2 capture that records the per-component-prediction
+    # anchor needed to compute the residual.
+    phase2_per_comp_pred_iter_s: float = 0.0
+
     # ----- Block -> tree-index registry (TRACE_VERSION 16) -----
     #
     # Maps each global ``BlockId`` to its forward-order tree index

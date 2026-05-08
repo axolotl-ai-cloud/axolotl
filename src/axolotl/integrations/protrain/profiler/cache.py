@@ -165,7 +165,19 @@ _CACHE_SUBDIR = Path("protrain") / "profiler"
 # single-α legacy path that under-predicted iter time by ~20% on
 # 2B-LoRA — bumping forces a fresh phase-2 capture that records the
 # component decomposition.
-TRACE_VERSION = 21
+# Version 22 adds the per-component-prediction anchor
+# (``phase2_per_comp_pred_iter_s``) used to derive a residual-α
+# multiplier on top of the per-component composition. Per-component α
+# captures fwd/bwd/optim bias *within each component*; it does not
+# capture whole-iter overheads (Python hook dispatch, kernel launch
+# latency, NCCL handshake) that the analytical baseline doesn't
+# model. Without the residual anchor the per-component-only path
+# regressed 7B-LoRA iter prediction to 41% under-predict (boot's
+# whole-iter overhead bias is no longer absorbed by a lumped α).
+# v21 traces lack the field, so the cost model falls back to no
+# residual correction (per-component-only behaviour) — bumping forces
+# a fresh phase-2 capture that records the anchor.
+TRACE_VERSION = 22
 
 
 @dataclass(frozen=True)
@@ -355,6 +367,13 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_analytical_step_s": float(
             getattr(trace, "phase2_analytical_step_s", 0.0)
         ),
+        # Per-component-prediction anchor (TRACE_VERSION 22) for the
+        # residual-α multiplier. Same defensive ``getattr`` so an
+        # in-tree builder lagging the schema doesn't break the writer;
+        # the version bump still invalidates v21 entries lacking it.
+        "phase2_per_comp_pred_iter_s": float(
+            getattr(trace, "phase2_per_comp_pred_iter_s", 0.0)
+        ),
         "block_tree_index": {
             str(int(k)): int(v) for k, v in trace.block_tree_index.items()
         },
@@ -417,6 +436,14 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     ):
         if _fname in _trace_field_names:
             extra[_fname] = float(data.get(_fname, 0.0))
+    # Per-component-prediction anchor (TRACE_VERSION 22). Same field-
+    # presence guard as the older optional fields above — the version
+    # bump invalidates v21 entries lacking this anchor, but in-tree
+    # builders lagging the schema still load gracefully.
+    if "phase2_per_comp_pred_iter_s" in _trace_field_names:
+        extra["phase2_per_comp_pred_iter_s"] = float(
+            data.get("phase2_per_comp_pred_iter_s", 0.0)
+        )
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={
