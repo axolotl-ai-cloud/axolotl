@@ -21,7 +21,7 @@ def clear_nvidia_cu13_modules():
         sys.modules.pop(module_name, None)
 
 
-def _make_fake_cu13_package(root: Path) -> None:
+def _make_fake_cu13_package(root: Path) -> Path:
     package_root = root / "nvidia" / "cu13"
     package_root.mkdir(parents=True)
     (root / "nvidia" / "__init__.py").write_text("", encoding="utf-8")
@@ -30,9 +30,7 @@ def _make_fake_cu13_package(root: Path) -> None:
     return package_root
 
 
-def test_prepend_cu13_ld_library_path_when_package_exists(
-    monkeypatch, tmp_path
-):
+def test_prepend_cu13_ld_library_path_when_package_exists(monkeypatch, tmp_path):
     package_root = _make_fake_cu13_package(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
     expected_lib = str(package_root / "lib")
@@ -82,7 +80,7 @@ def test_cuda13_env_sh_prepend_path_when_package_exists(tmp_path):
         [
             "bash",
             "-lc",
-            "source scripts/cuda13_env.sh; printf %s \"$LD_LIBRARY_PATH\"",
+            'source scripts/cuda13_env.sh; printf %s "$LD_LIBRARY_PATH"',
         ],
         check=True,
         capture_output=True,
