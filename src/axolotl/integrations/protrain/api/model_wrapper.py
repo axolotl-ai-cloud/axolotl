@@ -331,12 +331,123 @@ def _calibrate_peak_with_actual_chunk_bytes(
     actual_persistent``. Mismatch was harmless under LoRA-with-frozen-
     base (``persistent_factor ≈ 1``); now corrected for both regimes.
     """
-    from axolotl.integrations.protrain.cost.memory import ALPHA_FRAGMENTATION
+    from axolotl.integrations.protrain.cost.memory import (
+        ALPHA_FRAGMENTATION,
+        _saved_tensor_bytes_per_block,
+    )
     from axolotl.integrations.protrain.types import BlockMode
 
     S = layout.S_chunk
-    persistent_ids = set(int(c) for c in chunk_manager._persistent_ids)
     cb = _chunk_bytes(layout, chunk_manager)
+
+    fp16_total_bytes = layout.N_chunk * layout.S_chunk
+    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0) if trace else 0
+    if fp16_total_bytes > 0 and model_state_total > 0:
+        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
+    else:
+        persistent_factor = 1.0
+    buffer_factor = 2.0  # fp16 params (gathered) + fp16 grads (accumulated)
+    alpha = ALPHA_FRAGMENTATION
+
+    # Trace-derived activation reconstruction is shared between the
+    # production-cfg calibration path and the cfg-delta floor's
+    # boot-cfg calibration path — extract once.
+    if trace is not None:
+        saved_bytes_proxy = _saved_tensor_bytes_per_block(trace)
+        act_sizes_full = dict(trace.activation_sizes)
+        max_op_delta_global = 0
+        for op in trace.op_order:
+            if not op.is_forward:
+                continue
+            if op.block_id is None:
+                continue
+            contrib = trace.intra_op_delta.get(
+                op.op_id, 0
+            ) + trace.inter_op_delta.get(op.op_id, 0)
+            if contrib > max_op_delta_global:
+                max_op_delta_global = contrib
+    else:
+        saved_bytes_proxy = {}
+        act_sizes_full = {}
+        max_op_delta_global = 0
+
+    def _reconstruct_f_bm(bmap) -> tuple[int, int]:
+        """Trace-derived F_bm reconstruction for a candidate block map.
+
+        Returns ``(reconstructed_f_bm, n_ckpt)`` so callers can decide
+        between min/max-with-cost-model-f_bm based on CKPT dominance.
+        """
+        if bmap is None or not act_sizes_full:
+            return 0, 0
+        live_none_bytes = 0
+        for bid_, mode_ in bmap.items():
+            if mode_ is BlockMode.NONE or mode_ is BlockMode.OFFLOAD:
+                live_none_bytes += int(
+                    saved_bytes_proxy.get(bid_, act_sizes_full.get(bid_, 0))
+                )
+        n_ckpt_ = sum(1 for m in bmap.values() if m is BlockMode.CKPT)
+        max_ckpt_act_ = 0
+        if n_ckpt_ > 0 and act_sizes_full:
+            max_ckpt_act_ = max(int(v) for v in act_sizes_full.values())
+        return live_none_bytes + max_ckpt_act_ + max_op_delta_global, n_ckpt_
+
+    def _structural_calibrated(
+        n_persist_arg: int,
+        n_buffer_arg: int,
+        original_peak_arg: int,
+        bmap_arg,
+    ) -> tuple[int, int, int, int]:
+        """Compute the structural-calibrated peak for a given cfg/bmap.
+
+        Returns ``(calibrated_bytes, persistent_bytes, buffer_bytes,
+        f_bm)`` so the cfg-delta floor can use the calibrated peak as
+        an oracle for cfg-sensitivity AND we can keep the production-
+        path log lines reading the same intermediates as before.
+
+        ``calibrated_bytes`` here is alpha-applied with the wrapper's
+        ``calibration_alpha`` (capped at ALPHA_FRAGMENTATION); both
+        prod and boot calls use the same alpha so taking their delta
+        below preserves OOM-safety semantics.
+        """
+        persistent_ids_local = layout.effective_persistent_ids(n_persist_arg)
+        n_persist_eff_local = len(persistent_ids_local)
+        n_buffer_local = max(
+            0, min(int(n_buffer_arg), layout.N_chunk - n_persist_eff_local)
+        )
+        actual_persistent_local = sum(
+            cb.get(int(cid), 0) for cid in persistent_ids_local
+        )
+        original_model_state_local = int(
+            n_persist_eff_local * S * persistent_factor
+            + n_buffer_local * S * buffer_factor
+        )
+        f_bm_local = max(
+            0, int(original_peak_arg / alpha) - original_model_state_local
+        )
+        reconstructed_local, n_ckpt_local = _reconstruct_f_bm(bmap_arg)
+        if bmap_arg is not None:
+            if n_ckpt_local >= max(1, len(bmap_arg) - 2):
+                if f_bm_local > 0:
+                    f_bm_local = min(f_bm_local, reconstructed_local)
+                else:
+                    f_bm_local = reconstructed_local
+            else:
+                f_bm_local = max(f_bm_local, reconstructed_local)
+        buffer_bytes_local = int(n_buffer_local * S * buffer_factor)
+        persistent_bytes_local = int(actual_persistent_local * persistent_factor)
+        calibration_alpha_local = min(alpha, 1.05)
+        calibrated_local = int(
+            calibration_alpha_local
+            * (persistent_bytes_local + buffer_bytes_local + f_bm_local)
+        )
+        return (
+            calibrated_local,
+            persistent_bytes_local,
+            buffer_bytes_local,
+            f_bm_local,
+        )
+
+    persistent_ids = set(int(c) for c in chunk_manager._persistent_ids)
 
     # Actual persistent param bytes (≤ n_persist_eff * S_chunk). Scaled
     # below by ``persistent_factor`` to recover full state.
@@ -349,87 +460,50 @@ def _calibrate_peak_with_actual_chunk_bytes(
     # only give the aggregate.
     n_persist_eff = len(persistent_ids)
     n_buffer = max(0, min(int(cfg.n_buffer), layout.N_chunk - n_persist_eff))
-    fp16_total_bytes = layout.N_chunk * layout.S_chunk
-    model_state_total = int(getattr(trace, "model_state_bytes", 0) or 0) if trace else 0
-    if fp16_total_bytes > 0 and model_state_total > 0:
-        persistent_factor = max(1.0, model_state_total / fp16_total_bytes)
-    else:
-        persistent_factor = 1.0
-    buffer_factor = 2.0  # fp16 params (gathered) + fp16 grads (accumulated)
 
-    alpha = ALPHA_FRAGMENTATION
     original_model_state = int(
         n_persist_eff * S * persistent_factor + n_buffer * S * buffer_factor
     )
     f_bm = max(0, int(original_peak / alpha) - original_model_state)
 
-    # Rebuild F_bm from a more realistic activation model when a CKPT-
-    # dominant block map is in play.
+    # Trace-derived F_bm reconstruction. The shared ``_reconstruct_f_bm``
+    # helper above tracks two failure modes the cost model's raw_peak
+    # hides:
     #
-    # cost/memory.py's op-walk sums intra+inter deltas at the max op,
-    # but those deltas were recorded WITHOUT checkpointing — so for
-    # configs where most blocks are CKPT, the op-walk counts activations
-    # that the CKPT wrapper discards at forward time. The paper's Eq
-    # 11 is designed to over-predict, but the overestimate is meant to
-    # be "up to 10%", not up to 3x.
+    # 1. CKPT-dominant configs: ``cost/memory.py``'s op-walk sums
+    #    intra+inter deltas at the max op, recorded WITHOUT
+    #    checkpointing — so for CKPT-dominant configs, op-walk counts
+    #    activations the CKPT wrapper discards at forward time. The
+    #    paper's Eq. 11 is designed to over-predict by ~10%, not 3x.
     #
-    # Reconstructed F_bm estimate: sum(activation_sizes for non-CKPT
-    # blocks) + 1 block's worth of bump for CKPT recomputation (which
-    # happens one block at a time in backward) + the max single-op
-    # intra_delta (to conservatively cover any peaking attention
-    # kernel).
-    if trace is not None and block_map is not None:
-        n_ckpt = sum(1 for m in block_map.values() if m is BlockMode.CKPT)
+    # 2. ``hot_iter_peak_cap`` chunk-padding cancellation: when most
+    #    chunks are persistent (n_persist_eff ≈ N_chunk), the cost
+    #    model's post-cap raw_peak collapses to roughly
+    #    ``profile_time_model_state + small_activation_residual``.
+    #    The reverse-out ``original_peak / α - n_persist_eff * S``
+    #    then yields ``f_bm = 0`` because the chunk-padding waste in
+    #    the cost model's model-state term consumes the activation
+    #    headroom — even though the runtime DOES allocate activations
+    #    + buffer-pool transients + grad accumulators. Symptom: 14%
+    #    under-prediction on 2B/7B LoRA where the searcher picks a
+    #    mostly-persistent layout.
+    #
+    # Reconstructed F_bm uses the saved-tensor-per-block proxy
+    # (commit 8cf4259d) for live_none, the worst-case single-CKPT
+    # block recompute, and the max single-op intra+inter delta. For
+    # CKPT-dominant configs we keep the cost model's cap (use min);
+    # for non-CKPT-dominant we floor at the reconstructed value
+    # (max) so the activation contribution survives both failure
+    # modes above.
+    reconstructed_f_bm, n_ckpt = _reconstruct_f_bm(block_map)
+    if block_map is not None:
         if n_ckpt >= max(1, len(block_map) - 2):
-            # CKPT-dominant config — most blocks drop their activations.
-            act_sizes = dict(trace.activation_sizes)
-            non_ckpt_act = 0
-            for bid, mode in block_map.items():
-                if mode is not BlockMode.CKPT:
-                    non_ckpt_act += int(act_sizes.get(bid, 0))
-            # One CKPT block's activation (recomputed during its
-            # backward, persists briefly) — use the max.
-            one_ckpt_act = 0
-            if act_sizes:
-                one_ckpt_act = max(int(v) for v in act_sizes.values())
-
-            # Max single-op intra+inter inside the forward, ignoring
-            # the top-level "module-wrapper" ops (their deltas are
-            # aggregates, not single-kernel peaks).
-            max_op_delta = 0
-            for op in trace.op_order:
-                if not op.is_forward:
-                    continue
-                if op.block_id is None:
-                    # Root-module deltas aggregate everything below;
-                    # skip (CKPT strips most of this).
-                    continue
-                contrib = trace.intra_op_delta.get(
-                    op.op_id, 0
-                ) + trace.inter_op_delta.get(op.op_id, 0)
-                if contrib > max_op_delta:
-                    max_op_delta = contrib
-
-            reconstructed_f_bm = non_ckpt_act + one_ckpt_act + max_op_delta
-            # Use the smaller of the two estimates — never INCREASE the
-            # prediction (cost model is already upper-bounding).
-            #
-            # Exception: when ``f_bm`` clamped to 0 because the
-            # calibration's *effective* n_persist (post non-block-chunk
-            # pinning) exceeds the search's raw n_persist, the
-            # ``original_peak / alpha - original_model_state`` arithmetic
-            # subtracts more than the original raw_peak budgeted. The
-            # search's predicted_peak was computed with the raw n_persist,
-            # so ``original_peak / alpha`` reflects that smaller model
-            # state plus activations + deltas. The differential between
-            # raw and effective n_persist eats into the activation
-            # headroom and leaves f_bm at 0 — but the trace-derived
-            # reconstructed_f_bm is still a valid independent activation
-            # estimate. Use it when f_bm has degenerated to 0.
             if f_bm > 0:
                 f_bm = min(f_bm, reconstructed_f_bm)
             else:
                 f_bm = reconstructed_f_bm
+        else:
+            f_bm = max(f_bm, reconstructed_f_bm)
 
     # Reassemble with the actual persistent bytes + corrected F_bm.
     #
@@ -500,6 +574,20 @@ def _calibrate_peak_with_actual_chunk_bytes(
     calibrated_persistent = int(actual_persistent * persistent_factor)
     calibrated_raw = calibrated_persistent + buffer_bytes_eff + f_bm
     calibrated = int(calibration_alpha * calibrated_raw)
+    LOG.debug(
+        "ProTrain calibrate body: cfg=(np=%d nb=%d ns=%d nck=%d nof=%d) "
+        "S_chunk=%.3fGiB N_chunk=%d n_persist_eff=%d n_buffer=%d "
+        "actual_persistent=%.3fGiB persistent_factor=%.3f buffer_factor=%.2f "
+        "f_bm=%.3fGiB calibrated_persistent=%.3fGiB buffer_bytes_eff=%.3fGiB "
+        "calibrated_raw=%.3fGiB calibration_alpha=%.3f -> calibrated=%.3fGiB "
+        "(original_peak=%.3fGiB original_model_state=%.3fGiB)",
+        cfg.n_persist, cfg.n_buffer, cfg.n_swap, cfg.n_checkpoint, cfg.n_offload,
+        S / (1 << 30), layout.N_chunk, n_persist_eff, n_buffer,
+        actual_persistent / (1 << 30), persistent_factor, buffer_factor,
+        f_bm / (1 << 30), calibrated_persistent / (1 << 30), buffer_bytes_eff / (1 << 30),
+        calibrated_raw / (1 << 30), calibration_alpha, calibrated / (1 << 30),
+        original_peak / (1 << 30), original_model_state / (1 << 30),
+    )
     if trace is not None and block_map is not None:
         phase2_peak = int(getattr(trace, "steady_phase2_peak_bytes", 0) or 0)
         if phase2_peak > 0:
@@ -581,12 +669,59 @@ def _calibrate_peak_with_actual_chunk_bytes(
                     # under-predict raise above).
                     calibrated = min(calibrated, phase2_floor)
             elif phase2_analytical_peak > 0 and hw is not None:
-                # Cfg-delta path. Compute the analytical peak at the
-                # production cfg using the exact same function the
-                # searcher minimises (``cost.memory.estimate_peak``)
-                # so the model + production sides see consistent
-                # numbers. Local import to keep the wrapper's
-                # eager-import surface narrow.
+                # Cfg-delta path. The floor anchors phase-2's measured
+                # absolute scale (``phase2_peak``) and adds the cfg-
+                # sensitivity delta.
+                #
+                # Previous alpha-stripped additive formulation used the
+                # raw analytical peaks directly:
+                #
+                #     delta = (prod_anal - phase2_anal) / ALPHA
+                #     floor = phase2_peak + delta
+                #
+                # Both ``prod_anal`` and ``phase2_anal`` come from
+                # ``cost.memory.estimate_peak``, which charges the
+                # persistent set as ``n_persist_eff * S_chunk`` — the
+                # chunk-padded upper bound, NOT the actual packed
+                # bytes. When the production cfg has many more
+                # persistent chunks than the bootstrap (boot is
+                # n_persist=0; production picks up to N_chunk), the
+                # delta accumulates ~``(prod_n_persist - boot_n_persist)
+                # * (S_chunk - avg_chunk_density)`` worth of
+                # chunk-padding waste — over-counting the floor by
+                # roughly 13% on the 7B-LoRA end-to-end test, which
+                # the prior agent compensated for with a stacked
+                # safety lift that started over-predicting once the
+                # structural body's f_bm was fixed.
+                #
+                # New formulation: apply the structural calibration
+                # body (chunk-padding strip + reconstructed F_bm) to
+                # BOTH cfgs before taking the delta:
+                #
+                #     prod_calibrated = structural(prod_cfg, prod_anal,
+                #                                  prod_block_map)
+                #     boot_calibrated = structural(boot_cfg, phase2_anal,
+                #                                  boot_block_map)
+                #     delta = max(0, prod_calibrated - boot_calibrated)
+                #     floor = phase2_peak + delta
+                #
+                # The structural body strips chunk-padding waste and
+                # recovers the activation portion via the trace-derived
+                # ``reconstructed_f_bm``; applying it symmetrically on
+                # both sides means the delta carries only the
+                # cfg-sensitivity, not the chunk-padding bias. Reduces
+                # to ``floor = phase2_peak`` when prod_cfg == boot_cfg
+                # (same calibrated peaks → delta == 0), and grows
+                # monotonically with cfg complexity.
+                #
+                # Boot cfg reconstruction: ``select_bootstrap_config``
+                # in ``profiler/phase2.py`` always picks
+                # ``n_persist=0, n_swap=0, n_checkpoint=N_block``, so
+                # the boot block_map is "every block CKPT". The
+                # ``phase2_n_*`` fields on the trace let us validate
+                # this and fall back to the previous alpha-stripped
+                # formula if the trace was recorded under a different
+                # bootstrap shape.
                 from axolotl.integrations.protrain.cost.memory import (
                     estimate_peak as _estimate_peak,
                 )
@@ -594,116 +729,80 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 prod_analytical_peak = int(
                     _estimate_peak(cfg, trace, layout, block_map, hw)
                 )
-                # Cfg-delta floor (multiplicative-ratio anchored).
-                #
-                # Previous formulation:
-                #
-                #     floor = phase2_peak + (prod_anal - phase2_anal)
-                #
-                # which assumed the analytical model's bias is ADDITIVE
-                # and constant across cfgs — i.e. ``(prod_anal -
-                # prod_actual) ≈ (phase2_anal - phase2_peak)``. That
-                # holds only if the bias is dominated by a fixed-bytes
-                # term independent of raw_peak. In practice
-                # ``cost.memory.estimate_peak`` applies
-                # ``ALPHA_FRAGMENTATION = 1.10`` MULTIPLICATIVELY to a
-                # raw_peak that scales with cfg complexity, so the
-                # absolute bias scales WITH ``raw_peak``. The additive
-                # formula therefore lets the alpha-driven bias
-                # accumulate through the delta term and inflate the
-                # floor for cfgs where ``raw_peak >> phase2_raw_peak``
-                # (e.g. boot cfg fully-offload but production cfg
-                # mostly-persistent — observed at 25.5% over-predict on
-                # the 7B-LoRA end-to-end test even after the bug-7 SWAP
-                # fix).
-                #
-                # The multiplicative ratio formulation
-                #
-                #     floor = prod_anal * (phase2_peak / phase2_anal)
-                #
-                # treats the analytical model as a sensitivity oracle
-                # (relative shape across cfgs is correct) and uses the
-                # phase-2 measurement to set the absolute scale. When
-                # ``phase2_anal == phase2_peak`` (analytical model
-                # perfect at boot cfg) this collapses to ``floor =
-                # prod_anal`` — same as the old additive floor. When
-                # ``phase2_anal > phase2_peak`` (analytical
-                # over-predicts at boot, which is the typical state
-                # under ALPHA_FRAGMENTATION=1.10) the ratio < 1
-                # deflates ``prod_anal`` by exactly the proportion that
-                # phase-2 measured the analytical was off — the
-                # multiplicative bias is BACKED OUT instead of
-                # accumulating through the delta.
-                #
-                # Anti-hack: the deflation is bounded below by
-                # ``phase2_peak`` so OOM safety is preserved (the
-                # production cfg cannot be predicted to consume LESS
-                # than the boot cfg actually used — the runtime can
-                # only grow from there as cfg complexity rises). And
-                # the deflation can never lower the floor below the
-                # analytical raw_peak before ALPHA was applied —
-                # ``raw_peak = prod_anal / ALPHA_FRAGMENTATION`` is the
-                # cost model's own pre-fragmentation upper bound on
-                # achievable allocations, so we never use a ratio that
-                # would push the floor below it.
-                #
-                # When ``phase2_anal == 0`` (older trace, in-process
-                # degraded fixture) or non-positive, we fall back to
-                # the additive formula to preserve legacy behaviour.
-                if phase2_analytical_peak > 0:
-                    # Cfg-delta floor (alpha-stripped additive form).
-                    #
-                    # The previous additive formula ``phase2_peak +
-                    # (prod_anal - phase2_anal)`` over-counted because
-                    # both ``prod_anal`` and ``phase2_anal`` include
-                    # the multiplicative ``ALPHA_FRAGMENTATION = 1.10``
-                    # safety factor — so the delta carries an alpha-
-                    # scaled component that, when added to the un-
-                    # scaled measurement ``phase2_peak``, inflated the
-                    # floor by the bias residue ``(α - 1) * raw_delta``
-                    # for cfgs where ``raw_peak >> phase2_raw_peak``
-                    # (e.g. boot fully-offload, production mostly-
-                    # persistent — observed at +25.5% on 7B-LoRA).
-                    #
-                    # The fix: strip ALPHA out of the delta before
-                    # adding it to the measurement anchor. Both
-                    # analytical peaks are scaled by the same alpha,
-                    # so dividing the delta by alpha recovers the
-                    # raw cfg-sensitivity the cost model would predict
-                    # WITHOUT the fragmentation safety factor — which
-                    # is what we want to add to a measured (un-alpha'd)
-                    # baseline. The alpha safety is preserved
-                    # asymmetrically through the under-predict +5%
-                    # margin below.
-                    #
-                    # Reduces to ``floor = phase2_peak`` when
-                    # ``prod_anal == phase2_anal`` (same cfg case)
-                    # exactly like the additive formulation. For the
-                    # 7B-LoRA test:
-                    #
-                    #     phase2_peak ≈ 1.76 GB,
-                    #     phase2_anal ≈ 2.80 GB,
-                    #     prod_anal ≈ 19.20 GB
-                    #     additive floor = 1.76 + 16.40 = 18.16 GB
-                    #     alpha-stripped delta = 16.40 / 1.10 = 14.91 GB
-                    #     alpha-stripped floor = 1.76 + 14.91 = 16.67 GB
-                    #     vs. actual peak 15.30 GB → 8.9% over (PASS).
-                    delta_raw = (prod_analytical_peak - phase2_analytical_peak) / float(
-                        ALPHA_FRAGMENTATION
+                # Production-side calibrated peak — re-uses the same
+                # closure as the production path above so the two
+                # invocations are bit-identical at the same cfg.
+                prod_calibrated, _, _, _ = _structural_calibrated(
+                    int(cfg.n_persist),
+                    int(cfg.n_buffer),
+                    prod_analytical_peak,
+                    block_map,
+                )
+                # Boot cfg structural calibration. Validate the trace's
+                # phase2_n_* fields look like the canonical bootstrap
+                # (n_persist=0 + all-CKPT); when they don't, fall back
+                # to the alpha-stripped additive formula on raw
+                # analytical peaks.
+                boot_n_persist = int(getattr(trace, "phase2_n_persist", -1))
+                boot_n_buffer = int(getattr(trace, "phase2_n_buffer", -1))
+                boot_n_ckpt = int(getattr(trace, "phase2_n_checkpoint", -1))
+                if (
+                    boot_n_persist == 0
+                    and boot_n_ckpt == len(block_map)
+                    and boot_n_buffer >= 0
+                ):
+                    boot_block_map = {
+                        bid_: BlockMode.CKPT for bid_ in block_map.keys()
+                    }
+                    boot_calibrated, _, _, _ = _structural_calibrated(
+                        boot_n_persist,
+                        boot_n_buffer,
+                        phase2_analytical_peak,
+                        boot_block_map,
                     )
-                    delta_raw = max(0.0, delta_raw)
+                    delta_raw = max(0, prod_calibrated - boot_calibrated)
                     calibrated_floor = max(
                         int(phase2_peak + delta_raw),
                         phase2_peak,
                     )
                     LOG.info(
-                        "ProTrain peak cfg-delta: phase2_peak=%.2f GB "
-                        "phase2_anal=%.2f GB prod_anal=%.2f GB "
-                        "delta_raw=%.2f GB floor=%.2f GB calibrated=%.2f GB",
+                        "ProTrain peak cfg-delta (calibrated-delta): "
+                        "phase2_peak=%.2f GB phase2_anal=%.2f GB "
+                        "prod_anal=%.2f GB boot_calibrated=%.2f GB "
+                        "prod_calibrated=%.2f GB delta_raw=%.2f GB "
+                        "floor=%.2f GB calibrated=%.2f GB",
                         phase2_peak / (1 << 30),
                         phase2_analytical_peak / (1 << 30),
                         prod_analytical_peak / (1 << 30),
+                        boot_calibrated / (1 << 30),
+                        prod_calibrated / (1 << 30),
                         delta_raw / (1 << 30),
+                        calibrated_floor / (1 << 30),
+                        calibrated / (1 << 30),
+                    )
+                elif phase2_analytical_peak > 0:
+                    # Legacy alpha-stripped additive fallback for
+                    # traces whose phase2 bootstrap shape doesn't
+                    # match the canonical (n_persist=0, all-CKPT)
+                    # form. Preserves the OOM-safety floor at
+                    # phase2_peak.
+                    delta_raw_legacy = (
+                        prod_analytical_peak - phase2_analytical_peak
+                    ) / float(ALPHA_FRAGMENTATION)
+                    delta_raw_legacy = max(0.0, delta_raw_legacy)
+                    calibrated_floor = max(
+                        int(phase2_peak + delta_raw_legacy),
+                        phase2_peak,
+                    )
+                    LOG.info(
+                        "ProTrain peak cfg-delta (legacy α-strip): "
+                        "phase2_peak=%.2f GB phase2_anal=%.2f GB "
+                        "prod_anal=%.2f GB delta_raw=%.2f GB "
+                        "floor=%.2f GB calibrated=%.2f GB",
+                        phase2_peak / (1 << 30),
+                        phase2_analytical_peak / (1 << 30),
+                        prod_analytical_peak / (1 << 30),
+                        delta_raw_legacy / (1 << 30),
                         calibrated_floor / (1 << 30),
                         calibrated / (1 << 30),
                     )
@@ -743,23 +842,32 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 # cfg-delta branch the floor INCORPORATES analytical
                 # uncertainty already (via ``prod_anal - phase2_anal``)
                 # so an additional 5% is pure tax.
-                # Anchor at the floor in both directions:
-                # * Under-predict (``calibrated < floor``): raise to
-                #   the floor — OOM defence. The structural calibration
-                #   may have over-deflated the analytical's estimate
-                #   (e.g. when ``f_bm`` clamps to 0 because effective
-                #   ``n_persist`` exceeds the search's raw value), so
-                #   the measurement-anchored floor is the more reliable
-                #   lower bound.
-                # * Over-predict (``calibrated >= floor``): cap at the
-                #   floor — the floor is already alpha-stripped and
-                #   measurement-anchored, so it's the cost model's
-                #   best guess at the production peak. Any analytical
-                #   value above it is the cost model's residual over-
-                #   prediction (op-walk activation over-counting,
-                #   chunk fragmentation slop) that the alpha-stripped
-                #   delta + phase-2 anchor already absorbs.
-                calibrated = calibrated_floor
+                # Anchor at the floor as a LOWER BOUND only.
+                #
+                # Pre-step-3 the splice capped both directions at the
+                # floor (the floor was the alpha-stripped raw-anal
+                # delta, which carried chunk-padding over-count that
+                # exceeded the structural body's output, so capping
+                # down was the right move). After step 3 the floor is
+                # symmetrically calibrated on both sides
+                # (``prod_calibrated - boot_calibrated``); the
+                # structural body's output IS the same calibration
+                # applied to the production cfg with the cost model's
+                # raw_peak as the reverse-out base. When the
+                # structural body lands ABOVE the floor it has
+                # captured cfg-specific terms (OFFLOAD chunk-gather,
+                # CKPT recomp bump, op-walk peaks) that the
+                # measurement-anchored boot baseline doesn't see —
+                # capping down would discard those terms. When the
+                # structural body lands BELOW the floor (chunk-padding
+                # f_bm clamp degeneracy), raise to the floor for OOM
+                # safety.
+                #
+                # Net behaviour: ``calibrated = max(structural_calibrated,
+                # measurement_anchored_floor)``. Both terms are
+                # alpha-stripped at this point so layering them
+                # doesn't compound safety factors.
+                calibrated = max(calibrated, calibrated_floor)
     return calibrated
 
 
