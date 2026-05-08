@@ -232,7 +232,20 @@ def _clone_state_dict(state, target_device=None):
 
     if torch.is_tensor(state):
         if target_device is not None:
-            return state.detach().to(target_device).clone()
+            target = torch.device(target_device)
+            if state.device == target:
+                # Already on the target device — single ``clone()``
+                # allocates the snapshot directly without a needless
+                # round-trip.
+                return state.detach().clone()
+            # ``.to(target)`` allocates a fresh tensor on the target
+            # device when the source is on a different device, and
+            # under that condition the result is independent storage —
+            # no extra ``.clone()`` is needed (and the prior path
+            # double-allocated, which on multi-GB model snapshots was
+            # spiking host RAM enough to OOM phase-2 before timing
+            # started).
+            return state.detach().to(target)
         return state.detach().clone()
     if isinstance(state, dict):
         cloned_items = {

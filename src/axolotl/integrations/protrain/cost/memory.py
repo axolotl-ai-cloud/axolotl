@@ -742,13 +742,22 @@ def estimate_cpu_footprint(
     # ``api/model_wrapper.py::_construct_runtime``.
     swap_term = 0
     if cfg.n_swap > 0 and trace is not None and trace.activation_sizes:
+        # Defensive normalisation — same pattern as
+        # ``block_tree_index_map`` and ``_saved_tensor_bytes_per_block``:
+        # a reloaded trace whose keys round-tripped through JSON or
+        # pickle as strings would otherwise sort lexicographically here
+        # ("10" < "2"), placing the wrong blocks in the swap band and
+        # mis-sizing the pinned swap pool.
+        normalized_activation_sizes: dict[BlockId, int] = {
+            BlockId(int(bid)): int(sz) for bid, sz in trace.activation_sizes.items()
+        }
         # Swap-early rule: the first ``n_swap`` blocks (in BlockId order)
         # use SWAP.
-        sorted_bids = sorted(trace.activation_sizes.keys())
+        sorted_bids = sorted(normalized_activation_sizes.keys())
         swap_band = sorted_bids[: cfg.n_swap]
         if swap_band:
             per_block_activation_bytes = max(
-                int(trace.activation_sizes.get(bid, 0)) for bid in swap_band
+                normalized_activation_sizes.get(bid, 0) for bid in swap_band
             )
             slot_bytes = max(1, int(per_block_activation_bytes))
             swap_term = (
