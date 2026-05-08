@@ -582,6 +582,19 @@ class ProTrainPlugin(BasePlugin):
                 "stale wrapper and re-wrapping. (Test harness or "
                 "re-trainer-build path.)"
             )
+            # Cascade the canonical teardown so the stale wrapper releases
+            # pinned-host pools, joins the CPU-Adam worker thread, and
+            # removes hooks before we drop the reference. Without this
+            # the dropped wrapper relies on Python GC to fire __del__ on
+            # ChunkManager / CpuFusedAdamAdapter, which can run too late
+            # to keep the next wrap's allocator math honest.
+            try:
+                existing.close()
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug(
+                    "ProTrain: stale-wrapper close() failed during re-wrap: %s",
+                    exc,
+                )
             cfg._protrain_wrapped = None  # type: ignore[attr-defined]
 
         from axolotl.integrations.protrain.api import protrain_model_wrapper

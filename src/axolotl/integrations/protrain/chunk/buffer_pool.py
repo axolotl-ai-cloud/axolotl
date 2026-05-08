@@ -209,6 +209,11 @@ class BufferPool:
         self._large_buffers: dict[ChunkId, "torch.Tensor"] = {}
         self._large_leases: dict[ChunkId, int] = {}
 
+        # Set by :meth:`close`. Once flipped, all public ops are no-ops so
+        # a teardown cascade (WrappedModel.close -> ChunkManager.close ->
+        # BufferPool.close) is idempotent under repeated invocation.
+        self._closed: bool = False
+
     # ---- core ops ------------------------------------------------------
 
     def acquire(
@@ -508,6 +513,39 @@ class BufferPool:
 
     def __len__(self) -> int:
         return self.n_buffer
+
+    # ---- teardown ------------------------------------------------------
+
+    def close(self) -> None:
+        """Drop every pool-owned buffer and free the paired pinned region.
+
+        Idempotent. Drops references to the pre-allocated GPU slot
+        buffers and any oversize side-table allocations, clears the
+        free-list / tag bookkeeping, and closes the paired
+        :class:`PinnedHostMemory` region. Repeated calls are no-ops.
+
+        The pool is the sole owner of its ``pinned_host`` (constructed
+        alongside the pool in :func:`_construct_runtime`) so closing it
+        here is safe — no other component holds a borrow on the host
+        slots after the chunk manager has released its own references.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        self._buffers = []
+        self._large_buffers.clear()
+        self._large_leases.clear()
+        self._free.clear()
+        self._free_set.clear()
+        self._tag_to_slot.clear()
+        self._tags = [None] * self.n_buffer
+        self._leases = [0] * self.n_buffer
+        if self.pinned_host is not None:
+            try:
+                self.pinned_host.close()
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug("BufferPool.close: pinned_host.close failed: %s", exc)
+            self.pinned_host = None  # type: ignore[assignment]
 
 
 __all__ = ["BufferPool"]

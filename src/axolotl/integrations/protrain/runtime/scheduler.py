@@ -133,6 +133,7 @@ class Scheduler:
         # wrapper when ``n_swap > 0``. Type-erased to ``object`` here so
         # the scheduler module does not depend on ``block.swap_pool``.
         self.swap_pool: object | None = None
+        self._closed: bool = False
         self._init_streams()
 
     @property
@@ -547,6 +548,45 @@ class Scheduler:
         self.chunk_manager.drain_deferred_offloads()
 
         self.chunk_manager.wait_cpu_optim()
+
+    # ---- teardown -----------------------------------------------------
+
+    def close(self) -> None:
+        """Synchronize and drop the scheduler-owned streams + swap pool.
+
+        Idempotent. Synchronizes the prefetch/swap streams so any
+        in-flight transfers retire before their CUDA event handles are
+        dropped, closes the attached :class:`ActivationSwapPool` (if
+        one was wired in by the model wrapper), and clears the stream
+        references. Repeated calls are no-ops.
+
+        Does NOT close the chunk manager — :meth:`WrappedModel.close`
+        owns that ordering so the optim shutdown / hook removal happen
+        before the manager's pinned-host pools are freed.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            import torch
+        except ImportError:  # pragma: no cover
+            torch = None  # type: ignore[assignment]
+        if torch is not None and torch.cuda.is_available():
+            for stream in (self._prefetch_stream, self._swap_stream):
+                if stream is None:
+                    continue
+                try:
+                    stream.synchronize()
+                except Exception as exc:  # noqa: BLE001 — best-effort
+                    LOG.debug("Scheduler.close: stream synchronize failed: %s", exc)
+        self._prefetch_stream = None
+        self._swap_stream = None
+        if self.swap_pool is not None:
+            try:
+                self.swap_pool.close()  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug("Scheduler.close: swap_pool.close failed: %s", exc)
+            self.swap_pool = None
 
 
 __all__ = ["Scheduler"]

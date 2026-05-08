@@ -608,6 +608,10 @@ class ChunkManager:
         # oversize branches stay dormant.
         self._chunk_bytes_by_id: dict[ChunkId, int] = {}
 
+        # Set by :meth:`close`. Once flipped, ``close`` becomes a no-op
+        # so the WrappedModel teardown cascade is idempotent.
+        self._closed: bool = False
+
         self.mark_persistent(n_persist)
 
     # ---- configuration -------------------------------------------------
@@ -2792,6 +2796,69 @@ class ChunkManager:
             except Exception as exc:  # noqa: BLE001 — best-effort
                 LOG.debug("ChunkManager.uninstall: hook remove failed: %s", exc)
         self._grad_hook_handles.clear()
+
+    def close(self) -> None:
+        """Tear down every manager-owned resource. Idempotent.
+
+        Cascade order matters:
+
+        1. Drain + shut down the CPU optimizer worker pool so no
+           background thread can touch ``_cpu_slots`` / ``_cpu_grad_pool``
+           bytes after we drop them.
+        2. ``uninstall()`` — drop the per-param grad hooks so a
+           late-firing autograd path cannot reach into the freed pools.
+        3. Clear ``_cpu_slots`` / ``_chunk_shards`` / ``_persistent_buffers``
+           and the various per-chunk bookkeeping dicts BEFORE freeing
+           the pinned pools — every per-slot ``cpu_data`` / ``cpu_grad``
+           view borrows from the unified pool, and live borrows would
+           block ``PinnedHostMemory.close``.
+        4. ``_close_cpu_pools()`` — release the borrow on slot 0 and
+           free both pinned regions.
+        5. Close the GPU buffer pool (drops its slot tensors and the
+           paired pinned-host region).
+        6. Drop adapter references.
+        """
+        if self._closed:
+            return
+        self._closed = True
+
+        if self.cpu_optim is not None:
+            try:
+                self.cpu_optim.shutdown()
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug("ChunkManager.close: cpu_optim.shutdown failed: %s", exc)
+
+        try:
+            self.uninstall()
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            LOG.debug("ChunkManager.close: uninstall failed: %s", exc)
+
+        self._cpu_slots.clear()
+        self._chunk_shards.clear()
+        self._persistent_buffers.clear()
+        self._storage_ptr_to_chunk.clear()
+        self._active_chunks.clear()
+        self._backward_refcount.clear()
+        self._deferred_offloads.clear()
+        self._grad_remaining.clear()
+        self._grad_initial.clear()
+        self._chunk_bytes_by_id.clear()
+        self._empty_by_dtype.clear()
+
+        try:
+            self._close_cpu_pools()
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            LOG.debug("ChunkManager.close: _close_cpu_pools failed: %s", exc)
+
+        if self.buffer_pool is not None:
+            try:
+                self.buffer_pool.close()
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                LOG.debug("ChunkManager.close: buffer_pool.close failed: %s", exc)
+            self.buffer_pool = None
+
+        self.cpu_optim = None
+        self.gpu_optim = None
 
     def __del__(self) -> None:  # noqa: D401
         try:

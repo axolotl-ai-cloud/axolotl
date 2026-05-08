@@ -659,6 +659,58 @@ class WrappedModel:
     chunk_manager: object = None
     scheduler: object = None
     _hook_handles: list[object] = field(default_factory=list, repr=False)
+    _closed: bool = field(default=False, repr=False)
+
+    def close(self) -> None:
+        """Tear down every wrapper-owned resource. Idempotent.
+
+        Order:
+
+        1. Remove every model-level forward / backward hook installed by
+           :func:`install_hooks`. Doing this BEFORE we touch the
+           scheduler / chunk manager guarantees no late-firing hook can
+           reach into a half-closed runtime.
+        2. ``Scheduler.close()`` — synchronizes prefetch / swap streams
+           and frees the activation swap pool.
+        3. ``ChunkManager.close()`` — shuts down the CPU FusedAdam
+           worker pool, removes per-param grad hooks, and frees the
+           pinned-host param/grad pools + GPU buffer pool.
+
+        After ``close()`` returns the wrapper holds no CUDA handles,
+        no pinned-host borrows, and no executor threads — safe to drop
+        and re-wrap a fresh model.
+        """
+        if self._closed:
+            return
+        self._closed = True
+
+        # Local import to avoid pulling logging deps at module import time.
+        from axolotl.utils.logging import get_logger
+
+        log = get_logger(__name__)
+
+        for handle in self._hook_handles:
+            try:
+                handle.remove()  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.debug("WrappedModel.close: hook handle.remove failed: %s", exc)
+        self._hook_handles = []
+
+        scheduler = self.scheduler
+        if scheduler is not None:
+            try:
+                scheduler.close()  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.debug("WrappedModel.close: scheduler.close failed: %s", exc)
+            self.scheduler = None
+
+        chunk_manager = self.chunk_manager
+        if chunk_manager is not None:
+            try:
+                chunk_manager.close()  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001 — best-effort
+                log.debug("WrappedModel.close: chunk_manager.close failed: %s", exc)
+            self.chunk_manager = None
 
 
 __all__ = [
