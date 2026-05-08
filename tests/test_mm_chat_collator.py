@@ -8,6 +8,7 @@ input_ids tensor instead of the full BatchFeature dict, leading to
 when downstream code did batch["input_ids"] on the resulting tensor.
 """
 
+from collections.abc import Mapping
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -97,10 +98,10 @@ class TestMultiModalChatDataCollatorShapeContract:
         ):
             batch = collator.process_rows(examples)
 
-        assert isinstance(batch, dict), (
-            "process_rows must return a dict (BatchFeature), not a raw tensor. "
-            "If it returns a tensor, apply_chat_template was called without "
-            "return_dict=True at the top level."
+        assert isinstance(batch, Mapping), (
+            "process_rows must return a Mapping (BatchFeature or dict), not a "
+            "raw tensor. If it returns a tensor, apply_chat_template was called "
+            "without return_dict=True at the top level."
         )
 
     def test_process_rows_input_ids_shape(self, mock_processing_strategy):
