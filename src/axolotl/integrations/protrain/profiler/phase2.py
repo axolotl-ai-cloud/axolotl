@@ -60,10 +60,21 @@ _PHASE2_N_ITERS = 5
 
 
 def _min_n_buffer_for_layout(layout: "ChunkLayout", n_persist: int) -> int:
-    """Minimum pool size needed for adjacent-block prefetch at ``n_persist``."""
+    """Minimum pool size needed for adjacent-block prefetch at ``n_persist``.
+
+    The ``persistent`` set is the layout's *effective* persistent set —
+    ``[0, n_persist)`` plus any ``layout.mandatory_persistent`` chunks
+    (large-buffer / non-shardable chunks the runtime always keeps GPU-
+    resident). Excluding only ``[0, n_persist)`` would over-count buffer
+    needs for adjacency by counting mandatory-persistent chunks twice
+    (once as resident, once as needing a slot), inflating the bootstrap
+    peak and forcing phase-2 off the intended zero-persist/full-CKPT
+    calibration path. ``ChunkLayout.effective_persistent_ids(n_persist)``
+    is the canonical source of truth for this set.
+    """
     if n_persist >= layout.N_chunk:
         return 0
-    persistent: set[ChunkId] = {ChunkId(i) for i in range(n_persist)}
+    persistent: set[ChunkId] = set(layout.effective_persistent_ids(n_persist))
     block_ids = sorted(layout.block_to_chunks.keys())
     if not block_ids:
         return 0
@@ -554,6 +565,15 @@ def measure_chunked_steady(
             # mutating ``model.train()`` is the only state change we
             # need to roll back (handled by the per-module training-
             # flag restore at the bottom of this block).
+            # Defer rollback errors so every restore step runs even if
+            # one raises. Without this every later step (chunk_state,
+            # optim_state, RNG, train/eval flags) would be skipped on
+            # the first failure, leaving the caller with a partially
+            # rolled-back model — strictly worse than the original
+            # half-restored state we were trying to surface. Capture
+            # the FIRST exception, finish all remaining restore steps,
+            # and re-raise at the end of the ``finally`` block.
+            restore_error: Exception | None = None
             torch.cuda.synchronize(device)
             if model_state is not None:
                 # ``strict=False`` because the snapshot is intentionally
@@ -569,46 +589,49 @@ def measure_chunked_steady(
                 # during measurement) — surface those as a debug log
                 # so a future regression is visible in trace output
                 # without crashing the measurement.
-                _result = model.load_state_dict(model_state, strict=False)
-                # Validate ``missing_keys`` against the
-                # snapshot-time skipped set. ``strict=False`` is the
-                # right escape hatch for the offloaded zero-sized
-                # placeholders we filtered out at snapshot, but any
-                # OTHER missing key means the timed region mutated
-                # the model's state-dict surface (added a parameter,
-                # rebuilt a submodule, etc.) in a way the snapshot
-                # cannot restore. Surface that as a hard error so a
-                # partial restore doesn't silently leave the model
-                # in a half-rolled-back state.
-                extra_missing = set(_result.missing_keys) - expected_missing_keys
-                if extra_missing:
-                    raise RuntimeError(
-                        "Phase-2 state_dict restore missed "
-                        f"{len(extra_missing)} unexpected keys "
-                        f"(first 3: {sorted(extra_missing)[:3]}). "
-                        "The live model's state-dict surface "
-                        "changed during the timed measurement; "
-                        "investigate the harness or the model for "
-                        "a parameter add / submodule rebuild."
-                    )
-                if _result.unexpected_keys:
-                    # ``unexpected_keys`` = keys present in the snapshot
-                    # but NOT in the live model — the live model dropped
-                    # or renamed state during the timed measurement.
-                    # Those snapshot bytes therefore did NOT make it
-                    # back, so the rollback is incomplete and the
-                    # caller is left with a mutated model. Promote to
-                    # a hard error to match the ``extra_missing``
-                    # symmetry above (both directions of state-dict
-                    # surface drift now fail loudly rather than
-                    # silently leaving a half-restored model).
-                    raise RuntimeError(
-                        "Phase-2 state_dict restore saw "
-                        f"{len(_result.unexpected_keys)} unexpected snapshot "
-                        f"keys (first 3: {_result.unexpected_keys[:3]}). "
-                        "The live model dropped or renamed state during "
-                        "the timed measurement, so rollback is incomplete."
-                    )
+                try:
+                    _result = model.load_state_dict(model_state, strict=False)
+                    # Validate ``missing_keys`` against the
+                    # snapshot-time skipped set. ``strict=False`` is the
+                    # right escape hatch for the offloaded zero-sized
+                    # placeholders we filtered out at snapshot, but any
+                    # OTHER missing key means the timed region mutated
+                    # the model's state-dict surface (added a parameter,
+                    # rebuilt a submodule, etc.) in a way the snapshot
+                    # cannot restore. Surface that as a hard error so a
+                    # partial restore doesn't silently leave the model
+                    # in a half-rolled-back state.
+                    extra_missing = set(_result.missing_keys) - expected_missing_keys
+                    if extra_missing:
+                        raise RuntimeError(
+                            "Phase-2 state_dict restore missed "
+                            f"{len(extra_missing)} unexpected keys "
+                            f"(first 3: {sorted(extra_missing)[:3]}). "
+                            "The live model's state-dict surface "
+                            "changed during the timed measurement; "
+                            "investigate the harness or the model for "
+                            "a parameter add / submodule rebuild."
+                        )
+                    if _result.unexpected_keys:
+                        # ``unexpected_keys`` = keys present in the snapshot
+                        # but NOT in the live model — the live model dropped
+                        # or renamed state during the timed measurement.
+                        # Those snapshot bytes therefore did NOT make it
+                        # back, so the rollback is incomplete and the
+                        # caller is left with a mutated model. Promote to
+                        # a hard error to match the ``extra_missing``
+                        # symmetry above (both directions of state-dict
+                        # surface drift now fail loudly rather than
+                        # silently leaving a half-restored model).
+                        raise RuntimeError(
+                            "Phase-2 state_dict restore saw "
+                            f"{len(_result.unexpected_keys)} unexpected snapshot "
+                            f"keys (first 3: {_result.unexpected_keys[:3]}). "
+                            "The live model dropped or renamed state during "
+                            "the timed measurement, so rollback is incomplete."
+                        )
+                except Exception as exc:  # noqa: BLE001 — re-raised below
+                    restore_error = restore_error or exc
             # Restore the chunk-manager CPU-shadow bytes BEFORE the
             # optimizer state restore. Order doesn't strictly matter
             # for correctness — the two snapshots cover disjoint
@@ -622,18 +645,24 @@ def measure_chunked_steady(
                 and chunk_manager is not None
                 and hasattr(chunk_manager, "restore_cpu_state")
             ):
-                chunk_manager.restore_cpu_state(chunk_state)
+                try:
+                    chunk_manager.restore_cpu_state(chunk_state)
+                except Exception as exc:  # noqa: BLE001 — re-raised below
+                    restore_error = restore_error or exc
             if optim_state is not None:
                 # Mirror the snapshot path: route through the
                 # ProTrain non-public restore helper when present so
                 # the inner FusedAdam adapters actually receive the
                 # moments back (the public ``load_state_dict`` is a
                 # no-op by design — see the snapshot block above).
-                if hasattr(optimizer, "_protrain_restore_inner_state"):
-                    optimizer._protrain_restore_inner_state(optim_state)
-                else:
-                    optimizer.load_state_dict(optim_state)
-                optimizer.zero_grad(set_to_none=True)
+                try:
+                    if hasattr(optimizer, "_protrain_restore_inner_state"):
+                        optimizer._protrain_restore_inner_state(optim_state)
+                    else:
+                        optimizer.load_state_dict(optim_state)
+                    optimizer.zero_grad(set_to_none=True)
+                except Exception as exc:  # noqa: BLE001 — re-raised below
+                    restore_error = restore_error or exc
             torch.cuda.synchronize(device)
             # Restore RNG state + training flag AFTER the parameter /
             # optimizer rollback so the caller observes byte-identical
@@ -662,6 +691,15 @@ def measure_chunked_steady(
                     m.train()
                 else:
                     m.eval()
+            # All restore steps have run. Re-raise the first captured
+            # error (if any). Re-raising AFTER all restore steps means
+            # the caller observes the partial-restore failure but the
+            # other restore directions (chunk_state, optim_state, RNG,
+            # train/eval flags) still completed — strictly better than
+            # raising mid-rollback and leaving the unrestored steps
+            # silently mutated.
+            if restore_error is not None:
+                raise restore_error
     LOG.info(
         "Phase-2 chunked-runtime measurement: "
         "steady_fwd_chunked_wall_s=%.4f (n=%d, samples=%s) "

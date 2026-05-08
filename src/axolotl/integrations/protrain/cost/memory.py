@@ -88,22 +88,34 @@ def _saved_tensor_bytes_per_block(trace: ProfilerTrace) -> dict[BlockId, int]:
     neither source is populated.
     """
     deltas: dict[BlockId, int] = {}
-    per_block_peak = getattr(trace, "steady_fwd_block_peak_bytes", None) or {}
+    persisted_per_block_peak = getattr(trace, "steady_fwd_block_peak_bytes", None) or {}
+    # Normalize keys + values back through ``BlockId(int(...))`` /
+    # ``int(...)`` here, BEFORE the sorted/lookup paths below — so a
+    # cached trace whose keys round-tripped through JSON / pickle as
+    # strings still hits ``per_block_peak.get(prev_bid)`` (which uses
+    # the coerced ``BlockId`` type). Without this normalization the
+    # ``.get`` calls miss on every lookup and the helper silently
+    # falls back to ``activation_sizes``, disabling the saved-tensor
+    # proxy on reloaded traces.
+    per_block_peak: dict[BlockId, int] = {
+        BlockId(int(block_id)): int(peak_bytes)
+        for block_id, peak_bytes in persisted_per_block_peak.items()
+    }
     activation_sizes = trace.activation_sizes or {}
     if not per_block_peak:
         return {BlockId(int(bid)): int(sz) for bid, sz in activation_sizes.items()}
 
-    # Sort by block id to walk in forward order. ``steady_fwd_block_peak_bytes``
-    # is keyed by ``BlockId`` (NewType over int) — coerce defensively to int
-    # to handle pickled traces that may have lost the type wrapper.
-    sorted_bids = sorted((BlockId(int(b)) for b in per_block_peak.keys()))
+    # Sort by block id to walk in forward order. Keys are already
+    # canonical ``BlockId`` after the normalization above, so sorted()
+    # operates on int-equivalent NewType values without further coercion.
+    sorted_bids = sorted(per_block_peak.keys())
     if not sorted_bids:
         return {BlockId(int(bid)): int(sz) for bid, sz in activation_sizes.items()}
 
     forward_diffs: list[int] = []
     for prev_bid, cur_bid in zip(sorted_bids, sorted_bids[1:], strict=False):
-        prev_peak = int(per_block_peak.get(prev_bid, 0))
-        cur_peak = int(per_block_peak.get(cur_bid, 0))
+        prev_peak = per_block_peak.get(prev_bid, 0)
+        cur_peak = per_block_peak.get(cur_bid, 0)
         diff = cur_peak - prev_peak
         if diff > 0:
             forward_diffs.append(diff)
