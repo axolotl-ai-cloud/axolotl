@@ -31,6 +31,25 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+class _DestroyedDsAdam:
+    """Replaces a destroyed DeepSpeedCPUAdam C-state binding.
+
+    DeepSpeed's ``DeepSpeedCPUAdam.__del__`` (``deepspeed/ops/adam/
+    cpu_adam.py:99``) unconditionally calls
+    ``self.ds_opt_adam.destroy_adam(self.opt_id)``. Once we have
+    explicitly destroyed the C state in :meth:`CpuFusedAdamAdapter.
+    _destroy_ds_adam_state`, we replace the live binding with this
+    stub so the wrapper's destructor (which can run at GC / interpreter
+    shutdown) is a harmless no-op rather than a double-free or an
+    ``AttributeError`` (the latter would surface as
+    ``PytestUnraisableExceptionWarning`` and accumulate into test
+    failures across repeated adapter rebuilds).
+    """
+
+    def destroy_adam(self, _opt_id):  # noqa: D401, ANN001
+        return None
+
+
 # ---------------------------------------------------------------------------
 # CPU FusedAdam — non-persistent chunks
 # ---------------------------------------------------------------------------
@@ -272,6 +291,22 @@ class CpuFusedAdamAdapter:
         a Ctrl-C during teardown should not be deferred and re-raised
         AFTER ``executor.shutdown(wait=True)`` (which itself blocks on
         worker drain and could compound the wait).
+
+        After draining the executor we explicitly destroy each
+        ``DeepSpeedCPUAdam``'s C++ kernel state via
+        ``ds_opt_adam.destroy_adam(opt_id)`` (DeepSpeed 0.18.2
+        ``deepspeed/ops/adam/cpu_adam.py:102``). Relying on
+        ``DeepSpeedCPUAdam.__del__`` is unreliable: GC ordering at
+        interpreter shutdown can run the destructor on a partially
+        initialised object that lacks ``ds_opt_adam`` (we observed this
+        as ``AttributeError`` warnings under repeated adapter rebuilds),
+        and even on healthy objects ``__del__`` is only invoked when
+        the wrapper is unreachable — references held by the executor
+        thread, futures, or test fixtures keep the C state alive until
+        process exit. Calling destroy here is idempotent: we replace
+        ``ds_opt_adam`` with a :class:`_DestroyedDsAdam` sentinel after
+        the call and gate the second call on the attribute not being a
+        sentinel, so a duplicate ``shutdown()`` is a safe no-op.
         """
         error: Exception | None = None
         try:
@@ -280,8 +315,40 @@ class CpuFusedAdamAdapter:
             error = exc
         finally:
             self._executor.shutdown(wait=True)
+            self._destroy_ds_adam_state()
         if error is not None:
             raise error
+
+    def _destroy_ds_adam_state(self) -> None:
+        """Free each per-chunk DeepSpeedCPUAdam's C++ kernel state.
+
+        Idempotent: a missing or already-stubbed ``ds_opt_adam`` is
+        skipped, and we replace the live binding with a no-op stub
+        (:class:`_DestroyedDsAdam`) after destroy so the wrapper's
+        ``__del__`` — which calls ``self.ds_opt_adam.destroy_adam(
+        self.opt_id)`` unconditionally (DeepSpeed
+        ``cpu_adam.py:102``) — cannot double-free the C state and
+        cannot raise ``AttributeError``. Per-chunk failures are logged
+        as warnings rather than raised so a single misbehaving
+        optimizer cannot block teardown of the others.
+        """
+        for cid, opt in self._optims.items():
+            ds_opt_adam = getattr(opt, "ds_opt_adam", None)
+            if ds_opt_adam is None or isinstance(ds_opt_adam, _DestroyedDsAdam):
+                continue
+            opt_id = getattr(opt, "opt_id", None)
+            try:
+                ds_opt_adam.destroy_adam(opt_id)
+            except Exception as exc:  # noqa: BLE001 — best-effort cleanup
+                LOG.warning(
+                    "DeepSpeedCPUAdam destroy_adam failed for chunk %s: %s",
+                    cid,
+                    exc,
+                )
+            try:
+                opt.ds_opt_adam = _DestroyedDsAdam()  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 — best-effort cleanup
+                pass
 
     def __del__(self) -> None:  # noqa: D401
         try:
