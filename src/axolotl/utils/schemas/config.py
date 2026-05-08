@@ -519,23 +519,13 @@ class AxolotlInputConfig(
     torch_empty_cache_steps: int | None = Field(
         default=None,
         json_schema_extra={
-            "description": (
-                "Number of steps between calls to `torch.cuda.empty_cache()`, "
-                "handled natively by the HuggingFace Trainer. "
-                "This helps manage GPU memory fragmentation during training."
-            )
+            "description": "Steps between native HF Trainer `torch.cuda.empty_cache()` calls."
         },
     )
     gc_collect_steps: int | None = Field(
         default=None,
         json_schema_extra={
-            "description": (
-                "Number of steps between Python `gc.collect()` calls. "
-                "-1 will run on epoch end and before evaluations only. "
-                "None means disabled (no periodic Python GC). "
-                "This is separate from `torch_empty_cache_steps` as `gc.collect()` "
-                "reclaims Python-level memory which the native Trainer cache clearing does not do."
-            )
+            "description": "Steps between Python `gc.collect()` calls. -1 runs on epoch end and before evals only; None disables."
         },
     )
 
@@ -1817,17 +1807,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                     data["torch_empty_cache_steps"] = gc_steps
                 data["gc_collect_steps"] = gc_steps
                 LOG.warning(
-                    "`gc_steps` is deprecated. Use `torch_empty_cache_steps` for "
-                    "CUDA cache clearing (handled natively by Trainer) and "
-                    "`gc_collect_steps` for Python garbage collection. "
-                    "Automatically mapping gc_steps=%d to both options.",
+                    "`gc_steps` is deprecated; mapping gc_steps=%d to "
+                    "`torch_empty_cache_steps` and `gc_collect_steps`.",
                     gc_steps,
                 )
             else:
                 LOG.warning(
-                    "`gc_steps` is set alongside `torch_empty_cache_steps` or "
-                    "`gc_collect_steps`. The new options take precedence; "
-                    "`gc_steps` is ignored."
+                    "`gc_steps` ignored; `torch_empty_cache_steps` / "
+                    "`gc_collect_steps` take precedence."
                 )
         return data
 

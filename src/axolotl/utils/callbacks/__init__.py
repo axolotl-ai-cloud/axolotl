@@ -878,14 +878,10 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
 
 class GCCallback(TrainerCallback):
-    """Callback to run Python garbage collection during training.
-
-    This handles gc.collect() calls which reclaim Python-level memory. CUDA cache
-    clearing is handled natively by the Trainer via torch_empty_cache_steps in
-    TrainingArguments, so this callback focuses solely on Python GC.
-
-    Note: gc.collect() is still valuable because it can free Python objects that
-    hold references to GPU tensors, allowing those tensors to be reclaimed.
+    """Runs ``gc.collect()`` + ``torch.cuda.empty_cache()`` on
+    ``gc_collect_steps`` intervals and on eval/save/epoch boundaries that
+    the Trainer's native ``torch_empty_cache_steps`` doesn't cover. The two
+    settings are complementary; overlapping intervals just double-clear.
     """
 
     def __init__(self, gc_collect_steps: int | None = -1, gc_steps: int | None = None):
