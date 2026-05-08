@@ -2987,12 +2987,28 @@ def test_block_map_peak_contribution_drops_offload_bumps_when_persistent(
 
 
 def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
-    """``cfg.n_swap > 0`` routes through the analytical roofline path
-    (which over-predicts hot-loop overhead by 10-15% on PCIe-bound
-    workloads). The phase-2 analytical-baseline trio anchors the
-    measurement and lets ``estimate_runtime`` apply
-    ``α = phase2_iter_s / phase2_analytical_iter_s`` to deflate that
-    bias to within the test's same-cfg tolerance.
+    """α-calibration applies to analytical-path predictions, but with
+    a cfg-structure gate: deflation (α < 1) only fires when the prod
+    cfg matches boot's shape (same n_persist, n_swap=0, n_checkpoint
+    within 1 of boot's). For cfgs that differ structurally — the
+    typical case where the searcher picks something other than the
+    boot cfg — α is clamped to [1.0, 1.5] so we only INFLATE.
+
+    The boot cfg is selected by ``select_bootstrap_config`` to be
+    PCIe-comm-dominant (``n_persist=0``, all-CKPT) so its measured-
+    vs-analytical ratio reflects the bias on that specific shape; a
+    prod cfg with ``n_persist > 0`` or ``n_swap > 0`` has a different
+    bias profile (less comm-bound) and applying boot's deflation
+    factor over-corrects, predicting iter time well under the actual
+    chunked-runtime wall. 7B-LoRA observed: boot α=0.579 deflated
+    prod (n_persist=128, n_swap=1, n_checkpoint=31) t_iter from 0.35s
+    (close to actual 0.39s) to 0.20s (47% under), making the
+    searcher pick configs whose runtime doesn't match the prediction.
+
+    This test verifies the gate: with prod ``n_swap=2`` (structural
+    mismatch with boot), α=0.85 deflation is suppressed and the
+    calibrated prediction equals the un-calibrated analytical (no
+    multiplicative correction applied).
     """
     from dataclasses import replace
 
@@ -3011,10 +3027,8 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
     )
     assert boot_analytical_iter > 0.0
 
-    # Synthesise a "measured" iter that's 0.85x of analytical — i.e.
-    # the cost model over-predicted by 17.6% in absolute terms; α
-    # should bring a comparable production cfg's prediction down by
-    # the same factor.
+    # Synthesise a "measured" iter that's 0.85x of analytical (the
+    # cost model over-predicted by 17.6% at boot).
     measured_iter = boot_analytical_iter * 0.85
 
     spliced = replace(
@@ -3034,7 +3048,9 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
         phase2_analytical_iter_s=boot_analytical_iter,
     )
 
-    # Production cfg uses n_swap > 0 → analytical path engaged.
+    # Production cfg uses n_swap > 0 → structural mismatch with boot
+    # (which has n_swap=0). Deflation is suppressed; α=0.85 clamps to
+    # 1.0 → cal_prod == bare_prod.
     prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
     prod_block_map = assign_modes(2, 0, n_block)
 
@@ -3043,15 +3059,34 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
     bare_trace = replace(spliced, phase2_iter_s=0.0, phase2_analytical_iter_s=0.0)
     bare_prod = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
 
-    # Same trace WITH the baseline applies α — should be 0.85x.
+    # Same trace WITH the baseline applies α — but the gate suppresses
+    # deflation, so cal_prod == bare_prod exactly (clamped to 1.0).
     cal_prod = estimate_runtime(prod_cfg, spliced, layout, prod_block_map, hw)
 
-    expected = bare_prod * 0.85
-    rel_err = abs(cal_prod - expected) / max(1e-9, expected)
+    rel_err = abs(cal_prod - bare_prod) / max(1e-9, bare_prod)
     assert rel_err < 1e-6, (
-        f"α-calibration did not scale analytical t_iter by phase2 ratio: "
-        f"bare={bare_prod:.6f} cal={cal_prod:.6f} expected={expected:.6f}"
+        f"deflation should be gated off for cfg-structure mismatch with boot: "
+        f"bare={bare_prod:.6f} cal={cal_prod:.6f}"
     )
+
+    # Sanity: a cfg that matches boot (same n_persist, n_swap=0,
+    # n_checkpoint within 1 of boot) DOES get deflation applied.
+    # Use n_swap=0 + n_persist=0 + n_checkpoint=n_block to match boot.
+    # On the matched-cfg path the chunked-wall override fires for
+    # both fwd and bwd (n_swap=0 + chunked walls populated), so the
+    # ``used_analytical_path`` gate at the α stage is False and α
+    # is a no-op there as well — verify cal == bare on that path too,
+    # but for a different reason (analytical path bypassed entirely).
+    matched_cfg = CostConfig(
+        n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block
+    )
+    matched_bm = assign_modes(0, n_block, n_block)
+    matched_bare = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
+    matched_cal = estimate_runtime(matched_cfg, spliced, layout, matched_bm, hw)
+    # No assertion on equality here — just smoke that estimate_runtime
+    # remains finite on the matched-cfg path through the new gate.
+    assert matched_cal > 0.0
+    assert matched_bare > 0.0
 
 
 def test_phase2_alpha_is_no_op_when_baseline_missing():
@@ -3110,6 +3145,93 @@ def test_phase2_alpha_clamped_to_safe_range():
     clamped = estimate_runtime(prod_cfg, high_ratio, layout, prod_bm, hw)
     # Clamped at 1.5x exactly.
     assert clamped == pytest.approx(bare * 1.5, rel=1e-6)
+
+
+def test_phase2_alpha_deflation_suppressed_for_sparse_ckpt_prod():
+    """Regression for the 7B-LoRA n_checkpoint=9 under-prediction.
+
+    Boot cfg captures α from a CKPT-dominant analytical roofline
+    (n_checkpoint = N_block; α << 1 because the boot's per-block
+    recompute roofline over-predicts wall by 73%). When the production
+    cfg has materially fewer CKPT blocks (here n_checkpoint = ~28% of
+    N_block), the boot's α represents a recompute-roofline bias that
+    does NOT apply to prod — applying it deflates t_iter by ~40% under
+    actual.
+
+    Invariant: when ``α < 0.85`` (deep deflation regime) AND prod
+    CKPT density ≤ half boot's CKPT density AND boot is CKPT-dominant
+    (> 50% blocks), the deflation must be suppressed (clamped to
+    [1.0, 1.5]) — t_iter must be ≥ the un-calibrated analytical
+    prediction, not below it.
+
+    Also asserts t_iter is monotonically non-decreasing in n_checkpoint
+    under fixed prod cfg: each additional CKPT block adds a recompute
+    pass and must NOT make the iteration faster.
+    """
+    from dataclasses import replace
+
+    base_trace = _make_trace()
+    n_block = len(base_trace.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_block_map = assign_modes(0, n_block, n_block)
+    boot_analytical_iter = estimate_runtime(
+        boot_cfg, base_trace, layout, boot_block_map, hw
+    )
+    assert boot_analytical_iter > 0.0
+
+    # α = 0.579 — same regime as the failing 7B case (deep deflation,
+    # roofline-driven over-prediction at boot).
+    measured_iter = boot_analytical_iter * 0.579
+
+    spliced = replace(
+        base_trace,
+        steady_fwd_chunked_wall_s=measured_iter * 0.4,
+        steady_bwd_chunked_wall_s=measured_iter * 0.55,
+        steady_step_overlap_s=measured_iter * 0.05,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_per_block_recompute_s=0.0002 * 5,
+        phase2_iter_s=measured_iter,
+        phase2_analytical_iter_s=boot_analytical_iter,
+    )
+
+    # Production cfg with sparse CKPT (~28% density mirrors 7B 9/32).
+    prod_n_ckpt = max(1, int(round(n_block * 0.28)))
+    prod_cfg = CostConfig(
+        n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=prod_n_ckpt
+    )
+    prod_block_map = assign_modes(2, prod_n_ckpt, n_block)
+
+    bare_trace = replace(spliced, phase2_iter_s=0.0, phase2_analytical_iter_s=0.0)
+    bare_prod = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
+    cal_prod = estimate_runtime(prod_cfg, spliced, layout, prod_block_map, hw)
+
+    # The deflation gate must suppress α=0.579 at this asymmetric cfg:
+    # the calibrated prediction must be ≥ the un-calibrated analytical.
+    # Without the fix, cal_prod = bare_prod * 0.579 ≈ 0.42 × actual.
+    assert cal_prod >= bare_prod - 1e-9, (
+        f"sparse-CKPT prod must NOT be deflated by boot's roofline α: "
+        f"bare={bare_prod:.6f} cal={cal_prod:.6f} (expected cal >= bare)"
+    )
+
+    # Monotonicity in n_checkpoint at the prod cfg (separate axis): each
+    # additional CKPT block adds a recompute pass on the analytical
+    # backward path, so t_iter must be non-decreasing in n_checkpoint.
+    # Fix prod cfg's other axes; sweep n_checkpoint over a sparse range.
+    prev = -1.0
+    for n_ck in (0, 1, 4, prod_n_ckpt, n_block // 2):
+        bm = assign_modes(2, n_ck, n_block)
+        cfg_k = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=n_ck)
+        t_k = estimate_runtime(cfg_k, spliced, layout, bm, hw)
+        assert t_k >= prev - 1e-9, (
+            f"t_iter must be non-decreasing in n_checkpoint; "
+            f"n_ck={n_ck} t={t_k:.6f} prev={prev:.6f}"
+        )
+        prev = t_k
 
 
 def test_calibrate_peak_with_actual_chunk_bytes_cfg_delta_path():

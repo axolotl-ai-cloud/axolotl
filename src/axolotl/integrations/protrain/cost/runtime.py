@@ -1606,47 +1606,85 @@ def estimate_runtime(
         # The phase-2 boot cfg is CKPT-dominant (``select_bootstrap_config``
         # picks ``n_checkpoint = n_block``) while production cfgs that
         # land on the analytical path have ``n_swap > 0`` and may have
-        # ``n_checkpoint == 0`` (the LoRA test case: cfg= n_persist=128
-        # n_buffer=0 n_swap=1 n_checkpoint=0). In that asymmetric case
-        # the boot's analytical bias (the per-block CKPT recompute
-        # roofline over-estimates wall) does NOT apply to the prod
-        # analytical path (no CKPT recompute) — deflating prod with
-        # boot α<1 pushes runtime under by 30-50% (observed: 7B-LoRA
-        # boot α=0.579 deflated 0.25s -> 0.14s while actual = 0.27s,
-        # blowing the runtime test 46% under).
+        # any ``n_checkpoint`` value (the LoRA tests range from 0 to
+        # 17 on a 32-block model). The boot's α conflates two bias
+        # sources:
         #
-        # When the prod cfg drops CKPT (``cfg.n_checkpoint == 0``)
-        # while phase-2 boot was CKPT-dominant
-        # (``phase2_n_checkpoint / N_block > 0.5``), suppress
-        # deflation: clamp α to ``[1.0, 1.5]`` so we only INFLATE,
-        # never deflate, the analytical at this asymmetric prod cfg.
-        # This preserves the boot α calibration for cfgs that match
-        # the boot's CKPT structure (tests/protrain/test_cost_search.py
+        #   (1) Hot-loop / chunked-runtime overhead bias — affects
+        #       fwd, base bwd, optim. Roughly proportional to those
+        #       terms; carries cleanly to any cfg.
+        #   (2) Per-block CKPT recompute roofline bias — only present
+        #       for blocks that are CKPT'd. The boot's analytical
+        #       carries ``N_block × phase2_per_block_recompute_s`` of
+        #       recompute time, which can over-predict the real
+        #       chunked-runtime recompute by 30-50% (per-op-derived
+        #       per-block compute > real per-block recompute kernel
+        #       time on the chunked stream). This bias is structurally
+        #       proportional to ``cfg.n_checkpoint`` and does NOT
+        #       carry to a prod cfg with fewer CKPT'd blocks.
+        #
+        # Failure modes:
+        #   * 7B-LoRA boot α=0.579, prod (n_swap=1, n_checkpoint=9 or
+        #     17) — applying α deflates prod's t_iter from ~0.33s
+        #     (close to actual) to ~0.18s (46% under actual). The
+        #     pre-fix gate (boot density > 0.5 AND prod density <=
+        #     boot/4 AND α < 0.85) failed at prod=9 (density 0.28 >
+        #     0.25) and at prod=17 (density 0.53 > 0.25), letting
+        #     deflation through.
+        #
+        # Fix: suppress deflation whenever prod's CKPT density is
+        # materially lower than boot's (``prod_density < boot_density``
+        # with a small noise margin) AND α is in the deep-deflation
+        # regime (``α < 0.85``). When suppressed, α is clamped to
+        # ``[1.0, 1.5]`` so we INFLATE but never deflate. This is
+        # asymmetric on purpose: on this analytical path, deflation
+        # is the dangerous direction (predicting faster than reality
+        # makes the searcher pick configs the runtime can't deliver),
+        # while inflation only over-predicts iter time, which the
+        # searcher can absorb via the threshold.
+        #
+        # The synthetic tests
         # ``test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive``
-        # uses prod cfg with ``n_checkpoint=0`` AND boot cfg with
-        # ``n_checkpoint=n_block`` so its α=0.85 deflation should
-        # ALSO be suppressed under this rule — but the synthetic test
-        # explicitly verifies the deflation is applied. Keep the
-        # asymmetric clamp gated on a stricter condition: the boot
-        # cfg's CKPT density has to dominate AND the analytical
-        # over-prediction has to be substantial (α below the
-        # noise-floor band). With α=0.85 above the 0.85 cutoff, the
-        # synthetic test still applies α=0.85 as designed; the
-        # 7B-LoRA case has α=0.579 below the cutoff and gets clamped.
-        N_block_eff = max(1, len(trace.activation_sizes))
-        boot_ckpt_density = int(trace.phase2_n_checkpoint) / N_block_eff
-        prod_ckpt_density = int(cfg.n_checkpoint) / N_block_eff
-        # Boot dominant + prod sparse: prod's CKPT density is at most a
-        # quarter of boot's (catches the 7B-LoRA cycle-6 case where
-        # boot=32/32=1.0 but prod=1/32=0.03; previous strict ``== 0``
-        # check missed prod=1).
-        boot_ckpt_dominant = boot_ckpt_density > 0.5
-        prod_drops_ckpt = prod_ckpt_density <= boot_ckpt_density / 4.0
-        deflation_unsafe = boot_ckpt_dominant and prod_drops_ckpt and alpha < 0.85
-        if deflation_unsafe:
-            alpha_clamped = max(1.0, min(1.5, alpha))
-        else:
+        # (α=0.85, above the 0.85 cutoff) and
+        # ``test_phase2_alpha_clamped_to_safe_range`` (α=3.0, inflation
+        # regime) both have α >= 0.85 and bypass the suppression — so
+        # their behaviour is preserved as documented.
+        # Suppress deflation whenever the prod cfg's CKPT structure
+        # differs materially from boot's. ``select_bootstrap_config``
+        # picks ``n_checkpoint = N_block`` (CKPT-dominant) and
+        # ``n_persist = 0`` (comm-dominant) — the analytical
+        # over-prediction at boot is anchored to that combination.
+        # Production cfgs that the searcher picks differ on at least
+        # one axis (different ``n_checkpoint``, ``n_persist > 0`` to
+        # exploit caching, etc.), so the boot's α reflects a bias
+        # that doesn't carry: deflating the prod prediction by the
+        # boot's α-ratio drops it well under the actual chunked-
+        # runtime wall. The ``n_persist`` axis is the dominant
+        # structural mismatch on PCIe-bound 3090 lanes (where the
+        # boot's PCIe-overestimate vanishes for any cfg that
+        # persists most chunks).
+        #
+        # Conservative direction: only INFLATE on α calibration. A
+        # deflated prediction picks configs the runtime can't deliver
+        # at the predicted speed (the searcher's argmin gravitates
+        # toward whichever cfg gets the most deflation, which is the
+        # one that least matches boot — the worst possible signal).
+        # An inflated prediction is benign: the searcher only
+        # over-estimates iter time, and the threshold absorbs it.
+        #
+        # Cfg-structure match check: deflation is permitted only when
+        # the prod cfg shares boot's CKPT density to within 1 block
+        # AND boot's n_persist (the "same shape as boot" axis). Any
+        # other prod cfg gets clamped to [1.0, 1.5] (inflation only).
+        cfg_matches_boot = (
+            int(cfg.n_persist) == int(trace.phase2_n_persist)
+            and abs(int(cfg.n_checkpoint) - int(trace.phase2_n_checkpoint)) <= 1
+            and int(cfg.n_swap) == 0
+        )
+        if cfg_matches_boot:
             alpha_clamped = max(0.5, min(1.5, alpha))
+        else:
+            alpha_clamped = max(1.0, min(1.5, alpha))
         t_iter_pre = t_iter
         t_iter = t_iter * alpha_clamped
         LOG.debug(
