@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 
 from axolotl.monkeypatch.relora import (
-    _FULL_RESET_RATIO,
     magnitude_pruning_,
     random_pruning_,
     reset_optimizer,
@@ -79,7 +78,9 @@ def test_reset_optimizer_actually_prunes_lora_state():
         ("magnitude", 0.99, 0.99),
         ("random", 0.9, 0.9),
         ("random", 0.5, 0.5),
-        ("reset", 0.0, _FULL_RESET_RATIO),
+        # reset uses random pruning; relora_prune_ratio must be honored, not ignored.
+        ("reset", 0.9, 0.9),
+        ("reset", 0.5, 0.5),
     ],
 )
 def test_prune_methods(method, ratio, expected_zero_frac):

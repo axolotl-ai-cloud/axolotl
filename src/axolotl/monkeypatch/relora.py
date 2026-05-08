@@ -69,10 +69,10 @@ def reset_optimizer(
     """Prune optimizer state for ``reset_params`` only."""
     if prune_method == "magnitude":
         pruning_fn = partial(magnitude_pruning_, prune_ratio=prune_ratio)
-    elif prune_method == "random":
+    elif prune_method in ("random", "reset"):
+        # "reset" is random pruning at a near-full ratio; the caller is responsible
+        # for supplying the appropriate prune_ratio (see ReLoRACallback.on_step_begin).
         pruning_fn = partial(random_pruning_, prune_ratio=prune_ratio)
-    elif prune_method == "reset":
-        pruning_fn = partial(random_pruning_, prune_ratio=_FULL_RESET_RATIO)
     else:
         raise ValueError(
             f"Unknown prune_method {prune_method!r}; expected one of "
@@ -197,12 +197,19 @@ class ReLoRACallback(TrainerCallback):
                     actually_save=is_main_process(),
                     cpu_offload=self.cpu_offload,
                 )
+                # When relora_prune_ratio is not set, use _FULL_RESET_RATIO for
+                # "reset" (paper-style near-full reset) and 0.9 for other methods.
+                prune_ratio = args.relora_prune_ratio
+                if prune_ratio is None:
+                    prune_ratio = (
+                        _FULL_RESET_RATIO if self.prune_method == "reset" else 0.9
+                    )
                 reset_optimizer(
                     optimizer,
                     reset_params=lora_params,
                     optimizer_state_keys=optimizer_state_keys,
                     prune_method=self.prune_method,
-                    prune_ratio=args.relora_prune_ratio,
+                    prune_ratio=prune_ratio,
                 )
 
             if self.quantized:

@@ -101,7 +101,7 @@ class TestReLoraLlama(unittest.TestCase):
                 "jagged_restart_steps": 50,
                 "jagged_restart_warmup_steps": 10,
                 "jagged_restart_anneal_steps": 10,
-                "relora_prune_ratio": 0.9,
+                "relora_prune_ratio": 0.5,  # explicitly honored by reset (not ignored)
                 "relora_prune_method": "reset",
                 "relora_cpu_offload": True,
                 "val_set_size": 0.0,
