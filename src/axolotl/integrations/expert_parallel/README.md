@@ -17,15 +17,7 @@ TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 uv pip install --no-build-isolation .
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
-**Hopper (sm_90, H100), single-node intranode-only (no NCCL 2.29+ or no OFED):**
-
-Pin DeepEP to `v1.2.1` and disable NVSHMEM. Why:
-
-- DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, added in commit `b306af0`) needs `ncclGinRequest_t`, which only exists in NCCL 2.29+. Torch 2.10+cu130 ships NCCL 2.28.9.
-- NVSHMEM-enabled builds require Mellanox OFED dev headers (`infiniband/mlx5dv.h`); single-node H100×8 boxes without OFED can't build them.
-- Once NVSHMEM is off, `-rdc=true` triggers a device-link step with nothing to link against — import fails with `__cudaRegisterLinkedBinary_*` undefined symbol. Patch 2 makes `-rdc=true` conditional on NVSHMEM.
-
-Hopper kernels (FP8, TMA, etc.) are preserved; only intranode dispatch/combine is built — appropriate for single-node H100×{4,8}.
+**Hopper (sm_90, H100), single-node intranode-only (no OFED):**
 
 ```bash
 git clone https://github.com/deepseek-ai/DeepEP.git
@@ -70,6 +62,13 @@ DISABLE_NVSHMEM=1 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 \
   uv pip install --no-build-isolation .
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
+
+Notes:
+
+- Hopper kernels (FP8, TMA, etc.) are preserved; only intranode dispatch/combine is built — appropriate for single-node H100×{4,8}.
+- Patch 1 lets `DISABLE_NVSHMEM=1` skip the NVSHMEM build path, which would otherwise need Mellanox OFED dev headers (`infiniband/mlx5dv.h`).
+- Patch 2 drops `-rdc=true` when NVSHMEM is off; otherwise the device-link step has nothing to link against and import fails with `__cudaRegisterLinkedBinary_*` undefined symbol.
+- The `v1.2.1` pin sidesteps DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, commit `b306af0`), which needs `ncclGinRequest_t` from NCCL 2.29+. On NCCL ≥ 2.29 (torch 2.11+) you can drop `git checkout v1.2.1` and build from HEAD with the same two patches.
 
 **Ampere (sm_80, A100, intranode-only)** — needs two small source patches gated on `DISABLE_NVSHMEM=1`:
 
