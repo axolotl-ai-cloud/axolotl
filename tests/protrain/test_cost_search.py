@@ -370,9 +370,7 @@ def test_estimate_peak_cap_shrinks_with_n_checkpoint(toy_layout, toy_hw):
     # savings the test exercises.
     profile_model_state = toy_layout.N_chunk * toy_layout.S_chunk
     last_block_peak = profile_model_state + (n_block * activation_bytes_per_block)
-    per_block_peaks = {
-        BlockId(b): last_block_peak for b in range(n_block)
-    }
+    per_block_peaks = {BlockId(b): last_block_peak for b in range(n_block)}
     from dataclasses import replace
 
     trace = replace(
@@ -383,9 +381,7 @@ def test_estimate_peak_cap_shrinks_with_n_checkpoint(toy_layout, toy_hw):
     # Fixed (n_persist, n_buffer); sweep n_checkpoint.
     peaks: list[int] = []
     for k in range(0, n_block + 1):
-        cfg = CostConfig(
-            n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=k, n_offload=0
-        )
+        cfg = CostConfig(n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=k, n_offload=0)
         bm = assign_modes(0, k, n_block)
         peaks.append(estimate_peak(cfg, trace, toy_layout, bm, toy_hw))
 
@@ -450,9 +446,7 @@ def test_saved_tensor_bytes_per_block_uses_steady_fwd_deltas():
     # ``saved_per_block`` to the residency carried into its own forward
     # window. Profile-time model-state baseline omitted from this synthetic
     # trace — the helper only consumes the inter-block deltas.
-    per_block_peaks = {
-        BlockId(b): saved_per_block * (b + 1) for b in range(n_block)
-    }
+    per_block_peaks = {BlockId(b): saved_per_block * (b + 1) for b in range(n_block)}
     from dataclasses import replace
 
     trace = replace(trace, steady_fwd_block_peak_bytes=per_block_peaks)
@@ -553,13 +547,9 @@ def test_estimate_peak_uses_saved_tensor_proxy_for_savings(toy_layout, toy_hw):
     bm_none = assign_modes(0, 0, n_block)
     peak_none = estimate_peak(cfg_none, trace, toy_layout, bm_none, toy_hw)
 
-    cfg_all_ckpt = CostConfig(
-        n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=n_block
-    )
+    cfg_all_ckpt = CostConfig(n_persist=4, n_buffer=2, n_swap=0, n_checkpoint=n_block)
     bm_all_ckpt = assign_modes(0, n_block, n_block)
-    peak_all_ckpt = estimate_peak(
-        cfg_all_ckpt, trace, toy_layout, bm_all_ckpt, toy_hw
-    )
+    peak_all_ckpt = estimate_peak(cfg_all_ckpt, trace, toy_layout, bm_all_ckpt, toy_hw)
 
     # Drop must be at least half the saved proxy total. The recomp bump
     # (~activation_bytes_per_block, the single max CKPT block's output)
@@ -3077,9 +3067,7 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
     # ``used_analytical_path`` gate at the α stage is False and α
     # is a no-op there as well — verify cal == bare on that path too,
     # but for a different reason (analytical path bypassed entirely).
-    matched_cfg = CostConfig(
-        n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block
-    )
+    matched_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
     matched_bm = assign_modes(0, n_block, n_block)
     matched_bare = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
     matched_cal = estimate_runtime(matched_cfg, spliced, layout, matched_bm, hw)
@@ -3201,9 +3189,7 @@ def test_phase2_alpha_deflation_suppressed_for_sparse_ckpt_prod():
 
     # Production cfg with sparse CKPT (~28% density mirrors 7B 9/32).
     prod_n_ckpt = max(1, int(round(n_block * 0.28)))
-    prod_cfg = CostConfig(
-        n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=prod_n_ckpt
-    )
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=prod_n_ckpt)
     prod_block_map = assign_modes(2, prod_n_ckpt, n_block)
 
     bare_trace = replace(spliced, phase2_iter_s=0.0, phase2_analytical_iter_s=0.0)

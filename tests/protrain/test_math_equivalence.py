@@ -204,9 +204,7 @@ def _run_vanilla(
             float("inf"),
             float("-inf"),
         ):
-            raise AssertionError(
-                f"vanilla iter {it}: non-finite loss ({loss_val})"
-            )
+            raise AssertionError(f"vanilla iter {it}: non-finite loss ({loss_val})")
         losses.append(loss_val)
         model.zero_grad()
         loss.backward()
@@ -286,9 +284,7 @@ def _run_protrain(
             float("inf"),
             float("-inf"),
         ):
-            raise AssertionError(
-                f"protrain iter {it}: non-finite loss ({loss_val})"
-            )
+            raise AssertionError(f"protrain iter {it}: non-finite loss ({loss_val})")
         losses.append(loss_val)
         optim.zero_grad()
         loss.backward()
@@ -344,7 +340,9 @@ def _compare(
     sd_v_n = _normalize_keys(sd_v)
     sd_p_n = _normalize_keys(sd_p)
     missing = [k for k in sd_v_n if k not in sd_p_n]
-    assert not missing, f"[{label}] params missing from protrain state_dict: {missing[:5]}"
+    assert not missing, (
+        f"[{label}] params missing from protrain state_dict: {missing[:5]}"
+    )
     worst_name = ""
     worst_rel = 0.0
     for k in sd_v_n:
@@ -360,9 +358,7 @@ def _compare(
         if rel > worst_rel:
             worst_rel = rel
             worst_name = k
-    _mark(
-        f"[{label}] worst-param relerr: {worst_name} = {worst_rel * 100:.4f}%"
-    )
+    _mark(f"[{label}] worst-param relerr: {worst_name} = {worst_rel * 100:.4f}%")
     assert worst_rel <= param_tol, (
         f"[{label}] final-param divergence — worst tensor {worst_name} "
         f"rel-err={worst_rel * 100:.4f}% (tol={param_tol * 100:.2f}%). "

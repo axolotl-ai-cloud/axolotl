@@ -361,9 +361,9 @@ def _calibrate_peak_with_actual_chunk_bytes(
                 continue
             if op.block_id is None:
                 continue
-            contrib = trace.intra_op_delta.get(
+            contrib = trace.intra_op_delta.get(op.op_id, 0) + trace.inter_op_delta.get(
                 op.op_id, 0
-            ) + trace.inter_op_delta.get(op.op_id, 0)
+            )
             if contrib > max_op_delta_global:
                 max_op_delta_global = contrib
     else:
@@ -421,9 +421,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
             n_persist_eff_local * S * persistent_factor
             + n_buffer_local * S * buffer_factor
         )
-        f_bm_local = max(
-            0, int(original_peak_arg / alpha) - original_model_state_local
-        )
+        f_bm_local = max(0, int(original_peak_arg / alpha) - original_model_state_local)
         reconstructed_local, n_ckpt_local = _reconstruct_f_bm(bmap_arg)
         if bmap_arg is not None:
             if n_ckpt_local >= max(1, len(bmap_arg) - 2):
@@ -581,12 +579,26 @@ def _calibrate_peak_with_actual_chunk_bytes(
         "f_bm=%.3fGiB calibrated_persistent=%.3fGiB buffer_bytes_eff=%.3fGiB "
         "calibrated_raw=%.3fGiB calibration_alpha=%.3f -> calibrated=%.3fGiB "
         "(original_peak=%.3fGiB original_model_state=%.3fGiB)",
-        cfg.n_persist, cfg.n_buffer, cfg.n_swap, cfg.n_checkpoint, cfg.n_offload,
-        S / (1 << 30), layout.N_chunk, n_persist_eff, n_buffer,
-        actual_persistent / (1 << 30), persistent_factor, buffer_factor,
-        f_bm / (1 << 30), calibrated_persistent / (1 << 30), buffer_bytes_eff / (1 << 30),
-        calibrated_raw / (1 << 30), calibration_alpha, calibrated / (1 << 30),
-        original_peak / (1 << 30), original_model_state / (1 << 30),
+        cfg.n_persist,
+        cfg.n_buffer,
+        cfg.n_swap,
+        cfg.n_checkpoint,
+        cfg.n_offload,
+        S / (1 << 30),
+        layout.N_chunk,
+        n_persist_eff,
+        n_buffer,
+        actual_persistent / (1 << 30),
+        persistent_factor,
+        buffer_factor,
+        f_bm / (1 << 30),
+        calibrated_persistent / (1 << 30),
+        buffer_bytes_eff / (1 << 30),
+        calibrated_raw / (1 << 30),
+        calibration_alpha,
+        calibrated / (1 << 30),
+        original_peak / (1 << 30),
+        original_model_state / (1 << 30),
     )
     if trace is not None and block_map is not None:
         phase2_peak = int(getattr(trace, "steady_phase2_peak_bytes", 0) or 0)
@@ -751,9 +763,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
                     and boot_n_ckpt == len(block_map)
                     and boot_n_buffer >= 0
                 ):
-                    boot_block_map = {
-                        bid_: BlockMode.CKPT for bid_ in block_map.keys()
-                    }
+                    boot_block_map = {bid_: BlockMode.CKPT for bid_ in block_map.keys()}
                     boot_calibrated, _, _, _ = _structural_calibrated(
                         boot_n_persist,
                         boot_n_buffer,
