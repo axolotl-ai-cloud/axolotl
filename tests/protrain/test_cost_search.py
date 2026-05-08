@@ -2978,20 +2978,23 @@ def test_block_map_peak_contribution_drops_offload_bumps_when_persistent(
 
 def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
     """Per-component α-calibration applies independently to fwd / bwd /
-    optim on the analytical path (TRACE_VERSION 21).
+    optim on the analytical path when prod's cfg shape matches boot's
+    (TRACE_VERSION 23 structure-match gate).
 
     Each scale is calibrated against its matching analytical component
-    at the bootstrap cfg, so deflation (α < 1) is safe per-component —
-    no structure-match gate is required. With per-component α set to
-    a uniform 0.85 across fwd / bwd / step at the boot cfg, the
-    calibrated prod prediction must equal ``bare_prod * 0.85`` (within
-    a small numeric epsilon for the ``max(0, αopt*t_cpu - αbwd*t_bwd)``
-    serialisation tail term where αbwd and αopt are both 0.85).
+    at the bootstrap cfg. Per-component deflation (α < 1) is safe
+    *only* when the prod cfg shares boot's structural shape — otherwise
+    boot's per-component biases (e.g. CKPT-roofline over-prediction)
+    don't transfer and the gate clamps each α to inflate-only [1.0, 2.0].
+    With per-component α set to a uniform 0.85 across fwd / bwd / step
+    at the boot cfg AND a prod cfg matching boot's shape (same
+    n_persist, n_swap=0, ±1 n_checkpoint), the calibrated prediction
+    must equal ``bare_prod * 0.85``.
 
     The boot cfg is selected by ``select_bootstrap_config`` to be
-    PCIe-comm-dominant (``n_persist=0``, all-CKPT). Per-component α
-    decomposes the bias into its fwd / bwd / optim contributions and
-    each scale is applied to the matching component on the prod path.
+    PCIe-comm-dominant (``n_persist=0``, all-CKPT). The matching prod
+    cfg here uses the same structural axes; cross-shape transfer (e.g.
+    ``n_swap > 0``) is exercised by the inflate-only clamp test.
     """
     from dataclasses import replace
 
@@ -3045,8 +3048,13 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
         phase2_analytical_step_s=max(boot_analytical_step, 1e-12),
     )
 
-    # Production cfg uses n_swap > 0 → bypasses the phase-2 override
-    # and lands on the analytical path. Per-component α applies.
+    # Production cfg with n_swap > 0 has a different shape than boot
+    # (boot.n_swap == 0) → bypasses the phase-2 override and lands on
+    # the analytical path. Under the structure-match gate (TRACE_VERSION
+    # 23), per-component deflation does NOT carry across this shape
+    # change — each α clamps to inflate-only [1.0, 2.0], leaving the
+    # analytical prediction unmodified. The test confirms cross-shape
+    # deflation is suppressed (anti-regression for 7B-LoRA).
     prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
     prod_block_map = assign_modes(2, 0, n_block)
 
@@ -3065,15 +3073,15 @@ def test_phase2_alpha_calibrates_analytical_path_when_n_swap_positive():
     )
     bare_prod = estimate_runtime(prod_cfg, bare_trace, layout, prod_block_map, hw)
 
-    # Same trace WITH per-component baselines applies the three α
-    # scales; with all three at 0.85 the lumped iter scales by 0.85.
+    # Same trace WITH per-component baselines (αraw=0.85 on each
+    # component) hits the structure-match gate (boot.n_swap=0 vs
+    # prod.n_swap=2 → shape differs). Each α clamps to [1.0, 2.0] and
+    # 0.85 → 1.0, so the calibrated prediction equals the bare one.
     cal_prod = estimate_runtime(prod_cfg, spliced, layout, prod_block_map, hw)
-
-    expected = alpha * bare_prod
-    rel_err = abs(cal_prod - expected) / max(1e-9, expected)
+    rel_err = abs(cal_prod - bare_prod) / max(1e-9, bare_prod)
     assert rel_err < 1e-3, (
-        f"per-component α=0.85 across all components must scale t_iter by "
-        f"0.85: bare={bare_prod:.6f} cal={cal_prod:.6f} expected={expected:.6f}"
+        f"structure-match gate must clamp cross-shape deflation to no-op: "
+        f"bare={bare_prod:.6f} cal={cal_prod:.6f}"
     )
 
     # Sanity: a cfg that matches boot (same n_persist, n_swap=0,
@@ -3268,6 +3276,186 @@ def test_phase2_alpha_deflation_safe_under_per_component_calibration():
         prev = t_k
 
 
+def test_per_component_alpha_clamped_inflate_only_on_cfg_shape_mismatch():
+    """Structure-match gate (TRACE_VERSION 23): when prod cfg's shape
+    differs from boot's (different ``n_persist``, ``n_swap``, or
+    ``n_checkpoint`` beyond the ±1 tolerance), per-component α deflation
+    must be suppressed (clamped to 1.0) while inflation still passes
+    through.
+
+    This is the 7B-LoRA regression fix: boot's αraw on a CKPT-dominant
+    config can be deeply deflated (αbwd ≈ 0.47, αfwd ≈ 0.80) because the
+    analytical roofline OVER-predicts boot's chunked time. Carrying that
+    deflation onto an all-persistent prod cfg (no CKPT, n_persist=N) —
+    where the analytical baseline is already accurate — systematically
+    under-predicts iter wall (8.4% → 39.8% regression observed in
+    integration). The gate restores the asymmetric inflate-only behavior
+    of the single-α era for cross-shape transfer while preserving
+    per-component bias correction when shape matches.
+
+    Two scenarios:
+      (a) DEFLATION raw (αraw=0.6 across all components) — gate clamps
+          to 1.0, prediction equals bare analytical (no scaling).
+      (b) INFLATION raw (αraw=1.5 across all components) — gate passes
+          through (still in [1.0, 2.0] band), prediction scales by 1.5.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.runtime import (
+        _estimate_runtime_components,
+    )
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+    boot_t_fwd, boot_t_bwd, boot_t_gpu, boot_t_cpu, _, _ = _estimate_runtime_components(
+        boot_cfg, base, layout, boot_bm, hw
+    )
+    boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
+
+    def _spliced_with_alpha(a: float):
+        return replace(
+            base,
+            steady_fwd_chunked_wall_s=a * boot_t_fwd,
+            steady_bwd_chunked_wall_s=a * boot_t_bwd,
+            steady_step_overlap_s=a * boot_step,
+            phase2_n_persist=boot_cfg.n_persist,
+            phase2_n_buffer=boot_cfg.n_buffer,
+            phase2_n_checkpoint=boot_cfg.n_checkpoint,
+            phase2_per_block_recompute_s=0.0002 * 5,
+            phase2_fwd_s=a * boot_t_fwd,
+            phase2_bwd_s=a * boot_t_bwd,
+            phase2_step_s=a * boot_step,
+            phase2_analytical_fwd_s=boot_t_fwd,
+            phase2_analytical_bwd_s=boot_t_bwd,
+            phase2_analytical_step_s=boot_step,
+        )
+
+    # Prod cfg that does NOT match boot's shape: n_swap=2 (boot=0).
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
+    prod_bm = assign_modes(2, 0, n_block)
+
+    # Bare analytical prediction (no per-component baseline populated).
+    bare = estimate_runtime(
+        prod_cfg,
+        replace(
+            _spliced_with_alpha(1.0),
+            phase2_fwd_s=0.0,
+            phase2_bwd_s=0.0,
+            phase2_step_s=0.0,
+            phase2_analytical_fwd_s=0.0,
+            phase2_analytical_bwd_s=0.0,
+            phase2_analytical_step_s=0.0,
+            phase2_iter_s=0.0,
+            phase2_analytical_iter_s=0.0,
+        ),
+        layout,
+        prod_bm,
+        hw,
+    )
+
+    # (a) Deflation suppressed: αraw=0.6 should clamp to 1.0 → cal == bare.
+    deflate = estimate_runtime(prod_cfg, _spliced_with_alpha(0.6), layout, prod_bm, hw)
+    assert deflate == pytest.approx(bare, rel=1e-3), (
+        f"shape-mismatch deflation must clamp to no-op: bare={bare:.6f} "
+        f"deflate={deflate:.6f}"
+    )
+
+    # (b) Inflation passes through: αraw=1.5 → cal == 1.5 × bare.
+    inflate = estimate_runtime(prod_cfg, _spliced_with_alpha(1.5), layout, prod_bm, hw)
+    assert inflate == pytest.approx(1.5 * bare, rel=1e-3), (
+        f"shape-mismatch inflation must pass through: bare={bare:.6f} "
+        f"inflate={inflate:.6f} expected={1.5 * bare:.6f}"
+    )
+
+
+def test_per_component_alpha_allows_deflation_when_shape_matches():
+    """Structure-match gate: when prod cfg shares boot's structural
+    shape (same ``n_persist``, ``n_swap=0``, ``n_checkpoint`` within ±1),
+    per-component α applies in full — deflation included — because boot's
+    component biases are valid at the same shape.
+
+    Constructed so the chunked-wall override does NOT short-circuit
+    fwd/bwd α (which would otherwise mask the per-component scaling on
+    a same-cfg prod). We achieve this by leaving the chunked walls as
+    zero (no override possible) but populating per-component baselines:
+    the cost path then takes the analytical route on fwd/bwd with α
+    applied directly.
+
+    Verifies: αraw=0.85 across all components on a shape-matching prod
+    cfg yields a calibrated prediction within ε of ``0.85 × bare``,
+    confirming the gate does NOT fire for matching shapes.
+    """
+    from dataclasses import replace
+
+    from axolotl.integrations.protrain.cost.runtime import (
+        _estimate_runtime_components,
+    )
+
+    base = _make_trace()
+    n_block = len(base.activation_sizes)
+    layout = _make_layout()
+    hw = _make_hw()
+    boot_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_block)
+    boot_bm = assign_modes(0, n_block, n_block)
+    boot_t_fwd, boot_t_bwd, boot_t_gpu, boot_t_cpu, _, _ = _estimate_runtime_components(
+        boot_cfg, base, layout, boot_bm, hw
+    )
+    boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
+
+    alpha = 0.85
+    # Per-component baselines populated; chunked-wall override fields
+    # left at 0.0 so the analytical path is taken on fwd/bwd and α
+    # applies. (In production, the override would be populated and α
+    # would be skipped on fwd/bwd at boot's exact cfg — that is the
+    # intended behaviour because the override is already measurement-
+    # anchored. This test isolates per-component α scaling proper.)
+    spliced = replace(
+        base,
+        phase2_n_persist=boot_cfg.n_persist,
+        phase2_n_buffer=boot_cfg.n_buffer,
+        phase2_n_checkpoint=boot_cfg.n_checkpoint,
+        phase2_per_block_recompute_s=0.0002 * 5,
+        phase2_fwd_s=alpha * boot_t_fwd,
+        phase2_bwd_s=alpha * boot_t_bwd,
+        phase2_step_s=alpha * boot_step,
+        phase2_analytical_fwd_s=boot_t_fwd,
+        phase2_analytical_bwd_s=boot_t_bwd,
+        phase2_analytical_step_s=boot_step,
+    )
+
+    # Shape-matching prod cfg (same n_persist=0, n_swap=0, n_checkpoint
+    # within ±1 of boot's n_block). Use n_checkpoint = n_block - 1 to
+    # exercise the n_ckpt tolerance in _structure_match.
+    prod_n_ckpt = max(0, n_block - 1)
+    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=prod_n_ckpt)
+    prod_bm = assign_modes(0, prod_n_ckpt, n_block)
+
+    bare = estimate_runtime(
+        prod_cfg,
+        replace(
+            spliced,
+            phase2_fwd_s=0.0,
+            phase2_bwd_s=0.0,
+            phase2_step_s=0.0,
+            phase2_analytical_fwd_s=0.0,
+            phase2_analytical_bwd_s=0.0,
+            phase2_analytical_step_s=0.0,
+        ),
+        layout,
+        prod_bm,
+        hw,
+    )
+    cal = estimate_runtime(prod_cfg, spliced, layout, prod_bm, hw)
+    assert cal == pytest.approx(alpha * bare, rel=1e-3), (
+        f"shape-match deflation must pass through: bare={bare:.6f} "
+        f"cal={cal:.6f} expected={alpha * bare:.6f}"
+    )
+
+
 def test_alpha_residual_compensates_for_unmodeled_overhead():
     """Residual α captures whole-iter overhead the analytical model
     does not see (Python hook dispatch, kernel launch latency, NCCL
@@ -3336,10 +3524,18 @@ def test_alpha_residual_compensates_for_unmodeled_overhead():
         phase2_iter_s=measured_iter,
     )
 
-    # Production cfg routes through the analytical path
-    # (``n_swap > 0``) so per-component α and residual α both apply.
-    prod_cfg = CostConfig(n_persist=0, n_buffer=0, n_swap=2, n_checkpoint=0)
-    prod_bm = assign_modes(2, 0, n_block)
+    # Production cfg shape MATCHES boot (TRACE_VERSION 23: residual α
+    # only contributes when shape matches; cross-shape transfer suppresses
+    # both per-component deflation AND the residual). Same n_persist/
+    # n_swap/n_checkpoint as boot ensures the structure-match gate does
+    # not fire and the residual α is applied as-is.
+    prod_cfg = CostConfig(
+        n_persist=boot_cfg.n_persist,
+        n_buffer=boot_cfg.n_buffer,
+        n_swap=boot_cfg.n_swap,
+        n_checkpoint=boot_cfg.n_checkpoint,
+    )
+    prod_bm = assign_modes(0, n_block, n_block)
 
     bare = estimate_runtime(
         prod_cfg,
@@ -3361,7 +3557,7 @@ def test_alpha_residual_compensates_for_unmodeled_overhead():
     )
     cal = estimate_runtime(prod_cfg, spliced, layout, prod_bm, hw)
 
-    # Per-component α all = 1.0 → composed iter equals bare.
+    # Per-component α all = 1.0, shape matches → composed iter equals bare.
     # Residual α = 2.0 → cal == 2.0 × bare.
     assert cal == pytest.approx(target_residual * bare, rel=1e-3), (
         f"residual α should scale per-component prediction by {target_residual}: "

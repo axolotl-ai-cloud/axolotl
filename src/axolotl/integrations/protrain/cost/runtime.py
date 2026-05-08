@@ -724,6 +724,83 @@ def _clamp_alpha(alpha: float, name: str) -> float:
     return max(_PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, alpha))
 
 
+# Structure-match gate's tolerance on n_checkpoint mismatch. The bootstrap
+# selector sometimes picks a slightly different ``n_checkpoint`` than the
+# searcher's pre-phase2 boot due to phase-2 re-evaluating recompute cost,
+# so we accept a ±1 difference as "same shape" without firing the gate.
+# Larger deltas (boot=N_block, prod=0 — the 7B-LoRA case) genuinely change
+# the bwd-recompute roofline and trigger the gate.
+_STRUCTURE_MATCH_NCKPT_TOL: int = 1
+
+
+def _structure_match(
+    cfg: "CostConfig", trace: "ProfilerTrace", n_ckpt_prod: int
+) -> bool:
+    """Whether prod cfg matches boot's structural shape closely enough for
+    per-component α deflation to transfer safely.
+
+    The per-component α scales reflect the *boot* cfg's component biases
+    (e.g. boot's CKPT-dominant bwd has a deflated α<1 because the analytical
+    roofline over-predicts the chunked recompute cost). When prod has a
+    fundamentally different shape — boot is CKPT-dominant + zero-persistent,
+    prod is all-persistent + no-CKPT — boot's per-component biases do not
+    transfer: the analytical model at prod is already accurate without the
+    boot-anchored deflation, so applying α<1 systematically under-predicts
+    prod. The gate detects this shape change and clamps α to inflate-only
+    ([1.0, 2.0]) on those configs; matching shapes pass through with full
+    [0.5, 2.0] (deflation included).
+
+    Boot's ``n_swap`` is always 0 by phase-2 spec
+    (:func:`profiler.phase2.bootstrap_config`), so we compare prod's
+    ``cfg.n_swap`` to 0 directly without needing a ``phase2_n_swap`` field.
+    """
+    boot_n_persist = int(getattr(trace, "phase2_n_persist", -1))
+    boot_n_checkpoint = int(getattr(trace, "phase2_n_checkpoint", -1))
+    if boot_n_persist < 0 or boot_n_checkpoint < 0:
+        # Trace doesn't carry boot cfg (legacy / fixture). Default to "no
+        # match" — fail-safe: clamp to inflate-only so per-component α
+        # cannot deflate predictions in the absence of a shape signal.
+        return False
+    return (
+        int(cfg.n_persist) == boot_n_persist
+        and int(cfg.n_swap) == 0  # boot is always n_swap=0
+        and abs(int(n_ckpt_prod) - boot_n_checkpoint) <= _STRUCTURE_MATCH_NCKPT_TOL
+    )
+
+
+def _clamp_alpha_inflate_only(alpha: float, name: str) -> float:
+    """Clamp raw α to [1.0, 2.0] — inflate-only — when shape gate fires.
+
+    Used when the production cfg's structural shape differs from boot's.
+    Per-component α deflation would over-correct prod's already-accurate
+    analytical baseline (e.g. boot's CKPT roofline OVER-predicts boot's
+    bwd time, yielding αbwd<1 — that deflation should NOT carry over to a
+    prod cfg with no CKPT blocks). Inflation remains safe — it catches
+    under-modeled overhead the analytical baseline misses regardless of
+    shape. Noise-envelope warning still fires (we still want to surface
+    noisy α values regardless of which clamp side fires).
+    """
+    # Surface noise-envelope warnings for the raw α before clamping —
+    # the noise diagnostic is independent of the gate decision.
+    if alpha < _PHASE2_ALPHA_NOISE_FLOOR or alpha > _PHASE2_ALPHA_NOISE_CEILING:
+        global _WARNED_PHASE2_ALPHA_NOISY
+        if not _WARNED_PHASE2_ALPHA_NOISY:
+            LOG.warning(
+                "estimate_runtime: phase-2 per-component α %s = %.3f is "
+                "outside the noise envelope [%.2f, %.2f] — measurement noise "
+                "may be dominating signal. Clamping to [1.00, %.2f] "
+                "(shape-gate active); investigate phase-2 measurement "
+                "variance if predictions regress.",
+                name,
+                alpha,
+                _PHASE2_ALPHA_NOISE_FLOOR,
+                _PHASE2_ALPHA_NOISE_CEILING,
+                _PHASE2_ALPHA_CLAMP_MAX,
+            )
+            _WARNED_PHASE2_ALPHA_NOISY = True
+    return max(1.0, min(_PHASE2_ALPHA_CLAMP_MAX, alpha))
+
+
 def _clamp_residual_alpha(alpha: float) -> float:
     """Clamp the residual whole-iter α to [0.8, 2.0]; warn once if outside [0.5, 5.0].
 
@@ -804,11 +881,31 @@ def _compose_t_iter_with_alpha_calibration(
         and getattr(trace, "phase2_step_s", 0.0) > 0.0
     )
     if has_per_component:
-        a_fwd = _clamp_alpha(trace.phase2_fwd_s / trace.phase2_analytical_fwd_s, "αfwd")
-        a_bwd = _clamp_alpha(trace.phase2_bwd_s / trace.phase2_analytical_bwd_s, "αbwd")
-        a_opt = _clamp_alpha(
-            trace.phase2_step_s / trace.phase2_analytical_step_s, "αopt"
-        )
+        a_fwd_raw = trace.phase2_fwd_s / trace.phase2_analytical_fwd_s
+        a_bwd_raw = trace.phase2_bwd_s / trace.phase2_analytical_bwd_s
+        a_opt_raw = trace.phase2_step_s / trace.phase2_analytical_step_s
+        # Structure-match gate (TRACE_VERSION 23 fix): per-component α
+        # scales reflect boot's component biases (e.g. boot's CKPT-dominant
+        # bwd produces αbwd<1 because the analytical roofline OVER-predicts
+        # boot's chunked bwd). Those biases do NOT transfer to a prod cfg
+        # with a structurally different shape — boot=CKPT-heavy zero-
+        # persistent, prod=all-persistent no-CKPT — because prod's
+        # analytical baseline is already accurate at that shape and αbwd<1
+        # would systematically under-predict it. The gate clamps each α
+        # to inflate-only ([1.0, 2.0]) when shapes differ; matching shapes
+        # pass through full [0.5, 2.0] (deflation included). This restores
+        # the asymmetric structure-match behavior of the single-α era
+        # (commit 8554116b) without losing per-component bias correction
+        # when the shape DOES match (commit 8fcc3c4e).
+        shape_matches = _structure_match(cfg, trace, int(cfg.n_checkpoint))
+        if shape_matches:
+            a_fwd = _clamp_alpha(a_fwd_raw, "αfwd")
+            a_bwd = _clamp_alpha(a_bwd_raw, "αbwd")
+            a_opt = _clamp_alpha(a_opt_raw, "αopt")
+        else:
+            a_fwd = _clamp_alpha_inflate_only(a_fwd_raw, "αfwd")
+            a_bwd = _clamp_alpha_inflate_only(a_bwd_raw, "αbwd")
+            a_opt = _clamp_alpha_inflate_only(a_opt_raw, "αopt")
         # When a component used the phase-2 chunked-wall override, its
         # prediction is already measurement-anchored at the boot cfg —
         # applying α would double-correct. The override only fires when
@@ -843,7 +940,17 @@ def _compose_t_iter_with_alpha_calibration(
         # post-refactor pre-fix baseline.
         anchor = float(getattr(trace, "phase2_per_comp_pred_iter_s", 0.0))
         measured = float(getattr(trace, "phase2_iter_s", 0.0))
-        if anchor > 0.0 and measured > 0.0:
+        if anchor > 0.0 and measured > 0.0 and shape_matches:
+            # Residual α generalises a whole-iter overhead bias measured
+            # at boot to a prod cfg with the SAME structural shape. When
+            # shape differs the per-component gate has already clamped αs
+            # to inflate-only and the prod analytical baseline is taken
+            # at face value (no boot-anchored bias transfer); applying a
+            # boot-anchored residual on top would amplify an already-
+            # accurate baseline in ways that don't track prod's actual
+            # whole-iter overhead. Suppress to no-op (1.0) on shape
+            # mismatch — this is the symmetrical companion to the
+            # per-component gate.
             a_residual = _clamp_residual_alpha(measured / max(anchor, 1e-9))
         else:
             a_residual = 1.0
@@ -851,10 +958,11 @@ def _compose_t_iter_with_alpha_calibration(
         t_iter = a_residual * t_iter
         LOG.debug(
             "estimate_runtime: phase-2 per-component α applied "
-            "(αfwd=%.3f αbwd=%.3f αopt=%.3f, α_residual=%.3f, "
-            "fwd_override=%s bwd_override=%s, "
+            "(shape_matches=%s, αfwd=%.3f αbwd=%.3f αopt=%.3f, "
+            "α_residual=%.3f, fwd_override=%s bwd_override=%s, "
             "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
             "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
+            shape_matches,
             a_fwd,
             a_bwd,
             a_opt,
