@@ -124,3 +124,79 @@ def test_ray_train_func_validates_with_worker_capabilities(monkeypatch):
     }
     assert kwargs["env_capabilities"] == {"torch_version": "2.6.0"}
     do_train_mock.assert_called_once()
+
+
+def test_ray_train_func_registers_plugins_before_validate_config(monkeypatch):
+    """Regression: plugins must be registered before `validate_config` so the
+    plugin-extended pydantic schema is in scope. Otherwise `merge_input_args`
+    sees an empty PluginManager on the worker and `model_dump(exclude_none=True)`
+    silently drops plugin-specific cfg fields.
+    """
+    cfg_dict = {
+        "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "gradient_accumulation_steps": 1,
+        "plugins": ["axolotl.integrations.liger.LigerPlugin"],
+    }
+
+    parent = MagicMock()
+    parent.validate_config.side_effect = lambda cfg, **_: cfg
+
+    # Patch at the source module so a local `from axolotl.cli.config import ...`
+    # inside the function also resolves to the mock; also patch the train module
+    # for top-level imports (raising=False keeps it tolerant of either style).
+    monkeypatch.setattr("axolotl.cli.config.prepare_plugins", parent.prepare_plugins)
+    monkeypatch.setattr("axolotl.cli.config.plugin_set_cfg", parent.plugin_set_cfg)
+    monkeypatch.setattr(
+        "axolotl.cli.train.prepare_plugins", parent.prepare_plugins, raising=False
+    )
+    monkeypatch.setattr(
+        "axolotl.cli.train.plugin_set_cfg", parent.plugin_set_cfg, raising=False
+    )
+    monkeypatch.setattr("axolotl.cli.train.validate_config", parent.validate_config)
+    monkeypatch.setattr("axolotl.cli.train.gpu_capabilities", lambda: ({}, {}))
+    monkeypatch.setattr("axolotl.cli.train.do_train", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.prepare_optim_env", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+
+    ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
+
+    # Filter to the calls we care about, in the order they happened.
+    ordered = [
+        call[0]
+        for call in parent.mock_calls
+        if call[0] in ("prepare_plugins", "validate_config", "plugin_set_cfg")
+    ]
+    assert ordered == ["prepare_plugins", "validate_config", "plugin_set_cfg"], (
+        f"Expected prepare_plugins -> validate_config -> plugin_set_cfg; got {ordered}"
+    )
+
+
+def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
+    """When no plugins are configured, neither `prepare_plugins` nor
+    `plugin_set_cfg` should be invoked on the worker."""
+    cfg_dict = {
+        "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "gradient_accumulation_steps": 1,
+    }
+
+    prepare_plugins_mock = MagicMock()
+    plugin_set_cfg_mock = MagicMock()
+
+    monkeypatch.setattr("axolotl.cli.train.prepare_plugins", prepare_plugins_mock)
+    monkeypatch.setattr("axolotl.cli.train.plugin_set_cfg", plugin_set_cfg_mock)
+    monkeypatch.setattr(
+        "axolotl.cli.train.validate_config", MagicMock(side_effect=lambda cfg, **_: cfg)
+    )
+    monkeypatch.setattr("axolotl.cli.train.gpu_capabilities", lambda: ({}, {}))
+    monkeypatch.setattr("axolotl.cli.train.do_train", MagicMock())
+    monkeypatch.setattr("axolotl.cli.train.prepare_optim_env", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.normalize_config", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.resolve_dtype", lambda *_: None)
+    monkeypatch.setattr("axolotl.cli.train.Accelerator", MagicMock())
+
+    ray_train_func({"cfg": cfg_dict, "cli_args": MagicMock()})
+
+    prepare_plugins_mock.assert_not_called()
+    plugin_set_cfg_mock.assert_not_called()
