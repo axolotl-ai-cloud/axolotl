@@ -592,13 +592,22 @@ def measure_chunked_steady(
                         "a parameter add / submodule rebuild."
                     )
                 if _result.unexpected_keys:
-                    LOG.debug(
-                        "Phase-2 state_dict restore: %d unexpected keys "
-                        "(first 3: %s); the live model gained keys "
-                        "during the timed loop. Investigate if this is "
-                        "not a one-shot module-rebuild artefact.",
-                        len(_result.unexpected_keys),
-                        _result.unexpected_keys[:3],
+                    # ``unexpected_keys`` = keys present in the snapshot
+                    # but NOT in the live model — the live model dropped
+                    # or renamed state during the timed measurement.
+                    # Those snapshot bytes therefore did NOT make it
+                    # back, so the rollback is incomplete and the
+                    # caller is left with a mutated model. Promote to
+                    # a hard error to match the ``extra_missing``
+                    # symmetry above (both directions of state-dict
+                    # surface drift now fail loudly rather than
+                    # silently leaving a half-restored model).
+                    raise RuntimeError(
+                        "Phase-2 state_dict restore saw "
+                        f"{len(_result.unexpected_keys)} unexpected snapshot "
+                        f"keys (first 3: {_result.unexpected_keys[:3]}). "
+                        "The live model dropped or renamed state during "
+                        "the timed measurement, so rollback is incomplete."
                     )
             # Restore the chunk-manager CPU-shadow bytes BEFORE the
             # optimizer state restore. Order doesn't strictly matter

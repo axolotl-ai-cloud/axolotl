@@ -146,7 +146,7 @@ class BufferPool:
         # default-stream allocator (paper App B.2 / SingleStreamAllocator
         # contract) so every long-lived pool slot sits on the default
         # stream's heap. These slots are the largest sustained GPU
-        # allocation in ProTrain (n_buffer × S_chunk bytes — tens of
+        # allocation in ProTrain (n_buffer x S_chunk bytes — tens of
         # gigabytes on training-scale models), so unifying their heap
         # is the highest-leverage single application of App B.2. No
         # ``record_stream`` needed: the slots' lifetime is owned by the
@@ -470,13 +470,29 @@ class BufferPool:
         the next acquire.
 
         Safe to call when ``chunk_id`` has no current slot tag: the
-        method silently returns. The slot's previous lease count is
-        preserved so a concurrent reader does not have its lease
-        dropped underneath it.
+        method silently returns. Raises ``RuntimeError`` if the slot is
+        currently leased — invalidating in that state would leak the
+        lease (the future ``release(chunk_id)`` would no-op because the
+        chunk_id → slot mapping is gone, leaving the slot permanently
+        in-use). The phase-2 restore call site holds no leases on the
+        chunks it restores (the snapshot/restore window is outside any
+        gather/release pair), so this guard surfaces the misuse case
+        without blocking the legitimate caller.
         """
-        slot = self._tag_to_slot.pop(chunk_id, None)
-        if slot is not None:
-            self._tags[slot] = None
+        slot = self._tag_to_slot.get(chunk_id)
+        if slot is None:
+            return
+        if self._leases[slot] > 0:
+            raise RuntimeError(
+                f"BufferPool.invalidate_tag: cannot invalidate "
+                f"chunk_id={chunk_id} while slot {slot} has "
+                f"{self._leases[slot]} active lease(s). The caller "
+                "must release all leases before invalidating; otherwise "
+                "the matching release() would silently no-op and leave "
+                "the slot permanently in-use."
+            )
+        self._tag_to_slot.pop(chunk_id, None)
+        self._tags[slot] = None
 
     # ---- introspection -------------------------------------------------
 

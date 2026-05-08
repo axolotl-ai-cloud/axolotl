@@ -4,8 +4,9 @@ We score each candidate by simulating the *exact* packing rules
 :func:`build_layout` would apply (block-sealing and block-contiguity from
 §3.1.1) and selecting the S_chunk that minimizes the summed
 ``S_chunk - bytes_used`` across non-tail chunks. Ties are broken toward the
-larger candidate so the layout uses fewer, larger chunks. The simulation
-matches :func:`build_layout`'s placement exactly: both call
+smaller candidate so the layout keeps the slot-pool capacity ceiling
+``M_buffer = n_buffer * S_chunk`` (paper Eq. 11) tight at equal waste. The
+simulation matches :func:`build_layout`'s placement exactly: both call
 :func:`_pack_chunks_with_block_rules` from ``layout.py`` so the grid search
 chooses the same fragmentation-optimal S_chunk that the actual layout will
 produce — there is no heuristic skew between simulation and reality.
@@ -83,9 +84,11 @@ def pick_S_chunk(
     when omitted, the simulation degrades to plain greedy fit (which is what
     ``build_layout`` itself does for an empty ``block_spans``).
 
-    Ties are broken by picking the *larger* candidate — fewer chunks means
-    less scheduler overhead and larger individual H2D transfers, both of
-    which are strictly preferable at equal waste (App B.1 motivation).
+    Ties are broken by picking the *smaller* candidate so the slot-pool
+    capacity ceiling ``n_buffer * S_chunk`` (paper Eq. 11) stays tight
+    at equal waste. Preferring the larger S would inflate the resident
+    buffer footprint without reducing waste, so the smaller-S tie-break
+    is strictly preferable at equal waste.
     """
     if not candidates:
         raise ValueError("candidates must be non-empty")

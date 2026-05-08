@@ -210,7 +210,17 @@ def block_tree_index_map(
     """
     persisted = getattr(trace, "block_tree_index", None)
     if persisted:
-        return dict(persisted)
+        # Defensive normalisation: the cached map may round-trip
+        # through JSON / pickle that stringifies dict keys, while the
+        # rest of this module looks them up via ``BlockId(int(...))``.
+        # Mirror the coercion the per-block loop in ``estimate_peak``
+        # already applies so the encoder/decoder surcharge path
+        # doesn't silently disable on a re-loaded trace whose keys
+        # are strings.
+        return {
+            BlockId(int(block_id)): int(tree_index)
+            for block_id, tree_index in persisted.items()
+        }
     seen: dict[BlockId, int] = {}
     for op in trace.op_order:
         if not op.is_forward or op.block_id is None:

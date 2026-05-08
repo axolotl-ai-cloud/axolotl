@@ -217,13 +217,19 @@ class CpuFusedAdamAdapter:
         Every pending future is awaited even if one raises, so gradient
         computation is not left in an incomplete state. The first captured
         exception is re-raised after all futures have been awaited; any
-        additional exceptions are logged.
+        additional exceptions are logged. ``KeyboardInterrupt`` and
+        ``SystemExit`` (the ``BaseException``-not-``Exception`` set)
+        propagate immediately rather than being aggregated — Ctrl-C
+        and process shutdown signals must escape the await loop so
+        the caller sees them on the first interruption rather than
+        having them deferred (and possibly suppressed) behind a worker
+        exception.
         """
-        errors: list[BaseException] = []
+        errors: list[Exception] = []
         for fut in list(self._pending.values()):
             try:
                 fut.result()
-            except BaseException as exc:  # noqa: BLE001 — re-raised below
+            except Exception as exc:  # noqa: BLE001 — re-raised below
                 errors.append(exc)
         if errors:
             if len(errors) > 1:
@@ -234,7 +240,19 @@ class CpuFusedAdamAdapter:
             raise errors[0]
 
     def zero_grad(self, set_to_none: bool = True) -> None:
-        """Zero gradients across every chunk's params."""
+        """Zero gradients across every chunk's params.
+
+        Drains in-flight async ``step_async`` futures via :meth:`wait_all`
+        BEFORE clearing grads. Without this barrier the worker thread
+        could still be reading the grad shard for a chunk's CPU-Adam
+        step when ``zero_grad`` clears or nulls the corresponding
+        ``param.grad`` tensor — corrupting the in-progress step.
+        Adam's ``step`` reads ``param.grad`` and writes ``param.data`` /
+        ``state['exp_avg']`` / ``state['exp_avg_sq']``; nulling the
+        grad mid-step is the classic concurrent-mutation hazard, so
+        we synchronize the executor explicitly first.
+        """
+        self.wait_all()
         for optim in self._optims.values():
             optim.zero_grad(set_to_none=set_to_none)
 
@@ -248,11 +266,17 @@ class CpuFusedAdamAdapter:
         leaks on the explicit-cleanup path and ``__del__`` would swallow
         the failure silently. Run the executor shutdown in ``finally``
         and re-raise the original error after the pool is released.
+
+        Only catches ``Exception`` (not ``BaseException``) so
+        ``KeyboardInterrupt`` / ``SystemExit`` propagate immediately —
+        a Ctrl-C during teardown should not be deferred and re-raised
+        AFTER ``executor.shutdown(wait=True)`` (which itself blocks on
+        worker drain and could compound the wait).
         """
-        error: BaseException | None = None
+        error: Exception | None = None
         try:
             self.wait_all()
-        except BaseException as exc:  # noqa: BLE001 — re-raised below
+        except Exception as exc:  # noqa: BLE001 — re-raised below
             error = exc
         finally:
             self._executor.shutdown(wait=True)
