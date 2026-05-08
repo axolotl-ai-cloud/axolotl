@@ -469,8 +469,24 @@ def build_batch(
     if not isinstance(seq_len, int) or isinstance(seq_len, bool) or seq_len <= 0:
         raise ValueError(f"seq_len must be a positive int, got {seq_len!r}")
     if task_type is None:
+        # Auto-detect path: ``get_factory`` may fall back to the
+        # causal-LM factory when ``detect_task_type`` returns a string
+        # that wasn't registered (defensive — for forward-compat with
+        # new task heads). The fallback is only applied here, on the
+        # auto-detect path; an explicitly-passed ``task_type`` below
+        # gets a hard error so caller typos / stale overrides surface
+        # immediately rather than silently profiling the wrong graph.
         task_type = detect_task_type(model)
-    factory = get_factory(task_type)
+        factory = get_factory(task_type)
+    else:
+        factory = _FACTORIES.get(task_type)
+        if factory is None:
+            raise ValueError(
+                f"build_batch: unknown task_type={task_type!r}. Registered "
+                f"types: {sorted(_FACTORIES)}. Pass task_type=None to "
+                "auto-detect from the model, or register the factory via "
+                "register_factory(task_type, fn) before calling."
+            )
     batch = factory(model, batch_size, seq_len, device)
     factory_id = getattr(factory, "__qualname__", None) or repr(factory)
     if not isinstance(batch, Mapping):

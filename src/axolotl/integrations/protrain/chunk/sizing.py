@@ -118,11 +118,19 @@ def pick_S_chunk(
     # ``max(0, S_chunk - bytes_used)`` clamp prevents an oversize chunk
     # from crediting a too-small candidate with negative waste. With the
     # clamp in place, smaller candidates remain legal members of the
-    # search and the simulator's tie-break (prefer larger S at equal
-    # waste) handles preference cleanly. We therefore keep ALL positive
-    # candidates in the search and let ``_simulate_waste`` plus the
-    # tie-break (prefer larger S at equal waste) decide — no soft
+    # search. We therefore keep ALL positive candidates in the search
+    # and let ``_simulate_waste`` plus the tie-break decide — no soft
     # feasibility-filter fallback is needed.
+    #
+    # Tie-break: at equal waste prefer the SMALLER ``S_chunk``. The
+    # slot-pool capacity ceiling is ``M_buffer = n_buffer * S_chunk``
+    # (paper Eq. 11), so a larger S inflates the resident buffer
+    # footprint without reducing waste. Since ``_simulate_waste`` drops
+    # tail slack many small / single-chunk candidates tie at zero waste;
+    # a "prefer larger S" tie-break would consistently drift to the
+    # largest grid entry and over-reserve buffer bytes. Picking the
+    # smallest S at equal waste keeps the buffer-pool ceiling tight
+    # while preserving the same waste-minimisation behaviour.
 
     best_S = candidates[0]
     best_waste = _simulate_waste(
@@ -130,7 +138,7 @@ def pick_S_chunk(
     )
     for S in candidates[1:]:
         waste = _simulate_waste(model_state_bytes_per_param, exec_order, block_spans, S)
-        if waste < best_waste or (waste == best_waste and S > best_S):
+        if waste < best_waste or (waste == best_waste and S < best_S):
             best_S = S
             best_waste = waste
 

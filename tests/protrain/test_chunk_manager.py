@@ -293,7 +293,7 @@ def test_param_exec_order_dedups_weight_tied_params():
 
 
 def test_sizing_picks_min_waste():
-    """Grid-search chooses the minimum-waste candidate, tie-breaking to the larger S.
+    """Grid-search chooses the minimum-waste candidate, tie-breaking to the smaller S.
 
     The algorithm (Appendix B.1) keeps every positive candidate in the
     search — ``_simulate_waste`` already models the "oversize tensor on
@@ -302,8 +302,11 @@ def test_sizing_picks_min_waste():
     natively remain legal members of the grid. Among the candidates it
     simulates greedy-fit chunking and picks the S_chunk minimizing the
     sum of ``S_chunk - bytes_used`` across every *non-tail* chunk. Ties
-    are broken by picking the *larger* candidate — fewer chunks ⇒ fewer
-    scheduler iterations.
+    are broken by picking the *smaller* candidate — the slot-pool
+    capacity ceiling is ``M_buffer = n_buffer * S_chunk`` (paper Eq. 11),
+    so a larger S inflates the resident buffer footprint without
+    reducing waste. Picking the smaller S at equal waste keeps the
+    buffer ceiling tight while preserving waste minimisation.
     """
     from axolotl.integrations.protrain.chunk.sizing import pick_S_chunk
 
@@ -337,11 +340,13 @@ def test_sizing_picks_min_waste():
     #   S=128 → fits pairs exactly; preceding waste 0.
     #   S=256 → fits all four in one tail-only chunk; waste 0.
     # All four candidates tie at 0 waste, so the tie-break rule
-    # ("prefer larger S_chunk") selects 256 MB.
+    # ("prefer smaller S_chunk" — keeps the n_buffer * S_chunk ceiling
+    # tight) selects the smallest grid entry, 32 MB.
     sizes_b: dict[ParamId, int] = {cast(ParamId, f"q{i}"): 64 * MB for i in range(4)}
     picked_b = pick_S_chunk(sizes_b)
-    assert picked_b == 256 * MB, (
-        f"tie-at-zero-waste scenario: expected S=256 MB via tie-break; got {picked_b}"
+    assert picked_b == 32 * MB, (
+        f"tie-at-zero-waste scenario: expected S=32 MB via tie-break "
+        f"(prefer smaller S to minimise buffer-pool ceiling); got {picked_b}"
     )
 
     # Case C — undersized candidates win the zero-waste tie. 3 × 100 MB
@@ -352,14 +357,14 @@ def test_sizing_picks_min_waste():
     #           56 MB.
     #   S=256 → greedy packs [200][100] (2 chunks), 1 non-tail × 56 MB =
     #           56 MB.
-    # Minimum waste is 0 at S=32 and S=64; tie-break picks the larger
-    # (S=64).
+    # Minimum waste is 0 at S=32 and S=64; tie-break picks the smaller
+    # (S=32) to minimise buffer-pool ceiling.
     sizes_c: dict[ParamId, int] = {cast(ParamId, f"r{i}"): 100 * MB for i in range(3)}
     picked_c = pick_S_chunk(sizes_c)
-    assert picked_c == 64 * MB, (
-        f"oversize-clamp tie scenario: expected S=64 MB (tie-break among "
+    assert picked_c == 32 * MB, (
+        f"oversize-clamp tie scenario: expected S=32 MB (tie-break among "
         f"the zero-waste oversize candidates {{32, 64}} MB picks the "
-        f"larger); got {picked_c}"
+        f"smaller); got {picked_c}"
     )
 
     # Sanity — every pick is drawn from the documented grid.
@@ -509,8 +514,9 @@ def test_sizing_oversize_tensor_does_not_credit_undersized_candidate():
     the clamp every candidate produces an ``[oversize, small-tail]``
     chunking and the small tail is the trailing chunk (excluded from waste
     accounting), so all four candidates tie at zero waste. The tie-break
-    rule (prefer the larger ``S`` at equal waste) then picks
-    ``max(DEFAULT_GRID)``.
+    rule (prefer the smaller ``S`` at equal waste — keeps the
+    ``n_buffer * S_chunk`` capacity ceiling tight) then picks
+    ``min(DEFAULT_GRID)``.
     """
     from axolotl.integrations.protrain.chunk.sizing import (
         DEFAULT_GRID,
@@ -528,11 +534,11 @@ def test_sizing_oversize_tensor_does_not_credit_undersized_candidate():
     }
     # All candidates produce [300 MB oversize, 30 MB tail]; non-tail waste
     # is clamp(S - 300) = 0 for every S, so the tie-break selects
-    # max(DEFAULT_GRID) (= 256 MB).
+    # min(DEFAULT_GRID) (= 32 MB).
     picked = pick_S_chunk(param_bytes)
-    assert picked == max(DEFAULT_GRID), (
+    assert picked == min(DEFAULT_GRID), (
         f"with every candidate tied at zero waste under the oversize clamp, "
-        f"the tie-break must pick max(DEFAULT_GRID); got {picked}"
+        f"the tie-break must pick min(DEFAULT_GRID); got {picked}"
     )
 
     # Sanity: _simulate_waste reports non-negative waste even when the chunk

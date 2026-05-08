@@ -428,11 +428,49 @@ def hot_iter_peak_cap(
         # savings (what NONE retains across the whole forward but CKPT
         # / SWAP do not) need the larger proxy.
         saved_bytes_proxy = _saved_tensor_bytes_per_block(trace)
+        # Encoder→decoder handoff fence (encoder-decoder traces only).
+        #
+        # ``estimate_peak`` re-adds ``cross_attn_persist_bytes(...)`` as
+        # a per-decoder-op surcharge when the encoder's last block is
+        # CKPT or SWAP, because the cross-attention output tensor must
+        # remain GPU-resident across the whole decoder fwd+bwd window
+        # even though the rest of the encoder block's saved tensors
+        # have been discarded / swapped (see ``cross_attn_persist_bytes``
+        # docstring at line 232 and the ``op_cross_attn_surcharge`` op-walk
+        # gating at lines 286-303). Subtracting that block's full
+        # ``block_saved`` here would double-discount: the cap shrinks by
+        # the full saved-tensor bytes while the runtime peak only
+        # actually drops by ``block_saved - cross_attn_persist_bytes``
+        # (the encoder→decoder hidden tensor stays live). Cap the
+        # encoder-last block's contribution to ``max(0, block_saved -
+        # cross_attn_persist_bytes)`` for CKPT/SWAP modes; non-encdec
+        # traces are unaffected because ``cross_attn_persist_bytes``
+        # returns 0 outside the multi-tree path.
+        tree_index_map = block_tree_index_map(trace)
+        cross_attn_bytes_for_cap = cross_attn_persist_bytes(
+            trace, block_map, tree_index_map
+        )
+        encoder_last_bid: BlockId | None = None
+        if cross_attn_bytes_for_cap > 0:
+            encoder_bids = sorted(
+                bid for bid, idx in tree_index_map.items() if idx == 0
+            )
+            if encoder_bids:
+                encoder_last_bid = encoder_bids[-1]
         ckpt_swap_savings = 0
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
             mode = block_map.get(bid, BlockMode.NONE)
             block_saved = int(saved_bytes_proxy.get(bid, act_sz))
+            if (
+                encoder_last_bid is not None
+                and bid == encoder_last_bid
+                and mode in (BlockMode.CKPT, BlockMode.SWAP)
+            ):
+                # Cap the encoder-last savings by the persisted handoff
+                # tensor — the cross-attention output cannot be
+                # reclaimed on this block under CKPT/SWAP.
+                block_saved = max(0, block_saved - cross_attn_bytes_for_cap)
             if mode is BlockMode.CKPT:
                 if act_sz > ckpt_recomp_bump:
                     ckpt_recomp_bump = act_sz

@@ -263,7 +263,16 @@ class CpuFusedAdamAdapter:
         try:
             self.shutdown()
         except Exception:  # noqa: BLE001 — destructors must not throw
-            pass
+            # Swallow but log: a CPU-Adam future failure plus a missed
+            # explicit ``shutdown()`` call would otherwise discard the
+            # only signal that the optimizer hit a teardown-time error.
+            # Use module logger via ``LOG`` (defined above); ``debug``
+            # rather than ``warning`` because GC ordering can cause
+            # spurious failures during interpreter teardown.
+            LOG.debug(
+                "CpuFusedAdamAdapter.__del__: shutdown failed",
+                exc_info=True,
+            )
 
 
 # ---------------------------------------------------------------------------

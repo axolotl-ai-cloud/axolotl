@@ -198,12 +198,16 @@ class BufferPool:
         # exact-byte uint8 GPU tensor for a chunk whose ``chunk_bytes``
         # exceeds ``self.S_chunk``. Empty in the common case (no
         # oversize chunks), which keeps the normal slot-pool path
-        # zero-overhead. Membership is the implicit "lease" — there's
-        # only ever one caller of an oversize buffer at a time within
-        # an active window (the manager's ``_active_chunks`` set is
-        # the single-writer guard), so we don't need a separate
-        # refcount the way slots do.
+        # zero-overhead. Each oversize buffer carries its own
+        # lease counter (``_large_leases``) mirroring the slot-pool
+        # ``_leases`` discipline: ``acquire``/``acquire_if_resident``
+        # increment, ``release`` decrements, and the side-table entry
+        # is dropped only when the lease drops to zero. This closes
+        # the "two prefetch sites converged on the same chunk" race
+        # where the first ``release`` would otherwise drop the buffer
+        # while a second caller still references it.
         self._large_buffers: dict[ChunkId, "torch.Tensor"] = {}
+        self._large_leases: dict[ChunkId, int] = {}
 
     # ---- core ops ------------------------------------------------------
 
@@ -253,6 +257,11 @@ class BufferPool:
                         f"already allocated at {existing.numel()} bytes; "
                         f"caller requested {chunk_bytes} bytes"
                     )
+                # Increment the lease so a paired ``release(chunk_id)``
+                # from each acquirer is required before the buffer is
+                # actually dropped. Mirrors the slot-pool discipline
+                # at line 294 (``self._leases[slot] += 1``).
+                self._large_leases[chunk_id] = self._large_leases.get(chunk_id, 0) + 1
                 return existing
             # First-time allocation for this oversize chunk. Route
             # through ``SingleStreamAllocator`` so the bytes land on
@@ -275,6 +284,13 @@ class BufferPool:
             else:
                 buf = torch.empty(chunk_bytes, dtype=torch.uint8, device=self.device)
             self._large_buffers[chunk_id] = buf
+            # Initialize the lease at 1 — same convention as the slot
+            # pool (line 320: ``self._leases[slot] = 1``). The first
+            # ``release(chunk_id)`` will decrement to 0 and drop the
+            # buffer; additional ``acquire``/``acquire_if_resident``
+            # calls within the same active window will bump the count
+            # to keep the buffer alive until ALL holders release.
+            self._large_leases[chunk_id] = 1
             return buf
 
         # Fast path: chunk is already in a slot (possibly free, possibly in-use).
@@ -333,12 +349,20 @@ class BufferPool:
         and re-copy), but the bytes saved by freeing eagerly outweigh the
         rare reuse hit.
         """
-        # Oversize fast path: free the side-table buffer eagerly. Done
-        # BEFORE the slot-pool path because the two state spaces are
-        # disjoint by construction (an oversize chunk never made it
-        # into ``_tag_to_slot``).
-        large = self._large_buffers.pop(chunk_id, None)
-        if large is not None:
+        # Oversize fast path: free the side-table buffer eagerly when
+        # the lease drops to zero. Done BEFORE the slot-pool path
+        # because the two state spaces are disjoint by construction
+        # (an oversize chunk never made it into ``_tag_to_slot``).
+        # Mirrors the slot-pool decrement-then-drop discipline (lines
+        # 348-358) so two simultaneous acquirers must each release
+        # before the side-table entry is forgotten.
+        if chunk_id in self._large_buffers:
+            count = self._large_leases.get(chunk_id, 0)
+            if count <= 1:
+                self._large_buffers.pop(chunk_id, None)
+                self._large_leases.pop(chunk_id, None)
+            else:
+                self._large_leases[chunk_id] = count - 1
             return
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
@@ -402,13 +426,14 @@ class BufferPool:
         the lookup and the read could re-tag the slot and overwrite the
         data.
 
-        Oversize chunks: a hit in :attr:`_large_buffers` returns the
-        buffer with no extra bookkeeping. Membership IS the lease — only
-        :meth:`release` drops the entry, and oversize allocations cannot
-        be evicted by an unrelated ``acquire``.
+        Oversize chunks: a hit in :attr:`_large_buffers` increments
+        the side-table lease (mirroring the slot-pool path at line
+        425) so the matching ``release(chunk_id)`` only drops the
+        buffer when the LAST holder releases.
         """
         large = self._large_buffers.get(chunk_id)
         if large is not None:
+            self._large_leases[chunk_id] = self._large_leases.get(chunk_id, 0) + 1
             return large
         slot = self._tag_to_slot.get(chunk_id)
         if slot is None:
@@ -424,6 +449,34 @@ class BufferPool:
             pass
         self._leases[slot] += 1
         return self._buffers[slot]
+
+    def invalidate_tag(self, chunk_id: ChunkId) -> None:
+        """Drop the GPU residency tag for ``chunk_id`` without recycling its slot.
+
+        Force-evicts the cached chunk_id → slot mapping so the next
+        ``acquire(chunk_id)`` is treated as a fresh miss (allocates a
+        free slot and re-copies from CPU) instead of returning the
+        currently-tagged buffer. The slot itself is left on whatever
+        lease/free state it was in — only the *tag* is cleared.
+
+        Used by :meth:`ChunkManager.restore_cpu_state` to ensure that a
+        post-restore ``gather()`` for any restored chunk doesn't return
+        stale GPU bytes from a buffer that was tagged before the CPU
+        shadow was overwritten. Oversize chunks (entries in
+        :attr:`_large_buffers`) are unaffected — their buffer carries
+        the actual GPU bytes that would have to be re-copied; callers
+        that need to invalidate those should drop their lease via
+        :meth:`release` and let the lease-tracking path replace them on
+        the next acquire.
+
+        Safe to call when ``chunk_id`` has no current slot tag: the
+        method silently returns. The slot's previous lease count is
+        preserved so a concurrent reader does not have its lease
+        dropped underneath it.
+        """
+        slot = self._tag_to_slot.pop(chunk_id, None)
+        if slot is not None:
+            self._tags[slot] = None
 
     # ---- introspection -------------------------------------------------
 

@@ -337,6 +337,13 @@ def measure_chunked_steady(
     # back cleanly on partial failure.
     model_state: dict[str, Any] | None = None
     optim_state: dict[str, Any] | None = None
+    # Set of state-dict keys intentionally filtered out of ``model_state``
+    # at snapshot time (zero-element placeholder tensors that came from
+    # offloaded chunks). The restore's ``strict=False`` accepts these
+    # as missing; any OTHER missing key indicates that the timed region
+    # mutated the model's state-dict surface in a way the snapshot
+    # cannot roll back, which the restore promotes to a hard error.
+    expected_missing_keys: frozenset[str] = frozenset()
     # Mode-C correctness gap: ``state_dict()`` only sees what's reachable
     # through ``param.data``. After the chunk manager's
     # ``materialize_offload`` runs, every non-persistent param's
@@ -423,6 +430,13 @@ def measure_chunked_steady(
                 for k, v in full_state.items()
                 if not torch.is_tensor(v) or v.numel() > 0
             }
+            # Capture the set of keys we intentionally skipped (offloaded
+            # placeholder tensors that ``_empty_placeholder`` materialised
+            # as zero-element). The restore path uses ``strict=False`` to
+            # tolerate them missing from the snapshot, so we need this
+            # set to distinguish "expected missing" from "real missing"
+            # below.
+            expected_missing_keys = frozenset(full_state.keys() - filtered_state.keys())
             model_state = _clone_state_dict(
                 filtered_state, target_device=torch.device("cpu")
             )
@@ -556,6 +570,27 @@ def measure_chunked_steady(
                 # so a future regression is visible in trace output
                 # without crashing the measurement.
                 _result = model.load_state_dict(model_state, strict=False)
+                # Validate ``missing_keys`` against the
+                # snapshot-time skipped set. ``strict=False`` is the
+                # right escape hatch for the offloaded zero-sized
+                # placeholders we filtered out at snapshot, but any
+                # OTHER missing key means the timed region mutated
+                # the model's state-dict surface (added a parameter,
+                # rebuilt a submodule, etc.) in a way the snapshot
+                # cannot restore. Surface that as a hard error so a
+                # partial restore doesn't silently leave the model
+                # in a half-rolled-back state.
+                extra_missing = set(_result.missing_keys) - expected_missing_keys
+                if extra_missing:
+                    raise RuntimeError(
+                        "Phase-2 state_dict restore missed "
+                        f"{len(extra_missing)} unexpected keys "
+                        f"(first 3: {sorted(extra_missing)[:3]}). "
+                        "The live model's state-dict surface "
+                        "changed during the timed measurement; "
+                        "investigate the harness or the model for "
+                        "a parameter add / submodule rebuild."
+                    )
                 if _result.unexpected_keys:
                     LOG.debug(
                         "Phase-2 state_dict restore: %d unexpected keys "

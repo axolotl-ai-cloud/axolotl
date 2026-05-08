@@ -329,6 +329,27 @@ def validate_config(
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
 
+    # ProTrain pre-check: ``protrain_auto_memory`` is a top-level YAML
+    # field but its sibling validators only fire when the ProTrain plugin
+    # is registered (because ``ProTrainArgs`` is merged in via
+    # ``merge_input_args`` only on ``cfg.plugins``). Surface the
+    # misconfiguration here so a user with ``protrain_auto_memory: true``
+    # but no plugins entry gets the same actionable error they would see
+    # if they had only forgotten the plugin string.
+    if cfg.get("protrain_auto_memory"):
+        from axolotl.integrations.protrain.args import _has_protrain_plugin
+
+        plugins = cfg.get("plugins") or []
+        if isinstance(
+            plugins, (list, tuple, set, frozenset)
+        ) and not _has_protrain_plugin(plugins):
+            raise ValueError(
+                "`protrain_auto_memory: true` requires the ProTrain plugin to be "
+                "listed in `plugins:`. Add "
+                "`- axolotl.integrations.protrain.ProTrainPlugin` to the "
+                "`plugins` list."
+            )
+
     if cfg.plugins:
         (
             AxolotlConfigWCapabilities,

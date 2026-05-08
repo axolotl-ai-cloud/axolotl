@@ -3089,6 +3089,7 @@ class ChunkManager:
             The dict returned by a previous :meth:`snapshot_cpu_state`
             call against this manager.
         """
+        restored_cids: list[ChunkId] = []
         for cid, entry in snapshot.items():
             shard_state = self._chunk_shards.get(cid)
             region_snaps = entry.get("regions")
@@ -3104,6 +3105,7 @@ class ChunkManager:
                     shard_state.regions, region_snaps, strict=True
                 ):
                     region.cpu_shard_bytes.copy_(region_snap)
+                restored_cids.append(cid)
                 continue
             slot_snaps = entry.get("slots")
             slots = self._cpu_slots.get(cid)
@@ -3115,6 +3117,34 @@ class ChunkManager:
                 if slot_snap is None or slot.cpu_data is None:
                     continue
                 slot.cpu_data.copy_(slot_snap)
+            restored_cids.append(cid)
+        # Invalidate any GPU residency tagged for the restored chunks
+        # in the buffer pool. Without this, a subsequent ``gather()``
+        # could observe a still-resident GPU buffer (tagged with the
+        # chunk's id under the slot pool's LRU) and return it without
+        # re-copying from the freshly-restored CPU shadow — the GPU
+        # bytes would carry the post-step values that the CPU restore
+        # was supposed to overwrite. See CR P5: "After
+        # restore_cpu_state(...) you must invalidate corresponding
+        # resident GPU pool entries so gather() will re-copy fresh CPU
+        # data." Persistent chunks have no buffer-pool tag (they live
+        # in ``_persistent_buffers``) and are unaffected; the
+        # all-persistent layout (``buffer_pool is None``) is also a
+        # no-op — there's no slot pool to invalidate.
+        if self.buffer_pool is not None and restored_cids:
+            for cid in restored_cids:
+                # ``invalidate_tag`` clears the chunk_id → slot
+                # mapping without recycling the slot itself: the next
+                # ``acquire(cid)`` is treated as a fresh miss and
+                # re-copies from the freshly-restored CPU shadow.
+                # Oversize chunks (in ``_large_buffers``) carry their
+                # own data and aren't reached by this call — their
+                # contents would survive a CPU restore. The phase-2
+                # snapshot/restore path is the only call site that
+                # rolls CPU bytes backward without going through
+                # ``release()``, so this is the only place we need
+                # the tag-only invalidation primitive.
+                self.buffer_pool.invalidate_tag(cid)
 
     # ---- internals -----------------------------------------------------
 

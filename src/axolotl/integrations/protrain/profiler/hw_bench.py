@@ -492,11 +492,29 @@ def measure_nccl(
     if n_warmup < 0:
         raise ValueError(f"measure_nccl: n_warmup must be >= 0, got {n_warmup}")
 
-    if world_size == 1:
-        return ({}, {})
-
     import torch
     import torch.distributed as dist
+
+    # Single-rank fast path: validate against the runtime distributed
+    # world size BEFORE returning empty tables. Otherwise a multi-rank
+    # job that accidentally calls ``measure_nccl(world_size=1)`` would
+    # silently skip the benchmark and produce empty tables — the
+    # downstream cost model then degrades to all-CPU bandwidth
+    # estimates without any signal that the NCCL measurement was
+    # bypassed. Only short-circuit when EITHER ``dist`` is unavailable
+    # / uninitialized OR the runtime world size also reports 1.
+    if world_size == 1:
+        if not dist.is_available() or not dist.is_initialized():
+            return ({}, {})
+        runtime_world = dist.get_world_size()
+        if runtime_world == 1:
+            return ({}, {})
+        raise RuntimeError(
+            f"measure_nccl: caller passed world_size=1 but "
+            f"torch.distributed reports world_size={runtime_world}. "
+            "Either pass the actual world size or tear down the "
+            "distributed group before calling for the single-rank fast path."
+        )
 
     if not dist.is_available():
         raise RuntimeError(
