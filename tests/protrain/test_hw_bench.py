@@ -38,9 +38,11 @@ def test_measure_cpu_adam_returns_sensible_rate():
 
     Allows 0.0 as a valid answer — DeepSpeedCPUAdam requires a matching
     CUDA toolchain to JIT-compile the C++ op, and dev rigs frequently lack
-    one. When it DOES compile, typical rates sit between ~200 MB/s
-    (ancient Xeon) and ~40 GB/s (Threadripper + DDR5). The bounds here
-    catch unit errors (GB vs MB) and runaway positive values.
+    one. When it DOES compile, observed rates span ~200 MB/s
+    (ancient Xeon) to >100 GB/s (modern Threadripper / EPYC + DDR5 +
+    cached working set). The upper bound is a unit-error / runaway-value
+    guard, not a hardware ceiling — keep it loose enough to accommodate
+    high-end DRAM-channel-count CPUs.
     """
     rate = measure_cpu_adam(n_params=2_000_000, n_iters=3)
     if rate == 0.0:
@@ -48,7 +50,10 @@ def test_measure_cpu_adam_returns_sensible_rate():
         # by test_estimate_runtime_falls_back_when_adam_bps_zero.
         pytest.skip("DeepSpeedCPUAdam unavailable on this host")
     assert rate >= 100e6, f"CPU Adam rate {rate:.2e} B/s is implausibly low"
-    assert rate <= 100e9, f"CPU Adam rate {rate:.2e} B/s is implausibly high"
+    # 1 TB/s upper bound — catches unit errors (e.g. confusing GB with MB)
+    # without rejecting modern high-channel-count CPU rigs that genuinely
+    # hit 100-200 GB/s on cached benchmarks.
+    assert rate <= 1e12, f"CPU Adam rate {rate:.2e} B/s is implausibly high"
 
 
 @pytest.mark.gpu
