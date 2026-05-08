@@ -141,7 +141,7 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 The system's `libcublas.so.13` is older than what cu130 torch expects. Put the cu13 lib that ships with the torch wheel on `LD_LIBRARY_PATH`:
 
 ```bash
-export LD_LIBRARY_PATH=$(python -c "import os, nvidia.cu13 as m; print(os.path.join(os.path.dirname(m.__file__), 'lib'))"):$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="$(python -c 'import nvidia.cu13 as m; print(list(m.__path__)[0] + "/lib")'):$LD_LIBRARY_PATH"
 ```
 
 Unrelated to DeepEP itself, but anyone on cu130 torch hits it on boxes with a system CUDA toolkit older than 13.0.
