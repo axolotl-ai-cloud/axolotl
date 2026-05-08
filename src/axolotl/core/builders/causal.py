@@ -286,9 +286,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
 
         if self.cfg.relora and self.cfg.jagged_restart_steps:
-            if self.cfg.relora_prune_ratio:
+            if self.cfg.relora_prune_ratio is not None:
                 training_arguments_kwargs["relora_prune_ratio"] = (
                     self.cfg.relora_prune_ratio
+                )
+            if self.cfg.relora_prune_method:
+                training_arguments_kwargs["relora_prune_method"] = (
+                    self.cfg.relora_prune_method
                 )
 
         if self.cfg.jagged_restart_steps:

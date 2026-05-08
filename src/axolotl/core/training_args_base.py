@@ -83,13 +83,15 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "The number of processes to use for data processing"},
     )
-    relora_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how often to reset for ReLoRA"},
-    )
     relora_prune_ratio: Optional[float] = field(
         default=0.9,
         metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+    )
+    relora_prune_method: Optional[str] = field(
+        default="magnitude",
+        metadata={
+            "help": "optimizer state pruning method: magnitude | random | reset"
+        },
     )
     jagged_restart_steps: Optional[int] = field(
         default=None,
