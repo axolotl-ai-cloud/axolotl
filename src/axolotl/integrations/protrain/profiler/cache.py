@@ -533,6 +533,31 @@ def load_cached_trace(
             TRACE_VERSION,
         )
         return None
+    # Defense-in-depth identity check: the on-disk filename hashes the
+    # ProfilerCacheKey fields plus TRACE_VERSION, so a path hit already
+    # implies field equality under the current hashing scheme. Re-verify
+    # the identifying fields against the payload anyway so that a stale
+    # file written under a different scheme (or a hash collision in the
+    # filename derivation, however unlikely) cannot silently return a
+    # foreign trace. Mirror the warning style used above for shape miss.
+    payload_identity = (
+        str(data.get("arch_hash", "")),
+        int(data.get("bs", -1)) if isinstance(data.get("bs"), (int, float)) else -1,
+        int(data.get("seq", -1)) if isinstance(data.get("seq"), (int, float)) else -1,
+        str(data.get("sku", "")),
+        int(data.get("world", -1))
+        if isinstance(data.get("world"), (int, float))
+        else -1,
+    )
+    expected_identity = (key.arch_hash, key.bs, key.seq, key.sku, key.world)
+    if payload_identity != expected_identity:
+        LOG.warning(
+            "profiler cache at %s identifies %s but expected %s; treating as miss.",
+            path,
+            payload_identity,
+            expected_identity,
+        )
+        return None
     try:
         return _trace_from_dict(data)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
