@@ -8,12 +8,66 @@ Ampere (sm_80, A100) or Hopper (sm_90, H100), all-pairs NVLink.
 
 ## Installation
 
-**Hopper (sm_90, H100):**
+**Hopper (sm_90, H100), multi-node with NCCL 2.29+ (torch 2.11+) and OFED:**
 
 ```bash
 git clone --depth 1 https://github.com/deepseek-ai/DeepEP.git
 cd DeepEP
 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 uv pip install --no-build-isolation .
+python -c "import deep_ep; print(deep_ep.Buffer)"
+```
+
+**Hopper (sm_90, H100), single-node intranode-only (no NCCL 2.29+ or no OFED):**
+
+Pin DeepEP to `v1.2.1` and disable NVSHMEM. Why:
+
+- DeepEP HEAD's `csrc/elastic/` (Engram/EPv2, added in commit `b306af0`) needs `ncclGinRequest_t`, which only exists in NCCL 2.29+. Torch 2.10+cu130 ships NCCL 2.28.9.
+- NVSHMEM-enabled builds require Mellanox OFED dev headers (`infiniband/mlx5dv.h`); single-node H100×8 boxes without OFED can't build them.
+- Once NVSHMEM is off, `-rdc=true` triggers a device-link step with nothing to link against — import fails with `__cudaRegisterLinkedBinary_*` undefined symbol. Patch 2 makes `-rdc=true` conditional on NVSHMEM.
+
+Hopper kernels (FP8, TMA, etc.) are preserved; only intranode dispatch/combine is built — appropriate for single-node H100×{4,8}.
+
+```bash
+git clone https://github.com/deepseek-ai/DeepEP.git
+cd DeepEP
+git checkout v1.2.1
+# Patch 1: setup.py — honor DISABLE_NVSHMEM=1
+git apply <<'EOF'
+--- a/setup.py
++++ b/setup.py
+@@ -19,7 +19,10 @@ if __name__ == '__main__':
+     disable_nvshmem = False
+     nvshmem_dir = os.getenv('NVSHMEM_DIR', None)
+     nvshmem_host_lib = 'libnvshmem_host.so'
+-    if nvshmem_dir is None:
++    if int(os.getenv('DISABLE_NVSHMEM', '0')):
++        disable_nvshmem = True
++        nvshmem_dir = None
++    elif nvshmem_dir is None:
+         try:
+             nvshmem_dir = importlib.util.find_spec("nvidia.nvshmem").submodule_search_locations[0]
+             nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_dir)
+EOF
+
+# Patch 2: setup.py — drop -rdc=true when NVSHMEM is disabled
+git apply <<'EOF'
+--- a/setup.py
++++ b/setup.py
+@@ -71,7 +71,9 @@ if __name__ == '__main__':
+         os.environ['TORCH_CUDA_ARCH_LIST'] = os.getenv('TORCH_CUDA_ARCH_LIST', '9.0')
+
+         # CUDA 12 flags
+-        nvcc_flags.extend(['-rdc=true', '--ptxas-options=--register-usage-level=10'])
++        nvcc_flags.append('--ptxas-options=--register-usage-level=10')
++        if not disable_nvshmem:
++            nvcc_flags.append('-rdc=true')
+
+     # Disable LD/ST tricks, as some CUDA version does not support `.L1::no_allocate`
+     if os.environ['TORCH_CUDA_ARCH_LIST'].strip() != '9.0':
+EOF
+
+DISABLE_NVSHMEM=1 TORCH_CUDA_ARCH_LIST=9.0 MAX_JOBS=16 \
+  uv pip install --no-build-isolation .
 python -c "import deep_ep; print(deep_ep.Buffer)"
 ```
 
