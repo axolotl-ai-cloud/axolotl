@@ -38,10 +38,10 @@ class LoraConfig(BaseModel):
         default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
     )
 
-    adapter: Literal["lora", "qlora", "llama-adapter"] | None = Field(
+    adapter: Literal["lora", "qlora", "mora", "llama-adapter"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use 'lora', 'qlora', or 'llama-adapter', or leave blank to train all parameters in original model"
+            "description": "If you want to use 'lora', 'qlora', 'mora', or 'llama-adapter', or leave blank to train all parameters in original model"
         },
     )
     lora_model_dir: str | None = Field(
@@ -201,6 +201,17 @@ class LoraConfig(BaseModel):
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
         return self
 
+    @model_validator(mode="after")
+    def validate_mora(self):
+        if self.adapter == "mora" and (
+            self.load_in_8bit or self.load_in_4bit or self.gptq
+        ):
+            raise ValueError(
+                "adapter: mora currently requires a full-precision base model. "
+                "Use adapter: lora or qlora for quantized training."
+            )
+        return self
+
     @field_validator("loraplus_lr_embedding")
     @classmethod
     def convert_loraplus_lr_embedding(cls, loraplus_lr_embedding):
@@ -270,3 +281,42 @@ class ReLoRAConfig(BaseModel):
             "description": "True to perform lora weight merges on cpu during restarts, for modest gpu memory savings"
         },
     )
+
+
+class MoraConfig(BaseModel):
+    """MoRA / ReMoRA configuration subset."""
+
+    use_mora: bool = Field(
+        default=True,
+        json_schema_extra={
+            "description": "Enable MoRA adapter construction. Requires a PEFT build with MoRA support (for example, the MoRA fork)."
+        },
+    )
+    mora_type: int = Field(
+        default=6,
+        ge=1,
+        json_schema_extra={
+            "description": "MoRA variant selector. The MoRA repo uses type 1 for sharing and type 6 for RoPE-based updates."
+        },
+    )
+    use_relora: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Enable ReMoRA restart scheduling. Axolotl maps this to the existing ReLoRA restart path."
+        },
+    )
+    use_relora_step: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Restart interval in steps when ReMoRA is enabled. This maps to Axolotl's jagged_restart_steps."
+        },
+    )
+
+    @model_validator(mode="after")
+    def validate_relora(self):
+        if self.use_relora_step is not None:
+            self.use_relora = True
+        if self.use_relora and self.use_relora_step is None:
+            raise ValueError("mora.use_relora requires mora.use_relora_step")
+        return self
