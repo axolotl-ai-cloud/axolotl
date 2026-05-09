@@ -67,13 +67,14 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
 
 
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    from axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts import (
-        gemma4_sonicmoe_experts_forward,
-    )
+    raise NotImplementedError("Sonicmoe + EP is not yet properly implemented.")
+    # from axolotl.integrations.kernels.libs.sonicmoe.gemma4_experts import (
+    #     gemma4_sonicmoe_experts_forward,
+    # )
 
-    return gemma4_sonicmoe_experts_forward(
-        experts, recv_x, recv_topk_idx, recv_topk_weights
-    )
+    # return gemma4_sonicmoe_experts_forward(
+    #     experts, recv_x, recv_topk_idx, recv_topk_weights
+    # )
 
 
 _LOCAL_KERNELS = {
