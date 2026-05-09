@@ -165,3 +165,22 @@ def test_pruning_helpers_are_inplace():
     ptr_before = tensor.data_ptr()
     random_pruning_(tensor, 0.5)
     assert tensor.data_ptr() == ptr_before
+
+
+def test_pruning_helpers_support_uint8_tensors():
+    """Both pruning helpers must work on uint8 optimizer state tensors."""
+    tensor = torch.arange(1, 129, dtype=torch.uint8)
+    magnitude_pruning_(tensor, 0.9)
+
+    assert tensor.dtype == torch.uint8
+    magnitude_zero_frac = (tensor == 0).float().mean().item()
+    assert 0.85 <= magnitude_zero_frac <= 0.95
+
+    tensor = torch.arange(1, 129, dtype=torch.uint8)
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(1234)
+        random_pruning_(tensor, 0.9)
+
+    assert tensor.dtype == torch.uint8
+    random_zero_frac = (tensor == 0).float().mean().item()
+    assert 0.85 <= random_zero_frac <= 0.95

@@ -48,7 +48,10 @@ def magnitude_pruning_(tensor, prune_ratio):
 @torch.no_grad()
 def random_pruning_(tensor, prune_ratio):
     """Zero a random ``prune_ratio`` fraction of values, in place."""
-    mask = torch.rand_like(tensor) > prune_ratio
+    mask = (
+        torch.rand(tensor.shape, dtype=torch.float32, device=tensor.device)
+        > prune_ratio
+    )
     tensor.mul_(mask.to(dtype=tensor.dtype))
 
 
