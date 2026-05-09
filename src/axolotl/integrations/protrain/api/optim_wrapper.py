@@ -35,6 +35,7 @@ import torch
 
 from axolotl.integrations.protrain.chunk import (
     CpuFusedAdamAdapter,
+    GpuAdamW8bitAdapter,
     GpuFusedAdamAdapter,
 )
 from axolotl.integrations.protrain.types import ChunkId, WrappedModel
@@ -59,7 +60,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 
     def __init__(
         self,
-        gpu_optim: GpuFusedAdamAdapter | None,
+        gpu_optim: GpuFusedAdamAdapter | GpuAdamW8bitAdapter | None,
         cpu_optim: CpuFusedAdamAdapter | None,
         params: list["nn.Parameter"],
         defaults: dict[str, Any],
@@ -602,6 +603,32 @@ def _split_optim_param_groups(
     inner.param_groups = new_groups
 
 
+#: Axolotl / HF Trainer optimizer-name strings that route the persistent
+#: chunk set through ``GpuAdamW8bitAdapter`` instead of
+#: ``GpuFusedAdamAdapter``. ``adamw_8bit`` and ``adamw_bnb_8bit`` are
+#: aliases in HF's ``OptimizerNames`` (training_args.py:128-129) that both
+#: dispatch to ``bnb.optim.AdamW`` with ``optim_bits=8``; we accept both
+#: spellings so users carrying configs from either origin work without
+#: edits. ``paged_adamw_8bit`` selects the paged variant (UVM-backed
+#: state) for the same persistent set.
+_BNB_8BIT_OPTIMIZERS: frozenset[str] = frozenset(
+    {"adamw_8bit", "adamw_bnb_8bit", "paged_adamw_8bit"}
+)
+_BNB_8BIT_PAGED_OPTIMIZERS: frozenset[str] = frozenset({"paged_adamw_8bit"})
+
+
+def _normalize_optimizer_name(name: str | None) -> str | None:
+    """Lower-case + strip whitespace; ``None`` passes through unchanged.
+
+    Centralised so both the public dispatch check below and any future
+    callers (e.g. checkpoint resume) compare against the same normalised
+    representation.
+    """
+    if name is None:
+        return None
+    return str(name).strip().lower()
+
+
 def protrain_optimizer_wrapper(
     wrapped: WrappedModel,
     *,
@@ -609,6 +636,7 @@ def protrain_optimizer_wrapper(
     betas: tuple[float, float] = (0.9, 0.999),
     eps: float = 1e-8,
     weight_decay: float = 0.0,
+    optimizer_name: str | None = None,
 ) -> torch.optim.Optimizer:
     """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams.
 
@@ -695,16 +723,45 @@ def protrain_optimizer_wrapper(
         else:
             cpu_params_per_chunk[ChunkId(cid)] = chunk_params
 
-    gpu_optim: GpuFusedAdamAdapter | None = None
+    # M2.5 dispatch — pair 8-bit weight quantization with 8-bit optimizer
+    # state when the user requested an Axolotl/HF ``adamw_8bit`` /
+    # ``adamw_bnb_8bit`` / ``paged_adamw_8bit`` optimizer name. Bail
+    # condition: bnb 8-bit Adam kernels run on CUDA only, so only the
+    # persistent (GPU-resident) chunk set can use the 8-bit adapter; the
+    # non-persistent CPU shards keep the existing 32-bit DeepSpeedCPUAdam
+    # path and we surface a one-shot warning so users see the partial
+    # win (phase2.md §M2.5).
+    normalized_optim_name = _normalize_optimizer_name(optimizer_name)
+    use_bnb_8bit = normalized_optim_name in _BNB_8BIT_OPTIMIZERS
+    use_paged_8bit = normalized_optim_name in _BNB_8BIT_PAGED_OPTIMIZERS
+
+    gpu_optim: GpuFusedAdamAdapter | GpuAdamW8bitAdapter | None = None
     cpu_optim: CpuFusedAdamAdapter | None = None
     if persistent_params:
-        gpu_optim = GpuFusedAdamAdapter(
-            params=persistent_params,
-            lr=lr,
-            betas=betas,
-            eps=eps,
-            weight_decay=weight_decay,
-        )
+        if use_bnb_8bit:
+            LOG.info(
+                "protrain_optimizer_wrapper: routing %d persistent params "
+                "through bnb %s (optimizer_name=%s)",
+                len(persistent_params),
+                "PagedAdamW8bit" if use_paged_8bit else "AdamW8bit",
+                optimizer_name,
+            )
+            gpu_optim = GpuAdamW8bitAdapter(
+                params=persistent_params,
+                lr=lr,
+                betas=betas,
+                eps=eps,
+                weight_decay=weight_decay,
+                paged=use_paged_8bit,
+            )
+        else:
+            gpu_optim = GpuFusedAdamAdapter(
+                params=persistent_params,
+                lr=lr,
+                betas=betas,
+                eps=eps,
+                weight_decay=weight_decay,
+            )
 
     # M7: for sharded non-persistent chunks the CPU Adam updates each
     # :class:`_DtypeRegion`'s flat shard_param (one per rank slice per
@@ -721,6 +778,32 @@ def protrain_optimizer_wrapper(
             ]
         else:
             cpu_params_per_chunk_for_optim[cid] = chunk_params
+
+    if use_bnb_8bit and any(
+        params for params in cpu_params_per_chunk_for_optim.values()
+    ):
+        # Bail criterion (phase2.md §M2.5): bnb 8-bit Adam requires CUDA
+        # tensors; non-persistent chunks live on CPU. We keep the
+        # 32-bit CpuFusedAdamAdapter on those chunks so training stays
+        # correct (and the user still gets the persistent-chunk 8-bit
+        # win from above). Surface this once, loudly, so users
+        # configuring `adamw_8bit` aren't surprised by the partial
+        # adoption.
+        n_cpu_chunks = sum(
+            1 for params in cpu_params_per_chunk_for_optim.values() if params
+        )
+        LOG.warning(
+            "protrain_optimizer_wrapper: optimizer_name=%s requested 8-bit "
+            "AdamW, but %d non-persistent chunk(s) live on CPU and bnb's "
+            "8-bit Adam kernels are CUDA-only. Those chunks will keep "
+            "using 32-bit DeepSpeedCPUAdam (still correct, but the "
+            "optimizer-state memory win applies only to the persistent "
+            "set). To get end-to-end 8-bit, configure ProTrain with all "
+            "chunks persistent (Mode A) — e.g. set "
+            "protrain_force_all_persistent: true.",
+            optimizer_name,
+            n_cpu_chunks,
+        )
 
     if any(params for params in cpu_params_per_chunk_for_optim.values()):
         try:
@@ -827,9 +910,16 @@ def protrain_optimizer_wrapper(
 
     # Swap the freshly-built adapters into the chunk manager so the
     # scheduler's post_block_backward -> reduce_grads_and_offload ->
-    # cpu_optim.step_async chain uses them.
+    # cpu_optim.step_async chain uses them. The chunk manager's
+    # ``gpu_optim`` slot is typed ``GpuFusedAdamAdapter | None`` (the
+    # legacy adapter); the M2.5 ``GpuAdamW8bitAdapter`` is duck-compat
+    # at the call sites that consume the slot (``.step()``,
+    # ``.zero_grad()``, ``.state_dict()`` — see
+    # :class:`GpuAdamW8bitAdapter`). We assign through a typing cast
+    # rather than widening the chunk manager's type signature, which
+    # would touch a read-only file from this milestone's perspective.
     chunk_manager.cpu_optim = cpu_optim
-    chunk_manager.gpu_optim = gpu_optim
+    chunk_manager.gpu_optim = cast("GpuFusedAdamAdapter | None", gpu_optim)
 
     # Build the flat param list for the Optimizer base class.
     all_params: list["nn.Parameter"] = list(persistent_params)

@@ -792,13 +792,22 @@ class ProTrainPlugin(BasePlugin):
         betas = (float(args.adam_beta1), float(args.adam_beta2))
         eps = float(args.adam_epsilon)
         weight_decay = float(args.weight_decay)
+        # M2.5: forward the user's configured optimizer name so the
+        # wrapper can route 8-bit-bnb selections through
+        # GpuAdamW8bitAdapter on the persistent chunk set. ``cfg.optimizer``
+        # is an Axolotl pydantic enum at validate time but ``args.optim``
+        # (HF TrainingArguments) is the canonical post-validate string.
+        optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
+        if optimizer_name is not None and not isinstance(optimizer_name, str):
+            optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
 
         LOG.info(
-            "ProTrain.create_optimizer: lr=%.3e betas=%s eps=%.1e wd=%.3e",
+            "ProTrain.create_optimizer: lr=%.3e betas=%s eps=%.1e wd=%.3e optimizer=%s",
             lr,
             betas,
             eps,
             weight_decay,
+            optimizer_name,
         )
 
         return protrain_optimizer_wrapper(
@@ -807,6 +816,7 @@ class ProTrainPlugin(BasePlugin):
             betas=betas,
             eps=eps,
             weight_decay=weight_decay,
+            optimizer_name=optimizer_name,
         )
 
     def post_trainer_create(self, cfg, trainer: "Trainer") -> None:
@@ -854,12 +864,16 @@ class ProTrainPlugin(BasePlugin):
         from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
         args = trainer.args
+        optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
+        if optimizer_name is not None and not isinstance(optimizer_name, str):
+            optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
         optim = protrain_optimizer_wrapper(
             wrapped,
             lr=float(args.learning_rate),
             betas=(float(args.adam_beta1), float(args.adam_beta2)),
             eps=float(args.adam_epsilon),
             weight_decay=float(args.weight_decay),
+            optimizer_name=optimizer_name,
         )
 
         # ``_ProTrainOptimizer.state_dict`` / ``load_state_dict`` already
