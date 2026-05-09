@@ -166,3 +166,98 @@ def test_force_all_persistent_default_is_false() -> None:
     """
     args = ProTrainArgs()
     assert args.protrain_force_all_persistent is False
+
+
+# ---------------------------------------------------------------------
+# Optimizer allow-list (M6B) — ProTrain's chunk-manager adapters only
+# drive AdamW-shaped state. Unsupported optimizers must be rejected at
+# config-load time rather than corrupting state inside the step path.
+# ---------------------------------------------------------------------
+
+
+def test_optimizer_validator_accepts_adamw_torch() -> None:
+    cfg = _minimal_active_cfg(optimizer="adamw_torch")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_adamw_torch_fused() -> None:
+    cfg = _minimal_active_cfg(optimizer="adamw_torch_fused")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_adamw_8bit() -> None:
+    cfg = _minimal_active_cfg(optimizer="adamw_8bit")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_adamw_bnb_8bit() -> None:
+    cfg = _minimal_active_cfg(optimizer="adamw_bnb_8bit")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_paged_adamw_8bit() -> None:
+    cfg = _minimal_active_cfg(optimizer="paged_adamw_8bit")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_missing_optimizer() -> None:
+    """No ``optimizer`` key — Axolotl picks a supported default elsewhere."""
+    cfg = _minimal_active_cfg()
+    assert "optimizer" not in cfg
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_accepts_none_optimizer() -> None:
+    """Explicit ``optimizer: null`` must not raise (default-fill happens later)."""
+    cfg = _minimal_active_cfg(optimizer=None)
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_rejects_lion() -> None:
+    cfg = _minimal_active_cfg(optimizer="lion_pytorch")
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    msg = str(exc.value)
+    assert "lion_pytorch" in msg
+    assert "ProTrain" in msg
+
+
+def test_optimizer_validator_rejects_adafactor() -> None:
+    cfg = _minimal_active_cfg(optimizer="adafactor")
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    assert "adafactor" in str(exc.value)
+
+
+def test_optimizer_validator_rejects_sgd() -> None:
+    cfg = _minimal_active_cfg(optimizer="sgd")
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    assert "sgd" in str(exc.value)
+
+
+def test_optimizer_validator_message_cites_chunk_optim_path() -> None:
+    """Error message must point users at the adapter source file."""
+    cfg = _minimal_active_cfg(optimizer="muon")
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    msg = str(exc.value)
+    assert "src/axolotl/integrations/protrain/chunk/optim.py" in msg
+    # Message should also enumerate the supported set + give a fix.
+    assert "adamw_torch" in msg
+    assert "remove the ProTrain plugin" in msg
+
+
+def test_optimizer_validator_is_case_insensitive_accept() -> None:
+    """Mixed-case supported names must still be accepted."""
+    cfg = _minimal_active_cfg(optimizer="AdamW_Torch")
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_optimizer_validator_skips_when_protrain_inactive() -> None:
+    """An unsupported optimizer is fine if ProTrain isn't enabled."""
+    cfg = {
+        "protrain_auto_memory": False,
+        "optimizer": "lion_pytorch",
+    }
+    ProTrainArgs.model_validate(cfg)

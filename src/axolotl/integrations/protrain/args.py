@@ -64,6 +64,34 @@ _PROTRAIN_PLUGIN_KEYS = frozenset(
 )
 
 
+# Strict allow-list of Axolotl/HF optimizer names that ProTrain's chunk
+# manager + per-chunk adapters can drive correctly. The set is the union
+# of names dispatched by ``api/optim_wrapper.protrain_optimizer_wrapper``:
+#
+# * ``adamw_torch`` / ``adamw_torch_fused`` — default route through
+#   ``GpuFusedAdamAdapter`` (Apex FusedAdam, falls back to
+#   ``torch.optim.AdamW``) for persistent chunks and
+#   ``CpuFusedAdamAdapter`` (DeepSpeedCPUAdam) for non-persistent chunks.
+# * ``adamw_8bit`` / ``adamw_bnb_8bit`` / ``paged_adamw_8bit`` (M2.5) —
+#   route persistent chunks through ``GpuAdamW8bitAdapter``
+#   (``bnb.optim.AdamW8bit`` / ``bnb.optim.PagedAdamW8bit``); see
+#   ``api/optim_wrapper._BNB_8BIT_OPTIMIZERS``.
+#
+# All other optimizer names (Lion, Adafactor, GaLore, Sophia, Muon,
+# torchao, plain SGD, etc.) have state shapes that do not match the
+# AdamW-shaped adapters and are silently broken — the validator below
+# rejects them at config-load time.
+_SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
+    {
+        "adamw_torch",
+        "adamw_torch_fused",
+        "adamw_8bit",
+        "adamw_bnb_8bit",
+        "paged_adamw_8bit",
+    }
+)
+
+
 def _has_protrain_plugin(plugins) -> bool:
     """Return True iff the iterable contains an explicit ProTrain plugin id.
 
@@ -506,6 +534,55 @@ class ProTrainArgs(BaseModel):
         # SCB stays GPU-resident as a Python attribute. Offload-mode wiring (bnb-aware
         # discovery in profiler/trace.py) is deferred to a follow-up after the M1
         # fused-kernel work lands.
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_unsupported_optimizer(cls, data):
+        """Reject ``cfg.optimizer`` values that ProTrain's adapters cannot drive.
+
+        ProTrain's per-chunk optimizer wrapper only knows AdamW-shaped
+        state (see :data:`_SUPPORTED_OPTIMIZERS` and
+        ``api/optim_wrapper.protrain_optimizer_wrapper``). Unsupported
+        optimizers (Lion, Adafactor, GaLore, Sophia, Muon, torchao, plain
+        SGD, ...) silently corrupt the chunk manager because their per-
+        param state shapes don't match what the adapter expects. We
+        catch the misconfiguration here rather than letting it surface
+        as a confusing crash deep inside the chunk-manager step path.
+
+        Compares case-insensitively (``str(...).strip().lower()``) to
+        match :func:`api.optim_wrapper._normalize_optimizer_name`. A
+        missing / ``None`` ``optimizer`` is permitted: Axolotl's training
+        schema picks a supported default (``adamw_torch_fused``) when
+        the user omits it, so this validator must not over-reject the
+        unset case.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not data.get("protrain_auto_memory"):
+            return data
+        plugins = data.get("plugins") or []
+        if not _has_protrain_plugin(plugins):
+            return data
+        optimizer = data.get("optimizer")
+        if optimizer is None:
+            return data
+        # Tolerate enum values supplied programmatically (e.g.
+        # ``OptimizerNames.ADAMW_TORCH``) as well as the YAML string.
+        optimizer_str = getattr(optimizer, "value", optimizer)
+        normalized = str(optimizer_str).strip().lower()
+        if normalized not in _SUPPORTED_OPTIMIZERS:
+            supported = ", ".join(sorted(_SUPPORTED_OPTIMIZERS))
+            raise ValueError(
+                f"ProTrain currently supports AdamW family optimizers only "
+                f"(got `{optimizer_str}`). Lion, Adafactor, GaLore, Sophia, "
+                f"Muon, and torchao optimizers require optimizer-specific "
+                f"chunk-manager adapters that have not been implemented. See "
+                f"src/axolotl/integrations/protrain/chunk/optim.py for the "
+                f"supported adapter list. Supported optimizers: "
+                f"{supported}. Set `optimizer: adamw_torch` (or another "
+                f"supported value above) or remove the ProTrain plugin."
+            )
         return data
 
     @model_validator(mode="before")
