@@ -798,6 +798,12 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.relora.ReLoRACallback" id="toc-axolotl.monkeypatch.relora.ReLoRACallback" class="nav-link" data-scroll-target="#axolotl.monkeypatch.relora.ReLoRACallback">ReLoRACallback</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.monkeypatch.relora.magnitude_pruning_" id="toc-axolotl.monkeypatch.relora.magnitude_pruning_" class="nav-link" data-scroll-target="#axolotl.monkeypatch.relora.magnitude_pruning_">magnitude_pruning_</a></li>
+  <li><a href="#axolotl.monkeypatch.relora.random_pruning_" id="toc-axolotl.monkeypatch.relora.random_pruning_" class="nav-link" data-scroll-target="#axolotl.monkeypatch.relora.random_pruning_">random_pruning_</a></li>
+  <li><a href="#axolotl.monkeypatch.relora.reset_optimizer" id="toc-axolotl.monkeypatch.relora.reset_optimizer" class="nav-link" data-scroll-target="#axolotl.monkeypatch.relora.reset_optimizer">reset_optimizer</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -832,6 +838,53 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.relora.ReLoRACallback">ReLoRACallback</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.relora.ReLoRACallback(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Callback to merge LoRA weights into the base model and save full-weight checkpoints</p>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.relora.magnitude_pruning_">magnitude_pruning_</a></td>
+<td>Zero the lowest <code>prune_ratio</code> fraction of values by absolute magnitude, in place.</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.monkeypatch.relora.random_pruning_">random_pruning_</a></td>
+<td>Zero a random <code>prune_ratio</code> fraction of values, in place.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.monkeypatch.relora.reset_optimizer">reset_optimizer</a></td>
+<td>Prune optimizer state for <code>reset_params</code> only.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.monkeypatch.relora.magnitude_pruning_" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.relora.magnitude_pruning_">magnitude_pruning_</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.relora.magnitude_pruning_(tensor, prune_ratio)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Zero the lowest <code>prune_ratio</code> fraction of values by absolute magnitude, in place.</p>
+</section>
+<section id="axolotl.monkeypatch.relora.random_pruning_" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.relora.random_pruning_">random_pruning_</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.relora.random_pruning_(tensor, prune_ratio)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Zero a random <code>prune_ratio</code> fraction of values, in place.</p>
+</section>
+<section id="axolotl.monkeypatch.relora.reset_optimizer" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.relora.reset_optimizer">reset_optimizer</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.relora.reset_optimizer(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    optimizer,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">*</span>,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    reset_params,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    optimizer_state_keys,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    prune_method<span class="op">=</span><span class="st">'magnitude'</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    prune_ratio<span class="op">=</span><span class="fl">0.9</span>,</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Prune optimizer state for <code>reset_params</code> only.</p>
 
 
 </section>
