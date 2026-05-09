@@ -24,7 +24,7 @@ max_steps: 50
 
 optimizer: adamw_torch_8bit
 lr_scheduler: cosine
-learning_rate: 0.003
+learning_rate: 5e-6
 warmup_steps: 0.1
 
 bf16: true
