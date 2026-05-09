@@ -85,7 +85,8 @@ tf32: false
 # validator will refuse the config.
 gradient_checkpointing: false
 
-flash_attention: false
+# M0 spike validated FA composes cleanly with ProTrain on this config.
+flash_attention: true
 xformers_attention: false
 
 # IMPORTANT: Axolotl auto-enables fused Triton LoRA kernels (q/k/v/o/MLP)
