@@ -383,7 +383,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
         for bid_, mode_ in bmap.items():
             if mode_ is BlockMode.NONE or mode_ is BlockMode.OFFLOAD:
                 live_none_bytes += int(
-                    saved_bytes_proxy.get(bid_, act_sizes_full.get(bid_, 0))
+                    saved_bytes_proxy.get(bid_, act_sizes_full.get(bid_, 0)) or 0
                 )
         n_ckpt_ = sum(1 for m in bmap.values() if m is BlockMode.CKPT)
         max_ckpt_act_ = 0
@@ -2609,9 +2609,7 @@ def protrain_model_wrapper(
             )
 
             def _clamp_for_anchor(x: float) -> float:
-                return max(
-                    _PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, x)
-                )
+                return max(_PHASE2_ALPHA_CLAMP_MIN, min(_PHASE2_ALPHA_CLAMP_MAX, x))
 
             if (
                 phase2_analytical_fwd_s_val > 0.0
