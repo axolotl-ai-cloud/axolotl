@@ -500,20 +500,12 @@ class ProTrainArgs(BaseModel):
                     "(scope-excluded per plan.md — single-3090 target). Set "
                     "sequence_parallel_degree=1 or remove the ProTrain plugin."
                 )
-        if data.get("load_in_8bit"):
-            raise ValueError(
-                "ProTrain is incompatible with load_in_8bit=true (bitsandbytes "
-                "8-bit quantization wraps nn.Linear.weight in a non-owning proxy; "
-                "the chunk manager operates on unquantized storage for gather / "
-                "offload). Set load_in_8bit=false or remove the ProTrain plugin."
-            )
-        if data.get("load_in_4bit"):
-            raise ValueError(
-                "ProTrain is incompatible with load_in_4bit=true (bitsandbytes "
-                "4-bit quantization wraps nn.Linear.weight in a non-owning proxy; "
-                "the chunk manager operates on unquantized storage for gather / "
-                "offload). Set load_in_4bit=false or remove the ProTrain plugin."
-            )
+        # M0 spike validated bnb 8-bit/4-bit weights compose with ProTrain Mode A: bnb's
+        # Int8Params.data and Params4bit.data are int8/uint8 tensors and chunk
+        # numel*element_size byte math handles them correctly; the bnb quant_state /
+        # SCB stays GPU-resident as a Python attribute. Offload-mode wiring (bnb-aware
+        # discovery in profiler/trace.py) is deferred to a follow-up after the M1
+        # fused-kernel work lands.
         return data
 
     @model_validator(mode="before")

@@ -123,22 +123,20 @@ def test_mutex_rejects_sequence_parallel() -> None:
     assert "sequence_parallel_degree" in str(exc.value)
 
 
-def test_mutex_rejects_load_in_8bit() -> None:
+def test_mutex_allows_load_in_8bit() -> None:
+    """M0 spike validated bnb 8-bit composes with ProTrain Mode A; validator must allow it."""
     cfg = _minimal_active_cfg(load_in_8bit=True)
-    with pytest.raises(ValidationError) as exc:
-        ProTrainArgs.model_validate(cfg)
-    assert "load_in_8bit" in str(exc.value)
+    ProTrainArgs.model_validate(cfg)
 
 
-def test_mutex_rejects_load_in_4bit() -> None:
+def test_mutex_allows_load_in_4bit() -> None:
+    """M0 spike validated bnb 4-bit (QLoRA) composes with ProTrain Mode A; validator must allow it."""
     cfg = _minimal_active_cfg(load_in_4bit=True)
-    with pytest.raises(ValidationError) as exc:
-        ProTrainArgs.model_validate(cfg)
-    assert "load_in_4bit" in str(exc.value)
+    ProTrainArgs.model_validate(cfg)
 
 
 def test_mutex_allows_load_in_xbit_false() -> None:
-    """Both bnb flags explicitly False is the supported path."""
+    """Both bnb flags explicitly False is still the supported path."""
     cfg = _minimal_active_cfg(load_in_8bit=False, load_in_4bit=False)
     ProTrainArgs.model_validate(cfg)
 
