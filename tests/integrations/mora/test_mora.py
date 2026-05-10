@@ -21,7 +21,7 @@ class TestMoraAdapterLoading:
         cfg = DictDefault(
             {
                 "adapter": "mora",
-                "mora": {"use_mora": True, "mora_type": 6},
+                "mora": {"use_mora": True, "mora_type": "rope"},
             }
         )
 
@@ -47,7 +47,7 @@ class TestMoraAdapterLoading:
         cfg = DictDefault(
             {
                 "adapter": "mora",
-                "mora": {"use_mora": True, "mora_type": 6},
+                "mora": {"use_mora": True, "mora_type": "rope"},
             }
         )
         PluginManager.get_instance().plugins["axolotl.integrations.mora.MoraPlugin"] = (
@@ -64,7 +64,7 @@ class TestMoraAdapterLoading:
                 "adapter": "mora",
                 "mora": {
                     "use_mora": True,
-                    "mora_type": 6,
+                    "mora_type": "rope",
                 },
                 "lora_r": 8,
                 "lora_alpha": 16,
@@ -103,7 +103,7 @@ class TestMoraAdapterLoading:
         cfg = DictDefault(
             {
                 "adapter": "mora",
-                "mora": {"use_mora": True, "mora_type": 6},
+                "mora": {"use_mora": True, "mora_type": "rope"},
                 "lora_model_dir": "adapter-checkpoint",
                 "lora_on_cpu": False,
                 "lora_r": 8,

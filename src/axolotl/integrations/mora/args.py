@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel, Field, model_validator
+
+
+class MoraType(str, Enum):
+    """MoRA variants supported by the reference implementation."""
+
+    SHARING = "sharing"
+    ROPE = "rope"
+
+    @property
+    def peft_value(self) -> int:
+        return {
+            MoraType.SHARING: 1,
+            MoraType.ROPE: 6,
+        }[self]
 
 
 class MoraConfig(BaseModel):
@@ -15,37 +31,27 @@ class MoraConfig(BaseModel):
             "support (for example, the MoRA fork)."
         ),
     )
-    mora_type: int = Field(
-        default=6,
-        ge=1,
+    mora_type: MoraType = Field(
+        default=MoraType.ROPE,
         description=(
-            "MoRA variant selector. The MoRA repo uses type 1 for sharing and "
-            "type 6 for RoPE-based updates."
-        ),
-    )
-    use_relora: bool = Field(
-        default=False,
-        description=(
-            "Enable ReMoRA restart scheduling. Axolotl maps this to the existing "
-            "ReLoRA restart path."
-        ),
-    )
-    use_relora_step: int | None = Field(
-        default=None,
-        ge=1,
-        description=(
-            "Restart interval in steps when ReMoRA is enabled. This maps to "
-            "Axolotl's jagged_restart_steps."
+            "MoRA variant selector. Supported values are `sharing` for type 1 "
+            "and `rope` for type 6. Numeric values 1 and 6 are accepted for "
+            "backwards compatibility."
         ),
     )
 
-    @model_validator(mode="after")
-    def validate_relora(self):
-        if self.use_relora_step is not None:
-            self.use_relora = True
-        if self.use_relora and self.use_relora_step is None:
-            raise ValueError("mora.use_relora requires mora.use_relora_step")
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_mora_type(cls, data):
+        if not isinstance(data, dict) or "mora_type" not in data:
+            return data
+        data = data.copy()
+        mora_type = data["mora_type"]
+        if mora_type == 1:
+            data["mora_type"] = MoraType.SHARING
+        elif mora_type == 6:
+            data["mora_type"] = MoraType.ROPE
+        return data
 
 
 class MoraArgs(BaseModel):

@@ -6,6 +6,7 @@ from peft import LoraConfig, PeftModel
 from transformers import PreTrainedModel
 
 from axolotl.integrations.base import AdapterCapabilities, BasePlugin
+from axolotl.integrations.mora.args import MoraType
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -20,6 +21,26 @@ def _peft_supports_mora() -> bool:
     return "use_mora" in params and "mora_type" in params
 
 
+def _mora_type_peft_value(mora_type: MoraType | str | int) -> int:
+    if isinstance(mora_type, MoraType):
+        return mora_type.peft_value
+    if mora_type == 1 or mora_type == MoraType.SHARING.value:
+        return MoraType.SHARING.peft_value
+    if mora_type == 6 or mora_type == MoraType.ROPE.value:
+        return MoraType.ROPE.peft_value
+    raise ValueError("mora_type must be one of `sharing`, `rope`, 1, or 6")
+
+
+def _mora_type_label(mora_type: MoraType | str | int) -> str:
+    if isinstance(mora_type, MoraType):
+        return mora_type.value
+    if mora_type == 1:
+        return MoraType.SHARING.value
+    if mora_type == 6:
+        return MoraType.ROPE.value
+    return str(mora_type)
+
+
 class MoraPlugin(BasePlugin):
     """Plugin that exposes MoRA-specific config and validates runtime support."""
 
@@ -30,21 +51,7 @@ class MoraPlugin(BasePlugin):
         return [AdapterCapabilities(name="mora", lora_like=True, relora=True)]
 
     def normalize_config_input(self, cfg: DictDefault):
-        if cfg.get("adapter") != "mora":
-            return
-        mora_cfg = cfg.get("mora") or {}
-        use_relora = bool(mora_cfg.get("use_relora"))
-        use_relora_step = mora_cfg.get("use_relora_step")
-        if use_relora_step is not None:
-            cfg["relora"] = True
-            if not cfg.get("jagged_restart_steps"):
-                cfg["jagged_restart_steps"] = use_relora_step
-            elif cfg.get("jagged_restart_steps") != use_relora_step:
-                raise ValueError(
-                    "mora.use_relora_step must match jagged_restart_steps when both are set"
-                )
-        elif use_relora:
-            raise ValueError("mora.use_relora requires mora.use_relora_step")
+        """MoRA uses core ReLoRA fields for ReMoRA scheduling."""
 
     def validate_config(self, cfg: DictDefault):
         if cfg.adapter != "mora":
@@ -77,7 +84,7 @@ class MoraPlugin(BasePlugin):
         mora_cfg = cfg.mora
         return {
             "use_mora": mora_cfg.use_mora,
-            "mora_type": mora_cfg.mora_type,
+            "mora_type": _mora_type_peft_value(mora_cfg.mora_type),
         }
 
     def pre_model_load(self, cfg: DictDefault):
@@ -89,6 +96,6 @@ class MoraPlugin(BasePlugin):
         if cfg.adapter == "mora" and getattr(cfg, "mora", None):
             LOG.debug(
                 "Loaded MoRA model with mora_type=%s, relora=%s",
-                cfg.mora.mora_type,
-                cfg.mora.use_relora,
+                _mora_type_label(cfg.mora.mora_type),
+                cfg.relora,
             )
