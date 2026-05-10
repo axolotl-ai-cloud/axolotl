@@ -528,12 +528,13 @@ class ProTrainArgs(BaseModel):
                     "(scope-excluded per plan.md — single-3090 target). Set "
                     "sequence_parallel_degree=1 or remove the ProTrain plugin."
                 )
-        # M0 spike validated bnb 8-bit/4-bit weights compose with ProTrain Mode A: bnb's
-        # Int8Params.data and Params4bit.data are int8/uint8 tensors and chunk
-        # numel*element_size byte math handles them correctly; the bnb quant_state /
-        # SCB stays GPU-resident as a Python attribute. Offload-mode wiring (bnb-aware
-        # discovery in profiler/trace.py) is deferred to a follow-up after the M1
-        # fused-kernel work lands.
+        # M0 spike + M3 audit validation: bnb 8-bit / 4-bit weights compose with
+        # ProTrain in BOTH Mode A (all-persistent) AND offload mode (Mode C / single-GPU
+        # n_persist_override<N_chunk). Int8Params.data and Params4bit.data are int8/uint8
+        # tensors so chunk numel*element_size byte math handles them correctly; quant_state
+        # lives as a Python attribute on the param instance and survives the chunk gather/
+        # offload path because chunk/manager.py rebinds param.data without touching python
+        # attrs. Pinned by tests/protrain/test_bnb_offload.py.
         return data
 
     @model_validator(mode="before")
