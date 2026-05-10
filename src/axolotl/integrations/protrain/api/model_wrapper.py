@@ -48,7 +48,10 @@ from axolotl.integrations.protrain.profiler import (
 )
 from axolotl.integrations.protrain.profiler.cache import ProfilerCacheKey
 from axolotl.integrations.protrain.profiler.hw_bench import measure_compute_rate
-from axolotl.integrations.protrain.profiler.trace import _arch_hash
+from axolotl.integrations.protrain.profiler.trace import (
+    _arch_hash,
+    synth_trace_from_overrides,
+)
 from axolotl.integrations.protrain.runtime.hooks import install_hooks
 from axolotl.integrations.protrain.runtime.scheduler import Scheduler
 from axolotl.integrations.protrain.search import search
@@ -1856,8 +1859,73 @@ def protrain_model_wrapper(
         sku=_sku(device),
         world=hardware_profile.gpu_count,
     )
+    # Trace-pass override-skip gate. When the user has supplied all four
+    # explicit-override knobs (n_persist / n_buffer / n_swap / n_checkpoint)
+    # the searcher AND the cost model are bypassed downstream by the
+    # ``all_overrides_set`` branch. The trace pass itself becomes wasted
+    # work — and on big-model offload configurations (e.g. 30B + 4-bit,
+    # or 8B + 4-bit at seq=2048) the un-offloaded trace OOMs the device
+    # *before* chunk offload could engage. We therefore short-circuit
+    # the trace pass on this exact path: build a synthetic ProfilerTrace
+    # via ``synth_trace_from_overrides`` (op_order=(), analytical
+    # activation_sizes per discovered block, model_state_bytes from
+    # _count_model_state_bytes, measured pcie if CUDA is available) and
+    # bypass ``run_trace`` entirely. This mirrors the existing
+    # ``force_all_persistent`` short-circuit in trace.py:609-625 (which
+    # only suppresses on-demand engagement WITHIN the trace) by going one
+    # step further and skipping the trace itself when there is nothing
+    # the trace would inform.
+    #
+    # The synthetic trace is NOT saved to the on-disk cache — its
+    # activation_sizes are placeholders (analytical, not measured) and
+    # caching them would risk a future non-override run picking them up
+    # as if they were real. The cache key falls back to a normal
+    # cache-miss + run_trace on subsequent override-cleared runs.
+    _override_skip_trace = (
+        n_persist_override is not None
+        and n_buffer_override is not None
+        and n_swap_override is not None
+        and n_checkpoint_override is not None
+    )
     trace = load_cached_trace(cache_key, cache_dir=cache_dir)
-    if trace is None:
+    if trace is None and _override_skip_trace:
+        import sys as _sys
+
+        LOG.info(
+            "ProTrain: explicit knob override path with cache miss — "
+            "synthesizing ProfilerTrace from defaults and SKIPPING the "
+            "trace pass (n_persist=%s n_buffer=%s n_swap=%s n_checkpoint=%s "
+            "n_offload=%s). This avoids the trace-pass OOM on big-model "
+            "offload configurations where the un-offloaded forward+backward "
+            "exceeds device memory before chunk offload can engage.",
+            n_persist_override,
+            n_buffer_override,
+            n_swap_override,
+            n_checkpoint_override,
+            n_offload_override,
+        )
+        _sys.stderr.write(
+            "[protrain] override path: skipping trace pass, "
+            "synthesizing ProfilerTrace from defaults\n"
+        )
+        _sys.stderr.flush()
+        trace = synth_trace_from_overrides(
+            model,
+            batch_size=batch_size,
+            seq_len=seq_len,
+            device=device,
+            world_size=int(hardware_profile.gpu_count),
+        )
+        _sys.stderr.write(
+            f"[protrain] synth trace done: {len(trace.activation_sizes)} blocks "
+            f"(no op_order, no measured activations)\n"
+        )
+        _sys.stderr.flush()
+        # Deliberately do NOT save to cache: the synthetic activation
+        # sizes are analytical placeholders, not measured values. A
+        # future non-override run on the same arch+bs+seq+sku+world key
+        # must not pick these up as real measurements.
+    elif trace is None:
         import sys as _sys
 
         LOG.info(
