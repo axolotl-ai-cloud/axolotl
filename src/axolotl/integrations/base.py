@@ -101,12 +101,6 @@ class BasePlugin:
         Returns a dataclass model for the plugin's training arguments.
         """
 
-    def normalize_config_input(self, cfg: DictDefault):
-        """Normalize raw config values before Pydantic validation."""
-
-    def validate_config(self, cfg: DictDefault):
-        """Validate a parsed config after Pydantic validation."""
-
     def get_adapter_capabilities(self) -> list[AdapterCapabilities]:
         """Returns adapter capabilities contributed by the plugin."""
         return []
@@ -449,16 +443,6 @@ class PluginManager:
             if training_args_from_plugin is not None:
                 training_args.append(training_args_from_plugin)
         return training_args
-
-    def normalize_config_input(self, cfg: DictDefault):
-        """Calls raw config normalization hooks on registered plugins."""
-        for plugin in self.plugins.values():
-            plugin.normalize_config_input(cfg)
-
-    def validate_config(self, cfg: DictDefault):
-        """Calls parsed config validation hooks on registered plugins."""
-        for plugin in self.plugins.values():
-            plugin.validate_config(cfg)
 
     def adapter_capabilities(self) -> dict[str, AdapterCapabilities]:
         """Returns adapter capabilities by adapter name."""

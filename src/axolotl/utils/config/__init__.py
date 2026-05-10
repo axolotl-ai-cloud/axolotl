@@ -328,14 +328,12 @@ def validate_config(
 ) -> DictDefault:
     AxolotlConfigWCapabilities = AxolotlConfigWCapabilitiesBase
     AxolotlInputConfig = AxolotlInputConfigBase
-    plugin_manager = PluginManager.get_instance()
 
     if cfg.plugins:
         (
             AxolotlConfigWCapabilities,
             AxolotlInputConfig,
         ) = merge_input_args()
-        plugin_manager.normalize_config_input(cfg)
 
     # Convert datasets to proper format if needed
     if cfg.get("datasets"):
@@ -365,7 +363,7 @@ def validate_config(
                 "Both capabilities and env_capabilities must be provided or not provided."
             )
 
-        validated_cfg = DictDefault(
+        return DictDefault(
             dict(
                 AxolotlConfigWCapabilities(
                     **cfg.to_dict(),
@@ -374,14 +372,10 @@ def validate_config(
                 ).model_dump(exclude_none=True)
             )
         )
-        plugin_manager.validate_config(validated_cfg)
-        return validated_cfg
 
-    validated_cfg = DictDefault(
+    return DictDefault(
         dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
     )
-    plugin_manager.validate_config(validated_cfg)
-    return validated_cfg
 
 
 def prepare_plugins(cfg):

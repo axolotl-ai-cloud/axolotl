@@ -57,6 +57,22 @@ class TestMoraAdapterLoading:
         with pytest.raises(ImportError, match="MoRA support"):
             load_adapter(model, cfg, "mora", config_only=True)
 
+    def test_mora_plugin_rejects_quantized_base_model(self):
+        model = torch.nn.Linear(4, 4)
+        cfg = DictDefault(
+            {
+                "adapter": "mora",
+                "load_in_4bit": True,
+                "mora": {"use_mora": True, "mora_type": "rope"},
+            }
+        )
+        PluginManager.get_instance().plugins["axolotl.integrations.mora.MoraPlugin"] = (
+            mora_plugin.MoraPlugin()
+        )
+
+        with pytest.raises(ValueError, match="full-precision base model"):
+            load_adapter(model, cfg, "mora", config_only=True)
+
     def test_mora_plugin_builds_mora_config_when_supported(self, monkeypatch):
         model = torch.nn.Linear(4, 4)
         cfg = DictDefault(

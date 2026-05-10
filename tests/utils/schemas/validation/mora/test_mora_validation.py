@@ -98,20 +98,3 @@ class TestMoraValidation:
         prepare_plugins(cfg)
         with pytest.raises(ValueError, match="jagged_restart_steps"):
             validate_config(cfg)
-
-    def test_mora_rejects_quantized_base_model(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(
-            {
-                "adapter": "mora",
-                "plugins": ["axolotl.integrations.mora.MoraPlugin"],
-                "load_in_4bit": True,
-                "mora": {
-                    "use_mora": True,
-                    "mora_type": "rope",
-                },
-            }
-        )
-
-        prepare_plugins(cfg)
-        with pytest.raises(ValueError, match="full-precision base model"):
-            validate_config(cfg)

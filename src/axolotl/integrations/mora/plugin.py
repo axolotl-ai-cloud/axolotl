@@ -50,12 +50,7 @@ class MoraPlugin(BasePlugin):
     def get_adapter_capabilities(self) -> list[AdapterCapabilities]:
         return [AdapterCapabilities(name="mora", lora_like=True, relora=True)]
 
-    def normalize_config_input(self, cfg: DictDefault):
-        """MoRA uses core ReLoRA fields for ReMoRA scheduling."""
-
-    def validate_config(self, cfg: DictDefault):
-        if cfg.adapter != "mora":
-            return
+    def _validate_mora_config(self, cfg: DictDefault):
         mora_cfg = getattr(cfg, "mora", None)
         if mora_cfg is None:
             raise ValueError("adapter: mora requires a nested mora configuration block")
@@ -74,6 +69,7 @@ class MoraPlugin(BasePlugin):
     def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
         if cfg.adapter != "mora":
             return {}
+        self._validate_mora_config(cfg)
         if not _peft_supports_mora():
             raise ImportError(
                 "adapter: mora requires a PEFT build with MoRA support "
