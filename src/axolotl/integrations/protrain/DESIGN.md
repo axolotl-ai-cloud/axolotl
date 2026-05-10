@@ -323,3 +323,24 @@ App B.2 of the paper has **two distinct components**, each addressing a differen
 #### Measurement status
 
 Peak-memory delta from the wire-up has not been measured on RTX 3090 reference hardware in this commit (the `α = 1.10` fragmentation factor — item 1 above — was already absorbing the un-wired fragmentation cost in the cost model). To-be-measured in a follow-up: re-run the M1 profiler ground-truth before and after the wire-up; if peak drops by more than ~5% on a 1.5B-param target shape, recalibrate `α` downward. The single-stream wire-up's correctness — the `record_stream` discipline at every cross-stream site — has been validated by the new `tests/protrain/test_single_stream_allocator.py` test (heap-affinity assertion via free-then-reallocate fragmentation probe + nested-stream context-manager composition test). The pinned-host wire-up's correctness — total pool bytes equals the sum of per-chunk aligned bytes — is asserted by `tests/protrain/test_chunk_manager_offload.py::test_materialize_offload_uses_precise_pinned_pool`.
+
+## Known Limitations
+
+### Checkpoint mode-pinning (Phase 2 M6C)
+
+ProTrain checkpoints are **mode-pinned**: the mode used to train a checkpoint must equal the mode used to resume it. Concretely:
+
+- A checkpoint produced under **Mode A** (`protrain_force_all_persistent: true`) must be resumed under Mode A.
+- A checkpoint produced under **Mode C** (`protrain_zero3_shard: true`) must be resumed under Mode C.
+- **Cross-mode resume is unsupported.** HF Trainer's `_load_from_checkpoint` runs *after* ProTrain's chunk `materialize_offload` has zero-ed every non-persistent slot; the loader writes into those zero-ed slots, then ProTrain's first `gather` overwrites the loaded state with the (still-zero) CPU shadow. HF Trainer exposes no hook to interleave a ProTrain `gather` between weight load and the first forward, so this cannot be patched in the plugin without forking HF.
+
+### Standard PEFT-LoRA in Mode C (Phase 2 M6C)
+
+Plain `peft` LoRA on top of an unquantized base is **currently unsupported in Mode C** on real models. The LoRA adapter's `param.data` lands on a non-persistent chunk; the chunk's CPU shadow is the source of truth and the GPU buffer is materialized lazily, so the autograd-traced delta path sees a shape mismatch on backward. This is the same hookability gap class the fused-LoRA kernels exhibited pre-M1, tracked under `M6C-fix-2`.
+
+**Workarounds:**
+
+- **Plain fp16 / bf16 LoRA** — use Mode A (`protrain_force_all_persistent: true`). All parameters stay GPU-resident, so the LoRA delta path follows the standard PEFT contract.
+- **Quantized base + LoRA** — pair LoRA with bnb 4-bit or 8-bit weight quantization. `bitsandbytes.nn.Linear4bit` / `Linear8bitLt` use typed `param.data` views that survive the non-persistent slot lifecycle; the M3 13B headline test exercises this combination in both Mode A and Mode C.
+
+Coverage: `tests/protrain/test_cross_mode_resume.py` is xfail-pinned against the cross-mode resume failure; the M6C report under `docs/protrain/` traces the concrete failure modes for each combination above.
