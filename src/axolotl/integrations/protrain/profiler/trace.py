@@ -607,7 +607,23 @@ def run_trace(
     # exactly what doesn't fit. The cost model falls back to defaults
     # (identity scale, default bwd_fwd ratio) for traces marked on-demand.
     engage_on_demand = False
-    if cfg.on_demand and cuda_available:
+    if cfg.force_all_persistent:
+        # Caller explicitly opted into Mode A (all chunks GPU-resident);
+        # respect their intent and skip the on-demand auto-engagement
+        # even if model_state exceeds the device-memory threshold. The
+        # trace pass will run the trainable forward+backward un-offloaded
+        # — the caller is on the hook for ensuring the model fits.
+        # Required to prevent the trace from re-engaging on-demand on
+        # borderline 7-13B configs where the user has chosen Mode A
+        # explicitly (see Phase 2 M5 post-mortem: 8B trace pass auto-
+        # engaged on-demand despite force_all_persistent=True and
+        # destabilized the host).
+        LOG.info(
+            "Profiler force_all_persistent=True; skipping on-demand "
+            "engagement gate. Trace pass will run the trainable "
+            "forward+backward fully on GPU."
+        )
+    elif cfg.on_demand and cuda_available:
         try:
             gpu_total = int(torch.cuda.get_device_properties(device).total_memory)
             # State-aware footprint: params (all of them) + grads + fp32

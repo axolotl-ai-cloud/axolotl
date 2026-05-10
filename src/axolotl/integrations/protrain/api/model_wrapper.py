@@ -1899,6 +1899,7 @@ def protrain_model_wrapper(
             device=str(device),
             include_backward=True,
             on_demand=True,
+            force_all_persistent=bool(force_all_persistent),
             world_size=int(hardware_profile.gpu_count),
         )
         batch = _dummy_batch(model, batch_size, seq_len, device)

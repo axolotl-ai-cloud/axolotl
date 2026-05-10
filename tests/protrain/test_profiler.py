@@ -554,6 +554,82 @@ def test_on_demand_engaged_path_in_run_trace(gpu_device, monkeypatch):
 
 
 @pytest.mark.gpu
+def test_force_all_persistent_suppresses_on_demand_in_run_trace(
+    gpu_device, monkeypatch, caplog
+):
+    """force_all_persistent=True must skip the on-demand trace gate.
+
+    Even with the device-memory threshold pinned to 0% (which would
+    normally force on-demand engagement), passing
+    ``force_all_persistent=True`` to ``run_trace`` via ``ProfilerConfig``
+    must short-circuit the gate and run the trace's forward+backward
+    fully on GPU. Pins the Phase 2 M5 post-mortem fix: prior behavior
+    silently re-engaged on-demand offloading even when the user had
+    explicitly opted into Mode A, which can hang or destabilize the
+    host on borderline 7-13B configurations.
+    """
+    import logging
+
+    import torch
+    from torch import nn
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+
+    device = torch.device(f"cuda:{gpu_device}")
+
+    class TinyBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(32, 64)
+            self.fc2 = nn.Linear(64, 32)
+
+        def forward(self, x):
+            return self.fc2(torch.relu(self.fc1(x)))
+
+    class TinyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.ModuleList([TinyBlock(), TinyBlock()])
+
+        def forward(self, input_ids=None, **kwargs):
+            x = input_ids.to(torch.float32)
+            for layer in self.layers:
+                x = layer(x)
+            return type("Out", (), {"loss": x.sum()})()
+
+    model = TinyModel().to(device)
+    batch = {"input_ids": torch.randn(2, 32, device=device)}
+
+    # Force on-demand to engage (without the fix) by dropping the threshold.
+    from axolotl.integrations.protrain.profiler import trace as trace_mod
+
+    monkeypatch.setattr(trace_mod, "ON_DEMAND_STATE_BYTES_FRACTION", 0.0)
+
+    cfg = ProfilerConfig(
+        batch_size=2,
+        seq_len=32,
+        device=str(device),
+        include_backward=False,
+        on_demand=True,
+        force_all_persistent=True,
+    )
+
+    with caplog.at_level(logging.INFO, logger=trace_mod.LOG.name):
+        trace = run_trace(model, batch, cfg)
+
+    assert len(trace.op_order) > 0
+    log_text = "\n".join(rec.getMessage() for rec in caplog.records)
+    assert "force_all_persistent=True; skipping on-demand" in log_text, (
+        f"force_all_persistent did not suppress on-demand engagement; "
+        f"trace log was:\n{log_text}"
+    )
+    assert "Profiler engaging on-demand mode" not in log_text, (
+        f"on-demand was engaged despite force_all_persistent=True; log: {log_text}"
+    )
+
+
+@pytest.mark.gpu
 def test_on_demand_engaged_cost_model_finite(gpu_device, monkeypatch):
     """Cost model must produce a finite, positive iter-time on an on-demand trace.
 

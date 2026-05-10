@@ -80,6 +80,15 @@ class ProfilerConfig:
     device: str  # e.g. "cuda:2"
     include_backward: bool = True
     on_demand: bool = True  # OnDemandTensorMgr for models > single-GPU
+    # When True, suppress the trace-pass on-demand engagement gate even if
+    # model_state exceeds the device-memory threshold. Plumbed from the
+    # caller's ``force_all_persistent`` flag so a user who has explicitly
+    # opted into Mode A doesn't get on-demand offloading silently re-
+    # engaged during the trace pass (which can hang or destabilize the
+    # host on borderline configurations — see Phase 2 M5 post-mortem).
+    # The trace pass still runs the trainable forward+backward; the
+    # caller is responsible for ensuring the model fits.
+    force_all_persistent: bool = False
     # Distributed world size. ``None`` (default) means "auto-detect" — the
     # tracer probes ``torch.distributed.get_world_size()`` if a process
     # group is initialized and falls back to 1 otherwise. Pass an explicit
