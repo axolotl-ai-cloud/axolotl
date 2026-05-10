@@ -336,11 +336,17 @@ ProTrain checkpoints are **mode-pinned**: the mode used to train a checkpoint mu
 
 ### Standard PEFT-LoRA in Mode C (Phase 2 M6C)
 
-Plain `peft` LoRA on top of an unquantized base is **currently unsupported in Mode C** on real models. The LoRA adapter's `param.data` lands on a non-persistent chunk; the chunk's CPU shadow is the source of truth and the GPU buffer is materialized lazily, so the autograd-traced delta path sees a shape mismatch on backward. This is the same hookability gap class the fused-LoRA kernels exhibited pre-M1, tracked under `M6C-fix-2`.
+Plain `peft` LoRA on top of an unquantized base is **supported in single-GPU offload mode** as of `M6C-fix-2` + `M6C-fix-3` (per-PEFT-LoRA-container gather hooks installed at both profiler-trace and runtime-scheduler surfaces). The chain works as follows:
+
+- `profiler/on_demand.py::_find_peft_lora_containers` discovers any module with direct trainable LoRA factors (`lora_A` / `lora_B` / `lora_magnitude_vector` / `lora_embedding_*`). Pre-forward and pre-backward gather hooks are installed at the *container* granularity (parallel to M1's fused-kernel-container strategy), so the LoRA factor sub-chunks are GPU-resident before PEFT's `LoraLayer.forward` casts them to bf16.
+- `runtime/hooks.py` + `runtime/scheduler.py::ensure_chunks_resident` install the same container-granularity hooks on the live training scheduler. Without this, the runtime's block-level gather (which assumes per-block chunk granularity) leaves the LoRA sub-chunks released until after the PEFT cast op records its autograd shape, producing the canonical `ToCopyBackward0 returned an invalid gradient at index 0 - got [N, R] but expected shape compatible with [0]` failure.
+
+**Multi-GPU sharded mode (`protrain_zero3_shard: true, world_size > 1`) remains unsupported for plain LoRA.** The `chunk/manager.py::_gather_sharded` path does an `all_gather_into_tensor` against the per-rank shard slice; the LoRA sub-chunk view returned by the gather still has the empty (`[0]`) sentinel shape that the autograd shape-derivation reads on the bf16 cast — the per-LoRA-container hooks fire but the sharded buffer they materialize doesn't satisfy the autograd contract that single-GPU's full-chunk buffer does. Tracked under `M6C-fix-4` (out-of-scope for the M6C-fix-3 dispatch; touches the `chunk/manager.py` sharded-gather sequence).
 
 **Workarounds:**
 
-- **Plain fp16 / bf16 LoRA** — use Mode A (`protrain_force_all_persistent: true`). All parameters stay GPU-resident, so the LoRA delta path follows the standard PEFT contract.
-- **Quantized base + LoRA** — pair LoRA with bnb 4-bit or 8-bit weight quantization. `bitsandbytes.nn.Linear4bit` / `Linear8bitLt` use typed `param.data` views that survive the non-persistent slot lifecycle; the M3 13B headline test exercises this combination in both Mode A and Mode C.
+- **Single-GPU plain fp16 / bf16 LoRA in offload mode** — works directly as of M6C-fix-3; no special config beyond `protrain_force_all_persistent: false` and the override knobs.
+- **Plain fp16 / bf16 LoRA at multi-GPU** — use Mode A (`protrain_force_all_persistent: true`) until M6C-fix-4 lands. All parameters stay GPU-resident, so the LoRA delta path follows the standard PEFT contract.
+- **Quantized base + LoRA** — pair LoRA with bnb 4-bit or 8-bit weight quantization. `bitsandbytes.nn.Linear4bit` / `Linear8bitLt` use typed `param.data` views that survive the non-persistent slot lifecycle in both single- and multi-GPU; the M3 13B headline test exercises this combination.
 
-Coverage: `tests/protrain/test_cross_mode_resume.py` is xfail-pinned against the cross-mode resume failure; the M6C report under `docs/protrain/` traces the concrete failure modes for each combination above.
+Coverage: `tests/protrain/test_lora_offload_mode.py` (22 tests, single-GPU plain LoRA Mode C end-to-end). `tests/protrain/test_cross_mode_resume.py` real-multigpu tests are xfail-pinned against the multi-GPU sharded-gather residual gap. The M6C report under `docs/protrain/` traces the concrete failure modes.
