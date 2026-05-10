@@ -1,6 +1,5 @@
 """Adapter loading functionality, including LoRA / QLoRA and associated utils"""
 
-import inspect
 import os
 import types
 from typing import Any
@@ -20,12 +19,14 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
+from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -157,53 +158,9 @@ def _build_lora_config_kwargs(cfg: DictDefault) -> dict[str, Any]:
     return lora_config_kwargs
 
 
-def _peft_supports_mora() -> bool:
-    try:
-        params = inspect.signature(LoraConfig).parameters
-    except (TypeError, ValueError):
-        return False
-    return "use_mora" in params and "mora_type" in params
-
-
-def _validate_mora_runtime(cfg: DictDefault):
-    mora_cfg = getattr(cfg, "mora", None)
-    if mora_cfg is None:
-        raise ValueError("adapter: mora requires a nested mora configuration block")
-    if not getattr(mora_cfg, "use_mora", False):
-        raise ValueError("mora.use_mora must be true when adapter: mora is set")
-    if cfg.load_in_4bit or cfg.load_in_8bit:
-        raise ValueError(
-            "adapter: mora currently requires a full-precision base model. "
-            "Use adapter: lora or qlora for quantized training."
-        )
-    if cfg.gptq:
-        raise ValueError(
-            "adapter: mora is not compatible with GPTQ quantized base models."
-        )
-
-
-def _build_mora_config_kwargs(cfg: DictDefault) -> dict[str, Any]:
-    _validate_mora_runtime(cfg)
-
-    if not _peft_supports_mora():
-        raise ImportError(
-            "adapter: mora requires a PEFT build with MoRA support "
-            "(LoraConfig(use_mora=..., mora_type=...)). "
-            "Install the MoRA fork or another PEFT distribution that exposes "
-            "those fields."
-        )
-
-    mora_cfg = cfg.mora
-    lora_config_kwargs = _build_lora_config_kwargs(cfg)
-    lora_config_kwargs["use_mora"] = mora_cfg.use_mora
-    lora_config_kwargs["mora_type"] = mora_cfg.mora_type
-    return lora_config_kwargs
-
-
 def _build_peft_lora_config(
     model: PreTrainedModel,
     cfg: DictDefault,
-    adapter_kind: str,
 ) -> PeftConfig:
     lora_target_modules = cfg.lora_target_modules or []
     lora_target_parameters = cfg.lora_target_parameters or []
@@ -218,10 +175,8 @@ def _build_peft_lora_config(
         )
         lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
 
-    if adapter_kind == "mora":
-        lora_config_kwargs = _build_mora_config_kwargs(cfg)
-    else:
-        lora_config_kwargs = _build_lora_config_kwargs(cfg)
+    lora_config_kwargs = _build_lora_config_kwargs(cfg)
+    lora_config_kwargs.update(PLUGIN_MANAGER.get_lora_config_kwargs(cfg))
 
     lora_config = LoraConfig(
         r=cfg.lora_r,
@@ -343,7 +298,7 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     _patch_peft_clippable_linear()
-    lora_config = _build_peft_lora_config(model, cfg, adapter_kind="lora")
+    lora_config = _build_peft_lora_config(model, cfg)
 
     if config_only:
         return None, lora_config
@@ -377,7 +332,7 @@ def load_lora(
         model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - LoRA")
+        LOG.debug("Loading pretrained PEFT adapter")
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
@@ -420,106 +375,65 @@ def load_lora(
     return model, lora_config
 
 
-def load_mora(
-    model: PreTrainedModel,
-    cfg: DictDefault,
-    inference: bool = False,
-    config_only: bool = False,
-) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
-    _patch_peft_clippable_linear()
-    lora_config = _build_peft_lora_config(model, cfg, adapter_kind="mora")
-
-    if config_only:
-        return None, lora_config
-
-    rank = int(os.environ.get("LOCAL_RANK", 0))
-
-    if (
-        cfg.fsdp_config
-        and cfg.adapter
-        and cfg.fsdp_config.cpu_ram_efficient_loading
-        and rank != 0
-    ):
-        setup_quantized_meta_for_peft(model)
-
-    model_kwargs: Any = {}
-    if cfg.peft_autocast_adapter_dtype is not None:
-        model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
-
-    if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - MoRA")
-        if cfg.lora_on_cpu:
-            model_kwargs["max_memory"] = {"cpu": "256GiB"}
-            model_kwargs["device_map"] = {"": "cpu"}
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
-    else:
-        model = get_peft_model(model, lora_config, **model_kwargs)
-
-    if cfg.torch_dtype:
-        _fp8_cast_dtype = cfg.torch_dtype
-    elif torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        _fp8_cast_dtype = torch.bfloat16
-    else:
-        _fp8_cast_dtype = torch.float16
-    for _name, param in model.named_parameters():
-        if param.requires_grad and param.dtype == torch.float8_e4m3fn:
-            param.data = param.data.to(_fp8_cast_dtype)
-
-    if rank == 0:
-        try:
-            model.print_trainable_parameters()
-        except AttributeError as exc:
-            LOG.warning(
-                "Exception caught during model.print_trainable_parameters(): %s", exc
-            )
-    elif (
-        cfg.fsdp_config
-        and cfg.adapter
-        and cfg.fsdp_config.cpu_ram_efficient_loading
-        and rank != 0
-    ):
-        setup_quantized_peft_meta_for_training(model)
-
-    return model, lora_config
-
-
 @send_errors
 def load_adapter(
     model: PreTrainedModel,
     cfg: DictDefault,
     adapter: str | None,
     inference: bool = False,
-) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel, PeftConfig | None]:
+    config_only: bool = False,
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     if adapter is None:
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        peft_model, lora_config = load_lora(model, cfg, inference=inference)
-        return peft_model, lora_config
-    if adapter == "mora":
-        peft_model, lora_config = load_mora(model, cfg, inference=inference)
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
         return peft_model, lora_config
     if adapter == "llama-adapter":
+        if config_only:
+            _, lora_config = load_llama_adapter(model, cfg, config_only=True)
+            return None, lora_config
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
 
-    raise NotImplementedError(f"{adapter} PEFT adapter not available")
+    plugin_loaded = PLUGIN_MANAGER.load_adapter(
+        model,
+        cfg,
+        inference=inference,
+        config_only=config_only,
+    )
+    if plugin_loaded is not None:
+        return plugin_loaded
+
+    adapter_capability = PLUGIN_MANAGER.get_adapter_capability(adapter)
+    if adapter_capability and adapter_capability.lora_like:
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
+        return peft_model, lora_config
+
+    registered = sorted(PLUGIN_MANAGER.adapter_capabilities())
+    registered_msg = ", ".join(registered) if registered else "none"
+    raise NotImplementedError(
+        f"Adapter '{adapter}' is not built in and was not registered by a plugin "
+        f"with loader support. Registered plugin adapters: {registered_msg}"
+    )
 
 
 def load_llama_adapter(
-    model: PreTrainedModel, cfg: DictDefault
-) -> tuple[PeftModel | PeftMixedModel, PeftConfig]:
+    model: PreTrainedModel, cfg: DictDefault, config_only: bool = False
+) -> tuple[PeftModel | PeftMixedModel | None, PeftConfig]:
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
         adapter_len=cfg.peft_adapter.len,  # prompt length (K)
         task_type="CAUSAL_LM",
     )
+
+    if config_only:
+        return None, peft_config
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - llama_adapter")

@@ -285,7 +285,7 @@ def save_trained_model(
         )
     # Handle ReLoRA early return case
     if cfg.relora:
-        if cfg.adapter in ("lora", "mora") and not (
+        if hasattr(model, "merge_and_unload") and not (
             cfg.load_in_4bit or cfg.load_in_8bit
         ):
             model = model.merge_and_unload()

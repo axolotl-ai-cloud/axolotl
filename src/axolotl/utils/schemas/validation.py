@@ -1475,24 +1475,22 @@ class ComplexValidationMixin:
 
     @model_validator(mode="after")
     def check_relora(self):
-        mora_cfg = getattr(self, "mora", None)
-        mora_use_relora = bool(getattr(mora_cfg, "use_relora", False))
-        mora_relora_step = getattr(mora_cfg, "use_relora_step", None)
-        if mora_use_relora:
-            if not mora_relora_step:
-                raise ValueError("mora.use_relora requires mora.use_relora_step")
-            self.relora = True
-            if not self.jagged_restart_steps:
-                self.jagged_restart_steps = mora_relora_step
-            elif self.jagged_restart_steps != mora_relora_step:
-                raise ValueError(
-                    "mora.use_relora_step must match jagged_restart_steps when both are set"
-                )
         if self.relora:
             if not self.jagged_restart_steps:
                 raise ValueError("jagged_restart_steps must be set to use ReLoRA")
-            if self.adapter not in ("lora", "qlora", "mora"):
-                raise ValueError("cfg.adapter must be lora, qlora, or mora to use ReLoRA")
+
+            adapter_supports_relora = self.adapter in ("lora", "qlora")
+            if self.adapter and not adapter_supports_relora:
+                from axolotl.integrations.base import PluginManager
+
+                plugin_manager = PluginManager.get_instance()
+                adapter_supports_relora = plugin_manager.adapter_supports_relora(
+                    self.adapter
+                )
+            if not adapter_supports_relora:
+                raise ValueError(
+                    "cfg.adapter must support ReLoRA to use ReLoRA restart semantics"
+                )
 
             if self.fsdp or self.fsdp_config:
                 raise ValueError("fsdp not supported with ReLoRA")
