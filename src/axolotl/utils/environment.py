@@ -25,24 +25,48 @@ def check_cuda_p2p_ib_support():
 
 
 def check_cuda_p2p_support() -> bool:
+    """Return whether ALL local-GPU pairs support peer-to-peer access.
+
+    Iterates the full local-peer matrix and returns False if any unordered
+    pair lacks P2P. The result is rank-symmetric — every rank computes the
+    same answer regardless of its ``LOCAL_RANK``. This matters on
+    heterogeneous-NVLink topologies (e.g. some pairs have NVLink, others
+    don't): the prior implementation probed only one ``(local_rank,
+    other_rank)`` pair where ``other_rank`` collapsed to 0 or 1, which
+    returned different answers per rank and produced an asymmetric
+    ``NCCL_P2P_DISABLE`` setting across ranks → SIGSEGV in the first
+    NCCL collective. See ProTrain Phase 2 audit follow-up
+    (multigpu_segfault_diagnosis.md).
+    """
     try:
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
-        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     except ValueError:
         return True
 
-    if world_size > 1:
-        node_world_size = int(os.environ.get("NODE_WORLD_SIZE", "8"))
-        local_other_rank = (local_rank // node_world_size) * node_world_size
-        local_other_rank += 1 if (local_rank % node_world_size) == 0 else 0
-        try:
-            can_p2p = torch.cuda.can_device_access_peer(local_rank, local_other_rank)
-        except AssertionError as exc:
-            # some sort of logic error in indexing processes, assume p2p is fine for now
-            LOG.warning(exc)
-            return True
-        return can_p2p
+    if world_size <= 1:
+        return True
 
+    try:
+        n = torch.cuda.device_count()
+    except Exception as exc:  # pragma: no cover - defensive
+        LOG.warning(
+            "check_cuda_p2p_support: device_count failed (%s); assuming p2p ok",
+            exc,
+        )
+        return True
+    if n <= 1:
+        return True
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            try:
+                if not torch.cuda.can_device_access_peer(i, j):
+                    return False
+            except AssertionError as exc:
+                # Indexing problem; bail safe to True so we don't force-disable
+                # P2P on a config we can't introspect.
+                LOG.warning(exc)
+                return True
     return True
 
 
