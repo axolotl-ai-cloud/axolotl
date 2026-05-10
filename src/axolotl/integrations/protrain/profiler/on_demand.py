@@ -122,6 +122,139 @@ def _find_fused_kernel_containers(model: "nn.Module") -> "list[nn.Module]":
     return out
 
 
+# PEFT trainable-factor parameter name fragments. These are the canonical
+# attribute names PEFT uses for trainable LoRA factors on a wrapped layer.
+# We match by substring against ``named_parameters(recurse=False)`` so the
+# detector covers both bare ``lora_A`` and the ParameterDict-wrapped
+# ``lora_A.default`` form (PEFT serialises the active adapter under the
+# adapter-name key, defaulting to "default"). ``lora_magnitude_vector``
+# covers DoRA's per-output-channel magnitude scalar.
+_PEFT_LORA_NAME_TAGS: frozenset[str] = frozenset(
+    {
+        "lora_A",
+        "lora_B",
+        "lora_embedding_A",
+        "lora_embedding_B",
+        "lora_magnitude_vector",
+    }
+)
+
+
+def _has_peft_lora_factor(
+    module: "nn.Module", *, recurse_children: bool = True
+) -> bool:
+    """True iff ``module`` directly owns a trainable PEFT LoRA factor.
+
+    "Directly owns" means: the LoRA factor is reachable as a *direct*
+    attribute access on ``module`` (``getattr(module, "lora_A")``), not
+    via a child module that itself qualifies. This matches the PEFT
+    runtime convention — ``LoraLayer.forward`` reads
+    ``self.lora_A[active]`` and ``self.lora_B[active]`` as direct
+    attribute accesses. A grandparent module (e.g. the enclosing
+    transformer block) might transitively contain a LoraLayer in its
+    subtree, but it is NOT a LoRA container in the hookability sense:
+    its forward delegates to the LoraLayer's forward, where the actual
+    direct-attribute reads of the factors happen.
+
+    Detection scopes:
+
+    * Direct ``Parameter`` attributes (``self.lora_magnitude_vector``
+      as a bare ``nn.Parameter`` — DoRA's per-out-channel magnitude
+      scalar); ``named_parameters(recurse=False)`` catches these by
+      attribute name.
+    * Direct child ``nn.Module`` attributes whose attribute NAME
+      contains a PEFT tag (e.g. ``self.lora_A`` is a
+      ``nn.ParameterDict`` or a wrapped ``nn.Linear``);
+      ``named_children()`` returns these by their attribute name on
+      ``module``, and a tag substring match on the child name catches
+      both the ParameterDict and the child-Linear adapter forms.
+
+    When ``recurse_children=False`` only the parameter scope is
+    checked (skip the child-module scan); used in non-default callers
+    that want pure direct-Parameter ownership.
+    """
+    # Direct-Parameter scope: catches the bare ``nn.Parameter`` form.
+    for name, p in module.named_parameters(recurse=False):
+        if not p.requires_grad:
+            continue
+        if any(tag in name for tag in _PEFT_LORA_NAME_TAGS):
+            return True
+    if not recurse_children:
+        return False
+    # Direct-child-module scope: PEFT's ParameterDict / wrapped-Linear
+    # form. The child's *attribute name on this module* carries the
+    # PEFT tag (``lora_A`` etc.). Verify the child actually contains
+    # at least one trainable parameter so we don't tag a frozen-only
+    # subtree as a container (the M6C bug only matters for params
+    # that produce gradients).
+    for child_name, child in module.named_children():
+        if not any(tag in child_name for tag in _PEFT_LORA_NAME_TAGS):
+            continue
+        for _pname, p in child.named_parameters(recurse=True):
+            if p.requires_grad:
+                return True
+    return False
+
+
+def _find_peft_lora_containers(model: "nn.Module") -> "list[nn.Module]":
+    """Return modules that directly own trainable PEFT LoRA factor parameters.
+
+    ProTrain's offload mode (Mode C) zeroes ``param.data`` on non-
+    persistent chunks via ``ChunkManager.materialize_offload``. PEFT's
+    standard ``LoraLayer.forward`` reads its ``lora_A`` / ``lora_B``
+    factor weights via direct attribute access (the ``nn.ParameterDict``
+    or the wrapped ``nn.Linear`` child); like the M1 fused-kernel case,
+    these reads bypass the per-Linear gather hook. At backward time the
+    fp16-cast ``ToCopyBackward0`` derives its expected gradient shape
+    from the live ``param.size()`` (now ``[0]``) and rejects the real-
+    shape grad with ``RuntimeError: ToCopyBackward0 returned an invalid
+    gradient at index 0 - got [...] but expected shape compatible with
+    [0]``.
+
+    This detector mirrors :func:`_find_fused_kernel_containers` for the
+    PEFT path: it returns the *outermost* module whose direct or one-
+    level-child parameters include a trainable LoRA factor. The
+    container's pre-/post-forward and pre-/post-backward hooks then
+    gather every sub-parameter (including the LoRA factors and the
+    underlying base weight) for the duration of the forward / backward
+    pass — same machinery as the fused-kernel containers, same memory
+    trade-off (one container's worth of params lives on GPU during its
+    own forward + backward window).
+
+    Filtering rules:
+
+    * **Direct-attribute ownership only** (see
+      :func:`_has_peft_lora_factor`). A module qualifies iff it owns
+      a LoRA factor as a *direct* attribute — i.e. the LoRA factor
+      is reachable as ``getattr(module, "lora_A")`` or via a bare
+      direct ``Parameter`` named ``lora_*``. Enclosing blocks that
+      transitively contain a LoraLayer in their subtree do NOT
+      qualify; their forward delegates to the LoraLayer's forward,
+      where the actual direct-attribute reads happen.
+    * **Not also a fused container.** If a module is already returned
+      by :func:`_find_fused_kernel_containers` (e.g. a ``mlp`` whose
+      ``forward`` has been swapped for ``apply_lora_mlp_swiglu``), the
+      fused-container hooks already gather its full subtree — there's
+      no value in registering a second pair of hooks for the same
+      gather scope. The fused-kernel set wins.
+
+    Returned in deterministic ``model.modules()`` order so tests can
+    rely on a stable enumeration. Empty when no trainable PEFT LoRA
+    factors are present anywhere in the model — the on-demand manager
+    then falls back to its per-Linear + fused-kernel hook path with
+    no behavior change.
+    """
+    fused = set(id(m) for m in _find_fused_kernel_containers(model))
+    out: list["nn.Module"] = []
+    for sub in model.modules():
+        if id(sub) in fused:
+            continue
+        if not _has_peft_lora_factor(sub, recurse_children=True):
+            continue
+        out.append(sub)
+    return out
+
+
 @dataclass
 class _ParamSpill:
     """Bookkeeping for one parameter that's been spilled to CPU.
@@ -229,6 +362,12 @@ class OnDemandTensorMgr:
         # Populated by ``__enter__`` after fused-kernel detection. Tests
         # may inspect this to verify per-container hook installation.
         self._fused_containers: list["nn.Module"] = []
+        # Populated by ``__enter__`` after PEFT-LoRA detection (M6C-fix-2).
+        # Modules that own trainable PEFT LoRA factors and need the same
+        # subtree gather/release treatment as fused-kernel containers so
+        # ``param.data`` is GPU-resident at backward time. Tests may
+        # inspect this to verify per-container hook installation.
+        self._peft_lora_containers: list["nn.Module"] = []
 
     # ---- context-manager protocol --------------------------------------
 
@@ -409,6 +548,71 @@ class OnDemandTensorMgr:
                     )
                 )
 
+            # M6C-fix-2: PEFT-LoRA containers (standard, non-fused path).
+            # Same root cause as the fused-kernel case: PEFT's
+            # ``LoraLayer.forward`` reads ``self.lora_A[active]`` /
+            # ``self.lora_B[active]`` (or, for the bare-Parameter form,
+            # ``self.lora_magnitude_vector[active]``) via direct attribute
+            # access. The per-Linear gather hook on the wrapped child
+            # ``nn.Linear`` does fire — but the LoRA factor parameters
+            # themselves don't sit on a separately hookable forward path,
+            # and the autograd ``ToCopyBackward0`` (from PEFT's bf16
+            # cast inside ``LoraLayer.forward``) reads the *current*
+            # ``param.size()`` to derive its expected grad shape. By
+            # backward time the per-Linear post-release has cleared the
+            # base weight to a length-0 placeholder; the LoRA factors
+            # themselves were never gathered in the first place because
+            # they live on a sibling ParameterDict, not a child Linear
+            # whose ``__call__`` would fire the per-leaf pre-hook. The
+            # subtree gather on the LoRA container makes both the LoRA
+            # factor weights and the wrapped base linear's weight live
+            # for the duration of the container's forward + backward
+            # window, so autograd's shape-derivation step sees the real
+            # shape and the grad copy succeeds.
+            #
+            # Skips containers already in ``_fused_containers`` (when an
+            # MLP container has both fused-kernel patches AND PEFT LoRA
+            # factors on its child Linears, the fused-container hooks
+            # already cover the same subtree — see
+            # ``_find_peft_lora_containers``'s "fused-set wins" rule).
+            self._peft_lora_containers = _find_peft_lora_containers(self.model)
+            if self._peft_lora_containers:
+                LOG.debug(
+                    "OnDemandTensorMgr: %d PEFT-LoRA container(s) "
+                    "detected; installing per-container gather hooks",
+                    len(self._peft_lora_containers),
+                )
+            for container in self._peft_lora_containers:
+                self._handles.append(
+                    container.register_forward_pre_hook(
+                        self._pre_gather_subtree, prepend=True
+                    )
+                )
+                self._handles.append(
+                    container.register_forward_hook(self._post_release_subtree)
+                )
+                # Symmetric backward hooks: the PEFT LoRA forward path's
+                # autograd graph is built against the gathered tensors;
+                # at backward time the same shape-derivation step that
+                # bites at forward (``ToCopyBackward0`` reading
+                # ``param.size()``) bites again. Without this pair, the
+                # per-Linear post-release would clear ``base_layer.weight``
+                # before the LoRA backward runs and grad accumulation
+                # against the saved-shape activation would see a length-0
+                # placeholder weight. Mirror the fused-kernel container's
+                # backward hooks so the LoRA backward window sees real
+                # weights too.
+                self._handles.append(
+                    container.register_full_backward_pre_hook(
+                        self._pre_gather_subtree_bwd, prepend=True
+                    )
+                )
+                self._handles.append(
+                    container.register_full_backward_hook(
+                        self._post_release_subtree_bwd
+                    )
+                )
+
             # Saved-for-backward tensors spill to CPU. Without this, autograd
             # would keep the gathered GPU param alive via the saved-for-
             # backward slot of the linear's grad_fn, defeating post_release.
@@ -534,6 +738,7 @@ class OnDemandTensorMgr:
         self._spills.clear()
         self._active_param_users.clear()
         self._fused_containers = []
+        self._peft_lora_containers = []
 
     def __exit__(self, exc_type, exc, tb) -> None:
         """Remove hooks and restore parameters from their pinned-CPU spill copies."""
@@ -647,6 +852,7 @@ class OnDemandTensorMgr:
         self._spills.clear()
         self._active_param_users.clear()
         self._fused_containers = []
+        self._peft_lora_containers = []
 
     # ---- spill / restore helpers ---------------------------------------
 
@@ -1140,5 +1346,7 @@ class OnDemandTensorMgr:
 __all__ = [
     "OnDemandTensorMgr",
     "_find_fused_kernel_containers",
+    "_find_peft_lora_containers",
+    "_has_peft_lora_factor",
     "_is_fused_method",
 ]
