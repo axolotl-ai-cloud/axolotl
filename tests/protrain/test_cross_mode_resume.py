@@ -28,13 +28,25 @@ Two layers of coverage:
   ``gpu`` and auto-skip when ``nvidia-smi`` reports < 4 GPUs.
 
   Empirical state on the 4×3090 rig (commit ``91e0912e``): both
-  directions FAIL with structural bugs that are out-of-scope for the
-  M6C acceptance test (they require a chunk-layout-rebuild path on the
-  HF Trainer's ``_load_from_checkpoint`` boundary, which has no
-  callback hook). Per phase2.md M6C bail criterion ("ProTrain
-  checkpoints are mode-pinned"), the multi-GPU tests are marked
-  ``xfail(strict=True)`` so a future fix that closes the gap will
-  flip them to ``XPASS`` and force a follow-up to remove the marker.
+  directions originally FAILED with structural bugs (see
+  ``ProTrain/m6c_real_multigpu_report.md``):
+
+  * A→C originally failed at HF Trainer's ``_load_from_checkpoint``
+    with ``size mismatch ... shape in current model is torch.Size([0])``
+    on every offloaded LoRA tensor. **M6C-fix-1 closes this gap** —
+    the resume hook (``plugin.py:_install_resume_hook``)
+    restore_to_gpu's the offloaded chunks, lets HF copy the loaded
+    weights into full-shape ``param.data`` slots, then re-runs
+    ``materialize_offload`` and rebuilds the optimizer adapter.
+  * Both directions still fail at iter-0 of Mode C **training**
+    backward with ``ToCopyBackward0 returned an invalid gradient ...
+    expected shape compatible with [0]``. M6C-fix-2 in
+    ``profiler/on_demand.py`` closes this gap for the *profiler trace
+    path* but the runtime training-time gap remains — that fix would
+    need to extend the chunk-manager scheduler to install per-LoRA-
+    factor (sub-chunk) gather hooks, which is out of the M6C-fix-2
+    file partition. Both tests therefore stay marked
+    ``xfail(strict=True)`` until that runtime-side fix lands.
 
 Substitution rationale (single-process tests): real LLaMA-3-8B + CLI
 subprocess invocations were the post-crash unsafe path at the time the
@@ -276,12 +288,20 @@ def test_cross_mode_resume_c_to_a() -> None:
 # ``world_size > 1`` branch runs and Mode C actually engages chunk
 # sharding (``zero3_shard=True (requested=True)`` in the log).
 #
-# Status on commit ``91e0912e`` (4×3090 rig, GPUs 1/4/5/7, ProTrain
-# Phase 2 branch): both directions FAIL — see the report at
-# ``ProTrain/m6c_real_multigpu_report.md`` for the full traceback. The
-# tests are marked ``xfail(strict=True)`` so a future fix that
-# legitimately closes the resume path will flip them to XPASS and force
-# a follow-up PR to remove the marker.
+# Originally on commit ``91e0912e`` (4×3090 rig, GPUs 1/4/5/7, ProTrain
+# Phase 2 branch) both directions FAILED — see the report at
+# ``ProTrain/m6c_real_multigpu_report.md``. The M6C-fix-1 cross-mode
+# resume monkey-patch in ``plugin.py:_install_resume_hook`` closes the
+# ``_load_from_checkpoint`` shape-mismatch error class. M6C-fix-2 in
+# ``profiler/on_demand.py:_find_peft_lora_containers`` closes the
+# autograd shape-derivation gap for the *profiler trace path*. The
+# remaining failure (both directions still iter-0 ``loss.backward()``
+# fail in Mode C **training** with the same
+# ``ToCopyBackward0 ... shape compatible with [0]``) requires a
+# runtime-side per-LoRA-factor gather hook in the chunk manager
+# scheduler — out of scope for M6C-fix-{1,2} per the spec's file
+# partition. Tests stay marked ``xfail(strict=True)`` so a future
+# runtime fix that closes the remaining gap will flip them to XPASS.
 # =============================================================================
 
 
@@ -511,17 +531,28 @@ def _repo_root() -> Path:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "M6C operational-risk case: HF Trainer's _load_from_checkpoint "
-        "calls model.load_adapter() AFTER ProTrain.materialize_offload "
-        "has zeroed param.data on offloaded chunks, so the PEFT load "
-        "fails with 'size mismatch ... shape in current model is "
-        "torch.Size([0])'. Fix requires either (a) detect "
-        "resume_from_checkpoint at plugin init and defer "
-        "materialize_offload until after _load_from_checkpoint, or "
-        "(b) wrap PEFT.load_adapter to gather offloaded chunk shapes "
-        "first. HF has no on_load_checkpoint callback. Documented as "
-        "a known limitation per phase2.md M6C bail criterion. Remove "
-        "this xfail when the resume hook lands."
+        "M6C-fix-1 (cross-mode resume hook in plugin.py:_install_resume_hook) "
+        "DID land and the load_adapter shape-mismatch error class is gone — "
+        "verified empirically: Mode C resume completes through the "
+        "restore_to_gpu / materialize_offload / optimizer-rebuild cycle and "
+        "the PEFT load_state_dict succeeds (log line: 'ProTrain resume hook: "
+        "optimizer adapter rebuilt and installed on trainer.optimizer; "
+        "cross-mode resume complete.'). The remaining failure is the "
+        "**training-time** PEFT-LoRA-on-offloaded-chunk autograd gap that "
+        "blocks fresh Mode C training of any 8B+LoRA model through the "
+        "Axolotl/HF Trainer entry point: iter-0 loss.backward() fails with "
+        "'ToCopyBackward0 returned an invalid gradient at index 0 - got "
+        "[14336, 16] but expected shape compatible with [0]' the same way "
+        "the C→A direction does. M6C-fix-2 in profiler/on_demand.py closes "
+        "this gap for the *profiler trace path* (the trace's backward now "
+        "succeeds with the per-container PEFT-LoRA hooks) but the runtime "
+        "training-time gap remains because the chunk-manager scheduler's "
+        "block-level hooks don't gather LoRA-factor sub-chunks ahead of "
+        "the autograd shape-derivation step for the bf16 cast. Closing "
+        "that gap requires touching runtime/scheduler.py, runtime/hooks.py, "
+        "or chunk/manager.py — out of scope for the M6C-fix-{1,2} batch "
+        "per the spec's file partition. Remove this xfail when a runtime-"
+        "side per-LoRA-factor gather lands."
     ),
 )
 def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
@@ -599,22 +630,24 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
 @pytest.mark.xfail(
     strict=True,
     reason=(
-        "M6C symmetric direction: blocked upstream by the same "
-        "PEFT-LoRA-on-offloaded-chunk hookability gap that breaks "
-        "fresh Mode C training of an 8B+LoRA model through the "
-        "Axolotl/HF Trainer entry point. Phase 1 (Mode C train+save) "
-        "fails at iter-0 backward with "
-        "'ToCopyBackward0 returned an invalid gradient at index 0 - "
-        "got [14336, 16] but expected shape compatible with [0]' — "
-        "the LoRA mlp.gate_proj.lora_B grad sees the real param "
-        "shape but param.data was zeroed by materialize_offload on "
-        "the non-persistent chunk. Same root cause as the "
-        "fused-LoRA-kernels gap noted in examples/protrain/3090-8b-lora.yml "
-        "(lines 92-105) — the hook-bypass affects PEFT's standard "
-        "LoRA forward path too once the chunk is non-persistent. "
-        "Remove this xfail when Mode C + PEFT-LoRA training works "
-        "via the Trainer entry point AND the load_adapter resume "
-        "hook is in place."
+        "M6C-fix-2 in profiler/on_demand.py closes the PEFT-LoRA-on-"
+        "offloaded-chunk hookability gap for the *profiler trace path* "
+        "(the trace's backward succeeds with the per-container PEFT-LoRA "
+        "hooks) but the runtime training-time gap remains: iter-0 "
+        "loss.backward() of fresh Mode C training of an 8B+LoRA model "
+        "still fails with 'ToCopyBackward0 returned an invalid gradient "
+        "at index 0 - got [14336, 16] but expected shape compatible with "
+        "[0]'. The chunk-manager scheduler's block-level pre-/post-bwd "
+        "hooks gather chunks at the block boundary, but the LoRA factor's "
+        "bf16 cast (PEFT's standard LoraLayer forward) creates a "
+        "ToCopyBackward0 whose autograd shape-derivation step reads "
+        "param.size() and finds [0] at the precise moment the engine "
+        "validates the inbound grad. Closing this gap requires touching "
+        "runtime/scheduler.py, runtime/hooks.py, or chunk/manager.py to "
+        "install per-LoRA-factor (sub-chunk) gather/release hooks — "
+        "out of scope for the M6C-fix-{1,2} batch per the spec's file "
+        "partition. Remove this xfail when a runtime-side per-LoRA-factor "
+        "gather lands."
     ),
 )
 def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
