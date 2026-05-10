@@ -301,6 +301,39 @@ class Scheduler:
         self._gather_on_prefetch_stream(chunk_ids)
         self._sync_prefetch_with_compute()
 
+    def ensure_chunks_resident(self, chunk_ids: Iterable[ChunkId]) -> None:
+        """Synchronously ensure an arbitrary chunk set is GPU-resident.
+
+        Lower-granularity sibling of :meth:`ensure_block_resident` —
+        used by the per-LoRA-container hooks (M6C-fix-3) so the
+        scheduler can re-gather a sub-block-granularity chunk set
+        before a PEFT ``LoraLayer.forward`` runs. The standard
+        block-level pre-forward hook already gathers a *superset* of
+        these chunks (every PEFT-LoRA factor lives in a chunk owned
+        by the enclosing transformer block), so this call is in
+        steady state a fast-path tag-lookup that bumps no leases —
+        the value is correctness coverage on the cold paths where the
+        block hook hasn't yet fired (e.g. the autograd
+        shape-derivation step at the moment the LoRA forward records
+        its ``ToCopyBackward0`` cast op against the LoRA factor's
+        ``param.size()``).
+
+        Idempotent. ``ChunkManager.gather`` itself short-circuits on
+        persistent / already-active chunks, so calling this on a
+        chunk set that's already covered by an outer ``gather`` is
+        cheap. ``ensure_chunks_resident`` is the analogue of
+        ``ensure_block_resident`` for non-``BlockId``-keyed chunk
+        sets — the LoRA-container hook computes its own chunk set at
+        install time (one per container) and passes it in here.
+        """
+        # Materialize once so we can both check emptiness and iterate
+        # twice (gather + the fast-path persistent-skip in the manager).
+        cids = tuple(chunk_ids)
+        if not cids:
+            return
+        self._gather_on_prefetch_stream(cids)
+        self._sync_prefetch_with_compute()
+
     # ---- forward -------------------------------------------------------
 
     def pre_block_forward(self, block_id: BlockId) -> None:

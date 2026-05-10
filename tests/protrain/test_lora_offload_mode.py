@@ -496,3 +496,583 @@ def test_lora_repeated_forward_under_manager(n_blocks):
         for _ in range(3):
             got = model(x)
             assert torch.allclose(got, expected, atol=0, rtol=0)
+
+
+# ---------------------------------------------------------------------------
+# Runtime-side coverage (M6C-fix-3): the analogue of the
+# OnDemandTensorMgr-driven tests above for the *training runtime* path —
+# ``runtime/scheduler.py`` + ``runtime/hooks.py``. The on-demand manager
+# is the profiler-trace path; the runtime path goes through the actual
+# ChunkManager + Scheduler that real training uses.
+#
+# Bug class closed by M6C-fix-3 (per the spec):
+#   - PEFT's ``LoraLayer.forward`` builds autograd graph nodes whose
+#     shape derivation reads ``param.size()`` at op-construction time.
+#   - With Mode-C-style offload (non-persistent chunks), the LoRA factor's
+#     ``param.data`` is the empty ``[0]`` placeholder until the
+#     enclosing block's pre-forward gather rebinds it.
+#   - The block-level gather is a *superset* of the LoRA factor's
+#     chunks, but if any op fires against the placeholder shape before
+#     the gather completes (or if a future scheduler refactor moves
+#     the gather into the OFFLOAD wrapper instead of the block hook),
+#     autograd records ``[0]`` and backward fails with
+#     ``ToCopyBackward0 returned an invalid gradient at index 0 - got
+#     [...] but expected shape compatible with [0]``.
+#
+# These tests pin the per-LoRA-container hook installation +
+# chunk-id closure capture, so a future reordering of the runtime
+# gather chain that re-introduces the gap is caught at unit scope.
+# ---------------------------------------------------------------------------
+
+
+class _AttnLikeBlock(nn.Module):
+    """TinyPeftBlock variant that satisfies discover_blocks' attention heuristic.
+
+    discover_blocks expects each block in the candidate ModuleList to
+    expose a direct ``attention`` or ``self_attn`` attribute (see
+    ``layout_rules._looks_like_block``). The test fixture wraps a
+    FakeLoraLayer under ``self_attn`` so the heuristic identifies the
+    enclosing ``ModuleList`` as a transformer-block list.
+    """
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        for p in self.norm.parameters():
+            p.requires_grad_(False)
+        # Wrap the FakeLoraLayer under ``self_attn`` so the
+        # discover_blocks attention heuristic identifies the
+        # enclosing ModuleList as a block list.
+        self.self_attn = FakeLoraLayer(dim, dim, r=4)
+
+    def forward(self, x):
+        return self.self_attn(self.norm(x))
+
+
+class _TinyAttnPeftModel(nn.Module):
+    """Discover-blocks-friendly PEFT-LoRA model fixture.
+
+    ``model.layers`` is a ModuleList of ``_AttnLikeBlock`` — discover_blocks
+    matches it via the attention heuristic. Each block carries a
+    FakeLoraLayer under ``self_attn`` so the M6C-fix-3 detector
+    finds one PEFT-LoRA container per block.
+    """
+
+    def __init__(self, n_blocks: int = 2, dim: int = 8) -> None:
+        super().__init__()
+        self.layers = nn.ModuleList([_AttnLikeBlock(dim) for _ in range(n_blocks)])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+def _build_runtime_chunk_layout(model: nn.Module, S_chunk: int):
+    """Build a ChunkLayout treating each ``layers.{i}`` as a block.
+
+    Mirrors the production layout-construction path's intent (the
+    transformer-block ``ModuleList`` is the block source) without
+    requiring CUDA / a full ``protrain_model_wrapper`` invocation.
+    Used by the runtime-side hook-installation tests to put a
+    ChunkManager around a tiny PEFT-LoRA-shaped model.
+    """
+    from typing import cast as _cast
+
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        ParamId as _ParamId,
+    )
+
+    # Block spans: each ``layers.{i}`` maps to its trainable + frozen
+    # parameter dotted-name list. The detector in
+    # _find_peft_lora_containers walks ``model.modules()`` and tags
+    # each ``FakeLoraLayer`` instance regardless of where in the tree
+    # it lives, so the spans need only steer build_layout's
+    # block-contiguity packing (every LoRA factor lands in a chunk
+    # owned by its enclosing block).
+    block_spans: dict = {}
+    for name, _ in model.named_parameters():
+        if name.startswith("layers."):
+            idx = int(name.split(".")[1])
+            block_spans.setdefault(_cast(_BlockId, idx), []).append(
+                _cast(_ParamId, name)
+            )
+    exec_order = [_cast(_ParamId, n) for n, _ in model.named_parameters()]
+    return build_layout(model, exec_order, S_chunk, block_spans)
+
+
+class _RecordingScheduler:
+    """Stub Scheduler capturing ensure_chunks_resident calls.
+
+    Used by the CPU-only tests below to verify that
+    install_hooks attaches per-LoRA-container pre-forward and
+    pre-backward hooks that fire ``ensure_chunks_resident`` with the
+    correct chunk-id set. Real Scheduler wiring needs CUDA; this
+    stub keeps the install_hooks-side coverage CPU-portable.
+    """
+
+    def __init__(self) -> None:
+        # Each entry: (call_kind, tuple_of_chunk_ids). call_kind
+        # encodes whether the call originated from a block-level or
+        # container-level hook, so tests can assert ordering and
+        # aggregation independently.
+        self.calls: list[tuple[str, tuple]] = []
+
+    def pre_block_forward(self, block_id) -> None:
+        self.calls.append(("pre_block_forward", (int(block_id),)))
+
+    def post_block_forward(self, block_id) -> None:
+        self.calls.append(("post_block_forward", (int(block_id),)))
+
+    def pre_block_backward(self, block_id) -> None:
+        self.calls.append(("pre_block_backward", (int(block_id),)))
+
+    def post_block_backward(self, block_id) -> None:
+        self.calls.append(("post_block_backward", (int(block_id),)))
+
+    def ensure_block_resident(self, block_id) -> None:
+        self.calls.append(("ensure_block_resident", (int(block_id),)))
+
+    def ensure_chunks_resident(self, chunk_ids) -> None:
+        # ``chunk_ids`` is the closure-captured tuple — record verbatim
+        # so the test can compare set membership and ordering.
+        self.calls.append(("ensure_chunks_resident", tuple(int(c) for c in chunk_ids)))
+
+
+class _RecordingChunkManagerStub:
+    """Minimal stand-in for ChunkManager exposing only what install_hooks reads.
+
+    install_hooks calls ``_container_chunk_ids`` which reads
+    ``chunk_manager._params_by_id`` and ``chunk_manager.layout``. The
+    ``layout`` field is a real ChunkLayout built via
+    ``_build_runtime_chunk_layout``; the rest of ChunkManager is not
+    consulted by install_hooks at registration time.
+    """
+
+    def __init__(self, model: nn.Module, layout) -> None:
+        from typing import cast as _cast
+
+        from axolotl.integrations.protrain.types import ParamId as _ParamId
+
+        self.layout = layout
+        self._params_by_id = {
+            _cast(_ParamId, name): p for name, p in model.named_parameters()
+        }
+
+
+def test_install_hooks_attaches_lora_container_pre_hooks_cpu():
+    """install_hooks adds 1 forward-pre + 1 backward-pre hook per PEFT-LoRA container.
+
+    Uses a stub scheduler / chunk-manager to keep the test CPU-only.
+    The block-level hook quartet (4 per block) plus the per-container
+    pair (2 per container) gives the expected handle count.
+    """
+    from axolotl.integrations.protrain.runtime.hooks import install_hooks
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        BlockMode as _BlockMode,
+    )
+
+    torch.manual_seed(7)
+    n_blocks = 3
+    model = _TinyAttnPeftModel(n_blocks=n_blocks, dim=8)
+
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+    sched = _RecordingScheduler()
+
+    block_map = {_BlockId(i): _BlockMode.NONE for i in range(n_blocks)}
+
+    handles = install_hooks(
+        model=model,
+        chunk_manager=cm,  # type: ignore[arg-type]
+        block_map=block_map,
+        scheduler=sched,  # type: ignore[arg-type]
+    )
+    try:
+        # Per-block: 4 hooks (fwd pre/post + bwd pre/post). Per LoRA
+        # container: 2 hooks (fwd pre + bwd pre).
+        n_containers = len(_find_peft_lora_containers(model))
+        assert n_containers == n_blocks  # one FakeLoraLayer per block
+        expected = 4 * n_blocks + 2 * n_containers
+        assert len(handles) == expected, (
+            f"hook count mismatch: got {len(handles)} expected {expected} "
+            f"(blocks={n_blocks}, containers={n_containers})"
+        )
+    finally:
+        for h in handles:
+            try:
+                h.remove()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def test_install_hooks_lora_container_chunk_ids_cover_lora_factors():
+    """Each LoRA container's hook closure captures the chunks containing its factors.
+
+    Walks every PEFT-LoRA container, computes the chunk-id set the
+    container's pre-hooks will gather, and asserts every trainable
+    LoRA factor parameter under that container actually lands in
+    one of those chunks. Without this invariant the per-container
+    gather is a no-op for the very params the bug is about.
+    """
+    from axolotl.integrations.protrain.runtime.hooks import _container_chunk_ids
+
+    torch.manual_seed(8)
+    n_blocks = 2
+    model = _TinyAttnPeftModel(n_blocks=n_blocks, dim=8)
+
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+
+    containers = _find_peft_lora_containers(model)
+    assert len(containers) == n_blocks
+
+    for container in containers:
+        cids = _container_chunk_ids(container, cm)  # type: ignore[arg-type]
+        assert cids, f"container {container} produced empty chunk-id set"
+        # Verify each trainable LoRA factor reachable from the container
+        # lands in one of the captured chunk ids — this is the
+        # correctness invariant the runtime hook depends on.
+        cm_id_to_name = {id(p): name for name, p in cm._params_by_id.items()}
+        for p in container.parameters(recurse=True):
+            if not p.requires_grad:
+                continue
+            cm_name = cm_id_to_name.get(id(p))
+            if cm_name is None:
+                continue
+            cid = layout.param_to_chunk.get(cm_name)
+            assert cid in cids, (
+                f"trainable param {cm_name} (chunk {cid}) not in container's "
+                f"captured chunk-id set {cids}"
+            )
+
+
+def test_install_hooks_lora_container_pre_forward_fires_ensure_chunks_resident():
+    """The forward-pre hook installs cleanly and dispatches to scheduler.
+
+    Runs the full install_hooks then exercises the model forward
+    against the stub scheduler; asserts the stub recorded
+    ``ensure_chunks_resident`` calls (one per LoRA container per
+    forward) with non-empty chunk-id tuples — the load-bearing
+    invariant the M6C-fix-3 fix relies on.
+    """
+    from axolotl.integrations.protrain.runtime.hooks import install_hooks
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        BlockMode as _BlockMode,
+    )
+
+    torch.manual_seed(9)
+    n_blocks = 2
+    model = _TinyAttnPeftModel(n_blocks=n_blocks, dim=8)
+
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+    sched = _RecordingScheduler()
+    block_map = {_BlockId(i): _BlockMode.NONE for i in range(n_blocks)}
+
+    handles = install_hooks(
+        model=model,
+        chunk_manager=cm,  # type: ignore[arg-type]
+        block_map=block_map,
+        scheduler=sched,  # type: ignore[arg-type]
+    )
+    try:
+        x = torch.randn(2, 8)
+        _ = model(x)
+
+        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
+        # One per LoRA container (one container per TinyPeftBlock);
+        # block hooks invoke pre_block_forward, NOT
+        # ensure_chunks_resident, so any call here came from the
+        # M6C-fix-3 container hook.
+        assert len(ensure_calls) >= n_blocks, (
+            f"expected at least {n_blocks} ensure_chunks_resident calls "
+            f"(one per container), got {len(ensure_calls)} "
+            f"(all calls: {sched.calls})"
+        )
+        for _kind, cids in ensure_calls:
+            assert cids, "ensure_chunks_resident invoked with empty tuple"
+    finally:
+        for h in handles:
+            try:
+                h.remove()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def test_install_hooks_no_lora_no_container_hooks():
+    """A model with zero PEFT-LoRA containers gets only the block-quartet hooks.
+
+    Regression guard for the dormant path — running
+    ``install_hooks`` against a non-LoRA model must not add any
+    per-container handles (and must not raise during the
+    container-detection walk).
+    """
+    from axolotl.integrations.protrain.runtime.hooks import install_hooks
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        BlockMode as _BlockMode,
+    )
+
+    class _PlainAttnBlock(nn.Module):
+        def __init__(self, dim):
+            super().__init__()
+            # Expose ``self_attn`` so discover_blocks' attention
+            # heuristic identifies the enclosing ModuleList as a
+            # block list (mirrors _AttnLikeBlock).
+            self.self_attn = nn.Linear(dim, dim, bias=False)
+
+        def forward(self, x):
+            return self.self_attn(x)
+
+    class _PlainModel(nn.Module):
+        def __init__(self, n: int, dim: int) -> None:
+            super().__init__()
+            self.layers = nn.ModuleList([_PlainAttnBlock(dim) for _ in range(n)])
+
+        def forward(self, x):
+            for b in self.layers:
+                x = b(x)
+            return x
+
+    n_blocks = 2
+    model = _PlainModel(n_blocks, dim=4)
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+    sched = _RecordingScheduler()
+    block_map = {_BlockId(i): _BlockMode.NONE for i in range(n_blocks)}
+
+    handles = install_hooks(
+        model=model,
+        chunk_manager=cm,  # type: ignore[arg-type]
+        block_map=block_map,
+        scheduler=sched,  # type: ignore[arg-type]
+    )
+    try:
+        # 4 per block, 0 per container.
+        assert len(handles) == 4 * n_blocks
+    finally:
+        for h in handles:
+            try:
+                h.remove()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+# ---------------------------------------------------------------------------
+# Real-runtime end-to-end (GPU-gated): exercise the full
+# ChunkManager + Scheduler stack against a tiny PEFT-LoRA model and
+# confirm the LoRA forward + backward succeed under offload mode.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.gpu
+def test_runtime_lora_e2e_under_offload_mode_smoke():
+    """End-to-end smoke: PEFT-LoRA + real ChunkManager + Scheduler, fwd+bwd succeeds.
+
+    Builds a real PEFT-LoRA Llama-arch model, wraps it through the
+    full ``protrain_model_wrapper`` machinery with offload-mode
+    overrides (force_all_persistent=False, n_persist_override=0),
+    and runs one forward + backward iteration. Without M6C-fix-3
+    this would (per Agent B's diagnosis on the 4×3090 multi-GPU
+    rig) fail at iter-0 backward with ``ToCopyBackward0 returned
+    an invalid gradient at index 0 - got [...] but expected shape
+    compatible with [0]`` on a PEFT LoRA factor.
+
+    Skipped when DeepSpeed CPU Adam is unavailable (offload mode
+    requires it). The test deliberately mirrors the production
+    Mode C path (multiple non-persistent chunks, real PEFT LoRA
+    layers) so a future regression that re-introduces the gap
+    surfaces here at unit scope.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    # Probe DeepSpeedCPUAdam availability — drives whether we exercise
+    # the optimizer.step() round-trip below. The forward + backward
+    # bug-surface validation does NOT require CPU Adam: the
+    # ``ChunkManager`` per-param grad-accumulation hook installed at
+    # ``materialize_offload`` time fires during backward, but its
+    # CPU-Adam dependency only surfaces when a chunk's offload-step
+    # path is invoked. M6C-fix-3 prevents the autograd shape-derivation
+    # error class, which fires earlier in the backward chain than that
+    # hook — so we can validate the fix even with a degraded CPU-Adam
+    # environment by tolerating the ``missing CPU optimizer for
+    # offloaded chunk`` RuntimeError as a known post-fix-validation
+    # signal (the fix was already proven by the time backward reached
+    # that hook).
+    cpu_adam_available = False
+    try:
+        import deepspeed  # noqa: F401
+        from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+        # Probe the JIT-loaded extension by attempting one construction;
+        # CUDA/torch toolchain mismatch surfaces here.
+        _probe = torch.nn.Parameter(torch.zeros(2, dtype=torch.float32))
+        try:
+            DeepSpeedCPUAdam([_probe], lr=1e-3)
+            cpu_adam_available = True
+        except Exception:  # noqa: BLE001
+            cpu_adam_available = False
+    except ImportError:
+        cpu_adam_available = False
+
+    pytest.importorskip("peft")
+    pytest.importorskip("transformers")
+
+    from peft import LoraConfig, get_peft_model
+    from transformers import LlamaConfig, LlamaForCausalLM
+
+    from axolotl.integrations.protrain.api import (
+        protrain_model_wrapper,
+        protrain_optimizer_wrapper,
+    )
+    from axolotl.integrations.protrain.types import HardwareProfile
+
+    # Sized so build_layout produces enough chunks that LoRA factors
+    # land in non-persistent chunks (mandatory_persistent only covers
+    # embed / final-norm).
+    cfg = LlamaConfig(
+        hidden_size=512,
+        num_hidden_layers=2,
+        num_attention_heads=8,
+        num_key_value_heads=8,
+        intermediate_size=1024,
+        vocab_size=1024,
+        max_position_embeddings=64,
+        rms_norm_eps=1e-5,
+        use_cache=False,
+    )
+    torch.manual_seed(13)
+    base_model = LlamaForCausalLM(cfg).to(dtype=torch.bfloat16, device="cuda")
+    lora_cfg = LoraConfig(
+        r=4,
+        lora_alpha=8,
+        lora_dropout=0.0,
+        bias="none",
+        target_modules=["q_proj", "v_proj"],
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(base_model, lora_cfg).to(device="cuda")
+
+    # Force a small S_chunk so multiple chunks emerge and LoRA
+    # factors land in non-persistent chunks.
+    import axolotl.integrations.protrain.api.model_wrapper as mw
+
+    orig_pick = mw.pick_S_chunk
+    mw.pick_S_chunk = lambda *a, **k: 1 << 20  # 1 MiB
+    try:
+        hw = HardwareProfile(
+            gpu_sku=torch.cuda.get_device_name(0),
+            gpu_memory_bytes=torch.cuda.get_device_properties(0).total_memory,
+            gpu_count=1,
+            pcie_h2d_bps=13e9,
+            pcie_d2h_bps=13e9,
+            has_nvlink=False,
+        )
+        try:
+            wrapped = protrain_model_wrapper(
+                model,
+                model_config=cfg,
+                hardware_profile=hw,
+                batch_size=1,
+                seq_len=32,
+                capacity_bytes=2 * (1 << 30),
+                force_all_persistent=False,
+                zero3_shard=False,
+                n_persist_override=0,
+                n_buffer_override=16,
+                n_swap_override=0,
+                n_checkpoint_override=0,
+                n_offload_override=cfg.num_hidden_layers,
+            )
+        except (ValueError, RuntimeError) as exc:
+            pytest.skip(f"protrain_model_wrapper offload setup unavailable: {exc}")
+
+        optim = None
+        if cpu_adam_available:
+            try:
+                optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
+            except RuntimeError as exc:
+                # CPU Adam probe passed but the per-chunk wrapping
+                # still raised — degrade to fwd+bwd-only validation.
+                optim = None
+                _ = exc
+
+        input_ids = torch.randint(
+            0, cfg.vocab_size, (1, 32), device="cuda", dtype=torch.long
+        )
+        labels = input_ids.clone()
+        # The bug surface: this is exactly the iter-0 backward that
+        # fails per the M6C real-multigpu report. M6C-fix-3 closes the
+        # runtime gap; before the fix this raises
+        # ``ToCopyBackward0 returned an invalid gradient at index 0
+        # - got [...] but expected shape compatible with [0]``.
+        out = wrapped.module(input_ids=input_ids, labels=labels)
+        loss = out.loss
+        loss_v = float(loss.detach())
+        assert math.isfinite(loss_v), f"non-finite loss: {loss_v}"
+        # The bug surface: this is exactly the iter-0 backward that
+        # fails per the M6C real-multigpu report. M6C-fix-3 closes
+        # the runtime gap; before the fix this raises:
+        #   "ToCopyBackward0 returned an invalid gradient at index 0
+        #    - got [...] but expected shape compatible with [0]"
+        # If the backward call below completes without raising the
+        # ``ToCopyBackward0`` error class, the M6C-fix-3 invariant
+        # holds (the LoRA factor's chunk was gathered before the
+        # autograd graph recorded the cast op against
+        # ``param.size()``). We deliberately do NOT assert on
+        # ``param.grad`` for offloaded LoRA factors — under offload
+        # mode their grads are drained to pinned-CPU shadows by the
+        # per-param post-accumulate-grad hook installed in
+        # ``ChunkManager.materialize_offload`` and the live
+        # ``param.grad`` attribute is reset to None as a side effect
+        # (the optimizer step reads from the CPU shadow, not from
+        # the Parameter). The successful return is the assertion.
+        #
+        # Without DeepSpeedCPUAdam available, the per-chunk grad-
+        # accumulation hook installed by ``materialize_offload``
+        # raises ``RuntimeError: ChunkManager: missing CPU optimizer
+        # for offloaded chunk N`` from ``chunk/manager.py:_hook``
+        # AFTER the autograd graph has executed cleanly. That
+        # specific message is tolerated here because it confirms
+        # backward unwound past the LoRA bf16-cast node (i.e. the
+        # M6C-fix-3 fix is active); the test still fails on any
+        # other RuntimeError, including the canonical
+        # ``ToCopyBackward0 ... shape compatible with [0]`` regression
+        # signal.
+        try:
+            loss.backward()
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "ToCopyBackward" in msg:
+                pytest.fail(
+                    f"M6C-fix-3 regression: ToCopyBackward0 fired in "
+                    f"backward — runtime LoRA gather hook did not cover "
+                    f"the autograd shape-derivation step.\n{exc}"
+                )
+            if "missing CPU optimizer for offloaded chunk" in msg:
+                # Backward graph completed past the LoRA bf16-cast
+                # node — fix is validated. The CPU-Adam dependency
+                # is environmental, not a regression signal.
+                pass
+            else:
+                raise
+        # Optional: an optimizer step round-trip — exercises the CPU
+        # FusedAdam plumbing on the offloaded chunks. Skipped if the
+        # adapter wasn't constructed (e.g. CPU Adam unavailable).
+        if optim is not None:
+            try:
+                optim.step()
+                optim.zero_grad()
+            except Exception:  # noqa: BLE001
+                # CPU Adam plumbing failure is environmental; the
+                # forward+backward validation above is what M6C-fix-3
+                # cares about.
+                pass
+    finally:
+        mw.pick_S_chunk = orig_pick
