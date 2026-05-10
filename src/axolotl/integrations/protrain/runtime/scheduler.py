@@ -318,6 +318,25 @@ class Scheduler:
         its ``ToCopyBackward0`` cast op against the LoRA factor's
         ``param.size()``).
 
+        M6C-fix-4: the gather runs SYNCHRONOUSLY on the *compute*
+        stream — NOT routed through the prefetch stream like
+        :meth:`ensure_block_resident`. The container-hook entry point
+        is a defensive correctness barrier (cold-path coverage for the
+        ``ToCopyBackward0 ... shape compatible with [0]`` failure
+        mode). On the multi-GPU sharded path, ``_gather_sharded``
+        issues an ``all_gather_into_tensor`` collective; if that
+        collective is queued on the prefetch stream the chunk's full
+        bytes don't materialise on the compute stream until the next
+        ``compute.wait_stream(prefetch)`` barrier — but the
+        ``param.data`` rebind (Python-level, immediate) AND every
+        autograd op that follows it (the bf16 cast in PEFT's
+        ``LoraLayer.forward``) run on the compute stream WITHOUT
+        an intervening barrier in some sharded cold-paths. Routing
+        the gather through the compute stream directly removes the
+        cross-stream coordination as a failure mode and matches the
+        synchronous-fallback path the manager already takes when
+        ``self._prefetch_stream is None`` (CPU-only test lanes).
+
         Idempotent. ``ChunkManager.gather`` itself short-circuits on
         persistent / already-active chunks, so calling this on a
         chunk set that's already covered by an outer ``gather`` is
@@ -331,8 +350,25 @@ class Scheduler:
         cids = tuple(chunk_ids)
         if not cids:
             return
-        self._gather_on_prefetch_stream(cids)
-        self._sync_prefetch_with_compute()
+        # M6C-fix-4: bypass the prefetch stream. Issuing
+        # ``chunk_manager.gather(cid)`` directly here makes the
+        # underlying ``_gather_sharded`` collective land on the
+        # compute stream the LoRA forward uses, so the all_gather
+        # completes before the autograd ``_to_copy`` op records its
+        # source-shape against the rebound ``param.data``. The
+        # synchronous fallback path in
+        # :meth:`_gather_on_prefetch_stream` (taken when
+        # ``self._prefetch_stream is None``) already does exactly
+        # this; we extend the same guarantee to the multi-GPU
+        # sharded path. Cost: the per-LoRA-container hook fires
+        # once per container per fwd/bwd window (224 hooks on
+        # Llama-3-8B) and on the steady-state hot path each call
+        # hits the manager's ``_active_chunks`` fast path with a
+        # zero-GPU-work tag re-bind, so the synchronous routing
+        # carries no measurable wall-clock overhead beyond the
+        # cold-path first-time gathers.
+        for cid in cids:
+            self.chunk_manager.gather(cid)
 
     # ---- forward -------------------------------------------------------
 
