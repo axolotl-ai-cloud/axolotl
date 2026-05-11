@@ -663,11 +663,20 @@ class _RecordingChunkManagerStub:
 
 
 def test_install_hooks_attaches_lora_container_pre_hooks_cpu():
-    """install_hooks adds 1 forward-pre + 1 backward-pre hook per PEFT-LoRA container.
+    """install_hooks adds the full fwd/bwd pre+post hook quartet per PEFT-LoRA container.
 
     Uses a stub scheduler / chunk-manager to keep the test CPU-only.
     The block-level hook quartet (4 per block) plus the per-container
-    pair (2 per container) gives the expected handle count.
+    quartet (4 per container, M6C-fix-6) gives the expected handle
+    count.
+
+    M6C-fix-6 introduced the post-forward and post-backward halves of
+    the per-container hook quartet (previously only the pre-edge pair
+    was registered, M6C-fix-3). The post-* hooks defensively re-assert
+    the gather across the OUTER container's full autograd lifecycle —
+    closing the M6C-fix-5 b787acb5 residual failure mode where the
+    chunk could be released between the OUTER container's post-forward
+    and the inner ``nn.Linear``'s ``TBackward0`` apply.
     """
     from axolotl.integrations.protrain.runtime.hooks import install_hooks
     from axolotl.integrations.protrain.types import (
@@ -693,10 +702,10 @@ def test_install_hooks_attaches_lora_container_pre_hooks_cpu():
     )
     try:
         # Per-block: 4 hooks (fwd pre/post + bwd pre/post). Per LoRA
-        # container: 2 hooks (fwd pre + bwd pre).
+        # container (M6C-fix-6): 4 hooks (fwd pre/post + bwd pre/post).
         n_containers = len(_find_peft_lora_containers(model))
         assert n_containers == n_blocks  # one FakeLoraLayer per block
-        expected = 4 * n_blocks + 2 * n_containers
+        expected = 4 * n_blocks + 4 * n_containers
         assert len(handles) == expected, (
             f"hook count mismatch: got {len(handles)} expected {expected} "
             f"(blocks={n_blocks}, containers={n_containers})"
@@ -796,6 +805,120 @@ def test_install_hooks_lora_container_pre_forward_fires_ensure_chunks_resident()
         )
         for _kind, cids in ensure_calls:
             assert cids, "ensure_chunks_resident invoked with empty tuple"
+    finally:
+        for h in handles:
+            try:
+                h.remove()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def test_install_hooks_lora_container_post_forward_fires_ensure_chunks_resident():
+    """M6C-fix-6: post-forward hook on each LoRA container fires ``ensure_chunks_resident``.
+
+    The post-forward hook is the defense-in-depth re-bind that closes
+    the M6C-fix-5 b787acb5 residual failure mode. After a single
+    forward pass through the model, the recorded scheduler call list
+    must contain at least 2 ``ensure_chunks_resident`` invocations
+    per LoRA container — one from the pre-forward (M6C-fix-3) and
+    one from the new post-forward (M6C-fix-6).
+    """
+    from axolotl.integrations.protrain.runtime.hooks import install_hooks
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        BlockMode as _BlockMode,
+    )
+
+    torch.manual_seed(11)
+    n_blocks = 2
+    model = _TinyAttnPeftModel(n_blocks=n_blocks, dim=8)
+
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+    sched = _RecordingScheduler()
+    block_map = {_BlockId(i): _BlockMode.NONE for i in range(n_blocks)}
+
+    handles = install_hooks(
+        model=model,
+        chunk_manager=cm,  # type: ignore[arg-type]
+        block_map=block_map,
+        scheduler=sched,  # type: ignore[arg-type]
+    )
+    try:
+        x = torch.randn(2, 8)
+        _ = model(x)
+
+        # pre-forward + post-forward → at least 2 ensure_chunks_resident
+        # per container per forward pass.
+        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
+        n_containers = n_blocks  # one FakeLoraLayer per block
+        assert len(ensure_calls) >= 2 * n_containers, (
+            f"expected at least {2 * n_containers} ensure_chunks_resident "
+            f"calls (pre-fwd + post-fwd per container), got "
+            f"{len(ensure_calls)} (all calls: {sched.calls})"
+        )
+    finally:
+        for h in handles:
+            try:
+                h.remove()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def test_install_hooks_lora_container_post_backward_fires_ensure_chunks_resident():
+    """M6C-fix-6: post-backward hook on each LoRA container fires
+    ``ensure_chunks_resident``.
+
+    Pins the load-bearing M6C-fix-6 invariant: the post-backward
+    re-bind covers the window between the OUTER container's pre-
+    backward fire and the inner ``nn.Linear``'s ``TBackward0`` apply
+    (which executes deep inside the OUTER's backward graph
+    unrolling). Without the post-backward hook, a release window
+    opens around the inner-op tail that the M6C-fix-5 commit
+    ``b787acb5`` empirical run identified as the residual failure.
+
+    A full forward + backward through the tiny PEFT-LoRA fixture
+    must produce at least 4 ``ensure_chunks_resident`` calls per
+    container: pre-fwd, post-fwd, pre-bwd, post-bwd (M6C-fix-6
+    quartet).
+    """
+    from axolotl.integrations.protrain.runtime.hooks import install_hooks
+    from axolotl.integrations.protrain.types import (
+        BlockId as _BlockId,
+        BlockMode as _BlockMode,
+    )
+
+    torch.manual_seed(12)
+    n_blocks = 2
+    model = _TinyAttnPeftModel(n_blocks=n_blocks, dim=8)
+
+    layout = _build_runtime_chunk_layout(model, S_chunk=4096)
+    cm = _RecordingChunkManagerStub(model, layout)
+    sched = _RecordingScheduler()
+    block_map = {_BlockId(i): _BlockMode.NONE for i in range(n_blocks)}
+
+    handles = install_hooks(
+        model=model,
+        chunk_manager=cm,  # type: ignore[arg-type]
+        block_map=block_map,
+        scheduler=sched,  # type: ignore[arg-type]
+    )
+    try:
+        x = torch.randn(2, 8, requires_grad=False)
+        target = torch.zeros(2, 8)
+        out = model(x)
+        loss = (out - target).pow(2).mean()
+        loss.backward()
+
+        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
+        n_containers = n_blocks
+        # 4 calls per container: pre-fwd + post-fwd + pre-bwd + post-bwd.
+        # M6C-fix-6 brings the quartet up from 2 (pre-edge only) to 4.
+        assert len(ensure_calls) >= 4 * n_containers, (
+            f"expected at least {4 * n_containers} ensure_chunks_resident "
+            f"calls (full quartet per container), got {len(ensure_calls)} "
+            f"(all calls: {sched.calls})"
+        )
     finally:
         for h in handles:
             try:
