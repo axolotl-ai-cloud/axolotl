@@ -1377,6 +1377,57 @@ class ChunkManager:
             precise_grad,
             freed / 1e9,
         )
+
+        # M6C-fix-8: keep ``model._ddp_params_and_buffers_to_ignore`` in
+        # sync with the just-released param set so DDP's
+        # ``_sync_module_states`` broadcast skips every chunk-managed
+        # param. See ``api/model_wrapper.py`` for the full architectural
+        # rationale; the load-bearing reason this needs to ALSO live in
+        # ``materialize_offload`` (not only at first wrap) is the cross-
+        # mode resume hook in ``plugin.py``: it tears down the offload
+        # via ``restore_to_gpu``, runs PEFT's ``load_adapter``, then
+        # calls ``materialize_offload`` AGAIN — between the two
+        # materialize calls the model attribute would otherwise still
+        # carry the FIRST run's name set; if the layout changed (or any
+        # name shifted) the broadcast filter would miss the new
+        # placeholders. Re-registering on every materialize closes that
+        # gap with one O(N_params) walk.
+        #
+        # Default OFF: ``self._shape_preserving_placeholders`` False on
+        # single-GPU / replicated paths, no DDP collision possible (the
+        # legacy ``[0]`` placeholder is write-tolerant), no-op.
+        if self._shape_preserving_placeholders and self.model is not None:
+            try:
+                _ignore = self.chunk_managed_param_names()
+                _existing = getattr(
+                    self.model, "_ddp_params_and_buffers_to_ignore", None
+                )
+                if _existing is None:
+                    self.model._ddp_params_and_buffers_to_ignore = list(_ignore)  # type: ignore[attr-defined]
+                else:
+                    _merged = set(_existing) | _ignore
+                    self.model._ddp_params_and_buffers_to_ignore = list(_merged)  # type: ignore[attr-defined]
+                LOG.info(
+                    "ChunkManager.materialize_offload (M6C-fix-8): "
+                    "synced %d chunk-managed names into "
+                    "model._ddp_params_and_buffers_to_ignore",
+                    len(_ignore),
+                )
+            except Exception as _exc:  # noqa: BLE001 — defensive
+                # The DDP-ignore registration is a defense-in-depth
+                # measure; if the model object doesn't support
+                # attribute assignment (extremely unusual — would mean
+                # some custom subclass with __slots__ and no
+                # ``_ddp_params_and_buffers_to_ignore`` slot) we log
+                # and continue rather than break the offload. The
+                # downstream DDP wrap will then trip the shared-
+                # storage hazard, surfacing the issue loudly.
+                LOG.warning(
+                    "ChunkManager.materialize_offload (M6C-fix-8): "
+                    "failed to register _ddp_params_and_buffers_to_ignore "
+                    "on model: %s",
+                    _exc,
+                )
         return freed
 
     def _close_cpu_pools(self) -> None:
@@ -1873,6 +1924,66 @@ class ChunkManager:
             # itself reshaped as a 0-dim tensor.
             return scratch.view(())
         return scratch.expand(tuple(shape))
+
+    def chunk_managed_param_names(self) -> set[str]:
+        """Return every param name backed by a non-persistent (released) chunk.
+
+        M6C-fix-8: required by ``api/model_wrapper.py`` to populate
+        ``model._ddp_params_and_buffers_to_ignore`` before
+        ``accelerator.prepare`` wraps the model in
+        :class:`torch.nn.parallel.DistributedDataParallel`.
+
+        Why this matters
+        ----------------
+        On the multi-GPU sharded path (``zero3_shard=True`` and
+        ``world_size > 1``) the model wrapper engages
+        ``shape_preserving_placeholders=True`` so that the released-state
+        ``param.data`` carries the param's REAL logical shape via a
+        ``scratch.expand(slot.shape)`` zero-stride view (M6C-fix-7
+        architectural fix that closes the autograd shape-capture race for
+        PEFT LoRA factors). The expanded view shares one physical
+        element across every logical position; reading is fine but ANY
+        in-place WRITE trips PyTorch's shared-storage hazard:
+
+            RuntimeError: unsupported operation: more than one element
+            of the written-to tensor refers to a single memory location.
+            Please clone() the tensor before performing the operation.
+
+        ``DistributedDataParallel.__init__`` calls
+        ``_sync_module_states`` → ``_broadcast_coalesced``, which
+        iterates ``module.named_parameters()`` and broadcasts the
+        rank-0 contents into every rank's tensor. The broadcast is an
+        in-place write — into the still-released expanded placeholder —
+        so it trips the hazard on every chunk-managed param.
+
+        ProTrain owns the parallelism contract for these params anyway
+        (init-time sharding via :meth:`materialize_offload`, gather-time
+        ``all_gather_into_tensor`` reconstruction, grad-time
+        ``reduce_scatter`` drain). DDP's broadcast/allreduce on them is
+        not just unnecessary, it is INCORRECT for sharded init —
+        every rank holds a different shard and broadcasting one rank's
+        bytes to every rank would corrupt the other ranks' shards. The
+        correct shape of the integration is "tell DDP to ignore these
+        params entirely" via
+        ``model._ddp_params_and_buffers_to_ignore`` (the documented
+        opt-out hook PyTorch's DDP honours via the attribute lookup at
+        ``DistributedDataParallel.__init__`` line ~718).
+
+        Returns
+        -------
+        set[str]
+            Every dotted parameter name (matching ``named_parameters``
+            keys) whose backing chunk is in ``_non_persistent_ids``.
+            Persistent chunks are excluded — their params stay GPU-
+            resident, do not pass through the released-state
+            placeholder, and DO need the standard DDP broadcast for
+            correctness.
+        """
+        names: set[str] = set()
+        for cid in self._non_persistent_ids:
+            for slot in self._cpu_slots.get(cid, []):
+                names.add(str(slot.param_id))
+        return names
 
     def _make_grad_offload_hook(self, chunk_id: ChunkId, slot: _CpuParamSlot):
         """Build a post-accumulate grad hook for one trainable non-persistent param.

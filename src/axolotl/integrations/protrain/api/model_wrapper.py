@@ -1421,6 +1421,202 @@ def _construct_runtime(
     )
     _sys2.stderr.flush()
 
+    # ---- 4.5b: DDP-ignore the chunk-managed params (M6C-fix-8) ---------
+    # On the multi-GPU sharded path we engaged
+    # ``shape_preserving_placeholders=True`` above. The released-state
+    # ``param.data`` is now a ``scratch.expand(slot.shape)`` zero-stride
+    # view: shape-preserving (autograd-safe — closes the M6C-fix-7
+    # race window) but NOT write-safe (multiple logical positions share
+    # one physical element).
+    #
+    # Downstream, ``transformers.Trainer._prepare_for_training`` calls
+    # ``self.accelerator.prepare(model, optimizer)`` which wraps the
+    # model in :class:`torch.nn.parallel.DistributedDataParallel`.
+    # DDP's ``__init__`` runs ``_sync_module_states`` which iterates
+    # ``module.named_parameters()`` and broadcasts each rank-0 tensor
+    # into every rank's storage via ``dist._broadcast_coalesced``. The
+    # broadcast is an IN-PLACE WRITE; on the expanded placeholder it
+    # trips PyTorch's shared-storage hazard:
+    #
+    #     RuntimeError: unsupported operation: more than one element
+    #     of the written-to tensor refers to a single memory location.
+    #     Please clone() the tensor before performing the operation.
+    #
+    # Failure is universal across all 4 ranks at DDP construction time,
+    # BEFORE the trainer's training loop starts. See
+    # ``/home/rgilbreth/Desktop/ProTrain/m0_artifacts/m6c_fix7_modeC_resume.log``
+    # for the multi-rank trace.
+    #
+    # Architecturally the fix is a no-op on correctness: ProTrain owns
+    # the parallelism contract for chunk-managed params. Init-time
+    # sharding is performed by ``materialize_offload`` (each rank
+    # populates its own shard from the same rank-0-loaded weights via
+    # the Trainer's pre-wrap path); gather-time reconstruction uses
+    # ``all_gather_into_tensor``; grad-time drain uses
+    # ``reduce_scatter``. DDP's per-param broadcast at construction
+    # time would CORRUPT the per-rank shards (each rank's CPU shard
+    # holds different bytes, so broadcasting rank-0's bytes to every
+    # rank would overwrite rank-N's shard with rank-0's shard). DDP's
+    # backward-pass allreduce on these params would also conflict with
+    # the chunk manager's reduce_scatter drain.
+    #
+    # The supported opt-out hook is
+    # ``module._ddp_params_and_buffers_to_ignore`` — DDP's
+    # ``__init__`` reads it at construction time
+    # (torch/nn/parallel/distributed.py ~line 718) and excludes those
+    # named params from BOTH the init broadcast AND the backward
+    # allreduce. Persistent chunks are intentionally NOT included:
+    # their params stay GPU-resident through the released window,
+    # never pass through the expand placeholder, and DO need the
+    # standard DDP broadcast/allreduce for correctness (they are
+    # replicated across ranks, not sharded).
+    #
+    # Default OFF (single-GPU / multi-GPU replicated): no-op. The
+    # ``_shape_preserving`` gate guarantees we only set the ignore
+    # attribute on the path that needs it.
+    if _shape_preserving:
+        # M6C-fix-8 (DDP-init-sync bypass). Empirically, registering
+        # ``model._ddp_params_and_buffers_to_ignore`` is INSUFFICIENT
+        # on the production multi-GPU sharded path even when 100 % of
+        # chunk-managed names match ``model.named_parameters()``
+        # (verified at INFO time via "live match: N/N"). The
+        # ``_sync_module_states`` broadcast STILL trips the shared-
+        # storage hazard, suggesting either a name-resolution
+        # discrepancy inside DDP's C++ filter, an accelerate-side
+        # transformation that re-introduces the placeholders, or a
+        # buffer the filter does not reach. Rather than continue
+        # fighting the filter at the symptom layer, we bypass the
+        # init-time broadcast entirely.
+        #
+        # Architectural justification: ProTrain owns the parallelism
+        # contract for chunk-managed params (init shard via
+        # ``materialize_offload``, gather via
+        # ``all_gather_into_tensor``, grad reduce via
+        # ``reduce_scatter``). DDP's init-time broadcast is REDUNDANT
+        # for replicated params (every rank already loaded the same
+        # checkpoint) and INCORRECT for sharded params (each rank
+        # holds a different shard, broadcasting one rank's bytes to
+        # all ranks would corrupt the other ranks' shards). The
+        # init-broadcast contract is "make all ranks agree on the
+        # initial state"; on the sharded ProTrain path that contract
+        # is satisfied by every rank loading from the SAME local
+        # ``modelA_ckpt`` checkpoint and going through the same
+        # materialize_offload partition rule — the broadcast adds
+        # nothing.
+        #
+        # Mechanism: monkey-patch
+        # ``torch.nn.parallel.DistributedDataParallel.__init__`` to
+        # auto-inject ``init_sync=False`` whenever the wrapped module
+        # carries our marker attribute
+        # ``_protrain_ddp_skip_init_sync``. This skips
+        # ``_verify_param_shape_across_processes`` (which would
+        # gather() shape metadata even for ignored params and could
+        # itself trip on the placeholder) AND the
+        # ``_sync_module_states`` broadcast. Backward-pass allreduce
+        # remains gated by ``parameters_to_ignore`` (still filled
+        # from ``_ddp_params_and_buffers_to_ignore`` — see DDP
+        # __init__ line ~718) so chunk-managed params are also
+        # skipped at backward, matching ProTrain's reduce_scatter
+        # contract.
+        #
+        # The monkey-patch is idempotent: we attach a sentinel
+        # attribute on the DDP class so repeat
+        # ``protrain_model_wrapper`` calls (test reruns, fixtures)
+        # don't stack patches. The patch is GATED on the marker —
+        # any DDP construction WITHOUT our marker (other models in
+        # the same process, future use cases) is untouched.
+        try:
+            import torch.nn.parallel as _tnp
+
+            _ddp_cls = _tnp.DistributedDataParallel
+            if not getattr(_ddp_cls, "_protrain_init_sync_patched", False):
+                _orig_init = _ddp_cls.__init__
+
+                def _patched_init(self, module, *args, **kwargs):
+                    # Detect our marker on the wrapped module (or any
+                    # ancestor reached via ``module.module`` for
+                    # nested-DDP edge cases). When present, override
+                    # ``init_sync`` to False so the init-time
+                    # broadcast skips the chunk-manager-managed
+                    # placeholders.
+                    _walk = module
+                    _seen: set[int] = set()
+                    while _walk is not None and id(_walk) not in _seen:
+                        _seen.add(id(_walk))
+                        if getattr(_walk, "_protrain_ddp_skip_init_sync", False):
+                            kwargs["init_sync"] = False
+                            LOG.info(
+                                "ProTrain (M6C-fix-8): "
+                                "DistributedDataParallel.__init__ "
+                                "patched-injection of init_sync=False "
+                                "for chunk-managed model — "
+                                "_sync_module_states broadcast and "
+                                "_verify_param_shape_across_processes "
+                                "are bypassed (every rank already "
+                                "agreed on init state via "
+                                "materialize_offload's deterministic "
+                                "partition).",
+                            )
+                            break
+                        _walk = getattr(_walk, "module", None)
+                    return _orig_init(self, module, *args, **kwargs)
+
+                _ddp_cls.__init__ = _patched_init
+                _ddp_cls._protrain_init_sync_patched = True
+
+            # Mark the model so the patch detects it. Persistent
+            # across the model lifetime — the marker is harmless if
+            # DDP is never wrapped around it (no patch fires).
+            model._protrain_ddp_skip_init_sync = True  # type: ignore[attr-defined]
+        except Exception as _patch_exc:  # noqa: BLE001 — defensive
+            LOG.warning(
+                "ProTrain (M6C-fix-8): failed to install "
+                "DistributedDataParallel init_sync bypass patch: %s. "
+                "Multi-GPU sharded path may still trip the shared-"
+                "storage hazard at DDP construction time.",
+                _patch_exc,
+            )
+
+        ignore = chunk_manager.chunk_managed_param_names()
+        # Cross-check: every registered name must resolve through
+        # ``model.named_parameters()`` — if it doesn't, DDP's
+        # ``_sync_module_states`` filter ``if name not in ignore`` will
+        # not match (DDP iterates the full recursive name; we register
+        # whatever ``slot.param_id`` carried). Mismatch is the silent-
+        # failure mode that would let the broadcast still target the
+        # expand placeholder. Surface a count that aligns the two
+        # vocabularies so any future drift is caught at INFO time.
+        live_names = {n for n, _ in model.named_parameters()}
+        unmatched = ignore - live_names
+        if unmatched:
+            LOG.warning(
+                "ProTrain (M6C-fix-8): %d/%d chunk-managed names do NOT "
+                "match model.named_parameters() — DDP broadcast filter "
+                "will MISS them. Sample mismatches: %s",
+                len(unmatched),
+                len(ignore),
+                sorted(unmatched)[:5],
+            )
+        existing = getattr(model, "_ddp_params_and_buffers_to_ignore", None)
+        if existing is None:
+            model._ddp_params_and_buffers_to_ignore = list(ignore)  # type: ignore[attr-defined]
+        else:
+            # Preserve any names a caller (or earlier integration) already
+            # registered; merge ours on top so neither side is lost.
+            merged = set(existing) | ignore
+            model._ddp_params_and_buffers_to_ignore = list(merged)  # type: ignore[attr-defined]
+        LOG.info(
+            "ProTrain (M6C-fix-8): registered %d chunk-managed param "
+            "names in model._ddp_params_and_buffers_to_ignore (live "
+            "match: %d/%d) so DDP's _sync_module_states broadcast "
+            "skips the shape-preserving expand placeholders (write "
+            "would trip the shared-storage hazard on the expanded "
+            "view).",
+            len(ignore),
+            len(ignore - unmatched),
+            len(ignore),
+        )
+
     # ---- 4.6: build the CPU FusedAdam adapter (post-offload) ------------
     # BUG 3 FIX: now that ``materialize_offload`` has allocated the pinned
     # CPU shards and installed per-param grad hooks, build the CPU Adam

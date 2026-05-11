@@ -491,3 +491,221 @@ def test_autograd_shape_capture_on_released_param() -> None:
     mgr.uninstall()
     host.close()
     del pool
+
+
+@pytest.mark.gpu
+def test_release_state_placeholder_is_write_unsafe() -> None:
+    """M6C-fix-8 root-cause pin: the expand placeholder is NOT write-safe.
+
+    The shape-preserving placeholder is a ``scratch.expand(slot.shape)``
+    zero-stride view. ``.size()`` / ``.shape`` / ``.dim()`` return the
+    real values (M6C-fix-7 invariant — see
+    ``test_release_state_preserves_shape``), but any in-place WRITE
+    fails with PyTorch's shared-storage hazard:
+
+        RuntimeError: unsupported operation: more than one element of
+        the written-to tensor refers to a single memory location.
+
+    This is the exact failure that DDP's ``_sync_module_states``
+    (``dist._broadcast_coalesced``) hits at construction time on the
+    multi-GPU sharded path — DDP iterates ``named_parameters()`` and
+    broadcasts rank-0's bytes into every rank's tensor, the broadcast
+    writes IN-PLACE into the placeholder, and every rank fails. See
+    ``model_wrapper.py``'s M6C-fix-8 block for the
+    ``model._ddp_params_and_buffers_to_ignore`` workaround.
+
+    This test pins the underlying invariant so future "let's just make
+    DDP write to it" attempts trip a unit test before they trip a
+    multi-GPU integration test.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    model = _tiny_model(hidden=hidden, n_layers=2).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+    mgr, _layout, pool, host = _build_chunk_manager(
+        model,
+        n_persist=1,
+        S_chunk=S_chunk,
+        shape_preserving_placeholders=True,
+    )
+
+    placeholder = mgr._shape_preserving_placeholder(
+        torch.Size([hidden, hidden]), torch.float32
+    )
+    # Shape preserved (M6C-fix-7 invariant).
+    assert placeholder.shape == torch.Size([hidden, hidden])
+    # Storage points at the per-dtype scratch (1 element).
+    assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
+
+    # In-place write fails with the shared-storage hazard. Any of
+    # ``copy_``, ``add_``, ``zero_``, ``mul_`` triggers it.
+    real_payload = torch.zeros(hidden, hidden, dtype=torch.float32, device="cuda")
+    with pytest.raises(RuntimeError, match="more than one element"):
+        placeholder.copy_(real_payload)
+
+    mgr.uninstall()
+    host.close()
+    del pool
+
+
+@pytest.mark.gpu
+def test_chunk_managed_param_names_excludes_persistent() -> None:
+    """M6C-fix-8 helper invariant.
+
+    ``ChunkManager.chunk_managed_param_names()`` must return EXACTLY the
+    param names whose backing chunks are non-persistent (the ones whose
+    ``param.data`` is currently the released-state expand placeholder
+    on the M6C-fix-7 path). Persistent-chunk params must NOT appear:
+    they live on GPU through the released window, never trip the
+    write-hazard, and DO need DDP's standard broadcast/allreduce.
+
+    This is the load-bearing invariant for the
+    ``model._ddp_params_and_buffers_to_ignore`` registration in
+    ``model_wrapper.py`` — the wrong set passed to DDP would either
+    leave the hazard in (false negatives — broadcast still tries to
+    write the placeholder) or skip persistent params (false positives
+    — persistent param weights would diverge across ranks).
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    n_layers = 4
+    model = _tiny_model(hidden=hidden, n_layers=n_layers).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+
+    mgr, layout, pool, host = _build_chunk_manager(
+        model,
+        n_persist=1,
+        S_chunk=S_chunk,
+        shape_preserving_placeholders=True,
+    )
+    mgr.materialize_offload()
+
+    ignored = mgr.chunk_managed_param_names()
+
+    # Build the expected set: every param in a non-persistent chunk.
+    expected: set[str] = set()
+    for cid in mgr._non_persistent_ids:
+        for pid in layout.chunks[int(cid)]:
+            expected.add(str(pid))
+    assert ignored == expected, (
+        f"chunk_managed_param_names mismatch: "
+        f"expected={sorted(expected)} got={sorted(ignored)}"
+    )
+
+    # Persistent chunk params are explicitly NOT in the set.
+    persistent_names: set[str] = set()
+    for cid in mgr._persistent_ids:
+        for pid in layout.chunks[int(cid)]:
+            persistent_names.add(str(pid))
+    assert ignored.isdisjoint(persistent_names), (
+        f"persistent params leaked into ignore set: "
+        f"intersection={ignored & persistent_names}"
+    )
+
+    # Sanity: every returned name resolves through named_parameters().
+    by_name = dict(model.named_parameters())
+    for name in ignored:
+        assert name in by_name, f"unknown param name in ignore set: {name}"
+
+    mgr.uninstall()
+    host.close()
+    del pool
+
+
+@pytest.mark.gpu
+def test_release_state_is_write_safe_through_gather_round_trip() -> None:
+    """M6C-fix-8 gather-roundtrip safety.
+
+    The released-state placeholder is write-UNSAFE by construction
+    (see ``test_release_state_placeholder_is_write_unsafe``), but the
+    chunk manager's gather path must NEVER trigger an in-place write
+    against it. ``gather()`` rebinds ``param.data`` to a fresh GPU
+    typed-view of the pool buffer BEFORE any caller can write to the
+    param; the H2D copy that fills the buffer writes into the buffer
+    slice (a fresh contiguous view), not into the still-released
+    placeholder.
+
+    This test pins that ordering: a forward pass that consumes the
+    gathered param (potentially writing to it via in-place ops the
+    caller chose to dispatch) must succeed without tripping the
+    shared-storage hazard.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA runtime")
+
+    torch.cuda.empty_cache()
+
+    hidden = 64
+    n_layers = 4
+    model = _tiny_model(hidden=hidden, n_layers=n_layers).to("cuda")
+    S_chunk = hidden * hidden * 4 + 4096
+
+    mgr, layout, pool, host = _build_chunk_manager(
+        model,
+        n_persist=1,
+        S_chunk=S_chunk,
+        shape_preserving_placeholders=True,
+    )
+    mgr.materialize_offload()
+
+    non_persist = sorted(mgr._non_persistent_ids)
+    assert non_persist, "need at least one non-persistent chunk"
+    cid = non_persist[0]
+
+    # Pre-gather: param.data IS the expand placeholder (write-unsafe).
+    target_pid = str(layout.chunks[int(cid)][0])
+    target_param = dict(model.named_parameters())[target_pid]
+    pre_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+
+    # gather → param.data must rebind to a fresh typed view of the pool
+    # buffer before any write reaches the placeholder.
+    mgr.gather(cid)
+    target_param = dict(model.named_parameters())[target_pid]
+    post_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+    assert post_gather_storage_ptr != pre_gather_storage_ptr, (
+        "gather did not rebind param.data — still pointing at the "
+        "expand placeholder; in-place write would trip the hazard"
+    )
+
+    # Confirm the gathered param IS write-safe: an in-place fill must
+    # succeed (proving the rebind landed on real storage).
+    target_param.data.fill_(0.5)
+    assert torch.allclose(
+        target_param.data,
+        torch.full_like(target_param.data, 0.5),
+    ), "in-place fill on gathered param did not take effect"
+
+    # Round-trip: offload returns to placeholder; another gather must
+    # again rebind to fresh storage. This pins the cycle.
+    mgr.offload(cid)
+    target_param = dict(model.named_parameters())[target_pid]
+    placeholder_storage_ptr = target_param.data.untyped_storage().data_ptr()
+    # Re-gather and confirm the rebind happens before any write.
+    mgr.gather(cid)
+    target_param = dict(model.named_parameters())[target_pid]
+    re_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+    assert re_gather_storage_ptr != placeholder_storage_ptr, (
+        "re-gather did not rebind param.data after offload returned "
+        "it to the expand placeholder"
+    )
+
+    mgr.uninstall()
+    host.close()
+    del pool

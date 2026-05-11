@@ -38,15 +38,26 @@ Two layers of coverage:
     restore_to_gpu's the offloaded chunks, lets HF copy the loaded
     weights into full-shape ``param.data`` slots, then re-runs
     ``materialize_offload`` and rebuilds the optimizer adapter.
-  * Both directions still fail at iter-0 of Mode C **training**
-    backward with ``ToCopyBackward0 returned an invalid gradient ...
-    expected shape compatible with [0]``. M6C-fix-2 in
-    ``profiler/on_demand.py`` closes this gap for the *profiler trace
-    path* but the runtime training-time gap remains — that fix would
-    need to extend the chunk-manager scheduler to install per-LoRA-
-    factor (sub-chunk) gather hooks, which is out of the M6C-fix-2
-    file partition. Both tests therefore stay marked
-    ``xfail(strict=True)`` until that runtime-side fix lands.
+  * **M6C-fix-7** closed the autograd shape-capture race window at
+    forward construction time via the shape-preserving expand
+    placeholder (``chunk/manager.py::_shape_preserving_placeholder``;
+    pinned by ``test_param_data_shape_preservation.py``). The 4×3090
+    multi-GPU verification leg then surfaced a follow-on DDP
+    ``_sync_module_states`` shared-storage hazard at construction
+    time (the expand placeholder is shape-preserving but not write-
+    safe; DDP's init-time broadcast tries to write it).
+  * **M6C-fix-8** closes that follow-on by auto-injecting
+    ``init_sync=False`` at DDP construction whenever the wrapped
+    module carries the ProTrain marker (set in
+    ``api/model_wrapper.py`` only on the multi-GPU sharded path).
+    Architectural rationale: every rank already agrees on init state
+    via ``materialize_offload``'s deterministic partition, so the
+    construction-time broadcast is redundant for replicated params
+    and INCORRECT for sharded params (broadcasting one rank's bytes
+    over all ranks would corrupt per-rank shards). The
+    ``_ddp_params_and_buffers_to_ignore`` registration also stays in
+    place so the backward-pass allreduce skips chunk-managed params.
+    Both ``test_real_multigpu_*`` tests now PASS on the 4×3090 rig.
 
 Substitution rationale (single-process tests): real LLaMA-3-8B + CLI
 subprocess invocations were the post-crash unsafe path at the time the
@@ -290,18 +301,18 @@ def test_cross_mode_resume_c_to_a() -> None:
 #
 # Originally on commit ``91e0912e`` (4×3090 rig, GPUs 1/4/5/7, ProTrain
 # Phase 2 branch) both directions FAILED — see the report at
-# ``ProTrain/m6c_real_multigpu_report.md``. The M6C-fix-1 cross-mode
-# resume monkey-patch in ``plugin.py:_install_resume_hook`` closes the
-# ``_load_from_checkpoint`` shape-mismatch error class. M6C-fix-2 in
-# ``profiler/on_demand.py:_find_peft_lora_containers`` closes the
-# autograd shape-derivation gap for the *profiler trace path*. The
-# remaining failure (both directions still iter-0 ``loss.backward()``
-# fail in Mode C **training** with the same
-# ``ToCopyBackward0 ... shape compatible with [0]``) requires a
-# runtime-side per-LoRA-factor gather hook in the chunk manager
-# scheduler — out of scope for M6C-fix-{1,2} per the spec's file
-# partition. Tests stay marked ``xfail(strict=True)`` so a future
-# runtime fix that closes the remaining gap will flip them to XPASS.
+# ``ProTrain/m6c_real_multigpu_report.md``. The M6C-fix-{1..8} chain
+# closes the path: M6C-fix-1 the cross-mode resume monkey-patch in
+# ``plugin.py:_install_resume_hook`` (load_from_checkpoint shape-
+# mismatch); M6C-fix-{2..6} the per-LoRA-container gather hook
+# coverage in profiler/on_demand.py and runtime/hooks.py; M6C-fix-7
+# the architectural shape-preserving expand placeholder in
+# ``chunk/manager.py::_shape_preserving_placeholder`` (autograd
+# shape-capture race window); M6C-fix-8 the DDP init_sync=False
+# auto-injection in ``api/model_wrapper.py`` (DDP construction-time
+# broadcast hazard on the expand placeholder). Both
+# ``test_real_multigpu_*`` tests now PASS on the 4×3090 rig (xfail
+# markers removed in the M6C-fix-8 commit).
 # =============================================================================
 
 
@@ -528,175 +539,6 @@ def _repo_root() -> Path:
 
 @pytest.mark.slow
 @pytest.mark.gpu
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M6C-fix-{1,2,3,4,5,6,7} now cover EVERY transition window of "
-        "every M6C runtime gather path we can identify: M6C-fix-1 the "
-        "cross-mode resume hook in plugin.py, M6C-fix-2 the per-PEFT-"
-        "LoRA-container gather in profiler/on_demand.py, M6C-fix-3 the "
-        "per-container fwd/bwd PRE-gather hooks in runtime/hooks.py, "
-        "M6C-fix-4 routes Scheduler.ensure_chunks_resident "
-        "SYNCHRONOUSLY through the chunk manager (instead of via the "
-        "prefetch stream) so the LoRA factor's param.data rebind "
-        "happens on the same logical execution stream the autograd op "
-        "consumes the shape from, M6C-fix-5 unblocks the late-NCCL "
-        "re-search RuntimeError on explicit-override paths (so "
-        "multi-GPU Mode C with explicit n_persist/n_buffer/n_swap/"
-        "n_checkpoint overrides actually REACHES the iter-0 backward "
-        "instead of bailing inside post_trainer_create — pinned by "
-        "tests/protrain/test_late_nccl_search_skip.py), M6C-fix-6 "
-        "extends the per-container hook coverage from the pre-edge pair "
-        "to a full pre/post fwd+bwd quartet (defensive idempotent "
-        "re-gathers at every transition window the chunk could pass "
-        "through during the LoRA container's autograd lifecycle), and "
-        "M6C-fix-7 (architectural attempt) closes the autograd shape-"
-        "capture race window architecturally: chunk/manager.py rebinds "
-        "the post-release ``param.data`` to a SHAPE-PRESERVING zero-"
-        "stride view (one 1-element per-dtype scratch ``expand``-ed to "
-        "``slot.shape``) instead of the legacy ``torch.Size([0])`` "
-        "empty placeholder, so ``param.size()`` returns the real "
-        "logical shape even in the released state — pinned by "
-        "tests/protrain/test_param_data_shape_preservation.py (5 "
-        "tests, all PASS). Engaged automatically when "
-        "zero3_shard=True AND world_size>1 (see model_wrapper.py); "
-        "default OFF on single-GPU / replicated paths so the wide "
-        "``param.data.numel() == 0`` test surface (14+ assertions "
-        "across 7 files) continues to hold unchanged.\n"
-        "\n"
-        "Pinned at unit scope by tests/protrain/test_sharded_lora_offload.py "
-        "(2-rank gloo workers exercising the sharded gather + rebind "
-        "invariant). Single-GPU plain LoRA Mode C E2E "
-        "(test_lora_offload_mode.py::test_runtime_lora_e2e_under_offload_mode_smoke) "
-        "passes. Despite all SIX fixes, the 4×3090 multi-GPU sharded "
-        "path (zero3_shard=True + Llama-3-8B + LoRA) still surfaces a "
-        "shape-mismatch autograd error at iter-0 backward of the "
-        "resumed Mode C training.\n"
-        "\n"
-        "M6C-fix-6 empirical findings (4×3090 rig, no autocast workaround "
-        "in YAML — so the OUTER autograd op is the upstream bf16 cast):\n"
-        "  * Failure mode (with the full fwd/bwd pre+post quartet "
-        "    installed at runtime/hooks.py): 'RuntimeError: Function "
-        "    ToCopyBackward0 returned an invalid gradient at index 0 - "
-        "    got [14336, 16] but expected shape compatible with [0]'. "
-        "    INFO log confirms install_hooks (M6C-fix-6): 224 PEFT-LoRA "
-        "    container(s) detected; quartet installed (1024 total "
-        "    handles across 32 transformer blocks plus 224 PEFT-LoRA "
-        "    container pre+post fwd/bwd hook quartet(s)).\n"
-        "  * The post-forward and post-backward defense-in-depth re-"
-        "    binds did NOT close the gap. The autograd op records its "
-        "    expected-grad shape at FORWARD construction time; if "
-        "    weight.size() was [0] at forward dispatch, the post-* "
-        "    hook re-bind happens too late to influence the recorded "
-        "    metadata. The pre-forward hook IS the load-bearing edge — "
-        "    it must rebind BEFORE the inner Linear's at::linear "
-        "    dispatch records the autograd graph node — and it "
-        "    apparently does NOT reliably do so on the 4-rank sharded "
-        "    path.\n"
-        "\n"
-        "Empirical disambiguation between Hypothesis A (release between "
-        "OUTER pre-bwd and inner TBackward0 apply) and Hypothesis B "
-        "(weight is [0] at forward construction):\n"
-        "  - Hypothesis B is correct. PyTorch's autograd Function input "
-        "    metadata is captured by-value at Node construction (see "
-        "    self_sym_sizes std::vector<c10::SymInt> in torch/csrc/"
-        "    autograd/generated/Functions.h). The 'expected shape "
-        "    compatible with [0]' message can ONLY arise if at the "
-        "    moment ToCopyBackward0 / TBackward0 was constructed, "
-        "    weight.size() returned [0]. Since M6C-fix-3's pre-fwd "
-        "    hook fires before the outer container's forward starts, "
-        "    and M6C-fix-4 makes that hook synchronous, the gather "
-        "    SHOULD have rebound param.data to the real-shape view "
-        "    before any inner forward op dispatches. But empirically "
-        "    on the 4-rank Llama-3-8B sharded path, that invariant "
-        "    doesn't hold — the rebind isn't visible to at::linear's "
-        "    at::Tensor::sym_sizes() call.\n"
-        "  - 2-rank synthetic reproducers (8-layer + all 7 LoRA "
-        "    targets, n_buffer=28, /tmp/m6c_diagnose_2rank.py) with "
-        "    instrumented inner-Linear pre-fwd hooks show every LoRA "
-        "    factor weight.size() at REAL shape during forward, AND "
-        "    backward succeeds. The bug only triggers at production "
-        "    scale (32-layer Llama-3-8B + 4 ranks + n_buffer=8 with "
-        "    significant pool-eviction pressure across blocks).\n"
-        "\n"
-        "Recommended next step (M6C-fix-7+ scope; outside M6C-fix-6's "
-        "file-partition framework). Two candidate root causes worth "
-        "instrumenting on the actual 4×3090 rig:\n"
-        "  (a) Storage-identity vs. data_ptr drift: nn.Linear's "
-        "    self.weight is a Parameter object; rebinding param.data "
-        "    swaps the storage out from under it. PyTorch's autograd "
-        "    captures Variable identity at op-record time. If the "
-        "    chunk-manager's _rebind_params_to_buffer path lands on "
-        "    a Parameter that autograd has already cached against the "
-        "    [0] placeholder storage, the captured input metadata is "
-        "    stuck at [0] regardless of subsequent .data swaps.\n"
-        "  (b) Sharded-gather race not closed by M6C-fix-4's "
-        "    synchronous routing: _gather_sharded issues "
-        "    all_gather_into_tensor on whatever stream is current. "
-        "    The Python-level _rebind_params_to_buffer rebinds "
-        "    param.data SYNCHRONOUSLY in Python — but the SHAPE "
-        "    rebind and the BYTES arrival are decoupled across stream "
-        "    boundaries. In bf16 mode, the at::linear dispatch may "
-        "    issue a CUDA kernel that reads weight metadata (size) "
-        "    from C++ side via at::Tensor::sym_sizes() — that read "
-        "    might be lazy / cached against the original tensor "
-        "    handle.\n"
-        "  (c) Workaround acceptable: documented in DESIGN.md — "
-        "    plain-LoRA + Mode C is gated to single-GPU only on the "
-        "    multi-GPU multi-rank front; users can run Mode A "
-        "    (all-persistent) for the same model on 4 ranks, or "
-        "    bnb-quantized Mode C (the bnb path passes — see "
-        "    test_bnb_offload.py).\n"
-        "\n"
-        "M6C-fix-7 architectural-attempt outcome (this commit). The "
-        "fix is implemented + unit-tested (5/5 PASS in "
-        "test_param_data_shape_preservation.py) and the full single-"
-        "GPU regression surface (lora_offload_mode, bnb_offload, "
-        "fused_lora_kernels, cross_mode_resume single-process, "
-        "trace_skip_on_override, late_nccl_search_skip, "
-        "sharded_lora_offload, chunk_manager_offload, "
-        "offload_mode_m{2,3}) holds. The architectural invariant — "
-        "``param.size()`` is preserved across release+regather under "
-        "the new flag — is pinned at unit scope. The 4×3090 multi-GPU "
-        "verification leg was NOT empirically retried in this "
-        "dispatch because GPUs 1/4/5/7 were not all simultaneously "
-        "free during the dispatch window (GPU 1 had an external "
-        "process throughout; agent's hardware-safety protocol "
-        "prohibits killing or pattern-matching processes, so the "
-        "multi-GPU 4-rank launch path could not be exercised). The "
-        "single-process synthetic equivalents pass under the new flag "
-        "(test_param_data_shape_preservation::"
-        "test_autograd_shape_capture_on_released_param confirms the "
-        "autograd Node records the REAL shape from a shape-preserving "
-        "placeholder, eliminating the ``[0]`` source). A future "
-        "dispatch can validate the multi-GPU close by running this "
-        "test ``--runxfail`` on the 4×3090 rig when GPUs are free.\n"
-        "\n"
-        "If multi-GPU still fails after M6C-fix-7 engages (would mean "
-        "the race window is DEEPER than ``param.size()`` shape "
-        "capture — e.g. autograd captures ``data_ptr()`` or "
-        "``untyped_storage()`` identity at Node construction, not "
-        "just shape; or PEFT's LoraLayer caches a separate reference "
-        "to the inner Linear's weight Tensor outside the Parameter "
-        "wrapper), the recommended M6C-fix-8 scope is: instrument "
-        "the C++ side of ``at::Tensor::sym_sizes()`` and ``ToCopy``'s "
-        "autograd Function metadata capture via PyTorch's "
-        "``torch.utils._python_dispatch.TorchDispatchMode`` to record "
-        "the exact moment the ``[0]`` shape is captured, and which "
-        "Tensor identity that capture binds against. Only this "
-        "instrumentation can disambiguate whether the residual gap "
-        "(if any) is a Parameter-identity issue (Option B in the "
-        "M6C-fix-7 spec — subclass nn.Parameter to override size()), "
-        "or a storage-pointer caching issue (Option C — full-shape "
-        "[0]-storage placeholder with consistent storage_ptr across "
-        "release/regather cycles).\n"
-        "\n"
-        "Closing the upstream root cause may still require invasive "
-        "PEFT-internal instrumentation or upstream PyTorch-side "
-        "investigation. Larger scope than the M6C-fix-* file-"
-        "partition framework supports. Tracked."
-    ),
-)
 def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
     """4×3090 cross-mode A→C: train+save Mode A, resume in Mode C.
 
@@ -707,8 +549,23 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
     asks for max_steps=10 (so 5 more steps after resume).
 
     Acceptance: both phases exit 0; Phase 2's stdout shows loss values
-    for steps 6..10 with no Traceback. See ``xfail`` reason for the
-    current empirical failure mode.
+    for steps 6..10 with no Traceback.
+
+    Status (M6C-fix-8): PASSING. The full M6C chain (fixes 1..8) closed
+    the multi-GPU plain-LoRA Mode C cross-mode resume path. M6C-fix-7
+    architecturally closed the autograd shape-capture race window via
+    the shape-preserving expand placeholder; M6C-fix-8 closed the
+    follow-on DDP ``_sync_module_states`` shared-storage hazard by
+    auto-injecting ``init_sync=False`` on the chunk-managed model
+    (every rank already agreed on init state via
+    ``materialize_offload``'s deterministic partition, so the
+    construction-time broadcast was redundant; the module-level
+    ``_ddp_params_and_buffers_to_ignore`` registration also stays in
+    place so the backward-pass allreduce skips chunk-managed params,
+    matching ProTrain's reduce_scatter contract). See
+    ``api/model_wrapper.py``'s M6C-fix-8 block and
+    ``tests/protrain/test_param_data_shape_preservation.py`` for the
+    full architectural invariant + 8 unit tests.
     """
     _require_real_multigpu()
 
@@ -769,52 +626,6 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
 
 @pytest.mark.slow
 @pytest.mark.gpu
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Same residual gap as test_real_multigpu_cross_mode_resume_a_to_c. "
-        "M6C-fix-{1,2,3,4,5,6,7} cover every M6C runtime gather path we "
-        "can identify, including the M6C-fix-6 per-container POST-fwd "
-        "and POST-bwd defense-in-depth re-binds added on top of "
-        "M6C-fix-3's pre-edge pair AND the M6C-fix-7 architectural "
-        "fix (shape-preserving release-state placeholders in "
-        "chunk/manager.py). All verified at single-GPU + multi-rank "
-        "gloo unit scope (test_lora_offload_mode.py, "
-        "test_sharded_lora_offload.py, "
-        "test_param_data_shape_preservation.py).\n"
-        "\n"
-        "M6C-fix-6 empirical run (A→C direction, no autocast workaround "
-        "in YAML — so the OUTER autograd op is the upstream bf16 cast):\n"
-        "  * Failure: 'RuntimeError: Function ToCopyBackward0 returned "
-        "    an invalid gradient at index 0 - got [14336, 16] but "
-        "    expected shape compatible with [0]'.\n"
-        "  * INFO log confirms install_hooks (M6C-fix-6) installed the "
-        "    full quartet (1024 hooks across 32 blocks + 224 PEFT-LoRA "
-        "    containers) — the post-* re-binds DID fire during the "
-        "    failing run but did not influence the recorded autograd "
-        "    metadata at FORWARD construction time.\n"
-        "\n"
-        "C→A Phase 1 was NOT empirically retried after M6C-fix-6 per "
-        "the safety protocol (one multi-GPU attempt per direction max; "
-        "the A→C run showed the M6C-fix-6 quartet does not close the "
-        "construction-time gap and the C→A direction would manifest "
-        "the same way at Phase 1 backward). See the A→C xfail reason "
-        "for the full construction-site analysis "
-        "(peft/tuners/lora/layer.py:969 → at::linear → implicit .t() / "
-        "at::Tensor::sym_sizes() captured at Node construction) and "
-        "the M6C-fix-7 architectural-attempt outcome (shape-preserving "
-        "placeholders implemented, unit-tested 5/5 PASS, regression "
-        "intact, but the multi-GPU verification leg was not exercised "
-        "in this dispatch — see the A→C xfail reason for the full "
-        "M6C-fix-7 outcome record and the recommended M6C-fix-8 "
-        "scope if the multi-GPU run still fails under the engaged "
-        "flag). Tracked for a follow-up dispatch outside the M6C-"
-        "fix-* file-partition framework. Workaround: use Mode A "
-        "(all-persistent, no offload) for plain-LoRA multi-rank runs, "
-        "or bnb-quantized Mode C (test_bnb_offload.py covers that "
-        "path)."
-    ),
-)
 def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
     """4×3090 cross-mode C→A: train+save Mode C, resume in Mode A.
 
@@ -823,8 +634,15 @@ def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
     Phase 2 resumes in Mode A.
 
     Acceptance: both phases exit 0; Phase 2's stdout shows 5 resumed
-    step losses with no Traceback. See ``xfail`` reason for the
-    current empirical failure mode (Phase 1 fails at backward).
+    step losses with no Traceback.
+
+    Status (M6C-fix-8): PASSING. See A→C test docstring for the full
+    M6C chain close. Phase 1 (Mode C train) exercises the same DDP
+    init_sync bypass as the A→C Phase 2 (Mode C resume); Phase 2 here
+    (Mode A resume) goes through the standard DDP path (no shape-
+    preserving placeholders engaged in Mode A — the bypass marker is
+    not set on the model so DDP's __init__ runs the normal init_sync
+    broadcast, correct for the all-persistent path).
     """
     _require_real_multigpu()
 
