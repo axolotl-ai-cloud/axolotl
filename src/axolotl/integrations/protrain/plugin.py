@@ -296,6 +296,41 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     if trace.nccl_gather_s and trace.nccl_reduce_s and trace.world == world_size:
         return (False, False)
 
+    # Override-skip gate (M6C-fix-5). When the user supplied all four
+    # explicit-override knobs (n_persist / n_buffer / n_swap /
+    # n_checkpoint), the bootstrap ``search_result`` was *synthesized*
+    # from those knobs (no searcher / cost-model input — see the
+    # ``all_overrides_set`` branch in ``model_wrapper.py``). Re-running
+    # ``search()`` on the late path would either:
+    #
+    # * pick the same synthesized cfg back (best case — wasted work
+    #   plus a wasted NCCL bench), or
+    # * pick a *different* cost-optimal cfg, hit the
+    #   ``cfg_changed=True`` branch below, and raise
+    #   ``RuntimeError("ProTrain: late NCCL re-search picked a different
+    #   plan than the bootstrap.")`` — even though the user's overrides
+    #   are documented to pin the plan and the runtime is already wired
+    #   for that pinned plan. This was the M6C-fix-5 Blocker 1 trip:
+    #   any multi-GPU Mode C run with explicit override knobs failed
+    #   here regardless of whether the rest of the cross-mode resume
+    #   chain worked.
+    #
+    # Skip the measurement + re-search entirely on this path. The
+    # synthetic trace's empty NCCL tables stay empty (the cost model is
+    # not consulted on the override path; downstream consumers that
+    # would read the tables are not on the override path either). Emit
+    # an INFO so the operator sees the gate engaged.
+    if bool(getattr(wrapped, "_override_skip_trace", False)):
+        LOG.info(
+            "ProTrain: late NCCL re-search skipped — explicit override knobs "
+            "are fully set so the bootstrap cfg is pinned. world_size=%d, "
+            "bootstrap cfg=%s. (See model_wrapper.py override-skip gate; "
+            "M6C-fix-5.)",
+            world_size,
+            wrapped.search_result.cfg,
+        )
+        return (False, False)
+
     from axolotl.integrations.protrain.profiler import measure_nccl
     from axolotl.integrations.protrain.profiler.cache import (
         ProfilerCacheKey,

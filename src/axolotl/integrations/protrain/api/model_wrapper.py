@@ -2982,6 +2982,21 @@ def protrain_model_wrapper(
     # Carry the user-supplied cache_dir so post_trainer_create's NCCL
     # re-measure path can persist the spliced trace under the same root.
     wrapped._cache_dir = cache_dir  # type: ignore[attr-defined]
+    # Carry the override-skip flag through so the plugin's
+    # ``_remeasure_nccl_and_research`` path (post_trainer_create) can
+    # ALSO short-circuit when the user pinned every layout knob via
+    # explicit overrides. Without this, the late re-search (which runs
+    # after the post-bootstrap NCCL benchmark splices real tables into
+    # the trace) would re-invoke ``search()`` and may pick a different
+    # plan than the bootstrap; the runtime is already wired for the
+    # bootstrap plan and cannot be rebuilt mid-flight, so the helper
+    # would raise ``RuntimeError("ProTrain: late NCCL re-search picked
+    # a different plan than the bootstrap.")``. The user's explicit
+    # override knobs are documented to pin the plan; ``cfg`` was
+    # synthesized from those knobs (no searcher / cost-model input on
+    # this branch — see ``all_overrides_set`` branch above), so the
+    # late-search outcome is meaningless on this path. M6C-fix-5.
+    wrapped._override_skip_trace = bool(_override_skip_trace)  # type: ignore[attr-defined]
     return wrapped
 
 
