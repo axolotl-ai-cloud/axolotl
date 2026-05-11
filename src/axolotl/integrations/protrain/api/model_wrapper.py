@@ -1257,6 +1257,40 @@ def _construct_runtime(
         zero3_shard,
     )
 
+    # M6C-fix-7: shape-preserving release-state placeholders. PEFT's
+    # ``LoraLayer.forward`` on multi-GPU sharded non-persistent chunks
+    # at production scale (32-layer Llama-3-8B × 4 ranks × heavy
+    # pool-eviction pressure) hits a rare race window where an autograd
+    # op records its input shape against a still-``torch.Size([0])``
+    # placeholder before the per-LoRA-container gather hook's rebind
+    # takes effect — surfacing at backward as ``RuntimeError: Function
+    # ToCopyBackward0 returned an invalid gradient ... expected shape
+    # compatible with [0]`` (the multi-GPU plain-LoRA Mode C cross-mode
+    # resume xfail in tests/protrain/test_cross_mode_resume.py).
+    #
+    # The shape-preserving placeholder closes the window architecturally:
+    # the post-release ``param.data`` is a zero-stride view over a
+    # 1-element per-dtype scratch (``scratch.expand(slot.shape)``), so
+    # ``param.size()`` returns the real logical shape regardless of
+    # where in the gather→forward sequence an autograd op records its
+    # metadata. See ChunkManager.__init__ + tests/protrain/
+    # test_param_data_shape_preservation.py for the architectural
+    # invariant.
+    #
+    # Engagement policy: enable ONLY on the multi-GPU sharded
+    # zero3_shard path. The single-GPU / replicated paths keep the
+    # legacy ``torch.Size([0])`` placeholder so the wide test surface
+    # asserting ``param.data.numel() == 0`` post-offload
+    # (test_chunk_manager_offload.py, test_offload_mode_m{2,3}.py,
+    # test_lora_offload_mode.py, test_fused_lora_kernels.py,
+    # test_multi_gpu_7b.py, test_profiler.py — 14+ assertions across
+    # 7 files) continues to hold without modification. The
+    # ``zero3_shard`` gate is the same one that auto-detected the
+    # multi-rank multi-GPU sharded path above (lines around 1250);
+    # single-rank tests with ``zero3_shard=True`` (which silently
+    # degrades to ``False`` inside ChunkManager.__init__) also keep
+    # the legacy placeholder.
+    _shape_preserving = bool(_zero3)
     chunk_manager = ChunkManager(
         model=model,
         layout=layout,
@@ -1268,6 +1302,7 @@ def _construct_runtime(
         world_size=_ws,
         rank=_rank,
         zero3_shard=_zero3,
+        shape_preserving_placeholders=_shape_preserving,
     )
 
     # The non-block-chunk pinning that earlier versions performed here

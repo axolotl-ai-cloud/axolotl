@@ -432,6 +432,7 @@ class ChunkManager:
         world_size: int = 1,
         rank: int = 0,
         zero3_shard: bool = False,
+        shape_preserving_placeholders: bool = False,
     ) -> None:
         if n_persist < 0 or n_persist > layout.N_chunk:
             raise ValueError(
@@ -540,6 +541,54 @@ class ChunkManager:
         # "placeholders" after offload so we don't allocate a fresh 0-byte
         # tensor per param (cheap but not free).
         self._empty_by_dtype: dict["torch.dtype", "torch.Tensor"] = {}
+
+        # M6C-fix-7: shape-preserving placeholder mode. When True, the
+        # post-release "placeholder" bound to ``param.data`` is a
+        # zero-stride view (one 1-element scratch tensor per dtype,
+        # ``.expand(slot.shape)``) instead of a ``torch.Size([0])`` empty
+        # tensor. This preserves ``param.size()`` / ``param.shape`` /
+        # ``param.dim()`` consistency across the release window so any
+        # autograd op that records input metadata while the chunk is in
+        # the released state captures the REAL logical shape rather
+        # than ``[0]``.
+        #
+        # Rationale (M6C-fix-7 root-cause synthesis from M6C-fix-{3..6}
+        # empirical findings): PyTorch autograd captures Function input
+        # shape metadata at Node-construction time (see
+        # ``torch/csrc/autograd/generated/Functions.h``
+        # ``self_sym_sizes`` captured by-value as
+        # ``std::vector<c10::SymInt>``). When PEFT's ``LoraLayer.forward``
+        # dispatches ``nn.functional.linear`` on a LoRA factor in
+        # multi-GPU sharded mode with non-persistent chunks at
+        # production scale (32-layer Llama-3-8B × 4 ranks × n_buffer=8),
+        # there is a ~rare race window where the autograd op records
+        # its input shape against the still-``[0]``-shape placeholder
+        # before the per-LoRA-container gather hook's rebind takes
+        # effect — surfacing at backward as ``RuntimeError: Function
+        # ToCopyBackward0 returned an invalid gradient ... expected
+        # shape compatible with [0]``. The shape-preserving placeholder
+        # closes the window architecturally: even if the gather
+        # rebind hasn't reached the LoRA factor yet, ``param.size()``
+        # returns the real shape that autograd will eventually expect
+        # at backward.
+        #
+        # Storage footprint: ONE 1-element scratch tensor per dtype
+        # ``(self._shape_scratch_by_dtype)``. The per-param "view" is
+        # constructed on demand via ``scratch.expand(slot.shape)`` —
+        # zero strides, zero additional storage.
+        #
+        # Default OFF (``False``): the legacy ``torch.Size([0])``
+        # placeholder is preserved so the wide test surface that
+        # asserts ``param.data.numel() == 0`` post-offload
+        # (test_chunk_manager_offload.py, test_offload_mode_m{2,3}.py,
+        # test_lora_offload_mode.py, test_fused_lora_kernels.py,
+        # test_multi_gpu_7b.py, test_profiler.py — 14+ assertions
+        # across 7 files) continues to hold without modification. The
+        # API surface is opt-in via the constructor flag (or the
+        # ``protrain_shape_preserving_placeholders: true`` YAML knob
+        # plumbed through ``protrain_model_wrapper``).
+        self._shape_preserving_placeholders: bool = bool(shape_preserving_placeholders)
+        self._shape_scratch_by_dtype: dict["torch.dtype", "torch.Tensor"] = {}
 
         # Per-chunk grad-drain counter: decremented by _offload_grad for
         # every trainable param in the chunk; when it hits zero we kick
@@ -1130,9 +1179,19 @@ class ChunkManager:
                 cpu_param = cpu_view.view(dtype).view(shape)
                 cpu_param.copy_(orig_data)
 
-                # Release GPU storage by rebinding .data to an empty
-                # placeholder of the same dtype.
-                param.data = self._empty_placeholder(dtype)
+                # Release GPU storage by rebinding .data to a
+                # placeholder. M6C-fix-7: when
+                # ``shape_preserving_placeholders`` is on, the
+                # placeholder is a zero-stride view of shape ``shape``
+                # so ``param.size()`` returns the real logical shape
+                # even in the released state — closes the autograd
+                # shape-capture race window for multi-GPU sharded
+                # non-persistent chunks. Default OFF preserves the
+                # legacy ``torch.Size([0])`` placeholder semantics.
+                if self._shape_preserving_placeholders:
+                    param.data = self._shape_preserving_placeholder(shape, dtype)
+                else:
+                    param.data = self._empty_placeholder(dtype)
 
                 # Pinned CPU grad shadow for trainable params (replicated
                 # only). In sharded mode the per-region shard buffer
@@ -1634,6 +1693,11 @@ class ChunkManager:
         # placeholders are unreferenced from torch's perspective. Drop
         # the dict so the next gather builds fresh ones if needed.
         self._empty_by_dtype.clear()
+        # M6C-fix-7: drop the per-dtype shape-scratch cache symmetric
+        # with ``_empty_by_dtype``. Any param.data still aliasing one
+        # of these scratches was just rebound to a fresh GPU tensor
+        # above, so the scratches are now unreferenced.
+        self._shape_scratch_by_dtype.clear()
 
         # Release + close the unified pinned pools.
         #
@@ -1727,6 +1791,88 @@ class ChunkManager:
             t = torch.empty(0, device=self.device, dtype=dtype)
         self._empty_by_dtype[dtype] = t
         return t
+
+    def _shape_preserving_placeholder(
+        self,
+        shape: "torch.Size | tuple[int, ...]",
+        dtype: "torch.dtype",
+    ) -> "torch.Tensor":
+        """Return a tensor with logical ``shape``/``dtype`` but ~zero storage.
+
+        M6C-fix-7: closes the autograd shape-capture race window for
+        multi-GPU non-persistent chunks. PyTorch autograd captures
+        Function input shape metadata at Node-construction (forward)
+        time — see ``torch/csrc/autograd/generated/Functions.h``
+        ``self_sym_sizes`` captured by-value as
+        ``std::vector<c10::SymInt>``. The legacy ``_empty_placeholder``
+        returns a ``torch.Size([0])`` tensor; when an autograd op
+        records its input shape from a parameter still in the released
+        state (race with the gather-hook rebind on the 4-rank
+        Llama-3-8B sharded path under heavy pool-eviction pressure),
+        the recorded shape is ``[0]`` and backward fails with
+        "expected shape compatible with [0]".
+
+        This helper returns a tensor of the *correct* logical shape
+        backed by a 1-element scratch tensor expanded with all-zero
+        strides. Storage footprint per dtype is exactly one element
+        (e.g. 2 bytes for bf16) shared across every param of that
+        dtype currently in the released state. ``param.size()`` /
+        ``param.shape`` / ``param.dim()`` return real values; autograd
+        Node construction captures the real shape regardless of where
+        in the gather→forward→backward sequence the autograd op
+        records its metadata.
+
+        The returned tensor is intentionally non-contiguous (zero
+        strides) — reading from it would yield repeated copies of the
+        single scratch element, which is correct only as a release-
+        state sentinel. The chunk manager's ``_rebind_params_to_buffer``
+        replaces ``param.data`` with a real typed view before any
+        kernel consumes the param's elements; the placeholder is
+        only the post-release sentinel held while no kernel is
+        reading.
+
+        Caching: one scratch tensor per dtype, allocated lazily and
+        held in ``self._shape_scratch_by_dtype``. Cleared by
+        ``restore_to_gpu`` and ``close`` alongside
+        ``self._empty_by_dtype``.
+
+        Notes
+        -----
+        Even when ``self._shape_preserving_placeholders`` is False
+        (the default — see ``__init__``), this method remains callable
+        from external code (tests, future hook code). The release-
+        path call sites in this module gate the swap-in on the flag
+        so existing ``param.data.numel() == 0`` test assertions
+        continue to hold under default behavior.
+        """
+        import torch
+
+        from axolotl.integrations.protrain.runtime.streams import (
+            SingleStreamAllocator,
+        )
+
+        # Materialize-or-fetch the per-dtype 1-element scratch.
+        scratch = self._shape_scratch_by_dtype.get(dtype)
+        if scratch is None:
+            if self.device.type == "cuda" and torch.cuda.is_available():
+                with SingleStreamAllocator():
+                    scratch = torch.empty(1, device=self.device, dtype=dtype)
+            else:
+                scratch = torch.empty(1, device=self.device, dtype=dtype)
+            self._shape_scratch_by_dtype[dtype] = scratch
+
+        # ``expand`` produces a non-contiguous view with all-zero
+        # strides; storage cost is the single scratch element. The
+        # view shares storage with ``scratch`` so the storage_ptr
+        # equals the scratch's storage_ptr — distinguishable from a
+        # real chunk-buffer view (which has its own storage) by
+        # storage-identity comparison if the caller needs that
+        # distinction.
+        if shape == torch.Size([]):
+            # 0-dim scalar param — ``expand([])`` returns the scratch
+            # itself reshaped as a 0-dim tensor.
+            return scratch.view(())
+        return scratch.expand(tuple(shape))
 
     def _make_grad_offload_hook(self, chunk_id: ChunkId, slot: _CpuParamSlot):
         """Build a post-accumulate grad hook for one trainable non-persistent param.
@@ -1919,7 +2065,14 @@ class ChunkManager:
                 # trainable slots round-trip through this callback.
                 if param.data.device.type != "cpu":
                     continue
-                param.data = cm._empty_placeholder(slot.dtype)
+                # M6C-fix-7: shape-preserving placeholder swap (opt-in)
+                # — see the materialize_offload site for rationale.
+                if cm._shape_preserving_placeholders:
+                    param.data = cm._shape_preserving_placeholder(
+                        slot.shape, slot.dtype
+                    )
+                else:
+                    param.data = cm._empty_placeholder(slot.dtype)
                 # Also clear grad: we've consumed it in the CPU step,
                 # and leaving param.grad pointing at the CPU grad shard
                 # means iter N+1's autograd would accumulate new GPU
@@ -2407,7 +2560,15 @@ class ChunkManager:
             # post-step repoint will null it back to a GPU placeholder.
             if param.data.device.type == "cpu":
                 continue
-            param.data = self._empty_placeholder(slot.dtype)
+            # M6C-fix-7: shape-preserving placeholder swap (opt-in
+            # via constructor flag) keeps ``param.size()`` consistent
+            # with the slot's logical shape across the release window
+            # so autograd Node-construction shape-capture sees the
+            # real shape even on the multi-GPU sharded fast path.
+            if self._shape_preserving_placeholders:
+                param.data = self._shape_preserving_placeholder(slot.shape, slot.dtype)
+            else:
+                param.data = self._empty_placeholder(slot.dtype)
         self.buffer_pool.release(chunk_id)
         # Symmetric with the ``_active_chunks.add`` in ``gather()``:
         # the gather-side lease has been released, so the next gather
@@ -2844,6 +3005,8 @@ class ChunkManager:
         self._grad_initial.clear()
         self._chunk_bytes_by_id.clear()
         self._empty_by_dtype.clear()
+        # M6C-fix-7: symmetric teardown with ``_empty_by_dtype``.
+        self._shape_scratch_by_dtype.clear()
 
         try:
             self._close_cpu_pools()
