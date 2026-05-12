@@ -805,9 +805,14 @@ def protrain_optimizer_wrapper(
             "8-bit Adam kernels are CUDA-only. Those chunks will keep "
             "using 32-bit DeepSpeedCPUAdam (still correct, but the "
             "optimizer-state memory win applies only to the persistent "
-            "set). To get end-to-end 8-bit, configure ProTrain with all "
-            "chunks persistent (Mode A) — e.g. set "
-            "protrain_force_all_persistent: true.",
+            "set). To get end-to-end 8-bit, configure ProTrain to force "
+            "all chunks persistent (Mode A): set "
+            "``protrain_auto_mode: false`` AND "
+            "``protrain_force_all_persistent: true`` together — "
+            "``protrain_force_all_persistent`` is ignored while "
+            "``protrain_auto_mode`` is on (the auto-mode selector picks "
+            "the mode itself based on capacity), so disabling auto-mode "
+            "first is required for the Mode-A override to take effect.",
             optimizer_name,
             n_cpu_chunks,
         )
@@ -939,16 +944,16 @@ def protrain_optimizer_wrapper(
     # before ``restore_to_gpu``.
     _old_cpu_optim = getattr(chunk_manager, "cpu_optim", None)
     if _old_cpu_optim is not None and _old_cpu_optim is not cpu_optim:
-        try:
-            _old_cpu_optim.shutdown()
-        except Exception as _shutdown_exc:  # noqa: BLE001 — defensive
-            LOG.warning(
-                "protrain_optimizer_wrapper: failed to shut down previous "
-                "cpu_optim adapter before swap (%s); replacing the "
-                "reference anyway. The old adapter's executor + DeepSpeed "
-                "C-state may leak until GC.",
-                _shutdown_exc,
-            )
+        # F-#3 (Major): let ``shutdown()`` failures abort the swap
+        # rather than warning-and-continuing. The whole point of
+        # calling ``shutdown()`` here is the D3 deterministic-cleanup
+        # invariant — masking a real teardown failure (e.g.,
+        # ``ThreadPoolExecutor`` hung, DeepSpeed C-state corrupted)
+        # puts the failed adapter back on the GC path AND silently
+        # accepts a broken state-machine on the rebuild side. If the
+        # shutdown raises, the rebuild is in an inconsistent state
+        # and the call should fail rather than silently degrading.
+        _old_cpu_optim.shutdown()
     chunk_manager.cpu_optim = cpu_optim
     chunk_manager.gpu_optim = cast("GpuFusedAdamAdapter | None", gpu_optim)
 

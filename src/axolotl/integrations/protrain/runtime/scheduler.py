@@ -350,26 +350,40 @@ class Scheduler:
         cids = tuple(chunk_ids)
         if not cids:
             return
-        # SWAP-stream safety barrier (CodeRabbit R3-#1). Bypassing the
-        # prefetch stream also bypasses the
-        # ``self._prefetch_stream.wait_stream(self._swap_stream)``
-        # barrier that protects pool buffers from being overwritten
-        # while a SWAP D2H is still reading them. On the SWAP + LoRA
-        # path that would reopen the same cross-stream buffer race the
-        # ``_gather_on_prefetch_stream`` barrier closes, just shifted
-        # onto the compute stream. Make the compute stream wait on
-        # ``_swap_stream`` here too so the gather's pool-buffer writes
-        # are correctly ordered after any in-flight SWAP D2H reads.
+        # Cross-stream safety barriers (CodeRabbit R3-#1 + F-#6).
+        # Bypassing ``_gather_on_prefetch_stream`` also bypasses the
+        # barriers that path establishes. Two distinct races need
+        # closing:
+        #
+        # 1. SWAP D2H race (R3-#1). ``_gather_on_prefetch_stream``
+        #    does ``self._prefetch_stream.wait_stream(self._swap_stream)``
+        #    so pool buffers aren't overwritten while a SWAP D2H is
+        #    still reading. On the compute-stream sync path the same
+        #    pool buffer races between the SWAP D2H and the
+        #    ``gather()``'s H2D / fill, just shifted onto the compute
+        #    stream. The compute stream waits on ``_swap_stream``.
+        #
+        # 2. Prefetch-stream race (F-#6). If a chunk is already being
+        #    prefetched, ``ChunkManager.gather()`` may hit the
+        #    ``_active_chunks`` resident fast path and rebind
+        #    ``param.data`` immediately — even though the original H2D
+        #    or ``all_gather_into_tensor`` on ``_prefetch_stream`` is
+        #    still running. In that case the synchronous path returns
+        #    BEFORE the chunk is actually compute-stream-safe, and a
+        #    LoRA forward consuming ``param.data`` reads stale /
+        #    not-yet-written bytes. The compute stream also waits on
+        #    ``_prefetch_stream`` so the rebind is sequenced after the
+        #    in-flight prefetch's completion.
         try:
             import torch as _torch
         except ImportError:  # pragma: no cover — defensive, CPU-only lanes
             _torch = None  # type: ignore[assignment]
-        if (
-            _torch is not None
-            and _torch.cuda.is_available()
-            and self._swap_stream is not None
-        ):
-            _torch.cuda.current_stream().wait_stream(self._swap_stream)
+        if _torch is not None and _torch.cuda.is_available():
+            compute = _torch.cuda.current_stream()
+            if self._swap_stream is not None:
+                compute.wait_stream(self._swap_stream)
+            if self._prefetch_stream is not None:
+                compute.wait_stream(self._prefetch_stream)
         # M6C-fix-4: bypass the prefetch stream. Issuing
         # ``chunk_manager.gather(cid)`` directly here makes the
         # underlying ``_gather_sharded`` collective land on the

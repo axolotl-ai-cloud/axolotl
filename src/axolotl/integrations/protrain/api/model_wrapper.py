@@ -2226,9 +2226,35 @@ def _construct_runtime(
     # names whose param OBJECT matches one we own.
     if _shape_preserving:
         try:
-            chunk_managed_param_ids: set[int] = {
-                id(p) for p in chunk_manager._params_by_id.values()
-            }
+            # F-#1 fix: restrict the ignore-set membership to params
+            # backed by NON-PERSISTENT chunks. Persistent chunks
+            # explicitly need normal DDP broadcast / backward allreduce
+            # — see ``ChunkManager.chunk_managed_param_names``'s
+            # docstring (Returns section lines 2008-2011): "Persistent
+            # chunks are excluded — their params stay GPU-resident,
+            # do not pass through the released-state placeholder, and
+            # DO need the standard DDP broadcast for correctness." The
+            # initial R4-#1 patch built ``chunk_managed_param_ids`` from
+            # ALL ``_params_by_id.values()`` which silently swept the
+            # persistent params into the ignore set, breaking
+            # gradient sync on the chunks DDP IS supposed to handle.
+            chunk_managed_param_ids: set[int] = set()
+            for _cid in chunk_manager._non_persistent_ids:
+                _slots = chunk_manager._cpu_slots.get(_cid)
+                if not _slots:
+                    continue
+                for _cpu_slot in _slots:
+                    # ``_cpu_slot`` is renamed from a more natural
+                    # ``slot`` to avoid shadowing the ``slot`` int
+                    # binding the block-wrap site uses earlier in
+                    # this function (``for slot, child in
+                    # enumerate(parent)``). mypy carries the int type
+                    # forward across the function scope and would
+                    # otherwise flag this iteration as
+                    # ``Incompatible types in assignment``.
+                    _p = chunk_manager._params_by_id.get(_cpu_slot.param_id)
+                    if _p is not None:
+                        chunk_managed_param_ids.add(id(_p))
             post_wrap_ignore: set[str] = {
                 live_name
                 for live_name, live_param in model.named_parameters()

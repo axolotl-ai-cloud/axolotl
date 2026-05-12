@@ -79,7 +79,23 @@ def check_cuda_p2p_support() -> bool:
             try:
                 if not torch.cuda.can_device_access_peer(i, j):
                     return False
-            except AssertionError as exc:
+            except Exception as exc:  # noqa: BLE001 — fail-closed posture, see below
+                # F-#7 (Major) widens the catch from ``AssertionError``
+                # to ``Exception``. PyTorch 2.6's
+                # ``torch.cuda.can_device_access_peer`` validates
+                # device indices with ``AssertionError("Invalid device
+                # id")`` but ALSO delegates to the C++ binding
+                # ``_cuda_canDeviceAccessPeer`` which can surface
+                # exceptions from the CUDA runtime (e.g.
+                # ``RuntimeError`` wrapping ``cudaErrorInvalidDevice``
+                # or peer-access-machinery errors) that wouldn't
+                # match ``AssertionError``. An unhandled exception
+                # from the C++ layer would propagate out of this
+                # helper and break the fail-closed contract: ranks
+                # would disagree about ``NCCL_P2P_DISABLE``, which is
+                # exactly the SIGSEGV class commit ``91e0912e`` set
+                # out to prevent.
+                #
                 # Indexing / introspection problem on this (i, j) pair —
                 # the rank-symmetric guarantee we need (every rank
                 # agrees on whether P2P is available) requires that we
@@ -88,9 +104,10 @@ def check_cuda_p2p_support() -> bool:
                 # back to a non-P2P path uniformly across ranks.
                 LOG.warning(
                     "check_cuda_p2p_support: can_device_access_peer(%s, %s) "
-                    "raised %s; disabling P2P (fail-closed posture).",
+                    "raised %s (%s); disabling P2P (fail-closed posture).",
                     i,
                     j,
+                    type(exc).__name__,
                     exc,
                 )
                 return False
