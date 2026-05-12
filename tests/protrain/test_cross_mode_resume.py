@@ -204,7 +204,17 @@ def _make_inputs(cfg, *, bs: int, seq: int):
 
 
 def test_cross_mode_resume_a_to_c() -> None:
-    """Mode A → Mode C: train, save, re-wrap in Mode C, resume, assert finite training."""
+    """Mode A → Mode C: train, save, re-wrap in Mode C, resume, assert finite training.
+
+    Uses an explicit lifecycle (``wrapped_a.close()`` before re-wrapping,
+    ``wrapped_c.close()`` in ``finally``) rather than relying on GC to
+    drop hooks / pinned memory between phases. This exercises the
+    D1/D2/D3 rebuild lifecycle: the chunk manager's
+    ``_restore_protrain_ddp_ignore_snapshot`` runs on close, and the
+    Mode-C → Mode-A path (via the D1 else branch in
+    ``protrain_model_wrapper``) cleans up the markers if any leak past
+    close.
+    """
     pytest.importorskip("torch")
     import torch
 
@@ -218,38 +228,68 @@ def test_cross_mode_resume_a_to_c() -> None:
     bs, seq = 1, 32
     input_ids, labels = _make_inputs(cfg, bs=bs, seq=seq)
 
-    # Mode A: train + capture state.
-    wrapped_a, optim_a = _wrap(
-        model, cfg, force_all_persistent=True, zero3_shard=False, bs=bs, seq=seq
-    )
-    losses_a = _train(wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels)
-    underlying_a = getattr(wrapped_a, "module", wrapped_a)
-    model_state = {k: v.detach().clone() for k, v in underlying_a.state_dict().items()}
-    optim_state = optim_a.state_dict() if hasattr(optim_a, "state_dict") else None
+    wrapped_c = None
+    try:
+        # Mode A: train + capture state.
+        wrapped_a, optim_a = _wrap(
+            model, cfg, force_all_persistent=True, zero3_shard=False, bs=bs, seq=seq
+        )
+        try:
+            losses_a = _train(
+                wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels
+            )
+            underlying_a = getattr(wrapped_a, "module", wrapped_a)
+            model_state = {
+                k: v.detach().clone() for k, v in underlying_a.state_dict().items()
+            }
+            optim_state = (
+                optim_a.state_dict() if hasattr(optim_a, "state_dict") else None
+            )
+        finally:
+            # Explicit teardown BEFORE re-wrapping so the D2 snapshot is
+            # restored and the new chunk manager starts from a clean
+            # ``_ddp_params_and_buffers_to_ignore`` baseline. GC-only
+            # teardown would leave the prior wrap's hooks / pinned pool
+            # alive until the next allocator cycle.
+            close_a = getattr(wrapped_a, "close", None)
+            if callable(close_a):
+                close_a()
 
-    # Mode C: re-wrap fresh from same model object, load state, train more.
-    wrapped_c, optim_c = _wrap(
-        model, cfg, force_all_persistent=False, zero3_shard=True, bs=bs, seq=seq
-    )
-    _resume(wrapped_c, optim_c, model_state, optim_state)
-    losses_c = _train(wrapped_c, optim_c, n_iters=3, input_ids=input_ids, labels=labels)
+        # Mode C: re-wrap fresh from same model object, load state, train more.
+        wrapped_c, optim_c = _wrap(
+            model, cfg, force_all_persistent=False, zero3_shard=True, bs=bs, seq=seq
+        )
+        _resume(wrapped_c, optim_c, model_state, optim_state)
+        losses_c = _train(
+            wrapped_c, optim_c, n_iters=3, input_ids=input_ids, labels=labels
+        )
 
-    print(f"\nA→C resume: losses_a={losses_a} losses_c={losses_c}")
+        print(f"\nA→C resume: losses_a={losses_a} losses_c={losses_c}")
 
-    # Acceptance: no crash above; losses are finite; Mode C losses are
-    # not catastrophically larger than the last Mode A loss (allow 5x as
-    # a generous bound — the optimizer may have cold-started).
-    assert all(math.isfinite(v) for v in losses_c), (
-        f"non-finite Mode C loss: {losses_c}"
-    )
-    assert losses_c[0] < 5.0 * losses_a[-1] + 1.0, (
-        f"Mode C loss diverged after A→C resume: a-end={losses_a[-1]} "
-        f"c-start={losses_c[0]} (>5x is treated as catastrophic divergence)"
-    )
+        # Acceptance: no crash above; losses are finite; Mode C losses are
+        # not catastrophically larger than the last Mode A loss (allow 5x as
+        # a generous bound — the optimizer may have cold-started).
+        assert all(math.isfinite(v) for v in losses_c), (
+            f"non-finite Mode C loss: {losses_c}"
+        )
+        assert losses_c[0] < 5.0 * losses_a[-1] + 1.0, (
+            f"Mode C loss diverged after A→C resume: a-end={losses_a[-1]} "
+            f"c-start={losses_c[0]} (>5x is treated as catastrophic divergence)"
+        )
+    finally:
+        if wrapped_c is not None:
+            close_c = getattr(wrapped_c, "close", None)
+            if callable(close_c):
+                close_c()
 
 
 def test_cross_mode_resume_c_to_a() -> None:
-    """Mode C → Mode A: symmetric. Train Mode C, save, resume in Mode A."""
+    """Mode C → Mode A: symmetric. Train Mode C, save, resume in Mode A.
+
+    Uses an explicit lifecycle (``wrapped_c.close()`` before re-wrapping,
+    ``wrapped_a.close()`` in ``finally``) — see :func:`test_cross_mode_resume_a_to_c`
+    for the rationale.
+    """
     pytest.importorskip("torch")
     import torch
 
@@ -263,29 +303,49 @@ def test_cross_mode_resume_c_to_a() -> None:
     bs, seq = 1, 32
     input_ids, labels = _make_inputs(cfg, bs=bs, seq=seq)
 
-    wrapped_c, optim_c = _wrap(
-        model, cfg, force_all_persistent=False, zero3_shard=True, bs=bs, seq=seq
-    )
-    losses_c = _train(wrapped_c, optim_c, n_iters=3, input_ids=input_ids, labels=labels)
-    underlying_c = getattr(wrapped_c, "module", wrapped_c)
-    model_state = {k: v.detach().clone() for k, v in underlying_c.state_dict().items()}
-    optim_state = optim_c.state_dict() if hasattr(optim_c, "state_dict") else None
+    wrapped_a = None
+    try:
+        wrapped_c, optim_c = _wrap(
+            model, cfg, force_all_persistent=False, zero3_shard=True, bs=bs, seq=seq
+        )
+        try:
+            losses_c = _train(
+                wrapped_c, optim_c, n_iters=3, input_ids=input_ids, labels=labels
+            )
+            underlying_c = getattr(wrapped_c, "module", wrapped_c)
+            model_state = {
+                k: v.detach().clone() for k, v in underlying_c.state_dict().items()
+            }
+            optim_state = (
+                optim_c.state_dict() if hasattr(optim_c, "state_dict") else None
+            )
+        finally:
+            close_c = getattr(wrapped_c, "close", None)
+            if callable(close_c):
+                close_c()
 
-    wrapped_a, optim_a = _wrap(
-        model, cfg, force_all_persistent=True, zero3_shard=False, bs=bs, seq=seq
-    )
-    _resume(wrapped_a, optim_a, model_state, optim_state)
-    losses_a = _train(wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels)
+        wrapped_a, optim_a = _wrap(
+            model, cfg, force_all_persistent=True, zero3_shard=False, bs=bs, seq=seq
+        )
+        _resume(wrapped_a, optim_a, model_state, optim_state)
+        losses_a = _train(
+            wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels
+        )
 
-    print(f"\nC→A resume: losses_c={losses_c} losses_a={losses_a}")
+        print(f"\nC→A resume: losses_c={losses_c} losses_a={losses_a}")
 
-    assert all(math.isfinite(v) for v in losses_a), (
-        f"non-finite Mode A loss: {losses_a}"
-    )
-    assert losses_a[0] < 5.0 * losses_c[-1] + 1.0, (
-        f"Mode A loss diverged after C→A resume: c-end={losses_c[-1]} "
-        f"a-start={losses_a[0]} (>5x is treated as catastrophic divergence)"
-    )
+        assert all(math.isfinite(v) for v in losses_a), (
+            f"non-finite Mode A loss: {losses_a}"
+        )
+        assert losses_a[0] < 5.0 * losses_c[-1] + 1.0, (
+            f"Mode A loss diverged after C→A resume: c-end={losses_c[-1]} "
+            f"a-start={losses_a[0]} (>5x is treated as catastrophic divergence)"
+        )
+    finally:
+        if wrapped_a is not None:
+            close_a = getattr(wrapped_a, "close", None)
+            if callable(close_a):
+                close_a()
 
 
 # =============================================================================

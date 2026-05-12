@@ -1116,15 +1116,38 @@ def test_runtime_lora_e2e_under_offload_mode_smoke():
         except (ValueError, RuntimeError) as exc:
             pytest.skip(f"protrain_model_wrapper offload setup unavailable: {exc}")
 
+        # Substrings that mark known *environmental* failures that
+        # should degrade this smoke to "skip optimizer round-trip" rather
+        # than fail the test. Any RuntimeError whose message does NOT
+        # contain one of these is treated as a real regression and
+        # re-raised — D8 fix: previously the bare ``except RuntimeError``
+        # swallowed real ``protrain_optimizer_wrapper`` / ``optim.step``
+        # bugs and let the test pass green.
+        _env_failure_substrings = (
+            "DeepSpeedCPUAdam",  # DeepSpeed CPU Adam JIT-load failure
+            "CUDA version",  # DeepSpeed CUDA/torch toolchain mismatch
+            "bitsandbytes",  # bnb load issues
+            "No module named",  # ModuleNotFoundError surface
+            "missing CPU optimizer for offloaded chunk",
+            # The fix-3 validation signal — backward unwound past the
+            # LoRA bf16-cast node BEFORE the per-chunk grad hook
+            # raised; the message confirms the fix worked.
+        )
+
+        def _is_env_failure(exc: BaseException) -> bool:
+            msg = str(exc)
+            return any(sub in msg for sub in _env_failure_substrings)
+
         optim = None
         if cpu_adam_available:
             try:
                 optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
             except RuntimeError as exc:
-                # CPU Adam probe passed but the per-chunk wrapping
-                # still raised — degrade to fwd+bwd-only validation.
+                # Only suppress documented env-failure signatures; real
+                # protrain_optimizer_wrapper regressions must surface.
+                if not _is_env_failure(exc):
+                    raise
                 optim = None
-                _ = exc
 
         input_ids = torch.randint(
             0, cfg.vocab_size, (1, 32), device="cuda", dtype=torch.long
@@ -1188,14 +1211,19 @@ def test_runtime_lora_e2e_under_offload_mode_smoke():
         # Optional: an optimizer step round-trip — exercises the CPU
         # FusedAdam plumbing on the offloaded chunks. Skipped if the
         # adapter wasn't constructed (e.g. CPU Adam unavailable).
+        #
+        # D8 fix: previously a bare ``except Exception`` here swallowed
+        # any optim.step / optim.zero_grad failure, making the round-trip
+        # effectively non-asserting. Now only suppress documented env
+        # failure signatures (DeepSpeedCPUAdam JIT, CUDA toolchain
+        # mismatch, bnb load, the post-fix-3 "missing CPU optimizer"
+        # message); re-raise real CPU-Adam plumbing regressions.
         if optim is not None:
             try:
                 optim.step()
                 optim.zero_grad()
-            except Exception:  # noqa: BLE001
-                # CPU Adam plumbing failure is environmental; the
-                # forward+backward validation above is what M6C-fix-3
-                # cares about.
-                pass
+            except (RuntimeError, ImportError) as exc:
+                if not _is_env_failure(exc):
+                    raise
     finally:
         mw.pick_S_chunk = orig_pick

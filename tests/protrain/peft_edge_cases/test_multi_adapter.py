@@ -143,34 +143,54 @@ def test_protrain_multi_lora_adapter_switch() -> None:
     input_ids = torch.randint(0, vocab, (bs, seq), device=device, dtype=torch.long)
     labels = input_ids.clone()
 
-    # Wrap once with adapter alpha active. Train 3 iters.
-    peft_model.set_adapter("alpha")
-    wrapped_a, optim_a = _wrap_protrain(
-        peft_model, cfg, bs=bs, seq=seq, capacity_bytes=4 * (1 << 30)
-    )
-    losses_alpha = _train_loop(
-        wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels
-    )
-    assert losses_alpha[-1] < losses_alpha[0], (
-        f"alpha adapter did not train: {losses_alpha}"
-    )
+    # Wrap once with adapter alpha active. Train 3 iters. Explicit
+    # ``wrapped_a.close()`` in ``finally`` before re-wrapping so the
+    # D2 lifecycle teardown restores the model's pre-protrain
+    # ``_ddp_params_and_buffers_to_ignore`` snapshot AND the prior
+    # ``CpuFusedAdamAdapter``'s executor + DeepSpeed C-state are
+    # released deterministically. Without explicit close, GC timing
+    # decides whether hooks / pinned memory live into the beta phase
+    # and the test's reproducibility depends on Python's reference-
+    # counting heuristics.
+    wrapped_b = None
+    try:
+        peft_model.set_adapter("alpha")
+        wrapped_a, optim_a = _wrap_protrain(
+            peft_model, cfg, bs=bs, seq=seq, capacity_bytes=4 * (1 << 30)
+        )
+        try:
+            losses_alpha = _train_loop(
+                wrapped_a, optim_a, n_iters=3, input_ids=input_ids, labels=labels
+            )
+            assert losses_alpha[-1] < losses_alpha[0], (
+                f"alpha adapter did not train: {losses_alpha}"
+            )
+        finally:
+            close_a = getattr(wrapped_a, "close", None)
+            if callable(close_a):
+                close_a()
 
-    # Switch to beta. Re-wrap (chunk layout depends on requires_grad which
-    # changed) and train another 3 iters. The point of the test is that
-    # the set_adapter transition + re-wrap path doesn't crash and beta
-    # also makes progress.
-    peft_model.set_adapter("beta")
-    wrapped_b, optim_b = _wrap_protrain(
-        peft_model, cfg, bs=bs, seq=seq, capacity_bytes=4 * (1 << 30)
-    )
-    losses_beta = _train_loop(
-        wrapped_b, optim_b, n_iters=3, input_ids=input_ids, labels=labels
-    )
-    assert losses_beta[-1] < losses_beta[0], (
-        f"beta adapter did not train after switch: {losses_beta}"
-    )
+        # Switch to beta. Re-wrap (chunk layout depends on requires_grad which
+        # changed) and train another 3 iters. The point of the test is that
+        # the set_adapter transition + re-wrap path doesn't crash and beta
+        # also makes progress.
+        peft_model.set_adapter("beta")
+        wrapped_b, optim_b = _wrap_protrain(
+            peft_model, cfg, bs=bs, seq=seq, capacity_bytes=4 * (1 << 30)
+        )
+        losses_beta = _train_loop(
+            wrapped_b, optim_b, n_iters=3, input_ids=input_ids, labels=labels
+        )
+        assert losses_beta[-1] < losses_beta[0], (
+            f"beta adapter did not train after switch: {losses_beta}"
+        )
 
-    print(
-        f"\nProTrain + multi-adapter: losses_alpha={losses_alpha} "
-        f"losses_beta={losses_beta}"
-    )
+        print(
+            f"\nProTrain + multi-adapter: losses_alpha={losses_alpha} "
+            f"losses_beta={losses_beta}"
+        )
+    finally:
+        if wrapped_b is not None:
+            close_b = getattr(wrapped_b, "close", None)
+            if callable(close_b):
+                close_b()

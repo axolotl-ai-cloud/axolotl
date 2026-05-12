@@ -64,6 +64,24 @@ def _build_tiny_llama_with_dora():
     )
 
     # --- Base model -------------------------------------------------------
+    # Try the cached SmolLM2-135M for a real arch first, fall back to a
+    # hand-crafted tiny LlamaConfig when the cache miss / disk / cache /
+    # permission paths fire. We catch the documented offline-load failure
+    # families specifically so that a real bug in
+    # ``AutoConfig.from_pretrained`` / ``AutoModelForCausalLM.from_pretrained``
+    # (e.g. API breakage, deserialization regression, dtype mismatch)
+    # surfaces as a test failure rather than getting silently
+    # masked by the synthetic fallback.
+    #
+    # Documented failure surfaces for ``local_files_only=True``:
+    # - ``ValueError`` — unrecognised config / unknown model_type
+    #   (transformers' canonical "not found in cache" surface)
+    # - ``OSError`` — filesystem unreadable, cache pruned,
+    #   ``FileNotFoundError`` (its subclass), ``PermissionError``
+    #   (subclass), disk full / IO error
+    # - ``EnvironmentError`` — alias for OSError on Python 3, kept
+    #   explicit for clarity with the transformers / huggingface_hub
+    #   error wiring docs.
     try:
         cfg = AutoConfig.from_pretrained(
             "HuggingFaceTB/SmolLM2-135M", local_files_only=True
@@ -74,7 +92,7 @@ def _build_tiny_llama_with_dora():
             local_files_only=True,
             torch_dtype=torch.bfloat16,
         )
-    except Exception:
+    except (OSError, ValueError, EnvironmentError):
         cfg = LlamaConfig(
             hidden_size=256,
             num_hidden_layers=4,

@@ -470,23 +470,65 @@ def test_autograd_shape_capture_on_released_param() -> None:
     assert param.size() == torch.Size(real_shape)
     assert param.dim() == 2
 
-    # Now rebind to real data and confirm autograd shape capture
-    # produces the REAL shape — not [0] — through a full
-    # forward+backward.
+    # D10 — run forward WHILE THE PLACEHOLDER IS STILL BOUND so the
+    # placeholder's reported shape is what autograd records. The
+    # previous test ordering (rebind to real_data BEFORE the linear
+    # call) meant autograd recorded weight.shape from the real-storage
+    # tensor and never exercised the placeholder; a regression in
+    # ``_shape_preserving_placeholder`` returning ``[0]`` (the legacy
+    # placeholder shape) would have left this test silently green.
+    #
+    # Forward writes nothing to param.data — it reads it for the
+    # ``x @ weight.T`` matmul — so the placeholder's
+    # not-write-safe-ness is irrelevant here. The matmul output uses
+    # the scratch's value broadcast across the expanded view; we
+    # don't care about y's values, only that autograd records the
+    # placeholder's reported (real) shape.
+    x = torch.randn(4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True)
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        y_placeholder = nn.functional.linear(x, param)
+    # The matmul-output shape must reflect the placeholder's reported
+    # weight shape; if the placeholder shrank back to ``[0]`` the
+    # output would be ``(batch, 0)`` and the shape assertion below
+    # would catch it BEFORE backward fires.
+    assert y_placeholder.shape == torch.Size([4, real_shape[0]]), (
+        f"forward through placeholder produced wrong-shape output: "
+        f"expected (4, {real_shape[0]}), got {tuple(y_placeholder.shape)} — "
+        f"placeholder.size() likely regressed."
+    )
+
+    # Simulate the runtime's gather step: rebind to real storage
+    # BEFORE backward fires (the gather hook runs between forward
+    # and backward in production). Backward then writes
+    # ``param.grad`` against the real storage's shape, but the
+    # earlier shape recording happened against the placeholder —
+    # so a regression in the placeholder's reported shape would
+    # surface as the ``ToCopyBackward0 ... shape compatible with
+    # [0]`` autograd error class that M6C-fix-7 closes.
     real_data = torch.randn(*real_shape, dtype=dtype, device="cuda")
     param.data = real_data
 
-    # Forward through a Linear that the LoRA factor would feed.
-    x = torch.randn(4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True)
-    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-        y = nn.functional.linear(x, param)
-    loss = y.sum()
+    loss = y_placeholder.sum()
     loss.backward()
     assert param.grad is not None
     assert param.grad.shape == torch.Size(real_shape), (
         f"autograd recorded the WRONG shape: expected {real_shape}, "
-        f"got {tuple(param.grad.shape)}"
+        f"got {tuple(param.grad.shape)} — the M6C-fix-7 "
+        f"shape-preserving placeholder invariant has regressed."
     )
+
+    # Also exercise the post-gather steady-state forward+backward
+    # path so a regression that only fires on the placeholder side
+    # is distinguishable from one that fires on the real-data side.
+    param.grad = None
+    x_real = torch.randn(
+        4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True
+    )
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        y_real = nn.functional.linear(x_real, param)
+    y_real.sum().backward()
+    assert param.grad is not None
+    assert param.grad.shape == torch.Size(real_shape)
 
     mgr.uninstall()
     host.close()

@@ -88,6 +88,15 @@ def test_protrain_mixed_trainable_frozen_smoke() -> None:
     if not torch.cuda.is_available():
         pytest.skip("ProTrain mixed trainable/frozen smoke requires CUDA.")
 
+    # Seed BEFORE building the model so LoRA layer init + wrapped runtime
+    # state is reproducible across runs. The later seed at the batch-
+    # generation site re-seeds for the randint call so the synthetic
+    # batch is also deterministic even though the build above consumed
+    # some RNG state. Both seeds together make the test's loss-descent
+    # assertion (``losses[-1] < losses[0]``) reproducible end-to-end.
+    torch.manual_seed(0)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(0)
     peft_model, cfg = _build_tiny_llama_mixed_trainable()
     device = torch.device("cuda:0")
     peft_model = peft_model.to(device)
