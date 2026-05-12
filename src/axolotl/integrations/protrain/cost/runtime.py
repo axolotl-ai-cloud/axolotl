@@ -816,10 +816,7 @@ def _clamp_residual_alpha(alpha: float) -> float:
     we still clamp to keep the prediction bounded but warn once so the
     regression is visible (the brief's "anti-hack guard").
     """
-    if (
-        alpha < _PHASE2_RESIDUAL_NOISE_FLOOR
-        or alpha > _PHASE2_RESIDUAL_NOISE_CEILING
-    ):
+    if alpha < _PHASE2_RESIDUAL_NOISE_FLOOR or alpha > _PHASE2_RESIDUAL_NOISE_CEILING:
         global _WARNED_PHASE2_RESIDUAL_NOISY
         if not _WARNED_PHASE2_RESIDUAL_NOISY:
             LOG.warning(
@@ -835,9 +832,7 @@ def _clamp_residual_alpha(alpha: float) -> float:
                 _PHASE2_RESIDUAL_CLAMP_MAX,
             )
             _WARNED_PHASE2_RESIDUAL_NOISY = True
-    return max(
-        _PHASE2_RESIDUAL_CLAMP_MIN, min(_PHASE2_RESIDUAL_CLAMP_MAX, alpha)
-    )
+    return max(_PHASE2_RESIDUAL_CLAMP_MIN, min(_PHASE2_RESIDUAL_CLAMP_MAX, alpha))
 
 
 def _compose_t_iter_with_alpha_calibration(
