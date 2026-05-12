@@ -38,22 +38,39 @@ def check_cuda_p2p_support() -> bool:
     NCCL collective. See ProTrain Phase 2 audit follow-up
     (multigpu_segfault_diagnosis.md).
     """
+    # D9 (fail-closed posture): when the introspection that would let us
+    # *prove* every local-peer pair supports P2P fails or is ambiguous,
+    # return ``False`` (i.e. disable P2P) instead of optimistically
+    # returning ``True``. The previous fail-open posture trusted the
+    # absence of evidence as evidence of safety; for an NCCL P2P
+    # configuration knob the safer degradation is to disable P2P
+    # symmetrically across ranks. The unsupported-NVLink case (the
+    # original bug this helper was written for) is then handled
+    # uniformly with the "introspection unreliable" case: NCCL_P2P_DISABLE
+    # gets set, every rank agrees, and NCCL falls back to a slower but
+    # functional path rather than SIGSEGV'ing on the first collective.
     try:
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
     except ValueError:
-        return True
+        LOG.warning(
+            "check_cuda_p2p_support: invalid WORLD_SIZE=%r; disabling P2P "
+            "(fail-closed posture).",
+            os.environ.get("WORLD_SIZE"),
+        )
+        return False
 
     if world_size <= 1:
         return True
 
     try:
         n = torch.cuda.device_count()
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:  # pragma: no cover - defensive  # noqa: BLE001
         LOG.warning(
-            "check_cuda_p2p_support: device_count failed (%s); assuming p2p ok",
+            "check_cuda_p2p_support: device_count failed (%s); disabling P2P "
+            "(fail-closed posture).",
             exc,
         )
-        return True
+        return False
     if n <= 1:
         return True
 
@@ -63,10 +80,20 @@ def check_cuda_p2p_support() -> bool:
                 if not torch.cuda.can_device_access_peer(i, j):
                     return False
             except AssertionError as exc:
-                # Indexing problem; bail safe to True so we don't force-disable
-                # P2P on a config we can't introspect.
-                LOG.warning(exc)
-                return True
+                # Indexing / introspection problem on this (i, j) pair —
+                # the rank-symmetric guarantee we need (every rank
+                # agrees on whether P2P is available) requires that we
+                # treat an unintrospectable pair as "P2P not safe"
+                # rather than "assume safe". Disable P2P; NCCL falls
+                # back to a non-P2P path uniformly across ranks.
+                LOG.warning(
+                    "check_cuda_p2p_support: can_device_access_peer(%s, %s) "
+                    "raised %s; disabling P2P (fail-closed posture).",
+                    i,
+                    j,
+                    exc,
+                )
+                return False
     return True
 
 

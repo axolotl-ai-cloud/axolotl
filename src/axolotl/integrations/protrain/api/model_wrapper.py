@@ -1717,6 +1717,66 @@ def _construct_runtime(
             len(ignore - unmatched),
             len(ignore),
         )
+    else:
+        # D1 (rebuild lifecycle): non-shape-preserving rebuild path —
+        # if the model still carries DDP-skip state from a prior
+        # shape-preserving wrap (Mode C bootstrap → Mode A/B rebuild
+        # without an explicit close in between), strip it so the
+        # downstream DDP wrap performs the normal init_sync broadcast
+        # and backward allreduce. Leaving the marker / ignore list in
+        # place would silently desynchronize weights or gradients on
+        # the rebuilt runtime because:
+        #
+        # - ``_protrain_ddp_skip_init_sync`` ⇒ the M6C-fix-8 monkey-
+        #   patch on ``DDP.__init__`` skips ``init_sync`` entirely on
+        #   the rebuilt model, even though replicated Mode A NEEDS
+        #   the init-time broadcast (every rank loaded the same
+        #   weights but DDP's contract is to make that authoritative).
+        # - ``_ddp_params_and_buffers_to_ignore`` carries the chunk-
+        #   managed name set from the prior Mode-C wrap; if the
+        #   rebuilt Mode-A runtime keeps the same param names, DDP's
+        #   backward allreduce would still skip them and per-rank
+        #   gradients would diverge.
+        #
+        # The pre-protrain snapshot (``_protrain_ddp_original_ignore``)
+        # was taken by ChunkManager.materialize_offload's D2 lifecycle
+        # logic on the FIRST wrap; restoring from it here is the
+        # symmetric teardown that
+        # ``ChunkManager._restore_protrain_ddp_ignore_snapshot`` runs
+        # on ``close()``, applied inline so the rebuild path doesn't
+        # require the caller to close the prior chunk manager first.
+        if getattr(model, "_protrain_ddp_skip_init_sync", False):
+            try:
+                delattr(model, "_protrain_ddp_skip_init_sync")
+            except AttributeError:
+                pass
+        if hasattr(model, "_protrain_ddp_original_ignore"):
+            try:
+                _original = model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
+                if _original is None:
+                    if hasattr(model, "_ddp_params_and_buffers_to_ignore"):
+                        try:
+                            delattr(model, "_ddp_params_and_buffers_to_ignore")
+                        except AttributeError:
+                            pass
+                else:
+                    model._ddp_params_and_buffers_to_ignore = list(_original)  # type: ignore[attr-defined]
+                try:
+                    delattr(model, "_protrain_ddp_original_ignore")
+                except AttributeError:
+                    pass
+                LOG.info(
+                    "ProTrain (D1): rebuild path detected — stripped stale "
+                    "M6C-fix-8 DDP skip state from model so the rebuilt "
+                    "runtime (non-shape-preserving) receives normal "
+                    "init_sync + backward allreduce semantics."
+                )
+            except Exception as _exc:  # noqa: BLE001 — defensive
+                LOG.warning(
+                    "ProTrain (D1): failed to strip stale DDP skip state on "
+                    "rebuild: %s",
+                    _exc,
+                )
 
     # ---- 4.6: build the CPU FusedAdam adapter (post-offload) ------------
     # BUG 3 FIX: now that ``materialize_offload`` has allocated the pinned

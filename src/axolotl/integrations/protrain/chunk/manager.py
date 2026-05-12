@@ -1393,25 +1393,56 @@ class ChunkManager:
         # placeholders. Re-registering on every materialize closes that
         # gap with one O(N_params) walk.
         #
+        # Lifecycle (D2 — replace, don't union): the prior union logic
+        # accumulated stale names across rebuild cycles because the
+        # second ``materialize_offload`` saw the first call's names in
+        # ``_existing`` and merged them in. A name that moves from
+        # non-persistent to persistent between calls (e.g. user changes
+        # ``n_persist`` on resume, or a sharded layout collapses to
+        # replicated) would then stay in the ignore set and DDP would
+        # skip syncing a weight that is now live. Snapshot the
+        # pre-protrain value once (in ``_protrain_ddp_original_ignore``
+        # on the model) so every materialize call rebuilds from that
+        # canonical "what was there before ProTrain touched it" basis
+        # rather than from the previous protrain set. The snapshot is
+        # restored on ``close()`` (deterministic teardown) and on the
+        # non-shape-preserving rebuild path in
+        # ``api/model_wrapper.py`` (so a Mode C -> Mode A rebuild
+        # cleanly drops the marker + ignore list).
+        #
         # Default OFF: ``self._shape_preserving_placeholders`` False on
         # single-GPU / replicated paths, no DDP collision possible (the
         # legacy ``[0]`` placeholder is write-tolerant), no-op.
         if self._shape_preserving_placeholders and self.model is not None:
             try:
-                _ignore = self.chunk_managed_param_names()
-                _existing = getattr(
-                    self.model, "_ddp_params_and_buffers_to_ignore", None
-                )
-                if _existing is None:
-                    self.model._ddp_params_and_buffers_to_ignore = list(_ignore)  # type: ignore[attr-defined]
+                protrain_set = self.chunk_managed_param_names()
+                if not hasattr(self.model, "_protrain_ddp_original_ignore"):
+                    _pre_existing = getattr(
+                        self.model, "_ddp_params_and_buffers_to_ignore", None
+                    )
+                    # ``None`` (no pre-existing attribute) vs ``[]``
+                    # (caller registered an empty ignore list) are
+                    # different terminal states on teardown: the former
+                    # means delete the attribute, the latter means
+                    # restore to an empty list. Preserve the distinction
+                    # by writing ``None`` only when no attribute was set.
+                    self.model._protrain_ddp_original_ignore = (  # type: ignore[attr-defined]
+                        None if _pre_existing is None else list(_pre_existing)
+                    )
+                _original = self.model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
+                if _original is None:
+                    self.model._ddp_params_and_buffers_to_ignore = list(protrain_set)  # type: ignore[attr-defined]
                 else:
-                    _merged = set(_existing) | _ignore
-                    self.model._ddp_params_and_buffers_to_ignore = list(_merged)  # type: ignore[attr-defined]
+                    self.model._ddp_params_and_buffers_to_ignore = list(  # type: ignore[attr-defined]
+                        set(_original) | protrain_set
+                    )
                 LOG.info(
-                    "ChunkManager.materialize_offload (M6C-fix-8): "
-                    "synced %d chunk-managed names into "
-                    "model._ddp_params_and_buffers_to_ignore",
-                    len(_ignore),
+                    "ChunkManager.materialize_offload (M6C-fix-8 / D2): "
+                    "rebuilt model._ddp_params_and_buffers_to_ignore "
+                    "from snapshot + %d chunk-managed names "
+                    "(pre-protrain original: %s)",
+                    len(protrain_set),
+                    "<unset>" if _original is None else f"{len(_original)} names",
                 )
             except Exception as _exc:  # noqa: BLE001 — defensive
                 # The DDP-ignore registration is a defense-in-depth
@@ -1423,7 +1454,7 @@ class ChunkManager:
                 # downstream DDP wrap will then trip the shared-
                 # storage hazard, surfacing the issue loudly.
                 LOG.warning(
-                    "ChunkManager.materialize_offload (M6C-fix-8): "
+                    "ChunkManager.materialize_offload (M6C-fix-8 / D2): "
                     "failed to register _ddp_params_and_buffers_to_ignore "
                     "on model: %s",
                     _exc,
@@ -3069,6 +3100,54 @@ class ChunkManager:
                 LOG.debug("ChunkManager.uninstall: hook remove failed: %s", exc)
         self._grad_hook_handles.clear()
 
+    def _restore_protrain_ddp_ignore_snapshot(self) -> None:
+        """Restore ``model._ddp_params_and_buffers_to_ignore`` to its
+        pre-protrain snapshot (D2 lifecycle teardown).
+
+        Called from :meth:`close` (deterministic teardown) and from
+        :func:`api.model_wrapper.protrain_model_wrapper`'s
+        non-shape-preserving rebuild path so a Mode-C → Mode-A
+        rebuild cleanly drops the ignore list.
+
+        - If ``_protrain_ddp_original_ignore`` is missing on the model,
+          this is a no-op (we never snapshotted).
+        - If the snapshot is ``None``, the attribute was absent before
+          ProTrain touched it → delete ``_ddp_params_and_buffers_to_ignore``.
+        - Else, restore the saved list verbatim.
+
+        Always clears the ``_protrain_ddp_original_ignore`` sentinel
+        on success so the next wrap re-snapshots from a clean baseline.
+        """
+        model = self.model
+        if model is None:
+            return
+        if not hasattr(model, "_protrain_ddp_original_ignore"):
+            return
+        try:
+            _original = model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
+            if _original is None:
+                if hasattr(model, "_ddp_params_and_buffers_to_ignore"):
+                    try:
+                        delattr(model, "_ddp_params_and_buffers_to_ignore")
+                    except AttributeError:
+                        pass
+            else:
+                model._ddp_params_and_buffers_to_ignore = list(_original)  # type: ignore[attr-defined]
+            try:
+                delattr(model, "_protrain_ddp_original_ignore")
+            except AttributeError:
+                pass
+            LOG.info(
+                "ChunkManager: restored model._ddp_params_and_buffers_to_ignore "
+                "to pre-protrain snapshot (%s)",
+                "absent" if _original is None else f"{len(_original)} names",
+            )
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            LOG.debug(
+                "ChunkManager._restore_protrain_ddp_ignore_snapshot failed: %s",
+                exc,
+            )
+
     def close(self) -> None:
         """Tear down every manager-owned resource. Idempotent.
 
@@ -3089,6 +3168,9 @@ class ChunkManager:
         5. Close the GPU buffer pool (drops its slot tensors and the
            paired pinned-host region).
         6. Drop adapter references.
+        7. Restore the pre-protrain ``_ddp_params_and_buffers_to_ignore``
+           snapshot on the model so a future non-protrain DDP wrap of
+           the same model is not silently constrained by our ignore set.
         """
         if self._closed:
             return
@@ -3133,6 +3215,20 @@ class ChunkManager:
 
         self.cpu_optim = None
         self.gpu_optim = None
+
+        # D2 lifecycle teardown: restore the model's pre-protrain
+        # ``_ddp_params_and_buffers_to_ignore`` snapshot so a future
+        # non-protrain DDP wrap of the same model is not constrained
+        # by our ignore set. No-op if we never snapshotted (single-GPU
+        # / replicated paths where ``shape_preserving_placeholders`` is
+        # False).
+        try:
+            self._restore_protrain_ddp_ignore_snapshot()
+        except Exception as exc:  # noqa: BLE001 — best-effort
+            LOG.debug(
+                "ChunkManager.close: snapshot restore failed: %s",
+                exc,
+            )
 
     def __del__(self) -> None:  # noqa: D401
         try:

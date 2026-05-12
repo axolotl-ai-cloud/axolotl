@@ -925,6 +925,30 @@ def protrain_optimizer_wrapper(
     # :class:`GpuAdamW8bitAdapter`). We assign through a typing cast
     # rather than widening the chunk manager's type signature, which
     # would touch a read-only file from this milestone's perspective.
+    #
+    # D3 lifecycle (shutdown-before-swap): ``CpuFusedAdamAdapter`` owns
+    # a live ``ThreadPoolExecutor`` and per-chunk DeepSpeedCPUAdam
+    # C-state; overwriting ``chunk_manager.cpu_optim`` without first
+    # tearing the old adapter down leaks executor threads + DeepSpeed
+    # state on every re-wrap (e.g. the resume hook's "Step 1" tears
+    # the adapter down at the plugin layer, but a direct second
+    # ``protrain_optimizer_wrapper`` invocation — e.g. user reruns the
+    # wrapper after changing optim hyperparams without going through
+    # the HF Trainer resume path — would otherwise GC-time the
+    # cleanup). Mirrors the same teardown the resume hook performs
+    # before ``restore_to_gpu``.
+    _old_cpu_optim = getattr(chunk_manager, "cpu_optim", None)
+    if _old_cpu_optim is not None and _old_cpu_optim is not cpu_optim:
+        try:
+            _old_cpu_optim.shutdown()
+        except Exception as _shutdown_exc:  # noqa: BLE001 — defensive
+            LOG.warning(
+                "protrain_optimizer_wrapper: failed to shut down previous "
+                "cpu_optim adapter before swap (%s); replacing the "
+                "reference anyway. The old adapter's executor + DeepSpeed "
+                "C-state may leak until GC.",
+                _shutdown_exc,
+            )
     chunk_manager.cpu_optim = cpu_optim
     chunk_manager.gpu_optim = cast("GpuFusedAdamAdapter | None", gpu_optim)
 
