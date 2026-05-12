@@ -595,7 +595,14 @@ class GpuAdamW8bitAdapter:
                 AdamW8bit,
                 PagedAdamW8bit,
             )
-        except ImportError as err:
+        except (ImportError, RuntimeError) as err:
+            # ``bitsandbytes`` JIT-loads CUDA libraries on import; if the
+            # extension cannot be linked against the active CUDA toolkit
+            # the failure surfaces as ``RuntimeError`` rather than the
+            # canonical ``ImportError``. Catch both so callers see the
+            # adapter-level message instead of an opaque loader trace.
+            # Mirrors :class:`GpuFusedAdamAdapter`'s apex-import guard
+            # earlier in this module.
             raise ImportError(
                 "GpuAdamW8bitAdapter requires `bitsandbytes` (>=0.41) for "
                 "the 8-bit AdamW kernels. Install via "

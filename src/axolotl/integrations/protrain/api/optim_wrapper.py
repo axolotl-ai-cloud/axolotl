@@ -622,11 +622,18 @@ def _normalize_optimizer_name(name: str | None) -> str | None:
 
     Centralised so both the public dispatch check below and any future
     callers (e.g. checkpoint resume) compare against the same normalised
-    representation.
+    representation. Handles enum-backed names like
+    ``transformers.training_args.OptimizerNames.ADAMW_8BIT`` by reading
+    ``.value`` when present — ``str(enum)`` would otherwise return
+    ``"OptimizerNames.ADAMW_8BIT"`` and miss the ``_BNB_8BIT_OPTIMIZERS``
+    lookup, silently routing a requested 8-bit optimizer to the
+    legacy fused-Adam adapter. Mirrors the same pattern used by the
+    args-side validator in
+    ``src/axolotl/integrations/protrain/args.py``.
     """
     if name is None:
         return None
-    return str(name).strip().lower()
+    return str(getattr(name, "value", name)).strip().lower()
 
 
 def protrain_optimizer_wrapper(

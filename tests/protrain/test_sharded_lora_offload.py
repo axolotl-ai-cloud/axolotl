@@ -423,7 +423,7 @@ def test_sharded_lora_gather_rebinds_param_data_2rank(tmp_path) -> None:
     Without M6C-fix-4 the multi-GPU failure mode would manifest as
     ``ToCopyBackward0 ... shape compatible with [0]`` — at unit scope
     we pin the rebind invariant directly so future regressions surface
-    here without needing a 4×3090 rig.
+    here without needing a 4x3090 rig.
     """
     import torch.multiprocessing as mp
 

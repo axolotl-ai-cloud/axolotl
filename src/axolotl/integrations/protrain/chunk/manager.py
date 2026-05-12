@@ -560,7 +560,7 @@ class ChunkManager:
         # ``std::vector<c10::SymInt>``). When PEFT's ``LoraLayer.forward``
         # dispatches ``nn.functional.linear`` on a LoRA factor in
         # multi-GPU sharded mode with non-persistent chunks at
-        # production scale (32-layer Llama-3-8B × 4 ranks × n_buffer=8),
+        # production scale (32-layer Llama-3-8B x 4 ranks x n_buffer=8),
         # there is a ~rare race window where the autograd op records
         # its input shape against the still-``[0]``-shape placeholder
         # before the per-LoRA-container gather hook's rebind takes
