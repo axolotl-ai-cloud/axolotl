@@ -275,7 +275,41 @@ Mirrors `plan.md`:
 
 ## Design Decisions (previously open questions, now resolved)
 
-1. **α fragmentation factor — per-dtype lookup** (Coverage audit Block G, Phase 2). The paper's α=1.10 default matches "up to 10% overestimate" (§3.3) when measured against fp16 / bf16 / 8-bit configurations. Block G's empirical re-derivation across the M5 / M0-spike / Block-A matrices showed α=1.10 is mildly conservative for fp16 (α_measured ≈ 0.96) and 8-bit (α_measured ≈ 0.93), but over-predicts bnb-4-bit Mode-A peak by ~37 % (α_measured ≈ 0.70 across four 8B-Llama rows). The cost model now dispatches through `alpha_fragmentation_for_dtype(bpe)` (`cost/memory.py`): fp16 / bf16 / 8-bit (bpe ≥ 1.0) → α=1.10 (`ALPHA_FRAGMENTATION`); bnb 4-bit (bpe = 0.5 via `Params4bit` packing) → α=0.75 (`ALPHA_FRAGMENTATION_4BIT`, slightly conservative vs the 0.70 empirical floor). The dominant bpe is detected in `protrain_model_wrapper` by walking `model.named_parameters()` and picking the bpe class with the largest aggregate logical-element count (bnb `Params4bit` instances are mapped to bpe=0.5 explicitly, since their storage `element_size()` is 1 but each byte packs two 4-bit values). Tests: `tests/protrain/test_alpha_per_dtype.py`. **Out of scope here**: the iter-1 transient observed at bnb-4-bit Mode-C (~6.9× pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation one, and is documented separately as an "init window" not covered by α. The Mode-C steady residual (~1.47×) trends under-predict-ish (predictor says 2.5 GiB but steady actually consumes 3.5–4.7 GiB at higher seq) and reflects activation-accounting under-counting in the offload-mode forward path — a separate follow-up.
+1. **α fragmentation factor — per-dtype lookup + Mode-C CKPT-chain accounting** (Coverage audit Block G, Phase 2).
+
+    *Per-dtype α (landed in commit `2fcc1fcf`).* The paper's α=1.10 default matches "up to 10% overestimate" (§3.3) when measured against fp16 / bf16 / 8-bit configurations. Block G's empirical re-derivation across the M5 / M0-spike / Block-A matrices showed α=1.10 is mildly conservative for fp16 (α_measured ≈ 0.96) and 8-bit (α_measured ≈ 0.93), but over-predicts bnb-4-bit Mode-A peak by ~37 % (α_measured ≈ 0.70 across four 8B-Llama rows). The cost model now dispatches through `alpha_fragmentation_for_dtype(bpe)` (`cost/memory.py`): fp16 / bf16 / 8-bit (bpe ≥ 1.0) → α=1.10 (`ALPHA_FRAGMENTATION`); bnb 4-bit (bpe = 0.5 via `Params4bit` packing) → α=0.75 (`ALPHA_FRAGMENTATION_4BIT`, slightly conservative vs the 0.70 empirical floor). The dominant bpe is detected in `protrain_model_wrapper` by walking `model.named_parameters()` and picking the bpe class with the largest aggregate logical-element count (bnb `Params4bit` instances are mapped to bpe=0.5 explicitly, since their storage `element_size()` is 1 but each byte packs two 4-bit values). Tests: `tests/protrain/test_alpha_per_dtype.py`.
+
+    *Mode-C steady-peak CKPT-chain accounting (this work).* Block G also observed a seq-dependent under-prediction in bnb-4-bit Mode-C (offload-pool chunk-offload + checkpoint-everywhere) configurations:
+
+    | Config (30B Llama, 4-bit Mode-C, n_persist=0, n_buffer=12, n_checkpoint=60) | pred GiB | meas steady | α_steady = meas / pred |
+    |---|---:|---:|---:|
+    | seq=512  (`ext_30b_safe.log`)    | 2.49 | 2.91 | 1.169 |
+    | seq=1024 (`ext_30b_seq1024.log`) | 2.50 | 3.50 | 1.400 |
+    | seq=2048 (`ext_30b_seq2048.log`) | 2.54 | 4.68 | 1.843 |
+
+    The α_steady drift with seq is the diagnostic: the predictor's activation contribution was effectively flat across seq for all-CKPT block_maps. Root cause in `cost/memory.py::estimate_peak`: `retained_none_bytes` only accumulates NONE/OFFLOAD blocks, and the per-CKPT-first-op `ckpt_extra` bump is taken as a per-op max — so an all-CKPT cfg paid for ONE block's recompute window but nothing for the *chain* of block-input residuals that the activation-checkpointing framework (`torch.utils.checkpoint` with `use_reentrant=True`, the production wrap) retains across the WHOLE backward window. With 60 CKPT blocks on Llama-30B that chain is `60 × bs × seq × hidden × dtype_bytes` — the missing seq-dependent term.
+
+    *Fix.* `estimate_peak` now adds a `ckpt_chain_bytes = sum(activation_sizes[bid] for bid in CKPT blocks)` term that:
+
+    - Is added to every op-walk candidate as a constant (chain is live for the entire backward, not at any single op).
+    - Is added to the `raw_peak == 0` static fallback (the explicit-override `synth_trace_from_overrides` skip-trace path the Mode-C audit runs all take — `op_order=()` so the per-op walk doesn't execute).
+    - Is disjoint by construction from `retained_none_bytes` (NONE/OFFLOAD vs CKPT in the per-block loop above).
+
+    To avoid double-counting, the per-CKPT-first-op recompute bump is now sized at the BLOCK-INTERNAL delta only — `ckpt_extra = max(0, saved_bytes_proxy[bid] - activation_sizes[bid])` — since `activation_sizes[bid]` (the block-output / next-block-input residual proxy) is already accounted for by `ckpt_chain_bytes`. The recompute window only materializes block-internal saved tensors (Q/K/V projections, attention scores, FFN intermediates) on top of the persisted chain. In synth / toy traces where `_saved_tensor_bytes_per_block` falls back to `activation_sizes` (no `steady_fwd_block_peak_bytes` data), the internal delta is 0 and `ckpt_chain_bytes` carries the full per-block contribution. The matching enc-dec cross-attention gate (`cross_attn_persist_bytes`) skips its surcharge when the encoder-last block is in CKPT — already covered by the chain term.
+
+    *Post-fix accuracy on the audit data points* (`estimate_peak` directly, NOT through the model wrapper's `_calibrate_peak_with_actual_chunk_bytes` post-calibration which adds a further ~0.6–0.9 GiB of actual_persistent_local correction):
+
+    | seq | estimate_peak GiB | measured | α_steady |
+    |----:|-----------------:|--------:|---------:|
+    |  512 | 2.04 | 2.91 | 1.43 |
+    | 1024 | 2.80 | 3.50 | 1.25 |
+    | 2048 | 4.34 | 4.68 | 1.08 |
+
+    α_steady is significantly tighter at high seq (1.84 → 1.08) and slightly looser at low seq (1.17 → 1.43, partly the per-dtype α shift from 1.10 to 0.75 since the audit). The chain term gives the per-seq scaling the predictor lacked; absolute accuracy at low seq is bottlenecked by the wrapper-side calibration, which is out of scope for the cost-model fix.
+
+    Tests: `tests/protrain/test_modec_steady_peak_accuracy.py` (pins the per-seq scaling + ±35% tolerance against the three audit data points). Existing tests adjusted: none — the `cost/memory.py` op-walk's recompute-bump refinement is backwards-compatible in every fallback regime (`_saved_tensor_bytes_per_block == activation_sizes`); the cap path and all cap-based tests are unchanged.
+
+    *Out of scope.* The iter-1 transient observed at bnb-4-bit Mode-C (~6.9× pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation or activation-accounting one, and is documented separately as an "init window" not covered by α. Tracked as the remaining open audit item.
 2. **Pinned-memory allocator:** `ctypes` → `cudaHostAlloc` directly. ~50 LOC, zero new deps, matches App B.2 precisely (avoids `CUDAHostAllocator` pow-2 rounding). DeepSpeed's `PinnedMemoryAllocator` rejected: may inherit same wart, adds import-graph weight.
 3. **CPU FusedAdam source:** `deepspeed.ops.adam.DeepSpeedCPUAdam`. Paper builds directly on ZeRO-Offload's CPU Adam. Pure-Python reimpl is >10× slower and would collapse the T_bwd / T_cpu_optim overlap window the cost model assumes. DeepSpeed is already in Axolotl's env.
 4. **S_chunk grid:** `{32, 64, 128, 256} MB`. 7B Llama blocks are ~200 MB fp16 → chunks want to be block-scale. 16 MB is too fine-grained; per-chunk sync overhead dominates. M2 agent extends the grid if optimum lands at an endpoint.
