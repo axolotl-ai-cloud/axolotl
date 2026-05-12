@@ -91,8 +91,32 @@ def _build_tiny_lora_model():
     return model, cfg
 
 
-def _wrap_protrain(model, cfg, *, force_all_persistent: bool, zero3_shard: bool):
-    """Wrap a model in ProTrain and return the wrapped runtime + optimizer."""
+def _wrap_protrain(
+    model,
+    cfg,
+    *,
+    force_all_persistent: bool,
+    zero3_shard: bool,
+    n_persist_override: int | None = None,
+    n_buffer_override: int | None = None,
+    n_swap_override: int | None = None,
+    n_checkpoint_override: int | None = None,
+    n_offload_override: int | None = None,
+    small_chunk: bool = False,
+):
+    """Wrap a model in ProTrain and return the wrapped runtime + optimizer.
+
+    Override knobs are forwarded straight through to
+    ``protrain_model_wrapper`` so individual tests can force
+    non-persistent chunks (``n_persist_override=0``) — necessary to
+    exercise the CPU-adapter path on a tiny model where the searcher
+    would otherwise pick ``n_persist == N_chunk`` and no
+    ``CpuFusedAdamAdapter`` would be constructed.
+
+    ``small_chunk=True`` monkey-patches ``pick_S_chunk`` so the layout
+    builder produces multiple chunks even on the tiny test model,
+    matching the pattern used in ``test_lora_offload_mode``.
+    """
     import torch
 
     from axolotl.integrations.protrain.api import (
@@ -109,16 +133,41 @@ def _wrap_protrain(model, cfg, *, force_all_persistent: bool, zero3_shard: bool)
         pcie_d2h_bps=13e9,
         has_nvlink=False,
     )
-    wrapped = protrain_model_wrapper(
-        model,
-        model_config=cfg,
-        hardware_profile=hw,
-        batch_size=1,
-        seq_len=32,
-        capacity_bytes=4 * (1 << 30),
-        force_all_persistent=force_all_persistent,
-        zero3_shard=zero3_shard,
-    )
+
+    # When small_chunk=True, monkey-patch pick_S_chunk so the layout
+    # builder produces multiple chunks. Without this, the tiny test
+    # model's params all fit in a single chunk and force_all_persistent
+    # vs override-driven non-persistent become indistinguishable. The
+    # 1 MiB value matches the working pattern in
+    # ``test_lora_offload_mode``; finer S_chunk values produce a
+    # larger N_chunk than n_buffer_override can satisfy
+    # (``min_n_buffer_for`` validates 2 * max(non_persistent_per_block)).
+    import axolotl.integrations.protrain.api.model_wrapper as mw
+
+    orig_pick_S_chunk = mw.pick_S_chunk
+    if small_chunk:
+        mw.pick_S_chunk = lambda *a, **k: 1 << 20  # 1 MiB
+    try:
+        wrapped = protrain_model_wrapper(
+            model,
+            model_config=cfg,
+            hardware_profile=hw,
+            batch_size=1,
+            seq_len=32,
+            capacity_bytes=4 * (1 << 30),
+            force_all_persistent=force_all_persistent,
+            zero3_shard=zero3_shard,
+            n_persist_override=n_persist_override,
+            n_buffer_override=n_buffer_override,
+            n_swap_override=n_swap_override,
+            n_checkpoint_override=n_checkpoint_override,
+            n_offload_override=n_offload_override,
+        )
+    finally:
+        # Restore the global so a subsequent test's wrap uses the
+        # searcher-picked S_chunk (one global monkey-patch leak would
+        # silently distort downstream resource accounting).
+        mw.pick_S_chunk = orig_pick_S_chunk
     optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
     return wrapped, optim
 
@@ -305,9 +354,12 @@ def test_cpu_optim_replaced_calls_shutdown_on_previous() -> None:
     same wrapped runtime calls ``shutdown()`` on the previous
     ``chunk_manager.cpu_optim`` before installing the new one.
 
-    Track ``shutdown`` calls on the original adapter via a monkey-
-    patched flag, re-run the optimizer wrapper, and verify the flag
-    flipped — meaning the swap path actually invoked the teardown.
+    Forces non-persistent chunks via ``force_all_persistent=False`` +
+    explicit overrides + ``small_chunk=True`` so the tiny test model
+    actually produces a ``CpuFusedAdamAdapter``. Without the
+    overrides + small_chunk the searcher picks
+    ``n_persist == N_chunk == 1`` and no CPU adapter is built — the
+    test would then silently self-skip (CodeRabbit R3-#6).
     """
     pytest.importorskip("torch")
     import torch
@@ -315,26 +367,59 @@ def test_cpu_optim_replaced_calls_shutdown_on_previous() -> None:
     if not torch.cuda.is_available():
         pytest.skip("ProTrain D3 invariant requires CUDA.")
 
+    # Probe DeepSpeedCPUAdam availability up front — the CPU adapter
+    # path needs it to construct, and the test cannot validate D3
+    # if the build env can't even build a CPU adapter.
+    try:
+        import deepspeed  # noqa: F401
+        from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+        _probe = torch.nn.Parameter(torch.zeros(2, dtype=torch.float32))
+        try:
+            DeepSpeedCPUAdam([_probe], lr=1e-3)
+        except Exception as exc:  # noqa: BLE001
+            pytest.skip(
+                f"DeepSpeedCPUAdam JIT load failed ({exc}); D3 invariant "
+                f"requires a working CPU adapter build."
+            )
+    except ImportError:
+        pytest.skip("deepspeed not installed; D3 invariant requires CPU adapter.")
+
     from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
     model, cfg = _build_tiny_lora_model()
     model = model.to("cuda")
+    # Force non-persistent chunks so a CpuFusedAdamAdapter actually
+    # gets constructed. small_chunk=True ensures N_chunk > 1 even on
+    # this tiny model so the n_persist=0 override produces chunks
+    # that ARE offloaded.
     wrapped, _optim = _wrap_protrain(
-        model, cfg, force_all_persistent=True, zero3_shard=False
+        model,
+        cfg,
+        force_all_persistent=False,
+        zero3_shard=False,
+        n_persist_override=0,
+        n_buffer_override=16,
+        n_swap_override=0,
+        n_checkpoint_override=0,
+        # All non-persistent transformer blocks in OFFLOAD mode
+        # (Option B) — saved tensors re-gather on backward via the
+        # M3 block manager's per-block hook rather than relying on
+        # NONE-mode hooks (which would clobber autograd's saved
+        # tensors when the chunk pool slot is reused).
+        n_offload_override=cfg.num_hidden_layers,
+        small_chunk=True,
     )
     try:
         chunk_manager = wrapped.chunk_manager
         previous_cpu_optim = getattr(chunk_manager, "cpu_optim", None)
-        if previous_cpu_optim is None:
-            pytest.skip(
-                "tiny model has no non-persistent chunks → no CPU adapter "
-                "to swap; D3 invariant degenerate on this configuration."
-            )
-        # mypy: pytest.skip() raises ``Skipped`` so the line above is a
-        # control-flow exit, but mypy doesn't model that. Narrow with
-        # an explicit assertion so the subsequent ``.shutdown`` access
-        # type-checks without union-attr complaints.
-        assert previous_cpu_optim is not None
+        assert previous_cpu_optim is not None, (
+            "test setup did not produce a CPU adapter — the D3 invariant "
+            "needs at least one non-persistent chunk to be exercised. "
+            "Check that force_all_persistent=False + n_persist_override=0 "
+            "+ small_chunk=True actually produced non-persistent chunks "
+            "for this model size."
+        )
 
         # Patch shutdown to record invocation.
         shutdown_calls: list[bool] = []
@@ -430,7 +515,11 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
 
     This is the smallest cycle that exercises D1/D2/D3 together:
 
-    1. Wrap model in ProTrain Mode A (force_all_persistent=True).
+    1. Wrap model in ProTrain offload mode (force_all_persistent=False
+       with ``n_persist_override=0`` so chunks are ACTUALLY offloaded;
+       without the override the searcher picks ``n_persist == N_chunk``
+       on a tiny model and ``materialize_offload`` becomes a no-op,
+       making the D2 hot path untested — CodeRabbit R3-#7).
     2. Train 3 steps, capture state_dict.
     3. Simulate the resume hook: explicitly tear down the CPU optim,
        call ``restore_to_gpu``, load the state_dict, call
@@ -445,14 +534,50 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
     if not torch.cuda.is_available():
         pytest.skip("ProTrain resume hook in-process cycle requires CUDA.")
 
+    # Probe DeepSpeedCPUAdam availability — the offload-mode wrap path
+    # needs it to construct, and the resume cycle below rebuilds the
+    # CPU adapter. Without it, the test would skip mid-cycle which is
+    # noisier than skipping up front.
+    try:
+        import deepspeed  # noqa: F401
+        from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+        _probe = torch.nn.Parameter(torch.zeros(2, dtype=torch.float32))
+        try:
+            DeepSpeedCPUAdam([_probe], lr=1e-3)
+        except Exception as exc:  # noqa: BLE001
+            pytest.skip(
+                f"DeepSpeedCPUAdam JIT load failed ({exc}); resume cycle "
+                f"requires a working CPU adapter build."
+            )
+    except ImportError:
+        pytest.skip("deepspeed not installed; resume cycle requires CPU adapter.")
+
     from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
     model, cfg = _build_tiny_lora_model()
     model = model.to("cuda")
     input_ids, labels = _make_batch(cfg)
 
+    # Force chunks off-GPU so materialize_offload actually moves bytes
+    # (the D2 hot path the test claims to exercise). small_chunk=True
+    # ensures N_chunk > 1 on the tiny model.
     wrapped, optim = _wrap_protrain(
-        model, cfg, force_all_persistent=True, zero3_shard=False
+        model,
+        cfg,
+        force_all_persistent=False,
+        zero3_shard=False,
+        n_persist_override=0,
+        n_buffer_override=16,
+        n_swap_override=0,
+        n_checkpoint_override=0,
+        # All non-persistent transformer blocks in OFFLOAD mode
+        # (Option B) — saved tensors re-gather on backward via the
+        # M3 block manager's per-block hook rather than relying on
+        # NONE-mode hooks (which would clobber autograd's saved
+        # tensors when the chunk pool slot is reused).
+        n_offload_override=cfg.num_hidden_layers,
+        small_chunk=True,
     )
     try:
         # ---- Phase 1: train 3 steps under the initial wrap ----------
@@ -463,30 +588,45 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
         for i, lv in enumerate(losses_pre):
             assert math.isfinite(lv), f"phase 1 step {i}: non-finite loss {lv}"
 
-        # Capture state for the resume.
-        underlying = getattr(wrapped, "module", wrapped)
-        saved_state = {
-            k: v.detach().clone() for k, v in underlying.state_dict().items()
-        }
-
         # ---- Phase 2: simulate the resume hook's in-process cycle ---
+        underlying = getattr(wrapped, "module", wrapped)
         chunk_manager = wrapped.chunk_manager
+        assert chunk_manager is not None
 
         # Step 1: tear down the CPU optim BEFORE restore_to_gpu (per
-        # the resume hook's preamble at plugin.py:557-572).
+        # the resume hook's preamble at plugin.py:557-572). This is
+        # the SAME teardown the production resume hook performs;
+        # ``restore_to_gpu`` is about to invalidate the CPU shards
+        # the adapter holds references to.
         if getattr(chunk_manager, "cpu_optim", None) is not None:
             chunk_manager.cpu_optim.shutdown()
 
         # Step 2: restore_to_gpu — rebinds param.data back to standalone
-        # GPU storage so the load_state_dict copy below has valid
-        # destination tensors.
+        # GPU storage so the state_dict capture below sees the real
+        # parameter shapes (not the ``[0]`` placeholder that's bound
+        # while chunks are offloaded). The production HF Trainer save
+        # path has the same property: checkpoints are taken AFTER
+        # ProTrain's resume hook restores chunks to GPU, not while
+        # offloaded — otherwise the saved state_dict would have
+        # ``Size([0])`` entries that would fail to load on resume.
         chunk_manager.restore_to_gpu()
 
-        # Step 3: load the saved state into the live model.
+        # Step 3: capture the saved state and load it back. In
+        # production this is the HF Trainer's
+        # ``trainer.save_state_dict`` → user copies the checkpoint →
+        # ``_load_from_checkpoint`` cycle; here we do the round-trip
+        # in-process to keep the smoke unit-scoped.
+        saved_state = {
+            k: v.detach().clone() for k, v in underlying.state_dict().items()
+        }
         underlying.load_state_dict(saved_state, strict=False)
 
         # Step 4: re-build the offload state. This is the D2 hot path —
-        # second materialize_offload on the same chunk manager.
+        # second materialize_offload on the same chunk manager. With
+        # ``n_persist_override=0`` + ``n_offload_override=N_layers``
+        # this actually moves bytes (7 non-persistent chunks → pinned
+        # CPU pool) rather than being a no-op on a force-all-persistent
+        # config (CodeRabbit R3-#7).
         chunk_manager.materialize_offload()
 
         # Step 5: rebuild the optimizer adapter (exercises D3 — the

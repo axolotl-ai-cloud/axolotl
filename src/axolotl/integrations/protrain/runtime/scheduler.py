@@ -350,6 +350,26 @@ class Scheduler:
         cids = tuple(chunk_ids)
         if not cids:
             return
+        # SWAP-stream safety barrier (CodeRabbit R3-#1). Bypassing the
+        # prefetch stream also bypasses the
+        # ``self._prefetch_stream.wait_stream(self._swap_stream)``
+        # barrier that protects pool buffers from being overwritten
+        # while a SWAP D2H is still reading them. On the SWAP + LoRA
+        # path that would reopen the same cross-stream buffer race the
+        # ``_gather_on_prefetch_stream`` barrier closes, just shifted
+        # onto the compute stream. Make the compute stream wait on
+        # ``_swap_stream`` here too so the gather's pool-buffer writes
+        # are correctly ordered after any in-flight SWAP D2H reads.
+        try:
+            import torch as _torch
+        except ImportError:  # pragma: no cover — defensive, CPU-only lanes
+            _torch = None  # type: ignore[assignment]
+        if (
+            _torch is not None
+            and _torch.cuda.is_available()
+            and self._swap_stream is not None
+        ):
+            _torch.cuda.current_stream().wait_stream(self._swap_stream)
         # M6C-fix-4: bypass the prefetch stream. Issuing
         # ``chunk_manager.gather(cid)`` directly here makes the
         # underlying ``_gather_sharded`` collective land on the
