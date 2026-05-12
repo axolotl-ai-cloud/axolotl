@@ -101,10 +101,10 @@ def _sku(device: "torch.device | str") -> str:
 def _detect_dominant_param_bytes_per_element(model: nn.Module) -> float:
     """Return the modal logical bytes-per-element across the model's params.
 
-    Drives the per-dtype α fragmentation factor lookup in
+    Drives the per-dtype alpha fragmentation factor lookup in
     :func:`axolotl.integrations.protrain.cost.memory.alpha_fragmentation_for_dtype`
     via :attr:`HardwareProfile.dominant_param_bytes_per_element`.
-    Coverage audit Block G found that α=1.10 over-predicts bnb 4-bit
+    Coverage audit Block G found that alpha=1.10 over-predicts bnb 4-bit
     Mode-A peak by ~37%, while fp16/bf16/8-bit predictors are
     slightly conservative within tolerance — so this signal needs
     to distinguish 4-bit from everything else.
@@ -132,7 +132,7 @@ def _detect_dominant_param_bytes_per_element(model: nn.Module) -> float:
     Falls back to 2.0 (fp16/bf16) when the model has no parameters
     or when every aggregate accumulator is zero — matches the
     :class:`HardwareProfile` default so the per-dtype lookup picks
-    the conservative α=1.10 ceiling.
+    the conservative alpha=1.10 ceiling.
     """
     # Best-effort detection of bnb 4-bit param class. The import is
     # behind a try/except because bitsandbytes is an optional dep —
@@ -187,7 +187,7 @@ def _detect_dominant_param_bytes_per_element(model: nn.Module) -> float:
 
     # Pick the bpe class with the largest aggregate logical-element
     # count. Ties resolve in favour of the smaller bpe (i.e. the more
-    # aggressive quantization) so the searcher's α picks the
+    # aggressive quantization) so the searcher's alpha picks the
     # tighter-budget regime when the model is genuinely mixed.
     dominant_bpe = min(
         by_bpe.keys(),
@@ -392,7 +392,7 @@ def predict_init_transient_peak_bytes(
 ) -> int:
     """Predict the GPU high-water mark during the init transient window.
 
-    Coverage audit Block G (Phase 2) observed a 6.9× iter-1 transient peak
+    Coverage audit Block G (Phase 2) observed a 6.9x iter-1 transient peak
     in bnb-4-bit Mode-C (chunk-offload) runs vs. the steady-state predictor:
 
     +-----------------------------------------+---------+---------+---------+
@@ -408,9 +408,9 @@ def predict_init_transient_peak_bytes(
     :meth:`ChunkManager.materialize_offload` runs. HF Trainer constructs
     the model fully on GPU; ProTrain then discharges every non-persistent
     chunk to pinned CPU memory. Between those two events the peak briefly
-    resembles ``sum_chunk_bytes × α`` (full-residence pool + cudactx
+    resembles ``sum_chunk_bytes x alpha`` (full-residence pool + cudactx
     overhead), while the steady predictor reports
-    ``persistent_subset × α`` (only the persistent chunks survive
+    ``persistent_subset x alpha`` (only the persistent chunks survive
     materialize_offload).
 
     This function returns the transient prediction so the searcher's
@@ -436,27 +436,27 @@ def predict_init_transient_peak_bytes(
         ``predicted = sum_chunk_bytes * ALPHA_FRAGMENTATION``
 
     where ``ALPHA_FRAGMENTATION`` is the fp16/bf16 paper default
-    (1.10) — NOT the per-dtype α from
+    (1.10) — NOT the per-dtype alpha from
     :func:`alpha_fragmentation_for_dtype`.
 
     Architectural decision (audit Block G)
     --------------------------------------
 
-    The per-dtype α lookup
+    The per-dtype alpha lookup
     (``{fp16/bf16/8-bit: 1.10, bnb-4-bit: 0.75}``) was calibrated
     against the *steady-state* peak, where fp16 activation / grad
     streams overlap with the on-GPU param subset. For bnb-4-bit
     weights the relative fragmentation cost shrinks because params
     occupy 0.5 B/element vs. activations' 2 B/element, so the
-    steady-state α drops to 0.75.
+    steady-state alpha drops to 0.75.
 
     At the iter-1 init transient, however, the GPU contains only
     raw model bytes + CUDA context overhead — no activations,
-    no gradient buffers, no recompute windows. The α=0.75 reduction
+    no gradient buffers, no recompute windows. The alpha=0.75 reduction
     does NOT apply: the under-prediction observed in the audit
-    (15.27 GiB × 0.75 = 11.45 GiB vs. measured 17.20 GiB → ~50%
+    (15.27 GiB x 0.75 = 11.45 GiB vs. measured 17.20 GiB → ~50%
     under-call) is too large a safety regression. Empirically
-    α=1.10 holds across the three Block-G data points:
+    alpha=1.10 holds across the three Block-G data points:
 
         ``15.27 GiB * 1.10 = 16.80 GiB``  (vs. measured 17.20 GiB,
                                           residual within 3%)
@@ -470,7 +470,7 @@ def predict_init_transient_peak_bytes(
             upper-bound fallback when ``chunk_manager`` is None.
         hw: HardwareProfile. The ``dominant_param_bytes_per_element``
             field is read for logging / future per-dtype refinement;
-            today the α=1.10 ceiling is dtype-agnostic for the reasons
+            today the alpha=1.10 ceiling is dtype-agnostic for the reasons
             documented above.
         chunk_manager: Optional ChunkManager handle. When provided,
             ``_chunk_bytes(layout, chunk_manager)`` is summed for the
@@ -516,8 +516,8 @@ def predict_init_transient_peak_bytes(
     else:
         sum_chunk_bytes = n_chunk * s_chunk
 
-    # The hw argument is reserved for a future per-dtype iter-1 α
-    # refinement once more empirical data is available. Today α=1.10
+    # The hw argument is reserved for a future per-dtype iter-1 alpha
+    # refinement once more empirical data is available. Today alpha=1.10
     # holds across the audit's fp16 / 8-bit / 4-bit Mode-C data points
     # (the 4-bit Mode-A configs have no separable transient because
     # the persistent set IS the full chunk set). Touch hw to silence
@@ -568,11 +568,11 @@ def _calibrate_peak_with_actual_chunk_bytes(
     ----------------------------
     The reverse-out below uses the SAME ``persistent_factor`` /
     ``buffer_factor`` as :func:`model_state_present_bytes`, NOT the
-    legacy 1.0×-flat assumption. The previous implementation reversed
+    legacy 1.0x-flat assumption. The previous implementation reversed
     out only ``(n_persist + n_buffer) * S`` (params-only), which left
     the per-chunk full-state multiplier hiding inside ``f_bm`` and then
     re-added only the param bytes — under full FT (where
-    ``persistent_factor`` can be 4-7×) that systematically under-stated
+    ``persistent_factor`` can be 4-7x) that systematically under-stated
     calibrated peak by roughly ``(persistent_factor - 1) *
     actual_persistent``. Mismatch was harmless under LoRA-with-frozen-
     base (``persistent_factor ≈ 1``); now corrected for both regimes.
@@ -724,7 +724,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
     #    chunks are persistent (n_persist_eff ≈ N_chunk), the cost
     #    model's post-cap raw_peak collapses to roughly
     #    ``profile_time_model_state + small_activation_residual``.
-    #    The reverse-out ``original_peak / α - n_persist_eff * S``
+    #    The reverse-out ``original_peak / alpha - n_persist_eff * S``
     #    then yields ``f_bm = 0`` because the chunk-padding waste in
     #    the cost model's model-state term consumes the activation
     #    headroom — even though the runtime DOES allocate activations
@@ -1051,7 +1051,7 @@ def _calibrate_peak_with_actual_chunk_bytes(
                         phase2_peak,
                     )
                     LOG.info(
-                        "ProTrain peak cfg-delta (legacy α-strip): "
+                        "ProTrain peak cfg-delta (legacy alpha-strip): "
                         "phase2_peak=%.2f GB phase2_anal=%.2f GB "
                         "prod_anal=%.2f GB delta_raw=%.2f GB "
                         "floor=%.2f GB calibrated=%.2f GB",
@@ -1405,7 +1405,7 @@ def _construct_runtime(
     # partitioning + the ChunkManager construction agree on which
     # chunks are persistent.
     #
-    # The runtime resident set is ``{0..n_persist-1} ∪
+    # The runtime resident set is ``{0..n_persist-1} |
     # layout.mandatory_persistent``. ``layout.mandatory_persistent`` is
     # populated once by :func:`build_layout` and records every chunk
     # containing at least one non-block param (e.g. ``model.norm.weight``,
@@ -1430,7 +1430,7 @@ def _construct_runtime(
         LOG.info(
             "ProTrain: %d chunks %s pinned by layout.mandatory_persistent "
             "(non-block params the block-granularity scheduler cannot "
-            "gather on its own); residency = prefix[0..%d) ∪ mandatory",
+            "gather on its own); residency = prefix[0..%d) | mandatory",
             len(layout.mandatory_persistent),
             sorted(layout.mandatory_persistent),
             n_persist,
@@ -1502,7 +1502,7 @@ def _construct_runtime(
 
     # M6C-fix-7: shape-preserving release-state placeholders. PEFT's
     # ``LoraLayer.forward`` on multi-GPU sharded non-persistent chunks
-    # at production scale (32-layer Llama-3-8B × 4 ranks × heavy
+    # at production scale (32-layer Llama-3-8B x 4 ranks x heavy
     # pool-eviction pressure) hits a rare race window where an autograd
     # op records its input shape against a still-``torch.Size([0])``
     # placeholder before the per-LoRA-container gather hook's rebind
@@ -1605,7 +1605,7 @@ def _construct_runtime(
     # ---- iter-1 init-transient peak prediction (audit Block G follow-up) -
     # Predict the GPU high-water mark during the brief window between
     # full-model GPU construction and ``materialize_offload``. Coverage
-    # audit Block G observed this transient is 6.9× the steady predictor
+    # audit Block G observed this transient is 6.9x the steady predictor
     # for bnb-4-bit Mode-C; surfacing it on SearchResult lets downstream
     # consumers (searcher feasibility gate, telemetry) catch
     # init-window OOM before iter 1. See
@@ -1653,7 +1653,7 @@ def _construct_runtime(
         )
     # Log the iter-1 transient alongside the steady peak so operators
     # see both numbers in the standard ProTrain bootstrap output. The
-    # ratio surfaces the Mode-C ~6× under-prediction at search time
+    # ratio surfaces the Mode-C ~6x under-prediction at search time
     # rather than at iter-1 OOM.
     LOG.info(
         "ProTrain: predicted peaks: steady=%.2f GiB iter1_transient=%.2f GiB "
@@ -2061,7 +2061,7 @@ def _construct_runtime(
         #   * Linear-layer weight tensors (``F.linear`` saves ``weight``
         #     for the input-grad recompute), which for transformer FFNs
         #     can dwarf the block-output size (Llama-7B's gate/up_proj
-        #     weight = hidden_size × intermediate_size ≈ 86 MB at bf16,
+        #     weight = hidden_size x intermediate_size ≈ 86 MB at bf16,
         #     vs. block output of 2 MB at bs=1 seq=256).
         #   * Attention probabilities upcast to fp32, intermediate FFN
         #     activations, etc.
@@ -2169,7 +2169,7 @@ def _construct_runtime(
                 if getattr(block, "_protrain_wrapped_mode", None) is _BM_swap.SWAP:
                     block.attach_runtime(swap_pool, scheduler.swap_stream)
             LOG.info(
-                "ProTrain: SWAP pool wired — %d slots × %d bytes = %.2f MB "
+                "ProTrain: SWAP pool wired — %d slots x %d bytes = %.2f MB "
                 "pinned (slot sized from max(act=%.2f MB, intra_op=%.2f MB, "
                 "param=%.2f MB))",
                 swap_pool.n_slot,
@@ -2775,7 +2775,7 @@ def protrain_model_wrapper(
             )
     # PCIe rates: overwrite the caller's hardcoded prior (usually 13e9 =
     # Gen3) with the profiler's measured H2D/D2H. A 3090 on PCIe Gen4 x16
-    # sits around 50-56 GB/s — 4× the conservative default — and the
+    # sits around 50-56 GB/s — 4x the conservative default — and the
     # cost model's per-chunk comm is S_chunk / eff_h2d, so this flow-
     # through directly corrects the 7B over-prediction.
     if (
@@ -2785,10 +2785,10 @@ def protrain_model_wrapper(
         _hw_updates["pcie_h2d_bps"] = trace.pcie_h2d_bps
     if hardware_profile.pcie_d2h_bps <= 13e9 + 1e6 and trace.pcie_d2h_bps > 13e9 + 1e6:
         _hw_updates["pcie_d2h_bps"] = trace.pcie_d2h_bps
-    # Detect dominant param dtype for the per-dtype α fragmentation
+    # Detect dominant param dtype for the per-dtype alpha fragmentation
     # lookup (Coverage audit Block G). Default 2.0 (fp16/bf16) means
-    # the cost model lands at α=1.10; bnb-4-bit weights drop the
-    # dominant bpe to 0.5 which lands at α=0.75. Only stamp the
+    # the cost model lands at alpha=1.10; bnb-4-bit weights drop the
+    # dominant bpe to 0.5 which lands at alpha=0.75. Only stamp the
     # profile when the detection differs from the caller-provided
     # value AND the caller passed the default — so tests that
     # explicitly hand-craft a profile with a specific bpe keep it.
@@ -2910,7 +2910,7 @@ def protrain_model_wrapper(
         # Replicate the searcher's two runtime-safety invariants. Without
         # these, the override path can ship configs that the searcher
         # would never select — e.g. an n_buffer too small for the
-        # scheduler's lookahead prefetch (current-block ∪ next-block
+        # scheduler's lookahead prefetch (current-block | next-block
         # non-persistent chunks must fit simultaneously) or a block_map
         # where a NONE block owns offloaded chunks (no activation-save
         # mechanism — autograd's saved tensors hold direct GPU storage
@@ -2919,7 +2919,7 @@ def protrain_model_wrapper(
         # recomputes; OFFLOAD re-gathers via saved-tensors-hook; SWAP
         # persists each saved tensor to a pinned-CPU pool slot decoupled
         # from param.data — see ``block_map_runtime_admissible`` and
-        # the §6.6 SWAP × non-persistent lift in
+        # the §6.6 SWAP x non-persistent lift in
         # ``BLOCK_MODE_OFFLOAD_DESIGN.md``).
         min_buffer = min_n_buffer_for(layout, n_persist)
         if n_buffer < min_buffer:
@@ -3225,7 +3225,7 @@ def protrain_model_wrapper(
             # are consumed by:
             #
             #   * ``cost.runtime.estimate_runtime`` to derive
-            #     α = phase2_iter_s / phase2_analytical_iter_s and scale
+            #     alpha = phase2_iter_s / phase2_analytical_iter_s and scale
             #     analytical-path predictions when the production cfg
             #     bypasses the chunked-wall override (e.g. ``n_swap > 0``).
             #   * ``_calibrate_peak_with_actual_chunk_bytes`` to apply
@@ -3259,9 +3259,9 @@ def protrain_model_wrapper(
                 )
             )
             # Per-component analytical decomposition at boot cfg
-            # (TRACE_VERSION 21). The per-component α calibration in
+            # (TRACE_VERSION 21). The per-component alpha calibration in
             # ``_compose_t_iter_with_alpha_calibration`` derives three
-            # independent scales — αfwd / αbwd / αopt — from the
+            # independent scales — alphafwd / alphabwd / alphaopt — from the
             # measured-vs-analytical ratios at the boot cfg. The
             # measured side is ``(fwd_s, bwd_s, step_s)`` from
             # ``measure_chunked_steady`` above; the analytical side is
@@ -3287,8 +3287,8 @@ def protrain_model_wrapper(
             # measured step wall ≈ t_gpu_optim + (CPU-Adam tail). For
             # calibration we use the simpler additive
             # ``t_gpu_optim + t_cpu_optim`` as the analytical-step
-            # denominator — the αopt ratio absorbs the bwd-overlap
-            # difference uniformly so it's consistent with how αopt
+            # denominator — the alphaopt ratio absorbs the bwd-overlap
+            # difference uniformly so it's consistent with how alphaopt
             # is applied in :func:`_compose_t_iter_with_alpha_calibration`.
             phase2_analytical_fwd_s_val = float(t_fwd_boot)
             phase2_analytical_bwd_s_val = float(t_bwd_boot)
@@ -3301,23 +3301,23 @@ def protrain_model_wrapper(
             phase2_iter_s_val = float(fwd_s + bwd_s + step_s)
 
             # Per-component-prediction anchor (TRACE_VERSION 22) for
-            # the residual-α multiplier. Compute what the per-component
+            # the residual-alpha multiplier. Compute what the per-component
             # formula in :func:`_compose_t_iter_with_alpha_calibration`
-            # WOULD predict at the boot cfg under the same αfwd /
-            # αbwd / αopt values that the cost model derives from the
+            # WOULD predict at the boot cfg under the same alphafwd /
+            # alphabwd / alphaopt values that the cost model derives from the
             # measured-vs-analytical ratios above. Crucially, this
-            # anchor uses the analytical-path composition (αfwd and
-            # αbwd both applied) — NOT the chunked-wall-override path
+            # anchor uses the analytical-path composition (alphafwd and
+            # alphabwd both applied) — NOT the chunked-wall-override path
             # the boot cfg's ``n_swap == 0`` would normally trigger —
-            # because the residual α generalises across cfgs that DO
+            # because the residual alpha generalises across cfgs that DO
             # take the analytical path (any prod cfg with ``n_swap >
             # 0``). At boot the override and analytical paths agree
-            # within αfwd/αbwd ≈ 1 anyway since the αs are calibrated
+            # within alphafwd/alphabwd ≈ 1 anyway since the alphas are calibrated
             # *against* the boot measurement; the residual captures
             # whatever whole-iter overhead bias remains after that
             # per-component correction.
             #
-            # Clamp αs to match the runtime composer's clamp so the
+            # Clamp alphas to match the runtime composer's clamp so the
             # anchor stays consistent with what the production path
             # actually applies (otherwise an out-of-clamp boot ratio
             # would skew the residual).
@@ -3355,7 +3355,7 @@ def protrain_model_wrapper(
                 )
             else:
                 # Per-component baselines unavailable — leave the
-                # anchor zero so the residual α collapses to no-op.
+                # anchor zero so the residual alpha collapses to no-op.
                 phase2_per_comp_pred_iter_s_val = 0.0
 
             from dataclasses import replace as _replace
@@ -3380,7 +3380,7 @@ def protrain_model_wrapper(
                 phase2_analytical_fwd_s=phase2_analytical_fwd_s_val,
                 phase2_analytical_bwd_s=phase2_analytical_bwd_s_val,
                 phase2_analytical_step_s=phase2_analytical_step_s_val,
-                # Residual-α anchor (TRACE_VERSION 22).
+                # Residual-alpha anchor (TRACE_VERSION 22).
                 phase2_per_comp_pred_iter_s=phase2_per_comp_pred_iter_s_val,
             )
             try:
@@ -3469,7 +3469,7 @@ def protrain_model_wrapper(
             # search's raw new pick (new_result.cfg) — NOT the
             # calibrated boot_result.cfg. The two used to diverge
             # because ``_construct_runtime`` widened ``cfg.n_persist``
-            # to ``len(_persistent_ids)`` (the prefix ∪ non-block-chunk
+            # to ``len(_persistent_ids)`` (the prefix | non-block-chunk
             # pin set) post-calibration; that collapse has since been
             # removed (the augmented set is now plumbed through
             # ``layout.mandatory_persistent`` so the prefix is preserved

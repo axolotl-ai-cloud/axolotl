@@ -46,7 +46,7 @@ src/axolotl/integrations/protrain/
 ├── cost/
 │   ├── __init__.py
 │   ├── runtime.py               # Eqs. 2–7, per-chunk max(compute, comm) roofline
-│   ├── memory.py                # Eqs. 8–11, op-walk peak + α=1.10 fragmentation
+│   ├── memory.py                # Eqs. 8–11, op-walk peak + alpha=1.10 fragmentation
 │   └── bandwidth.py             # contention model when n_swap>0 competes with prefetch
 ├── search/
 │   ├── __init__.py
@@ -108,14 +108,14 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 - `dispatcher.py` — `wrap_block(block: nn.Module, mode: BlockMode) -> nn.Module`. §3.1.2.
 - `checkpoint.py` — thin wrapper over `torch.utils.checkpoint.checkpoint` (use_reentrant=False). §3.1.2.
 - `swap.py` — `SwappedBlock`: wraps the block's forward in a `torch.autograd.graph.saved_tensors_hooks` context so **every autograd-saved tensor** (not just the block output) is D2H-copied to a pinned-host slot on `_swap_stream` in forward and H2D-copied back on `_swap_stream` in backward, with cross-stream event handshake against the default compute stream. Pool + stream are injected post-construction via `attach_runtime`; wrapper lifetime spans one fwd+bwd pair, and memory accounting must charge the sum of saved-tensor bytes (activations, RNG state, intermediate tensors), not just the block output. §3.1.2.
-- `swap_pool.py` — `ActivationSwapPool`: pinned-host slot pool sized to `n_swap × prefetch_depth × max_act_bytes`. Backed by one `PinnedHostMemory` allocation; slot acquire/release tracked Python-side. §3.1.2.
+- `swap_pool.py` — `ActivationSwapPool`: pinned-host slot pool sized to `n_swap x prefetch_depth x max_act_bytes`. Backed by one `PinnedHostMemory` allocation; slot acquire/release tracked Python-side. §3.1.2.
 - `offload.py` — Option B path: runs a non-persistent chunk's owning block under `BlockMode.OFFLOAD` (no recompute), re-gathering the chunk for backward and offloading after fwd. See `BLOCK_MODE_OFFLOAD_DESIGN.md` §3 / §6 for the storage-ptr book-keeping and runtime hook contract.
 - `layout_rules.py` — `assign_modes(n_swap, n_checkpoint, n_offload, N_block) -> BlockStrategyMap`. Swap-early / unopt-late / interleave; `n_offload` honors the unopt-late rule (`BLOCK_MODE_OFFLOAD_DESIGN.md` §5.1). §3.1.2.
 
 ### cost/ (M4)
 
 - `runtime.py` — `estimate_runtime(cfg, trace, layout) -> float`. Implements **Eqs. 2–7**: `T_iter = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)`, per-chunk `max(compute, comm)` roofline. §3.3, App A.1.
-- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (α = 1.10 fragmentation). Bumps are added at the first op of each `BlockMode.CKPT` block (recompute) and additionally at the first op of each `BlockMode.OFFLOAD` block (Option B backward gather), so both block types contribute to the per-block backward memory bump. §3.3, App A.2.
+- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (alpha = 1.10 fragmentation). Bumps are added at the first op of each `BlockMode.CKPT` block (recompute) and additionally at the first op of each `BlockMode.OFFLOAD` block (Option B backward gather), so both block types contribute to the per-block backward memory bump. §3.3, App A.2.
 - `bandwidth.py` — `effective_bw(cfg, hw) -> float`. Derates prefetch BW when `n_swap > 0`. §3.3.
 
 ### search/ (M4)
@@ -275,19 +275,19 @@ Mirrors `plan.md`:
 
 ## Design Decisions (previously open questions, now resolved)
 
-1. **α fragmentation factor — per-dtype lookup + Mode-C CKPT-chain accounting** (Coverage audit Block G, Phase 2).
+1. **alpha fragmentation factor — per-dtype lookup + Mode-C CKPT-chain accounting** (Coverage audit Block G, Phase 2).
 
-    *Per-dtype α (landed in commit `2fcc1fcf`).* The paper's α=1.10 default matches "up to 10% overestimate" (§3.3) when measured against fp16 / bf16 / 8-bit configurations. Block G's empirical re-derivation across the M5 / M0-spike / Block-A matrices showed α=1.10 is mildly conservative for fp16 (α_measured ≈ 0.96) and 8-bit (α_measured ≈ 0.93), but over-predicts bnb-4-bit Mode-A peak by ~37 % (α_measured ≈ 0.70 across four 8B-Llama rows). The cost model now dispatches through `alpha_fragmentation_for_dtype(bpe)` (`cost/memory.py`): fp16 / bf16 / 8-bit (bpe ≥ 1.0) → α=1.10 (`ALPHA_FRAGMENTATION`); bnb 4-bit (bpe = 0.5 via `Params4bit` packing) → α=0.75 (`ALPHA_FRAGMENTATION_4BIT`, slightly conservative vs the 0.70 empirical floor). The dominant bpe is detected in `protrain_model_wrapper` by walking `model.named_parameters()` and picking the bpe class with the largest aggregate logical-element count (bnb `Params4bit` instances are mapped to bpe=0.5 explicitly, since their storage `element_size()` is 1 but each byte packs two 4-bit values). Tests: `tests/protrain/test_alpha_per_dtype.py`.
+    *Per-dtype alpha (landed in commit `2fcc1fcf`).* The paper's alpha=1.10 default matches "up to 10% overestimate" (§3.3) when measured against fp16 / bf16 / 8-bit configurations. Block G's empirical re-derivation across the M5 / M0-spike / Block-A matrices showed alpha=1.10 is mildly conservative for fp16 (alpha_measured ≈ 0.96) and 8-bit (alpha_measured ≈ 0.93), but over-predicts bnb-4-bit Mode-A peak by ~37 % (alpha_measured ≈ 0.70 across four 8B-Llama rows). The cost model now dispatches through `alpha_fragmentation_for_dtype(bpe)` (`cost/memory.py`): fp16 / bf16 / 8-bit (bpe ≥ 1.0) → alpha=1.10 (`ALPHA_FRAGMENTATION`); bnb 4-bit (bpe = 0.5 via `Params4bit` packing) → alpha=0.75 (`ALPHA_FRAGMENTATION_4BIT`, slightly conservative vs the 0.70 empirical floor). The dominant bpe is detected in `protrain_model_wrapper` by walking `model.named_parameters()` and picking the bpe class with the largest aggregate logical-element count (bnb `Params4bit` instances are mapped to bpe=0.5 explicitly, since their storage `element_size()` is 1 but each byte packs two 4-bit values). Tests: `tests/protrain/test_alpha_per_dtype.py`.
 
     *Mode-C steady-peak CKPT-chain accounting (this work).* Block G also observed a seq-dependent under-prediction in bnb-4-bit Mode-C (offload-pool chunk-offload + checkpoint-everywhere) configurations:
 
-    | Config (30B Llama, 4-bit Mode-C, n_persist=0, n_buffer=12, n_checkpoint=60) | pred GiB | meas steady | α_steady = meas / pred |
+    | Config (30B Llama, 4-bit Mode-C, n_persist=0, n_buffer=12, n_checkpoint=60) | pred GiB | meas steady | alpha_steady = meas / pred |
     |---|---:|---:|---:|
     | seq=512  (`ext_30b_safe.log`)    | 2.49 | 2.91 | 1.169 |
     | seq=1024 (`ext_30b_seq1024.log`) | 2.50 | 3.50 | 1.400 |
     | seq=2048 (`ext_30b_seq2048.log`) | 2.54 | 4.68 | 1.843 |
 
-    The α_steady drift with seq is the diagnostic: the predictor's activation contribution was effectively flat across seq for all-CKPT block_maps. Root cause in `cost/memory.py::estimate_peak`: `retained_none_bytes` only accumulates NONE/OFFLOAD blocks, and the per-CKPT-first-op `ckpt_extra` bump is taken as a per-op max — so an all-CKPT cfg paid for ONE block's recompute window but nothing for the *chain* of block-input residuals that the activation-checkpointing framework (`torch.utils.checkpoint` with `use_reentrant=True`, the production wrap) retains across the WHOLE backward window. With 60 CKPT blocks on Llama-30B that chain is `60 × bs × seq × hidden × dtype_bytes` — the missing seq-dependent term.
+    The alpha_steady drift with seq is the diagnostic: the predictor's activation contribution was effectively flat across seq for all-CKPT block_maps. Root cause in `cost/memory.py::estimate_peak`: `retained_none_bytes` only accumulates NONE/OFFLOAD blocks, and the per-CKPT-first-op `ckpt_extra` bump is taken as a per-op max — so an all-CKPT cfg paid for ONE block's recompute window but nothing for the *chain* of block-input residuals that the activation-checkpointing framework (`torch.utils.checkpoint` with `use_reentrant=True`, the production wrap) retains across the WHOLE backward window. With 60 CKPT blocks on Llama-30B that chain is `60 x bs x seq x hidden x dtype_bytes` — the missing seq-dependent term.
 
     *Fix.* `estimate_peak` now adds a `ckpt_chain_bytes = sum(activation_sizes[bid] for bid in CKPT blocks)` term that:
 
@@ -299,21 +299,21 @@ Mirrors `plan.md`:
 
     *Post-fix accuracy on the audit data points* (`estimate_peak` directly, NOT through the model wrapper's `_calibrate_peak_with_actual_chunk_bytes` post-calibration which adds a further ~0.6–0.9 GiB of actual_persistent_local correction):
 
-    | seq | estimate_peak GiB | measured | α_steady |
+    | seq | estimate_peak GiB | measured | alpha_steady |
     |----:|-----------------:|--------:|---------:|
     |  512 | 2.04 | 2.91 | 1.43 |
     | 1024 | 2.80 | 3.50 | 1.25 |
     | 2048 | 4.34 | 4.68 | 1.08 |
 
-    α_steady is significantly tighter at high seq (1.84 → 1.08) and slightly looser at low seq (1.17 → 1.43, partly the per-dtype α shift from 1.10 to 0.75 since the audit). The chain term gives the per-seq scaling the predictor lacked; absolute accuracy at low seq is bottlenecked by the wrapper-side calibration, which is out of scope for the cost-model fix.
+    alpha_steady is significantly tighter at high seq (1.84 → 1.08) and slightly looser at low seq (1.17 → 1.43, partly the per-dtype alpha shift from 1.10 to 0.75 since the audit). The chain term gives the per-seq scaling the predictor lacked; absolute accuracy at low seq is bottlenecked by the wrapper-side calibration, which is out of scope for the cost-model fix.
 
     Tests: `tests/protrain/test_modec_steady_peak_accuracy.py` (pins the per-seq scaling + ±35% tolerance against the three audit data points). Existing tests adjusted: none — the `cost/memory.py` op-walk's recompute-bump refinement is backwards-compatible in every fallback regime (`_saved_tensor_bytes_per_block == activation_sizes`); the cap path and all cap-based tests are unchanged.
 
-    *Out of scope.* The iter-1 transient observed at bnb-4-bit Mode-C (~6.9× pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation or activation-accounting one, and is documented separately as an "init window" not covered by α. Tracked as the remaining open audit item.
+    *Out of scope.* The iter-1 transient observed at bnb-4-bit Mode-C (~6.9x pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation or activation-accounting one, and is documented separately as an "init window" not covered by alpha. Tracked as the remaining open audit item.
 2. **Pinned-memory allocator:** `ctypes` → `cudaHostAlloc` directly. ~50 LOC, zero new deps, matches App B.2 precisely (avoids `CUDAHostAllocator` pow-2 rounding). DeepSpeed's `PinnedMemoryAllocator` rejected: may inherit same wart, adds import-graph weight.
-3. **CPU FusedAdam source:** `deepspeed.ops.adam.DeepSpeedCPUAdam`. Paper builds directly on ZeRO-Offload's CPU Adam. Pure-Python reimpl is >10× slower and would collapse the T_bwd / T_cpu_optim overlap window the cost model assumes. DeepSpeed is already in Axolotl's env.
+3. **CPU FusedAdam source:** `deepspeed.ops.adam.DeepSpeedCPUAdam`. Paper builds directly on ZeRO-Offload's CPU Adam. Pure-Python reimpl is >10x slower and would collapse the T_bwd / T_cpu_optim overlap window the cost model assumes. DeepSpeed is already in Axolotl's env.
 4. **S_chunk grid:** `{32, 64, 128, 256} MB`. 7B Llama blocks are ~200 MB fp16 → chunks want to be block-scale. 16 MB is too fine-grained; per-chunk sync overhead dominates. M2 agent extends the grid if optimum lands at an endpoint.
-5. **SWAP path:** paper-real D2H/H2D wrapper on `_swap_stream`, backed by `ActivationSwapPool` (pinned host slots sized `n_swap × prefetch_depth × max_act_bytes`). Searcher's CPU-feasibility gate refuses `n_swap > 0` candidates whose pool would not fit `cpu_capacity_bytes`. On RTX 3090 / 3090 Ti (12 GB/s PCIe ceiling, no NVLink) the searcher rarely selects `n_swap > 0` — paper §3.1.2 — so the path is tested-but-unused infrastructure on this hardware class. Validated end-to-end via the wrapper-injection path with `n_swap_override`.
+5. **SWAP path:** paper-real D2H/H2D wrapper on `_swap_stream`, backed by `ActivationSwapPool` (pinned host slots sized `n_swap x prefetch_depth x max_act_bytes`). Searcher's CPU-feasibility gate refuses `n_swap > 0` candidates whose pool would not fit `cpu_capacity_bytes`. On RTX 3090 / 3090 Ti (12 GB/s PCIe ceiling, no NVLink) the searcher rarely selects `n_swap > 0` — paper §3.1.2 — so the path is tested-but-unused infrastructure on this hardware class. Validated end-to-end via the wrapper-injection path with `n_swap_override`.
 
 ### Memory Allocation Strategy (App B.2 — WIRED)
 
@@ -331,7 +331,7 @@ App B.2 of the paper has **two distinct components**, each addressing a differen
 - **Heap routing vs. kernel scheduling.** App B.2 governs *which heap an allocation comes from*, not which stream a kernel runs on. The wire-up keeps the dedicated `_prefetch_stream` and `_swap_stream` for PCIe-vs-compute overlap (those streams are about *kernel launch ordering*) but routes the *allocations* underneath them through the default-stream heap via `SingleStreamAllocator`. Cross-stream tensor consumption stays correct because every wrapped allocation that hands a buffer to a non-default stream calls `tensor.record_stream(non_default_stream)` immediately after exiting the allocator context, defering allocator reuse until the consuming stream has retired the work.
 
 - **Wired call sites.**
-  - `chunk/buffer_pool.py::BufferPool.__init__` — pre-allocates every pool slot (n_buffer × S_chunk bytes) on the default-stream heap. **Highest-leverage single change** — pool slots are the dominant sustained GPU allocation in ProTrain. No `record_stream` needed: pool slots' lifetimes are owned by the pool and only return to the allocator at teardown.
+  - `chunk/buffer_pool.py::BufferPool.__init__` — pre-allocates every pool slot (n_buffer x S_chunk bytes) on the default-stream heap. **Highest-leverage single change** — pool slots are the dominant sustained GPU allocation in ProTrain. No `record_stream` needed: pool slots' lifetimes are owned by the pool and only return to the allocator at teardown.
   - `chunk/manager.py::_ensure_persistent_buffer` — long-lived persistent-chunk GPU buffers. No `record_stream` (long-lived).
   - `chunk/manager.py::_empty_placeholder` — cached zero-element `param.data` sentinel. No `record_stream` (process-lived, not a kernel consumer).
   - `chunk/manager.py::_gather_sharded` — per-region `my_shard_gpu` and `gather_scratch` scratch tensors. **Critical wrap** — this method is called from `Scheduler._gather_on_prefetch_stream` inside `with torch.cuda.stream(self._prefetch_stream):`. Without the wrap, scratch tensors would land on the prefetch-stream heap and fragment the allocator. `record_stream(current_stream)` discipline applied: the scratch buffers are tied to whichever stream is actually consuming them (the prefetch stream in steady-state, the default stream in synchronous fallback).
@@ -345,18 +345,18 @@ App B.2 of the paper has **two distinct components**, each addressing a differen
 
 - **Paper's design.** PyTorch's `torch.empty(pin_memory=True)` routes through `CUDAHostAllocator`, which rounds the requested byte count up to the next power of two. For a 24 MB chunk that's a 32 MB allocation; for the trailing chunk of a 7B-param model the round-up can waste tens of MB across the offload set. ProTrain implements its own pinned allocator (`chunk/pinned_alloc.py::PinnedHostMemory`) that calls `cudaHostAlloc` directly via `ctypes` with the exact byte count, avoiding the rounding waste entirely.
 
-- **PinnedHostMemory contract.** `PinnedHostMemory(n_buffer, S_chunk)` allocates `n_buffer × S_chunk` bytes pinned-host. `buffer(i)` returns a zero-copy `torch.Tensor` view over slot `i`; `release_buffer(i)` decrements the borrow refcount. `close()` raises if any borrow is still outstanding (use-after-free guard). The `__del__` path leaks rather than free under outstanding borrows, on the basis that a destructor-time leak is preferable to a dangling-pointer free. If `libcudart` cannot be loaded via `ctypes`, the allocator falls back to `torch.empty(size, pin_memory=True)` and exposes `is_precise_size = False` so tests can detect the regression.
+- **PinnedHostMemory contract.** `PinnedHostMemory(n_buffer, S_chunk)` allocates `n_buffer x S_chunk` bytes pinned-host. `buffer(i)` returns a zero-copy `torch.Tensor` view over slot `i`; `release_buffer(i)` decrements the borrow refcount. `close()` raises if any borrow is still outstanding (use-after-free guard). The `__del__` path leaks rather than free under outstanding borrows, on the basis that a destructor-time leak is preferable to a dangling-pointer free. If `libcudart` cannot be loaded via `ctypes`, the allocator falls back to `torch.empty(size, pin_memory=True)` and exposes `is_precise_size = False` so tests can detect the regression.
 
 - **Wired call sites (pinned host).**
-  - `chunk/buffer_pool.py::BufferPool.__init__` — backing pinned-host region for the GPU buffer pool's H2D staging slots (`n_buffer × S_chunk`). One `PinnedHostMemory` per pool.
+  - `chunk/buffer_pool.py::BufferPool.__init__` — backing pinned-host region for the GPU buffer pool's H2D staging slots (`n_buffer x S_chunk`). One `PinnedHostMemory` per pool.
   - `chunk/manager.py::materialize_offload` — TWO unified `PinnedHostMemory` regions per manager: one for every non-persistent chunk's param shadow (replicated) or per-rank shard bytes (sharded), one for trainable-param grad shadows. Sized to the precise sum of per-chunk aligned bytes plus a 16-byte inter-chunk alignment pad. Per-chunk views into the pools are `narrow()` slices; the BUG 2 intra-chunk dtype-region alignment is preserved per-chunk under the unified layout. Closed via `_close_cpu_pools` from `restore_to_gpu` (deterministic teardown) or `__del__` (GC safety net). See `tests/protrain/test_chunk_manager_offload.py::test_materialize_offload_uses_precise_pinned_pool` for the precise-sizing assertion.
-  - `block/swap_pool.py::ActivationSwapPool` — backing pinned-host region for activation swap slots (`n_swap × prefetch_depth × max_act_bytes`). One `PinnedHostMemory` per pool.
+  - `block/swap_pool.py::ActivationSwapPool` — backing pinned-host region for activation swap slots (`n_swap x prefetch_depth x max_act_bytes`). One `PinnedHostMemory` per pool.
 
 - **Allocation sites still on `torch.empty(pin_memory=True)` (unintentional).** *None* in the wired ProTrain runtime as of this commit. If a follow-up adds a new pinned-host allocation site it should default to `PinnedHostMemory` for paper fidelity.
 
 #### Measurement status
 
-Peak-memory delta from the wire-up has not been measured on RTX 3090 reference hardware in this commit (the `α = 1.10` fragmentation factor — item 1 above — was already absorbing the un-wired fragmentation cost in the cost model). To-be-measured in a follow-up: re-run the M1 profiler ground-truth before and after the wire-up; if peak drops by more than ~5% on a 1.5B-param target shape, recalibrate `α` downward. The single-stream wire-up's correctness — the `record_stream` discipline at every cross-stream site — has been validated by the new `tests/protrain/test_single_stream_allocator.py` test (heap-affinity assertion via free-then-reallocate fragmentation probe + nested-stream context-manager composition test). The pinned-host wire-up's correctness — total pool bytes equals the sum of per-chunk aligned bytes — is asserted by `tests/protrain/test_chunk_manager_offload.py::test_materialize_offload_uses_precise_pinned_pool`.
+Peak-memory delta from the wire-up has not been measured on RTX 3090 reference hardware in this commit (the `alpha = 1.10` fragmentation factor — item 1 above — was already absorbing the un-wired fragmentation cost in the cost model). To-be-measured in a follow-up: re-run the M1 profiler ground-truth before and after the wire-up; if peak drops by more than ~5% on a 1.5B-param target shape, recalibrate `alpha` downward. The single-stream wire-up's correctness — the `record_stream` discipline at every cross-stream site — has been validated by the new `tests/protrain/test_single_stream_allocator.py` test (heap-affinity assertion via free-then-reallocate fragmentation probe + nested-stream context-manager composition test). The pinned-host wire-up's correctness — total pool bytes equals the sum of per-chunk aligned bytes — is asserted by `tests/protrain/test_chunk_manager_offload.py::test_materialize_offload_uses_precise_pinned_pool`.
 
 ## Known Limitations
 
@@ -367,7 +367,7 @@ ProTrain checkpoints encode the mode they were produced under (Mode A all-persis
 - **Same-mode resume** (Mode A → Mode A, Mode C → Mode C) is the simple path — the chunk layout and optimizer-state shapes are identical so HF Trainer's `_load_from_checkpoint` copies straight in.
 - **Cross-mode resume** (Mode A → Mode C, Mode C → Mode A) is bridged by **M6C-fix-1** (`a71f26e9`): the resume hook in `plugin._install_resume_hook` calls `restore_to_gpu()` on every offloaded chunk BEFORE HF copies the loaded weights into full-shape `param.data` slots, then re-runs `materialize_offload` afterward and rebuilds the per-chunk optimizer adapter. Without this hook HF would write into the zeroed non-persistent slots and ProTrain's first `gather` would overwrite the loaded state with the (still-zero) CPU shadow. The hook is registered as an HF Trainer callback that fires after `_load_from_checkpoint` finishes; ProTrain interleaves its `gather` between weight load and the first forward in plugin code rather than forking HF.
 
-Real-multigpu cross-mode resume coverage (4×3090, sharded Mode C, Llama-3-8B + LoRA): both `test_real_multigpu_cross_mode_resume_a_to_c` and `test_real_multigpu_cross_mode_resume_c_to_a` PASS as of the full M6C-fix-1..8 chain. See § "Standard PEFT-LoRA in Mode C" below for the chain's other layers (which closed PEFT-LoRA Mode-C correctness on top of the resume-hook fix).
+Real-multigpu cross-mode resume coverage (4x3090, sharded Mode C, Llama-3-8B + LoRA): both `test_real_multigpu_cross_mode_resume_a_to_c` and `test_real_multigpu_cross_mode_resume_c_to_a` PASS as of the full M6C-fix-1..8 chain. See § "Standard PEFT-LoRA in Mode C" below for the chain's other layers (which closed PEFT-LoRA Mode-C correctness on top of the resume-hook fix).
 
 ### Standard PEFT-LoRA in Mode C (Phase 2 M6C)
 
@@ -387,7 +387,7 @@ Plain `peft` LoRA on top of an unquantized base is **supported in single-GPU off
 - **fix-7** (`c0da4282`) — shape-preserving release-state placeholder (closes the `ToCopyBackward0 / TBackward0 ... shape compatible with [0]` autograd shape-capture error class via `scratch.expand(slot.shape)` views that preserve `param.size()` metadata across release/re-gather).
 - **fix-8** (`17ffb8d1`) — DDP `init_sync=False` bypass for chunk-managed params (closes the residual `more than one element of the written-to tensor refers to a single memory location` from DDP's construction-time `_sync_module_states._broadcast_coalesced` writing into the expand-view placeholder).
 
-Multi-GPU verification (4×3090, sharded Mode C, Llama-3-8B + LoRA): `test_real_multigpu_cross_mode_resume_a_to_c` PASSES (Phase 1 Mode A 5 steps + Phase 2 Mode C resume steps 6..10; losses 1.093 → 0.832); `test_real_multigpu_cross_mode_resume_c_to_a` PASSES (Phase 1 Mode C 5 steps + Phase 2 Mode A resume steps 6..10).
+Multi-GPU verification (4x3090, sharded Mode C, Llama-3-8B + LoRA): `test_real_multigpu_cross_mode_resume_a_to_c` PASSES (Phase 1 Mode A 5 steps + Phase 2 Mode C resume steps 6..10; losses 1.093 → 0.832); `test_real_multigpu_cross_mode_resume_c_to_a` PASSES (Phase 1 Mode C 5 steps + Phase 2 Mode A resume steps 6..10).
 
 Architecturally, ProTrain now owns the parallelism contract for chunk-managed parameters end-to-end: per-rank deterministic partition via `materialize_offload`, sharded gather via `_gather_sharded`, `reduce_scatter` on backward via `reduce_grads_and_offload`, and the DDP construction-time broadcast bypass keeps DDP from clobbering the sharded layout with its replicated broadcast assumption.
 

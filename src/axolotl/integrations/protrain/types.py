@@ -265,13 +265,13 @@ class ProfilerTrace:
 
     # Fraction of model parameters with ``requires_grad=True`` at trace time
     # (range [0.0, 1.0]). LoRA / adapter training has very low trainable
-    # fractions (~0.1% on 7B-LoRA-r8) — backward compute is then ~1× forward
-    # rather than the canonical 2× full-finetune ratio, because autograd
+    # fractions (~0.1% on 7B-LoRA-r8) — backward compute is then ~1x forward
+    # rather than the canonical 2x full-finetune ratio, because autograd
     # skips frozen subgraphs. The cost model's ``_bwd_compute_time_from_trace``
     # consults this fraction to pick a tighter fallback ratio when the
     # measured ``steady_bwd_wall_s`` is unavailable (7B-class profiler runs
     # OOM the backward without chunk offload engaged). 0.0 means unmeasured
-    # (pre-v8) — falls back to the canonical 2× ratio. New in TRACE_VERSION=8.
+    # (pre-v8) — falls back to the canonical 2x ratio. New in TRACE_VERSION=8.
     trainable_param_fraction: float = 0.0
 
     # ----- Phase-2 chunked-runtime measurements (TRACE_VERSION 10) -----
@@ -317,7 +317,7 @@ class ProfilerTrace:
     # These fields default to 0.0 / 0; the cost model treats 0.0 in
     # ``steady_bwd_chunked_wall_s`` as "no phase-2 measurement available"
     # and falls back to the v8 path (``steady_bwd_wall_s`` ratio →
-    # trainable-fraction heuristic → 2× canonical).
+    # trainable-fraction heuristic → 2x canonical).
     steady_bwd_chunked_wall_s: float = 0.0
     steady_step_overlap_s: float = 0.0
     steady_phase2_peak_bytes: int = 0
@@ -375,9 +375,9 @@ class ProfilerTrace:
     # captured pre-splice so the chunked-wall override does not
     # short-circuit the analytical path.
     # The cost model derives a multiplicative scale
-    # ``α = phase2_iter_s / phase2_analytical_iter_s`` and applies it to
+    # ``alpha = phase2_iter_s / phase2_analytical_iter_s`` and applies it to
     # any analytical-path prediction. When the analytical path is not
-    # taken (e.g. ``cfg.n_swap == 0`` and chunked walls populated) α is
+    # taken (e.g. ``cfg.n_swap == 0`` and chunked walls populated) alpha is
     # not consulted — the chunked-wall override is already absolute.
     #
     # ``phase2_analytical_peak_bytes`` plays the analogous role for peak
@@ -391,7 +391,7 @@ class ProfilerTrace:
     #
     # All three fields default to 0 / 0.0 — that is the "no phase-2
     # baseline available" sentinel that collapses both calibrations to
-    # their pre-refactor behaviour (no α scaling on the runtime side;
+    # their pre-refactor behaviour (no alpha scaling on the runtime side;
     # only the same-cfg measurement window on the peak side).
     phase2_iter_s: float = 0.0
     phase2_analytical_iter_s: float = 0.0
@@ -399,7 +399,7 @@ class ProfilerTrace:
 
     # ----- Phase-2 PER-COMPONENT analytical-baseline calibration (TRACE_VERSION 21) -----
     #
-    # The single-scalar α (``phase2_iter_s / phase2_analytical_iter_s``)
+    # The single-scalar alpha (``phase2_iter_s / phase2_analytical_iter_s``)
     # collapses three independent calibration scales — fwd, bwd, optim —
     # into one ratio anchored at the bootstrap cfg. That works only when
     # the production cfg has the same fwd/bwd/optim bias profile as boot;
@@ -411,11 +411,11 @@ class ProfilerTrace:
     # forced an asymmetric structure-match gate that suppressed any
     # deflation outside boot's exact shape.
     #
-    # The per-component fix decomposes α into three independent scales:
+    # The per-component fix decomposes alpha into three independent scales:
     #
-    #   αfwd = phase2_fwd_s  / phase2_analytical_fwd_s
-    #   αbwd = phase2_bwd_s  / phase2_analytical_bwd_s
-    #   αopt = phase2_step_s / phase2_analytical_step_s    (= analytical
+    #   alphafwd = phase2_fwd_s  / phase2_analytical_fwd_s
+    #   alphabwd = phase2_bwd_s  / phase2_analytical_bwd_s
+    #   alphaopt = phase2_step_s / phase2_analytical_step_s    (= analytical
     #                                                         t_gpu_optim
     #                                                         + t_cpu_optim
     #                                                         at boot)
@@ -423,9 +423,9 @@ class ProfilerTrace:
     # Each scale calibrates against the matching analytical component, so
     # cfg-shape changes that move the fwd/bwd/optim balance no longer
     # destabilise the prediction — the scales carry component-by-component
-    # rather than as a lumped ratio. This makes α<1 deflation safe (each
+    # rather than as a lumped ratio. This makes alpha<1 deflation safe (each
     # scale corrects only the component it was measured against), so the
-    # structure-match gate from the single-α era is dropped.
+    # structure-match gate from the single-alpha era is dropped.
     #
     # ``phase2_fwd_s`` / ``phase2_bwd_s`` / ``phase2_step_s`` are the
     # measured medians from ``measure_chunked_steady`` at the bootstrap
@@ -436,7 +436,7 @@ class ProfilerTrace:
     #
     # All six default to 0.0 — the "no per-component baseline available"
     # sentinel. When any component baseline is zero, the cost model falls
-    # back to the single-α path (``phase2_iter_s / phase2_analytical_iter_s``)
+    # back to the single-alpha path (``phase2_iter_s / phase2_analytical_iter_s``)
     # if those legacy fields are populated, or to no calibration otherwise.
     # Cached traces from TRACE_VERSION <= 20 are invalidated by the
     # version bump on cache.py; in-memory traces constructed without these
@@ -450,7 +450,7 @@ class ProfilerTrace:
 
     # ----- Phase-2 RESIDUAL whole-iter overhead anchor (TRACE_VERSION 22) -----
     #
-    # Per-component α (TRACE_VERSION 21) corrects fwd/bwd/optim bias
+    # Per-component alpha (TRACE_VERSION 21) corrects fwd/bwd/optim bias
     # *within each component* — its strength is generalising the
     # measurement to a production cfg with a different fwd/bwd/optim
     # balance (different ``n_persist`` / ``n_swap`` / ``n_checkpoint``).
@@ -458,28 +458,28 @@ class ProfilerTrace:
     # whole-iter overheads (Python hook dispatch, kernel launch latency,
     # NCCL handshake, allocator churn between fwd and bwd, etc.) that
     # scale roughly linearly with ``N_block`` rather than with any
-    # individual component. The previous single-α calibration absorbed
+    # individual component. The previous single-alpha calibration absorbed
     # those overheads accidentally because it scaled the whole iter; the
     # per-component decomposition by construction does not.
     #
-    # ``phase2_per_comp_pred_iter_s`` records what the per-component-α
-    # composition (using the SAME αfwd / αbwd / αopt values derived at
+    # ``phase2_per_comp_pred_iter_s`` records what the per-component-alpha
+    # composition (using the SAME alphafwd / alphabwd / alphaopt values derived at
     # boot) WOULD predict at the boot cfg. The cost model then derives
     #
-    #     α_residual = phase2_iter_s / phase2_per_comp_pred_iter_s
+    #     alpha_residual = phase2_iter_s / phase2_per_comp_pred_iter_s
     #
     # at boot and multiplies it onto every per-component prediction at
-    # production cfgs. By construction α_residual collapses to 1.0 when
+    # production cfgs. By construction alpha_residual collapses to 1.0 when
     # the per-component formula already explains the boot iter — i.e.
     # whole-iter overhead is fully captured by the components — so the
     # residual is a no-op on workloads where it should be. When the
     # analytical model systematically under-counts whole-iter overhead
-    # (the 7B-LoRA regression: ~50% bias on 32-block PEFT), α_residual
+    # (the 7B-LoRA regression: ~50% bias on 32-block PEFT), alpha_residual
     # > 1.0 inflates the prediction back toward the measurement.
     #
     # Bounds [0.8, 2.0] (wider on the inflate side than per-component's
-    # [0.5, 2.0]) reflect that residual α captures genuine missing
-    # overhead, not measurement noise — the natural regime is α ≥ 1.
+    # [0.5, 2.0]) reflect that residual alpha captures genuine missing
+    # overhead, not measurement noise — the natural regime is alpha ≥ 1.
     #
     # Default 0.0 means "no residual baseline available"; the cost
     # model collapses to per-component-only behaviour (the post-
@@ -534,7 +534,7 @@ class ChunkLayout:
     of the source paper); ``mandatory_persistent`` is the local
     integration's correctness extension. Cost model + search keep
     ``cfg.n_persist`` strictly meaning "prefix length the search chose";
-    the runtime resident set is ``{0..n_persist-1} ∪ mandatory_persistent``.
+    the runtime resident set is ``{0..n_persist-1} | mandatory_persistent``.
 
     The default is an empty frozenset so legacy ``ChunkLayout(...)``
     constructions stay drop-in compatible.
@@ -551,7 +551,7 @@ class ChunkLayout:
     mandatory_persistent: frozenset[ChunkId] = field(default_factory=frozenset)
 
     def effective_persistent_ids(self, n_persist: int) -> frozenset[ChunkId]:
-        """Return ``{0..n_persist-1} ∪ mandatory_persistent`` as a frozenset.
+        """Return ``{0..n_persist-1} | mandatory_persistent`` as a frozenset.
 
         Single source of truth for "which chunks are GPU-resident under
         ``n_persist``" so the searcher, cost model, and runtime construction
@@ -604,13 +604,13 @@ class SearchResult:
     is the predicted GPU high-water mark during the brief init window between
     HF Trainer's full-on-GPU model construction and
     :meth:`ChunkManager.materialize_offload`. In that window every non-persistent
-    chunk is still GPU-resident, so the peak resembles ``sum_chunk_bytes × α``
+    chunk is still GPU-resident, so the peak resembles ``sum_chunk_bytes x alpha``
     rather than the steady-state ``predicted_peak_bytes`` (which assumes
     only persistent + buffer chunks are live).
 
     Empirically (audit Block G) the steady predictor reports ~2.5 GiB for a
     30B-class bnb-4-bit Mode-C config while the measured iter-1 peak is
-    ~17.2 GiB — a 6.9× under-prediction. This field surfaces the transient
+    ~17.2 GiB — a 6.9x under-prediction. This field surfaces the transient
     prediction so callers (searcher feasibility gate, multi-GPU OOM forecasts,
     log telemetry) can see "steady prediction is X, but during init you'll
     see Y." It is populated by

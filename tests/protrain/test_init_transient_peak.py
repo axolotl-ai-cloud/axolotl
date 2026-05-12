@@ -13,7 +13,7 @@ GPU model construction and ProTrain's
     | A2 30B seq=2048  4-bit Mode-C           |  2.54   |  17.20  |  4.68   |
     +-----------------------------------------+---------+---------+---------+
 
-The steady predictor under-calls iter-1 by ~6.9× — surfacing the
+The steady predictor under-calls iter-1 by ~6.9x — surfacing the
 transient on :class:`SearchResult` lets downstream consumers (search
 feasibility gate, telemetry) catch the OOM at search time rather than
 at iter 1.
@@ -68,7 +68,7 @@ AUDIT_ITER1_PEAK_GIB = 17.20
 # Audit log derivation for ext_30b_safe seq=512 4-bit Mode-C:
 #   param_pool=16.236 GB (decimal) → 15.121 GiB
 #   grad_pool=0.243 GB (decimal) → 0.226 GiB
-#   3 persistent chunks worth ≈ 3/299 × 16.236 GB ≈ 0.163 GB → 0.152 GiB
+#   3 persistent chunks worth ≈ 3/299 x 16.236 GB ≈ 0.163 GB → 0.152 GiB
 #   total sum_chunk_bytes ≈ 15.27 GiB
 #
 # The grad_pool sits in pinned host memory, not GPU, so the strict
@@ -149,10 +149,10 @@ def test_audit_30b_4bit_modec_within_10pct_of_measured_peak():
 
     Reconstruct the audit's ext_30b_safe chunk-byte footprint
     (15.27 GiB sum_chunk_bytes across 302 chunks at S_chunk=64 MiB) and
-    assert the prediction (sum_chunk_bytes × ALPHA_FRAGMENTATION) lands
+    assert the prediction (sum_chunk_bytes x ALPHA_FRAGMENTATION) lands
     within 10% of the measured 17.20 GiB iter-1 peak.
 
-    Expected prediction: 15.27 GiB × 1.10 = 16.80 GiB
+    Expected prediction: 15.27 GiB x 1.10 = 16.80 GiB
     Measured peak:                          17.20 GiB
     Residual: |16.80 - 17.20| / 17.20 ≈ 2.3%  → well inside the 10% bar.
     """
@@ -180,23 +180,23 @@ def test_audit_30b_4bit_modec_within_10pct_of_measured_peak():
         f"measured={measured_gib:.2f} GiB, residual={residual * 100:.1f}%"
     )
 
-    # And on the specific empirical anchor: 15.27 GiB × 1.10 = 16.80 GiB,
+    # And on the specific empirical anchor: 15.27 GiB x 1.10 = 16.80 GiB,
     # which should match within tens of MiB (per-chunk byte-rounding +
     # the actual int * float multiply at the prediction site).
     expected_anchor_gib = AUDIT_30B_4BIT_SUM_CHUNK_GIB * ALPHA_FRAGMENTATION
     assert predicted_gib == pytest.approx(expected_anchor_gib, rel=0.005), (
-        f"prediction should anchor at sum_chunk_bytes × 1.10 = "
+        f"prediction should anchor at sum_chunk_bytes x 1.10 = "
         f"{expected_anchor_gib:.2f} GiB; got {predicted_gib:.2f} GiB"
     )
 
 
 def test_fp16_30b_dense_predicts_full_residence_at_alpha_1_10():
     """Smoke: a fp16 30B-class dense layout (no offload) anchors against
-    the same α=1.10 ceiling. The transient prediction matches the
+    the same alpha=1.10 ceiling. The transient prediction matches the
     steady prediction in Mode-A because there is no separable
     transient window — every chunk stays persistent. The test pins
     the formula's dtype-agnostic behaviour: bpe=2.0 produces the same
-    α=1.10 multiplier as bpe=0.5.
+    alpha=1.10 multiplier as bpe=0.5.
     """
     # 60 GiB raw model — Llama-30B at fp16 is ~60 GiB params.
     n_chunk = 240
@@ -213,15 +213,15 @@ def test_fp16_30b_dense_predicts_full_residence_at_alpha_1_10():
     pred_fp16 = predict_init_transient_peak_bytes(layout, _hw_profile(bpe=2.0), cm)
     pred_4bit = predict_init_transient_peak_bytes(layout, _hw_profile(bpe=0.5), cm)
 
-    # Same α regardless of dtype — the per-dtype reduction does not
+    # Same alpha regardless of dtype — the per-dtype reduction does not
     # apply at iter-1 transient time (audit Block G architectural
     # decision; see docstring on ``predict_init_transient_peak_bytes``).
     assert pred_fp16 == pred_4bit, (
-        f"iter-1 transient α must be dtype-agnostic; fp16 pred "
+        f"iter-1 transient alpha must be dtype-agnostic; fp16 pred "
         f"{pred_fp16} != 4-bit pred {pred_4bit}"
     )
 
-    # Anchor: 60 GiB × 1.10 = 66 GiB (will not fit on a 3090, which is
+    # Anchor: 60 GiB x 1.10 = 66 GiB (will not fit on a 3090, which is
     # exactly the signal the searcher's feasibility gate needs to see —
     # surfacing this lets it reject the all-persistent layout and pick
     # an offload-aware Mode-C plan instead).
@@ -231,7 +231,7 @@ def test_fp16_30b_dense_predicts_full_residence_at_alpha_1_10():
 
 def test_falls_back_to_layout_upper_bound_without_chunk_manager():
     """When ``chunk_manager`` is None, the prediction falls back to
-    ``N_chunk * S_chunk * α`` — the loose upper bound matching the
+    ``N_chunk * S_chunk * alpha`` — the loose upper bound matching the
     layout's soft-cap. This is the path the searcher feasibility gate
     will take before the runtime exists.
     """
@@ -246,7 +246,7 @@ def test_falls_back_to_layout_upper_bound_without_chunk_manager():
     pred = predict_init_transient_peak_bytes(layout, _hw_profile(bpe=0.5))
     expected = int(n_chunk * s_chunk * ALPHA_FRAGMENTATION)
     assert pred == expected, (
-        f"fallback path: expected {expected} bytes (N_chunk * S_chunk * α), got {pred}"
+        f"fallback path: expected {expected} bytes (N_chunk * S_chunk * alpha), got {pred}"
     )
 
 

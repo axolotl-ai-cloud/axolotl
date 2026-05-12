@@ -1,19 +1,19 @@
 """Steady-state peak accuracy under bnb-4-bit Mode-C (offload-pool) configs.
 
-Coverage audit Block G (Phase 2) re-derived the empirical α across the
+Coverage audit Block G (Phase 2) re-derived the empirical alpha across the
 M5 / M0-spike / Block-A matrices. For the bnb-4-bit Mode-C
 configurations (n_persist=0, n_buffer=12, n_checkpoint=N_block — the
 chunk-offload + checkpoint-everywhere recipe used for big-model offload
-on a single GPU) the audit observed α_steady = measured_peak /
+on a single GPU) the audit observed alpha_steady = measured_peak /
 predicted_peak that grew with sequence length:
 
-    | Config                              | pred GiB | meas steady | α_steady |
+    | Config                              | pred GiB | meas steady | alpha_steady |
     |-------------------------------------|---------:|------------:|---------:|
     | ext_30b_safe seq=512  4-bit Mode-C  |    2.49  |    2.91     |  1.169   |
     | A1 30B      seq=1024 4-bit Mode-C   |    2.50  |    3.50     |  1.400   |
     | A2 30B      seq=2048 4-bit Mode-C   |    2.54  |    4.68     |  1.843   |
 
-(α_steady > 1 ⇒ predictor UNDER-counts measured peak.)
+(alpha_steady > 1 ⇒ predictor UNDER-counts measured peak.)
 
 Diagnosis (audit narrative + this fix):
 
@@ -24,7 +24,7 @@ Diagnosis (audit narrative + this fix):
   ``use_reentrant=True``) actually retains the block INPUT residual
   stream for EVERY CKPT block across the entire backward window. With
   60 CKPT blocks on Llama-30B that chain is
-  ``60 × bs × seq × hidden × dtype_bytes`` — a significant per-seq
+  ``60 x bs x seq x hidden x dtype_bytes`` — a significant per-seq
   term the predictor never charged.
 
 Fix (``cost/memory.py::estimate_peak``): add ``ckpt_chain_bytes``, the
@@ -40,7 +40,7 @@ without loading the live 30B model.
 
 Note on alpha era:
     The audit logs above were generated PRE-2fcc1fcf (commit ``feat:
-    per-dtype α fragmentation factor``), when ``estimate_peak`` used
+    per-dtype alpha fragmentation factor``), when ``estimate_peak`` used
     ``ALPHA_FRAGMENTATION = 1.10`` for every dtype. Post-2fcc1fcf bnb
     4-bit routes to ``ALPHA_FRAGMENTATION_4BIT = 0.75`` via
     ``alpha_fragmentation_for_dtype(bpe<1.0)``. The measured peaks are
@@ -91,7 +91,7 @@ N_CHECKPOINT = 60
 
 # Layout knobs observed in every log: ``layout built: S_chunk=67108864
 # N_chunk=302``. ``layout.mandatory_persistent`` was [0, 300, 301] per
-# the wrapper's residency = prefix[0..0) ∪ mandatory line — 3 chunks
+# the wrapper's residency = prefix[0..0) | mandatory line — 3 chunks
 # pinned by layout regardless of n_persist.
 S_CHUNK = 67108864  # 64 MiB
 N_CHUNK = 302
@@ -106,7 +106,7 @@ MEASURED_STEADY_GIB = {
 }
 
 # 30B QLoRA model-state aggregate seen in the audit runs. Approximate:
-# frozen base @ 4-bit ≈ 15 GiB; tiny LoRA adapters ≈ 100 MiB × 16 bytes
+# frozen base @ 4-bit ≈ 15 GiB; tiny LoRA adapters ≈ 100 MiB x 16 bytes
 # (param+grad+fp32 master+m+v) ≈ 1.6 GiB. The trace's
 # ``_count_model_state_bytes`` records these as a single aggregate; the
 # cost model's ``model_state_present_bytes`` clamps
@@ -224,9 +224,9 @@ def _build_hw_4bit() -> HardwareProfile:
 #     prediction offset vs. the wrapper-calibrated number).
 #   * The synth proxy's per-block residency over-estimate (uses FFN
 #     ``intermediate`` not ``hidden``) which over-predicts at high seq.
-#   * Per-dtype α shift from 1.10 (audit era) to 0.75 (post-2fcc1fcf).
+#   * Per-dtype alpha shift from 1.10 (audit era) to 0.75 (post-2fcc1fcf).
 #
-# Post-fix α_steady (= measured / estimate_peak) lands in
+# Post-fix alpha_steady (= measured / estimate_peak) lands in
 # {1.43, 1.25, 1.08} across seq={512, 1024, 2048} — much tighter than
 # the pre-fix audit observation of {1.17, 1.40, 1.84}. The high-seq
 # improvement is the smoking-gun acceptance criterion; the seq=512
@@ -330,7 +330,7 @@ def test_modec_steady_peak_scales_with_seq() -> None:
         )
 
     # Sanity: the seq=2048 prediction must grow by at least
-    # ``2 * N_block * (1024 * intermediate * 2 bytes) * α_4bit``
+    # ``2 * N_block * (1024 * intermediate * 2 bytes) * alpha_4bit``
     # relative to seq=1024 — the chain contribution scales linearly
     # with seq, so doubling seq adds at least that much to raw_peak.
     expected_min_delta = int(
