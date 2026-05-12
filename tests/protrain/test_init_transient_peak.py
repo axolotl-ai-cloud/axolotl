@@ -108,13 +108,24 @@ def _stub_chunk_manager(layout: ChunkLayout, per_chunk_bytes: int) -> SimpleName
     Builds one fp32 nn.Parameter per chunk sized so
     ``numel * element_size == per_chunk_bytes``; the helper sums these
     to get the total ``sum_chunk_bytes``.
+
+    CodeRabbit R4-#3 (Major): construct the parameters on the ``meta``
+    device so ``numel()`` + ``element_size()`` report the right byte
+    accounting without allocating real storage. The audit's
+    ``ext_30b_safe`` chunk-byte footprint is ~15 GiB across 302
+    64-MiB chunks; allocating that for real on CI would OOM most
+    runners. Meta tensors preserve dtype + shape metadata (which is
+    all ``_chunk_bytes`` reads) and contribute zero RAM bytes.
     """
     params: list[tuple[str, nn.Parameter]] = []
     for pids in layout.chunks:
         for pid in pids:
             # fp32 = 4 bytes/element; round up so numel * 4 >= per_chunk_bytes.
             numel = max(1, (per_chunk_bytes + 3) // 4)
-            param = nn.Parameter(torch.zeros(numel, dtype=torch.float32))
+            param = nn.Parameter(
+                torch.empty(numel, dtype=torch.float32, device="meta"),
+                requires_grad=False,
+            )
             params.append((str(pid), param))
 
     model = SimpleNamespace(named_parameters=lambda: iter(params))

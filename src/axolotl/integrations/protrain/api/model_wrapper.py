@@ -2188,6 +2188,79 @@ def _construct_runtime(
         scheduler=scheduler,
     )
 
+    # ---- 6.5: post-wrap re-registration of ``_ddp_params_and_buffers_to_ignore``
+    # (CodeRabbit R4 Critical).
+    #
+    # The M6C-fix-8 registration earlier in this function (line 1852
+    # and ``ChunkManager.materialize_offload``'s D2 registration site)
+    # populated the ignore set from
+    # ``chunk_manager.chunk_managed_param_names()``, which returns
+    # ``slot.param_id`` strings captured at ChunkManager construction
+    # time — BEFORE the block-wrap step at line 2018+ ran. The block
+    # wrappers (``block/checkpoint.py``, ``block/swap.py``,
+    # ``block/offload.py``) all bind the wrapped module as
+    # ``self.block = block``, which means PyTorch's
+    # ``named_parameters()`` traversal now injects a ``.block.`` infix
+    # into the parameter namespace (``layers.0.attn.q_proj.weight``
+    # ⇒ ``layers.0.block.attn.q_proj.weight``).
+    #
+    # The M6C-fix-8 ``init_sync=False`` monkey-patch on DDP's
+    # ``__init__`` makes the init-time broadcast irrelevant to the
+    # ignore-list contents (the broadcast is skipped wholesale on the
+    # chunk-managed model). But DDP's BACKWARD-pass allreduce still
+    # consults ``_ddp_params_and_buffers_to_ignore`` when deciding
+    # which parameters to reduce — and that consultation uses the
+    # POST-wrap parameter names returned by the model's
+    # ``named_parameters()`` walk at DDP construction time. A stale
+    # ignore set (pre-wrap names) means DDP's backward allreduce
+    # would attempt to all-reduce the chunk-managed LoRA factors'
+    # gradients, conflicting with ProTrain's per-chunk
+    # ``reduce_scatter`` drain.
+    #
+    # The chunk_manager's slot.param_id strings can't be rebuilt
+    # safely (other call sites still rely on them being stable), so
+    # rebuild the model attribute from the WRAPPED model by
+    # parameter-OBJECT identity: every chunk-managed
+    # ``nn.Parameter`` lives in ``chunk_manager._params_by_id``,
+    # so we walk the live ``model.named_parameters()`` and pick
+    # names whose param OBJECT matches one we own.
+    if _shape_preserving:
+        try:
+            chunk_managed_param_ids: set[int] = {
+                id(p) for p in chunk_manager._params_by_id.values()
+            }
+            post_wrap_ignore: set[str] = {
+                live_name
+                for live_name, live_param in model.named_parameters()
+                if id(live_param) in chunk_managed_param_ids
+            }
+            # Combine with the pre-protrain snapshot (the D2 lifecycle
+            # invariant — see ``ChunkManager.materialize_offload``)
+            # so any caller-registered ignore name survives.
+            _original = getattr(model, "_protrain_ddp_original_ignore", None)
+            if _original is None:
+                model._ddp_params_and_buffers_to_ignore = list(post_wrap_ignore)  # type: ignore[attr-defined]
+            else:
+                model._ddp_params_and_buffers_to_ignore = list(  # type: ignore[attr-defined]
+                    set(_original) | post_wrap_ignore
+                )
+            LOG.info(
+                "ProTrain (M6C-fix-8 / R4 post-wrap): re-registered "
+                "%d chunk-managed param names in "
+                "model._ddp_params_and_buffers_to_ignore using "
+                "post-block-wrap named_parameters() (DDP's backward "
+                "allreduce filter sees the .block.-infixed names).",
+                len(post_wrap_ignore),
+            )
+        except Exception as _exc:  # noqa: BLE001 — defensive
+            LOG.warning(
+                "ProTrain (M6C-fix-8 / R4 post-wrap): failed to "
+                "re-register _ddp_params_and_buffers_to_ignore after "
+                "block-wrap: %s. DDP's backward allreduce may attempt "
+                "to reduce chunk-managed param gradients.",
+                _exc,
+            )
+
     # ``capacity_bytes`` is unused inside the helper — kept in the
     # signature for symmetry with the wrapper's call site so a future
     # extension that derates by capacity (e.g. peak vs. budget headroom)
@@ -3426,14 +3499,21 @@ def protrain_model_wrapper(
                 # Iter-1 transient prediction (audit Block G follow-up).
                 # The init transient window has already passed by the
                 # time the phase-2 post-measurement calibration runs,
-                # but we re-compute and re-publish the prediction here
-                # for SearchResult-shape consistency with the bootstrap
-                # path. Same formula + same chunk_manager → identical
-                # value to the bootstrap; documenting the no-op here
-                # so a future reader doesn't reach for a stale field.
-                init_transient_peak = predict_init_transient_peak_bytes(
-                    layout, hardware_profile, chunk_manager
-                )
+                # so we REUSE the bootstrap-time prediction rather than
+                # recomputing from the post-offload chunk_manager.
+                # CodeRabbit R4-#2 (Major): re-computing here would
+                # drift the value — the chunk_manager has been through
+                # ``materialize_offload`` since the bootstrap call, so
+                # its ``_chunk_bytes()`` walk now sees the zero-size
+                # placeholders (replicated path) or
+                # ``scratch.expand(slot.shape)`` views (sharded path)
+                # rather than the full-residence tensors that drive
+                # the init-time peak. The bootstrap value captured at
+                # ``_construct_runtime`` line 1614 is the authoritative
+                # one for the iter-1 transient and is what every
+                # downstream consumer (SearchResult publish, LOG.info
+                # at line 3620) expects.
+                init_transient_peak = boot_result.predicted_init_transient_peak_bytes
                 if (
                     calibrated_peak != new_result.predicted_peak_bytes
                     or init_transient_peak

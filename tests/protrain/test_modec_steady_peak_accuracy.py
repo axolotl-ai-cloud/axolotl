@@ -237,7 +237,7 @@ TOLERANCE_FRAC = 0.35
 
 @pytest.mark.parametrize("seq_len", [512, 1024, 2048])
 def test_modec_steady_peak_within_tolerance(seq_len: int) -> None:
-    """``estimate_peak`` lands within ±25% of the audit-measured steady peak.
+    """``estimate_peak`` lands within ±35% of the audit-measured steady peak.
 
     Audit data points (``coverage_audit_close_report.md`` Block G):
 
@@ -252,7 +252,7 @@ def test_modec_steady_peak_within_tolerance(seq_len: int) -> None:
     ``N_block * bs * seq * intermediate * 2`` (synth proxy) which
     recovers the linear-in-seq scaling the audit data exposes.
 
-    The ±25% band is asymmetric in practice: the synth proxy uses FFN
+    The ±35% band is asymmetric in practice: the synth proxy uses FFN
     ``intermediate`` (over-counts the residual stream by ~3.5x for a
     Llama block) so predictions tend to over-shoot slightly at high seq
     and under-shoot at low seq (where the constant model_state floor
