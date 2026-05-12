@@ -598,12 +598,39 @@ class Bounds:
 
 @dataclass(frozen=True)
 class SearchResult:
-    """Output of `search.exhaustive.search`."""
+    """Output of `search.exhaustive.search`.
+
+    ``predicted_init_transient_peak_bytes`` (Coverage audit Block G follow-up)
+    is the predicted GPU high-water mark during the brief init window between
+    HF Trainer's full-on-GPU model construction and
+    :meth:`ChunkManager.materialize_offload`. In that window every non-persistent
+    chunk is still GPU-resident, so the peak resembles ``sum_chunk_bytes × α``
+    rather than the steady-state ``predicted_peak_bytes`` (which assumes
+    only persistent + buffer chunks are live).
+
+    Empirically (audit Block G) the steady predictor reports ~2.5 GiB for a
+    30B-class bnb-4-bit Mode-C config while the measured iter-1 peak is
+    ~17.2 GiB — a 6.9× under-prediction. This field surfaces the transient
+    prediction so callers (searcher feasibility gate, multi-GPU OOM forecasts,
+    log telemetry) can see "steady prediction is X, but during init you'll
+    see Y." It is populated by
+    :func:`axolotl.integrations.protrain.api.model_wrapper.predict_init_transient_peak_bytes`
+    inside ``protrain_model_wrapper`` once the chunk_manager + layout are
+    available (the prediction needs actual per-chunk bytes via
+    :func:`_chunk_bytes`).
+
+    Default 0 means "not computed" — preserves backward compatibility with
+    every legacy ``SearchResult(...)`` construction site (search.exhaustive,
+    synth-cfg paths) where the chunk manager is not yet available. Downstream
+    consumers should treat 0 as a "no transient prediction available" sentinel
+    and fall back to ``predicted_peak_bytes`` for feasibility decisions.
+    """
 
     cfg: CostConfig
     block_map: BlockStrategyMap
     predicted_peak_bytes: int
     predicted_iter_s: float
+    predicted_init_transient_peak_bytes: int = 0
 
 
 # ---------------------------------------------------------------------------

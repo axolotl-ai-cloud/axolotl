@@ -385,6 +385,148 @@ def _chunk_bytes(layout, chunk_manager) -> dict[int, int]:
     return out
 
 
+def predict_init_transient_peak_bytes(
+    layout,
+    hw: HardwareProfile,
+    chunk_manager=None,
+) -> int:
+    """Predict the GPU high-water mark during the init transient window.
+
+    Coverage audit Block G (Phase 2) observed a 6.9× iter-1 transient peak
+    in bnb-4-bit Mode-C (chunk-offload) runs vs. the steady-state predictor:
+
+    +-----------------------------------------+---------+---------+---------+
+    | Config                                  | pred GiB| meas it1| meas std|
+    +-----------------------------------------+---------+---------+---------+
+    | ext_30b_safe seq=512 4-bit Mode-C       |  2.49   |  17.20  |  2.91   |
+    | A1 30B seq=1024  4-bit Mode-C           |  2.50   |  17.20  |  3.50   |
+    | A2 30B seq=2048  4-bit Mode-C           |  2.54   |  17.20  |  4.68   |
+    +-----------------------------------------+---------+---------+---------+
+
+    The 17.20 GiB peak is NOT a fragmentation phenomenon — it is the
+    chunked pool's GPU-resident model-load window BEFORE
+    :meth:`ChunkManager.materialize_offload` runs. HF Trainer constructs
+    the model fully on GPU; ProTrain then discharges every non-persistent
+    chunk to pinned CPU memory. Between those two events the peak briefly
+    resembles ``sum_chunk_bytes × α`` (full-residence pool + cudactx
+    overhead), while the steady predictor reports
+    ``persistent_subset × α`` (only the persistent chunks survive
+    materialize_offload).
+
+    This function returns the transient prediction so the searcher's
+    feasibility gate can see both numbers and warn when an otherwise-
+    feasible steady config will OOM during init. The runtime already
+    logs both values today ("alloc 17.20 -> 2.08 GB (torch measured)");
+    surfacing the predicted transient lets us catch the OOM at search
+    time rather than at iter 1.
+
+    Formula
+    -------
+
+    Let ``sum_chunk_bytes`` be the sum of per-chunk param bytes across
+    the entire layout (every chunk, persistent and non-persistent —
+    the full GPU-resident model at init). When ``chunk_manager`` is
+    provided, this is computed exactly via :func:`_chunk_bytes`;
+    otherwise it falls back to the layout's soft-cap upper bound
+    ``N_chunk * S_chunk`` (over-predicts by ~10-20% under typical
+    greedy packing).
+
+    The transient peak is
+
+        ``predicted = sum_chunk_bytes * ALPHA_FRAGMENTATION``
+
+    where ``ALPHA_FRAGMENTATION`` is the fp16/bf16 paper default
+    (1.10) — NOT the per-dtype α from
+    :func:`alpha_fragmentation_for_dtype`.
+
+    Architectural decision (audit Block G)
+    --------------------------------------
+
+    The per-dtype α lookup
+    (``{fp16/bf16/8-bit: 1.10, bnb-4-bit: 0.75}``) was calibrated
+    against the *steady-state* peak, where fp16 activation / grad
+    streams overlap with the on-GPU param subset. For bnb-4-bit
+    weights the relative fragmentation cost shrinks because params
+    occupy 0.5 B/element vs. activations' 2 B/element, so the
+    steady-state α drops to 0.75.
+
+    At the iter-1 init transient, however, the GPU contains only
+    raw model bytes + CUDA context overhead — no activations,
+    no gradient buffers, no recompute windows. The α=0.75 reduction
+    does NOT apply: the under-prediction observed in the audit
+    (15.27 GiB × 0.75 = 11.45 GiB vs. measured 17.20 GiB → ~50%
+    under-call) is too large a safety regression. Empirically
+    α=1.10 holds across the three Block-G data points:
+
+        ``15.27 GiB * 1.10 = 16.80 GiB``  (vs. measured 17.20 GiB,
+                                          residual within 3%)
+
+    See the audit report at
+    ``/home/rgilbreth/Desktop/ProTrain/coverage_audit_close_report.md``
+    Block G for the underlying empirical derivation.
+
+    Args:
+        layout: The chunk layout. ``N_chunk * S_chunk`` is used as the
+            upper-bound fallback when ``chunk_manager`` is None.
+        hw: HardwareProfile. The ``dominant_param_bytes_per_element``
+            field is read for logging / future per-dtype refinement;
+            today the α=1.10 ceiling is dtype-agnostic for the reasons
+            documented above.
+        chunk_manager: Optional ChunkManager handle. When provided,
+            ``_chunk_bytes(layout, chunk_manager)`` is summed for the
+            exact GPU-resident byte total; otherwise the loose
+            ``N_chunk * S_chunk`` upper bound is used.
+
+    Returns:
+        Predicted init-transient peak in bytes. Returns 0 when
+        ``N_chunk`` is 0 (degenerate empty layout) so the SearchResult
+        sentinel (``predicted_init_transient_peak_bytes == 0``) is
+        preserved.
+    """
+    # Local import to avoid a module-level cost.memory dependency cycle
+    # at import time (cost.memory pulls in profiler/types which would
+    # otherwise drag this api module in via Python's circular import
+    # resolution if it ever gets imported eagerly during cost.memory init).
+    from axolotl.integrations.protrain.cost.memory import ALPHA_FRAGMENTATION
+
+    n_chunk = int(getattr(layout, "N_chunk", 0))
+    s_chunk = int(getattr(layout, "S_chunk", 0))
+    if n_chunk <= 0 or s_chunk <= 0:
+        return 0
+
+    if chunk_manager is not None:
+        try:
+            cb = _chunk_bytes(layout, chunk_manager)
+        except Exception as exc:  # noqa: BLE001 — defensive, broken stub
+            LOG.debug(
+                "predict_init_transient_peak_bytes: _chunk_bytes failed "
+                "(%s); falling back to N_chunk * S_chunk upper bound.",
+                exc,
+            )
+            sum_chunk_bytes = n_chunk * s_chunk
+        else:
+            sum_chunk_bytes = sum(int(v) for v in cb.values())
+            # Defensive: if the chunk_manager's model has no overlap with
+            # the layout's param ids (e.g. tests pass a stub with empty
+            # named_parameters) the sum collapses to 0. Fall back to the
+            # layout upper bound so the caller still gets a non-zero
+            # prediction. Real models always populate the sum.
+            if sum_chunk_bytes <= 0:
+                sum_chunk_bytes = n_chunk * s_chunk
+    else:
+        sum_chunk_bytes = n_chunk * s_chunk
+
+    # The hw argument is reserved for a future per-dtype iter-1 α
+    # refinement once more empirical data is available. Today α=1.10
+    # holds across the audit's fp16 / 8-bit / 4-bit Mode-C data points
+    # (the 4-bit Mode-A configs have no separable transient because
+    # the persistent set IS the full chunk set). Touch hw to silence
+    # the unused-arg lint and make the future-extension intent clear.
+    _ = hw.dominant_param_bytes_per_element
+
+    return int(sum_chunk_bytes * ALPHA_FRAGMENTATION)
+
+
 def _calibrate_peak_with_actual_chunk_bytes(
     original_peak: int,
     layout,
@@ -1460,13 +1602,26 @@ def _construct_runtime(
         block_map=result.block_map,
         hw=hardware_profile,
     )
-    if calibrated_peak != result.predicted_peak_bytes:
-        LOG.info(
-            "ProTrain: peak prediction calibrated %.2f -> %.2f GB "
-            "using actual per-chunk byte footprint",
-            result.predicted_peak_bytes / (1 << 30),
-            calibrated_peak / (1 << 30),
-        )
+    # ---- iter-1 init-transient peak prediction (audit Block G follow-up) -
+    # Predict the GPU high-water mark during the brief window between
+    # full-model GPU construction and ``materialize_offload``. Coverage
+    # audit Block G observed this transient is 6.9× the steady predictor
+    # for bnb-4-bit Mode-C; surfacing it on SearchResult lets downstream
+    # consumers (searcher feasibility gate, telemetry) catch
+    # init-window OOM before iter 1. See
+    # :func:`predict_init_transient_peak_bytes` for the empirical
+    # derivation.
+    init_transient_peak = predict_init_transient_peak_bytes(
+        layout, hardware_profile, chunk_manager
+    )
+    if calibrated_peak != result.predicted_peak_bytes or init_transient_peak > 0:
+        if calibrated_peak != result.predicted_peak_bytes:
+            LOG.info(
+                "ProTrain: peak prediction calibrated %.2f -> %.2f GB "
+                "using actual per-chunk byte footprint",
+                result.predicted_peak_bytes / (1 << 30),
+                calibrated_peak / (1 << 30),
+            )
         # ``cfg.n_persist`` continues to mean "prefix length the search
         # chose". Earlier versions of this site collapsed it into
         # ``len(chunk_manager._persistent_ids)`` — the augmented set
@@ -1494,7 +1649,23 @@ def _construct_runtime(
             block_map=result.block_map,
             predicted_peak_bytes=calibrated_peak,
             predicted_iter_s=result.predicted_iter_s,
+            predicted_init_transient_peak_bytes=init_transient_peak,
         )
+    # Log the iter-1 transient alongside the steady peak so operators
+    # see both numbers in the standard ProTrain bootstrap output. The
+    # ratio surfaces the Mode-C ~6× under-prediction at search time
+    # rather than at iter-1 OOM.
+    LOG.info(
+        "ProTrain: predicted peaks: steady=%.2f GiB iter1_transient=%.2f GiB "
+        "(ratio=%.2fx; > 2x suggests Mode-C offload regime)",
+        result.predicted_peak_bytes / (1 << 30),
+        init_transient_peak / (1 << 30),
+        (
+            init_transient_peak / max(result.predicted_peak_bytes, 1)
+            if init_transient_peak > 0
+            else 0.0
+        ),
+    )
 
     # ---- 4.5: materialize the init-time chunk offload (M4.5 Gap 1) -----
     # Physically move every non-persistent chunk's param data to pinned
@@ -3252,7 +3423,22 @@ def protrain_model_wrapper(
                     block_map=new_result.block_map,
                     hw=hardware_profile,
                 )
-                if calibrated_peak != new_result.predicted_peak_bytes:
+                # Iter-1 transient prediction (audit Block G follow-up).
+                # The init transient window has already passed by the
+                # time the phase-2 post-measurement calibration runs,
+                # but we re-compute and re-publish the prediction here
+                # for SearchResult-shape consistency with the bootstrap
+                # path. Same formula + same chunk_manager → identical
+                # value to the bootstrap; documenting the no-op here
+                # so a future reader doesn't reach for a stale field.
+                init_transient_peak = predict_init_transient_peak_bytes(
+                    layout, hardware_profile, chunk_manager
+                )
+                if (
+                    calibrated_peak != new_result.predicted_peak_bytes
+                    or init_transient_peak
+                    != new_result.predicted_init_transient_peak_bytes
+                ):
                     # Preserve the search's prefix — see the matching
                     # comment in ``_construct_runtime`` for why
                     # ``len(_persistent_ids)`` (the augmented set) is
@@ -3273,6 +3459,7 @@ def protrain_model_wrapper(
                         block_map=new_result.block_map,
                         predicted_peak_bytes=calibrated_peak,
                         predicted_iter_s=new_result.predicted_iter_s,
+                        predicted_init_transient_peak_bytes=init_transient_peak,
                     )
                 LOG.info(
                     "Phase-2: post-measurement search picked the same cfg "
@@ -3348,7 +3535,8 @@ def protrain_model_wrapper(
 
     LOG.info(
         "ProTrain config: n_persist=%d n_buffer=%d n_swap=%d n_checkpoint=%d "
-        "S_chunk=%d N_chunk=%d peak=%.2f GiB iter=%.3f s capacity=%.2f GiB",
+        "S_chunk=%d N_chunk=%d peak=%.2f GiB iter1_transient=%.2f GiB "
+        "iter=%.3f s capacity=%.2f GiB",
         result.cfg.n_persist,
         result.cfg.n_buffer,
         result.cfg.n_swap,
@@ -3356,6 +3544,7 @@ def protrain_model_wrapper(
         layout.S_chunk,
         layout.N_chunk,
         result.predicted_peak_bytes / (1 << 30),
+        result.predicted_init_transient_peak_bytes / (1 << 30),
         result.predicted_iter_s,
         capacity_bytes / (1 << 30),
     )
@@ -3544,4 +3733,8 @@ def _find_block_parent_map(
     return out
 
 
-__all__ = ["auto_wrap", "protrain_model_wrapper"]
+__all__ = [
+    "auto_wrap",
+    "predict_init_transient_peak_bytes",
+    "protrain_model_wrapper",
+]
