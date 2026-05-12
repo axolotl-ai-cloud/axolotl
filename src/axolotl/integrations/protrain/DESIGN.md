@@ -46,7 +46,7 @@ src/axolotl/integrations/protrain/
 ├── cost/
 │   ├── __init__.py
 │   ├── runtime.py               # Eqs. 2–7, per-chunk max(compute, comm) roofline
-│   ├── memory.py                # Eqs. 8–11, op-walk peak + alpha=1.10 fragmentation
+│   ├── memory.py                # Eqs. 8–11, op-walk peak + per-dtype fragmentation alpha (see Design Decision 1)
 │   └── bandwidth.py             # contention model when n_swap>0 competes with prefetch
 ├── search/
 │   ├── __init__.py
@@ -115,7 +115,7 @@ Every entry: Inputs · Outputs · Paper ref · Milestone.
 ### cost/ (M4)
 
 - `runtime.py` — `estimate_runtime(cfg, trace, layout) -> float`. Implements **Eqs. 2–7**: `T_iter = T_fwd + max(T_bwd + T_gpu_optim, T_cpu_optim)`, per-chunk `max(compute, comm)` roofline. §3.3, App A.1.
-- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (alpha = 1.10 fragmentation). Bumps are added at the first op of each `BlockMode.CKPT` block (recompute) and additionally at the first op of each `BlockMode.OFFLOAD` block (Option B backward gather), so both block types contribute to the per-block backward memory bump. §3.3, App A.2.
+- `memory.py` — `estimate_peak(cfg, trace, layout, block_map) -> int`. Implements **Eqs. 8–10** (op-walk) and **Eq. 11** (per-dtype fragmentation alpha — `ALPHA_FRAGMENTATION = 1.10` for fp16 / bf16 / 8-bit; `ALPHA_FRAGMENTATION_4BIT = 0.75` for bnb 4-bit via `alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)`; see Design Decision 1 for the audit-data-driven calibration). Bumps are added at the first op of each `BlockMode.CKPT` block (recompute) and additionally at the first op of each `BlockMode.OFFLOAD` block (Option B backward gather), so both block types contribute to the per-block backward memory bump. §3.3, App A.2.
 - `bandwidth.py` — `effective_bw(cfg, hw) -> float`. Derates prefetch BW when `n_swap > 0`. §3.3.
 
 ### search/ (M4)
@@ -287,7 +287,7 @@ Mirrors `plan.md`:
     | seq=1024 (`ext_30b_seq1024.log`) | 2.50 | 3.50 | 1.400 |
     | seq=2048 (`ext_30b_seq2048.log`) | 2.54 | 4.68 | 1.843 |
 
-    The alpha_steady drift with seq is the diagnostic: the predictor's activation contribution was effectively flat across seq for all-CKPT block_maps. Root cause in `cost/memory.py::estimate_peak`: `retained_none_bytes` only accumulates NONE/OFFLOAD blocks, and the per-CKPT-first-op `ckpt_extra` bump is taken as a per-op max — so an all-CKPT cfg paid for ONE block's recompute window but nothing for the *chain* of block-input residuals that the activation-checkpointing framework (`torch.utils.checkpoint` with `use_reentrant=True`, the production wrap) retains across the WHOLE backward window. With 60 CKPT blocks on Llama-30B that chain is `60 x bs x seq x hidden x dtype_bytes` — the missing seq-dependent term.
+    The alpha_steady drift with seq is the diagnostic: the predictor's activation contribution was effectively flat across seq for all-CKPT block_maps. Root cause in `cost/memory.py::estimate_peak`: `retained_none_bytes` only accumulates NONE/OFFLOAD blocks, and the per-CKPT-first-op `ckpt_extra` bump is taken as a per-op max — so an all-CKPT cfg paid for ONE block's recompute window but nothing for the per-block-input residual that survives across the backward window. (Production uses `use_reentrant=False` per `block/checkpoint.py`; the non-reentrant variant still retains a linear-in-N_block activation footprint across the backward window because each CKPT block's saved-tensors-hooks recompute frame holds the block input — `block_input.requires_grad` and the autograd graph keep it pinned until the upstream backward completes.) With 60 CKPT blocks on Llama-30B that chain term is `60 x bs x seq x hidden x dtype_bytes` — the missing seq-dependent term the audit data exposes.
 
     *Fix.* `estimate_peak` now adds a `ckpt_chain_bytes = sum(activation_sizes[bid] for bid in CKPT blocks)` term that:
 

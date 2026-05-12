@@ -34,6 +34,7 @@ These tests pin:
 
 from __future__ import annotations
 
+import contextlib
 import math
 
 import pytest
@@ -739,11 +740,15 @@ def test_install_hooks_attaches_lora_container_pre_hooks_cpu():
             f"(blocks={n_blocks}, containers={n_containers})"
         )
     finally:
-        for h in handles:
-            try:
+        # CodeRabbit F-#9: contextlib.suppress(Exception) over the
+        # handle.remove() loop replaces silent try/except/pass.
+        # The Ruff S110 lint targets the bare swallow; we keep the
+        # same semantic (best-effort cleanup, tolerate already-
+        # removed handles or torch shutting down mid-test) with a
+        # context manager that documents intent.
+        with contextlib.suppress(Exception):
+            for h in handles:
                 h.remove()
-            except Exception:  # noqa: BLE001
-                pass
 
 
 def test_install_hooks_lora_container_chunk_ids_cover_lora_factors():
@@ -836,11 +841,15 @@ def test_install_hooks_lora_container_pre_forward_fires_ensure_chunks_resident()
         for _kind, cids in pre_fwd_calls:
             assert cids, "ensure_chunks_resident:pre_forward invoked with empty tuple"
     finally:
-        for h in handles:
-            try:
+        # CodeRabbit F-#9: contextlib.suppress(Exception) over the
+        # handle.remove() loop replaces silent try/except/pass.
+        # The Ruff S110 lint targets the bare swallow; we keep the
+        # same semantic (best-effort cleanup, tolerate already-
+        # removed handles or torch shutting down mid-test) with a
+        # context manager that documents intent.
+        with contextlib.suppress(Exception):
+            for h in handles:
                 h.remove()
-            except Exception:  # noqa: BLE001
-                pass
 
 
 def test_install_hooks_lora_container_post_forward_fires_ensure_chunks_resident():
@@ -903,11 +912,15 @@ def test_install_hooks_lora_container_post_forward_fires_ensure_chunks_resident(
             f"{len(post_fwd_calls)} (all calls: {sched.calls})"
         )
     finally:
-        for h in handles:
-            try:
+        # CodeRabbit F-#9: contextlib.suppress(Exception) over the
+        # handle.remove() loop replaces silent try/except/pass.
+        # The Ruff S110 lint targets the bare swallow; we keep the
+        # same semantic (best-effort cleanup, tolerate already-
+        # removed handles or torch shutting down mid-test) with a
+        # context manager that documents intent.
+        with contextlib.suppress(Exception):
+            for h in handles:
                 h.remove()
-            except Exception:  # noqa: BLE001
-                pass
 
 
 def test_install_hooks_lora_container_post_backward_fires_ensure_chunks_resident():
@@ -978,11 +991,15 @@ def test_install_hooks_lora_container_post_backward_fires_ensure_chunks_resident
                 f"(all calls: {sched.calls})"
             )
     finally:
-        for h in handles:
-            try:
+        # CodeRabbit F-#9: contextlib.suppress(Exception) over the
+        # handle.remove() loop replaces silent try/except/pass.
+        # The Ruff S110 lint targets the bare swallow; we keep the
+        # same semantic (best-effort cleanup, tolerate already-
+        # removed handles or torch shutting down mid-test) with a
+        # context manager that documents intent.
+        with contextlib.suppress(Exception):
+            for h in handles:
                 h.remove()
-            except Exception:  # noqa: BLE001
-                pass
 
 
 def test_install_hooks_no_lora_no_container_hooks():
@@ -1037,11 +1054,15 @@ def test_install_hooks_no_lora_no_container_hooks():
         # 4 per block, 0 per container.
         assert len(handles) == 4 * n_blocks
     finally:
-        for h in handles:
-            try:
+        # CodeRabbit F-#9: contextlib.suppress(Exception) over the
+        # handle.remove() loop replaces silent try/except/pass.
+        # The Ruff S110 lint targets the bare swallow; we keep the
+        # same semantic (best-effort cleanup, tolerate already-
+        # removed handles or torch shutting down mid-test) with a
+        # context manager that documents intent.
+        with contextlib.suppress(Exception):
+            for h in handles:
                 h.remove()
-            except Exception:  # noqa: BLE001
-                pass
 
 
 # ---------------------------------------------------------------------------
@@ -1059,7 +1080,7 @@ def test_runtime_lora_e2e_under_offload_mode_smoke():
     full ``protrain_model_wrapper`` machinery with offload-mode
     overrides (force_all_persistent=False, n_persist_override=0),
     and runs one forward + backward iteration. Without M6C-fix-3
-    this would (per Agent B's diagnosis on the 4×3090 multi-GPU
+    this would (per Agent B's diagnosis on the 4x3090 multi-GPU
     rig) fail at iter-0 backward with ``ToCopyBackward0 returned
     an invalid gradient at index 0 - got [...] but expected shape
     compatible with [0]`` on a PEFT LoRA factor.

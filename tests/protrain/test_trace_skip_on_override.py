@@ -267,19 +267,20 @@ def test_run_trace_skipped_on_override_full_path(
         n_offload_override=0,
         auto_mode=False,
     )
+    try:
+        assert isinstance(wrapped, WrappedModel)
+        # The override path's SearchResult round-trips into the wrapper.
+        assert wrapped.search_result is not None
+        assert wrapped.search_result.cfg.n_swap == 0
+        # n_checkpoint is bounded by N_block which is what activation_sizes
+        # maps; the synthetic trace populates one entry per discovered
+        # block. The wrapper accepted the override so the bounds check
+        # passed — sanity check that we land at n_block from the synth.
+        assert wrapped.search_result.cfg.n_checkpoint <= n_block_estimate
 
-    assert isinstance(wrapped, WrappedModel)
-    # The override path's SearchResult round-trips into the wrapper.
-    assert wrapped.search_result is not None
-    assert wrapped.search_result.cfg.n_swap == 0
-    # n_checkpoint is bounded by N_block which is what activation_sizes
-    # maps; the synthetic trace populates one entry per discovered
-    # block. The wrapper accepted the override so the bounds check
-    # passed — sanity check that we land at n_block from the synth.
-    assert wrapped.search_result.cfg.n_checkpoint <= n_block_estimate
-
-    # Tear down to release CUDA state for the next test.
-    wrapped.close()
+        # Tear down to release CUDA state for the next test.
+    finally:
+        wrapped.close()
 
 
 @pytest.mark.gpu
@@ -327,14 +328,15 @@ def test_run_trace_invoked_without_override(gpu_device, monkeypatch, tmp_path) -
         # No overrides → searcher path → run_trace must fire.
         auto_mode=False,
     )
+    try:
+        assert isinstance(wrapped, WrappedModel)
+        assert call_count["n"] == 1, (
+            f"run_trace was called {call_count['n']} times; expected exactly 1 "
+            "on the searcher path with a fresh cache_dir"
+        )
 
-    assert isinstance(wrapped, WrappedModel)
-    assert call_count["n"] == 1, (
-        f"run_trace was called {call_count['n']} times; expected exactly 1 "
-        "on the searcher path with a fresh cache_dir"
-    )
-
-    wrapped.close()
+    finally:
+        wrapped.close()
 
 
 # ---------------------------------------------------------------------------
@@ -390,11 +392,12 @@ def test_partial_overrides_do_not_skip_trace(gpu_device, monkeypatch, tmp_path) 
         # The other three knobs are None ⇒ partial override ⇒ NO skip.
         auto_mode=False,
     )
+    try:
+        assert isinstance(wrapped, WrappedModel)
+        assert call_count["n"] == 1, (
+            f"run_trace was called {call_count['n']} times; expected exactly 1 "
+            "with partial overrides (only n_persist set)"
+        )
 
-    assert isinstance(wrapped, WrappedModel)
-    assert call_count["n"] == 1, (
-        f"run_trace was called {call_count['n']} times; expected exactly 1 "
-        "with partial overrides (only n_persist set)"
-    )
-
-    wrapped.close()
+    finally:
+        wrapped.close()

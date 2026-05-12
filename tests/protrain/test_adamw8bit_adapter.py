@@ -43,7 +43,18 @@ pytestmark = pytest.mark.gpu
 
 
 def _gpu_device() -> "torch.device":
-    """Pick a CUDA device that respects ``CUDA_VISIBLE_DEVICES`` masking."""
+    """Pick a CUDA device that respects ``CUDA_VISIBLE_DEVICES`` masking.
+
+    Centralized CUDA-availability guard (CodeRabbit F-#8): each
+    gpu-marked test in this module calls ``_gpu_device()`` to acquire
+    its target device. If the pytest invocation deselects ``-m gpu``
+    but somehow ends up running these tests on a CPU-only context
+    (e.g., custom marker filter, conftest override), the unconditional
+    ``cuda:0`` return would surface as a torch error before the test
+    body — ``pytest.skip`` here yields a clean skip instead.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available; test_adamw8bit_adapter requires GPU.")
     return torch.device("cuda:0")
 
 
