@@ -98,6 +98,107 @@ def _sku(device: "torch.device | str") -> str:
         return "cpu"
 
 
+def _detect_dominant_param_bytes_per_element(model: nn.Module) -> float:
+    """Return the modal logical bytes-per-element across the model's params.
+
+    Drives the per-dtype α fragmentation factor lookup in
+    :func:`axolotl.integrations.protrain.cost.memory.alpha_fragmentation_for_dtype`
+    via :attr:`HardwareProfile.dominant_param_bytes_per_element`.
+    Coverage audit Block G found that α=1.10 over-predicts bnb 4-bit
+    Mode-A peak by ~37%, while fp16/bf16/8-bit predictors are
+    slightly conservative within tolerance — so this signal needs
+    to distinguish 4-bit from everything else.
+
+    Detection rules:
+
+    - ``bitsandbytes.nn.Params4bit`` instances are mapped to 0.5
+      bytes-per-logical-element regardless of their storage dtype
+      (``Params4bit`` stores its weights as a packed uint8 tensor
+      with two 4-bit values per byte, so ``param.element_size()``
+      returns 1 even though each logical weight occupies half a
+      byte). Detection is by ``isinstance(p, Params4bit)`` when
+      bitsandbytes is importable; for envs without bnb the path is
+      skipped and the storage byte size wins.
+    - Every other parameter contributes its ``param.element_size()``
+      directly (fp32→4, fp16/bf16→2, int8/uint8→1).
+
+    "Dominant" = the bytes-per-element value that accounts for the
+    most aggregate logical-element count across params (weighted
+    sum), not a simple count of params. This biases the detection
+    toward the base-model weight dtype rather than letting a few
+    auxiliary fp32 params (e.g. layer-norm scales) override the
+    classification on a quantized model.
+
+    Falls back to 2.0 (fp16/bf16) when the model has no parameters
+    or when every aggregate accumulator is zero — matches the
+    :class:`HardwareProfile` default so the per-dtype lookup picks
+    the conservative α=1.10 ceiling.
+    """
+    # Best-effort detection of bnb 4-bit param class. The import is
+    # behind a try/except because bitsandbytes is an optional dep —
+    # CPU-only test rigs and minimal installs may not have it.
+    _Params4bit: type | None = None
+    try:
+        import bitsandbytes.nn as _bnb_nn  # type: ignore[import-untyped]
+    except Exception as _bnb_exc:  # noqa: BLE001 — defensive; bnb is optional
+        LOG.debug(
+            "bitsandbytes.nn import failed (%s); 4-bit dtype detection "
+            "skipped — params classify by storage element_size().",
+            _bnb_exc,
+        )
+    else:
+        _Params4bit = getattr(_bnb_nn, "Params4bit", None)
+
+    # Aggregate logical-element counts keyed by bytes-per-element.
+    # The unit of "logical element" is one weight value as the
+    # autograd graph sees it — for ``Params4bit`` that's twice the
+    # storage numel.
+    by_bpe: dict[float, int] = {}
+    for _, param in model.named_parameters():
+        try:
+            storage_numel = int(param.numel())
+        except Exception as _exc:  # noqa: BLE001 — defensive, missing/meta params
+            LOG.debug(
+                "param.numel() failed during dtype detection (%s); skipping param.",
+                _exc,
+            )
+            continue
+        if storage_numel <= 0:
+            continue
+        if _Params4bit is not None and isinstance(param, _Params4bit):
+            # Each stored uint8 byte holds two 4-bit logical values.
+            logical_numel = storage_numel * 2
+            bpe = 0.5
+        else:
+            try:
+                bpe = float(int(param.element_size()))
+            except Exception as _exc:  # noqa: BLE001 — defensive
+                LOG.debug(
+                    "param.element_size() failed during dtype detection "
+                    "(%s); skipping param.",
+                    _exc,
+                )
+                continue
+            logical_numel = storage_numel
+        by_bpe[bpe] = by_bpe.get(bpe, 0) + logical_numel
+
+    if not by_bpe:
+        return 2.0
+
+    # Pick the bpe class with the largest aggregate logical-element
+    # count. Ties resolve in favour of the smaller bpe (i.e. the more
+    # aggressive quantization) so the searcher's α picks the
+    # tighter-budget regime when the model is genuinely mixed.
+    dominant_bpe = min(
+        by_bpe.keys(),
+        key=lambda b: (
+            -by_bpe[b],
+            b,
+        ),  # primary: descending count; secondary: smallest bpe
+    )
+    return float(dominant_bpe)
+
+
 def _dummy_batch(
     model: nn.Module,
     batch_size: int,
@@ -2380,6 +2481,19 @@ def protrain_model_wrapper(
         _hw_updates["pcie_h2d_bps"] = trace.pcie_h2d_bps
     if hardware_profile.pcie_d2h_bps <= 13e9 + 1e6 and trace.pcie_d2h_bps > 13e9 + 1e6:
         _hw_updates["pcie_d2h_bps"] = trace.pcie_d2h_bps
+    # Detect dominant param dtype for the per-dtype α fragmentation
+    # lookup (Coverage audit Block G). Default 2.0 (fp16/bf16) means
+    # the cost model lands at α=1.10; bnb-4-bit weights drop the
+    # dominant bpe to 0.5 which lands at α=0.75. Only stamp the
+    # profile when the detection differs from the caller-provided
+    # value AND the caller passed the default — so tests that
+    # explicitly hand-craft a profile with a specific bpe keep it.
+    _detected_bpe = _detect_dominant_param_bytes_per_element(model)
+    if (
+        abs(hardware_profile.dominant_param_bytes_per_element - 2.0) < 1e-9
+        and abs(_detected_bpe - 2.0) > 1e-9
+    ):
+        _hw_updates["dominant_param_bytes_per_element"] = _detected_bpe
     if _hw_updates:
         hardware_profile = _replace(hardware_profile, **_hw_updates)
 

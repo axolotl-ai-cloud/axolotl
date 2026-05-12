@@ -9,7 +9,11 @@ multiplicative over-estimate so the searcher conservatively prunes.
 Design contract (see DESIGN.md §Design Decisions):
 
 - ``ALPHA_FRAGMENTATION = 1.10`` matches the paper's "up to 10%
-  overestimate on best-selected configurations" claim.
+  overestimate on best-selected configurations" claim. Per-dtype
+  refinement lives in :func:`alpha_fragmentation_for_dtype`: fp16 /
+  bf16 / 8-bit keep α=1.10; bnb 4-bit drops to
+  ``ALPHA_FRAGMENTATION_4BIT = 0.75`` (Coverage audit Block G —
+  α=1.10 over-predicts bnb-4-bit Mode-A peak by ~37%).
 - SWAP blocks do not contribute to the op-walk peak: the paper argues
   swap-in "only fires when memory is available", so activation swapping
   is assumed to trade runtime for zero steady-state peak.
@@ -157,7 +161,73 @@ def _saved_tensor_bytes_per_block(trace: ProfilerTrace) -> dict[BlockId, int]:
 #: the BUG-1-4 fixes in ``chunk/manager.py``) the op-walk matches
 #: measured peaks tightly enough to restore the paper value — see
 #: DESIGN.md §Design Decisions point 1.
+#:
+#: Treat as the fp16/bf16/8-bit default; per-dtype overrides live in
+#: :func:`alpha_fragmentation_for_dtype`. The constant is retained
+#: (rather than fully replaced) so callers that legitimately want the
+#: fp16 ceiling — e.g. the model_wrapper's peak-calibration clamp,
+#: which is computing a "what would the cost model have said under
+#: pure fp16" baseline — can keep depending on the literal 1.10
+#: value, while estimate_peak now dispatches through the per-dtype
+#: lookup.
 ALPHA_FRAGMENTATION: float = 1.10
+
+#: Per-dtype α floor for bnb-4-bit weights. Coverage audit Block G
+#: (Phase 2) observed α_measured ≈ 0.70 across four Mode-A 4-bit
+#: configurations (8B Llama, seq ∈ {512, 1024}, fused-on and
+#: fused-off); 0.75 keeps a small conservative cushion above that
+#: empirical floor while still letting the searcher pick larger
+#: chunk sets / persistent partitions than α=1.10 would admit. See
+#: :func:`alpha_fragmentation_for_dtype` for the full lookup table.
+ALPHA_FRAGMENTATION_4BIT: float = 0.75
+
+
+def alpha_fragmentation_for_dtype(bytes_per_element: float) -> float:
+    """Per-dtype Eq. 11 fragmentation factor.
+
+    The α=1.10 paper default was calibrated against fp16 activation /
+    grad allocation patterns. Coverage audit Block G (Phase 2)
+    re-derived the empirical α across the M5 / M0-spike / Block-A
+    matrices and found:
+
+    - fp16 / bf16 (2 bytes / element): α_measured ≈ 0.96. α=1.10 is
+      mildly conservative (the predictor over-allocates headroom by
+      ~14 %). Acceptable — keep α=1.10.
+    - bnb 8-bit (1 byte / element): α_measured ≈ 0.93. α=1.10 is
+      mildly conservative by ~17 %. Acceptable — keep α=1.10. (The
+      activation / gradient streams stay fp16 even when the base
+      weights are int8, so the fragmentation profile is fp16-like.)
+    - bnb 4-bit Mode-A (0.5 bytes / logical element via
+      ``Params4bit``'s 2-elements-per-uint8 packing): α_measured ≈
+      0.70 across four config rows. α=1.10 over-predicts by ~37 %.
+      Drop to α=0.75 (slightly conservative vs. the empirical floor).
+
+    Coverage audit Block G also observed a 6.9× iter-1 transient
+    peak in bnb-4-bit Mode-C (offload) configurations during the
+    model-load → ``materialize_offload`` window when chunks are
+    briefly all-GPU-resident. This is an INIT-window transient, not
+    a fragmentation phenomenon — it is documented separately in
+    :func:`axolotl.integrations.protrain.api.model_wrapper.protrain_model_wrapper`
+    and is NOT covered by this α lookup. The steady-state Mode-C
+    α_measured (~1.47) is over-predict-ish but its residual is an
+    activation-accounting issue, not a fragmentation one — also not
+    addressed here.
+
+    Args:
+        bytes_per_element: dominant param storage cost per logical
+            element across the model. Use 2.0 for fp16/bf16, 1.0 for
+            bnb int8, 0.5 for bnb 4-bit (``Params4bit`` packs two
+            logical elements per stored byte; the caller passes the
+            *logical* density, not the storage byte size).
+
+    Returns:
+        ``ALPHA_FRAGMENTATION_4BIT`` (0.75) when
+        ``bytes_per_element < 1.0``, otherwise
+        ``ALPHA_FRAGMENTATION`` (1.10).
+    """
+    if bytes_per_element < 1.0:
+        return ALPHA_FRAGMENTATION_4BIT
+    return ALPHA_FRAGMENTATION
 
 
 def _group_ops_by_block(trace: ProfilerTrace) -> dict[BlockId, list[int]]:
@@ -852,7 +922,7 @@ def estimate_peak(
     trace: ProfilerTrace,
     layout: ChunkLayout,
     block_map: BlockStrategyMap,
-    hw: HardwareProfile,  # noqa: ARG001 - accepted for API symmetry with runtime
+    hw: HardwareProfile,
 ) -> int:
     """Estimate steady-state peak GPU memory in bytes.
 
@@ -1206,7 +1276,8 @@ def estimate_peak(
     measured_cap = hot_iter_peak_cap(trace, block_map, cfg, layout)
     raw_peak = apply_hot_iter_cap(raw_peak, model_state_present, measured_cap, layout)
 
-    scaled = int(ALPHA_FRAGMENTATION * raw_peak)
+    alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
+    scaled = int(alpha * raw_peak)
     LOG.debug(
         "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d n_offload=%d "
         "raw=%dB alpha=%.2f -> %dB",
@@ -1216,7 +1287,7 @@ def estimate_peak(
         cfg.n_checkpoint,
         cfg.n_offload,
         raw_peak,
-        ALPHA_FRAGMENTATION,
+        alpha,
         scaled,
     )
     return scaled
@@ -1224,6 +1295,8 @@ def estimate_peak(
 
 __all__ = [
     "ALPHA_FRAGMENTATION",
+    "ALPHA_FRAGMENTATION_4BIT",
+    "alpha_fragmentation_for_dtype",
     "_saved_tensor_bytes_per_block",
     "block_tree_index_map",
     "cross_attn_persist_bytes",

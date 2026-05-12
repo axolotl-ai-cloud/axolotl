@@ -489,14 +489,20 @@ def search(
     # ``F(block_map)`` is the raw-peak contribution excluding the
     # ``(n_persist + n_buffer) * S_chunk`` term, pre-alpha.
     from axolotl.integrations.protrain.cost.memory import (
-        ALPHA_FRAGMENTATION,
+        ALPHA_FRAGMENTATION,  # noqa: F401 — re-exported for downstream consumers
+        alpha_fragmentation_for_dtype,
         apply_hot_iter_cap,
         block_tree_index_map,
         hot_iter_peak_cap,
         model_state_present_bytes,
     )
 
-    alpha = ALPHA_FRAGMENTATION
+    # Per-dtype α (Coverage audit Block G — bnb 4-bit picks 0.75
+    # instead of the fp16/8-bit default 1.10). The fast-path inline
+    # peak computation below must use the same α that
+    # :func:`estimate_peak` uses, otherwise the search's GPU-gate
+    # filter and the wrapper's post-search calibration disagree.
+    alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
     s_chunk = layout.S_chunk
 
     # Hoist trace-only maps out of the (n_swap, n_ckpt) hot loop —
