@@ -325,8 +325,8 @@ def _pick_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _nvidia_smi_gpu_count() -> int:
-    """Return the number of GPUs reported by ``nvidia-smi``.
+def _nvidia_smi_gpu_indices() -> list[int]:
+    """Return the list of GPU indices reported by ``nvidia-smi``.
 
     Uses the subprocess-level invocation rather than torch so that the
     pytest host process's CUDA_VISIBLE_DEVICES masking does not under-
@@ -343,8 +343,34 @@ def _nvidia_smi_gpu_count() -> int:
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ):
-        return 0
-    return sum(1 for line in out.splitlines() if line.strip())
+        return []
+    indices: list[int] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            indices.append(int(line))
+        except ValueError:
+            continue
+    return indices
+
+
+def _nvidia_smi_gpu_count() -> int:
+    """Return the number of GPUs reported by ``nvidia-smi``.
+
+    Thin wrapper over :func:`_nvidia_smi_gpu_indices` for callers that
+    only need the count.
+    """
+    return len(_nvidia_smi_gpu_indices())
+
+
+# Indices ``_launch_axolotl`` pins via ``CUDA_VISIBLE_DEVICES``. The
+# corresponding precheck must verify these specific indices actually
+# exist on the host — a count-based >=4 check passes on any 4-GPU box
+# but launch fails late if e.g. GPU 7 isn't present. Kept in sync with
+# the env in ``_launch_axolotl``.
+_REQUIRED_GPU_INDICES = (1, 4, 5, 7)
 
 
 _MODE_A_YAML = textwrap.dedent(
@@ -516,10 +542,14 @@ def _launch_axolotl(yaml_path: Path, log_path: Path, repo_root: Path) -> int:
 
 def _require_real_multigpu() -> None:
     """Skip helper for the multi-GPU subprocess tests."""
-    if _nvidia_smi_gpu_count() < 4:
+    visible = _nvidia_smi_gpu_indices()
+    missing = [i for i in _REQUIRED_GPU_INDICES if i not in visible]
+    if missing:
         pytest.skip(
-            f"real multi-GPU cross-mode resume requires >= 4 GPUs; "
-            f"nvidia-smi reports {_nvidia_smi_gpu_count()}"
+            f"real multi-GPU cross-mode resume requires GPU indices "
+            f"{list(_REQUIRED_GPU_INDICES)} (hard-coded in "
+            f"``_launch_axolotl``); nvidia-smi reports {visible}, "
+            f"missing {missing}"
         )
     # accelerate must be importable in the *child* invocation; check it
     # in the parent first so we get a clean skip rather than a child-

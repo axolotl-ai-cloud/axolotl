@@ -52,8 +52,8 @@ def _pick_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _nvidia_smi_gpu_count() -> int:
-    """Return the number of GPUs reported by ``nvidia-smi``.
+def _nvidia_smi_gpu_indices() -> list[int]:
+    """Return the list of GPU indices reported by ``nvidia-smi``.
 
     Uses the subprocess-level invocation rather than torch so the
     pytest host process's ``CUDA_VISIBLE_DEVICES`` masking does not
@@ -70,8 +70,25 @@ def _nvidia_smi_gpu_count() -> int:
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ):
-        return 0
-    return sum(1 for line in out.splitlines() if line.strip())
+        return []
+    indices: list[int] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            indices.append(int(line))
+        except ValueError:
+            continue
+    return indices
+
+
+# Indices ``_launch_axolotl`` pins via ``CUDA_VISIBLE_DEVICES``. The
+# corresponding precheck must verify these specific indices actually
+# exist on the host — a count-based >=4 check passes on any 4-GPU box
+# but launch fails late if e.g. GPU 7 isn't present. Kept in sync with
+# the env in ``_launch_axolotl``.
+_REQUIRED_GPU_INDICES = (1, 4, 5, 7)
 
 
 def _repo_root() -> Path:
@@ -205,10 +222,14 @@ def _launch_axolotl(yaml_path: Path, log_path: Path, repo_root: Path) -> int:
 
 def _require_real_multigpu() -> None:
     """Skip helper for the multi-GPU subprocess test."""
-    if _nvidia_smi_gpu_count() < 4:
+    visible = _nvidia_smi_gpu_indices()
+    missing = [i for i in _REQUIRED_GPU_INDICES if i not in visible]
+    if missing:
         pytest.skip(
             f"4-bit + paged_adamw_8bit + Mode C multi-GPU regression requires "
-            f">= 4 GPUs; nvidia-smi reports {_nvidia_smi_gpu_count()}"
+            f"GPU indices {list(_REQUIRED_GPU_INDICES)} (hard-coded in "
+            f"``_launch_axolotl``); nvidia-smi reports {visible}, "
+            f"missing {missing}"
         )
     try:
         import accelerate  # noqa: F401

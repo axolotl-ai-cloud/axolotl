@@ -326,13 +326,14 @@ Peak-memory delta from the wire-up has not been measured on RTX 3090 reference h
 
 ## Known Limitations
 
-### Checkpoint mode-pinning (Phase 2 M6C)
+### Checkpoint mode handling (Phase 2 M6C)
 
-ProTrain checkpoints are **mode-pinned**: the mode used to train a checkpoint must equal the mode used to resume it. Concretely:
+ProTrain checkpoints encode the mode they were produced under (Mode A all-persistent vs. Mode C sharded-with-offload), so the resume path must reconcile the on-disk layout with the resumed-runtime layout. Two cases:
 
-- A checkpoint produced under **Mode A** (`protrain_force_all_persistent: true`) must be resumed under Mode A.
-- A checkpoint produced under **Mode C** (`protrain_zero3_shard: true`) must be resumed under Mode C.
-- **Cross-mode resume is unsupported.** HF Trainer's `_load_from_checkpoint` runs *after* ProTrain's chunk `materialize_offload` has zero-ed every non-persistent slot; the loader writes into those zero-ed slots, then ProTrain's first `gather` overwrites the loaded state with the (still-zero) CPU shadow. HF Trainer exposes no hook to interleave a ProTrain `gather` between weight load and the first forward, so this cannot be patched in the plugin without forking HF.
+- **Same-mode resume** (Mode A → Mode A, Mode C → Mode C) is the simple path — the chunk layout and optimizer-state shapes are identical so HF Trainer's `_load_from_checkpoint` copies straight in.
+- **Cross-mode resume** (Mode A → Mode C, Mode C → Mode A) is bridged by **M6C-fix-1** (`a71f26e9`): the resume hook in `plugin._install_resume_hook` calls `restore_to_gpu()` on every offloaded chunk BEFORE HF copies the loaded weights into full-shape `param.data` slots, then re-runs `materialize_offload` afterward and rebuilds the per-chunk optimizer adapter. Without this hook HF would write into the zeroed non-persistent slots and ProTrain's first `gather` would overwrite the loaded state with the (still-zero) CPU shadow. The hook is registered as an HF Trainer callback that fires after `_load_from_checkpoint` finishes; ProTrain interleaves its `gather` between weight load and the first forward in plugin code rather than forking HF.
+
+Real-multigpu cross-mode resume coverage (4×3090, sharded Mode C, Llama-3-8B + LoRA): both `test_real_multigpu_cross_mode_resume_a_to_c` and `test_real_multigpu_cross_mode_resume_c_to_a` PASS as of the full M6C-fix-1..8 chain. See § "Standard PEFT-LoRA in Mode C" below for the chain's other layers (which closed PEFT-LoRA Mode-C correctness on top of the resume-hook fix).
 
 ### Standard PEFT-LoRA in Mode C (Phase 2 M6C)
 
@@ -356,10 +357,10 @@ Multi-GPU verification (4×3090, sharded Mode C, Llama-3-8B + LoRA): `test_real_
 
 Architecturally, ProTrain now owns the parallelism contract for chunk-managed parameters end-to-end: per-rank deterministic partition via `materialize_offload`, sharded gather via `_gather_sharded`, `reduce_scatter` on backward via `reduce_grads_and_offload`, and the DDP construction-time broadcast bypass keeps DDP from clobbering the sharded layout with its replicated broadcast assumption.
 
-**Workarounds:**
+**Supported configurations (no workaround needed):**
 
 - **Single-GPU plain fp16 / bf16 LoRA in offload mode** — works directly as of M6C-fix-3; no special config beyond `protrain_force_all_persistent: false` and the override knobs.
-- **Plain fp16 / bf16 LoRA at multi-GPU** — use Mode A (`protrain_force_all_persistent: true`) until M6C-fix-4 lands. All parameters stay GPU-resident, so the LoRA delta path follows the standard PEFT contract.
+- **Multi-GPU sharded plain fp16 / bf16 LoRA in offload mode** — works as of the full M6C-fix-1..8 chain. The runtime/profiler-side gather hooks (fix-2, fix-3, fix-4, fix-6), the shape-preserving release-state placeholder (fix-7), and the DDP init-sync bypass (fix-8) together close the chain that previously surfaced as `ToCopyBackward0 ... shape compatible with [0]` and DDP `_sync_module_states._broadcast_coalesced` shared-storage hazards.
 - **Quantized base + LoRA** — pair LoRA with bnb 4-bit or 8-bit weight quantization. `bitsandbytes.nn.Linear4bit` / `Linear8bitLt` use typed `param.data` views that survive the non-persistent slot lifecycle in both single- and multi-GPU; the M3 13B headline test exercises this combination.
 
-Coverage: `tests/protrain/test_lora_offload_mode.py` (22 tests, single-GPU plain LoRA Mode C end-to-end). `tests/protrain/test_cross_mode_resume.py` real-multigpu tests are xfail-pinned against the multi-GPU sharded-gather residual gap. The M6C report under `docs/protrain/` traces the concrete failure modes.
+Coverage: `tests/protrain/test_lora_offload_mode.py` (22 tests, single-GPU plain LoRA Mode C end-to-end, all PASS); `tests/protrain/test_cross_mode_resume.py` real-multigpu tests `_a_to_c` and `_c_to_a` PASS as of M6C-fix-8 (xfail markers removed in commit `17ffb8d1`); `tests/protrain/test_paged_adam_offload_mgpu.py` regresses the bnb 4-bit + paged_adamw_8bit + Mode C at seq=2048 multi-GPU path that M6C-fix-8 also closed. The M6C report under `docs/protrain/` traces the historical failure modes.

@@ -149,8 +149,12 @@ class ProTrainArgs(BaseModel):
                 "trainer. Requires "
                 "``plugins: [axolotl.integrations.protrain.ProTrainPlugin]``. "
                 "Mutually exclusive with DeepSpeed, FSDP, gradient_checkpointing, "
-                "TP/CP/SP > 1, and load_in_8bit/load_in_4bit (see "
-                "`_reject_incompatible_features`)."
+                "and TP/CP/SP > 1 (see `_reject_incompatible_features`). "
+                "Composes with bitsandbytes ``load_in_8bit`` / ``load_in_4bit`` "
+                "(M2/M3 validated; ``Params4bit`` / ``Int8Params`` survive the "
+                "chunk gather/offload path because ``quant_state`` lives as a "
+                "Python attribute on the param and ``chunk/manager.py`` rebinds "
+                "``param.data`` without touching python attrs)."
             )
         },
     )
@@ -454,10 +458,17 @@ class ProTrainArgs(BaseModel):
           ``sequence_parallel_degree`` > 1 — scope-excluded per plan.md
           (M6 single-3090 focus); the chunk layout does not shard
           correctly across TP/CP ranks in this milestone.
-        * ``load_in_8bit`` / ``load_in_4bit`` — bnb weight quantization
-          wraps ``nn.Linear.weight`` in a non-owning proxy. The chunk
-          manager reads unquantized storage for gather / offload and
-          cannot reason about the 8-bit / 4-bit packed buffers.
+
+        Note: ``load_in_8bit`` / ``load_in_4bit`` are NOT in this mutex
+        list. M0 spike + M2/M3 audit validation established that bnb
+        weight quantization composes with ProTrain in both Mode A
+        (all-persistent) AND offload mode — ``Params4bit.data`` and
+        ``Int8Params.data`` are uint8/int8 storage tensors, so the
+        chunk manager's ``numel * element_size`` byte math handles them
+        correctly, and ``quant_state`` lives as a Python attribute on
+        the param instance and survives ``param.data`` rebinding (see
+        ``chunk/manager.py``). Pinned by
+        ``tests/protrain/test_bnb_offload.py``.
 
         Each rejection surfaces at config-load time rather than as a
         silent mis-training run.

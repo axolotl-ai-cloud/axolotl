@@ -649,14 +649,14 @@ class HardwareProfile:
     # the model_wrapper just before the searcher runs.
     gpu_compute_tflops: float = 0.0
     # Dominant param byte-size-per-element across the model's trainable
-    # parameter set. Drives the per-dtype α fragmentation factor lookup
-    # in :func:`cost.memory.alpha_fragmentation_for_dtype` (Coverage
-    # audit Block G — α=1.10 was calibrated for fp16/bf16 patterns and
-    # over-predicts bnb-4-bit Mode-A peak by ~37%; per-dtype α uses
-    # 0.75 for bnb-4-bit and 1.10 for fp16/bf16/8-bit). Default 2.0
-    # (fp16/bf16) so legacy callers and tests that construct
-    # ``HardwareProfile`` without populating this field continue to
-    # land at α=1.10 unchanged. Populated by
+    # parameter set. Drives the per-dtype alpha fragmentation factor
+    # lookup in :func:`cost.memory.alpha_fragmentation_for_dtype`
+    # (Coverage audit Block G — alpha=1.10 was calibrated for fp16/bf16
+    # patterns and over-predicts bnb-4-bit Mode-A peak by ~37%;
+    # per-dtype alpha uses 0.75 for bnb-4-bit and 1.10 for
+    # fp16/bf16/8-bit). Default 2.0 (fp16/bf16) so legacy callers and
+    # tests that construct ``HardwareProfile`` without populating this
+    # field continue to land at alpha=1.10 unchanged. Populated by
     # ``protrain_model_wrapper`` after the live model is available via
     # a modal-bytes-per-element scan; uint8-storage bnb-4-bit
     # ``Params4bit`` instances are mapped to 0.5 (two packed elements
