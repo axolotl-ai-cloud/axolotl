@@ -150,6 +150,31 @@ def _build_chunk_manager(
     return mgr, layout, pool, host
 
 
+def _teardown_chunk_manager(mgr, host, pool) -> None:
+    """Best-effort fail-safe teardown for the test-helper-built
+    chunk manager + pinned-host + buffer-pool triple (R3-#5).
+
+    Called from a ``finally`` block in each test so the resources
+    are released even when an assertion fails mid-test — without
+    this, an early-exit assertion failure would skip the teardown
+    and leak per-param grad hooks + pinned-host borrows + CUDA
+    buffer-pool state into subsequent GPU tests on the same pytest
+    session.
+    """
+    try:
+        mgr.uninstall()
+    except Exception:  # noqa: BLE001 — best-effort teardown
+        pass
+    try:
+        host.close()
+    except Exception:  # noqa: BLE001 — best-effort teardown
+        pass
+    # ``del pool`` drops the local reference so the GC can release
+    # the pool's GPU buffer slots immediately rather than at
+    # function-return.
+    del pool
+
+
 @pytest.mark.gpu
 def test_release_state_preserves_shape() -> None:
     """M6C-fix-7 central invariant.
@@ -190,42 +215,42 @@ def test_release_state_preserves_shape() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    # Every non-persistent chunk's params should retain their original
-    # shape — the legacy code would have rebound to torch.Size([0]).
-    non_persist = sorted(mgr._non_persistent_ids)
-    assert non_persist, "need at least one non-persistent chunk"
-    for cid in non_persist:
-        for pid in layout.chunks[int(cid)]:
-            param = dict(model.named_parameters())[str(pid)]
-            expected_shape = original_shapes[str(pid)]
-            assert param.shape == expected_shape, (
-                f"shape-preserving release violated: param={pid} "
-                f"expected shape={expected_shape}, got {param.shape}"
-            )
-            assert param.size() == expected_shape, (
-                f"param.size() drift: param={pid} expected {expected_shape}, "
-                f"got {param.size()}"
-            )
-            # dim() must reflect the original ndim too (LoRA factors
-            # are 2-D; embedding is 2-D; layernorm scales are 1-D — the
-            # bug surface includes shape AND dim consistency).
-            assert param.dim() == len(expected_shape), (
-                f"param.dim() drift: param={pid} expected {len(expected_shape)}, "
-                f"got {param.dim()}"
-            )
-            assert param.dtype == original_dtypes[str(pid)], (
-                f"dtype drift: param={pid} expected {original_dtypes[str(pid)]}, "
-                f"got {param.dtype}"
-            )
-            assert param.device.type == "cuda", (
-                f"released param expected on cuda, got {param.device}"
-            )
+        # Every non-persistent chunk's params should retain their original
+        # shape — the legacy code would have rebound to torch.Size([0]).
+        non_persist = sorted(mgr._non_persistent_ids)
+        assert non_persist, "need at least one non-persistent chunk"
+        for cid in non_persist:
+            for pid in layout.chunks[int(cid)]:
+                param = dict(model.named_parameters())[str(pid)]
+                expected_shape = original_shapes[str(pid)]
+                assert param.shape == expected_shape, (
+                    f"shape-preserving release violated: param={pid} "
+                    f"expected shape={expected_shape}, got {param.shape}"
+                )
+                assert param.size() == expected_shape, (
+                    f"param.size() drift: param={pid} expected {expected_shape}, "
+                    f"got {param.size()}"
+                )
+                # dim() must reflect the original ndim too (LoRA factors
+                # are 2-D; embedding is 2-D; layernorm scales are 1-D — the
+                # bug surface includes shape AND dim consistency).
+                assert param.dim() == len(expected_shape), (
+                    f"param.dim() drift: param={pid} expected {len(expected_shape)}, "
+                    f"got {param.dim()}"
+                )
+                assert param.dtype == original_dtypes[str(pid)], (
+                    f"dtype drift: param={pid} expected {original_dtypes[str(pid)]}, "
+                    f"got {param.dtype}"
+                )
+                assert param.device.type == "cuda", (
+                    f"released param expected on cuda, got {param.device}"
+                )
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -258,22 +283,22 @@ def test_release_state_default_off_is_unchanged() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=False,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    # Legacy invariant: every non-persistent chunk's params have a
-    # torch.Size([0]) placeholder after release.
-    non_persist = sorted(mgr._non_persistent_ids)
-    for cid in non_persist:
-        for pid in layout.chunks[int(cid)]:
-            param = dict(model.named_parameters())[str(pid)]
-            assert param.data.numel() == 0, (
-                f"legacy invariant broken: param={pid} expected numel==0, "
-                f"got numel={param.data.numel()} shape={param.shape}"
-            )
+        # Legacy invariant: every non-persistent chunk's params have a
+        # torch.Size([0]) placeholder after release.
+        non_persist = sorted(mgr._non_persistent_ids)
+        for cid in non_persist:
+            for pid in layout.chunks[int(cid)]:
+                param = dict(model.named_parameters())[str(pid)]
+                assert param.data.numel() == 0, (
+                    f"legacy invariant broken: param={pid} expected numel==0, "
+                    f"got numel={param.data.numel()} shape={param.shape}"
+                )
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -308,31 +333,31 @@ def test_gather_offload_round_trip_shape() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    non_persist = sorted(mgr._non_persistent_ids)
-    assert non_persist, "need at least one non-persistent chunk"
-    cid = non_persist[0]
+        non_persist = sorted(mgr._non_persistent_ids)
+        assert non_persist, "need at least one non-persistent chunk"
+        cid = non_persist[0]
 
-    # gather → params should be at real shape with real storage
-    mgr.gather(cid)
-    for pid in layout.chunks[int(cid)]:
-        param = dict(model.named_parameters())[str(pid)]
-        assert param.shape == original_shapes[str(pid)]
-        assert param.data.numel() > 0, "gathered param should have real storage"
+        # gather → params should be at real shape with real storage
+        mgr.gather(cid)
+        for pid in layout.chunks[int(cid)]:
+            param = dict(model.named_parameters())[str(pid)]
+            assert param.shape == original_shapes[str(pid)]
+            assert param.data.numel() > 0, "gathered param should have real storage"
 
-    # offload → released; under the flag, shape must still match.
-    mgr.offload(cid)
-    for pid in layout.chunks[int(cid)]:
-        param = dict(model.named_parameters())[str(pid)]
-        assert param.shape == original_shapes[str(pid)], (
-            f"post-offload shape drift on flag=True: param={pid} "
-            f"expected {original_shapes[str(pid)]}, got {param.shape}"
-        )
+        # offload → released; under the flag, shape must still match.
+        mgr.offload(cid)
+        for pid in layout.chunks[int(cid)]:
+            param = dict(model.named_parameters())[str(pid)]
+            assert param.shape == original_shapes[str(pid)], (
+                f"post-offload shape drift on flag=True: param={pid} "
+                f"expected {original_shapes[str(pid)]}, got {param.shape}"
+            )
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -370,38 +395,38 @@ def test_storage_footprint_is_bounded() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    # Walk the released params; bucket their storage pointers by dtype.
-    seen_storage_ptrs: dict[torch.dtype, set[int]] = {}
-    for cid in sorted(mgr._non_persistent_ids):
-        for pid in layout.chunks[int(cid)]:
-            param = dict(model.named_parameters())[str(pid)]
-            ptr = param.data.untyped_storage().data_ptr()
-            seen_storage_ptrs.setdefault(param.dtype, set()).add(ptr)
+        # Walk the released params; bucket their storage pointers by dtype.
+        seen_storage_ptrs: dict[torch.dtype, set[int]] = {}
+        for cid in sorted(mgr._non_persistent_ids):
+            for pid in layout.chunks[int(cid)]:
+                param = dict(model.named_parameters())[str(pid)]
+                ptr = param.data.untyped_storage().data_ptr()
+                seen_storage_ptrs.setdefault(param.dtype, set()).add(ptr)
 
-    # For each dtype represented in the released set, every param's
-    # released-state storage_ptr should equal the per-dtype scratch's
-    # storage_ptr.
-    for dtype, ptrs in seen_storage_ptrs.items():
-        scratch = mgr._shape_scratch_by_dtype.get(dtype)
-        assert scratch is not None, (
-            f"no scratch cached for dtype={dtype} but released params exist"
-        )
-        # One element wide → numel()==1 for the scratch itself.
-        assert scratch.numel() == 1, (
-            f"scratch for dtype={dtype} should be 1-element, got "
-            f"numel={scratch.numel()}"
-        )
-        scratch_ptr = scratch.untyped_storage().data_ptr()
-        assert ptrs == {scratch_ptr}, (
-            f"dtype={dtype}: released params should all share scratch's "
-            f"storage_ptr={scratch_ptr}, got {ptrs}"
-        )
+        # For each dtype represented in the released set, every param's
+        # released-state storage_ptr should equal the per-dtype scratch's
+        # storage_ptr.
+        for dtype, ptrs in seen_storage_ptrs.items():
+            scratch = mgr._shape_scratch_by_dtype.get(dtype)
+            assert scratch is not None, (
+                f"no scratch cached for dtype={dtype} but released params exist"
+            )
+            # One element wide → numel()==1 for the scratch itself.
+            assert scratch.numel() == 1, (
+                f"scratch for dtype={dtype} should be 1-element, got "
+                f"numel={scratch.numel()}"
+            )
+            scratch_ptr = scratch.untyped_storage().data_ptr()
+            assert ptrs == {scratch_ptr}, (
+                f"dtype={dtype}: released params should all share scratch's "
+                f"storage_ptr={scratch_ptr}, got {ptrs}"
+            )
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -457,82 +482,83 @@ def test_autograd_shape_capture_on_released_param() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
+    try:
+        placeholder = mgr._shape_preserving_placeholder(real_shape, dtype)
+        assert placeholder.shape == torch.Size(real_shape)
+        assert placeholder.dtype == dtype
+        assert placeholder.device.type == "cuda"
+        # Storage cost: one element (the scratch).
+        assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
 
-    placeholder = mgr._shape_preserving_placeholder(real_shape, dtype)
-    assert placeholder.shape == torch.Size(real_shape)
-    assert placeholder.dtype == dtype
-    assert placeholder.device.type == "cuda"
-    # Storage cost: one element (the scratch).
-    assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
+        param.data = placeholder
+        assert param.shape == torch.Size(real_shape)
+        assert param.size() == torch.Size(real_shape)
+        assert param.dim() == 2
 
-    param.data = placeholder
-    assert param.shape == torch.Size(real_shape)
-    assert param.size() == torch.Size(real_shape)
-    assert param.dim() == 2
+        # D10 — run forward WHILE THE PLACEHOLDER IS STILL BOUND so the
+        # placeholder's reported shape is what autograd records. The
+        # previous test ordering (rebind to real_data BEFORE the linear
+        # call) meant autograd recorded weight.shape from the real-storage
+        # tensor and never exercised the placeholder; a regression in
+        # ``_shape_preserving_placeholder`` returning ``[0]`` (the legacy
+        # placeholder shape) would have left this test silently green.
+        #
+        # Forward writes nothing to param.data — it reads it for the
+        # ``x @ weight.T`` matmul — so the placeholder's
+        # not-write-safe-ness is irrelevant here. The matmul output uses
+        # the scratch's value broadcast across the expanded view; we
+        # don't care about y's values, only that autograd records the
+        # placeholder's reported (real) shape.
+        x = torch.randn(
+            4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True
+        )
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            y_placeholder = nn.functional.linear(x, param)
+        # The matmul-output shape must reflect the placeholder's reported
+        # weight shape; if the placeholder shrank back to ``[0]`` the
+        # output would be ``(batch, 0)`` and the shape assertion below
+        # would catch it BEFORE backward fires.
+        assert y_placeholder.shape == torch.Size([4, real_shape[0]]), (
+            f"forward through placeholder produced wrong-shape output: "
+            f"expected (4, {real_shape[0]}), got {tuple(y_placeholder.shape)} — "
+            f"placeholder.size() likely regressed."
+        )
 
-    # D10 — run forward WHILE THE PLACEHOLDER IS STILL BOUND so the
-    # placeholder's reported shape is what autograd records. The
-    # previous test ordering (rebind to real_data BEFORE the linear
-    # call) meant autograd recorded weight.shape from the real-storage
-    # tensor and never exercised the placeholder; a regression in
-    # ``_shape_preserving_placeholder`` returning ``[0]`` (the legacy
-    # placeholder shape) would have left this test silently green.
-    #
-    # Forward writes nothing to param.data — it reads it for the
-    # ``x @ weight.T`` matmul — so the placeholder's
-    # not-write-safe-ness is irrelevant here. The matmul output uses
-    # the scratch's value broadcast across the expanded view; we
-    # don't care about y's values, only that autograd records the
-    # placeholder's reported (real) shape.
-    x = torch.randn(4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True)
-    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-        y_placeholder = nn.functional.linear(x, param)
-    # The matmul-output shape must reflect the placeholder's reported
-    # weight shape; if the placeholder shrank back to ``[0]`` the
-    # output would be ``(batch, 0)`` and the shape assertion below
-    # would catch it BEFORE backward fires.
-    assert y_placeholder.shape == torch.Size([4, real_shape[0]]), (
-        f"forward through placeholder produced wrong-shape output: "
-        f"expected (4, {real_shape[0]}), got {tuple(y_placeholder.shape)} — "
-        f"placeholder.size() likely regressed."
-    )
+        # Simulate the runtime's gather step: rebind to real storage
+        # BEFORE backward fires (the gather hook runs between forward
+        # and backward in production). Backward then writes
+        # ``param.grad`` against the real storage's shape, but the
+        # earlier shape recording happened against the placeholder —
+        # so a regression in the placeholder's reported shape would
+        # surface as the ``ToCopyBackward0 ... shape compatible with
+        # [0]`` autograd error class that M6C-fix-7 closes.
+        real_data = torch.randn(*real_shape, dtype=dtype, device="cuda")
+        param.data = real_data
 
-    # Simulate the runtime's gather step: rebind to real storage
-    # BEFORE backward fires (the gather hook runs between forward
-    # and backward in production). Backward then writes
-    # ``param.grad`` against the real storage's shape, but the
-    # earlier shape recording happened against the placeholder —
-    # so a regression in the placeholder's reported shape would
-    # surface as the ``ToCopyBackward0 ... shape compatible with
-    # [0]`` autograd error class that M6C-fix-7 closes.
-    real_data = torch.randn(*real_shape, dtype=dtype, device="cuda")
-    param.data = real_data
+        loss = y_placeholder.sum()
+        loss.backward()
+        assert param.grad is not None
+        assert param.grad.shape == torch.Size(real_shape), (
+            f"autograd recorded the WRONG shape: expected {real_shape}, "
+            f"got {tuple(param.grad.shape)} — the M6C-fix-7 "
+            f"shape-preserving placeholder invariant has regressed."
+        )
 
-    loss = y_placeholder.sum()
-    loss.backward()
-    assert param.grad is not None
-    assert param.grad.shape == torch.Size(real_shape), (
-        f"autograd recorded the WRONG shape: expected {real_shape}, "
-        f"got {tuple(param.grad.shape)} — the M6C-fix-7 "
-        f"shape-preserving placeholder invariant has regressed."
-    )
+        # Also exercise the post-gather steady-state forward+backward
+        # path so a regression that only fires on the placeholder side
+        # is distinguishable from one that fires on the real-data side.
+        param.grad = None
+        x_real = torch.randn(
+            4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True
+        )
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            y_real = nn.functional.linear(x_real, param)
+        y_real.sum().backward()
+        assert param.grad is not None
+        assert param.grad.shape == torch.Size(real_shape)
 
-    # Also exercise the post-gather steady-state forward+backward
-    # path so a regression that only fires on the placeholder side
-    # is distinguishable from one that fires on the real-data side.
-    param.grad = None
-    x_real = torch.randn(
-        4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True
-    )
-    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-        y_real = nn.functional.linear(x_real, param)
-    y_real.sum().backward()
-    assert param.grad is not None
-    assert param.grad.shape == torch.Size(real_shape)
-
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -577,24 +603,23 @@ def test_release_state_placeholder_is_write_unsafe() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
+    try:
+        placeholder = mgr._shape_preserving_placeholder(
+            torch.Size([hidden, hidden]), torch.float32
+        )
+        # Shape preserved (M6C-fix-7 invariant).
+        assert placeholder.shape == torch.Size([hidden, hidden])
+        # Storage points at the per-dtype scratch (1 element).
+        assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
 
-    placeholder = mgr._shape_preserving_placeholder(
-        torch.Size([hidden, hidden]), torch.float32
-    )
-    # Shape preserved (M6C-fix-7 invariant).
-    assert placeholder.shape == torch.Size([hidden, hidden])
-    # Storage points at the per-dtype scratch (1 element).
-    assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
+        # In-place write fails with the shared-storage hazard. Any of
+        # ``copy_``, ``add_``, ``zero_``, ``mul_`` triggers it.
+        real_payload = torch.zeros(hidden, hidden, dtype=torch.float32, device="cuda")
+        with pytest.raises(RuntimeError, match="more than one element"):
+            placeholder.copy_(real_payload)
 
-    # In-place write fails with the shared-storage hazard. Any of
-    # ``copy_``, ``add_``, ``zero_``, ``mul_`` triggers it.
-    real_payload = torch.zeros(hidden, hidden, dtype=torch.float32, device="cuda")
-    with pytest.raises(RuntimeError, match="more than one element"):
-        placeholder.copy_(real_payload)
-
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -634,38 +659,38 @@ def test_chunk_managed_param_names_excludes_persistent() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    ignored = mgr.chunk_managed_param_names()
+        ignored = mgr.chunk_managed_param_names()
 
-    # Build the expected set: every param in a non-persistent chunk.
-    expected: set[str] = set()
-    for cid in mgr._non_persistent_ids:
-        for pid in layout.chunks[int(cid)]:
-            expected.add(str(pid))
-    assert ignored == expected, (
-        f"chunk_managed_param_names mismatch: "
-        f"expected={sorted(expected)} got={sorted(ignored)}"
-    )
+        # Build the expected set: every param in a non-persistent chunk.
+        expected: set[str] = set()
+        for cid in mgr._non_persistent_ids:
+            for pid in layout.chunks[int(cid)]:
+                expected.add(str(pid))
+        assert ignored == expected, (
+            f"chunk_managed_param_names mismatch: "
+            f"expected={sorted(expected)} got={sorted(ignored)}"
+        )
 
-    # Persistent chunk params are explicitly NOT in the set.
-    persistent_names: set[str] = set()
-    for cid in mgr._persistent_ids:
-        for pid in layout.chunks[int(cid)]:
-            persistent_names.add(str(pid))
-    assert ignored.isdisjoint(persistent_names), (
-        f"persistent params leaked into ignore set: "
-        f"intersection={ignored & persistent_names}"
-    )
+        # Persistent chunk params are explicitly NOT in the set.
+        persistent_names: set[str] = set()
+        for cid in mgr._persistent_ids:
+            for pid in layout.chunks[int(cid)]:
+                persistent_names.add(str(pid))
+        assert ignored.isdisjoint(persistent_names), (
+            f"persistent params leaked into ignore set: "
+            f"intersection={ignored & persistent_names}"
+        )
 
-    # Sanity: every returned name resolves through named_parameters().
-    by_name = dict(model.named_parameters())
-    for name in ignored:
-        assert name in by_name, f"unknown param name in ignore set: {name}"
+        # Sanity: every returned name resolves through named_parameters().
+        by_name = dict(model.named_parameters())
+        for name in ignored:
+            assert name in by_name, f"unknown param name in ignore set: {name}"
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)
 
 
 @pytest.mark.gpu
@@ -705,49 +730,49 @@ def test_release_state_is_write_safe_through_gather_round_trip() -> None:
         S_chunk=S_chunk,
         shape_preserving_placeholders=True,
     )
-    mgr.materialize_offload()
+    try:
+        mgr.materialize_offload()
 
-    non_persist = sorted(mgr._non_persistent_ids)
-    assert non_persist, "need at least one non-persistent chunk"
-    cid = non_persist[0]
+        non_persist = sorted(mgr._non_persistent_ids)
+        assert non_persist, "need at least one non-persistent chunk"
+        cid = non_persist[0]
 
-    # Pre-gather: param.data IS the expand placeholder (write-unsafe).
-    target_pid = str(layout.chunks[int(cid)][0])
-    target_param = dict(model.named_parameters())[target_pid]
-    pre_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+        # Pre-gather: param.data IS the expand placeholder (write-unsafe).
+        target_pid = str(layout.chunks[int(cid)][0])
+        target_param = dict(model.named_parameters())[target_pid]
+        pre_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
 
-    # gather → param.data must rebind to a fresh typed view of the pool
-    # buffer before any write reaches the placeholder.
-    mgr.gather(cid)
-    target_param = dict(model.named_parameters())[target_pid]
-    post_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
-    assert post_gather_storage_ptr != pre_gather_storage_ptr, (
-        "gather did not rebind param.data — still pointing at the "
-        "expand placeholder; in-place write would trip the hazard"
-    )
+        # gather → param.data must rebind to a fresh typed view of the pool
+        # buffer before any write reaches the placeholder.
+        mgr.gather(cid)
+        target_param = dict(model.named_parameters())[target_pid]
+        post_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+        assert post_gather_storage_ptr != pre_gather_storage_ptr, (
+            "gather did not rebind param.data — still pointing at the "
+            "expand placeholder; in-place write would trip the hazard"
+        )
 
-    # Confirm the gathered param IS write-safe: an in-place fill must
-    # succeed (proving the rebind landed on real storage).
-    target_param.data.fill_(0.5)
-    assert torch.allclose(
-        target_param.data,
-        torch.full_like(target_param.data, 0.5),
-    ), "in-place fill on gathered param did not take effect"
+        # Confirm the gathered param IS write-safe: an in-place fill must
+        # succeed (proving the rebind landed on real storage).
+        target_param.data.fill_(0.5)
+        assert torch.allclose(
+            target_param.data,
+            torch.full_like(target_param.data, 0.5),
+        ), "in-place fill on gathered param did not take effect"
 
-    # Round-trip: offload returns to placeholder; another gather must
-    # again rebind to fresh storage. This pins the cycle.
-    mgr.offload(cid)
-    target_param = dict(model.named_parameters())[target_pid]
-    placeholder_storage_ptr = target_param.data.untyped_storage().data_ptr()
-    # Re-gather and confirm the rebind happens before any write.
-    mgr.gather(cid)
-    target_param = dict(model.named_parameters())[target_pid]
-    re_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
-    assert re_gather_storage_ptr != placeholder_storage_ptr, (
-        "re-gather did not rebind param.data after offload returned "
-        "it to the expand placeholder"
-    )
+        # Round-trip: offload returns to placeholder; another gather must
+        # again rebind to fresh storage. This pins the cycle.
+        mgr.offload(cid)
+        target_param = dict(model.named_parameters())[target_pid]
+        placeholder_storage_ptr = target_param.data.untyped_storage().data_ptr()
+        # Re-gather and confirm the rebind happens before any write.
+        mgr.gather(cid)
+        target_param = dict(model.named_parameters())[target_pid]
+        re_gather_storage_ptr = target_param.data.untyped_storage().data_ptr()
+        assert re_gather_storage_ptr != placeholder_storage_ptr, (
+            "re-gather did not rebind param.data after offload returned "
+            "it to the expand placeholder"
+        )
 
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        _teardown_chunk_manager(mgr, host, pool)

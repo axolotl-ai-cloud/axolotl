@@ -638,7 +638,35 @@ class _RecordingScheduler:
     def ensure_chunks_resident(self, chunk_ids) -> None:
         # ``chunk_ids`` is the closure-captured tuple — record verbatim
         # so the test can compare set membership and ordering.
-        self.calls.append(("ensure_chunks_resident", tuple(int(c) for c in chunk_ids)))
+        #
+        # R3-#3: tag the call with the originating hook edge so per-
+        # hook tests can distinguish which edge fired. The four LoRA
+        # container hooks (pre-forward / post-forward / pre-backward
+        # / post-backward) all funnel through this method, but their
+        # enclosing factory has a distinct ``__qualname__`` —
+        # ``_make_lora_container_<edge>_hook.<locals>._hook`` — which
+        # lets us recover the edge via frame inspection without
+        # changing production code. Falls back to the bare label if
+        # the caller frame doesn't match the expected pattern (e.g.
+        # the test calls ensure_chunks_resident directly).
+        import sys
+
+        edge_tag = "ensure_chunks_resident"
+        try:
+            caller_frame = sys._getframe(1)
+            qualname = caller_frame.f_code.co_qualname
+        except (AttributeError, ValueError):  # pragma: no cover
+            qualname = ""
+        for needle, edge in (
+            ("_make_lora_container_pre_forward_hook", "pre_forward"),
+            ("_make_lora_container_post_forward_hook", "post_forward"),
+            ("_make_lora_container_pre_backward_hook", "pre_backward"),
+            ("_make_lora_container_post_backward_hook", "post_backward"),
+        ):
+            if needle in qualname:
+                edge_tag = f"ensure_chunks_resident:{edge}"
+                break
+        self.calls.append((edge_tag, tuple(int(c) for c in chunk_ids)))
 
 
 class _RecordingChunkManagerStub:
@@ -793,18 +821,20 @@ def test_install_hooks_lora_container_pre_forward_fires_ensure_chunks_resident()
         x = torch.randn(2, 8)
         _ = model(x)
 
-        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
-        # One per LoRA container (one container per TinyPeftBlock);
-        # block hooks invoke pre_block_forward, NOT
-        # ensure_chunks_resident, so any call here came from the
-        # M6C-fix-3 container hook.
-        assert len(ensure_calls) >= n_blocks, (
-            f"expected at least {n_blocks} ensure_chunks_resident calls "
-            f"(one per container), got {len(ensure_calls)} "
+        # R3-#3: filter on the edge-tagged label so this test FAILS if
+        # the pre-forward hook factory is deleted while post-forward
+        # still fires. Pre-fix, the assertion was on the bare
+        # ``ensure_chunks_resident`` label that all four edges share.
+        pre_fwd_calls = [
+            c for c in sched.calls if c[0] == "ensure_chunks_resident:pre_forward"
+        ]
+        assert len(pre_fwd_calls) >= n_blocks, (
+            f"expected at least {n_blocks} ensure_chunks_resident:pre_forward "
+            f"calls (one per container), got {len(pre_fwd_calls)} "
             f"(all calls: {sched.calls})"
         )
-        for _kind, cids in ensure_calls:
-            assert cids, "ensure_chunks_resident invoked with empty tuple"
+        for _kind, cids in pre_fwd_calls:
+            assert cids, "ensure_chunks_resident:pre_forward invoked with empty tuple"
     finally:
         for h in handles:
             try:
@@ -848,14 +878,29 @@ def test_install_hooks_lora_container_post_forward_fires_ensure_chunks_resident(
         x = torch.randn(2, 8)
         _ = model(x)
 
-        # pre-forward + post-forward → at least 2 ensure_chunks_resident
-        # per container per forward pass.
-        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
+        # R3-#3: assert BOTH edges fired independently — without per-
+        # edge tagging, a regression that deletes pre-forward but
+        # keeps post-forward would still pass the >= 2*n_containers
+        # count (post-forward alone fires 2*n_containers... no wait,
+        # post-forward fires n_containers times). The fix is to
+        # assert BOTH edges saw at least n_containers calls; a
+        # regression on either edge surfaces here.
         n_containers = n_blocks  # one FakeLoraLayer per block
-        assert len(ensure_calls) >= 2 * n_containers, (
-            f"expected at least {2 * n_containers} ensure_chunks_resident "
-            f"calls (pre-fwd + post-fwd per container), got "
-            f"{len(ensure_calls)} (all calls: {sched.calls})"
+        pre_fwd_calls = [
+            c for c in sched.calls if c[0] == "ensure_chunks_resident:pre_forward"
+        ]
+        post_fwd_calls = [
+            c for c in sched.calls if c[0] == "ensure_chunks_resident:post_forward"
+        ]
+        assert len(pre_fwd_calls) >= n_containers, (
+            f"expected at least {n_containers} ensure_chunks_resident:pre_forward "
+            f"calls (one per container per forward pass), got "
+            f"{len(pre_fwd_calls)} (all calls: {sched.calls})"
+        )
+        assert len(post_fwd_calls) >= n_containers, (
+            f"expected at least {n_containers} ensure_chunks_resident:post_forward "
+            f"calls (one per container per forward pass), got "
+            f"{len(post_fwd_calls)} (all calls: {sched.calls})"
         )
     finally:
         for h in handles:
@@ -910,15 +955,28 @@ def test_install_hooks_lora_container_post_backward_fires_ensure_chunks_resident
         loss = (out - target).pow(2).mean()
         loss.backward()
 
-        ensure_calls = [c for c in sched.calls if c[0] == "ensure_chunks_resident"]
         n_containers = n_blocks
-        # 4 calls per container: pre-fwd + post-fwd + pre-bwd + post-bwd.
-        # M6C-fix-6 brings the quartet up from 2 (pre-edge only) to 4.
-        assert len(ensure_calls) >= 4 * n_containers, (
-            f"expected at least {4 * n_containers} ensure_chunks_resident "
-            f"calls (full quartet per container), got {len(ensure_calls)} "
-            f"(all calls: {sched.calls})"
-        )
+        # R3-#3: assert all FOUR M6C-fix-6 quartet edges fired
+        # independently. A regression that drops any single edge would
+        # be hidden by the previous count-only assertion.
+        per_edge_calls = {
+            edge: [c for c in sched.calls if c[0] == f"ensure_chunks_resident:{edge}"]
+            for edge in (
+                "pre_forward",
+                "post_forward",
+                "pre_backward",
+                "post_backward",
+            )
+        }
+        for edge, calls in per_edge_calls.items():
+            assert len(calls) >= n_containers, (
+                f"expected at least {n_containers} "
+                f"ensure_chunks_resident:{edge} calls (one per container "
+                f"per fwd/bwd window), got {len(calls)}. "
+                f"per-edge counts: "
+                f"{ {e: len(c) for e, c in per_edge_calls.items()} } "
+                f"(all calls: {sched.calls})"
+            )
     finally:
         for h in handles:
             try:
@@ -1097,6 +1155,32 @@ def test_runtime_lora_e2e_under_offload_mode_smoke():
             pcie_d2h_bps=13e9,
             has_nvlink=False,
         )
+        # Substrings that mark known *environmental* failures that
+        # should degrade this smoke to "skip" rather than fail the
+        # test (R3-#4 + D8 fix). Any (ValueError, RuntimeError) whose
+        # message does NOT contain one of these is treated as a real
+        # ``protrain_model_wrapper`` regression and re-raised; the
+        # previous bare ``except (ValueError, RuntimeError)`` was
+        # silently masking real wrapper bugs. The substring list
+        # matches the env-failure tuple used in the optimizer-step
+        # block below so both gates share one canonical definition.
+        _wrapper_env_failure_substrings = (
+            "DeepSpeedCPUAdam",  # CPU Adam JIT-load failed
+            "CUDA version",  # DeepSpeed CUDA/torch toolchain mismatch
+            "bitsandbytes",  # bnb load issues
+            "No module named",  # ModuleNotFoundError surface
+            # Searcher / capacity gates that legitimately mean
+            # "config not feasible on this rig", not "wrapper
+            # regression":
+            "no feasible config",
+            "cpu_capacity",
+            "capacity_bytes",
+        )
+
+        def _is_wrapper_env_failure(exc: BaseException) -> bool:
+            msg = str(exc)
+            return any(sub in msg for sub in _wrapper_env_failure_substrings)
+
         try:
             wrapped = protrain_model_wrapper(
                 model,
@@ -1114,6 +1198,9 @@ def test_runtime_lora_e2e_under_offload_mode_smoke():
                 n_offload_override=cfg.num_hidden_layers,
             )
         except (ValueError, RuntimeError) as exc:
+            if not _is_wrapper_env_failure(exc):
+                # Real wrapper regression — let it surface.
+                raise
             pytest.skip(f"protrain_model_wrapper offload setup unavailable: {exc}")
 
         # Substrings that mark known *environmental* failures that

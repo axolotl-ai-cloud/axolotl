@@ -200,10 +200,57 @@ def test_run_trace_skipped_on_override_full_path(
     # Pick valid override values: persist all chunks, no offload — the
     # SearchResult synthesizer in model_wrapper.py:2140 enforces
     # ``n_swap + n_checkpoint <= N_block`` and ``min_n_buffer_for``
-    # invariants, so we use the safe "all-persistent" pattern that
+    # invariants. We use the safe "all-persistent" pattern that
     # matches the test_swap.py override pattern.
-    n_chunk_estimate = 1  # tiny model fits in a single chunk
-    n_block_estimate = 4  # n_layer=4
+    #
+    # R3-#8: compute N_chunk and N_block dynamically rather than
+    # hard-coding ``n_chunk_estimate=1``. If the layout builder /
+    # block-discovery heuristics shift (e.g. S_chunk default
+    # changes, or block discovery starts pulling in embed/norm as
+    # blocks), a hard-coded ``1`` would fail ``min_n_buffer_for``'s
+    # validation before we even reach the trace-skip gate the test
+    # is supposed to validate — turning this into a flaky
+    # non-target failure. The dynamic values mirror what the
+    # production wrapper itself computes one layer up.
+    from axolotl.integrations.protrain.block.layout_rules import (
+        discover_blocks,
+        flatten_block_trees,
+    )
+    from axolotl.integrations.protrain.chunk.layout import build_layout
+
+    discovered = discover_blocks(model)
+    flat_blocks = flatten_block_trees(discovered)
+    n_block_estimate = len(flat_blocks)
+    # Build a layout exactly the way ``protrain_model_wrapper`` does
+    # (same S_chunk pick + same block_spans derivation) so the
+    # ``n_persist_override == N_chunk`` invariant we want to assert
+    # downstream actually holds. ``cfg.num_hidden_layers=4`` produces
+    # block_spans for layers 0..3 + embeddings — but the chunk
+    # builder operates over named_parameters().
+    block_spans: dict = {}
+    for name, param in model.named_parameters():
+        # Find which block (if any) this param belongs to via the
+        # discovered block list.
+        for block_idx, block_module in enumerate(flat_blocks):
+            if any(p is param for p in block_module.parameters()):
+                from axolotl.integrations.protrain.types import (
+                    BlockId,
+                    ParamId,
+                )
+
+                block_spans.setdefault(BlockId(block_idx), []).append(ParamId(name))
+                break
+    from typing import cast as _cast
+
+    from axolotl.integrations.protrain.types import ParamId as _ParamId
+
+    exec_order = [_cast(_ParamId, n) for n, _ in model.named_parameters()]
+    # 4 MiB S_chunk matches the wrapper's default for tiny models;
+    # the exact value isn't load-bearing as long as the same value is
+    # used inside ``protrain_model_wrapper`` (which it will be, since
+    # the override path also takes the wrapper's default S_chunk).
+    layout = build_layout(model, exec_order, 4 << 20, block_spans)
+    n_chunk_estimate = layout.N_chunk
 
     wrapped = protrain_model_wrapper(
         model,

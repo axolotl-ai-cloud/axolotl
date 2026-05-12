@@ -167,6 +167,11 @@ def test_protrain_dora_smoke() -> None:
     )
 
     bs, seq = 1, 64
+    # R3-#2: deterministic teardown — wrap the training loop in
+    # try/finally so ``wrapped.close()`` runs even when an assertion
+    # fails mid-test. Without this, hook handles + pinned-host
+    # borrows + CPU adapter threads leak into the next GPU test on
+    # the same pytest session.
     wrapped = protrain_model_wrapper(
         peft_model,
         model_config=cfg,
@@ -176,38 +181,43 @@ def test_protrain_dora_smoke() -> None:
         capacity_bytes=20 * (1 << 30),
         force_all_persistent=True,
     )
-    optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
+    try:
+        optim = protrain_optimizer_wrapper(wrapped, lr=1e-3)
 
-    vocab = int(getattr(cfg, "vocab_size", 1024))
-    torch.manual_seed(0)
-    input_ids = torch.randint(0, vocab, (bs, seq), device=device, dtype=torch.long)
-    labels = input_ids.clone()
+        vocab = int(getattr(cfg, "vocab_size", 1024))
+        torch.manual_seed(0)
+        input_ids = torch.randint(0, vocab, (bs, seq), device=device, dtype=torch.long)
+        labels = input_ids.clone()
 
-    losses: list[float] = []
-    n_iters = 5
-    for i in range(n_iters):
-        out = wrapped.module(input_ids=input_ids, labels=labels)
-        loss = out.loss
-        loss_value = float(loss.detach())
-        assert math.isfinite(loss_value), (
-            f"iter {i}: non-finite loss {loss_value}; losses so far={losses}"
+        losses: list[float] = []
+        n_iters = 5
+        for i in range(n_iters):
+            out = wrapped.module(input_ids=input_ids, labels=labels)
+            loss = out.loss
+            loss_value = float(loss.detach())
+            assert math.isfinite(loss_value), (
+                f"iter {i}: non-finite loss {loss_value}; losses so far={losses}"
+            )
+            loss.backward()
+            optim.step()
+            optim.zero_grad()
+            losses.append(loss_value)
+
+        print(f"\nProTrain + DoRA smoke (tiny Llama): losses={losses}")
+
+        # Strict descent over the window — the spec asks for "loss strictly
+        # decreases", interpreted as final < first on a fixed batch (the
+        # same convention used by ``test_full_ft_smoke.py`` / the bnb
+        # ``test_end_to_end_5_steps_descending_loss`` smoke). With LR=1e-3
+        # and a fixed batch, the DoRA magnitude vectors and LoRA A/B
+        # factors all receive nonzero updates and the loss must move.
+        assert all(math.isfinite(v) for v in losses), f"non-finite loss in {losses}"
+        assert losses[-1] < losses[0], (
+            f"DoRA + ProTrain loss did not decrease over {n_iters} iters: "
+            f"{losses} — magnitude vectors or LoRA factors may not be "
+            f"receiving gradient updates through the chunk-region split"
         )
-        loss.backward()
-        optim.step()
-        optim.zero_grad()
-        losses.append(loss_value)
-
-    print(f"\nProTrain + DoRA smoke (tiny Llama): losses={losses}")
-
-    # Strict descent over the window — the spec asks for "loss strictly
-    # decreases", interpreted as final < first on a fixed batch (the
-    # same convention used by ``test_full_ft_smoke.py`` / the bnb
-    # ``test_end_to_end_5_steps_descending_loss`` smoke). With LR=1e-3
-    # and a fixed batch, the DoRA magnitude vectors and LoRA A/B
-    # factors all receive nonzero updates and the loss must move.
-    assert all(math.isfinite(v) for v in losses), f"non-finite loss in {losses}"
-    assert losses[-1] < losses[0], (
-        f"DoRA + ProTrain loss did not decrease over {n_iters} iters: "
-        f"{losses} — magnitude vectors or LoRA factors may not be "
-        f"receiving gradient updates through the chunk-region split"
-    )
+    finally:
+        close = getattr(wrapped, "close", None)
+        if callable(close):
+            close()
