@@ -1163,6 +1163,8 @@ def test_multimodal_config_parses_dict_role_boundaries_to_specs():
     seq = [51, 7, 60, 50, 8, 60]
     out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
     assert out == [-100, -100, -100, -100, 8, 60]
+
+
 # --------------------------------------------------------------------------- #
 # field_messages plumbing: helpers and __call__ re-routing
 # --------------------------------------------------------------------------- #
@@ -1198,13 +1200,17 @@ def test_normalize_field_messages_string_wrapped_in_tuple():
 
 
 def test_normalize_field_messages_list_preserved():
-    assert ProcessingStrategy._normalize_field_messages(["foo", "bar"]) == ("foo", "bar")
+    assert ProcessingStrategy._normalize_field_messages(["foo", "bar"]) == (
+        "foo",
+        "bar",
+    )
 
 
 def test_normalize_field_messages_falsy_entries_dropped():
-    assert ProcessingStrategy._normalize_field_messages(
-        ["foo", "", None, "bar"]
-    ) == ("foo", "bar")
+    assert ProcessingStrategy._normalize_field_messages(["foo", "", None, "bar"]) == (
+        "foo",
+        "bar",
+    )
 
 
 def test_is_legacy_schema_sharegpt_pair_detected():

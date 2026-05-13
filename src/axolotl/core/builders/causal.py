@@ -545,8 +545,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 if self.cfg.role_boundaries:
                     role_boundaries_override = list(self.cfg.role_boundaries)
 
-                # Deduped union of per-dataset `field_messages` so custom
-                # conversation column names are honored by the MM collator.
+                # Deduped union of per-dataset `field_messages` for the MM collator.
                 field_messages = []
                 for dataset_cfg in ds_entries:
                     field_message = _ds_get(dataset_cfg, "field_messages")

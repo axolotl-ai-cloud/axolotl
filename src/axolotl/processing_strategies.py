@@ -149,28 +149,20 @@ class ProcessingStrategy:
             return ("messages",)
         if isinstance(field_messages, str):
             return (field_messages,)
-        return tuple(field for field in field_messages if field)
+        return tuple(name for name in field_messages if name)
 
     def _get_messages_field(self, example: dict) -> str | None:
-        # Honor an explicitly configured `field_messages` first so a stale
-        # "messages" column on the row cannot silently override the user's
-        # intent. When `field_messages` is left at its default of
-        # ("messages",) this collapses back to the previous behavior.
-        for field in self.field_messages:
-            if field in example and example[field] is not None:
-                return field
+        # Configured field wins so a stale `messages` column can't override it.
+        for name in self.field_messages:
+            if name in example and example[name] is not None:
+                return name
         if "messages" in example and example["messages"] is not None:
             return "messages"
         return None
 
     @staticmethod
     def _is_legacy_schema(messages) -> bool:
-        """Detect ShareGPT-style schema by inspecting the first message.
-
-        Both `from` and `value` must be present so that rows whose first
-        message merely happens to carry a `from` key (e.g., custom metadata)
-        are not misrouted into the legacy conversion branch.
-        """
+        """Detect ShareGPT schema: first message has both ``from`` and ``value``."""
         return (
             isinstance(messages, list)
             and bool(messages)
@@ -229,15 +221,10 @@ class ProcessingStrategy:
         processed_examples = []
         for example in examples:
             messages_field = self._get_messages_field(example)
-            # Only re-route when the user supplied a custom `field_messages`
-            # that is neither of the two canonical keys; for "messages" and
-            # "conversations" we defer entirely to the existing branches
-            # below so their behavior is unchanged.
+            # Re-route a custom field into the canonical key whose schema it matches;
+            # the canonical "messages"/"conversations" branches below are unchanged.
             if messages_field and messages_field not in {"messages", "conversations"}:
                 msgs = example[messages_field]
-                # Auto-detect ShareGPT vs OpenAI schema from the first
-                # message and route to the matching canonical key so the
-                # existing branches do the right schema conversion.
                 target = "conversations" if self._is_legacy_schema(msgs) else "messages"
                 example = dict(example)
                 example[target] = msgs
