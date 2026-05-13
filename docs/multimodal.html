@@ -1200,6 +1200,19 @@ Tip
 <li><code>role</code> can be <code>system</code>, <code>user</code>, <code>assistant</code>, etc.</li>
 <li><code>content</code> is a list of <code>type</code> and (<code>text</code>, <code>image</code>, <code>path</code>, <code>url</code>, <code>base64</code>, or <code>audio</code>).</li>
 </ul>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The recommended column name is <code>messages</code> with the OpenAI-style <code>role</code>/<code>content</code> schema shown above. If your upstream data already lives under a different column name (e.g., <code>conversations</code>, <code>dialogue</code>), set <code>field_messages: &lt;your_column&gt;</code> in the dataset config; this is a rename-only escape hatch — the inner schema must still match one of the two formats above (<code>role</code>/<code>content</code> or ShareGPT’s <code>from</code>/<code>value</code>).</p>
+</div>
+</div>
 <section id="image" class="level3">
 <h3 class="anchored" data-anchor-id="image">Image</h3>
 <div class="callout callout-style-default callout-note callout-titled">
