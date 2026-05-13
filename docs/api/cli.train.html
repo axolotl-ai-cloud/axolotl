@@ -798,6 +798,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.cli.train.do_cli" id="toc-axolotl.cli.train.do_cli" class="nav-link" data-scroll-target="#axolotl.cli.train.do_cli">do_cli</a></li>
   <li><a href="#axolotl.cli.train.do_train" id="toc-axolotl.cli.train.do_train" class="nav-link" data-scroll-target="#axolotl.cli.train.do_train">do_train</a></li>
+  <li><a href="#axolotl.cli.train.ray_train_func" id="toc-axolotl.cli.train.ray_train_func" class="nav-link" data-scroll-target="#axolotl.cli.train.ray_train_func">ray_train_func</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -830,6 +831,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><a href="#axolotl.cli.train.do_train">do_train</a></td>
 <td>Trains a <code>transformers</code> model by first loading the dataset(s) specified in the</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.cli.train.ray_train_func">ray_train_func</a></td>
+<td>Ray Train entrypoint executed on each GPU worker.</td>
 </tr>
 </tbody>
 </table>
@@ -909,9 +914,16 @@ manager’s <code>post_train_unload</code> once training completes.</p>
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.cli.train.ray_train_func" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.train.ray_train_func">ray_train_func</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.train.ray_train_func(kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Ray Train entrypoint executed on each GPU worker.</p>
+<p>Re-validates the config against worker-local GPU capabilities (deferred from
+the driver), then runs the standard training pipeline.</p>
+
+
 </section>
 </section>
 </section>

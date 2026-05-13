@@ -798,6 +798,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.cli.config.check_remote_config" id="toc-axolotl.cli.config.check_remote_config" class="nav-link" data-scroll-target="#axolotl.cli.config.check_remote_config">check_remote_config</a></li>
   <li><a href="#axolotl.cli.config.choose_config" id="toc-axolotl.cli.config.choose_config" class="nav-link" data-scroll-target="#axolotl.cli.config.choose_config">choose_config</a></li>
+  <li><a href="#axolotl.cli.config.gpu_capabilities" id="toc-axolotl.cli.config.gpu_capabilities" class="nav-link" data-scroll-target="#axolotl.cli.config.gpu_capabilities">gpu_capabilities</a></li>
   <li><a href="#axolotl.cli.config.load_cfg" id="toc-axolotl.cli.config.load_cfg" class="nav-link" data-scroll-target="#axolotl.cli.config.load_cfg">load_cfg</a></li>
   <li><a href="#axolotl.cli.config.prepare_plugins" id="toc-axolotl.cli.config.prepare_plugins" class="nav-link" data-scroll-target="#axolotl.cli.config.prepare_plugins">prepare_plugins</a></li>
   </ul></li>
@@ -834,10 +835,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Helper method for choosing a <code>axolotl</code> config YAML file (considering only files</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.cli.config.gpu_capabilities">gpu_capabilities</a></td>
+<td>Probe the local GPU and return <code>(capabilities, env_capabilities)</code> dicts</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.cli.config.load_cfg">load_cfg</a></td>
 <td>Loads the <code>axolotl</code> configuration stored at <code>config</code>, validates it, and performs</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.cli.config.prepare_plugins">prepare_plugins</a></td>
 <td>Registers the plugins for the given configuration.</td>
 </tr>
@@ -1027,9 +1032,17 @@ ending with <code>.yml</code> or <code>.yaml</code>). If more than one config fi
 </table>
 </section>
 </section>
+<section id="axolotl.cli.config.gpu_capabilities" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.config.gpu_capabilities">gpu_capabilities</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.config.gpu_capabilities()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Probe the local GPU and return <code>(capabilities, env_capabilities)</code> dicts
+suitable for :func:<code>axolotl.utils.config.validate_config</code>.</p>
+<p>Must be called on a GPU-enabled host (e.g.&nbsp;a Ray worker), otherwise the
+detected values reflect the driver/CPU node and not the training device.</p>
+</section>
 <section id="axolotl.cli.config.load_cfg" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.config.load_cfg">load_cfg</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>cli.config.load_cfg(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.config.load_cfg(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Loads the <code>axolotl</code> configuration stored at <code>config</code>, validates it, and performs
 various setup.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
@@ -1092,7 +1105,7 @@ various setup.</p>
 </section>
 <section id="axolotl.cli.config.prepare_plugins" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.config.prepare_plugins">prepare_plugins</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cli.config.prepare_plugins(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cli.config.prepare_plugins(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Registers the plugins for the given configuration.</p>
 <section id="parameters-3" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-3">Parameters</h4>

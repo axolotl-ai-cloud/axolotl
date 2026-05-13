@@ -800,6 +800,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.utils.quantization.get_quantization_config" id="toc-axolotl.utils.quantization.get_quantization_config" class="nav-link" data-scroll-target="#axolotl.utils.quantization.get_quantization_config">get_quantization_config</a></li>
   <li><a href="#axolotl.utils.quantization.prepare_model_for_qat" id="toc-axolotl.utils.quantization.prepare_model_for_qat" class="nav-link" data-scroll-target="#axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</a></li>
   <li><a href="#axolotl.utils.quantization.quantize_model" id="toc-axolotl.utils.quantization.quantize_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.quantize_model">quantize_model</a></li>
+  <li><a href="#axolotl.utils.quantization.save_quantized_model" id="toc-axolotl.utils.quantization.save_quantized_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.save_quantized_model">save_quantized_model</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -840,6 +841,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="even">
 <td><a href="#axolotl.utils.quantization.quantize_model">quantize_model</a></td>
 <td>This function is used to quantize a model.</td>
+</tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.quantization.save_quantized_model">save_quantized_model</a></td>
+<td>Save a quantized model, handling MXTensor serialization.</td>
 </tr>
 </tbody>
 </table>
@@ -1087,9 +1092,20 @@ fake quantized embedding weights.</p>
 </tr>
 </tbody>
 </table>
-
-
 </section>
+</section>
+<section id="axolotl.utils.quantization.save_quantized_model" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.save_quantized_model">save_quantized_model</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.save_quantized_model(model, save_dir, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Save a quantized model, handling MXTensor serialization.</p>
+<p>MXTensor does not have a valid storage pointer, which causes
+<code>save_pretrained</code> to crash (both in <code>remove_tied_weights_from_state_dict</code>
+via <code>id_tensor_storage</code>, and in safetensors serialization).
+Transformers &gt;=5.5 removed the <code>safe_serialization</code> parameter entirely.</p>
+<p>For MX-quantized models we save the config/generation_config via
+<code>save_pretrained</code> machinery and the weights via <code>torch.save</code>.</p>
+
+
 </section>
 </section>
 </section>
