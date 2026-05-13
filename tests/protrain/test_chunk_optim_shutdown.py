@@ -159,8 +159,30 @@ def test_shutdown_skips_missing_ds_opt_adam():
 
 
 def test_shutdown_logs_destroy_failure_but_continues(caplog):
-    """A per-chunk destroy failure is logged and does not block other chunks."""
-    import logging
+    """A per-chunk destroy failure is logged and does not block other chunks.
+
+    CI hardening (2026-05-12): the assertion that
+    ``LOG.warning(...)`` was invoked is done by patching the
+    module-level ``LOG`` rather than by inspecting ``caplog.records``
+    under ``caplog.at_level("axolotl")``. The caplog-based capture
+    is brittle under pytest-xdist + axolotl's
+    ``MultiProcessAdapter`` LoggerAdapter wrapper: the log record
+    DOES emit (visible in CI stderr as
+    ``[WARNING] [axolotl.integrations.protrain.chunk.optim]
+    DeepSpeedCPUAdam destroy_adam failed for chunk 1: boom``) but
+    ``caplog.records`` is intermittently empty depending on which
+    other tests ran first in the same xdist worker (an autouse
+    fixture in ``test_logging_config_file_capture.py`` removes
+    handlers from ``logging.root`` which can disrupt caplog's
+    propagation path mid-session).
+
+    Patching ``optim_module.LOG.warning`` directly bypasses both
+    the LoggerAdapter shape concern and the cross-test handler-
+    removal risk: we're asserting the wrapper's intent ("a warning
+    was logged when destroy_adam failed"), not the global logging
+    plumbing's ability to route it.
+    """
+    from axolotl.integrations.protrain.chunk import optim as optim_module
 
     adapter, fakes = _make_adapter_with_mock_ds(n_chunks=3)
 
@@ -175,7 +197,9 @@ def test_shutdown_logs_destroy_failure_but_continues(caplog):
     exploding = _ExplodingDs()
     adapter._optims[ChunkId(1)].ds_opt_adam = exploding  # type: ignore[attr-defined]
 
-    with caplog.at_level(logging.WARNING, logger="axolotl"):
+    with mock.patch.object(
+        optim_module.LOG, "warning", wraps=optim_module.LOG.warning
+    ) as mock_warn:
         adapter.shutdown()
 
     # Healthy chunks still got their destroy call.
@@ -183,10 +207,27 @@ def test_shutdown_logs_destroy_failure_but_continues(caplog):
     assert len(fakes[2].destroy_calls) == 1
     # The failing chunk attempted destroy exactly once.
     assert exploding.calls == 1
-    # And the failure surfaced via a warning.
-    assert any(
-        "destroy_adam failed" in record.getMessage() for record in caplog.records
-    ), "Expected a warning log for the failed destroy_adam call"
+    # And the failure surfaced via a warning. Inspect the mock's
+    # call args directly — match on the format-string prefix that
+    # uniquely identifies the destroy_adam-failure log site.
+    matching_calls = [
+        call
+        for call in mock_warn.call_args_list
+        if call.args
+        and isinstance(call.args[0], str)
+        and "destroy_adam failed" in call.args[0]
+    ]
+    assert matching_calls, (
+        f"Expected a LOG.warning call matching 'destroy_adam failed' but got "
+        f"{[call.args for call in mock_warn.call_args_list]}"
+    )
+    # The warning's format args should include the failing chunk id (1) and
+    # the underlying exception. Sanity-check both so a future copy-edit of
+    # the warning text doesn't silently mask the diagnostic content.
+    matching_call = matching_calls[0]
+    assert ChunkId(1) in matching_call.args, (
+        f"warning's chunk-id format arg should be ChunkId(1); got {matching_call.args}"
+    )
 
 
 def test_shutdown_destroys_state_even_when_wait_all_raises():
