@@ -1,18 +1,16 @@
-"""
-End-to-end gradient and convergence tests for SonicMoE integration.
+"""End-to-end gradient and convergence tests for SonicMoE integration.
 
-After the ExpertsInterface refactor, the flow is:
+Flow:
 
     register_sonicmoe_experts()                # plug into ALL_EXPERTS_FUNCTIONS
     config._experts_implementation = "sonicmoe"
     model = AutoModelForCausalLM.from_config(config)   # transformers dispatches
 
-No weight interleaving needed (cute-DSL ``concat_layout=True``); no per-arch
-SparseMoEBlock monkeypatching.
+No weight interleaving needed (``concat_layout=True``).
 
 Requires:
     - Hopper (sm_90) or Blackwell (sm_100+) GPU
-    - sonicmoe kernel available via HF kernels-community
+    - sonic-moe >= 0.1.2 installed from source
     - transformers >= 5.8 with Qwen3MoE Experts class
 """
 

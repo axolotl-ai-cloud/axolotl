@@ -39,12 +39,14 @@ use_sonicmoe: true
 - PyTorch 2.7+
 - For B300: Triton 3.6.x
 
-Sonic-MoE itself is loaded lazily from the HF [`kernels-community/sonic-moe`](https://huggingface.co/kernels-community/sonic-moe) hub on first use via the `kernels` package — no manual install is needed for the runtime. For from-source development:
+Install [`sonic-moe`](https://github.com/Dao-AILab/sonic-moe) `>= 0.1.2` from source:
 
 ```bash
-pip install --no-deps "sonic-moe @ git+https://github.com/Dao-AILab/sonic-moe.git" \
-            "nvidia-cutlass-dsl>=4.4.0" "quack-kernels>=0.3.0"
+pip install --no-deps "sonic-moe @ git+https://github.com/Dao-AILab/sonic-moe.git@0.1.2" \
+            "nvidia-cutlass-dsl==4.4.2" "quack-kernels>=0.3.11"
 ```
+
+The plugin checks the installed version at startup and raises if it's below `0.1.2`.
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 

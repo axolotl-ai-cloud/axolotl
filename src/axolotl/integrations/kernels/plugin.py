@@ -1,12 +1,32 @@
 import importlib
 import os
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 import torch
+from packaging.version import Version
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+_SONICMOE_MIN_VERSION = "0.1.2"
+
+
+def _check_sonicmoe_version():
+    """Require sonic-moe >= 0.1.2 for the ``concat_layout=True`` path."""
+    try:
+        installed = _pkg_version("sonic-moe")
+    except PackageNotFoundError as err:
+        raise RuntimeError(
+            f"sonic-moe is not installed. Install >= {_SONICMOE_MIN_VERSION} from "
+            "https://github.com/Dao-AILab/sonic-moe."
+        ) from err
+    if Version(installed) < Version(_SONICMOE_MIN_VERSION):
+        raise RuntimeError(
+            f"sonic-moe {installed} is too old; require >= {_SONICMOE_MIN_VERSION}. "
+            "Upgrade from https://github.com/Dao-AILab/sonic-moe."
+        )
 
 
 def _check_sonicmoe_gpu_compat():
@@ -74,6 +94,7 @@ class KernelsPlugin(BasePlugin):
             cfg.experts_implementation = "scattermoe"
             LOG.info("Registered 'scattermoe' in transformers ExpertsInterface")
         elif cfg.use_sonicmoe:
+            _check_sonicmoe_version()
             _check_sonicmoe_gpu_compat()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (

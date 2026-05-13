@@ -2,23 +2,22 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""
-End-to-end tests for SonicMoE + LoRA after the ExpertsInterface refactor.
+"""End-to-end tests for SonicMoE + LoRA.
 
-The new flow:
+Flow:
 
     register_sonicmoe_experts()                # plug into ALL_EXPERTS_FUNCTIONS
     config._experts_implementation = "sonicmoe"
     model = AutoModelForCausalLM.from_config(config)
     model = get_peft_model(model, lora_config)   # PEFT wraps params/modules
 
-Our registered ``sonicmoe_experts_forward_with_lora`` detects the PEFT
-wrappers and materializes ``W_eff = W + scaling * (B @ A)`` via
-:class:`MoELoRAMaterialize`, so adapters train through the CUTLASS kernels.
+``sonicmoe_experts_forward_with_lora`` detects the PEFT wrappers and
+materializes ``W_eff = W + scaling * (B @ A)`` via :class:`MoELoRAMaterialize`,
+so adapters train through the CUTLASS kernels.
 
 Requires:
     - Hopper (sm_90) or Blackwell (sm_100+) GPU
-    - sonicmoe kernel available via HF kernels-community
+    - sonic-moe >= 0.1.2 installed from source
     - peft installed
     - transformers >= 5.8 with Qwen3MoE Experts class
 """
