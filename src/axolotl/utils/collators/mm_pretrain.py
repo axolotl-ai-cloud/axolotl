@@ -10,6 +10,7 @@ from PIL import Image
 from torch import Tensor
 from transformers import PreTrainedTokenizerBase, ProcessorMixin
 from transformers.data.data_collator import DataCollatorMixin
+from transformers.image_utils import load_image
 from transformers.utils import PaddingStrategy
 
 from axolotl.prompt_strategies.multimodal_pretrain import (
@@ -19,10 +20,6 @@ from axolotl.prompt_strategies.multimodal_pretrain import (
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-# Decompression-bomb cap (~7070x7070).
-_DEFAULT_MAX_IMAGE_PIXELS = 50_000_000
-_DEFAULT_MAX_IMAGES_PER_ROW = 32
 
 
 @dataclass
@@ -36,12 +33,9 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
     pad_to_multiple_of: Optional[int] = None
     max_length: Optional[int] = None
     skip_bad_images: bool = False
-    max_image_pixels: int = _DEFAULT_MAX_IMAGE_PIXELS
-    max_images_per_row: int = _DEFAULT_MAX_IMAGES_PER_ROW
     add_eos_token: bool = True
 
     _image_family_token_ids: set[int] = field(init=False, default_factory=set)
-    _base_dir_real: Optional[str] = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         if self.return_tensors != "pt":
@@ -61,112 +55,35 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 "tokenize inconsistently."
             )
         self._image_family_token_ids = set(self.image_token_spec.image_family_token_ids)
-        if self.image_base_dir is not None:
-            self._base_dir_real = os.path.realpath(self.image_base_dir)
 
-    def _resolve_image_path(self, p: str) -> str:
-        if not isinstance(p, str):
-            raise ValueError(f"Image path must be str, got {type(p).__name__}.")
-        if "\x00" in p:
-            raise ValueError("Image path contains embedded NUL byte.")
-        p_lower = p.lower()
-        if p_lower.startswith(
-            (
-                "http://",
-                "https://",
-                "ftp://",
-                "ftps://",
-                "file://",
-                "data:",
-                "s3://",
-                "gs://",
-                "gcs://",
-                "az://",
-                "azure://",
-                "hf://",
-            )
-        ) or p.startswith(("\\\\", "//")):
-            raise ValueError(
-                f"Non-local image path scheme is not supported in v1 "
-                f"multimodal CPT (got {p!r})."
-            )
-        if self._base_dir_real is not None:
-            if os.path.isabs(p):
-                raise ValueError(
-                    f"Absolute image path {p!r} is rejected when "
-                    f"`image_base_dir` is configured. All image paths must be "
-                    f"relative to the configured base directory."
-                )
-            resolved = os.path.realpath(os.path.join(self._base_dir_real, p))
-            # commonpath (not startswith) so root-dir bases like "/" work.
-            try:
-                within_base = (
-                    os.path.commonpath([self._base_dir_real, resolved])
-                    == self._base_dir_real
-                )
-            except ValueError:
-                within_base = False
-            if not within_base:
-                raise ValueError(
-                    f"Image path {p!r} resolves outside `image_base_dir` "
-                    f"after symlink resolution. Refusing to load."
-                )
-            return resolved
-        return os.path.realpath(p) if os.path.isabs(p) else p
-
-    def _open_image_hardened(self, resolved: str) -> Image.Image:
-        # O_NOFOLLOW closes the realpath→open TOCTOU window for the final component.
-        nofollow = getattr(os, "O_NOFOLLOW", 0)
-        try:
-            fd = os.open(resolved, os.O_RDONLY | nofollow)
-        except OSError as exc:
-            raise ValueError(
-                f"Cannot open image (os.open failed: {type(exc).__name__})."
-            ) from exc
-        file_obj = os.fdopen(fd, "rb")
-        try:
-            with Image.open(file_obj) as src:
-                w, h = src.size
-                if w * h > self.max_image_pixels:
-                    raise ValueError(
-                        f"Image pixels ({w}x{h}) exceed "
-                        f"max_image_pixels ({self.max_image_pixels})."
-                    )
-                # Multi-frame bomb guard (GIF/TIFF/WebP).
-                n_frames = getattr(src, "n_frames", 1)
-                if n_frames > 1:
-                    raise ValueError(
-                        f"Multi-frame images are not supported (got {n_frames} frames)."
-                    )
-                img = src.convert("RGB")
-                img.load()
-                return img
-        finally:
-            if not file_obj.closed:
-                file_obj.close()
+    def _resolve_image_source(self, src: Any) -> Any:
+        # Only join base_dir for relative string paths; pass everything else
+        # (PIL images, URLs, base64, absolute paths) through to load_image.
+        if (
+            self.image_base_dir
+            and isinstance(src, str)
+            and not os.path.isabs(src)
+            and "://" not in src
+        ):
+            return os.path.join(self.image_base_dir, src)
+        return src
 
     def _load_images_for_row(
-        self, paths: list[str], row_index: int
+        self, sources: list, row_index: int
     ) -> list[Image.Image]:
-        if len(paths) > self.max_images_per_row:
-            raise ValueError(
-                f"Row {row_index}: {len(paths)} images exceeds "
-                f"`max_images_per_row={self.max_images_per_row}`. Split the "
-                f"row or raise the cap if this is expected."
-            )
         out: list[Image.Image] = []
-        for raw in paths:
+        for raw in sources:
             try:
-                resolved = self._resolve_image_path(raw)
-                img = self._open_image_hardened(resolved)
+                img = load_image(self._resolve_image_source(raw))
             except Exception as exc:
-                # Top-level log gets basename only; full path stays on DEBUG.
-                basename = os.path.basename(str(raw))
+                label = (
+                    os.path.basename(raw) if isinstance(raw, str) else type(raw).__name__
+                )
                 msg = (
-                    f"Row {row_index}: failed to load image {basename!r} "
+                    f"Row {row_index}: failed to load image {label!r} "
                     f"({type(exc).__name__})"
                 )
-                LOG.debug("failed image full path: %r; error: %s", raw, exc)
+                LOG.debug("failed image full source: %r; error: %s", raw, exc)
                 if self.skip_bad_images:
                     LOG.warning("%s — skipping", msg)
                     continue
@@ -197,33 +114,27 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 )
             raw = ex["images"]
             if raw is None:
-                raw_paths: list[str] = []
+                raw_sources: list = []
             elif isinstance(raw, (list, tuple)):
-                raw_paths = list(raw)
+                raw_sources = list(raw)
             else:
                 raise TypeError(
                     f"Row {i}: `images` must be a list (or None), got "
                     f"{type(raw).__name__}."
                 )
-            for j, rp in enumerate(raw_paths):
-                if not isinstance(rp, str):
-                    raise TypeError(
-                        f"Row {i}, image {j}: path must be str, got "
-                        f"{type(rp).__name__}."
-                    )
             # Processor re-tokenizes below, discarding the encoder's EOS — re-append.
             if self.add_eos_token and self.tokenizer.eos_token:
                 if not mm_text.endswith(self.tokenizer.eos_token):
                     mm_text = mm_text + self.tokenizer.eos_token
             texts.append(mm_text)
-            loaded = self._load_images_for_row(raw_paths, row_index=i)
-            if self.skip_bad_images and len(loaded) != len(raw_paths):
+            loaded = self._load_images_for_row(raw_sources, row_index=i)
+            if self.skip_bad_images and len(loaded) != len(raw_sources):
                 # Drop the row to avoid silent placeholder/image count mismatch.
                 LOG.warning(
                     "Row %d: %d/%d images failed to load; dropping row.",
                     i,
-                    len(raw_paths) - len(loaded),
-                    len(raw_paths),
+                    len(raw_sources) - len(loaded),
+                    len(raw_sources),
                 )
                 texts.pop()
                 continue
@@ -326,8 +237,8 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
         if self.max_length is not None and input_ids_len > self.max_length:
             LOG.warning(
                 "Batch input_ids length %d exceeds configured sequence_len %d "
-                "(image placeholder expansion). Reduce max_images_per_row or "
-                "raise sequence_len if this fires repeatedly.",
+                "(image placeholder expansion). Raise sequence_len if this "
+                "fires repeatedly.",
                 input_ids_len,
                 self.max_length,
             )

@@ -432,94 +432,7 @@ def test_collator_raises_on_missing_columns(smolvlm_processor):
         collator.torch_call([{"input_ids": [1, 2, 3]}])  # no _mm_text / images
 
 
-# ---- security gates -------------------------------------------------------
-
-
-def test_collator_rejects_path_traversal_with_base_dir(
-    smolvlm_processor, two_tiny_images, tmp_path
-):
-    spec = build_image_token_spec(smolvlm_processor)
-    base = tmp_path / "images"
-    base.mkdir()
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-        image_base_dir=str(base),
-    )
-    # Absolute path rejection
-    with pytest.raises(RuntimeError) as exc:
-        collator._load_images_for_row([str(two_tiny_images[0])], row_index=0)
-    assert isinstance(exc.value.__cause__, ValueError)
-    assert "Absolute image path" in str(exc.value.__cause__)
-    # Containment-escape rejection
-    with pytest.raises(RuntimeError) as exc:
-        collator._load_images_for_row(["../../../etc/passwd"], row_index=0)
-    assert isinstance(exc.value.__cause__, ValueError)
-    assert "outside" in str(exc.value.__cause__)
-
-
-def test_collator_rejects_remote_urls(smolvlm_processor):
-    spec = build_image_token_spec(smolvlm_processor)
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-    )
-    for url in (
-        "http://example.com/a.png",
-        "https://x/y.jpg",
-        "file:///etc/passwd",
-        "ftp://x/y.png",
-        "data:image/png;base64,xxx",
-        # Cloud / object-store / hub URIs.
-        "s3://bucket/key.png",
-        "gs://bucket/key.png",
-        "gcs://bucket/key.png",
-        "az://container/key.png",
-        "azure://account/container/key.png",
-        "hf://datasets/foo/bar/img.png",
-        # Case-variant bypass attempts.
-        "HTTP://evil.com/x.png",
-        "Https://x/y.jpg",
-        "FILE:///etc/passwd",
-        "DATA:image/png;base64,xxx",
-        "S3://bucket/key.png",
-        "GS://bucket/key.png",
-    ):
-        with pytest.raises(RuntimeError) as exc:
-            collator._load_images_for_row([url], row_index=0)
-        assert isinstance(exc.value.__cause__, ValueError)
-        assert "Non-local image path scheme" in str(exc.value.__cause__)
-
-
-def test_collator_rejects_nul_byte_paths(smolvlm_processor):
-    spec = build_image_token_spec(smolvlm_processor)
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-    )
-    with pytest.raises(RuntimeError) as exc:
-        collator._load_images_for_row(["bad\x00path.png"], row_index=0)
-    assert "NUL byte" in str(exc.value.__cause__)
-
-
-def test_collator_rejects_non_string_image_entries(smolvlm_processor, two_tiny_images):
-    spec = build_image_token_spec(smolvlm_processor)
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-    )
-    rows = [
-        {
-            "_mm_text": f"{spec.image_token}\nrow",
-            "images": [None],  # type: ignore[list-item]
-        }
-    ]
-    with pytest.raises(TypeError, match="path must be str"):
-        collator.torch_call(rows)
+# ---- input validation -----------------------------------------------------
 
 
 def test_collator_rejects_bytes_mm_text(smolvlm_processor, two_tiny_images):
@@ -553,19 +466,6 @@ def test_collator_sanitizes_error_message(smolvlm_processor, tmp_path):
     assert "nope.png" in str(exc.value)
     assert "subdir_with_secret_name" not in str(exc.value)
     assert "Row 3" in str(exc.value)
-
-
-def test_collator_rejects_too_many_images(smolvlm_processor, two_tiny_images):
-    spec = build_image_token_spec(smolvlm_processor)
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-        max_images_per_row=2,
-    )
-    paths = [str(two_tiny_images[0])] * 3
-    with pytest.raises(ValueError, match="max_images_per_row"):
-        collator._load_images_for_row(paths, row_index=0)
 
 
 def test_collator_skip_bad_images_drops_row_and_continues(
@@ -613,24 +513,6 @@ def test_collator_all_rows_dropped_raises(smolvlm_processor, tmp_path):
     ]
     with pytest.raises(RuntimeError, match="All rows in the batch were dropped"):
         collator.torch_call(rows)
-
-
-def test_collator_rejects_multi_frame_image(smolvlm_processor, tmp_path):
-    """Multi-frame GIF is rejected by the in-process bomb guard."""
-    spec = build_image_token_spec(smolvlm_processor)
-    collator = MultiModalPretrainDataCollator(
-        tokenizer=smolvlm_processor.tokenizer,
-        processor=smolvlm_processor,
-        image_token_spec=spec,
-    )
-    # Build an in-memory 2-frame GIF; verify the inner guard fires (the
-    # outer `_load_images_for_row` wraps it in a basename-only RuntimeError).
-    gif_path = tmp_path / "anim.gif"
-    f0 = Image.new("RGB", (16, 16), color=(255, 0, 0))
-    f1 = Image.new("RGB", (16, 16), color=(0, 255, 0))
-    f0.save(gif_path, save_all=True, append_images=[f1], duration=100, loop=0)
-    with pytest.raises(ValueError, match="Multi-frame"):
-        collator._open_image_hardened(str(gif_path))
 
 
 # ---- mixed / all-text batches --------------------------------------------
