@@ -232,10 +232,13 @@ class PretrainingDataset(BaseModel):
     name: str | None = None
     path: str | None = None
     split: str | None = "train"
-    text_column: str | None = "text"
+    text_column: str | None = Field(
+        default="text",
+        json_schema_extra={"description": "Column holding the row's text."},
+    )
     type: str | None = "pretrain"
     trust_remote_code: bool | None = False
-    data_files: str | None = None
+    data_files: str | list[str] | None = None
     ds_type: str | None = Field(
         default=None,
         json_schema_extra={
