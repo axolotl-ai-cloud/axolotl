@@ -58,11 +58,13 @@ class ProcessingStrategy:
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         self.processor = processor
         self.chat_template = chat_template
         self.image_token = None
         self.image_token_id = None
+        self.field_messages = self._normalize_field_messages(field_messages)
 
         self.image_size = image_size
         self.image_resize_algorithm = (
@@ -139,8 +141,38 @@ class ProcessingStrategy:
         """Subclasses declare role boundaries here; [] opts out of role masking."""
         return []
 
+    @staticmethod
+    def _normalize_field_messages(
+        field_messages: str | list[str] | tuple[str, ...] | None,
+    ) -> tuple[str, ...]:
+        if field_messages is None:
+            return ("messages",)
+        if isinstance(field_messages, str):
+            return (field_messages,)
+        return tuple(name for name in field_messages if name)
+
+    def _get_messages_field(self, example: dict) -> str | None:
+        # Configured field wins so a stale `messages` column can't override it.
+        for name in self.field_messages:
+            if name in example and example[name] is not None:
+                return name
+        if "messages" in example and example["messages"] is not None:
+            return "messages"
+        return None
+
+    @staticmethod
+    def _is_legacy_schema(messages) -> bool:
+        """Detect ShareGPT schema: first message has both ``from`` and ``value``."""
+        return (
+            isinstance(messages, list)
+            and bool(messages)
+            and isinstance(messages[0], dict)
+            and "from" in messages[0]
+            and "value" in messages[0]
+        )
+
     def __call__(self, examples: list[dict]) -> list[dict]:
-        """Normalize examples to OpenAI ``messages`` format (accepts legacy ``conversations``)."""
+        """Normalize examples to OpenAI ``messages`` (accepts legacy ``conversations`` or custom ``field_messages``)."""
         role_mapping = {
             "human": "user",
             "gpt": "assistant",
@@ -188,9 +220,21 @@ class ProcessingStrategy:
 
         processed_examples = []
         for example in examples:
+            messages_field = self._get_messages_field(example)
+            # Re-route a custom field into the canonical key whose schema it matches;
+            # the canonical "messages"/"conversations" branches below are unchanged.
+            if messages_field and messages_field not in {"messages", "conversations"}:
+                msgs = example[messages_field]
+                target = "conversations" if self._is_legacy_schema(msgs) else "messages"
+                example = dict(example)
+                example[target] = msgs
+                example.pop(messages_field, None)
+                if target == "conversations":
+                    example.pop("messages", None)
+
             if not ("messages" in example or "conversations" in example):
                 raise ValueError(
-                    "Only `messages` and `conversations` message keys are currently supported."
+                    "Only configured `field_messages`, `messages`, and `conversations` message keys are currently supported."
                 )
 
             if "messages" in example and example["messages"] is not None:
@@ -519,6 +563,7 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -529,6 +574,7 @@ class Qwen2VLProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         self.image_token = "<|image_pad|>"  # nosec
         self.image_token_id = processor.tokenizer.convert_tokens_to_ids(
@@ -564,6 +610,7 @@ class Qwen3_5ProcessingStrategy(Qwen2VLProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -574,6 +621,7 @@ class Qwen3_5ProcessingStrategy(Qwen2VLProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         self.video_token = "<|video_pad|>"  # nosec
         self.video_token_id = processor.tokenizer.convert_tokens_to_ids(
@@ -631,6 +679,7 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -641,6 +690,7 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         # Real Gemma3 tokenizers expose boi_token as a direct attribute, not
         # via special_tokens_map (which only holds HF's standard slots).
@@ -879,6 +929,7 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -889,6 +940,7 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         special_ids = (
             processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids
@@ -929,6 +981,7 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -939,6 +992,7 @@ class SmolVLM2ProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         self.image_token = "<image>"  # nosec
 
@@ -964,6 +1018,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -974,6 +1029,7 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
         special_ids = (
             processor.tokenizer.tokenizer.instruct_tokenizer.image_encoder.special_ids
@@ -1014,6 +1070,7 @@ class InternVLProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -1024,6 +1081,7 @@ class InternVLProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
 
         if not hasattr(processor, "image_ids"):
@@ -1064,6 +1122,7 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         roles_to_train: Optional[list[str]] = None,
         train_on_eos: Optional[str] = None,
         role_boundaries_override: Optional[list[dict]] = None,
+        field_messages: str | list[str] | tuple[str, ...] | None = None,
     ):
         super().__init__(
             processor,
@@ -1074,6 +1133,7 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
             roles_to_train=roles_to_train,
             train_on_eos=train_on_eos,
             role_boundaries_override=role_boundaries_override,
+            field_messages=field_messages,
         )
 
         self.tokenizer = getattr(processor, "tokenizer", processor)
@@ -1132,6 +1192,7 @@ def get_processing_strategy(
     roles_to_train: Optional[list[str]] = None,
     train_on_eos: Optional[str] = None,
     role_boundaries_override: Optional[list[dict]] = None,
+    field_messages: str | list[str] | tuple[str, ...] | None = None,
 ):
     processing_kwargs = {
         "processor": processor,
@@ -1142,6 +1203,7 @@ def get_processing_strategy(
         "roles_to_train": roles_to_train,
         "train_on_eos": train_on_eos,
         "role_boundaries_override": role_boundaries_override,
+        "field_messages": field_messages,
     }
 
     if chat_template_type in [None, "tokenizer_default"]:

@@ -20,7 +20,9 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 ## Installation {#sec-installation}
 
 ::: {.callout-important}
-For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 12.8.
+For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 13.0. CUDA 12.8 cannot
+compile for `sm_103a` (B300), and using CUDA 13.0 also avoids first-launch JIT
+overhead on B100 / B200 / RTX 50-series.
 :::
 
 ### Quick Install {#sec-uv}
@@ -79,7 +81,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
 :::
 
 ::: {.callout-important}
-For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.11-cu128-2.9.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.11-cu128-2.9.1`.
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.11-cu130-2.9.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.11-cu130-2.9.1`.
 :::
 
 Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.

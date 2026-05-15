@@ -34,8 +34,6 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
     except (ImportError, RuntimeError):
         pass
 
-    # int4 weight config imports will fail on machines with fbgemm-gpu installed
-    # without a CUDA runtime available so we do this safely
     try:
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
@@ -123,14 +121,14 @@ def get_quantization_config(
         return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
         if block_size != 32:
             raise ValueError(
                 "MXFP4 quantization must use a block_size (group_size) of 32"
             )
-
-        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
 
         return MXDynamicActivationMXWeightConfig(
             activation_dtype=torch.float4_e2m1fn_x2,
@@ -148,10 +146,11 @@ def _attach_torchao_quantizer(
 ):
     """Attach a TorchAoHfQuantizer to the model so save_pretrained uses
     torchao's flatten_tensor_state_dict path, preserving quantized weights
-    (e.g. MXTensor qdata+scale) in the safetensors file.
+    in the safetensors file.
 
-    Without this, save_pretrained falls through to the default path which
-    calls safetensors storage_ptr() on tensor subclasses and crashes.
+    Note: This does NOT work for MX formats (MXTensor) because MXTensor
+    lacks the ``tensor_data_names`` attribute that flatten_tensor_state_dict
+    requires.  MX formats use ``safe_serialization=False`` instead.
     """
     from transformers import TorchAoConfig
     from transformers.quantizers.quantizer_torchao import TorchAoHfQuantizer
@@ -202,11 +201,55 @@ def quantize_model(
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
 
-    _attach_torchao_quantizer(
-        model,
-        linear_ptq_config,
-        include_input_output_embeddings=bool(quantize_embedding),
-    )
+    is_mx = False
+    try:
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
+        is_mx = isinstance(linear_ptq_config, MXDynamicActivationMXWeightConfig)
+    except ImportError:
+        pass
+
+    if is_mx:
+        # MXTensor lacks tensor_data_names so flatten_tensor_state_dict (safetensors)
+        # cannot serialize it.  Mark the model so the caller can use
+        # safe_serialization=False (torch.save) which supports __tensor_flatten__.
+        model._is_mx_quantized = True
+    else:
+        _attach_torchao_quantizer(
+            model,
+            linear_ptq_config,
+            include_input_output_embeddings=bool(quantize_embedding),
+        )
+
+
+def save_quantized_model(model, save_dir, **kwargs):
+    """Save a quantized model, handling MXTensor serialization.
+
+    MXTensor does not have a valid storage pointer, which causes
+    ``save_pretrained`` to crash (both in ``remove_tied_weights_from_state_dict``
+    via ``id_tensor_storage``, and in safetensors serialization).
+    Transformers >=5.5 removed the ``safe_serialization`` parameter entirely.
+
+    For MX-quantized models we save the config/generation_config via
+    ``save_pretrained`` machinery and the weights via ``torch.save``.
+    """
+    import os
+
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if not is_mx:
+        model.save_pretrained(save_dir, **kwargs)
+        return
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save config, generation_config, etc.
+    model.config.save_pretrained(save_dir)
+    if hasattr(model, "generation_config") and model.generation_config is not None:
+        model.generation_config.save_pretrained(save_dir)
+
+    # Save weights via torch.save (supports __tensor_flatten__)
+    weights_path = os.path.join(save_dir, "pytorch_model.bin")
+    torch.save(model.state_dict(), weights_path)
 
 
 def _make_qat_config(

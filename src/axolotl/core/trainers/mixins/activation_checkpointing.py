@@ -22,6 +22,25 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+# TODO(#3638): drop once TRL pin includes huggingface/trl#5730. Mirrors the
+# upstream __enter__ override — clears cross-step state on context re-entry
+# so saved tensors that never unpack during backward (MoE / torch.compile)
+# don't accumulate as leaked GPU references.
+def _axolotl_offload_enter(self):
+    self.tracker.clear()
+    self.storage_to_tensor_id.clear()
+    if self.use_streams:
+        self.fwd_stash.clear()
+        self.bwd_tensor_stash.clear()
+        self.bwd_ev_stash.clear()
+    self.is_first_forward_call = True
+    self.is_first_backward_call = True
+    return super(OffloadActivations, self).__enter__()
+
+
+OffloadActivations.__enter__ = _axolotl_offload_enter
+
+
 class ActivationOffloadingMixin(Trainer):
     """
     Trainer mixin class for activation checkpointing w offloading

@@ -44,4 +44,7 @@ RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
 
 COPY .axolotl-complete.bash /root/.axolotl-complete.bash
 RUN chmod +x /root/.axolotl-complete.bash && \
+    chmod +x /workspace/axolotl/scripts/uv-entrypoint.sh && \
     echo 'source /root/.axolotl-complete.bash' >> ~/.bashrc
+
+ENTRYPOINT ["/workspace/axolotl/scripts/uv-entrypoint.sh"]

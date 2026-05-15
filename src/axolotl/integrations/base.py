@@ -23,9 +23,10 @@ from __future__ import annotations
 import collections
 import importlib
 import traceback
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, OrderedDict, Union
 
-from peft import PeftModel
+from peft import PeftConfig, PeftMixedModel, PeftModel
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -39,6 +40,15 @@ LOG = get_logger(__name__)
 
 if TYPE_CHECKING:
     from axolotl.common.datasets import TrainDatasetMeta
+
+
+@dataclass(frozen=True)
+class AdapterCapabilities:
+    """Capabilities for an adapter contributed by a plugin."""
+
+    name: str
+    lora_like: bool = False
+    relora: bool = False
 
 
 class BasePlugin:
@@ -90,6 +100,26 @@ class BasePlugin:
         """
         Returns a dataclass model for the plugin's training arguments.
         """
+
+    def get_adapter_capabilities(self) -> list[AdapterCapabilities]:
+        """Returns adapter capabilities contributed by the plugin."""
+        return []
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra PEFT LoraConfig kwargs for plugin LoRA-like adapters."""
+        return {}
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Optionally load a plugin adapter instead of the generic loader."""
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False
@@ -413,6 +443,58 @@ class PluginManager:
             if training_args_from_plugin is not None:
                 training_args.append(training_args_from_plugin)
         return training_args
+
+    def adapter_capabilities(self) -> dict[str, AdapterCapabilities]:
+        """Returns adapter capabilities by adapter name."""
+        capabilities = {}
+        for plugin in self.plugins.values():
+            for adapter_capability in plugin.get_adapter_capabilities():
+                capabilities[adapter_capability.name] = adapter_capability
+        return capabilities
+
+    def get_adapter_capability(self, adapter: str) -> AdapterCapabilities | None:
+        """Returns capabilities for a registered plugin adapter."""
+        return self.adapter_capabilities().get(adapter)
+
+    def supports_adapter(self, adapter: str) -> bool:
+        """Returns whether a plugin has registered the adapter name."""
+        return adapter in self.adapter_capabilities()
+
+    def adapter_supports_relora(self, adapter: str) -> bool:
+        """Returns whether a plugin adapter supports ReLoRA restart semantics."""
+        capability = self.get_adapter_capability(adapter)
+        return bool(capability and capability.relora)
+
+    def get_lora_config_kwargs(self, cfg: DictDefault) -> dict:
+        """Returns extra LoraConfig kwargs from plugins for the configured adapter."""
+        lora_config_kwargs = {}
+        for plugin in self.plugins.values():
+            plugin_kwargs = plugin.get_lora_config_kwargs(cfg)
+            if plugin_kwargs:
+                lora_config_kwargs.update(plugin_kwargs)
+        return lora_config_kwargs
+
+    def load_adapter(
+        self,
+        model: PreTrainedModel,
+        cfg: DictDefault,
+        inference: bool = False,
+        config_only: bool = False,
+    ) -> (
+        tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]
+        | None
+    ):
+        """Returns the first plugin adapter loader result, if any."""
+        for plugin in self.plugins.values():
+            loaded = plugin.load_adapter(
+                model,
+                cfg,
+                inference=inference,
+                config_only=config_only,
+            )
+            if loaded is not None:
+                return loaded
+        return None
 
     def load_datasets(
         self, cfg: DictDefault, preprocess: bool = False

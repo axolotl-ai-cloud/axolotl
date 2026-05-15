@@ -19,12 +19,14 @@ from peft import (
 )
 from transformers import PreTrainedModel
 
+from axolotl.integrations.base import PluginManager
 from axolotl.loaders.utils import get_linear_embedding_layers
 from axolotl.telemetry.errors import send_errors
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+PLUGIN_MANAGER = PluginManager.get_instance()
 
 
 def setup_quantized_meta_for_peft(model: torch.nn.Module):
@@ -122,6 +124,76 @@ def _patch_peft_clippable_linear():
 
     LoraModel._create_and_replace = _patched
     LoraModel._axolotl_clippable_patched = True
+
+
+def _get_peft_task_type(model: PreTrainedModel) -> TaskType:
+    model_cls = type(model).__name__
+    if "SequenceClassification" in model_cls:
+        return TaskType.SEQ_CLS
+    if "TokenClassification" in model_cls:
+        return TaskType.TOKEN_CLS
+    return TaskType.CAUSAL_LM
+
+
+def _build_lora_config_kwargs(cfg: DictDefault) -> dict[str, Any]:
+    lora_config_kwargs: dict[str, Any] = {}
+    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
+    if loftq_bits:
+        lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
+        lora_config_kwargs["init_lora_weights"] = "loftq"
+    if cfg.peft_init_lora_weights:
+        lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
+    if cfg.peft_use_dora:
+        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
+        LOG.info("Initializing LoRA weights using dora. This might take longer.")
+    if cfg.peft_use_rslora:
+        lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
+    if cfg.peft_layer_replication:
+        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
+    if cfg.peft_trainable_token_indices:
+        lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
+    if cfg.peft_ensure_weight_tying is not None:
+        lora_config_kwargs["ensure_weight_tying"] = cfg.peft_ensure_weight_tying
+
+    return lora_config_kwargs
+
+
+def _build_peft_lora_config(
+    model: PreTrainedModel,
+    cfg: DictDefault,
+) -> PeftConfig:
+    lora_target_modules = cfg.lora_target_modules or []
+    lora_target_parameters = cfg.lora_target_parameters or []
+
+    if cfg.lora_target_linear:
+        linear_names = find_all_linear_names(model)
+        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
+        lora_target_modules_as_list = (
+            lora_target_modules
+            if isinstance(lora_target_modules, list)
+            else [lora_target_modules]
+        )
+        lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
+
+    lora_config_kwargs = _build_lora_config_kwargs(cfg)
+    lora_config_kwargs.update(PLUGIN_MANAGER.get_lora_config_kwargs(cfg))
+
+    lora_config = LoraConfig(
+        r=cfg.lora_r,
+        lora_alpha=cfg.lora_alpha,
+        target_modules=lora_target_modules,
+        target_parameters=lora_target_parameters,
+        layers_to_transform=cfg.peft_layers_to_transform,
+        layers_pattern=cfg.peft_layers_pattern,
+        lora_dropout=cfg.lora_dropout,
+        fan_in_fan_out=cfg.lora_fan_in_fan_out,
+        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
+        exclude_modules=getattr(cfg, "lora_exclude_modules", None) or None,
+        bias="none",
+        task_type=_get_peft_task_type(model),
+        **lora_config_kwargs,
+    )
+    return lora_config
 
 
 def _peft_will_auto_convert_target_params(model, lora_config) -> bool:
@@ -226,62 +298,7 @@ def load_lora(
     config_only: bool = False,
 ) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     _patch_peft_clippable_linear()
-    lora_target_modules = cfg.lora_target_modules or []
-    lora_target_parameters = cfg.lora_target_parameters or []
-
-    if cfg.lora_target_linear:
-        linear_names = find_all_linear_names(model)
-        LOG.info(f"found linear modules: {repr(sorted(linear_names))}")
-        lora_target_modules_as_list = (
-            lora_target_modules
-            if isinstance(lora_target_modules, list)
-            else [lora_target_modules]
-        )
-        lora_target_modules = list(set(lora_target_modules_as_list + linear_names))
-
-    lora_config_kwargs = {}
-    loftq_bits = cfg.peft and cfg.peft.loftq_config and cfg.peft.loftq_config.loftq_bits
-    if loftq_bits:
-        lora_config_kwargs["loftq_config"] = LoftQConfig(loftq_bits=loftq_bits)
-        lora_config_kwargs["init_lora_weights"] = "loftq"
-    if cfg.peft_init_lora_weights:
-        lora_config_kwargs["init_lora_weights"] = cfg.peft_init_lora_weights
-    if cfg.peft_use_dora:
-        lora_config_kwargs["use_dora"] = cfg.peft_use_dora
-        LOG.info("Initializing LoRA weights using dora. This might take longer.")
-    if cfg.peft_use_rslora:
-        lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
-    if cfg.peft_layer_replication:
-        lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
-    if cfg.peft_trainable_token_indices:
-        lora_config_kwargs["trainable_token_indices"] = cfg.peft_trainable_token_indices
-    if cfg.peft_ensure_weight_tying is not None:
-        lora_config_kwargs["ensure_weight_tying"] = cfg.peft_ensure_weight_tying
-
-    # Determine the correct PEFT task type
-    model_cls = type(model).__name__
-    if "SequenceClassification" in model_cls:
-        task_type = TaskType.SEQ_CLS
-    elif "TokenClassification" in model_cls:
-        task_type = TaskType.TOKEN_CLS
-    else:
-        task_type = TaskType.CAUSAL_LM
-
-    lora_config = LoraConfig(
-        r=cfg.lora_r,
-        lora_alpha=cfg.lora_alpha,
-        target_modules=lora_target_modules,
-        target_parameters=lora_target_parameters,
-        layers_to_transform=cfg.peft_layers_to_transform,
-        layers_pattern=cfg.peft_layers_pattern,
-        lora_dropout=cfg.lora_dropout,
-        fan_in_fan_out=cfg.lora_fan_in_fan_out,
-        modules_to_save=cfg.lora_modules_to_save if cfg.lora_modules_to_save else None,
-        exclude_modules=getattr(cfg, "lora_exclude_modules", None) or None,
-        bias="none",
-        task_type=task_type,
-        **lora_config_kwargs,
-    )
+    lora_config = _build_peft_lora_config(model, cfg)
 
     if config_only:
         return None, lora_config
@@ -315,7 +332,7 @@ def load_lora(
         model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
 
     if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT - LoRA")
+        LOG.debug("Loading pretrained PEFT adapter")
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
@@ -364,29 +381,59 @@ def load_adapter(
     cfg: DictDefault,
     adapter: str | None,
     inference: bool = False,
-) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel, PeftConfig | None]:
+    config_only: bool = False,
+) -> tuple[PreTrainedModel | PeftModel | PeftMixedModel | None, PeftConfig | None]:
     if adapter is None:
         return model, None
     if hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     if adapter in ["lora", "qlora"]:
-        peft_model, lora_config = load_lora(model, cfg, inference=inference)
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
         return peft_model, lora_config
     if adapter == "llama-adapter":
+        if config_only:
+            _, lora_config = load_llama_adapter(model, cfg, config_only=True)
+            return None, lora_config
         peft_model, lora_config = load_llama_adapter(model, cfg)
         return peft_model, lora_config
 
-    raise NotImplementedError(f"{adapter} PEFT adapter not available")
+    plugin_loaded = PLUGIN_MANAGER.load_adapter(
+        model,
+        cfg,
+        inference=inference,
+        config_only=config_only,
+    )
+    if plugin_loaded is not None:
+        return plugin_loaded
+
+    adapter_capability = PLUGIN_MANAGER.get_adapter_capability(adapter)
+    if adapter_capability and adapter_capability.lora_like:
+        peft_model, lora_config = load_lora(
+            model, cfg, inference=inference, config_only=config_only
+        )
+        return peft_model, lora_config
+
+    registered = sorted(PLUGIN_MANAGER.adapter_capabilities())
+    registered_msg = ", ".join(registered) if registered else "none"
+    raise NotImplementedError(
+        f"Adapter '{adapter}' is not built in and was not registered by a plugin "
+        f"with loader support. Registered plugin adapters: {registered_msg}"
+    )
 
 
 def load_llama_adapter(
-    model: PreTrainedModel, cfg: DictDefault
-) -> tuple[PeftModel | PeftMixedModel, PeftConfig]:
+    model: PreTrainedModel, cfg: DictDefault, config_only: bool = False
+) -> tuple[PeftModel | PeftMixedModel | None, PeftConfig]:
     peft_config = AdaptionPromptConfig(
         adapter_layers=cfg.peft_adapter.layers,  # layers (L)
         adapter_len=cfg.peft_adapter.len,  # prompt length (K)
         task_type="CAUSAL_LM",
     )
+
+    if config_only:
+        return None, peft_config
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT - llama_adapter")

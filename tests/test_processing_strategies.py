@@ -1,6 +1,7 @@
 """Tests for ``axolotl.processing_strategies`` using fake tokenizers (offline/CI-safe)."""
 
 import logging
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -1162,3 +1163,163 @@ def test_multimodal_config_parses_dict_role_boundaries_to_specs():
     seq = [51, 7, 60, 50, 8, 60]
     out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
     assert out == [-100, -100, -100, -100, 8, 60]
+
+
+# --------------------------------------------------------------------------- #
+# field_messages plumbing: helpers and __call__ re-routing
+# --------------------------------------------------------------------------- #
+
+
+def _mock_processor() -> MagicMock:
+    """Processor mock with no ``image_token`` attr so __init__ skips that branch."""
+    processor = MagicMock()
+    del processor.image_token
+    return processor
+
+
+def _openai_messages() -> list[dict]:
+    return [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]
+
+
+def _sharegpt_messages() -> list[dict]:
+    return [
+        {"from": "human", "value": "hello"},
+        {"from": "gpt", "value": "hi"},
+    ]
+
+
+def test_normalize_field_messages_none_defaults_to_messages():
+    assert ProcessingStrategy._normalize_field_messages(None) == ("messages",)
+
+
+def test_normalize_field_messages_string_wrapped_in_tuple():
+    assert ProcessingStrategy._normalize_field_messages("dialogue") == ("dialogue",)
+
+
+def test_normalize_field_messages_list_preserved():
+    assert ProcessingStrategy._normalize_field_messages(["foo", "bar"]) == (
+        "foo",
+        "bar",
+    )
+
+
+def test_normalize_field_messages_falsy_entries_dropped():
+    assert ProcessingStrategy._normalize_field_messages(["foo", "", None, "bar"]) == (
+        "foo",
+        "bar",
+    )
+
+
+def test_is_legacy_schema_sharegpt_pair_detected():
+    assert ProcessingStrategy._is_legacy_schema([{"from": "human", "value": "hi"}])
+
+
+def test_is_legacy_schema_only_from_is_not_enough():
+    # `from` without `value` (e.g., custom metadata) must not be misrouted.
+    assert not ProcessingStrategy._is_legacy_schema([{"from": "human", "extra": "x"}])
+
+
+def test_is_legacy_schema_openai_schema_returns_false():
+    assert not ProcessingStrategy._is_legacy_schema([{"role": "user", "content": "hi"}])
+
+
+def test_is_legacy_schema_empty_list_returns_false():
+    assert not ProcessingStrategy._is_legacy_schema([])
+
+
+def test_is_legacy_schema_non_list_returns_false():
+    assert not ProcessingStrategy._is_legacy_schema(None)
+    assert not ProcessingStrategy._is_legacy_schema("not a list")
+
+
+def test_get_messages_field_default_returns_messages():
+    strategy = ProcessingStrategy(processor=_mock_processor())
+    assert strategy._get_messages_field({"messages": _openai_messages()}) == "messages"
+
+
+def test_get_messages_field_custom_field_returns_custom():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    assert strategy._get_messages_field({"my_col": _openai_messages()}) == "my_col"
+
+
+def test_get_messages_field_custom_takes_priority_over_stale_messages():
+    # Configured custom field must beat a leftover `messages` column.
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    example = {
+        "messages": [{"role": "user", "content": "stale"}],
+        "my_col": _openai_messages(),
+    }
+    assert strategy._get_messages_field(example) == "my_col"
+
+
+def test_get_messages_field_falls_back_to_messages_when_custom_absent():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    assert strategy._get_messages_field({"messages": _openai_messages()}) == "messages"
+
+
+def test_get_messages_field_returns_none_when_no_match():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    assert strategy._get_messages_field({"random_col": "x"}) is None
+
+
+def test_call_canonical_messages_openai():
+    strategy = ProcessingStrategy(processor=_mock_processor())
+    out = strategy([{"messages": _openai_messages()}])
+
+    assert len(out) == 1
+    assert out[0]["messages"][0]["role"] == "user"
+    # String content is wrapped to multimedia content list.
+    assert out[0]["messages"][0]["content"] == [{"type": "text", "text": "hello"}]
+
+
+def test_call_canonical_conversations_sharegpt():
+    strategy = ProcessingStrategy(processor=_mock_processor())
+    out = strategy([{"conversations": _sharegpt_messages()}])
+
+    # Roles get normalized: human -> user, gpt -> assistant.
+    assert out[0]["messages"][0]["role"] == "user"
+    assert out[0]["messages"][1]["role"] == "assistant"
+    assert "conversations" not in out[0]
+
+
+def test_call_custom_field_with_openai_schema():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    out = strategy([{"my_col": _openai_messages()}])
+
+    assert out[0]["messages"][0]["role"] == "user"
+    assert "my_col" not in out[0]
+
+
+def test_call_custom_field_with_sharegpt_schema():
+    # A custom column whose first message looks like ShareGPT is routed to the legacy branch.
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    out = strategy([{"my_col": _sharegpt_messages()}])
+
+    assert out[0]["messages"][0]["role"] == "user"
+    assert out[0]["messages"][1]["role"] == "assistant"
+    assert "my_col" not in out[0]
+    assert "conversations" not in out[0]
+
+
+def test_call_custom_field_overrides_stale_messages_column():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+    out = strategy(
+        [
+            {
+                "messages": [{"role": "user", "content": "stale"}],
+                "my_col": [{"role": "user", "content": "fresh"}],
+            }
+        ]
+    )
+
+    assert out[0]["messages"][0]["content"] == [{"type": "text", "text": "fresh"}]
+
+
+def test_call_unknown_key_raises_value_error():
+    strategy = ProcessingStrategy(processor=_mock_processor(), field_messages="my_col")
+
+    with pytest.raises(ValueError):
+        strategy([{"random_col": _openai_messages()}])

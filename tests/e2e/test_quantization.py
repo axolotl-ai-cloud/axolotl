@@ -23,6 +23,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     prepare_model_for_qat,
     quantize_model,
+    save_quantized_model,
 )
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 from axolotl.utils.schemas.quantization import QATConfig
@@ -360,6 +361,124 @@ class TestQuantization:
         # ensure weights have been quantized
         assert isinstance(model.model.embed_tokens.weight, nn.Parameter)
         assert isinstance(model.lm_head.weight, nn.Parameter)
+
+
+class TestMXQuantizeSaveLoad:
+    """Tests for MX format (mxfp4) quantize-save-load round-trip via save_pretrained.
+
+    Uses a tiny HF model built from config (no download) so tests exercise the
+    real save_pretrained / from_pretrained code path — the same one the CLI uses.
+    MX format models are saved with safe_serialization=False (torch.save) because
+    MXTensor does not yet support safetensors serialization.
+    """
+
+    @staticmethod
+    def _make_tiny_model():
+        """Build a minimal HF causal-LM that can be quantized on CPU."""
+        from transformers import Qwen2Config
+
+        config = Qwen2Config(
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            vocab_size=256,
+            max_position_embeddings=64,
+            torch_dtype="bfloat16",
+        )
+        model = AutoModelForCausalLM.from_config(config).to(torch.bfloat16)
+        return model
+
+    @require_torch_2_8_0
+    def test_mxfp4_quantize_save_pretrained(self, tmp_path):
+        """quantize_model(mxfp4) -> save_pretrained -> from_pretrained round-trip."""
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
+
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+
+        # Weights should be MXTensor after quantization
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
+
+        # Model should be flagged for MX-style save
+        assert getattr(model, "_is_mx_quantized", False)
+
+        # save_pretrained with safe_serialization=False (torch.save path)
+        save_dir = str(tmp_path / "mxfp4_model")
+        save_quantized_model(model, save_dir)
+
+        # Verify checkpoint files were written
+        import glob
+
+        assert glob.glob(f"{save_dir}/*.bin") or glob.glob(f"{save_dir}/**/*.bin")
+
+        # from_pretrained should load without error
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
+        )
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys, (
+            f"Key mismatch: missing={original_keys - loaded_keys}, "
+            f"extra={loaded_keys - original_keys}"
+        )
+
+    @require_torch_2_8_0
+    def test_mxfp4_is_mx_flag_set(self):
+        """quantize_model sets _is_mx_quantized for MX configs."""
+        model = self._make_tiny_model()
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        assert getattr(model, "_is_mx_quantized", False)
+
+    @require_torch_2_8_0
+    @requires_cuda_ge_8_9
+    def test_non_mx_uses_torchao_quantizer(self):
+        """Non-MX quantization attaches TorchAoHfQuantizer, not _is_mx_quantized."""
+        model = self._make_tiny_model()
+        try:
+            quantize_model(model, TorchAOQuantDType.int4, group_size=32)
+        except ImportError:
+            pytest.skip("int4 quantization requires mslk >= 1.0.0")
+        assert not getattr(model, "_is_mx_quantized", False)
+        assert hasattr(model, "hf_quantizer")
+
+    @require_torch_2_8_0
+    def test_mxfp4_qat_then_ptq_save_pretrained(self, tmp_path):
+        """Full QAT -> convert -> PTQ -> save_pretrained -> from_pretrained."""
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+        from torchao.prototype.qat import MXFakeQuantizedLinear
+
+        model = self._make_tiny_model()
+        original_keys = set(model.state_dict().keys())
+
+        # QAT preparation
+        prepare_model_for_qat(model, TorchAOQuantDType.mxfp4, 32)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module, MXFakeQuantizedLinear)
+
+        # Convert QAT back to normal linear
+        convert_qat_model(model)
+
+        # PTQ quantize
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        for module in model.modules():
+            if isinstance(module, nn.Linear):
+                assert isinstance(module.weight, MXTensor)
+
+        # save_pretrained round-trip
+        save_dir = str(tmp_path / "mxfp4_qat_model")
+        save_quantized_model(model, save_dir)
+
+        loaded = AutoModelForCausalLM.from_pretrained(
+            save_dir, torch_dtype=torch.bfloat16
+        )
+        loaded_keys = set(loaded.state_dict().keys())
+        assert original_keys == loaded_keys
 
 
 class TestQuantizationCallback:

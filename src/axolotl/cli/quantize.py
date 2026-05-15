@@ -15,6 +15,7 @@ from axolotl.utils.quantization import (
     get_quantization_config,
     quantization_config_to_str,
     quantize_model,
+    save_quantized_model,
 )
 
 LOG = get_logger(__name__)
@@ -93,22 +94,16 @@ def do_quantize(
         weight_dtype, activation_dtype, group_size
     )
 
-    LOG.info(f"Saving quantized model to: {str(Path(output_dir) / 'quantized')}.")
-    try:
-        model.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            progressbar=True,
+    save_path = str(Path(output_dir) / "quantized")
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if is_mx:
+        LOG.info(
+            f"Saving MX-quantized model to: {save_path} "
+            "(using torch.save — MXTensor does not support safetensors yet)."
         )
-    except NotImplementedError:
-        LOG.warning(
-            "Model weight conversions do not support reverse_op, "
-            "retrying save with save_original_format=False"
-        )
-        model.save_pretrained(
-            str(Path(output_dir) / "quantized"),
-            progressbar=True,
-            save_original_format=False,
-        )
+    else:
+        LOG.info(f"Saving quantized model to: {save_path}.")
+    save_quantized_model(model, save_path, progressbar=True)
     tokenizer.save_pretrained(
         str(Path(output_dir) / "quantized"),
         progressbar=True,

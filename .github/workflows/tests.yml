@@ -72,7 +72,7 @@ jobs:
         exclude:
           - python_version: "3.14"
             pytorch_version: "2.9.1"
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: cleanup node
