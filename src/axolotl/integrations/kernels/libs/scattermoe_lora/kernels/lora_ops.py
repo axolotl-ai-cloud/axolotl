@@ -2259,16 +2259,22 @@ def group_bwd_lora_fused(
 #       contiguous (matches torchao MXTensor's natural last-dim block layout
 #       once you treat the W storage as ``[E, N, K]``).
 #     - scale:  ``[E, N, K/32]`` uint8 (E8M0).
-#   * dX kernel: logical W is ``[E, K, N]`` (block axis = N), produced from
-#     the forward weights by ``mx_pre_transpose_for_dx`` (dequantize +
-#     transpose + re-quantize on the small active-experts set).
-#     - packed: ``[E, K, N/2]`` uint8.
-#     - scale:  ``[E, K, N/32]`` uint8 (E8M0).
+#   * dX kernel: reuses the *forward* MX layout ``[E, N, K/2]`` (no
+#     pre-transpose). The kernel iterates the N reduction in outer tiles and,
+#     for each (K_tile, N_tile), decodes nibbles along the K rows of the
+#     packed tile and broadcasts scales within each ``MX_BLOCK_SIZE`` K-block,
+#     yielding the same dequantized ``W[e, k, n]`` values the forward path
+#     consumes. This deliberately avoids a "pre-transpose for dX" step that
+#     would dequantize + transpose + re-quantize the active-experts slice:
+#     that round-trip introduces a second MX rounding error on top of the
+#     forward quantization, perturbing dX in ways that are hard to bound.
+#     Reusing the forward buffer keeps numerics bitwise-comparable to a
+#     dequant-then-MMA dX reference.
 #
-# ``BLOCK_K`` for the forward kernel and ``BLOCK_N`` for the dX kernel must
-# be multiples of the OCP block size (32) so that each K- or N-tile aligns
-# with whole scale blocks. The autotune config search space is pruned
-# accordingly in ``_prune_fwd_mx_configs`` / ``_prune_dX_mx_configs``.
+# ``BLOCK_K`` must be a multiple of the OCP block size (32) so that each
+# K-tile aligns with whole scale blocks for both the forward and dX
+# kernels. The autotune config search space is pruned accordingly in
+# ``_prune_fwd_mx_configs`` / ``_prune_dX_mx_configs``.
 
 _MX_BLOCK_SIZE = 32
 
