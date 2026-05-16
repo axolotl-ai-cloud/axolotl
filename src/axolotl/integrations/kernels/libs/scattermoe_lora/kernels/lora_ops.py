@@ -2432,9 +2432,14 @@ def _scatter2scatter_lora_mx_configs():
 def _prune_fwd_mx_configs(configs, named_args, **kwargs):
     """Prune MX forward configs by SMEM and register pressure.
 
-    MX-aware accounting adds the packed W tile (BLOCK_N * BLOCK_K/2 bytes)
-    and the scale tile (BLOCK_N * BLOCK_K/MX_BLOCK_SIZE bytes), per stage,
-    to the base GEMM SMEM estimate. Also require BLOCK_K % MX_BLOCK_SIZE == 0.
+    MX-aware accounting adds the packed W tile and the scale tile per
+    pipeline stage to the base GEMM SMEM estimate. Both tiles are sized
+    [BLOCK_N, BLOCK_K] uint8 in the kernel: the packed buffer reads each
+    byte twice (because K_byte = K // 2 indexes a [BLOCK_K]-wide vector
+    into a K/2-stride buffer), and the scale buffer reads each byte
+    MX_BLOCK_SIZE times (broadcast within each K-block). This matches
+    the conservative full-tile accounting in ``_prune_dX_mx_configs``.
+    Also require BLOCK_K % MX_BLOCK_SIZE == 0.
     """
     smem_cap = _get_smem_capacity()
     block_r = named_args.get("BLOCK_R", 64)
@@ -2448,9 +2453,11 @@ def _prune_fwd_mx_configs(configs, named_args, **kwargs):
             continue
         # Base GEMM tiles (X, dequantized W, acc)
         smem_base = _estimate_smem_usage(config.num_stages, block_m, block_n, block_k)
-        # MX-specific loads per pipeline stage: packed (1 byte) and scale (1 byte)
-        smem_packed = config.num_stages * block_n * (block_k // 2) * 1
-        smem_scale = config.num_stages * block_n * (block_k // _MX_BLOCK_SIZE) * 1
+        # MX-specific loads per pipeline stage: packed and scale tiles are
+        # both [BLOCK_N, BLOCK_K] bytes (see docstring for why each is full
+        # tile size, not BLOCK_K/2 or BLOCK_K/MX_BLOCK_SIZE).
+        smem_packed = config.num_stages * block_n * block_k * 1
+        smem_scale = config.num_stages * block_n * block_k * 1
         # LoRA tiles
         smem_lora_loop = config.num_stages * block_r * block_k * 2
         smem_lora_epilogue = block_n * block_r * 2
