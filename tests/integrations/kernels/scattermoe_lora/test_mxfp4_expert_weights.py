@@ -280,8 +280,9 @@ def test_strategy_a_backward_matches_bf16(E, K, N, M, top_k, R, seed):
 @pytest.mark.parametrize("use_fused_dX", [False, True])
 @pytest.mark.parametrize("use_fused_gather", [False, True])
 def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
-    """Sanity: Strategy A still matches baseline across the fused-bwd flag
-    combinations exercised in production by `HFScatterMoEGatedMLP`."""
+    """Strategy A must match baseline across all four fused-bwd flag
+    combinations exercised in production by ``HFScatterMoEGatedMLP``.
+    Asserts parity on dX, dA, and dB (active expert slice for dA/dB)."""
     E, K, N, M, top_k, R = 8, 128, 256, 16, 2, 8
     mx, W_ref = _make_mxfp4_weights(E, K, N, seed=7)
     x_base, lora_A_base, lora_B_base, sei, ssi, eo = _setup_routing_and_lora(
@@ -289,7 +290,7 @@ def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
     )
     scaling = 0.25
 
-    def run(W_kernel, A, B, sei_, eo_, k_, lora_A_in, lora_B_in):
+    def run(W_kernel, sei_, eo_, k_, lora_A_in, lora_B_in, grad_out):
         x_g = x_base.detach().clone().requires_grad_(True)
         A_g = lora_A_in.detach().clone().requires_grad_(True)
         B_g = lora_B_in.detach().clone().requires_grad_(True)
@@ -306,13 +307,23 @@ def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
             use_fused_dX=use_fused_dX,
             use_fused_gather=use_fused_gather,
         )
-        g = torch.ones_like(out)
-        out.backward(g)
-        return out, x_g.grad
+        out.backward(grad_out)
+        return out, x_g.grad, A_g.grad, B_g.grad
 
+    # Non-trivial grad (a constant grad zeros out cross-token differences in
+    # the fused-gather accumulation, which can mask reordering bugs).
+    torch.manual_seed(7)
     W_baseline = W_ref.transpose(2, 1).contiguous()
-    out_b, dx_b = run(W_baseline, lora_A_base, lora_B_base, sei, eo, top_k,
-                      lora_A_base, lora_B_base)
+    # Forward once on baseline shape to size grad_out.
+    out_shape_probe = parallel_linear_lora(
+        x_base, W_baseline, top_k, sei, ssi, eo,
+        lora_A=lora_A_base, lora_B=lora_B_base, scaling=scaling,
+    )
+    grad_out = torch.randn_like(out_shape_probe) * 0.1
+
+    out_b, dx_b, dA_b, dB_b = run(
+        W_baseline, sei, eo, top_k, lora_A_base, lora_B_base, grad_out,
+    )
 
     experts = _MockExperts(mx, E)
     active = get_active_experts(sei, E)
@@ -323,11 +334,45 @@ def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
     A_compact, B_compact = selective_lora_weights(
         lora_A_base, lora_B_base, active, E
     )
-    out_a, dx_a = run(W_compact, A_compact, B_compact, remapped,
-                      compact_offsets, top_k, A_compact, B_compact)
+    out_a, dx_a, dA_a, dB_a = run(
+        W_compact, remapped, compact_offsets, top_k, A_compact, B_compact,
+        grad_out,
+    )
 
-    assert torch.equal(out_b, out_a)
-    assert torch.equal(dx_b, dx_a)
+    # Strategy A is bitwise on forward / dX (same bf16 weights, same kernel).
+    assert torch.equal(out_b, out_a), (
+        f"forward mismatch: max diff = {(out_b - out_a).abs().max().item()}"
+    )
+    assert torch.equal(dx_b, dx_a), (
+        f"dX mismatch: max diff = {(dx_b - dx_a).abs().max().item()}"
+    )
+
+    # dA / dB — compare active-expert slice of the dense baseline grads
+    # against the compact-path grads. Same row_idx pattern as
+    # test_strategy_a_backward_matches_bf16. Bitwise (``torch.equal``) holds
+    # for forward and dX, but the fused dA/dB kernel uses ``atomic_add``
+    # across N-block programs and the in-flight program count differs
+    # between the full-E baseline and the compact-active path; combined
+    # with FMA reordering, this introduces 1–2 bf16 ULPs (~2e-4 at the
+    # values seen here) on the ``use_fused_dX=True`` configs. Use a
+    # tolerance an order of magnitude below that — tight enough to catch
+    # any real bug but tolerant of the unavoidable atomic-order noise.
+    lora_grad_tol = dict(atol=1e-3, rtol=1e-3)
+    row_idx = (
+        active.long()[:, None] * R
+        + torch.arange(R, device=DEVICE)[None, :]
+    ).reshape(-1)
+    dA_b_active = dA_b[row_idx]
+    dB_b_active = dB_b[:, row_idx]
+
+    assert torch.allclose(dA_b_active, dA_a, **lora_grad_tol), (
+        f"dA active slice mismatch: max diff = "
+        f"{(dA_b_active - dA_a).abs().max().item()}"
+    )
+    assert torch.allclose(dB_b_active, dB_a, **lora_grad_tol), (
+        f"dB active slice mismatch: max diff = "
+        f"{(dB_b_active - dB_a).abs().max().item()}"
+    )
 
 
 # ─── Strategy B — fused MXFP4 Triton kernel ──────────────────────────────────
@@ -435,6 +480,27 @@ def test_strategy_b_backward_matches_bf16(E, K, N, M, top_k, R, seed):
         f"Strategy B dX mismatch: max diff = "
         f"{(x_b.grad - x_s.grad).abs().max().item():.4e}"
     )
+
+    # Uniform-scaling drift guard: the allclose bound above is generous to
+    # accommodate accumulated bf16 MMA noise over N. A bug that scales every
+    # dX element by a constant factor (e.g. an off-by-one on the E8M0
+    # exponent shifting the whole tile by 2x) would still pass that bound.
+    # Catch it by requiring the per-element ratio std stays small after
+    # masking out near-zero baseline elements (where the ratio is dominated
+    # by quantization noise rather than uniform drift).
+    bf16_dX = x_b.grad.float()
+    mx_dX = x_s.grad.float()
+    eps = 1e-3 * bf16_dX.abs().max().clamp(min=1e-6)
+    mask = bf16_dX.abs() > eps
+    if mask.any():
+        ratio = mx_dX[mask] / bf16_dX[mask]
+        ratio_std = ratio.std().item()
+        assert ratio_std < 0.5, (
+            f"Strategy B dX uniform-scaling drift: std(mx/bf16) = "
+            f"{ratio_std:.4f} (mean = {ratio.mean().item():.4f}); "
+            f"a uniform multiplicative bug would slip past the allclose "
+            f"bound but is caught here."
+        )
 
     # dA / dB — compare active expert slices (use forward tolerance — these
     # come from the LoRA-only grad path which doesn't touch the W matmul)
