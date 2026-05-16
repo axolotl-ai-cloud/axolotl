@@ -457,14 +457,24 @@ class HFScatterMoEGatedMLP(nn.Module):
         # ====================================================================
         # Selective expert weight dequantization
         # ====================================================================
-        # When experts are BnB-quantized (quantize_moe_experts), dequantize
-        # only the active experts instead of all E. This saves ~97% memory
-        # for the transient dequant buffer when few experts are active.
-        use_selective = (
-            getattr(self, "_use_selective_dequant", False)
-            and hasattr(experts, "parametrizations")
+        # When experts are BnB-quantized (quantize_moe_experts) or MXFP4
+        # (torchao MXTensor), dequantize only the active experts instead of
+        # all E. This saves ~97% memory for the transient dequant buffer when
+        # few experts are active. MXFP4 always routes through selective
+        # dequant because the kernel needs bf16 weights and full-tensor
+        # dequant of 256-expert MX params is prohibitive.
+        from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (  # noqa: E402
+            is_mxfp4_param,
+        )
+
+        has_bnb_param = (
+            hasattr(experts, "parametrizations")
             and "gate_up_proj" in experts.parametrizations
         )
+        has_mxfp4_param = is_mxfp4_param(getattr(experts, "gate_up_proj", None))
+        use_selective = (
+            getattr(self, "_use_selective_dequant", False) and has_bnb_param
+        ) or has_mxfp4_param
 
         if use_selective:
             from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (

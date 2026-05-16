@@ -13,6 +13,8 @@ For Qwen3.5-35B-A3B (E=256, top_k=8, hidden=2048, intermediate=512):
 
 This module provides format-agnostic selective weight extraction:
   - BnB 4-bit (nf4/fp4): slice quantized data + absmax per expert
+  - MXFP4 (torchao MXTensor with elem_dtype=float4_e2m1fn_x2): slice
+    qdata + E8M0 scale per expert and dequantize via torchao
   - bf16/fp32: direct indexing (no dequant needed)
   - FP8: slice + cast
 
@@ -23,6 +25,23 @@ weight tensor.
 
 import torch
 import torch.nn as nn
+
+
+def _torchao_mxtensor_cls():
+    """Return the torchao MXTensor class, or None if torchao isn't installed."""
+    try:
+        from torchao.prototype.mx_formats.mx_tensor import MXTensor
+    except ImportError:
+        return None
+    return MXTensor
+
+
+def is_mxfp4_param(param) -> bool:
+    """True iff ``param`` is a torchao MXTensor with MXFP4 element dtype."""
+    MXTensor = _torchao_mxtensor_cls()
+    if MXTensor is None or not isinstance(param, MXTensor):
+        return False
+    return param.elem_dtype == torch.float4_e2m1fn_x2
 
 
 def get_active_experts(sorted_expert_idxs: torch.Tensor, E: int) -> torch.Tensor:
@@ -175,6 +194,52 @@ def _selective_dequant_bnb4(
     return deq.reshape(num_active, *expert_shape)
 
 
+def _selective_dequant_mxfp4(
+    mx_param,
+    active_experts: torch.Tensor,
+    out_dtype: torch.dtype = torch.bfloat16,
+) -> torch.Tensor:
+    """Selectively dequantize active experts from a torchao MXFP4 ``MXTensor``.
+
+    Layout assumption: the MXTensor's last axis is the OCP MX block axis.
+    For ScatterMoE experts this matches the natural storage where
+    ``experts.gate_up_proj``/``down_proj`` is ``[E, dim1, dim2]`` and
+    ``dim2`` is the contraction axis post ``.transpose(2, 1)`` performed by
+    the caller. Indexing ``[active_experts]`` on the qdata and scale yields
+    a compact MX tensor that we dequantize via torchao.
+
+    Args:
+        mx_param: ``torchao.prototype.mx_formats.mx_tensor.MXTensor`` of
+            logical shape ``[E, dim1, dim2]`` with ``elem_dtype=float4_e2m1fn_x2``.
+        active_experts: ``[num_active]`` sorted unique expert indices.
+        out_dtype: dtype of the dequantized buffer (default ``bfloat16``).
+
+    Returns:
+        Dequantized bf16/fp16 tensor of shape ``[num_active, dim1, dim2]``.
+    """
+    MXTensor = _torchao_mxtensor_cls()
+    if MXTensor is None:
+        raise ImportError(
+            "MXFP4 expert dequantization requires torchao>=0.7 "
+            "(install with `pip install torchao`)."
+        )
+
+    sub_qdata = mx_param.qdata[active_experts].contiguous()
+    sub_scale = mx_param.scale[active_experts].contiguous()
+
+    sub_mx = MXTensor(
+        sub_qdata,
+        sub_scale,
+        mx_param.elem_dtype,
+        mx_param.block_size,
+        mx_param.orig_dtype,
+        mx_param.kernel_preference,
+        mx_param.act_quant_kwargs,
+        mx_param.is_swizzled_scales,
+    )
+    return sub_mx.dequantize(out_dtype)
+
+
 def _selective_index_dense(
     param: torch.Tensor,
     active_experts: torch.Tensor,
@@ -243,8 +308,14 @@ def selective_expert_weights(
 
             return _selective_dequant_bnb4(raw_param, qs, active_experts, expert_shape)
 
-    # Dense parameter (bf16/fp32) — direct indexing
+    # Pull the parameter out before format dispatch — used by every branch below.
     param = getattr(experts_module, param_name)
+
+    # MXFP4 (torchao MXTensor) — dequantize the subset, return [num_active, d1, d2]
+    if is_mxfp4_param(param):
+        return _selective_dequant_mxfp4(param, active_experts)
+
+    # Dense parameter (bf16/fp32) — direct indexing
     if param.dim() == 3:
         return param[active_experts]
 
