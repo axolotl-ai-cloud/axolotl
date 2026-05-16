@@ -26,14 +26,12 @@ weight tensor.
 import torch
 import torch.nn as nn
 
-
-def _torchao_mxtensor_cls():
-    """Return the torchao MXTensor class, or None if torchao isn't installed."""
-    try:
-        from torchao.prototype.mx_formats.mx_tensor import MXTensor
-    except ImportError:
-        return None
-    return MXTensor
+from .mx_weights import (
+    _construct_mxtensor_subset,
+    _mx_qdata,
+    _mx_scale,
+    _torchao_mxtensor_cls,
+)
 
 
 def is_mxfp4_param(param) -> bool:
@@ -217,26 +215,16 @@ def _selective_dequant_mxfp4(
     Returns:
         Dequantized bf16/fp16 tensor of shape ``[num_active, dim1, dim2]``.
     """
-    MXTensor = _torchao_mxtensor_cls()
-    if MXTensor is None:
+    if _torchao_mxtensor_cls() is None:
         raise ImportError(
             "MXFP4 expert dequantization requires torchao>=0.7 "
             "(install with `pip install torchao`)."
         )
 
-    sub_qdata = mx_param.qdata[active_experts].contiguous()
-    sub_scale = mx_param.scale[active_experts].contiguous()
+    sub_qdata = _mx_qdata(mx_param)[active_experts].contiguous()
+    sub_scale = _mx_scale(mx_param)[active_experts].contiguous()
 
-    sub_mx = MXTensor(
-        sub_qdata,
-        sub_scale,
-        mx_param.elem_dtype,
-        mx_param.block_size,
-        mx_param.orig_dtype,
-        mx_param.kernel_preference,
-        mx_param.act_quant_kwargs,
-        mx_param.is_swizzled_scales,
-    )
+    sub_mx = _construct_mxtensor_subset(mx_param, sub_qdata, sub_scale)
     return sub_mx.dequantize(out_dtype)
 
 

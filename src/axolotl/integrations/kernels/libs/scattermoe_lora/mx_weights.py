@@ -116,6 +116,65 @@ def _torchao_mxtensor_cls():
     return MXTensor
 
 
+def _mx_qdata(mx) -> torch.Tensor:
+    """Read the packed-nibble buffer off an MXTensor, tolerating torchao
+    renaming the attribute between versions."""
+    qdata = getattr(mx, "qdata", None)
+    if qdata is None:
+        qdata = getattr(mx, "_data", None)
+    if qdata is None:
+        raise AttributeError(
+            "torchao MXTensor exposes neither .qdata nor ._data; "
+            "this torchao version is unsupported."
+        )
+    return qdata
+
+
+def _mx_scale(mx) -> torch.Tensor:
+    """Read the E8M0 scale buffer off an MXTensor, tolerating torchao
+    renaming the attribute between versions."""
+    scale = getattr(mx, "scale", None)
+    if scale is None:
+        scale = getattr(mx, "_scale_e8m0", None)
+    if scale is None:
+        raise AttributeError(
+            "torchao MXTensor exposes neither .scale nor ._scale_e8m0; "
+            "this torchao version is unsupported."
+        )
+    return scale
+
+
+def _construct_mxtensor_subset(parent, qdata_slice: torch.Tensor, scale_slice: torch.Tensor):
+    """Construct a new MXTensor that shares ``parent``'s metadata but uses
+    the provided ``qdata_slice`` / ``scale_slice`` buffers.
+
+    Pinned to torchao 0.17.0's positional constructor (qdata, scale,
+    elem_dtype, block_size, orig_dtype, kernel_preference,
+    act_quant_kwargs, is_swizzled_scales). Optional attributes are read via
+    ``getattr`` so we degrade gracefully if a future torchao version drops
+    or renames one — the single point of pain for torchao internals access
+    across this codebase.
+    """
+    MXTensor = _torchao_mxtensor_cls()
+    if MXTensor is None:
+        raise ImportError(
+            "MXFP4 path requires torchao (install `torchao>=0.7`)."
+        )
+    kernel_preference = getattr(parent, "kernel_preference", None)
+    act_quant_kwargs = getattr(parent, "act_quant_kwargs", None)
+    is_swizzled_scales = getattr(parent, "is_swizzled_scales", False)
+    return MXTensor(
+        qdata_slice,
+        scale_slice,
+        parent.elem_dtype,
+        parent.block_size,
+        parent.orig_dtype,
+        kernel_preference,
+        act_quant_kwargs,
+        is_swizzled_scales,
+    )
+
+
 def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeights:
     """Slice an MXFP4 expert parameter to the active set, keeping the K-axis
     block layout (FWD). The returned ``MXWeights.packed`` has shape
@@ -132,8 +191,8 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     assert mx_param.elem_dtype == torch.float4_e2m1fn_x2, (
         "only MXFP4 (float4_e2m1fn_x2) is supported"
     )
-    sub_qdata = mx_param.qdata[active_experts].contiguous()
-    sub_scale = mx_param.scale[active_experts].contiguous()
+    sub_qdata = _mx_qdata(mx_param)[active_experts].contiguous()
+    sub_scale = _mx_scale(mx_param)[active_experts].contiguous()
     # Logical dims (kernel's K, N): the contraction axis is K, the OCP block
     # axis is the LAST storage axis (= K). N is the leading non-expert axis.
     N = sub_qdata.size(1)

@@ -2974,7 +2974,6 @@ def _prune_dX_mx_configs(configs, named_args, **kwargs):
 )
 @triton.heuristics(
     {
-        "NO_K_MASK": lambda args: (args["K"] % args["BLOCK_K"]) == 0,
         "NO_N_MASK": lambda args: (args["N"] % args["BLOCK_N"]) == 0,
     }
 )
@@ -3021,7 +3020,6 @@ def _scatter2scatter_lora_dX_mx(
     allow_tf32: tl.constexpr,
     dy_grouped: tl.constexpr,
     dx_grouped: tl.constexpr,
-    NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
 ):
     """Fused MXFP4 dX kernel."""

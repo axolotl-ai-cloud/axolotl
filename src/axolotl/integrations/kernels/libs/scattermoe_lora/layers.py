@@ -37,6 +37,7 @@ from torch.nn import functional as F
 
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
+from .selective_dequant import is_mxfp4_param
 
 # =============================================================================
 # LoRA layout conversion utilities (peft <-> scattermoe)
@@ -463,10 +464,6 @@ class HFScatterMoEGatedMLP(nn.Module):
         # few experts are active. MXFP4 always routes through selective
         # dequant because the kernel needs bf16 weights and full-tensor
         # dequant of 256-expert MX params is prohibitive.
-        from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (  # noqa: E402
-            is_mxfp4_param,
-        )
-
         has_bnb_param = (
             hasattr(experts, "parametrizations")
             and "gate_up_proj" in experts.parametrizations
