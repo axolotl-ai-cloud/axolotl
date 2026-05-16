@@ -104,14 +104,63 @@ def _setup_bf16(E, K, N, top_k, M, rank):
     return W, W_kernel
 
 
-def _setup_mx(W_natural):
-    """Make a torchao MXFP4 ``MXTensor`` from the bf16 weight."""
-    return MXTensor.to_mx(W_natural, elem_dtype=torch.float4_e2m1fn_x2, block_size=32)
+def _setup_mx(W_natural, chunk: int = 8):
+    """Make a torchao MXFP4 ``MXTensor`` from the bf16 weight.
+
+    ``MXTensor.to_mx`` materializes an fp32 working tensor internally; for
+    large [E, N, K] weights this transient can spike setup-time GPU memory
+    well beyond the final quantized footprint. To keep the bench runnable
+    on a shared GPU, quantize ``chunk`` experts at a time and stitch the
+    qdata/scale shards into a single MXTensor.
+    """
+    if W_natural.shape[0] <= chunk:
+        return MXTensor.to_mx(
+            W_natural, elem_dtype=torch.float4_e2m1fn_x2, block_size=32
+        )
+    qdata_parts = []
+    scale_parts = []
+    template = None
+    for i in range(0, W_natural.shape[0], chunk):
+        piece = W_natural[i : i + chunk].contiguous()
+        mx_chunk = MXTensor.to_mx(
+            piece, elem_dtype=torch.float4_e2m1fn_x2, block_size=32
+        )
+        qdata_parts.append(mx_chunk.qdata)
+        scale_parts.append(mx_chunk.scale)
+        if template is None:
+            template = mx_chunk
+    qdata = torch.cat(qdata_parts, dim=0)
+    scale = torch.cat(scale_parts, dim=0)
+    return MXTensor(
+        qdata,
+        scale,
+        template.elem_dtype,
+        template.block_size,
+        template.orig_dtype,
+        template.kernel_preference,
+        template.act_quant_kwargs,
+        template.is_swizzled_scales,
+    )
 
 
-def _routing(M, E, top_k, seed=1):
+def _routing(M, E, top_k, seed=1, mode="dense"):
+    """Generate token→expert routing.
+
+    ``mode="dense"`` uses per-token random logits; for moderate E and top_k
+    this leaves nearly every expert active and exercises the kernels' full-load
+    case. ``mode="sparse"`` injects a strong shared bias so the same handful of
+    experts dominates the topk across all tokens — modelling realistic MoE
+    routing where only a small fraction of experts is active per step.
+    """
     torch.manual_seed(seed)
-    logits = torch.randn(M, E, device=DEVICE)
+    if mode == "dense":
+        logits = torch.randn(M, E, device=DEVICE)
+    elif mode == "sparse":
+        shared = torch.randn(E, device=DEVICE) * 5.0
+        noise = torch.randn(M, E, device=DEVICE) * 0.1
+        logits = shared.unsqueeze(0) + noise
+    else:
+        raise ValueError(f"unknown routing mode: {mode}")
     _, top_idx = torch.topk(torch.softmax(logits, dim=-1), top_k, dim=-1)
     sei, ssi, eo = flatten_sort_count(top_idx, E)
     return sei, ssi, eo, top_idx
@@ -227,7 +276,31 @@ def main():
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--iters", type=int, default=50)
+    parser.add_argument(
+        "--routing-mode",
+        choices=("dense", "sparse"),
+        default="dense",
+        help=(
+            "dense: per-token random logits (~all experts active). "
+            "sparse: shared bias + small per-token noise so the same ~top_k "
+            "experts dominate routing across all tokens."
+        ),
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append the new table to bench_mxfp4_results.md instead of overwriting it.",
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda",
+        help="CUDA device, e.g. 'cuda', 'cuda:0', 'cuda:1'.",
+    )
     args = parser.parse_args()
+
+    global DEVICE
+    DEVICE = args.device
+    torch.cuda.set_device(torch.device(DEVICE))
 
     E, K, N, top_k, M, rank = args.E, args.K, args.N, args.top_k, args.M, args.rank
 
@@ -239,7 +312,7 @@ def main():
     # Build dense bf16 weights, then MX-quantize the natural-storage [E, N, K] form
     W_natural, W_kernel = _setup_bf16(E, K, N, top_k, M, rank)
     mx = _setup_mx(W_natural)
-    sei, ssi, eo, top_idx = _routing(M, E, top_k)
+    sei, ssi, eo, top_idx = _routing(M, E, top_k, mode=args.routing_mode)
     lora_A, lora_B = _lora(E, K, N, rank)
     scaling = 0.5
     x = torch.randn(M, K, device=DEVICE, dtype=DTYPE)
@@ -286,33 +359,40 @@ def main():
             )
         )
 
-    lines = []
-    lines.append(f"# ScatterMoE LoRA — MXFP4 benchmark")
-    lines.append("")
-    lines.append(f"- **GPU**: {gpu_name()}")
-    lines.append(
+    section_lines = []
+    section_lines.append(
+        f"## Routing mode: {args.routing_mode} — {gpu_name()}"
+    )
+    section_lines.append("")
+    section_lines.append(f"- **GPU**: {gpu_name()}")
+    section_lines.append(
         f"- **Shape**: E={E}, K={K}, N={N}, top_k={top_k}, M={M}, rank={rank} "
         f"(active experts = {e_active})"
     )
-    lines.append(
+    section_lines.append(
         f"- **Iters**: {args.warmup} warmup + {args.iters} timed, fwd+bwd per iter"
     )
     if peak_bw:
-        lines.append(f"- **HBM peak (datasheet)**: {peak_bw:.0f} GB/s")
-    lines.append("")
-    lines.append("| Config | ms/iter | tokens/s | peak mem (MB) | HBM GB/s | HBM % |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        section_lines.append(f"- **HBM peak (datasheet)**: {peak_bw:.0f} GB/s")
+    section_lines.append("")
+    section_lines.append("| Config | ms/iter | tokens/s | peak mem (MB) | HBM GB/s | HBM % |")
+    section_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
     for r in results:
         hbm_pct = f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
-        lines.append(
+        section_lines.append(
             f"| {r['name']} | {r['ms_per_iter']:.2f} | {r['tokens_per_s']:.0f} | "
             f"{r['peak_mem_mb']:.1f} | {r['hbm_gbps']:.1f} | {hbm_pct} |"
         )
-
-    md = "\n".join(lines) + "\n"
-    print(md)
+    section_md = "\n".join(section_lines) + "\n"
 
     out_path = Path(__file__).resolve().parent / "bench_mxfp4_results.md"
+    if args.append and out_path.exists():
+        existing = out_path.read_text().rstrip() + "\n\n"
+        md = existing + section_md
+    else:
+        md = "# ScatterMoE LoRA — MXFP4 benchmark\n\n" + section_md
+
+    print(section_md)
     out_path.write_text(md)
     print(f"\nResults written to {out_path}")
 
