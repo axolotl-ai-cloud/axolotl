@@ -193,11 +193,21 @@ class _MockExperts:
 # ---------------------------------------------------------------------------
 
 
+# Runners reuse the same leaf tensors across timed iters (x, lora A/B) and
+# zero ``.grad`` to None at the top of each call. The previous per-iter
+# ``.clone()`` + ``requires_grad_(True)`` was setup cost — not kernel cost —
+# and biased the timing especially on small shapes. Gradient accumulation
+# is avoided by setting ``.grad = None`` (faster than ``.zero_()``), so the
+# autograd graph each iter is fresh but the leaf buffers are not reallocated.
+
+
 def make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling):
+    A = lora_A.detach().clone().requires_grad_(True)
+    B = lora_B.detach().clone().requires_grad_(True)
     def run(x):
-        x = x.requires_grad_(True)
-        A = lora_A.detach().clone().requires_grad_(True)
-        B = lora_B.detach().clone().requires_grad_(True)
+        x.grad = None
+        A.grad = None
+        B.grad = None
         out = parallel_linear_lora(
             x, W_kernel, top_k, sei, ssi, eo,
             lora_A=A, lora_B=B, scaling=scaling,
@@ -210,10 +220,12 @@ def make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling):
 
 def make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
     experts = _MockExperts(mx)
+    A = lora_A.detach().clone().requires_grad_(True)
+    B = lora_B.detach().clone().requires_grad_(True)
     def run(x):
-        x = x.requires_grad_(True)
-        A = lora_A.detach().clone().requires_grad_(True)
-        B = lora_B.detach().clone().requires_grad_(True)
+        x.grad = None
+        A.grad = None
+        B.grad = None
         active = get_active_experts(sei, E)
         remapped, compact_off = remap_expert_indices(sei, eo, active, E)
         W_compact = selective_expert_weights(
@@ -231,10 +243,12 @@ def make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
 
 
 def make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
+    A = lora_A.detach().clone().requires_grad_(True)
+    B = lora_B.detach().clone().requires_grad_(True)
     def run(x):
-        x = x.requires_grad_(True)
-        A = lora_A.detach().clone().requires_grad_(True)
-        B = lora_B.detach().clone().requires_grad_(True)
+        x.grad = None
+        A.grad = None
+        B.grad = None
         active = get_active_experts(sei, E)
         remapped, compact_off = remap_expert_indices(sei, eo, active, E)
         mx_active = selective_mx_weights_fwd(mx, active)
@@ -256,17 +270,20 @@ def make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
 def bench(fn: Callable, x_template: torch.Tensor, warmup: int, iters: int) -> dict:
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
+    # Allocate the input leaf tensor once outside the timed window. Runners
+    # reset ``.grad = None`` per iter; the underlying buffer is reused.
+    x = x_template.detach().clone().requires_grad_(True)
     try:
         # Warmup
         for _ in range(warmup):
-            fn(x_template.detach().clone())
+            fn(x)
         torch.cuda.synchronize()
 
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
         start.record()
         for _ in range(iters):
-            fn(x_template.detach().clone())
+            fn(x)
         end.record()
         torch.cuda.synchronize()
     except torch.cuda.OutOfMemoryError:
