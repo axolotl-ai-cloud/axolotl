@@ -388,9 +388,14 @@ class TrainerBuilderBase(abc.ABC):
                 try:
                     from scao import SCAO
                 except ImportError as err:
-                    raise ImportError(
-                        "SCAO optimizer not found. Please install it with 'pip install scao'"
-                    ) from err
+                    try:
+                        # Compatibility with package layouts exposing the optimizer
+                        # under scao.optimizer instead of top-level scao.
+                        from scao.optimizer import SCAO  # type: ignore[no-redef]
+                    except ImportError:
+                        raise ImportError(
+                            "SCAO optimizer not found. Please install it with 'pip install scao'"
+                        ) from err
                 optimizer_cls = SCAO
                 beta1 = training_args_kwargs.get("adam_beta1", 0.9)
                 beta2 = training_args_kwargs.get("adam_beta2", 0.999)
