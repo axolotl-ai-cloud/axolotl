@@ -151,6 +151,12 @@ def _routing(M, E, top_k, seed=1, mode="dense"):
     case. ``mode="sparse"`` injects a strong shared bias so the same handful of
     experts dominates the topk across all tokens — modelling realistic MoE
     routing where only a small fraction of experts is active per step.
+    ``mode="balanced"`` models a load-balance-regularized router (aux-loss /
+    z-loss trained): per-token logits = N(0, 1) noise + small per-expert
+    bias N(0, 0.5). At large M this yields approximately balanced expert
+    usage; at small M only a fraction of experts gets hit and which experts
+    are active varies with seed/M — i.e. the seqlen → active-expert-count
+    curve that drives the A-vs-B crossover.
     """
     torch.manual_seed(seed)
     if mode == "dense":
@@ -159,6 +165,10 @@ def _routing(M, E, top_k, seed=1, mode="dense"):
         shared = torch.randn(E, device=DEVICE) * 5.0
         noise = torch.randn(M, E, device=DEVICE) * 0.1
         logits = shared.unsqueeze(0) + noise
+    elif mode == "balanced":
+        bias = torch.randn(E, device=DEVICE) * 0.5
+        noise = torch.randn(M, E, device=DEVICE)
+        logits = noise + bias.unsqueeze(0)
     else:
         raise ValueError(f"unknown routing mode: {mode}")
     _, top_idx = torch.topk(torch.softmax(logits, dim=-1), top_k, dim=-1)
@@ -246,23 +256,28 @@ def make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
 def bench(fn: Callable, x_template: torch.Tensor, warmup: int, iters: int) -> dict:
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
-    # Warmup
-    for _ in range(warmup):
-        fn(x_template.detach().clone())
-    torch.cuda.synchronize()
+    try:
+        # Warmup
+        for _ in range(warmup):
+            fn(x_template.detach().clone())
+        torch.cuda.synchronize()
 
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(iters):
-        fn(x_template.detach().clone())
-    end.record()
-    torch.cuda.synchronize()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        for _ in range(iters):
+            fn(x_template.detach().clone())
+        end.record()
+        torch.cuda.synchronize()
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        return {"ms_per_iter": float("nan"), "peak_mem_mb": float("nan"), "oom": True}
     elapsed_ms = start.elapsed_time(end)
     peak_mem_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
     return {
         "ms_per_iter": elapsed_ms / iters,
         "peak_mem_mb": peak_mem_mb,
+        "oom": False,
     }
 
 
@@ -278,12 +293,25 @@ def main():
     parser.add_argument("--iters", type=int, default=50)
     parser.add_argument(
         "--routing-mode",
-        choices=("dense", "sparse"),
+        choices=("dense", "sparse", "balanced"),
         default="dense",
         help=(
             "dense: per-token random logits (~all experts active). "
             "sparse: shared bias + small per-token noise so the same ~top_k "
-            "experts dominate routing across all tokens."
+            "experts dominate routing across all tokens. "
+            "balanced: per-token N(0,1) noise + small N(0,0.5) per-expert bias "
+            "— mimics a load-balance-regularized router; active-expert count "
+            "grows with M."
+        ),
+    )
+    parser.add_argument(
+        "--M-sweep",
+        dest="M_sweep",
+        default=None,
+        help=(
+            "Comma-separated list of M values, e.g. '256,1024,4096,16384'. "
+            "When set, --M is ignored; the bench runs once per M with the "
+            "selected routing mode and emits a single combined section."
         ),
     )
     parser.add_argument(
@@ -302,88 +330,187 @@ def main():
     DEVICE = args.device
     torch.cuda.set_device(torch.device(DEVICE))
 
-    E, K, N, top_k, M, rank = args.E, args.K, args.N, args.top_k, args.M, args.rank
+    E, K, N, top_k, rank = args.E, args.K, args.N, args.top_k, args.rank
+
+    if args.M_sweep:
+        M_values = [int(s.strip()) for s in args.M_sweep.split(",") if s.strip()]
+    else:
+        M_values = [args.M]
 
     print(f"GPU: {gpu_name()}")
-    print(f"Shape: E={E}, K={K}, N={N}, top_k={top_k}, M={M}, rank={rank}")
+    print(
+        f"Shape: E={E}, K={K}, N={N}, top_k={top_k}, rank={rank}, "
+        f"M={M_values if args.M_sweep else M_values[0]}"
+    )
     print(f"Iters: {args.warmup} warmup + {args.iters} timed")
     print()
 
-    # Build dense bf16 weights, then MX-quantize the natural-storage [E, N, K] form
-    W_natural, W_kernel = _setup_bf16(E, K, N, top_k, M, rank)
+    # Build dense bf16 weights + MX-quantize once — weights are independent of M.
+    W_natural, W_kernel = _setup_bf16(E, K, N, top_k, M_values[0], rank)
     mx = _setup_mx(W_natural)
-    sei, ssi, eo, top_idx = _routing(M, E, top_k, mode=args.routing_mode)
+    # W_natural is only used to build the MX tensor; W_kernel feeds bf16 paths.
+    # Free it eagerly so the dequant transient fits on memory-constrained GPUs.
+    del W_natural
+    torch.cuda.empty_cache()
     lora_A, lora_B = _lora(E, K, N, rank)
     scaling = 0.5
-    x = torch.randn(M, K, device=DEVICE, dtype=DTYPE)
-
-    # Estimate the bytes read per iter for HBM BW utilization:
-    #   bf16 W:     E_active * K * N * 2
-    #   MX  W:      E_active * (K*N/2 + K*N/32)
-    # X is M*K*2 bytes. We ignore LoRA traffic (tiny relative to W).
-    num_tokens = M * top_k
-    e_active = int(get_active_experts(sei, E).numel())
-    bytes_bf16 = e_active * K * N * 2 + M * K * 2
-    bytes_mx = e_active * (K * N // 2 + K * N // 32) + M * K * 2
     peak_bw = gpu_hbm_bandwidth_gbps()
 
-    runners = {
-        "bf16 baseline": (
-            make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling),
-            bytes_bf16,
-        ),
-        "Strategy A (selective dequant)": (
-            make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
-            bytes_bf16,  # post-dequant the kernel still reads bf16
-        ),
-        "Strategy B (fused MX)": (
-            make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
-            bytes_mx,
-        ),
-    }
+    per_M = []  # list of (M, e_active, results)
+    for M in M_values:
+        sei, ssi, eo, _top_idx = _routing(M, E, top_k, mode=args.routing_mode)
+        x = torch.randn(M, K, device=DEVICE, dtype=DTYPE)
 
-    results = []
-    for name, (fn, bytes_per_iter) in runners.items():
-        r = bench(fn, x, args.warmup, args.iters)
-        tps = num_tokens / (r["ms_per_iter"] / 1000.0)
-        bw = (bytes_per_iter / 1e9) / (r["ms_per_iter"] / 1000.0)
-        bw_pct = (bw / peak_bw * 100.0) if peak_bw else float("nan")
-        results.append(
-            dict(
-                name=name,
-                ms_per_iter=r["ms_per_iter"],
-                tokens_per_s=tps,
-                peak_mem_mb=r["peak_mem_mb"],
-                hbm_gbps=bw,
-                hbm_pct=bw_pct,
+        # Estimate bytes read per iter for HBM BW utilization:
+        #   bf16 W:     E_active * K * N * 2
+        #   MX  W:      E_active * (K*N/2 + K*N/32)
+        # X is M*K*2 bytes. We ignore LoRA traffic (tiny relative to W).
+        num_tokens = M * top_k
+        e_active = int(get_active_experts(sei, E).numel())
+        bytes_bf16 = e_active * K * N * 2 + M * K * 2
+        bytes_mx = e_active * (K * N // 2 + K * N // 32) + M * K * 2
+
+        runners = {
+            "bf16 baseline": (
+                make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling),
+                bytes_bf16,
+            ),
+            "Strategy A (selective dequant)": (
+                make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
+                bytes_bf16,  # post-dequant the kernel still reads bf16
+            ),
+            "Strategy B (fused MX)": (
+                make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
+                bytes_mx,
+            ),
+        }
+
+        results = []
+        for name, (fn, bytes_per_iter) in runners.items():
+            r = bench(fn, x, args.warmup, args.iters)
+            if r.get("oom"):
+                tps = float("nan")
+                bw = float("nan")
+                bw_pct = float("nan")
+            else:
+                tps = num_tokens / (r["ms_per_iter"] / 1000.0)
+                bw = (bytes_per_iter / 1e9) / (r["ms_per_iter"] / 1000.0)
+                bw_pct = (bw / peak_bw * 100.0) if peak_bw else float("nan")
+            results.append(
+                dict(
+                    name=name,
+                    ms_per_iter=r["ms_per_iter"],
+                    tokens_per_s=tps,
+                    peak_mem_mb=r["peak_mem_mb"],
+                    hbm_gbps=bw,
+                    hbm_pct=bw_pct,
+                    oom=r.get("oom", False),
+                )
             )
-        )
+        per_M.append((M, e_active, results))
 
     section_lines = []
-    section_lines.append(
-        f"## Routing mode: {args.routing_mode} — {gpu_name()}"
-    )
-    section_lines.append("")
-    section_lines.append(f"- **GPU**: {gpu_name()}")
-    section_lines.append(
-        f"- **Shape**: E={E}, K={K}, N={N}, top_k={top_k}, M={M}, rank={rank} "
-        f"(active experts = {e_active})"
-    )
-    section_lines.append(
-        f"- **Iters**: {args.warmup} warmup + {args.iters} timed, fwd+bwd per iter"
-    )
-    if peak_bw:
-        section_lines.append(f"- **HBM peak (datasheet)**: {peak_bw:.0f} GB/s")
-    section_lines.append("")
-    section_lines.append("| Config | ms/iter | tokens/s | peak mem (MB) | HBM GB/s | HBM % |")
-    section_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
-    for r in results:
-        hbm_pct = f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
+    if args.M_sweep:
         section_lines.append(
-            f"| {r['name']} | {r['ms_per_iter']:.2f} | {r['tokens_per_s']:.0f} | "
-            f"{r['peak_mem_mb']:.1f} | {r['hbm_gbps']:.1f} | {hbm_pct} |"
+            f"## Routing mode: {args.routing_mode} — M sweep — {gpu_name()}"
         )
-    section_md = "\n".join(section_lines) + "\n"
+        section_lines.append("")
+        section_lines.append(f"- **GPU**: {gpu_name()}")
+        section_lines.append(
+            f"- **Base shape**: E={E}, K={K}, N={N}, top_k={top_k}, rank={rank}"
+        )
+        section_lines.append(f"- **M values**: {', '.join(str(m) for m in M_values)}")
+        section_lines.append(
+            f"- **Iters**: {args.warmup} warmup + {args.iters} timed, fwd+bwd per iter"
+        )
+        if peak_bw:
+            section_lines.append(f"- **HBM peak (datasheet)**: {peak_bw:.0f} GB/s")
+        section_lines.append("")
+        section_lines.append("### Summary (ms/iter, fwd+bwd)")
+        section_lines.append("")
+        section_lines.append(
+            "| M | active / E | bf16 ms | Strategy A ms | Strategy B ms | winner (A vs B) |"
+        )
+        section_lines.append("| ---: | ---: | ---: | ---: | ---: | :---: |")
+
+        def _fmt_ms(r):
+            return "OOM" if r["oom"] else f"{r['ms_per_iter']:.2f}"
+
+        for M, e_active, results in per_M:
+            by_name = {r["name"]: r for r in results}
+            a, b, bf = (
+                by_name["Strategy A (selective dequant)"],
+                by_name["Strategy B (fused MX)"],
+                by_name["bf16 baseline"],
+            )
+            if a["oom"] and b["oom"]:
+                winner = "—"
+            elif a["oom"]:
+                winner = "B"
+            elif b["oom"]:
+                winner = "A"
+            else:
+                winner = "A" if a["ms_per_iter"] < b["ms_per_iter"] else "B"
+            section_lines.append(
+                f"| {M} | {e_active}/{E} ({e_active / E:.2f}) | "
+                f"{_fmt_ms(bf)} | {_fmt_ms(a)} | {_fmt_ms(b)} | {winner} |"
+            )
+        section_lines.append("")
+        for M, e_active, results in per_M:
+            section_lines.append(
+                f"### M={M} (active experts = {e_active} / {E}, "
+                f"num_active/E = {e_active / E:.3f})"
+            )
+            section_lines.append("")
+            section_lines.append(
+                "| Config | ms/iter | tokens/s | peak mem (MB) | HBM GB/s | HBM % |"
+            )
+            section_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+            for r in results:
+                if r["oom"]:
+                    section_lines.append(
+                        f"| {r['name']} | OOM | OOM | OOM | OOM | OOM |"
+                    )
+                    continue
+                hbm_pct = (
+                    f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
+                )
+                section_lines.append(
+                    f"| {r['name']} | {r['ms_per_iter']:.2f} | "
+                    f"{r['tokens_per_s']:.0f} | {r['peak_mem_mb']:.1f} | "
+                    f"{r['hbm_gbps']:.1f} | {hbm_pct} |"
+                )
+            section_lines.append("")
+    else:
+        M, e_active, results = per_M[0]
+        section_lines.append(
+            f"## Routing mode: {args.routing_mode} — {gpu_name()}"
+        )
+        section_lines.append("")
+        section_lines.append(f"- **GPU**: {gpu_name()}")
+        section_lines.append(
+            f"- **Shape**: E={E}, K={K}, N={N}, top_k={top_k}, M={M}, rank={rank} "
+            f"(active experts = {e_active})"
+        )
+        section_lines.append(
+            f"- **Iters**: {args.warmup} warmup + {args.iters} timed, fwd+bwd per iter"
+        )
+        if peak_bw:
+            section_lines.append(f"- **HBM peak (datasheet)**: {peak_bw:.0f} GB/s")
+        section_lines.append("")
+        section_lines.append(
+            "| Config | ms/iter | tokens/s | peak mem (MB) | HBM GB/s | HBM % |"
+        )
+        section_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+        for r in results:
+            hbm_pct = (
+                f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
+            )
+            section_lines.append(
+                f"| {r['name']} | {r['ms_per_iter']:.2f} | {r['tokens_per_s']:.0f} | "
+                f"{r['peak_mem_mb']:.1f} | {r['hbm_gbps']:.1f} | {hbm_pct} |"
+            )
+    section_md = "\n".join(section_lines).rstrip() + "\n"
 
     out_path = Path(__file__).resolve().parent / "bench_mxfp4_results.md"
     if args.append and out_path.exists():
