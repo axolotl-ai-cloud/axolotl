@@ -24,14 +24,14 @@ Shapes covered:
 import pytest
 import torch
 
+from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+    selective_mx_weights_fwd,
+)
 from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
     flatten_sort_count,
 )
 from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_linear_lora import (
     parallel_linear_lora,
-)
-from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
-    selective_mx_weights_fwd,
 )
 from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant import (
     get_active_experts,
@@ -103,9 +103,7 @@ def _make_mxfp4_weights(E, K, N, seed):
     # Natural axolotl storage is [E, N, K] where K is the contraction axis;
     # `experts.gate_up_proj.transpose(2, 1)` then yields [E, K, N] for the kernel.
     W_dense = torch.randn(E, N, K, device=DEVICE, dtype=DTYPE)
-    mx = MXTensor.to_mx(
-        W_dense, elem_dtype=torch.float4_e2m1fn_x2, block_size=32
-    )
+    mx = MXTensor.to_mx(W_dense, elem_dtype=torch.float4_e2m1fn_x2, block_size=32)
     W_ref = mx.dequantize(DTYPE).contiguous()
     return mx, W_ref
 
@@ -131,8 +129,18 @@ class _MockExperts:
 
 
 def _run_baseline(
-    W_ref, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k,
-    *, use_fused_dX: bool = False, use_fused_gather: bool = False,
+    W_ref,
+    x,
+    lora_A,
+    lora_B,
+    scaling,
+    sei,
+    ssi,
+    eo,
+    top_k,
+    *,
+    use_fused_dX: bool = False,
+    use_fused_gather: bool = False,
 ):
     """Full-E bf16 baseline: dense weights, full LoRA, full expert indices."""
     W_kernel = W_ref.transpose(2, 1).contiguous()  # [E, K, N]
@@ -157,9 +165,11 @@ def _run_strategy_a(mx, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k, E):
     experts = _MockExperts(mx, E)
     active = get_active_experts(sei, E)
     remapped, compact_offsets = remap_expert_indices(sei, eo, active, E)
-    W_compact = selective_expert_weights(
-        experts, "gate_up_proj", active
-    ).transpose(2, 1).contiguous()  # [num_active, K, N]
+    W_compact = (
+        selective_expert_weights(experts, "gate_up_proj", active)
+        .transpose(2, 1)
+        .contiguous()
+    )  # [num_active, K, N]
     A_compact, B_compact = selective_lora_weights(lora_A, lora_B, active, E)
     return parallel_linear_lora(
         x,
@@ -186,12 +196,8 @@ def test_strategy_a_forward_matches_bf16(E, K, N, M, top_k, R, seed):
     )
     scaling = 0.5
 
-    out_baseline = _run_baseline(
-        W_ref, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k
-    )
-    out_a, _ = _run_strategy_a(
-        mx, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k, E
-    )
+    out_baseline = _run_baseline(W_ref, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k)
+    out_a, _ = _run_strategy_a(mx, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k, E)
 
     assert out_baseline.shape == out_a.shape
     assert torch.equal(out_baseline, out_a), (
@@ -224,9 +230,11 @@ def test_strategy_a_backward_matches_bf16(E, K, N, M, top_k, R, seed):
     experts = _MockExperts(mx, E)
     active = get_active_experts(sei, E)
     remapped, compact_offsets = remap_expert_indices(sei, eo, active, E)
-    W_compact = selective_expert_weights(
-        experts, "gate_up_proj", active
-    ).transpose(2, 1).contiguous()
+    W_compact = (
+        selective_expert_weights(experts, "gate_up_proj", active)
+        .transpose(2, 1)
+        .contiguous()
+    )
     A_full = lora_A_base.detach().clone().requires_grad_(True)
     B_full = lora_B_base.detach().clone().requires_grad_(True)
     A_compact, B_compact = selective_lora_weights(A_full, B_full, active, E)
@@ -251,8 +259,7 @@ def test_strategy_a_backward_matches_bf16(E, K, N, M, top_k, R, seed):
 
     # dA / dB — gather active slices from the baseline full grads and compare
     row_idx = (
-        active.long()[:, None] * R
-        + torch.arange(R, device=DEVICE)[None, :]
+        active.long()[:, None] * R + torch.arange(R, device=DEVICE)[None, :]
     ).reshape(-1)
     dA_b_active = A_b.grad[row_idx]
     dB_b_active = B_b.grad[:, row_idx]
@@ -316,26 +323,44 @@ def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
     W_baseline = W_ref.transpose(2, 1).contiguous()
     # Forward once on baseline shape to size grad_out.
     out_shape_probe = parallel_linear_lora(
-        x_base, W_baseline, top_k, sei, ssi, eo,
-        lora_A=lora_A_base, lora_B=lora_B_base, scaling=scaling,
+        x_base,
+        W_baseline,
+        top_k,
+        sei,
+        ssi,
+        eo,
+        lora_A=lora_A_base,
+        lora_B=lora_B_base,
+        scaling=scaling,
     )
     grad_out = torch.randn_like(out_shape_probe) * 0.1
 
     out_b, dx_b, dA_b, dB_b = run(
-        W_baseline, sei, eo, top_k, lora_A_base, lora_B_base, grad_out,
+        W_baseline,
+        sei,
+        eo,
+        top_k,
+        lora_A_base,
+        lora_B_base,
+        grad_out,
     )
 
     experts = _MockExperts(mx, E)
     active = get_active_experts(sei, E)
     remapped, compact_offsets = remap_expert_indices(sei, eo, active, E)
-    W_compact = selective_expert_weights(
-        experts, "gate_up_proj", active
-    ).transpose(2, 1).contiguous()
-    A_compact, B_compact = selective_lora_weights(
-        lora_A_base, lora_B_base, active, E
+    W_compact = (
+        selective_expert_weights(experts, "gate_up_proj", active)
+        .transpose(2, 1)
+        .contiguous()
     )
+    A_compact, B_compact = selective_lora_weights(lora_A_base, lora_B_base, active, E)
     out_a, dx_a, dA_a, dB_a = run(
-        W_compact, remapped, compact_offsets, top_k, A_compact, B_compact,
+        W_compact,
+        remapped,
+        compact_offsets,
+        top_k,
+        A_compact,
+        B_compact,
         grad_out,
     )
 
@@ -359,8 +384,7 @@ def test_strategy_a_backward_fused_variants(use_fused_dX, use_fused_gather):
     # any real bug but tolerant of the unavoidable atomic-order noise.
     lora_grad_tol = dict(atol=1e-3, rtol=1e-3)
     row_idx = (
-        active.long()[:, None] * R
-        + torch.arange(R, device=DEVICE)[None, :]
+        active.long()[:, None] * R + torch.arange(R, device=DEVICE)[None, :]
     ).reshape(-1)
     dA_b_active = dA_b[row_idx]
     dB_b_active = dB_b[:, row_idx]
@@ -413,12 +437,8 @@ def test_strategy_b_forward_matches_bf16(E, K, N, M, top_k, R, seed):
     scaling = 0.5
     tol = _tol_for_shape(K)
 
-    out_baseline = _run_baseline(
-        W_ref, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k
-    )
-    out_b, _ = _run_strategy_b(
-        mx, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k, E
-    )
+    out_baseline = _run_baseline(W_ref, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k)
+    out_b, _ = _run_strategy_b(mx, x, lora_A, lora_B, scaling, sei, ssi, eo, top_k, E)
 
     assert out_baseline.shape == out_b.shape
     diff = (out_baseline.float() - out_b.float()).abs()
@@ -438,7 +458,6 @@ def test_strategy_b_backward_matches_bf16(E, K, N, M, top_k, R, seed):
         E, K, N, M, top_k, R, seed
     )
     scaling = 0.5
-    fwd_tol = _tol_for_shape(K)
     dx_tol = _tol_for_shape(K, dx=True)
     lg_tol = _tol_for_shape(K, lora_grad=True)
 
@@ -448,8 +467,17 @@ def test_strategy_b_backward_matches_bf16(E, K, N, M, top_k, R, seed):
     A_b = lora_A_base.detach().clone().requires_grad_(True)
     B_b = lora_B_base.detach().clone().requires_grad_(True)
     out_b = _run_baseline(
-        W_ref, x_b, A_b, B_b, scaling, sei, ssi, eo, top_k,
-        use_fused_dX=True, use_fused_gather=True,
+        W_ref,
+        x_b,
+        A_b,
+        B_b,
+        scaling,
+        sei,
+        ssi,
+        eo,
+        top_k,
+        use_fused_dX=True,
+        use_fused_gather=True,
     )
     grad_out = torch.randn_like(out_b)
     out_b.backward(grad_out)
@@ -505,8 +533,7 @@ def test_strategy_b_backward_matches_bf16(E, K, N, M, top_k, R, seed):
     # dA / dB — compare active expert slices (use forward tolerance — these
     # come from the LoRA-only grad path which doesn't touch the W matmul)
     row_idx = (
-        active.long()[:, None] * R
-        + torch.arange(R, device=DEVICE)[None, :]
+        active.long()[:, None] * R + torch.arange(R, device=DEVICE)[None, :]
     ).reshape(-1)
     dA_b_active = A_b.grad[row_idx]
     dA_s_active = A_full.grad[row_idx]

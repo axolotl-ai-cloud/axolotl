@@ -26,9 +26,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import subprocess
-import time
 from pathlib import Path
 from typing import Callable
 
@@ -99,7 +97,7 @@ def gpu_hbm_bandwidth_gbps() -> float | None:
 @torch.no_grad()
 def _setup_bf16(E, K, N, top_k, M, rank):
     torch.manual_seed(0)
-    W = torch.randn(E, N, K, device=DEVICE, dtype=DTYPE) * (1.0 / K ** 0.5)
+    W = torch.randn(E, N, K, device=DEVICE, dtype=DTYPE) * (1.0 / K**0.5)
     W_kernel = W.transpose(2, 1).contiguous()  # [E, K, N]
     return W, W_kernel
 
@@ -131,6 +129,7 @@ def _setup_mx(W_natural, chunk: int = 8):
             template = mx_chunk
     qdata = torch.cat(qdata_parts, dim=0)
     scale = torch.cat(scale_parts, dim=0)
+    assert template is not None
     return MXTensor(
         qdata,
         scale,
@@ -204,17 +203,27 @@ class _MockExperts:
 def make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling):
     A = lora_A.detach().clone().requires_grad_(True)
     B = lora_B.detach().clone().requires_grad_(True)
+
     def run(x):
         x.grad = None
         A.grad = None
         B.grad = None
         out = parallel_linear_lora(
-            x, W_kernel, top_k, sei, ssi, eo,
-            lora_A=A, lora_B=B, scaling=scaling,
-            use_fused_dX=True, use_fused_gather=True,
+            x,
+            W_kernel,
+            top_k,
+            sei,
+            ssi,
+            eo,
+            lora_A=A,
+            lora_B=B,
+            scaling=scaling,
+            use_fused_dX=True,
+            use_fused_gather=True,
         )
         out.sum().backward()
         return out
+
     return run
 
 
@@ -222,29 +231,42 @@ def make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
     experts = _MockExperts(mx)
     A = lora_A.detach().clone().requires_grad_(True)
     B = lora_B.detach().clone().requires_grad_(True)
+
     def run(x):
         x.grad = None
         A.grad = None
         B.grad = None
         active = get_active_experts(sei, E)
         remapped, compact_off = remap_expert_indices(sei, eo, active, E)
-        W_compact = selective_expert_weights(
-            experts, "gate_up_proj", active
-        ).transpose(2, 1).contiguous()
+        W_compact = (
+            selective_expert_weights(experts, "gate_up_proj", active)
+            .transpose(2, 1)
+            .contiguous()
+        )
         A_c, B_c = selective_lora_weights(A, B, active, E)
         out = parallel_linear_lora(
-            x, W_compact, top_k, remapped, ssi, compact_off,
-            lora_A=A_c, lora_B=B_c, scaling=scaling,
-            use_fused_dX=True, use_fused_gather=True,
+            x,
+            W_compact,
+            top_k,
+            remapped,
+            ssi,
+            compact_off,
+            lora_A=A_c,
+            lora_B=B_c,
+            scaling=scaling,
+            use_fused_dX=True,
+            use_fused_gather=True,
         )
         out.sum().backward()
         return out
+
     return run
 
 
 def make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
     A = lora_A.detach().clone().requires_grad_(True)
     B = lora_B.detach().clone().requires_grad_(True)
+
     def run(x):
         x.grad = None
         A.grad = None
@@ -254,11 +276,19 @@ def make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E):
         mx_active = selective_mx_weights_fwd(mx, active)
         A_c, B_c = selective_lora_weights(A, B, active, E)
         out = parallel_linear_lora(
-            x, mx_active, top_k, remapped, ssi, compact_off,
-            lora_A=A_c, lora_B=B_c, scaling=scaling,
+            x,
+            mx_active,
+            top_k,
+            remapped,
+            ssi,
+            compact_off,
+            lora_A=A_c,
+            lora_B=B_c,
+            scaling=scaling,
         )
         out.sum().backward()
         return out
+
     return run
 
 
@@ -389,15 +419,21 @@ def main():
 
         runners = {
             "bf16 baseline": (
-                make_runner_bf16(W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling),
+                make_runner_bf16(
+                    W_kernel, lora_A, lora_B, sei, ssi, eo, top_k, scaling
+                ),
                 bytes_bf16,
             ),
             "Strategy A (selective dequant)": (
-                make_runner_strategy_a(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
+                make_runner_strategy_a(
+                    mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E
+                ),
                 bytes_bf16,  # post-dequant the kernel still reads bf16
             ),
             "Strategy B (fused MX)": (
-                make_runner_strategy_b(mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E),
+                make_runner_strategy_b(
+                    mx, lora_A, lora_B, sei, ssi, eo, top_k, scaling, E
+                ),
                 bytes_mx,
             ),
         }
@@ -500,9 +536,7 @@ def main():
             section_lines.append("")
     else:
         M, e_active, results = per_M[0]
-        section_lines.append(
-            f"## Routing mode: {args.routing_mode} — {gpu_name()}"
-        )
+        section_lines.append(f"## Routing mode: {args.routing_mode} — {gpu_name()}")
         section_lines.append("")
         section_lines.append(f"- **GPU**: {gpu_name()}")
         section_lines.append(
@@ -520,9 +554,7 @@ def main():
         )
         section_lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
         for r in results:
-            hbm_pct = (
-                f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
-            )
+            hbm_pct = f"{r['hbm_pct']:.1f}" if not math.isnan(r["hbm_pct"]) else "N/A"
             section_lines.append(
                 f"| {r['name']} | {r['ms_per_iter']:.2f} | {r['tokens_per_s']:.0f} | "
                 f"{r['peak_mem_mb']:.1f} | {r['hbm_gbps']:.1f} | {hbm_pct} |"

@@ -69,7 +69,7 @@ class ScatterMoELoRA(torch.autograd.Function):
         use_fused_gather: bool = False,
     ):
         is_mx = isinstance(expert_weights, MXWeights)
-        if is_mx:
+        if isinstance(expert_weights, MXWeights):
             assert expert_weights.layout == MXLayout.FWD, (
                 "MXWeights passed to forward must be in FWD layout"
             )

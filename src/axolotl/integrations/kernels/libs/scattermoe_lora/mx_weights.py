@@ -33,8 +33,22 @@ MX_BLOCK_SIZE = 32
 # Standard OCP-MX fp4 e2m1 codebook (sign bit | 2-bit exp | 1-bit mantissa).
 # Index by the raw 4-bit nibble. Cached fp32 tensor for kernel lookups.
 _FP4_E2M1_LUT = (
-    0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
-    -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    -0.0,
+    -0.5,
+    -1.0,
+    -1.5,
+    -2.0,
+    -3.0,
+    -4.0,
+    -6.0,
 )
 
 _LUT_CACHE: dict[torch.device, torch.Tensor] = {}
@@ -144,7 +158,9 @@ def _mx_scale(mx) -> torch.Tensor:
     return scale
 
 
-def _construct_mxtensor_subset(parent, qdata_slice: torch.Tensor, scale_slice: torch.Tensor):
+def _construct_mxtensor_subset(
+    parent, qdata_slice: torch.Tensor, scale_slice: torch.Tensor
+):
     """Construct a new MXTensor that shares ``parent``'s metadata but uses
     the provided ``qdata_slice`` / ``scale_slice`` buffers.
 
@@ -157,9 +173,7 @@ def _construct_mxtensor_subset(parent, qdata_slice: torch.Tensor, scale_slice: t
     """
     MXTensor = _torchao_mxtensor_cls()
     if MXTensor is None:
-        raise ImportError(
-            "MXFP4 path requires torchao (install `torchao>=0.7`)."
-        )
+        raise ImportError("MXFP4 path requires torchao (install `torchao>=0.7`).")
     kernel_preference = getattr(parent, "kernel_preference", None)
     act_quant_kwargs = getattr(parent, "act_quant_kwargs", None)
     is_swizzled_scales = getattr(parent, "is_swizzled_scales", False)
@@ -182,9 +196,7 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     kernel via ``parallel_linear_lora``."""
     MXTensor = _torchao_mxtensor_cls()
     if MXTensor is None:
-        raise ImportError(
-            "MXFP4 fused path requires torchao>=0.7 (install `torchao`)."
-        )
+        raise ImportError("MXFP4 fused path requires torchao>=0.7 (install `torchao`).")
     assert isinstance(mx_param, MXTensor), (
         f"selective_mx_weights_fwd expects an MXTensor, got {type(mx_param)}"
     )
@@ -207,5 +219,3 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
         num_experts=sub_qdata.size(0),
         orig_dtype=mx_param.orig_dtype,
     )
-
-

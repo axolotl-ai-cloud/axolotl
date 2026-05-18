@@ -2382,9 +2382,7 @@ def _compute_expert_block_lora_mxfp4(
 
         # MXFP4 dequant
         packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
-        nibble = tl.where(
-            K_is_high[None, :], (packed >> 4) & 0xF, packed & 0xF
-        )
+        nibble = tl.where(K_is_high[None, :], (packed >> 4) & 0xF, packed & 0xF)
         codebook_val = tl.load(Codebook_ptr + nibble)  # [BLOCK_N, BLOCK_K] fp32
         scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
         scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
@@ -2855,9 +2853,7 @@ def _compute_expert_block_lora_dX_mxfp4(
 
         # MXFP4 dequant of W tile [BLOCK_K, BLOCK_N]
         packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
-        nibble = tl.where(
-            K_is_high[:, None], (packed >> 4) & 0xF, packed & 0xF
-        )
+        nibble = tl.where(K_is_high[:, None], (packed >> 4) & 0xF, packed & 0xF)
         codebook_val = tl.load(Codebook_ptr + nibble)
         scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
         scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
