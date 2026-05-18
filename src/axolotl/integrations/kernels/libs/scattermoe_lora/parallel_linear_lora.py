@@ -68,15 +68,16 @@ class ScatterMoELoRA(torch.autograd.Function):
         use_fused_dX: bool = False,
         use_fused_gather: bool = False,
     ):
-        is_mx = isinstance(expert_weights, MXWeights)
-        if is_mx:
+        if isinstance(expert_weights, MXWeights):
             assert expert_weights.layout == MXLayout.FWD, (
                 "MXWeights passed to forward must be in FWD layout"
             )
+            is_mx = True
         else:
             # Cast weights to match input dtype (e.g. 8-bit LoRA)
             if expert_weights.dtype != x.dtype:
                 expert_weights = expert_weights.to(x.dtype)
+            is_mx = False
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
         with torch.device(x.device):
