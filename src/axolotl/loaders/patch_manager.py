@@ -775,6 +775,7 @@ class PatchManager:
 
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
+
         if (
             self.model_config.model_type
             in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
@@ -784,15 +785,18 @@ class PatchManager:
             and is_flash_attn_available()
             and not self.inference
         ):
-            # TODO(MengqingCao): split these patches separately
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                is_xformers_swiglu_available,
-                replace_llama_mlp_with_swiglu,
-            )
+            try:
+                # TODO(MengqingCao): split these patches separately
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                )
 
-            if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                LOG.info("Patching with SwiGLU...")
-                replace_llama_mlp_with_swiglu(model)
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("Patching with SwiGLU...")
+                    replace_llama_mlp_with_swiglu(model)
+            except ImportError as e:
+                LOG.warning(f"Flash Attention patches not applied: {e}")
 
     def _apply_lora_kernel_patch(self, model):
         """Apply LoRA kernel patches."""
