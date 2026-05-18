@@ -34,6 +34,7 @@ import torch
 import torch.nn.functional as F
 
 from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+    MXWeights,
     selective_mx_weights_fwd,
 )
 from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
@@ -86,17 +87,23 @@ def _build_synthetic_moe():
     torch.manual_seed(42)
     # Scale ~ 1/sqrt(fan_in) so per-layer outputs stay in order-1 range and
     # bf16 final-cast noise is not amplified by the magnitude.
-    gup_scale = 1.0 / (HIDDEN**0.5)
-    down_scale = 1.0 / (INTERMEDIATE**0.5)
+    gup_scale = 1.0 / (HIDDEN ** 0.5)
+    down_scale = 1.0 / (INTERMEDIATE ** 0.5)
     gate_up = (
-        torch.randn(E, 2 * INTERMEDIATE, HIDDEN, device=DEVICE, dtype=DTYPE) * gup_scale
+        torch.randn(E, 2 * INTERMEDIATE, HIDDEN, device=DEVICE, dtype=DTYPE)
+        * gup_scale
     )
-    down = torch.randn(E, HIDDEN, INTERMEDIATE, device=DEVICE, dtype=DTYPE) * down_scale
+    down = (
+        torch.randn(E, HIDDEN, INTERMEDIATE, device=DEVICE, dtype=DTYPE)
+        * down_scale
+    )
 
     gate_up_mx = MXTensor.to_mx(
         gate_up, elem_dtype=torch.float4_e2m1fn_x2, block_size=32
     )
-    down_mx = MXTensor.to_mx(down, elem_dtype=torch.float4_e2m1fn_x2, block_size=32)
+    down_mx = MXTensor.to_mx(
+        down, elem_dtype=torch.float4_e2m1fn_x2, block_size=32
+    )
     gate_up_ref = gate_up_mx.dequantize(DTYPE).contiguous()
     down_ref = down_mx.dequantize(DTYPE).contiguous()
 
@@ -139,7 +146,9 @@ class _MockExperts:
         self.num_experts = E
 
 
-def _axolotl_moe_forward(x, router_w, gate_up_param, down_param, *, strategy: str):
+def _axolotl_moe_forward(
+    x, router_w, gate_up_param, down_param, *, strategy: str
+):
     """Run the Axolotl ScatterMoE LoRA path with LoRA disabled (A=B=0).
 
     ``strategy='A'``: ``gate_up_param``/``down_param`` are torchao MXTensors;
@@ -162,7 +171,9 @@ def _axolotl_moe_forward(x, router_w, gate_up_param, down_param, *, strategy: st
     # Build LoRA tensors with A=B=0 so the LoRA term is zero.
     rank = 4
     lora_A = torch.zeros(rank * E, HIDDEN, device=DEVICE, dtype=DTYPE)
-    lora_B_gup = torch.zeros(2 * INTERMEDIATE, rank * E, device=DEVICE, dtype=DTYPE)
+    lora_B_gup = torch.zeros(
+        2 * INTERMEDIATE, rank * E, device=DEVICE, dtype=DTYPE
+    )
     lora_B_down = torch.zeros(HIDDEN, rank * E, device=DEVICE, dtype=DTYPE)
     lora_A_inter = torch.zeros(rank * E, INTERMEDIATE, device=DEVICE, dtype=DTYPE)
     A_gup_c, B_gup_c = selective_lora_weights(lora_A, lora_B_gup, active, E)
@@ -171,16 +182,12 @@ def _axolotl_moe_forward(x, router_w, gate_up_param, down_param, *, strategy: st
     experts = _MockExperts(gate_up_param, down_param)
 
     if strategy == "A":
-        gate_up_W = (
-            selective_expert_weights(experts, "gate_up_proj", active)
-            .transpose(2, 1)
-            .contiguous()
-        )
-        down_W = (
-            selective_expert_weights(experts, "down_proj", active)
-            .transpose(2, 1)
-            .contiguous()
-        )
+        gate_up_W = selective_expert_weights(
+            experts, "gate_up_proj", active
+        ).transpose(2, 1).contiguous()
+        down_W = selective_expert_weights(
+            experts, "down_proj", active
+        ).transpose(2, 1).contiguous()
         gup_W = gate_up_W
         dwn_W = down_W
     elif strategy == "B":
@@ -236,11 +243,13 @@ def test_mxfp4_moe_block_matches_pytorch_reference(strategy):
     x = torch.randn(M, HIDDEN, device=DEVICE, dtype=DTYPE)
 
     ref = _reference_moe_forward(x, router_w, gate_up_ref, down_ref)
-    out = _axolotl_moe_forward(x, router_w, gate_up_mx, down_mx, strategy=strategy)
+    out = _axolotl_moe_forward(
+        x, router_w, gate_up_mx, down_mx, strategy=strategy
+    )
 
     assert ref.shape == out.shape == (M, HIDDEN)
     assert torch.allclose(ref, out, atol=5e-3, rtol=5e-3), (
         f"Strategy {strategy} MoE block diverges from PyTorch reference: "
-        f"max abs={(ref - out).abs().max().item():.4e}, "
-        f"max rel={((ref - out).abs() / (ref.abs() + 1e-6)).max().item():.4e}"
+        f"max abs={ (ref - out).abs().max().item():.4e}, "
+        f"max rel={ ((ref - out).abs() / (ref.abs() + 1e-6)).max().item():.4e}"
     )

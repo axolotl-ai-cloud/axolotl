@@ -33,22 +33,8 @@ MX_BLOCK_SIZE = 32
 # Standard OCP-MX fp4 e2m1 codebook (sign bit | 2-bit exp | 1-bit mantissa).
 # Index by the raw 4-bit nibble. Cached fp32 tensor for kernel lookups.
 _FP4_E2M1_LUT = (
-    0.0,
-    0.5,
-    1.0,
-    1.5,
-    2.0,
-    3.0,
-    4.0,
-    6.0,
-    -0.0,
-    -0.5,
-    -1.0,
-    -1.5,
-    -2.0,
-    -3.0,
-    -4.0,
-    -6.0,
+    0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+    -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
 )
 
 _LUT_CACHE: dict[torch.device, torch.Tensor] = {}
@@ -115,25 +101,6 @@ class MXWeights:
         )
         if self.num_experts is None:
             self.num_experts = self.packed.size(0)
-        assert self.packed.ndim == 3, (
-            f"packed must be 3D [E, N, K/2], got shape {tuple(self.packed.shape)}"
-        )
-        assert self.scales.ndim == 3, (
-            f"scales must be 3D [E, N, K/block_size], got shape {tuple(self.scales.shape)}"
-        )
-        assert self.packed.size(2) * 2 == self.K, (
-            f"packed.size(2) * 2 (={self.packed.size(2) * 2}) must equal K (={self.K})"
-        )
-        assert self.packed.size(1) == self.N, (
-            f"packed.size(1) (={self.packed.size(1)}) must equal N (={self.N})"
-        )
-        assert self.scales.size(2) == self.K // self.block_size, (
-            f"scales.size(2) (={self.scales.size(2)}) must equal K/block_size (={self.K // self.block_size})"
-        )
-        assert self.packed.size(0) == self.scales.size(0), (
-            f"packed and scales must share leading E_active dim, got "
-            f"{self.packed.size(0)} vs {self.scales.size(0)}"
-        )
 
     @property
     def device(self) -> torch.device:
@@ -177,9 +144,7 @@ def _mx_scale(mx) -> torch.Tensor:
     return scale
 
 
-def _construct_mxtensor_subset(
-    parent, qdata_slice: torch.Tensor, scale_slice: torch.Tensor
-):
+def _construct_mxtensor_subset(parent, qdata_slice: torch.Tensor, scale_slice: torch.Tensor):
     """Construct a new MXTensor that shares ``parent``'s metadata but uses
     the provided ``qdata_slice`` / ``scale_slice`` buffers.
 
@@ -193,7 +158,7 @@ def _construct_mxtensor_subset(
     MXTensor = _torchao_mxtensor_cls()
     if MXTensor is None:
         raise ImportError(
-            "MXFP4 path requires torchao>=0.17.0 (install `torchao>=0.17.0`)."
+            "MXFP4 path requires torchao (install `torchao>=0.7`)."
         )
     kernel_preference = getattr(parent, "kernel_preference", None)
     act_quant_kwargs = getattr(parent, "act_quant_kwargs", None)
@@ -218,7 +183,7 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     MXTensor = _torchao_mxtensor_cls()
     if MXTensor is None:
         raise ImportError(
-            "MXFP4 fused path requires torchao>=0.17.0 (install `torchao>=0.17.0`)."
+            "MXFP4 fused path requires torchao>=0.7 (install `torchao`)."
         )
     assert isinstance(mx_param, MXTensor), (
         f"selective_mx_weights_fwd expects an MXTensor, got {type(mx_param)}"
@@ -242,3 +207,5 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
         num_experts=sub_qdata.size(0),
         orig_dtype=mx_param.orig_dtype,
     )
+
+
