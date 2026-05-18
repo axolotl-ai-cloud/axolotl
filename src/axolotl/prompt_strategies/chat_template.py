@@ -25,20 +25,15 @@ LOG = get_logger(__name__)
 LOG.setLevel("INFO")
 
 
-def _unwrap_build_prompt(result):
-    """Normalize a ``ChatTemplatePrompter.build_prompt`` return value.
+def _extract_input_ids(result):
+    """Return the ``input_ids`` from a ``build_prompt`` result.
 
     With a processor configured, ``build_prompt`` returns a dict of
     processor outputs (``input_ids``, ``attention_mask``, optional
     ``pixel_values``, etc.). Without a processor it returns a plain
-    ``list[int]`` from the tokenizer. Returns ``(input_ids, extras)``
-    where ``extras`` is the dict of non-``input_ids`` keys (empty when
-    the input was already a list).
+    ``list[int]`` from the tokenizer.
     """
-    if isinstance(result, dict):
-        extras = {k: v for k, v in result.items() if k != "input_ids"}
-        return result["input_ids"], extras
-    return result, {}
+    return result["input_ids"] if isinstance(result, dict) else result
 
 
 class ChatTemplatePrompter(Prompter):
@@ -484,9 +479,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)
-        input_ids, processor_extras = _unwrap_build_prompt(
-            self.prompter.build_prompt(turns, tools=tools)  # type: ignore
-        )
+        result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
+        if not isinstance(result, dict):
+            result = {"input_ids": result}
+        input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         last_eos_idx = -1
@@ -642,17 +638,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         LOG.debug(f"Final labels: {labels}")
 
-        attention_mask = processor_extras.get("attention_mask", [1] * len(input_ids))
-        result = {
-            "input_ids": input_ids,
-            "labels": labels,
-            "attention_mask": attention_mask,
-        }
-        # Carry forward any additional processor outputs (pixel_values, image
-        # grid info, etc.) without clobbering the fields we just set.
-        for key, val in processor_extras.items():
-            if key not in result:
-                result[key] = val
+        # ``result`` already carries any processor outputs (pixel_values, image
+        # grid info, etc.); just set the fields we computed locally.
+        result["labels"] = labels
+        result.setdefault("attention_mask", [1] * len(input_ids))
         return result
 
     def find_first_eos_token(self, input_ids, start_idx):
@@ -730,14 +719,14 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         real_last_index = len(turns) - 1
 
         # Generate the conversation up to the turn, with final turn replaced with dummy content
-        dummy_ids, _ = _unwrap_build_prompt(
+        dummy_ids = _extract_input_ids(
             self.prompter.build_prompt(  # type: ignore
                 turns_with_empty, tools=tools, real_last_index=real_last_index
             )
         )
 
         # Generate the conversation up to the turn, with final turn included
-        full_ids, _ = _unwrap_build_prompt(
+        full_ids = _extract_input_ids(
             self.prompter.build_prompt(  # type: ignore
                 turns_with_content, tools=tools, real_last_index=real_last_index
             )
