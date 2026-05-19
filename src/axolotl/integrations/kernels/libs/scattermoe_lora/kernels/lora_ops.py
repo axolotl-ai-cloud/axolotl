@@ -1456,16 +1456,17 @@ def _group_bwd_lora(
     N_block_id = pid1
 
     # Get expert's token range from cumulative offsets
-    if E_idx == 0:
-        start_idx = 0
-    else:
-        if INT64_INDICES:
-            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
-        else:
-            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
     if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
     else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
@@ -1702,16 +1703,17 @@ def _group_bwd_lora_split(
     E_idx = tl.program_id(0)
     dim_block_id = tl.program_id(1)
 
-    if E_idx == 0:
-        start_idx = 0
-    else:
-        if INT64_INDICES:
-            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
-        else:
-            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
     if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
     else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
@@ -2061,20 +2063,22 @@ def _group_bwd_lora_fused(
     # Get expert's token range from cumulative offsets
     # start_idx/end_idx from expert_offsets_ptr: iteration range (possibly padded)
     # real_end_idx from real_expert_offsets_ptr: for M_mask (real token count)
-    if E_idx == 0:
-        start_idx = 0
-        real_start_idx = 0
-    else:
-        if INT64_INDICES:
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+            real_start_idx = tl.zeros([], dtype=tl.int64)
+        else:
             start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
             real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int64)
-        else:
-            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    if INT64_INDICES:
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
         real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int64)
     else:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+            real_start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
         end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
         real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
