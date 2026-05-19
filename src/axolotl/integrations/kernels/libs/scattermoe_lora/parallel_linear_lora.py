@@ -82,13 +82,14 @@ class ScatterMoELoRA(torch.autograd.Function):
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
         L_scattered = sorted_expert_idxs.size(0)
-        N_dim = expert_weights.N if is_mx else expert_weights.size(-1)
+        if is_mx:
+            N_dim = expert_weights.N  # type: ignore[union-attr]
+        else:
+            N_dim = expert_weights.size(-1)  # type: ignore[union-attr]
         # Forward output is [L_scattered, N]. Overflow risk is dominated by
         # that buffer; also probe X for the unusual case where it alone is
         # huge (e.g. very wide hidden with modest seq).
-        needs_int64_fwd = (L_scattered * N_dim) >= _INT_MAX or _needs_int64_indices(
-            x
-        )
+        needs_int64_fwd = (L_scattered * N_dim) >= _INT_MAX or _needs_int64_indices(x)
         with torch.device(x.device):
             if is_mx:
                 # Fused MXFP4 forward: dequant happens inside the K-loop

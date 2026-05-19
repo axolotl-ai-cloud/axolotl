@@ -87,9 +87,7 @@ class ParallelLinear(torch.autograd.Function):
         # Cheap probe: the kernel's overflow risk is the M_block * stride_ym
         # product, dominated by the output buffer L_scattered * y_dim. We also
         # check x because the X_ptr arithmetic uses similar indices.
-        needs_int64_fwd = (L_scattered * y_dim) >= _INT_MAX or _needs_int64_indices(
-            x
-        )
+        needs_int64_fwd = (L_scattered * y_dim) >= _INT_MAX or _needs_int64_indices(x)
         with torch.device(x.device):
             output = kernels.ops.scatter2scatter(
                 X=x,

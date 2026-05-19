@@ -421,7 +421,14 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
 
     def _spy_compileable(*args, **kwargs):
         # int64_indices is positional arg 9 (after b, x_grouped, y_grouped).
-        launches.append({"args_len": len(args), "int64": args[9] if len(args) > 9 else kwargs.get("int64_indices", False)})
+        launches.append(
+            {
+                "args_len": len(args),
+                "int64": args[9]
+                if len(args) > 9
+                else kwargs.get("int64_indices", False),
+            }
+        )
         return real_compileable(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -444,8 +451,7 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
         torch.cuda.synchronize()
 
     assert len(launches) == 1, (
-        f"expected exactly one kernel launch (direct int64 path), "
-        f"got {len(launches)}"
+        f"expected exactly one kernel launch (direct int64 path), got {len(launches)}"
     )
     assert launches[0]["int64"] is True, (
         "auto-dispatch should have set int64_indices=True at the overflow shape"
