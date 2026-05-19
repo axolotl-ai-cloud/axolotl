@@ -12,6 +12,27 @@ import torch.nn as nn
 from . import kernels
 from .kernels.ops import BLOCK_M as _SCATTER2SCATTER_BLOCK_M
 
+# When the maximum addressable element offset across any input/output buffer
+# exceeds INT_MAX, the Triton kernel's int32 pointer-offset arithmetic
+# overflows. ``_needs_int64_indices`` returns True iff any tensor has
+# ``numel() >= INT_MAX``, which is a sufficient condition for the
+# ``M_idx * stride_*m`` product to overflow somewhere in the kernel. When
+# True, callers pass ``INT64_INDICES=True`` to the kernel so the index range
+# is cast to int64 before it enters the multiplication. Strides themselves
+# are already int64 at the Python level (from ``tensor.stride()``); only
+# the *index* type needs the bump.
+_INT_MAX = 2**31 - 1
+
+
+def _needs_int64_indices(*tensors) -> bool:
+    """True iff any input/output tensor's element count exceeds INT_MAX."""
+    for t in tensors:
+        if t is None or not isinstance(t, torch.Tensor):
+            continue
+        if t.numel() >= _INT_MAX:
+            return True
+    return False
+
 # Int32-overflow guard for the scatter2scatter Triton kernel.
 #
 # The kernel computes output-pointer offsets as
@@ -53,6 +74,7 @@ def _scatter2scatter_int32_safe(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Wrapper around ``kernels.ops.scatter2scatter`` that splits the call
     when its output would overflow the Triton kernel's int32 pointer
@@ -82,6 +104,27 @@ def _scatter2scatter_int32_safe(
             x_grouped=x_grouped,
             y_grouped=y_grouped,
             out=out,
+            int64_indices=int64_indices,
+        )
+
+    # Above the int32 limit, route through the int64 kernel path directly:
+    # the kernel-level fix (INT64_INDICES=True) handles both y_grouped=True
+    # and y_grouped=False, where the chunking workaround below cannot tile
+    # y_grouped=False safely. Chunking is retained for now as a fallback for
+    # extremely large outputs where the int64 kernel hasn't been validated,
+    # but the primary correctness path at overflow scale is now int64.
+    if int64_indices:
+        return kernels.ops.scatter2scatter(
+            X=X,
+            W=W,
+            sorted_expert_idxs=sorted_expert_idxs,
+            sorted_scattered_idxs=sorted_scattered_idxs,
+            k=k,
+            b=b,
+            x_grouped=x_grouped,
+            y_grouped=y_grouped,
+            out=out,
+            int64_indices=True,
         )
 
     if not y_grouped:
@@ -226,6 +269,14 @@ class ParallelLinear(torch.autograd.Function):
             expert_weights = expert_weights.to(x.dtype)
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
+        L_scattered = sorted_expert_idxs.size(0)
+        y_dim = expert_weights.size(-1)
+        # Cheap probe: the kernel's overflow risk is the M_block * stride_ym
+        # product, dominated by the output buffer L_scattered * y_dim. We also
+        # check x because the X_ptr arithmetic uses similar indices.
+        needs_int64_fwd = (L_scattered * y_dim) >= _INT_MAX or _needs_int64_indices(
+            x
+        )
         with torch.device(x.device):
             output = _scatter2scatter_int32_safe(
                 X=x,
@@ -236,6 +287,7 @@ class ParallelLinear(torch.autograd.Function):
                 sorted_scattered_idxs=sorted_scattered_idxs,
                 x_grouped=grouped_in,
                 y_grouped=grouped_out,
+                int64_indices=needs_int64_fwd,
             )
             if gates is not None:
                 output_expanded = output.view(
@@ -317,6 +369,11 @@ class ParallelLinear(torch.autograd.Function):
                 has_bias=expert_biases is not None,
             )
 
+            L_scattered = sorted_expert_idxs.size(0)
+            dx_dim = expert_weights.size(1)  # K dim of W = output dim for dX
+            needs_int64_bwd = (
+                L_scattered * dx_dim
+            ) >= _INT_MAX or _needs_int64_indices(grouped_grad_out)
             d_expanded_input = _scatter2scatter_int32_safe(
                 X=grouped_grad_out,
                 x_grouped=True,
@@ -326,6 +383,7 @@ class ParallelLinear(torch.autograd.Function):
                 k=1,
                 y_grouped=grouped_in,
                 out=d_expanded_input,  # Reuse grouped_x buffer
+                int64_indices=needs_int64_bwd,
             )
 
             if k == 1:
