@@ -295,3 +295,186 @@ def test_resolve_moe_block_cls_returns_none_for_dense_model():
 
     module = SimpleNamespace(FooMLP=object)
     assert _resolve_moe_block_cls(module, "Foo") is None
+
+
+# ─────────────── Grad parity under non-uniform per-token loss weights ─────────
+#
+# Sequence-dim sharding makes per-shard parameter-grads additive: the full
+# batch gradient is the SUM of shard contributions, not the mean. If the
+# tiled backward ever scaled by ``1/total_shards`` (the historical
+# ``GradientAccumulator.gradient_scale``), per-shard non-uniform weights
+# would make the mean visibly diverge from the un-tiled reference — uniform
+# loss weights can mask the bug because the per-shard means happen to add
+# up to a related-magnitude value. These tests exercise multiple
+# ``shards ∈ {1, 2, 4}`` with deliberately non-uniform per-token weights
+# so a regression in the scaling semantics fails loudly.
+
+
+def _run_untiled_with_upstream(mod, x, upstream):
+    """Un-tiled fwd+bwd given a fixed upstream grad."""
+    x = x.clone().detach().requires_grad_(True)
+    y = mod(x)
+    y.backward(upstream)
+    return y.detach().clone(), x.grad.detach().clone(), _grad_dict(mod)
+
+
+@pytest.mark.parametrize("shards", [1, 2, 4])
+def test_tiled_dense_mlp_grad_parity_nonuniform_weights(shards):
+    """Dense MLP: tiled vs un-tiled grad parity with non-uniform per-token weights.
+
+    The upstream grad's magnitude varies per token (non-uniform loss weights),
+    so each shard contributes a distinct fraction of the total parameter grad.
+    A mean-vs-sum bug shows up as a ``shards``-dependent scaling error.
+    """
+    torch.manual_seed(100 + shards)
+    hidden, intermediate = 64, 128
+    seq = 128
+    mlp_ref = TinyDenseMLP(hidden, intermediate).to(DEVICE)
+    mlp_tile = _clone_module(mlp_ref)
+
+    x = torch.randn(1, seq, hidden, device=DEVICE)
+    # Non-uniform per-token weights make per-shard grad contributions
+    # distinct, exposing any incorrect averaging.
+    per_token_w = torch.linspace(0.1, 3.0, seq, device=DEVICE).view(1, seq, 1)
+    upstream = torch.randn(1, seq, hidden, device=DEVICE) * per_token_w
+
+    y_ref, dx_ref, gp_ref = _run_untiled_with_upstream(mlp_ref, x, upstream)
+    y_tile, dx_tile, gp_tile = _run_tiled(mlp_tile, x, upstream, shards=shards)
+
+    assert torch.allclose(y_ref, y_tile, atol=1e-5, rtol=1e-5), (
+        f"shards={shards}: forward mismatch "
+        f"max={((y_ref - y_tile).abs().max()).item()}"
+    )
+    assert torch.allclose(dx_ref, dx_tile, atol=1e-5, rtol=1e-5), (
+        f"shards={shards}: dX mismatch "
+        f"max={((dx_ref - dx_tile).abs().max()).item()}"
+    )
+    for name in gp_ref:
+        diff = (gp_ref[name] - gp_tile[name]).abs().max().item()
+        ref_norm = gp_ref[name].abs().max().item() + 1e-8
+        # Tight bound in fp32; rel error must be tiny so a 1/N or N
+        # scaling error (which would give 25%-400% relative drift) is
+        # impossible to miss.
+        assert diff / ref_norm < 1e-4, (
+            f"shards={shards}: param-grad {name} rel_err={diff / ref_norm}"
+        )
+
+
+@pytest.mark.parametrize("shards", [1, 2, 4])
+def test_tiled_moe_grad_parity_nonuniform_weights(shards):
+    """MoE block: tiled vs un-tiled grad parity with non-uniform per-token weights."""
+    torch.manual_seed(200 + shards)
+    hidden, intermediate = 64, 128
+    seq = 128
+    moe_ref = TinyMoEBlock(hidden, intermediate, num_experts=8, top_k=2).to(DEVICE)
+    moe_tile = _clone_module(moe_ref)
+
+    x = torch.randn(1, seq, hidden, device=DEVICE)
+    per_token_w = torch.linspace(0.1, 3.0, seq, device=DEVICE).view(1, seq, 1)
+    upstream = torch.randn(1, seq, hidden, device=DEVICE) * per_token_w
+
+    y_ref, dx_ref, gp_ref = _run_untiled_with_upstream(moe_ref, x, upstream)
+    y_tile, dx_tile, gp_tile = _run_tiled(moe_tile, x, upstream, shards=shards)
+
+    assert torch.allclose(y_ref, y_tile, atol=1e-5, rtol=1e-5), (
+        f"shards={shards}: MoE forward mismatch "
+        f"max={((y_ref - y_tile).abs().max()).item()}"
+    )
+    assert torch.allclose(dx_ref, dx_tile, atol=1e-5, rtol=1e-5), (
+        f"shards={shards}: MoE dX mismatch "
+        f"max={((dx_ref - dx_tile).abs().max()).item()}"
+    )
+    for name in gp_ref:
+        diff = (gp_ref[name] - gp_tile[name]).abs().max().item()
+        ref_norm = gp_ref[name].abs().max().item() + 1e-8
+        assert diff / ref_norm < 1e-4, (
+            f"shards={shards}: MoE param-grad {name} rel_err={diff / ref_norm}"
+        )
+
+
+@pytest.mark.parametrize("shards", [1, 2, 4])
+def test_tiled_dense_mlp_grad_parity_bf16(shards):
+    """Dense MLP: bf16 grad parity at the param dtype (no fp32 accumulator).
+
+    Guards the default param-dtype accumulator path against regression.
+    bf16 reduction order across shards means we use a relative tolerance
+    rather than bitwise equality.
+    """
+    torch.manual_seed(300 + shards)
+    hidden, intermediate = 64, 128
+    seq = 128
+    dtype = torch.bfloat16
+    mlp_ref = TinyDenseMLP(hidden, intermediate, dtype=dtype).to(DEVICE)
+    mlp_tile = _clone_module(mlp_ref)
+
+    x = torch.randn(1, seq, hidden, device=DEVICE, dtype=dtype)
+    per_token_w = (
+        torch.linspace(0.1, 3.0, seq, device=DEVICE).view(1, seq, 1).to(dtype)
+    )
+    upstream = (torch.randn(1, seq, hidden, device=DEVICE) * per_token_w).to(dtype)
+
+    y_ref, dx_ref, gp_ref = _run_untiled_with_upstream(mlp_ref, x, upstream)
+    y_tile, dx_tile, gp_tile = _run_tiled(mlp_tile, x, upstream, shards=shards)
+
+    def _rel(a, b):
+        return ((a.float() - b.float()).norm() / (b.float().norm() + 1e-6)).item()
+
+    assert _rel(y_tile, y_ref) < 5e-3, (
+        f"shards={shards}: bf16 forward rel_err={_rel(y_tile, y_ref)}"
+    )
+    assert _rel(dx_tile, dx_ref) < 5e-3, (
+        f"shards={shards}: bf16 dX rel_err={_rel(dx_tile, dx_ref)}"
+    )
+    for name in gp_ref:
+        rel = _rel(gp_tile[name], gp_ref[name])
+        # Tight bound — a 1/N scaling bug would put rel_err ≈ (N-1)/N,
+        # which is far above this threshold for any N ≥ 2.
+        assert rel < 5e-3, (
+            f"shards={shards}: bf16 param-grad {name} rel_err={rel}"
+        )
+
+
+def test_tiled_grad_accumulator_dtype_matches_param_dtype():
+    """Regression guard: TiledMLP backward should accumulate at param dtype
+    by default (not fp32), so the on-the-fly accumulator does not double
+    the parameter-side memory footprint in bf16 training.
+
+    We snapshot the accumulator dtype by patching ``torch.zeros_like`` to
+    record the dtype of zero-tensors allocated for compute params during
+    backward. The assertion is that none of those allocations request
+    fp32 when the params are bf16.
+    """
+    from axolotl.monkeypatch.tiled_mlp.base import TiledMLP
+
+    torch.manual_seed(42)
+    dtype = torch.bfloat16
+    mlp = TinyDenseMLP(64, 128, dtype=dtype).to(DEVICE)
+    compute_params = [p for p in mlp.parameters() if p.requires_grad]
+    param_ids = {id(p) for p in compute_params}
+
+    x = torch.randn(1, 64, 64, device=DEVICE, dtype=dtype)
+    upstream = torch.randn(1, 64, 64, device=DEVICE, dtype=dtype)
+
+    real_zeros_like = torch.zeros_like
+    allocated_dtypes: list[torch.dtype] = []
+
+    def spy_zeros_like(t, *args, **kwargs):
+        # Only record allocations whose shape matches one of the
+        # compute params (the accumulator buffers we care about).
+        if id(t) in param_ids:
+            allocated_dtypes.append(kwargs.get("dtype", t.dtype))
+        return real_zeros_like(t, *args, **kwargs)
+
+    x_req = x.clone().detach().requires_grad_(True)
+    torch.zeros_like = spy_zeros_like
+    try:
+        y = TiledMLP.apply(type(mlp).forward, mlp, x_req, 4, compute_params)
+        y.backward(upstream)
+    finally:
+        torch.zeros_like = real_zeros_like
+
+    assert allocated_dtypes, "expected accumulator allocations to be observed"
+    # Default path must NOT pre-allocate fp32 buffers when params are bf16.
+    assert all(d == dtype for d in allocated_dtypes), (
+        f"expected accumulator dtype == {dtype}, got {allocated_dtypes}"
+    )
