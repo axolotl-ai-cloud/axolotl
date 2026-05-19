@@ -274,7 +274,7 @@ class HFRLTrainerBuilder(TrainerBuilderBase):
         if (
             self.cfg.adapter
             and self.peft_config
-            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT)
+            and self.cfg.rl not in (RLType.GRPO, RLType.ORPO, RLType.EBFT, RLType.SIMPO)
         ):
             trainer_kwargs["peft_config"] = self.peft_config
 
