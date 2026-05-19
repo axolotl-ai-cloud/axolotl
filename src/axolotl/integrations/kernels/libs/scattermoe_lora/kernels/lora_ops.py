@@ -1434,6 +1434,7 @@ def _group_bwd_lora(
     allow_tf32: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Compute LoRA gradients for each expert on grouped data.
@@ -1458,12 +1459,20 @@ def _group_bwd_lora(
     if E_idx == 0:
         start_idx = 0
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        if INT64_INDICES:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+    if INT64_INDICES:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
         K_mask = K_block < K
         N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -1669,6 +1678,7 @@ def _group_bwd_lora_split(
     ACC_TYPE: tl.constexpr,
     allow_tf32: tl.constexpr,
     NO_DIM_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Unified split kernel for LoRA gradient computation.
@@ -1695,8 +1705,14 @@ def _group_bwd_lora_split(
     if E_idx == 0:
         start_idx = 0
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        if INT64_INDICES:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+    if INT64_INDICES:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     # Output dimension tile (K for dA, N for dB)
@@ -1728,6 +1744,8 @@ def _group_bwd_lora_split(
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         INPUT_DTYPE = X_ptr.dtype.element_ty
         BLOCK_INNER: tl.constexpr = 64
         inner_iters = tl.cdiv(INNER_DIM, BLOCK_INNER)
@@ -1847,6 +1865,7 @@ def group_bwd_lora(
     scaling: float,
     sorted_scattered_idxs: Optional[torch.Tensor] = None,
     k: int = 1,
+    int64_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute LoRA gradients for A and B on expert-grouped data.
@@ -1905,6 +1924,7 @@ def group_bwd_lora(
         COMPUTE_DA=True,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
     )
 
     def grid_dB(META):
@@ -1934,6 +1954,7 @@ def group_bwd_lora(
         COMPUTE_DA=False,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
     )
 
     return dA, dB
@@ -2003,6 +2024,7 @@ def _group_bwd_lora_fused(
     NO_N_MASK: tl.constexpr,
     # Whether DY is already in grouped (expert-sorted) order
     dy_grouped: tl.constexpr = False,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused gather + LoRA gradient computation. Same as _group_bwd_lora but
@@ -2043,14 +2065,24 @@ def _group_bwd_lora_fused(
         start_idx = 0
         real_start_idx = 0
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-        real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
-    real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
+        if INT64_INDICES:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
+    if INT64_INDICES:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int64)
+    else:
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
         K_mask = K_block < K
         N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -2095,9 +2127,14 @@ def _group_bwd_lora_fused(
             M_mask = M_local < real_num_tokens
 
             # Fused gather: load scatter indices for indirect X access
-            scatter_idx = tl.load(
-                sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
-            ).to(tl.int32)
+            if INT64_INDICES:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int64)
+            else:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int32)
             X_token_idx = scatter_idx // FAN_OUT  # X is [M, K], not expanded by k
 
             # Load X via indirect index: [BLOCK_M, BLOCK_K]
@@ -2175,6 +2212,7 @@ def group_bwd_lora_fused(
     scaling: float,
     real_expert_offsets: Optional[torch.Tensor] = None,
     dy_grouped: bool = False,
+    int64_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Fused gather + LoRA gradient computation. Same result as
@@ -2259,6 +2297,7 @@ def group_bwd_lora_fused(
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return dA, dB
