@@ -53,9 +53,19 @@ def _build_tiled_forward(
     def tiled_mlp_forward(self, x):
         input_shape = x.shape
         seqlen = input_shape[-2]
-        hidden = input_shape[-1]
         if cfg_num_shards is None:
-            num_shards = math.ceil(seqlen / hidden)
+            # Target ~32K tokens per shard. The previous `ceil(seq / hidden)`
+            # heuristic produced only ~2K tokens/shard at long context, well
+            # below the MoE kernel's BLOCK_M sweet spot. An empirical sweep at
+            # seq ∈ {64K, 128K, 256K, 512K} showed 3.2× speed-up at 64–256K
+            # and 2.1× at 512K from raising per-shard tokens to ~32K, with
+            # only a modest peak-mem cost (~5–10 GiB extra at seq=256K)
+            # because the routed intermediate buffer dominates and scales
+            # linearly with per-shard tokens. Operators can override via
+            # cfg_num_shards for niche cases (smaller intermediate, larger
+            # top_k) where the default is wrong.
+            target_tokens_per_shard = 32768
+            num_shards = max(1, math.ceil(seqlen / target_tokens_per_shard))
             if is_distributed:
                 num_shards_tensor = torch.tensor(num_shards, device=x.device)
                 dist.all_reduce(num_shards_tensor, op=dist.ReduceOp.MAX)

@@ -102,8 +102,7 @@ def test_shared_dequant_matches_per_shard_bitwise():
         reference = selective_expert_weights(experts, "gate_up_proj", active_i)
         shared_slice = union_buf.index_select(0, shard_into_union[i])
         assert torch.equal(shared_slice, reference), (
-            f"shard {i}: max abs diff = "
-            f"{(shared_slice - reference).abs().max().item()}"
+            f"shard {i}: max abs diff = {(shared_slice - reference).abs().max().item()}"
         )
 
 

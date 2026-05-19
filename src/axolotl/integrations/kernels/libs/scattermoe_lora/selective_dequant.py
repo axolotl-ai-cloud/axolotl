@@ -373,9 +373,7 @@ def shared_dequant_across_shards(
     per_shard_active = [get_active_experts(sei, E) for sei in sei_per_shard]
     union_active = torch.unique(torch.cat(per_shard_active))
 
-    union_buffer = selective_expert_weights(
-        experts_module, param_name, union_active
-    )
+    union_buffer = selective_expert_weights(experts_module, param_name, union_active)
 
     # Build the global-id → union-row remap once, then gather per shard.
     # ``union_active`` is sorted and unique by construction, so the inverse

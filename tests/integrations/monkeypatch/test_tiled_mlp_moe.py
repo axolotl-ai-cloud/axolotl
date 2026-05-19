@@ -342,12 +342,10 @@ def test_tiled_dense_mlp_grad_parity_nonuniform_weights(shards):
     y_tile, dx_tile, gp_tile = _run_tiled(mlp_tile, x, upstream, shards=shards)
 
     assert torch.allclose(y_ref, y_tile, atol=1e-5, rtol=1e-5), (
-        f"shards={shards}: forward mismatch "
-        f"max={((y_ref - y_tile).abs().max()).item()}"
+        f"shards={shards}: forward mismatch max={((y_ref - y_tile).abs().max()).item()}"
     )
     assert torch.allclose(dx_ref, dx_tile, atol=1e-5, rtol=1e-5), (
-        f"shards={shards}: dX mismatch "
-        f"max={((dx_ref - dx_tile).abs().max()).item()}"
+        f"shards={shards}: dX mismatch max={((dx_ref - dx_tile).abs().max()).item()}"
     )
     for name in gp_ref:
         diff = (gp_ref[name] - gp_tile[name]).abs().max().item()
@@ -408,9 +406,7 @@ def test_tiled_dense_mlp_grad_parity_bf16(shards):
     mlp_tile = _clone_module(mlp_ref)
 
     x = torch.randn(1, seq, hidden, device=DEVICE, dtype=dtype)
-    per_token_w = (
-        torch.linspace(0.1, 3.0, seq, device=DEVICE).view(1, seq, 1).to(dtype)
-    )
+    per_token_w = torch.linspace(0.1, 3.0, seq, device=DEVICE).view(1, seq, 1).to(dtype)
     upstream = (torch.randn(1, seq, hidden, device=DEVICE) * per_token_w).to(dtype)
 
     y_ref, dx_ref, gp_ref = _run_untiled_with_upstream(mlp_ref, x, upstream)
@@ -429,9 +425,7 @@ def test_tiled_dense_mlp_grad_parity_bf16(shards):
         rel = _rel(gp_tile[name], gp_ref[name])
         # Tight bound — a 1/N scaling bug would put rel_err ≈ (N-1)/N,
         # which is far above this threshold for any N ≥ 2.
-        assert rel < 5e-3, (
-            f"shards={shards}: bf16 param-grad {name} rel_err={rel}"
-        )
+        assert rel < 5e-3, f"shards={shards}: bf16 param-grad {name} rel_err={rel}"
 
 
 def test_tiled_grad_accumulator_dtype_matches_param_dtype():

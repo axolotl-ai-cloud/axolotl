@@ -420,8 +420,7 @@ class GradientAccumulator:
                         )
                     else:
                         scaled_grad = (
-                            grad.to(self.grad_accumulation_dtype)
-                            * self.gradient_scale
+                            grad.to(self.grad_accumulation_dtype) * self.gradient_scale
                         )
 
                     if param in self.accumulated_grads:
