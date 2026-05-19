@@ -311,6 +311,84 @@ def selective_expert_weights(
     return param
 
 
+def shared_dequant_across_shards(
+    experts_module: nn.Module,
+    param_name: str,
+    sei_per_shard: list[torch.Tensor],
+    E: int,
+) -> tuple[torch.Tensor, torch.Tensor, list[torch.Tensor]]:
+    """Dequantize the union of active experts across N shards exactly once.
+
+    The orthogonal Strategy A path calls :func:`selective_expert_weights`
+    once per shard, which re-dequantizes the active experts redundantly
+    when the active-expert sets overlap. For seq-dim sharding with a
+    softmax-routed MoE, that overlap is the common case.
+
+    This helper hoists the dequant: it computes the union of active
+    experts across all shards, calls :func:`selective_expert_weights`
+    once on the union, and returns per-shard index tables that map each
+    shard's local active experts into rows of the union buffer.
+
+    Parameters
+    ----------
+    experts_module:
+        The base experts module (e.g. ``OlmoeExperts``). Same object the
+        per-shard path would pass to :func:`selective_expert_weights`.
+    param_name:
+        ``"gate_up_proj"`` or ``"down_proj"``.
+    sei_per_shard:
+        List of ``sorted_expert_idxs`` tensors, one per shard.
+    E:
+        Total number of experts.
+
+    Returns
+    -------
+    union_active:
+        ``[U]`` sorted unique expert ids across all shards.
+    union_buffer:
+        Dequantized weights for ``union_active``,
+        ``[U, dim1, dim2]`` in the param's natural storage dtype
+        (typically bf16). Same buffer each shard's call would have built
+        had it dequantized only its own active set, just shared.
+    shard_into_union:
+        List of length ``len(sei_per_shard)``. Entry ``i`` is a 1-D
+        ``long`` tensor that indexes ``union_buffer`` along dim 0 to
+        produce the same ``[num_active_i, dim1, dim2]`` slice the
+        per-shard path would have produced. Callers feed this through
+        ``union_buffer.index_select(0, shard_into_union[i])`` (or
+        equivalent advanced indexing) before handing the slice to
+        ``parallel_linear_lora``.
+
+    Bitwise contract: composing ``union_buffer.index_select(0,
+    shard_into_union[i])`` is byte-identical to
+    ``selective_expert_weights(experts_module, param_name,
+    get_active_experts(sei_per_shard[i], E))`` because both paths slice
+    the same dequantized MX subset by the same expert ids. The
+    ``test_shared_dequant_helper.py`` parity test asserts this.
+    """
+    if not sei_per_shard:
+        raise ValueError("sei_per_shard must contain at least one tensor")
+
+    device = sei_per_shard[0].device
+    per_shard_active = [get_active_experts(sei, E) for sei in sei_per_shard]
+    union_active = torch.unique(torch.cat(per_shard_active))
+
+    union_buffer = selective_expert_weights(
+        experts_module, param_name, union_active
+    )
+
+    # Build the global-id → union-row remap once, then gather per shard.
+    # ``union_active`` is sorted and unique by construction, so the inverse
+    # lookup is dense over ``E``.
+    union_remap = torch.empty(E, dtype=torch.long, device=device)
+    union_remap[union_active] = torch.arange(
+        len(union_active), device=device, dtype=torch.long
+    )
+    shard_into_union = [union_remap[active] for active in per_shard_active]
+
+    return union_active, union_buffer, shard_into_union
+
+
 def selective_lora_weights(
     lora_A: torch.Tensor,
     lora_B: torch.Tensor,
