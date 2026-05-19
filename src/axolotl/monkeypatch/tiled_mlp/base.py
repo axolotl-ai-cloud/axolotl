@@ -3,10 +3,19 @@ TiledMLP support for DDP, FSDP, and single GPU
 """
 
 import contextlib
+import os
 import threading
 from typing import List
 
 import torch
+
+# Opt-in fp32 accumulation for the tiled backward. The default accumulates
+# at the param's own dtype, which matches what AccumulateGrad does in the
+# unsharded backward and avoids materialising an fp32 buffer the size of
+# every compute param. Set ``AXOLOTL_TILED_MLP_ACCUM_FP32=1`` to recover
+# the previous fp32-accumulator behaviour when bf16 precision is the
+# concern (e.g. very large N-shard sums where bf16 round-off accumulates).
+_TILED_MLP_ACCUM_FP32 = os.environ.get("AXOLOTL_TILED_MLP_ACCUM_FP32", "0") == "1"
 
 
 def _find_fsdp2_module(module):
@@ -259,8 +268,8 @@ class TiledMLP(torch.autograd.Function):
         x_shards = list(torch.chunk(x, chunks=shards, dim=1))
 
         # Snapshot existing ``.grad`` for each param and zero it; we will
-        # accumulate the per-shard contributions in fp32 ourselves and
-        # write back at the end. The previous implementation used
+        # accumulate the per-shard contributions into a per-param buffer
+        # and write back at the end. The previous implementation used
         # ``param.register_hook`` per shard, which (a) re-installed hooks
         # every iteration so the N-th shard ran N stacked hooks and
         # double-counted contributions, and (b) scaled by ``1/N`` even
@@ -269,11 +278,20 @@ class TiledMLP(torch.autograd.Function):
         # 2x-2.5x the analytical value. Direct inline accumulation is
         # both simpler and correct, and avoids interactions with FSDP2's
         # own backward hooks.
+        #
+        # The accumulator defaults to the param's own dtype to match
+        # what AccumulateGrad would do in the unsharded backward. The
+        # earlier implementation accumulated in fp32, which doubled the
+        # parameter-side memory footprint in bf16 MoE training where the
+        # accumulator's ``[E, hidden, 2*intermediate]`` shape dominates.
+        # Set ``AXOLOTL_TILED_MLP_ACCUM_FP32=1`` to opt back into fp32
+        # accumulation when bf16 round-off is the concern.
         prev_grads = {}
         accum_grads = {}
         for p in compute_params:
             prev_grads[p] = p.grad
-            accum_grads[p] = torch.zeros_like(p, dtype=torch.float32)
+            accum_dtype = torch.float32 if _TILED_MLP_ACCUM_FP32 else p.dtype
+            accum_grads[p] = torch.zeros_like(p, dtype=accum_dtype)
             p.grad = None
 
         shard_step = x_shards[0].numel()
@@ -305,16 +323,24 @@ class TiledMLP(torch.autograd.Function):
                 else:
                     torch.autograd.backward(output, incoming_grad_shard)
 
-                # Capture this shard's contribution into our fp32 accumulator
-                # and clear ``.grad`` so the next shard starts from zero.
+                # Capture this shard's contribution into the per-param
+                # accumulator and clear ``.grad`` so the next shard starts
+                # from zero. Skip the dtype cast when the accumulator
+                # matches the param dtype (the default) — that cast was
+                # the per-shard HBM-bandwidth tax on the bf16 path.
                 for p in compute_params:
                     if p.grad is not None:
-                        accum_grads[p].add_(p.grad.detach().to(torch.float32))
+                        shard_grad = p.grad.detach()
+                        if shard_grad.dtype != accum_grads[p].dtype:
+                            shard_grad = shard_grad.to(accum_grads[p].dtype)
+                        accum_grads[p].add_(shard_grad)
                         p.grad = None
 
         # Restore prior grad value (if any) and add the tiled contribution.
         for p in compute_params:
-            tiled_contrib = accum_grads[p].to(p.dtype)
+            tiled_contrib = accum_grads[p]
+            if tiled_contrib.dtype != p.dtype:
+                tiled_contrib = tiled_contrib.to(p.dtype)
             if prev_grads[p] is None:
                 p.grad = tiled_contrib
             else:
@@ -325,8 +351,15 @@ class TiledMLP(torch.autograd.Function):
 
 class GradientAccumulator:
     """
-    Manual gradient accumulator for TiledMLP with configurable precision
-    Accumulates in specified dtype and rescales the gradient at the end
+    Manual gradient accumulator for TiledMLP with configurable precision.
+
+    .. note::
+        The production TiledMLP backward (above) accumulates inline and
+        does not call this class — it is retained as a reference / opt-in
+        path for callers that want hook-based accumulation. The defaults
+        below match the inline path: param-dtype accumulator (matches
+        ``AccumulateGrad`` in the unsharded backward) and ``1.0`` per-shard
+        scaling (sequence-dim sharded grads are additive, not averaged).
     """
 
     def __init__(
@@ -337,11 +370,24 @@ class GradientAccumulator:
     ):
         self.params = params
         self.total_shards = total_shards
-        self.grad_accumulation_dtype = dtype or torch.float32
+        # Default to the param's own dtype to avoid the 2x parameter-side
+        # memory regression in bf16 MoE training where the accumulator
+        # shape ``[E, hidden, 2*intermediate]`` dominates. fp32 accumulation
+        # is opt-in via the ``dtype`` arg.
+        if dtype is not None:
+            self.grad_accumulation_dtype = dtype
+        elif params:
+            self.grad_accumulation_dtype = params[0].dtype
+        else:
+            self.grad_accumulation_dtype = torch.float32
         self.accumulated_grads = {}
         self.hooks = []
         self.lock = threading.Lock()
-        self.gradient_scale = 1.0 / total_shards
+        # Sequence-dim shards partition the per-token sum; their
+        # contributions are additive (``sum_t dL_t/dW``), not averaged.
+        # The previous ``1/total_shards`` scaling produced a mean and was
+        # a correctness bug for this sharding semantics.
+        self.gradient_scale = 1.0
 
         # Initialize accumulated gradients in the specified dtype
         for param in self.params:
@@ -361,17 +407,34 @@ class GradientAccumulator:
         def create_hook(param):
             def hook(grad):
                 with self.lock:
-                    grad_to_accum_dtype = grad.to(self.grad_accumulation_dtype)
-                    scaled_grad = grad_to_accum_dtype * self.gradient_scale
+                    # Skip the dtype cast when the accumulator already
+                    # matches the grad dtype (the default after the
+                    # param-dtype change above) — the redundant cast was
+                    # the per-shard HBM bandwidth tax called out in the
+                    # tiled-MLP regression analysis.
+                    if grad.dtype == self.grad_accumulation_dtype:
+                        scaled_grad = (
+                            grad
+                            if self.gradient_scale == 1.0
+                            else grad * self.gradient_scale
+                        )
+                    else:
+                        scaled_grad = (
+                            grad.to(self.grad_accumulation_dtype)
+                            * self.gradient_scale
+                        )
 
                     if param in self.accumulated_grads:
                         self.accumulated_grads[param] += scaled_grad
                     else:
                         self.accumulated_grads[param] = scaled_grad.clone()
 
-                    # Only assign the averaged gradient on the last shard
+                    # Only assign the accumulated gradient on the last shard
                     if is_last_shard:
-                        param.grad = self.accumulated_grads[param].to(param.dtype)
+                        if self.accumulated_grads[param].dtype != param.dtype:
+                            param.grad = self.accumulated_grads[param].to(param.dtype)
+                        else:
+                            param.grad = self.accumulated_grads[param]
                         return param.grad
                     return None
 
