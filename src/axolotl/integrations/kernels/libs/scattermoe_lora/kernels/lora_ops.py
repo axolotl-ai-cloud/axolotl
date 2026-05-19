@@ -506,6 +506,7 @@ def _scatter2scatter_lora(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused scatter2scatter with LoRA: Y = X @ W + scaling * (X @ A^T) @ B^T + bias
@@ -517,6 +518,8 @@ def _scatter2scatter_lora(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -529,7 +532,10 @@ def _scatter2scatter_lora(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -600,6 +606,7 @@ def _scatter2scatter_lora_split(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Split base+LoRA forward: 3 scatter2scatter calls, no fused LoRA kernel.
 
@@ -629,6 +636,7 @@ def _scatter2scatter_lora_split(
         x_grouped=x_grouped,
         y_grouped=y_grouped,
         out=out,
+        int64_indices=int64_indices,
     )
 
     # 2. XA = X @ A^T  (tiny: output is [M*k, R])
@@ -642,6 +650,7 @@ def _scatter2scatter_lora_split(
         k=k,
         x_grouped=x_grouped,
         y_grouped=True,
+        int64_indices=int64_indices,
     )
 
     # 3. Y_lora = XA @ B^T  (R is tiny, so this is very fast)
@@ -655,6 +664,7 @@ def _scatter2scatter_lora_split(
         k=1,
         x_grouped=True,
         y_grouped=y_grouped,
+        int64_indices=int64_indices,
     )
 
     # 4. Y = Y_base + scaling * Y_lora
@@ -683,6 +693,7 @@ def scatter2scatter_lora(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """
     Scatter2scatter with LoRA: Y[i] = X[i] @ W[e] + scaling * (X[i] @ A[e]^T) @ B[e]^T + b[e]
@@ -729,6 +740,7 @@ def scatter2scatter_lora(
             x_grouped,
             y_grouped,
             out,
+            int64_indices=int64_indices,
         )
 
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
@@ -793,6 +805,7 @@ def scatter2scatter_lora(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return output
@@ -1084,6 +1097,7 @@ def _scatter2scatter_lora_dX(
     dx_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
@@ -1100,6 +1114,8 @@ def _scatter2scatter_lora_dX(
     K_block_id = pid % K_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
     K_mask = K_block < K
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -1112,7 +1128,10 @@ def _scatter2scatter_lora_dX(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -1175,6 +1194,7 @@ def scatter2scatter_lora_dX(
     dy_grouped: bool = True,
     dx_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """
     Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
@@ -1261,6 +1281,7 @@ def scatter2scatter_lora_dX(
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
         dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return output
@@ -2565,6 +2586,7 @@ def _scatter2scatter_lora_mx(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """Fused scatter2scatter forward with MXFP4 base weights + LoRA."""
     pid = tl.program_id(axis=0)
@@ -2573,6 +2595,8 @@ def _scatter2scatter_lora_mx(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -2583,7 +2607,10 @@ def _scatter2scatter_lora_mx(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -2658,6 +2685,7 @@ def scatter2scatter_lora_mx(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Forward dispatcher for the fused MXFP4 + LoRA kernel.
 
@@ -2741,6 +2769,7 @@ def scatter2scatter_lora_mx(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
     return output
 
@@ -3017,6 +3046,7 @@ def _scatter2scatter_lora_dX_mx(
     dy_grouped: tl.constexpr,
     dx_grouped: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """Fused MXFP4 dX kernel."""
     pid = tl.program_id(axis=0)
@@ -3025,6 +3055,8 @@ def _scatter2scatter_lora_dX_mx(
     K_block_id = pid % K_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
     K_mask = K_block < K
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -3035,7 +3067,10 @@ def _scatter2scatter_lora_dX_mx(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -3103,6 +3138,7 @@ def scatter2scatter_lora_dX_mx(
     dy_grouped: bool = True,
     dx_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Backward-dX dispatcher for the fused MXFP4 kernel.
 
@@ -3187,5 +3223,6 @@ def scatter2scatter_lora_dX_mx(
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
         dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
     )
     return output
