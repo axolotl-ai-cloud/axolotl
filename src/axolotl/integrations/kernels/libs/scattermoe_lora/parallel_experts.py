@@ -179,6 +179,7 @@ def _scatter2scatter_int32_safe(
             b,
             x_grouped,
             y_grouped,
+            False,
         )
     return out
 
