@@ -111,12 +111,14 @@ def resolve_dtype(cfg):
 
 def normalize_config(cfg):
     # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
-        cfg.batch_size // cfg.micro_batch_size
-    )
-    cfg.batch_size = (
-        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
-    )
+    if not cfg.use_ray:
+        # Defer derivation to the Ray worker; its re-validate forbids both being set.
+        cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+            cfg.batch_size // cfg.micro_batch_size
+        )
+        cfg.batch_size = (
+            cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+        )
     if cfg.eval_batch_size is None:
         cfg.eval_batch_size = cfg.micro_batch_size
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
