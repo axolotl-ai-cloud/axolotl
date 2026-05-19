@@ -40,12 +40,15 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.kernels import (
     ops as base_ops,
 )
 from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
-    _scatter2scatter_int32_safe,
     flatten_sort_count,
 )
 
 DEVICE = "cuda"
 DTYPE = torch.bfloat16
+
+# Sufficient condition for int32 pointer arithmetic to overflow in the
+# Triton kernel: any indexed buffer has >= 2**31 elements.
+_INT32_LIMIT = 2**31
 
 
 def _requires_cuda():
@@ -317,12 +320,13 @@ def _has_free_gpu_mem(min_gb: float) -> bool:
     reason="bench shape needs ~80 GiB free GPU memory",
 )
 def test_dense_scatter2scatter_int64_at_overflow_shape():
-    """Direct int64 kernel call at the bench shape produces no zero rows
-    and matches the chunked workaround within bf16 tolerance."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
-        _SCATTER2SCATTER_INT32_LIMIT,
-    )
+    """Direct int64 kernel call at the bench shape produces no zero rows.
 
+    With ``INT64_INDICES=True`` the kernel's pointer arithmetic stays in
+    int64 across the full output row range, so rows past the would-be
+    int32 overflow boundary (``M_block >= 2**31 / y_dim``) are populated
+    rather than silently dropped.
+    """
     device = torch.device("cuda:0")
     torch.manual_seed(0)
     x = torch.randn(_T, _HIDDEN, device=device, dtype=DTYPE)
@@ -339,7 +343,7 @@ def test_dense_scatter2scatter_int64_at_overflow_shape():
 
     L_scattered = sei.size(0)
     y_dim = W.size(-1)
-    assert L_scattered * y_dim >= _SCATTER2SCATTER_INT32_LIMIT, (
+    assert L_scattered * y_dim >= _INT32_LIMIT, (
         "precondition: shape must straddle the int32 overflow boundary"
     )
 
@@ -356,7 +360,7 @@ def test_dense_scatter2scatter_int64_at_overflow_shape():
     torch.cuda.synchronize()
 
     # Sample rows on both sides of the int32 overflow boundary.
-    overflow_threshold_row = _SCATTER2SCATTER_INT32_LIMIT // y_dim
+    overflow_threshold_row = _INT32_LIMIT // y_dim
     sample_rows = [
         0,
         overflow_threshold_row - 1,
@@ -369,28 +373,8 @@ def test_dense_scatter2scatter_int64_at_overflow_shape():
             f"int64 kernel left row {row} all-zero (overflow boundary "
             f"= {overflow_threshold_row}, L_scattered = {L_scattered})"
         )
-
-    # Compare to the chunked workaround within bf16 tolerance. Chunking
-    # changes accumulation order so we cannot expect bit-equality, but the
-    # outputs should be numerically close.
-    out_chunked = _scatter2scatter_int32_safe(
-        X=x,
-        W=W,
-        sorted_expert_idxs=sei,
-        sorted_scattered_idxs=ssi,
-        k=_TOP_K,
-        x_grouped=False,
-        y_grouped=True,
-        int64_indices=False,
-    )
-    torch.cuda.synchronize()
-    diff = (out_i64.float() - out_chunked.float()).abs().max().item()
-    ref = out_chunked.float().abs().max().item()
-    # bf16 has ~3 decimal digits, so a few-percent max-abs-diff against the
-    # chunked path is expected at this scale; assert a generous relative bound.
-    assert diff <= 5e-2 * (ref + 1.0), (
-        f"int64 kernel diverges from chunked path: max_abs_diff={diff:g} "
-        f"vs ref_max={ref:g}"
+    assert torch.isfinite(out_i64).all().item(), (
+        "int64 kernel produced non-finite values at overflow shape"
     )
 
 
@@ -398,13 +382,15 @@ def test_dense_scatter2scatter_int64_at_overflow_shape():
     not _has_free_gpu_mem(80.0),
     reason="bench shape needs ~80 GiB free GPU memory",
 )
-def test_parallel_linear_overflow_takes_direct_int64_path(monkeypatch):
+def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
     """``ParallelLinear.forward`` at the bench shape must route through
-    the direct int64 kernel call, *not* the chunking workaround.
+    the int64 kernel path (single launch, ``int64_indices=True``).
 
-    The auto-dispatch should set ``needs_int64=True`` and the
-    ``_scatter2scatter_int32_safe`` wrapper's new ``int64_indices=True``
-    branch should then bypass the chunking loop entirely.
+    The auto-dispatch should set ``needs_int64=True`` and dispatch a
+    single ``scatter2scatter`` launch with that flag. A regressed path
+    that called the kernel multiple times (e.g. a chunking workaround)
+    would invoke ``scatter2scatter_compileable`` more than once and
+    fail this assertion.
     """
     from axolotl.integrations.kernels.libs.scattermoe_lora import parallel_experts
     from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
@@ -426,16 +412,16 @@ def test_parallel_linear_overflow_takes_direct_int64_path(monkeypatch):
     _, top_idx = torch.topk(torch.softmax(logits, dim=-1), _TOP_K, dim=-1)
     sei, ssi, eo = flatten_sort_count(top_idx, _NUM_EXPERTS)
 
-    # Spy on the chunking path: count how many times the per-chunk
-    # ``scatter2scatter_compileable`` is invoked. If the int64 fast
-    # path is taken, this stays at zero.
-    chunk_calls = {"count": 0}
-    real_compileable = (
-        parallel_experts.kernels.ops.scatter2scatter_compileable
-    )
+    # Spy on the kernel launches. The kernel-level int64 fix dispatches
+    # exactly one ``scatter2scatter_compileable`` call with
+    # ``int64_indices=True``. A re-introduced chunking workaround would
+    # invoke it once per chunk (>=2 at this shape).
+    launches = []
+    real_compileable = parallel_experts.kernels.ops.scatter2scatter_compileable
 
     def _spy_compileable(*args, **kwargs):
-        chunk_calls["count"] += 1
+        # int64_indices is positional arg 9 (after b, x_grouped, y_grouped).
+        launches.append({"args_len": len(args), "int64": args[9] if len(args) > 9 else kwargs.get("int64_indices", False)})
         return real_compileable(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -457,13 +443,12 @@ def test_parallel_linear_overflow_takes_direct_int64_path(monkeypatch):
         )
         torch.cuda.synchronize()
 
-    # The direct int64 kernel path doesn't call scatter2scatter_compileable
-    # — it goes through ``base_ops.scatter2scatter`` which calls
-    # scatter2scatter_compileable exactly once for the whole launch. The
-    # chunking path would invoke it once per chunk (>=2 at the bench shape).
-    assert chunk_calls["count"] == 1, (
+    assert len(launches) == 1, (
         f"expected exactly one kernel launch (direct int64 path), "
-        f"got {chunk_calls['count']} (chunking workaround was taken)"
+        f"got {len(launches)}"
+    )
+    assert launches[0]["int64"] is True, (
+        "auto-dispatch should have set int64_indices=True at the overflow shape"
     )
     assert out.shape == (_T * _TOP_K, 2 * _INTERMEDIATE)
     assert torch.isfinite(out).all().item()

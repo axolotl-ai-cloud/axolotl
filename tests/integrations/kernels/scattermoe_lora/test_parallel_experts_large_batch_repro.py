@@ -50,21 +50,22 @@ def _requires_cuda():
     )
 
 
-@_requires_cuda()
-def test_int32_safe_wrapper_matches_direct_call_below_threshold():
-    """The wrapper must be a no-op for shapes below the int32 threshold.
+_SCATTER2SCATTER_INT32_LIMIT = 2**31
 
-    Specifically the fast path (single kernel launch) must produce
-    bit-identical output to ``kernels.ops.scatter2scatter``. This
-    guards against the wrapper accidentally penalising the common-case
-    path that does not need chunking.
+
+@_requires_cuda()
+def test_scatter2scatter_below_threshold_no_overhead():
+    """At shapes well below the int32 overflow boundary the auto-dispatch
+    in ``ParallelLinear`` picks ``INT64_INDICES=False`` and the kernel
+    output is bit-identical to a direct call with the same flag.
+
+    This is the regression guard for "don't accidentally penalise the
+    common-case path that does not need int64 indices".
     """
     from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import (
         scatter2scatter,
     )
     from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
-        _SCATTER2SCATTER_INT32_LIMIT,
-        _scatter2scatter_int32_safe,
         flatten_sort_count,
     )
 
@@ -88,7 +89,7 @@ def test_int32_safe_wrapper_matches_direct_call_below_threshold():
 
     assert sei.size(0) * W.size(-1) < _SCATTER2SCATTER_INT32_LIMIT
 
-    out_direct = scatter2scatter(
+    out_i32 = scatter2scatter(
         X=x,
         W=W,
         sorted_expert_idxs=sei,
@@ -96,8 +97,9 @@ def test_int32_safe_wrapper_matches_direct_call_below_threshold():
         k=_TOP_K,
         x_grouped=False,
         y_grouped=True,
+        int64_indices=False,
     )
-    out_wrapped = _scatter2scatter_int32_safe(
+    out_i64 = scatter2scatter(
         X=x,
         W=W,
         sorted_expert_idxs=sei,
@@ -105,36 +107,38 @@ def test_int32_safe_wrapper_matches_direct_call_below_threshold():
         k=_TOP_K,
         x_grouped=False,
         y_grouped=True,
+        int64_indices=True,
     )
     torch.cuda.synchronize()
-    assert torch.equal(out_direct, out_wrapped), (
-        "fast path must produce bit-identical output to the raw kernel"
+    assert torch.equal(out_i32, out_i64), (
+        "INT64_INDICES must not change MMA/accumulation order at small shapes"
     )
 
 
 @_requires_cuda()
-def test_int32_safe_wrapper_no_corruption_at_overflow_shape():
-    """The int32-safe scatter2scatter wrapper must keep every output
-    row populated when the shape straddles the 2**31-element boundary.
+def test_scatter2scatter_no_corruption_at_overflow_shape():
+    """The kernel-level int64 fix must keep every output row populated
+    when the shape straddles the 2**31-element boundary.
 
-    Background: the raw ``kernels.ops.scatter2scatter`` Triton kernel
-    computes pointer offsets as
+    Background: with INT64_INDICES=False the Triton ``scatter2scatter``
+    kernel computes pointer offsets as
     ``Y_ptr + M_block * stride_ym + N_block * stride_yn`` in int32. At
     the bench shape (L_scattered=262144, y_dim=16384 → 2**32 elements
     of output) the trailing rows past ``M_block >= 2**31 / y_dim``
     overflow and their masked stores silently drop, leaving those rows
-    as all-zeros. The ``_scatter2scatter_int32_safe`` wrapper in
-    ``parallel_experts.py`` is expected to chunk the call so each
-    sub-launch keeps ``rows * y_dim < 2**31``.
+    as all-zeros. With INT64_INDICES=True the M_block range is cast to
+    int64 before it enters the multiplication and the overflow is
+    eliminated at the kernel level.
 
-    This test asserts: a row at and past the would-overflow boundary
-    has at least one non-zero element. The same call against the raw
-    kernel (without the wrapper) is the failure mode the wrapper is
-    guarding against.
+    This test calls the kernel directly with INT64_INDICES=True and
+    asserts every sampled row past the boundary has at least one
+    non-zero element. (The ``ParallelLinear`` wrapper's auto-dispatch
+    is covered separately by ``test_parallel_linear_long_seq_routing_combination``.)
     """
+    from axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops import (
+        scatter2scatter,
+    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
-        _SCATTER2SCATTER_INT32_LIMIT,
-        _scatter2scatter_int32_safe,
         flatten_sort_count,
     )
 
@@ -161,7 +165,7 @@ def test_int32_safe_wrapper_no_corruption_at_overflow_shape():
         f"({_SCATTER2SCATTER_INT32_LIMIT})"
     )
 
-    output = _scatter2scatter_int32_safe(
+    output = scatter2scatter(
         X=x,
         W=W,
         sorted_expert_idxs=sei,
@@ -169,6 +173,7 @@ def test_int32_safe_wrapper_no_corruption_at_overflow_shape():
         k=_TOP_K,
         x_grouped=False,
         y_grouped=True,
+        int64_indices=True,
     )
     torch.cuda.synchronize()
 
