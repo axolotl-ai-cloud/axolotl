@@ -2,10 +2,117 @@
 TiledMLP support for DDP, FSDP, and single GPU
 """
 
+import contextlib
 import threading
 from typing import List
 
 import torch
+
+
+def _find_fsdp2_module(module):
+    """Return the nearest FSDP2 :class:`FSDPModule` that owns ``module``.
+
+    FSDP2 (``torch.distributed.fsdp.fully_shard``) registers per-module
+    post-backward hooks that reshard parameters once their gradients have
+    been produced. Inside :class:`TiledMLP.backward` we run several inner
+    backwards over shards of the same input; if the wrapping FSDPModule
+    reshards between iterations, the unsharded params are gone and the
+    next tile recomputes against bogus shards. We have to disable reshard
+    on the wrapping FSDPModule for the duration of the loop.
+
+    The MLP itself is rarely the directly-wrapped module — production
+    setups apply ``fully_shard`` at the decoder-layer level. Walk the
+    global FSDP module-state registry to find the nearest ancestor whose
+    parameter group contains us. Result is cached on the module so we pay
+    the lookup once.
+
+    Returns ``None`` if FSDP2 is not in use, or no wrapping FSDPModule
+    contains ``module`` as a descendant.
+    """
+    cached = getattr(module, "_axolotl_fsdp2_owner", "__unset__")
+    if cached != "__unset__":
+        return cached
+
+    try:
+        from torch.distributed._composable_state import _module_state_mapping
+        from torch.distributed.fsdp import FSDPModule
+    except ImportError:
+        module._axolotl_fsdp2_owner = None
+        return None
+
+    # MLP itself wrapped (covers the regression-guard unit test).
+    if isinstance(module, FSDPModule):
+        module._axolotl_fsdp2_owner = module
+        return module
+
+    # Walk the global FSDP registry looking for ancestors. The registry is
+    # a WeakKeyDictionary so the snapshot is cheap and bounded by the
+    # number of FSDP-wrapped modules in the process.
+    target_id = id(module)
+    candidates = []
+    for owner in list(_module_state_mapping.keys()):
+        if not isinstance(owner, FSDPModule):
+            continue
+        if owner is module:
+            continue
+        for sub in owner.modules():
+            if id(sub) == target_id:
+                candidates.append(owner)
+                break
+
+    if not candidates:
+        result = None
+    elif len(candidates) == 1:
+        result = candidates[0]
+    else:
+        # When multiple FSDPModules are ancestors (e.g. fully_shard applied
+        # to both decoder layer and the root), pick the deepest one — its
+        # subtree is smallest. Counting modules is O(N) per candidate but
+        # only runs once per MLP instance.
+        result = min(candidates, key=lambda m: sum(1 for _ in m.modules()))
+
+    module._axolotl_fsdp2_owner = result
+    return result
+
+
+@contextlib.contextmanager
+def _defer_fsdp2_reshard(module):
+    """Suspend FSDP2's post-backward reshard on the wrapping FSDPModule.
+
+    The tiled backward calls :func:`torch.autograd.backward` once per shard.
+    Each inner backward triggers FSDP2's per-module post-backward hooks,
+    which would reshard parameters mid-loop. We pause that by toggling
+    ``set_reshard_after_backward(False)`` on the wrapping FSDPModule, run
+    the loop, restore the original setting, then issue a single explicit
+    ``reshard()`` so the post-loop state matches normal FSDP2 semantics.
+
+    No-op when ``module`` is not under FSDP2.
+    """
+    fsdp_mod = _find_fsdp2_module(module)
+    if fsdp_mod is None:
+        yield
+        return
+
+    # No public getter for ``reshard_after_backward`` in PyTorch 2.11;
+    # read off the param group directly. The internal accessor surface
+    # is documented in
+    # ``torch.distributed.fsdp._fully_shard._fsdp_param_group.FSDPParamGroup``.
+    state = fsdp_mod._get_fsdp_state()
+    param_group = state._fsdp_param_group
+    if param_group is None:
+        # Nothing to defer (e.g. ignored module with no FSDP-managed params).
+        yield
+        return
+
+    prev = param_group.reshard_after_backward
+    fsdp_mod.set_reshard_after_backward(False, recurse=False)
+    try:
+        yield
+    finally:
+        # Restore so subsequent backward passes outside the tile loop
+        # behave normally, then issue the deferred reshard once.
+        fsdp_mod.set_reshard_after_backward(prev, recurse=False)
+        fsdp_mod.reshard()
 
 
 class DeepSpeedTiledMLPMoE(torch.autograd.Function):
@@ -151,39 +258,67 @@ class TiledMLP(torch.autograd.Function):
         x_grad = torch.zeros_like(x)
         x_shards = list(torch.chunk(x, chunks=shards, dim=1))
 
-        # Create a gradient accumulator for parameters
-        grad_accumulator = GradientAccumulator(compute_params, shards, dtype=x.dtype)
+        # Snapshot existing ``.grad`` for each param and zero it; we will
+        # accumulate the per-shard contributions in fp32 ourselves and
+        # write back at the end. The previous implementation used
+        # ``param.register_hook`` per shard, which (a) re-installed hooks
+        # every iteration so the N-th shard ran N stacked hooks and
+        # double-counted contributions, and (b) scaled by ``1/N`` even
+        # though sequence-dim sharding makes per-shard grads additive,
+        # not averaged. The combined effect was a gradient roughly
+        # 2x-2.5x the analytical value. Direct inline accumulation is
+        # both simpler and correct, and avoids interactions with FSDP2's
+        # own backward hooks.
+        prev_grads = {}
+        accum_grads = {}
+        for p in compute_params:
+            prev_grads[p] = p.grad
+            accum_grads[p] = torch.zeros_like(p, dtype=torch.float32)
+            p.grad = None
 
         shard_step = x_shards[0].numel()
-        for i, x_shard in enumerate(x_shards):
-            x_shard.requires_grad_(x_requires_grad)
+        # Suspend FSDP2 post-backward reshard for the duration of the loop.
+        # Without this, the first inner backward triggers FSDP2's reshard
+        # hook on the wrapping FSDPModule and subsequent shards recompute
+        # against only-local DTensor shards — silent grad corruption.
+        # Single-GPU and DDP paths fall through to a no-op context manager.
+        with _defer_fsdp2_reshard(self):
+            for i, x_shard in enumerate(x_shards):
+                x_shard.requires_grad_(x_requires_grad)
 
-            shard_offset = i * shard_step
-            x_shard.grad = (
-                x_grad.view(-1)
-                .narrow(0, shard_offset, x_shard.numel())
-                .view_as(x_shard)
-            )
-            incoming_grad_shard = (
-                incoming_grad.view(-1)
-                .narrow(0, shard_offset, x_shard.numel())
-                .view_as(x_shard)
-            )
+                shard_offset = i * shard_step
+                x_shard.grad = (
+                    x_grad.view(-1)
+                    .narrow(0, shard_offset, x_shard.numel())
+                    .view_as(x_shard)
+                )
+                incoming_grad_shard = (
+                    incoming_grad.view(-1)
+                    .narrow(0, shard_offset, x_shard.numel())
+                    .view_as(x_shard)
+                )
 
-            # Install hooks for this shard
-            is_last_shard = i + 1 == shards
-            grad_accumulator.install_hooks(is_last_shard)
+                with torch.enable_grad():
+                    output = fn(self, x_shard)
+                if is_tuple_output:
+                    torch.autograd.backward(output[0], incoming_grad_shard)
+                else:
+                    torch.autograd.backward(output, incoming_grad_shard)
 
-            with torch.enable_grad():
-                output = fn(self, x_shard)
-            if is_tuple_output:
-                torch.autograd.backward(output[0], incoming_grad_shard)
+                # Capture this shard's contribution into our fp32 accumulator
+                # and clear ``.grad`` so the next shard starts from zero.
+                for p in compute_params:
+                    if p.grad is not None:
+                        accum_grads[p].add_(p.grad.detach().to(torch.float32))
+                        p.grad = None
+
+        # Restore prior grad value (if any) and add the tiled contribution.
+        for p in compute_params:
+            tiled_contrib = accum_grads[p].to(p.dtype)
+            if prev_grads[p] is None:
+                p.grad = tiled_contrib
             else:
-                torch.autograd.backward(output, incoming_grad_shard)
-
-        # Clean up hooks
-        grad_accumulator.cleanup()
-        del grad_accumulator
+                p.grad = prev_grads[p] + tiled_contrib
 
         return (None, None, x_grad, None, None)
 
