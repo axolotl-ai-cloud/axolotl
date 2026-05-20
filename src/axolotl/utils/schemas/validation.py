@@ -203,15 +203,6 @@ class AttentionValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_sample_packing_with_s2attn(self):
-        if self.sample_packing and self.attn_implementation == "s2":
-            raise ValueError(
-                "Received `sample_packing=true` and `attn_implementation=s2`; "
-                "shifted-sparse attention does not currently support sample packing."
-            )
-        return self
-
-    @model_validator(mode="after")
     def check_scaling_softmax_requires_flex(self):
         if self.scaling_softmax and self.attn_implementation != "flex_attention":
             raise ValueError(
@@ -1209,7 +1200,6 @@ class SystemValidationMixin:
                 "flash_attention_2",
                 "flash_attention_3",
                 "sdpa",
-                "s2",
             }
             attn_impl = data.get("attn_implementation")
             if attn_impl and attn_impl in unsupported_npu_impls:
@@ -1217,7 +1207,7 @@ class SystemValidationMixin:
                     f"attn_implementation={attn_impl!r} is currently not supported on Ascend NPU."
                 )
             # Legacy flags still present at this point (normalizer strips them later).
-            attn_list = ["flash_attention", "sdp_attention", "s2_attention"]
+            attn_list = ["flash_attention", "sdp_attention"]
             for attn in attn_list:
                 if data.get(attn):
                     raise NotImplementedError(
@@ -1539,7 +1529,7 @@ class ComplexValidationMixin:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
                     "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash or s2)."
+                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
