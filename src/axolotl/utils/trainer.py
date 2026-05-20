@@ -647,7 +647,7 @@ def prepare_optim_env(cfg):
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
     if cfg.fsdp or cfg.fsdp_config:
-        cfg.fsdp = True if not cfg.fsdp else cfg.fsdp
+        # fsdp_config is source of truth; mutating cfg.fsdp to bool breaks Ray worker schema validation
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
