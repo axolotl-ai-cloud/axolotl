@@ -647,11 +647,7 @@ def prepare_optim_env(cfg):
             os.environ["NCCL_P2P_DISABLE"] = "1"
     # TODO @SalmanMohammadi remove the cfg.fsdp check in 0.12
     if cfg.fsdp or cfg.fsdp_config:
-        # Don't mutate cfg.fsdp to True when fsdp_config is the source of
-        # truth: the schema types fsdp as list[str] | None, and Ray workers
-        # re-validate the controller's dumped config, where a bool would
-        # fail (`list_type` ValidationError). Downstream callers
-        # (`if cfg.fsdp or cfg.fsdp_config:`) handle the None case.
+        # fsdp_config is source of truth; mutating cfg.fsdp to bool breaks Ray worker schema validation
         setup_fsdp_envs(cfg)
     elif cfg.deepspeed:
         stage = None
