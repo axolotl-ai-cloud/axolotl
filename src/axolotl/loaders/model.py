@@ -64,17 +64,8 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
-# ---------------------------------------------------------------------------
-# fp32 norm sharding for FSDP2
-#
-# Some models declare RMSNorm/LayerNorm as fp32 for training stability (the
-# variance computation in RMSNorm accumulates poorly in bf16). FSDP1 enforces
-# flat-param dtype uniformity within each wrap group, which is incompatible
-# with keeping norms in fp32 while decoder layers run in bf16. FSDP2 allows
-# per-module MixedPrecisionPolicy: we shard each norm with its own fp32
-# policy BEFORE the standard decoder-layer wrap, so the two groups stay
-# independent.
-# ---------------------------------------------------------------------------
+# Shard RMSNorm/LayerNorm as fp32 before decoder wrapping so FSDP2 can keep
+# per-module MixedPrecisionPolicy (workaround for FSDP1 flat-param dtype constraints).
 
 DEFAULT_FP32_NORM_SUFFIXES: tuple[str, ...] = ("RMSNorm", "LayerNorm")
 
@@ -85,11 +76,15 @@ def _matches_norm_class(module: "torch.nn.Module", patterns: Sequence[str]) -> b
     Two matching modes, chosen per-pattern by presence of a dot:
       - Fully qualified (contains "."): matches f"{module.__module__}.{cls}" exactly.
       - Suffix (no dot): matches type(module).__name__.endswith(pattern).
+    Empty / whitespace-only patterns are skipped (``cls_name.endswith("")``
+    is True for every class, which would silently match everything).
     """
     cls = type(module)
     cls_name = cls.__name__
     qualified = f"{cls.__module__}.{cls_name}"
     for pattern in patterns:
+        if not pattern or not pattern.strip():
+            continue
         if "." in pattern:
             if qualified == pattern:
                 return True

@@ -1500,12 +1500,21 @@ class AxolotlInputConfig(
 
     @model_validator(mode="after")
     def check_fp32_norms(self):
-        if self.fp32_norms and str(self.fsdp_version) != "2":
-            raise ValueError(
-                "fp32_norms requires fsdp_version: 2. FSDP1's flat-param "
-                "dtype uniformity constraint is incompatible with keeping "
-                "norms in fp32 while decoder layers run in bf16."
-            )
+        if self.fp32_norms:
+            # FSDP must actually be configured — fsdp_version alone is not
+            # sufficient since the rest of axolotl treats fsdp_config as the
+            # canonical "is_fsdp" signal.
+            if self.fsdp_config is None:
+                raise ValueError(
+                    "fp32_norms requires FSDP to be enabled "
+                    "(fsdp_config block must be set)."
+                )
+            if str(self.fsdp_version) != "2":
+                raise ValueError(
+                    "fp32_norms requires fsdp_version: 2. FSDP1's flat-param "
+                    "dtype uniformity constraint is incompatible with keeping "
+                    "norms in fp32 while decoder layers run in bf16."
+                )
         if self.fp32_norm_classes and not self.fp32_norms:
             LOG.warning(
                 "fp32_norm_classes is set but fp32_norms is not enabled; "

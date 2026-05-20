@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 import torch
 import torch.nn as nn
@@ -99,8 +101,17 @@ def test_meta_device_is_rejected():
 def test_no_matches_warns_and_returns_zero(caplog):
     model = nn.Sequential(MLP(), nn.Linear(8, 8))
     cfg = _Cfg(fp32_norms=True, fsdp_version=2)
-    with caplog.at_level("WARNING", logger="axolotl.loaders.model"):
-        n = shard_norms_fp32(model, cfg)
+    # axolotl.cli.configure_logging() sets propagate=False on the `axolotl`
+    # logger, so pytest caplog can't see records by default. Temporarily
+    # re-enable propagation for this assertion.
+    ax_logger = logging.getLogger("axolotl")
+    old_propagate = ax_logger.propagate
+    ax_logger.propagate = True
+    try:
+        with caplog.at_level("WARNING", logger="axolotl"):
+            n = shard_norms_fp32(model, cfg)
+    finally:
+        ax_logger.propagate = old_propagate
     assert n == 0
     assert "no modules matched" in caplog.text
 
