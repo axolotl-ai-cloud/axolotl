@@ -7,7 +7,7 @@ import math
 import os
 from functools import cached_property
 from importlib.util import find_spec
-from typing import Any
+from typing import Any, Sequence
 
 import peft
 import torch
@@ -62,6 +62,108 @@ from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
+
+
+# ---------------------------------------------------------------------------
+# fp32 norm sharding for FSDP2
+#
+# Some models declare RMSNorm/LayerNorm as fp32 for training stability (the
+# variance computation in RMSNorm accumulates poorly in bf16). FSDP1 enforces
+# flat-param dtype uniformity within each wrap group, which is incompatible
+# with keeping norms in fp32 while decoder layers run in bf16. FSDP2 allows
+# per-module MixedPrecisionPolicy: we shard each norm with its own fp32
+# policy BEFORE the standard decoder-layer wrap, so the two groups stay
+# independent.
+# ---------------------------------------------------------------------------
+
+DEFAULT_FP32_NORM_SUFFIXES: tuple[str, ...] = ("RMSNorm", "LayerNorm")
+
+
+def _matches_norm_class(module: "torch.nn.Module", patterns: Sequence[str]) -> bool:
+    """Match a module against class-name patterns.
+
+    Two matching modes, chosen per-pattern by presence of a dot:
+      - Fully qualified (contains "."): matches f"{module.__module__}.{cls}" exactly.
+      - Suffix (no dot): matches type(module).__name__.endswith(pattern).
+    """
+    cls = type(module)
+    cls_name = cls.__name__
+    qualified = f"{cls.__module__}.{cls_name}"
+    for pattern in patterns:
+        if "." in pattern:
+            if qualified == pattern:
+                return True
+        elif cls_name.endswith(pattern):
+            return True
+    return False
+
+
+def shard_norms_fp32(model: "torch.nn.Module", cfg) -> int:
+    """Wrap matching norm modules with FSDP2 + fp32 MixedPrecisionPolicy.
+
+    Must run AFTER model materialization and BEFORE accelerator.prepare().
+    Returns the number of modules sharded.
+
+    Norms are sharded on the default process group; mesh-scoped sharding for
+    composed TP + FSDP2 is not handled here (the device mesh is only available
+    once accelerator.prepare() runs), so combining fp32_norms with tensor
+    parallelism is unsupported.
+    """
+    if not getattr(cfg, "fp32_norms", False):
+        return 0
+
+    from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
+
+    if getattr(cfg, "fsdp_version", None) != 2:
+        raise ValueError(
+            "fp32_norms requires fsdp_version: 2. FSDP1 enforces flat-param "
+            "dtype uniformity within each wrap group, which is incompatible "
+            "with keeping norms in fp32 while the rest of the layer is bf16."
+        )
+
+    patterns = (
+        list(cfg.fp32_norm_classes)
+        if cfg.fp32_norm_classes
+        else list(DEFAULT_FP32_NORM_SUFFIXES)
+    )
+
+    fp32_policy = MixedPrecisionPolicy(
+        param_dtype=torch.float32,
+        reduce_dtype=torch.float32,
+    )
+
+    matches = [
+        (name, module)
+        for name, module in model.named_modules()
+        if _matches_norm_class(module, patterns)
+    ]
+
+    if not matches:
+        LOG.warning(
+            "fp32_norms enabled but no modules matched patterns %s. Check "
+            "fp32_norm_classes against the model's actual norm class names.",
+            patterns,
+        )
+        return 0
+
+    for name, module in matches:
+        if any(p.is_meta for p in module.parameters(recurse=False)):
+            raise RuntimeError(
+                f"Cannot shard meta-device module {name!r} "
+                f"({type(module).__name__}). fp32_norms currently requires "
+                "materialized parameters. Disable cpu_ram_efficient_loading "
+                "or materialize before this call."
+            )
+
+    for _name, module in matches:
+        fully_shard(module, mp_policy=fp32_policy)
+
+    LOG.info(
+        "Sharded %d norm modules with fp32 MixedPrecisionPolicy (patterns=%s)",
+        len(matches),
+        patterns,
+    )
+    return len(matches)
 
 
 class ModelLoader:
@@ -190,6 +292,9 @@ class ModelLoader:
         self._apply_post_lora_load_setup(skip_move_to_device)
         self.patch_manager.apply_post_model_load_patches(self.model)
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+
+        if self.cfg.fp32_norms:
+            shard_norms_fp32(self.model, self.cfg)
 
         return self.model, lora_config
 

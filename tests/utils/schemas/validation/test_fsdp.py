@@ -136,6 +136,33 @@ class TestFSDPValidation:
         assert cfg.fsdp_config.transformer_layer_cls_to_wrap == "LlamaDecoderLayer"
         assert cfg.fsdp_config.reshard_after_forward is True
 
+    def test_fp32_norms_requires_fsdp2(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fsdp_version=1,
+        )
+        with pytest.raises(ValueError, match="fp32_norms requires fsdp_version: 2"):
+            validate_config(cfg)
+
+    def test_fp32_norms_fsdp2_ok(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fp32_norm_classes=["AfmoeRMSNorm"],
+            fsdp_version=2,
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fp32_norms is True
+        assert validated_cfg.fp32_norm_classes == ["AfmoeRMSNorm"]
+
+    def test_fp32_norm_classes_without_fp32_norms_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norm_classes=["AfmoeRMSNorm"],
+        )
+        with caplog.at_level("WARNING", logger="axolotl.utils.schemas.config"):
+            validated_cfg = validate_config(cfg)
+        assert not validated_cfg.fp32_norms
+        assert "fp32_norm_classes is set but fp32_norms is not enabled" in caplog.text
+
     def test_muon_fsdp1_rejected(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(
             optimizer="muon",
