@@ -23,41 +23,6 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-/* CSS for syntax highlighting */
-html { -webkit-text-size-adjust: 100%; }
-pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
-pre > code.sourceCode > span:empty { height: 1.2em; }
-.sourceCode { overflow: visible; }
-code.sourceCode > span { color: inherit; text-decoration: inherit; }
-div.sourceCode { margin: 1em 0; }
-pre.sourceCode { margin: 0; }
-@media screen {
-div.sourceCode { overflow: auto; }
-}
-@media print {
-pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
-}
-pre.numberSource code
-  { counter-reset: source-line 0; }
-pre.numberSource code > span
-  { position: relative; left: -4em; counter-increment: source-line; }
-pre.numberSource code > span > a:first-child::before
-  { content: counter(source-line);
-    position: relative; left: -1em; text-align: right; vertical-align: baseline;
-    border: none; display: inline-block;
-    -webkit-touch-callout: none; -webkit-user-select: none;
-    -khtml-user-select: none; -moz-user-select: none;
-    -ms-user-select: none; user-select: none;
-    padding: 0 4px; width: 4em;
-  }
-pre.numberSource { margin-left: 3em;  padding-left: 4px; }
-div.sourceCode
-  {   }
-@media screen {
-pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
-}
 </style>
 
 
@@ -77,7 +42,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-d0ae9245876894da5ac7e18953ecc5cc.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-ab6ebd6eb475c4578b58908bc314f719.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-6cca919405fa2f273528256191175fbc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -792,13 +757,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash">monkeypatch.llama_attn_hijack_flash</a>
-  <ul class="collapse">
-  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
-  <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" class="nav-link" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</a></li>
-  </ul></li>
-  </ul></li>
+  <li><a href="#axolotl.monkeypatch.llama_attn_hijack_flash" id="toc-axolotl.monkeypatch.llama_attn_hijack_flash" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.llama_attn_hijack_flash">monkeypatch.llama_attn_hijack_flash</a></li>
   </ul>
 </nav>
     </div>
@@ -812,45 +771,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h1>monkeypatch.llama_attn_hijack_flash</h1>
 <p><code>monkeypatch.llama_attn_hijack_flash</code></p>
 <p>Flash attention monkey patch for llama model</p>
-<section id="functions" class="level2">
-<h2 class="anchored" data-anchor-id="functions">Functions</h2>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</a></td>
-<td>Input shape: Batch x Time x Channel</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn">flashattn_forward_with_s2attn</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.llama_attn_hijack_flash.flashattn_forward_with_s2attn(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="va">self</span>,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    hidden_states,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    attention_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    position_ids<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    past_key_value<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    output_attentions<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    use_cache<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    padding_mask<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    cu_seqlens<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    max_seqlen<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Input shape: Batch x Time x Channel</p>
-<p>From: https://github.com/dvlab-research/LongLoRA/blob/main/llama_attn_replace.py</p>
-<p>attention_mask: [bsz, q_len]</p>
-<p><code>cu_seqlens</code> will be ignored if provided
-<code>max_seqlen</code> will be ignored if provided</p>
 
 
-</section>
-</section>
 </section>
 
 </main> <!-- /main -->

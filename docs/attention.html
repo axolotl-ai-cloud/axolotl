@@ -78,7 +78,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-d0ae9245876894da5ac7e18953ecc5cc.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-ab6ebd6eb475c4578b58908bc314f719.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-6cca919405fa2f273528256191175fbc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -805,7 +805,6 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#flex-attention" id="toc-flex-attention" class="nav-link" data-scroll-target="#flex-attention">Flex Attention</a></li>
   <li><a href="#sageattention" id="toc-sageattention" class="nav-link" data-scroll-target="#sageattention">SageAttention</a></li>
   <li><a href="#xformers" id="toc-xformers" class="nav-link" data-scroll-target="#xformers">xFormers</a></li>
-  <li><a href="#shifted-sparse-attention" id="toc-shifted-sparse-attention" class="nav-link" data-scroll-target="#shifted-sparse-attention">Shifted Sparse Attention</a></li>
   <li><a href="#fp8" id="toc-fp8" class="nav-link" data-scroll-target="#fp8">FP8</a></li>
   <li><a href="#hub-kernels" id="toc-hub-kernels" class="nav-link" data-scroll-target="#hub-kernels">Hub kernels</a></li>
   </ul></li>
@@ -1059,35 +1058,16 @@ Tip
 </div>
 </div>
 </section>
-<section id="shifted-sparse-attention" class="level3">
-<h3 class="anchored" data-anchor-id="shifted-sparse-attention">Shifted Sparse Attention</h3>
-<div class="callout callout-style-default callout-warning callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Warning
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Planned for deprecation. Prefer one of the backends above.</p>
-</div>
-</div>
-<p>Requirements: LLaMA model architecture. Loaded as FA2 under the hood and
-patched to implement shifted-sparse attention. Does not support sample packing.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> s2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</section>
 <section id="fp8" class="level3">
 <h3 class="anchored" data-anchor-id="fp8">FP8</h3>
 <p>torchao low-precision attention. Loaded as SDPA and patched post-load.</p>
 <p>Requirements: SM90+ (Hopper/Blackwell), PyTorch ≥ 2.11, torchao ≥ 0.17,
 flash-attn with FA3. KV caching must be disabled.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> fp8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> fp8</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 <section id="hub-kernels" class="level3">
 <h3 class="anchored" data-anchor-id="hub-kernels">Hub kernels</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> kernels-community/flash-attn3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">attn_implementation</span><span class="kw">:</span><span class="at"> kernels-community/flash-attn3</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Passed through to <code>transformers</code>; axolotl does not install the kernel itself.
 For recognized hub paths the capability flags are set automatically; for
 arbitrary paths axolotl uses conservative defaults (<code>attn_supports_packing=False</code>,
@@ -1128,10 +1108,6 @@ the validated config.</p>
 <td><code>attn_implementation: sage</code></td>
 </tr>
 <tr class="even">
-<td><code>s2_attention: true</code></td>
-<td><code>attn_implementation: s2</code></td>
-</tr>
-<tr class="odd">
 <td><code>eager_attention: true</code></td>
 <td><code>attn_implementation: eager</code></td>
 </tr>
