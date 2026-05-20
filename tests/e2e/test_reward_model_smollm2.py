@@ -4,17 +4,23 @@ E2E tests for reward model lora llama
 
 import unittest
 
+import trl
+
 from axolotl.common.datasets import load_datasets
+from axolotl.core.trainers.trl import AxolotlRewardTrainer
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
 
-import trl
-from axolotl.core.trainers.trl import AxolotlRewardTrainer
-print("TRL:", trl.__version__,
-      "compute_loss:", AxolotlRewardTrainer.compute_loss.__qualname__)
+print(
+    "TRL:",
+    trl.__version__,
+    "compute_loss:",
+    AxolotlRewardTrainer.compute_loss.__qualname__,
+)
+
 
 class TestRewardModelLoraSmolLM2(unittest.TestCase):
     """
