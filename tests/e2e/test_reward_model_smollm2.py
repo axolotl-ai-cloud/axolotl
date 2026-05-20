@@ -11,6 +11,10 @@ from axolotl.utils.dict import DictDefault
 
 from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
 
+import trl
+from axolotl.core.trainers.trl import AxolotlRewardTrainer
+print("TRL:", trl.__version__,
+      "compute_loss:", AxolotlRewardTrainer.compute_loss.__qualname__)
 
 class TestRewardModelLoraSmolLM2(unittest.TestCase):
     """
