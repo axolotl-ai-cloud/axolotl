@@ -632,8 +632,8 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        # s2 patches FA2 internals (load as FA2); fp8 replaces sdpa post-load (load as sdpa).
-        _LOAD_TIME_OVERRIDE = {"s2": "flash_attention_2", "fp8": "sdpa"}
+        # fp8 replaces sdpa post-load (load as sdpa).
+        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa"}
         if self.cfg.attn_implementation:
             hf_impl = _LOAD_TIME_OVERRIDE.get(
                 self.cfg.attn_implementation, self.cfg.attn_implementation

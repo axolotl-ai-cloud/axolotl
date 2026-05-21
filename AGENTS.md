@@ -85,6 +85,14 @@ docs/                            # Quarto documentation site
 - Trainer mixins: `core/trainers/mixins/` for composable trainer behaviors
 - Schemas: all config validation via Pydantic in `utils/schemas/`
 
+## Comment Style
+
+- Default to no comment. Only add one when the WHY is non-obvious (hidden constraint, subtle invariant, workaround for a specific bug).
+- Don't explain WHAT the code does — names and types already do that.
+- Don't reference the current task, PR, or callers (e.g. "added for X", "used by Y", "fixes #123"). Those belong in commit messages / PR descriptions and rot fast.
+- Prefer one short line max.
+- Don't add planning/decision/analysis markdown files unless explicitly requested.
+
 ## Key Documentation
 
 - [Getting Started](docs/getting-started.qmd) — quickstart tutorial

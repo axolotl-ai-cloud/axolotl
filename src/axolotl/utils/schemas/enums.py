@@ -108,7 +108,6 @@ CANONICAL_ATTN_IMPLS = frozenset(
         "flex_attention",
         "xformers",
         "sage",
-        "s2",
         "fp8",
     }
 )
@@ -116,7 +115,6 @@ CANONICAL_ATTN_IMPLS = frozenset(
 # Legacy boolean flags → canonical attn_implementation. Priority: specific before generic.
 LEGACY_ATTN_FLAG_TO_IMPL = {
     "xformers_attention": "xformers",
-    "s2_attention": "s2",
     "sage_attention": "sage",
     "flex_attention": "flex_attention",
     "flash_attention": "flash_attention_2",
@@ -150,7 +148,6 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
     {
         "flash_attention_2",
         "flash_attention_3",
-        "s2",
         "kernels-community/flash-attn2",
         "kernels-community/flash-attn3",
     }
