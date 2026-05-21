@@ -1,22 +1,4 @@
-"""Placement rules for the interleaved block manager (§3.1.2).
-
-Given ``n_swap``, ``n_checkpoint``, and ``N_block``, decide which block
-index gets which ``BlockMode`` under ProTrain's three placement rules:
-
-1. **Swap-early** — the first ``n_swap`` blocks get SWAP. Earlier blocks
-   have more forward compute after them to hide the CPU->GPU prefetch.
-2. **Interleave CKPT among the remaining blocks** — flattens peak memory
-   by preventing activation accumulation in a contiguous run.
-3. **Unopt-late** — blocks with NONE sit in the late tail so their
-   activations are consumed first in backward, freeing PCIe bandwidth
-   for the earlier swap-block prefetches.
-
-Also ships ``discover_blocks`` — the heuristic that finds the
-transformer-block ``nn.ModuleList`` inside a user model without needing
-a central registry. Returns a ``list[BlockTree]`` so encoder-decoder
-models (T5, FLAN-T5) can surface both encoder and decoder block trees;
-single-tree causal-LM models return a single-element list.
-"""
+"""Placement rules for the interleaved block manager: swap-early, interleave CKPT, OFFLOAD, NONE-late."""
 
 from __future__ import annotations
 
@@ -44,59 +26,7 @@ def assign_modes(
     *,
     n_offload: int = 0,
 ) -> BlockStrategyMap:
-    """Return the per-block mode map under the four placement rules.
-
-    Placement order, applied in sequence (later rules fill positions left
-    free by earlier rules):
-
-    1. **Swap-early** — the first ``n_swap`` block ids are SWAP. Earlier
-       blocks have more forward compute after them to hide the CPU->GPU
-       prefetch.
-    2. **Interleave CKPT among the remaining blocks** — picks
-       ``n_checkpoint`` positions from ``[n_swap, N_block)`` via the
-       math-based even distribution, flattening peak memory by preventing
-       activation accumulation in a contiguous run.
-    3. **OFFLOAD in the unopt-late tail, before NONE** — the next
-       ``n_offload`` free positions (in index order, after SWAP/CKPT
-       removal) become OFFLOAD. OFFLOAD blocks share NONE's "unopt-late"
-       placement intent — they free their PCIe budget on the forward side
-       and their backward gather competes with reduce-offload in the same
-       backward window CKPT recompute would have. Placed before NONE so
-       that with mixed configs the tail-most positions stay NONE.
-    4. **NONE fills the remainder** — any positions not assigned by
-       rules 1-3 are NONE.
-
-    Parameters
-    ----------
-    n_swap:
-        Number of blocks that should use ``BlockMode.SWAP``. Must be
-        non-negative and ``n_swap + n_checkpoint + n_offload <= N_block``.
-    n_checkpoint:
-        Number of blocks that should use ``BlockMode.CKPT``.
-    N_block:
-        Total number of transformer blocks in the model.
-    n_offload:
-        Number of blocks that should use ``BlockMode.OFFLOAD`` (the
-        param-offload-aware NONE-equivalent for non-persistent chunks;
-        see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.6). Defaults to 0 for
-        backward compatibility — the legacy 3-knob (SWAP/CKPT/NONE)
-        signature ``assign_modes(n_swap, n_checkpoint, N_block)``
-        continues to produce identical maps.
-
-    Returns
-    -------
-    BlockStrategyMap
-        ``dict`` keyed ``0 .. N_block-1`` mapping to exactly ``n_swap``
-        SWAP entries, ``n_checkpoint`` CKPT entries, ``n_offload``
-        OFFLOAD entries, and ``N_block - n_swap - n_checkpoint -
-        n_offload`` NONE entries.
-
-    Raises
-    ------
-    ValueError
-        If any input is negative or
-        ``n_swap + n_checkpoint + n_offload > N_block``.
-    """
+    """Return per-block mode map: SWAP early, CKPT interleaved, OFFLOAD before NONE in the tail."""
     if N_block < 0:
         raise ValueError(f"N_block must be non-negative, got {N_block}")
     if n_swap < 0 or n_checkpoint < 0 or n_offload < 0:
@@ -113,34 +43,16 @@ def assign_modes(
             f"({N_block})"
         )
 
-    # Initialise everything to NONE (unopt-late default — positions that
-    # do not receive SWAP/CKPT/OFFLOAD just stay NONE, and by construction
-    # those positions land in the tail).
+    # NONE default; SWAP/CKPT/OFFLOAD overwrite specific slots.
     modes: BlockStrategyMap = {BlockId(i): BlockMode.NONE for i in range(N_block)}
 
-    # Rule 1: swap-early. First n_swap block ids are SWAP.
+    # SWAP early.
     for i in range(n_swap):
         modes[BlockId(i)] = BlockMode.SWAP
 
-    # Rule 2: interleave CKPT evenly among the remaining (N_block - n_swap)
-    # positions so checkpoint and non-checkpoint blocks alternate, flattening
-    # peak memory. Strategy: pick n_checkpoint positions from [n_swap, N_block)
-    # using a math-based even distribution.
+    # Centered CKPT placement via half-step offset; unique indices guaranteed by input validation.
     remaining = N_block - n_swap
     if n_checkpoint > 0 and remaining > 0:
-        # Centered math-based placement: for k in 0..n_checkpoint-1, place at
-        # position n_swap + ((2k + 1) * remaining) // (2 * n_checkpoint). The
-        # half-step offset (2k + 1)/(2 * n_checkpoint) targets the midpoint
-        # of each of n_checkpoint equal-width sub-intervals across the tail,
-        # rather than its left edge — so CKPT slots are centered rather than
-        # front-loaded. Concretely: with remaining=5, n_checkpoint=3 this
-        # yields {0, 2, 4} (offset by n_swap) instead of the front-loaded
-        # {0, 1, 3} the left-edge formula `(k * remaining) // n_checkpoint`
-        # produced. Indices are unique whenever remaining >= n_checkpoint
-        # (guaranteed by input validation: n_swap + n_checkpoint <= N_block),
-        # and the maximum index is bounded by n_swap + ((2 * n_checkpoint - 1)
-        # * remaining) // (2 * n_checkpoint) < N_block, preserving the
-        # unopt-late tail for rule 3.
         ckpt_positions = {
             n_swap + ((2 * k + 1) * remaining) // (2 * n_checkpoint)
             for k in range(n_checkpoint)
@@ -148,11 +60,7 @@ def assign_modes(
         for idx in sorted(ckpt_positions):
             modes[BlockId(idx)] = BlockMode.CKPT
 
-    # Rule 3: OFFLOAD fills the next n_offload positions still bearing
-    # NONE, in ascending index order. This places OFFLOAD "before NONE"
-    # in the unopt-late tail — see §3.6 of ``BLOCK_MODE_OFFLOAD_DESIGN.md``.
-    # When n_offload=0 (default / legacy callers), this loop is a no-op
-    # and the map is identical to the pre-Option-B output.
+    # OFFLOAD fills the next n_offload NONE positions in ascending order.
     if n_offload > 0:
         placed = 0
         for i in range(N_block):
@@ -259,34 +167,7 @@ _ENC_DEC_PATH_PAIRS: tuple[tuple[str, str], ...] = (
 
 @dataclass(frozen=True)
 class BlockTree:
-    """One transformer-block sequence in a model's forward graph.
-
-    Causal-LM models surface a single tree (e.g. ``"layers"`` on Llama,
-    ``"h"`` on GPT-2). Encoder-decoder models surface two: an encoder
-    (``forward_order=0``) and a decoder (``forward_order=1``). The
-    decoder's forward consumes the encoder's last-layer hidden state via
-    cross-attention; that cross-tree dependency is captured at the cost-
-    model layer, not here — this dataclass only carries the topology.
-
-    Attributes
-    ----------
-    name:
-        Human-readable identifier for the tree (``""`` for single-tree
-        models, ``"encoder"`` / ``"decoder"`` for T5).
-    blocks:
-        Ordered list of block ``nn.Module`` instances inside this tree.
-        Order matches the underlying ``nn.ModuleList``, which is forward
-        execution order by construction.
-    forward_order:
-        Position of this tree in the model's overall forward pass.
-        Encoder=0, decoder=1; single-tree models always use 0.
-    parent_path:
-        Dotted module path on the root model that resolves to the
-        underlying ``nn.ModuleList`` (e.g. ``"encoder.block"``,
-        ``"model.layers"``). Used by the model wrapper to swap in
-        wrapped blocks; ``""`` when the tree was found via the attention
-        heuristic and no dotted path applies.
-    """
+    """One transformer-block sequence (encoder=0, decoder=1, or single-tree=0)."""
 
     name: str
     blocks: list[nn.Module]
@@ -295,17 +176,7 @@ class BlockTree:
 
 
 def flatten_block_trees(trees: list[BlockTree]) -> list[nn.Module]:
-    """Flatten ``BlockTree`` list into a single forward-ordered block list.
-
-    Trees are sorted by ``forward_order`` ascending. Within each tree
-    blocks are emitted in their existing list order (already forward
-    order by construction). The returned position of each block IS its
-    global ``BlockId`` — encoder blocks occupy ids ``[0, n_enc)``,
-    decoder blocks occupy ids ``[n_enc, n_enc + n_dec)``. This global
-    numbering is the source of truth used by hooks, the scheduler, and
-    the trace's path -> block_id resolver, so every consumer agrees on
-    which block a given id refers to.
-    """
+    """Flatten BlockTree list into forward-ordered global BlockIds (encoder first)."""
     out: list[nn.Module] = []
     for tree in sorted(trees, key=lambda t: t.forward_order):
         out.extend(tree.blocks)
@@ -324,34 +195,18 @@ def _resolve(root: nn.Module, dotted: str) -> nn.Module | None:
 
 
 def _looks_like_block(m: nn.Module) -> bool:
-    """Heuristic: transformer blocks expose an ``attention`` or ``self_attn``
-    attribute. Blocks wrapped by ProTrain's dispatcher expose
-    ``_protrain_wrapped_mode``. Fall-back path when no known dotted path
-    matches.
-
-    Extends one level deeper for T5-style nested layouts: T5Block hides
-    its attention + FFN inside a ``.layer`` ``nn.ModuleList`` whose
-    elements are ``T5LayerSelfAttention`` / ``T5LayerCrossAttention`` /
-    ``T5LayerFF``. We accept a module whose ``.layer`` ModuleList
-    contains at least one element exposing ``EncDecAttention``,
-    ``SelfAttention``, ``attention``, or ``self_attn`` as a direct
-    attribute. This is only consulted on the fallback scan path —
-    T5 models are normally caught by the ``encoder.block`` /
-    ``decoder.block`` dotted paths.
-    """
+    """Heuristic for transformer block recognition; T5 nested-layer case via .layer ModuleList."""
     if hasattr(m, "attention") or hasattr(m, "self_attn"):
         return True
     if hasattr(m, "_protrain_wrapped_mode"):
         return True
-    # CheckpointedBlock stores the original in ``.block``; check one level in.
+    # CheckpointedBlock stores the original in .block.
     inner = getattr(m, "block", None)
     if inner is not None and (
         hasattr(inner, "attention") or hasattr(inner, "self_attn")
     ):
         return True
-    # T5Block-style nested layer ModuleList. T5LayerSelfAttention exposes
-    # ``SelfAttention``; T5LayerCrossAttention exposes ``EncDecAttention``;
-    # both are common attribute names on the inner ``.layer`` children.
+    # T5Block-style nested .layer ModuleList.
     nested = getattr(m, "layer", None)
     if isinstance(nested, nn.ModuleList) and len(nested) > 0:
         for child in nested:
@@ -380,36 +235,7 @@ def _iter_module_lists_with_path(
 
 
 def discover_blocks(model: nn.Module) -> list[BlockTree]:
-    """Return the transformer-block trees on ``model``.
-
-    Resolution order:
-
-    1. Encoder-decoder dotted-path pairs. If both ``encoder.block`` AND
-       ``decoder.block`` resolve to non-empty ``nn.ModuleList`` (T5,
-       FLAN-T5), return two ``BlockTree`` entries. Other future enc-dec
-       models (BART's ``encoder.layers`` / ``decoder.layers``) can be
-       added to ``_ENC_DEC_PATH_PAIRS`` when needed.
-    2. Single-tree dotted paths. Try each known causal-LM path
-       (``transformer.h``, ``model.layers``, etc.). Return a single
-       ``BlockTree`` for the first one that resolves.
-    3. Fallback heuristic. Scan every ``nn.ModuleList`` under ``model``
-       and return the first whose children all look like transformer
-       blocks. T5Block-style nested-layer modules are recognised here
-       too via ``_looks_like_block``'s ``.layer`` recursion.
-
-    Returns
-    -------
-    list[BlockTree]
-        Non-empty list. Single-tree models return one element with
-        ``name=""`` and ``forward_order=0``. Encoder-decoder models
-        return two elements: encoder first (``forward_order=0``), then
-        decoder (``forward_order=1``).
-
-    Raises
-    ------
-    RuntimeError
-        If no match is found. The error message names the paths tried.
-    """
+    """Return transformer-block trees: enc-dec pair → single-tree dotted → ModuleList heuristic."""
     # 1. Encoder-decoder pairs.
     for enc_path, dec_path in _ENC_DEC_PATH_PAIRS:
         enc = _resolve(model, enc_path)
@@ -427,10 +253,7 @@ def discover_blocks(model: nn.Module) -> list[BlockTree]:
                 len(enc),
                 len(dec),
             )
-            # Tree name should be "encoder" / "decoder" — search the
-            # dotted segments rather than blindly taking ``[0]``, which
-            # would yield the wrong wrapper name (e.g. ``base_model``)
-            # for paths like ``base_model.model.encoder.block``.
+            # Pick encoder/decoder name segment to handle PEFT-prefixed paths.
             enc_segments = enc_path.split(".")
             dec_segments = dec_path.split(".")
             enc_name = next(
@@ -454,8 +277,7 @@ def discover_blocks(model: nn.Module) -> list[BlockTree]:
                 ),
             ]
 
-    # 2. Single-tree dotted paths. Skip the enc-dec ones; those only
-    # match in a pair.
+    # Single-tree dotted paths (skip enc-dec ones which only match in pairs).
     enc_dec_paths = {p for pair in _ENC_DEC_PATH_PAIRS for p in pair}
     for dotted in _KNOWN_BLOCK_PATHS:
         if dotted in enc_dec_paths:
@@ -472,21 +294,10 @@ def discover_blocks(model: nn.Module) -> list[BlockTree]:
                 ),
             ]
 
-    # 3. Fallback: scan for a ModuleList of block-shaped children.
+    # Fallback ModuleList scan; reject nested .layer lists under indexed-block ancestors.
     for path, mlist in _iter_module_lists_with_path(model):
         if len(mlist) == 0:
             continue
-        # Reject ModuleLists nested inside a block-shaped ancestor that is
-        # itself an indexed ModuleList entry (e.g. ``T5Block``'s inner
-        # ``.layer`` ModuleList, where the ancestor at ``encoder.block.0``
-        # is the block instance). Without this guard the T5Block's inner
-        # list of T5LayerSelfAttention / T5LayerCrossAttention / T5LayerFF
-        # — all of which can superficially satisfy ``_looks_like_block`` —
-        # would be picked up as the block sequence. Restricting the reject
-        # to ancestors whose final path segment is numeric leaves
-        # non-indexed wrappers (e.g. ``bert.encoder`` is a ``BertEncoder``
-        # that itself looks block-shaped but is the right intermediate)
-        # untouched.
         skip = False
         ancestor_path = path
         while "." in ancestor_path:
@@ -526,22 +337,11 @@ def discover_blocks(model: nn.Module) -> list[BlockTree]:
 
 
 def block_id_path_map(model: nn.Module, trees: list[BlockTree]) -> dict[str, BlockId]:
-    """Map each block's dotted module path to its global ``BlockId``.
-
-    Walked across ``flatten_block_trees(trees)`` so the returned ids
-    match exactly the global numbering every other consumer sees. Used
-    by the profiler to disambiguate encoder vs decoder block 0 (which
-    would otherwise collide under naive
-    ``_infer_block_id`` path-fragment parsing).
-
-    Returns ``{}`` if any block can't be located inside the model
-    (defensive — should not happen for well-formed BlockTree inputs).
-    """
+    """Map each block's dotted module path to its global BlockId; empty if any block missing."""
     flat = flatten_block_trees(trees)
     if not flat:
         return {}
-    # Build an identity index over named_modules so we can locate each
-    # block's path in O(N_modules) total instead of O(N_block * N_modules).
+    # id-indexed named_modules walk: O(N_modules) vs naive O(N_block * N_modules).
     path_by_id: dict[int, str] = {}
     for name, mod in model.named_modules():
         path_by_id[id(mod)] = name
