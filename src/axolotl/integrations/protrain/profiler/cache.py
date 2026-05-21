@@ -1,12 +1,4 @@
-"""On-disk cache for ProfilerTrace, keyed by (arch_hash, bs, seq, sku, world).
-
-JSON serialization (not pickle) — pickle.load() is a remote-code-execution
-sink if any attacker can drop a file under ``$XDG_CACHE_HOME/protrain/profiler``,
-and the trace is pure data anyway. JSON has cheap, verifiable round-trip
-semantics here; the only fixups required on load are re-tupling sequence
-fields, re-typing ``BlockId`` keys (JSON dict keys are always strings), and
-reconstructing the ``BlockMode`` str-enum.
-"""
+"""On-disk JSON cache for ProfilerTrace, keyed by (arch_hash, bs, seq, sku, world)."""
 
 from __future__ import annotations
 
@@ -30,163 +22,13 @@ LOG = get_logger(__name__)
 
 _CACHE_SUBDIR = Path("protrain") / "profiler"
 
-# Bump when the ProfilerTrace schema changes in a way that invalidates existing
-# cached traces. Version 2 adds per-op wall-clock latencies (``op_latencies``);
-# version 3 adds measured Adam throughputs (``cpu_adam_bytes_per_sec`` /
-# ``gpu_adam_bytes_per_sec``) — traces from v2 have 0.0 for those fields, so
-# the runtime cost model would fall back to the hardcoded prior. Bumping the
-# version forces a re-profile rather than silently degrading accuracy.
-# Version 4 adds hook-dispatch calibration fields (``hooked_fwd_wall_s`` /
-# ``steady_fwd_wall_s`` / ``steady_bwd_wall_s``) that the cost model consumes
-# to scale the hooked per-op latencies down to a steady-state prior. v3
-# traces default those fields to 0.0 which would make the cost model fall
-# back to identity scale and regress 7B runtime error to its pre-calibration
-# level; bumping forces a fresh trace.
-# Version 5 adds an aggregate ``steady_fwd_peak_bytes`` cap used by the
-# memory cost model when the searcher picks all-NONE.
-# Version 6 adds per-block peaks (``steady_fwd_block_peak_bytes``) captured
-# during the hook-less steady forward via lightweight block-level hooks.
-# Unlike the v5 aggregate — which only applies when n_checkpoint=0 &&
-# n_swap=0 — the per-block max bounds the forward peak for any fractional-
-# NONE config, tightening over-prediction across the search space. v5
-# traces default the per-block dict to empty, so the cost model falls back
-# to the aggregate-only cap (identical v5 behavior); bumping forces a fresh
-# trace so the cap takes effect.
-# Version 7 changes the steady-state measurement methodology from a single
-# iteration to a 4-iter hot loop (2 warmup + 2 measured, median of measured)
-# and adds a best-effort steady_bwd_wall_s in the same loop. The recorded
-# fields are unchanged but the *values* shift (single-iter carried allocator-
-# settle cost the multi-iter median eliminates), so the cost model's measured
-# bwd/fwd ratio path requires a fresh trace under the new methodology.
-# Version 8 makes ``world`` and the NCCL collective tables real for
-# world_size > 1: ``measure_nccl(world_size>1)`` now actually runs
-# all_gather_into_tensor / reduce_scatter_tensor sweeps over a payload-size
-# grid instead of raising NotImplementedError, and ``run_trace`` plumbs
-# ``cfg.world_size`` (or auto-detects from the live process group) into
-# both the trace's ``world`` field and the per-payload tables. Single-rank
-# traces are unaffected (collective tables stay empty); multi-rank traces
-# captured under v7 had ``world=1`` hard-coded and must be re-run.
-# Version 9 folds ``requires_grad`` into the arch_hash so that toggling
-# freeze-layer config invalidates the cache. Previously a v8 trace
-# captured under one freezing pattern would replay against a different
-# freezing pattern with the same arch, returning stale
-# ``trainable_param_fraction`` / ``model_state_bytes`` and steering the
-# cost model into the wrong bwd/fwd-ratio fallback. v8 traces remain on
-# disk but never look up under v9 keys.
-# Version 10 adds phase-2 chunked-runtime backward fields:
-# ``steady_bwd_chunked_wall_s``, ``steady_step_overlap_s``,
-# ``phase2_n_checkpoint``, ``phase2_per_block_recompute_s``. These are
-# populated by the bootstrap-then-measure loop in
-# ``protrain_model_wrapper`` and consumed by ``cost/runtime.py`` to
-# translate a measured chunked backward to any candidate ``block_map``
-# the search evaluates. v9 traces lack these fields and would steer
-# the cost model into the v8 fallback path; bumping invalidates them
-# so the next run captures a real chunked backward measurement.
-# Version 11 adds the phase-2 chunked-runtime FORWARD field:
-# ``steady_fwd_chunked_wall_s``. Same plumbing as v10 — the
-# bootstrap-then-measure loop in ``protrain_model_wrapper`` now also
-# times the forward window, and ``cost/runtime._fwd_compute_time_from_trace``
-# uses the measurement directly as the forward total when populated
-# (overrides the per-op-latency-sum + hook-scale + roofline cap path).
-# Closes the forward half of the residual over-prediction left after
-# v10 backward calibration; on 7B-LoRA + 3090 this drops same-SKU
-# runtime error into the high-20% range before the matching backward
-# chunked-wall bypass. v10 traces have ``steady_fwd_chunked_wall_s`` at
-# 0.0 which would silently force the cost model back to the v10 forward
-# path; bumping forces a fresh trace so the new measurement is captured
-# and consumed.
-# Version 12 invalidates v11 traces after checkpoint recompute was wired
-# to re-gather block chunks before replay. v11 phase-2 backward timings
-# were captured without that replay-time gather cost, so they
-# under-predict all-CKPT offload configs once the runtime is actually
-# correct.
-# Version 13 changes the phase-2 bootstrap from the initial search's
-# often-high ``n_persist`` pick to a conservative low-persistence
-# all-CKPT config. v12 traces under-count replay gathers for the
-# low-persistence configs selected after calibration.
-# Version 14 records ``steady_phase2_peak_bytes`` plus the phase-2
-# bootstrap cfg tuple, allowing the wrapper to calibrate peak from the
-# same measured chunked run when the final config matches.
-# Version 15 stores the EFFECTIVE phase-2 cfg after runtime construction
-# (including non-block chunk pins), not the raw bootstrap search tuple.
-# Version 16 adds the persisted ``block_tree_index`` field — captured at
-# trace-construction from ``discover_blocks(model)`` so the cost model
-# no longer has to parse ``OpRecord.module_path`` prefixes (``encoder.``
-# / ``decoder.``) to recover tree membership. The string-prefix path
-# stays as a fallback for degenerate test traces but cached profiles
-# carry the authoritative map.
-# Version 17 switches the on-disk format from pickle to JSON. Pickle
-# is a remote-code-execution sink (``pickle.load`` calls arbitrary
-# constructors during deserialization) and the cache directory is a
-# local-attacker writable target; JSON has none of those semantics.
-# v16 ``.pkl`` files remain on disk but are never looked up under the
-# v17 ``.json`` extension — the cache is local-only and a re-profile
-# is cheap, so the migration policy is "ignore + retrace".
-# Version 18 adds ``phase2_n_offload`` to the persisted phase-2 bootstrap
-# cfg tuple. Option B's search space includes the n_offload axis (see
-# ``exhaustive.py`` / ``block/layout_rules.py``) and the bootstrap
-# captures it in ``boot_result.cfg.n_offload``, but v17 cached only
-# (persist, buffer, checkpoint). Two configs that differ only in the
-# offload axis would therefore share a cached measurement and the
-# wrapper's ``phase2_matches_cfg`` predicate would mis-calibrate the
-# cost model (in particular ``steady_phase2_peak_bytes`` and the
-# chunked-bwd base term). Bumping forces a fresh trace so the offload
-# count is recorded under the matching cfg. ``ProfilerTrace`` may not
-# yet carry the field; the (de)serializers fall back to 0 via getattr
-# / fields-introspection so a v18 payload round-trips cleanly either
-# way and the bump alone invalidates v17 entries that lacked the axis.
-# Version 19 engages backward profiling end-to-end (paper §3.2 / App A.2).
-# The wrapper now passes ``include_backward=True`` to ``run_trace`` and
-# the steady-state hot loop captures the BACKWARD peak alongside the
-# forward peak: ``steady_bwd_peak_bytes`` is the cumulative
-# ``max_memory_allocated`` across the hook-less backward pass, and
-# ``steady_bwd_block_peak_bytes`` carries the per-block bwd peaks via
-# ``register_full_backward_hook`` (mirroring the per-block fwd capture).
-# v18 traces have these at 0 / empty so the cost model would silently
-# regress to its analytical bwd estimate — bumping the schema forces a
-# re-profile so the measurement is captured and consumed.
-# Version 20 adds the phase-2 analytical-baseline trio
-# (``phase2_iter_s``, ``phase2_analytical_iter_s``,
-# ``phase2_analytical_peak_bytes``) used by the cost model to apply a
-# measurement-anchored α calibration to analytical-path runtime
-# predictions and a cfg-delta peak floor when the production cfg
-# differs from the bootstrap. v19 cached traces lack these fields, so
-# the cost model would silently lose both calibrations — bumping
-# invalidates them and forces a fresh phase-2 capture that records the
-# analytical baselines.
-# Version 21 decomposes the single α into per-component scales by
-# capturing the measured (``phase2_fwd_s`` / ``phase2_bwd_s`` /
-# ``phase2_step_s``) and analytical (``phase2_analytical_fwd_s`` /
-# ``phase2_analytical_bwd_s`` / ``phase2_analytical_step_s``) components
-# at the bootstrap cfg. The cost model derives αfwd / αbwd / αopt
-# independently per component, generalising the calibration across
-# cfg-shape changes that made the lumped α brittle. v20 traces lack
-# the per-component fields, so the cost model would fall back to the
-# single-α legacy path that under-predicted iter time by ~20% on
-# 2B-LoRA — bumping forces a fresh phase-2 capture that records the
-# component decomposition.
-# Version 22 adds the per-component-prediction anchor
-# (``phase2_per_comp_pred_iter_s``) used to derive a residual-α
-# multiplier on top of the per-component composition. Per-component α
-# captures fwd/bwd/optim bias *within each component*; it does not
-# capture whole-iter overheads (Python hook dispatch, kernel launch
-# latency, NCCL handshake) that the analytical baseline doesn't
-# model. Without the residual anchor the per-component-only path
-# regressed 7B-LoRA iter prediction to 41% under-predict (boot's
-# whole-iter overhead bias is no longer absorbed by a lumped α).
-# v21 traces lack the field, so the cost model falls back to no
-# residual correction (per-component-only behaviour) — bumping forces
-# a fresh phase-2 capture that records the anchor.
+# Bump on any schema change to ProfilerTrace; old payloads are then ignored.
 TRACE_VERSION = 22
 
 
 @dataclass(frozen=True)
 class ProfilerCacheKey:
-    """Identity of a cached trace (§7 re-profile trigger).
-
-    Not defined in ``types.py`` by design — cache keys are an implementation
-    detail of this subpackage and shouldn't leak into the public plugin API.
-    """
+    """Identity of a cached trace (re-profile trigger)."""
 
     arch_hash: str
     bs: int
@@ -195,24 +37,13 @@ class ProfilerCacheKey:
     world: int
 
     def fingerprint(self) -> str:
-        """Deterministic 64-char sha256 hex digest used as the on-disk filename.
-
-        The ``TRACE_VERSION`` prefix ensures a schema bump invalidates all prior
-        cache entries — old files stay on disk but are never looked up.
-        """
+        """sha256 hex digest; TRACE_VERSION prefix invalidates old entries."""
         raw = f"v{TRACE_VERSION}|{self.arch_hash}|{self.bs}|{self.seq}|{self.sku}|{self.world}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _cache_root(cache_dir: str | os.PathLike[str] | None = None) -> Path:
-    """Resolve the profiler cache root.
-
-    When ``cache_dir`` is provided (non-None) it wins over the XDG fallback,
-    so users can override via ``protrain_cache_dir`` in YAML / the wrapper
-    kwarg without having to mutate ``XDG_CACHE_HOME`` globally. When None,
-    falls back to ``$XDG_CACHE_HOME/protrain/profiler`` or
-    ``~/.cache/protrain/profiler``.
-    """
+    """Resolve the profiler cache root (explicit dir wins, else XDG_CACHE_HOME or ~/.cache)."""
     if cache_dir is not None:
         return Path(cache_dir) / _CACHE_SUBDIR
     xdg = os.environ.get("XDG_CACHE_HOME")
@@ -227,19 +58,7 @@ def _path_for(
     return _cache_root(cache_dir) / f"{key.fingerprint()}.json"
 
 
-# ---------------------------------------------------------------------------
-# JSON (de)serialization — ProfilerTrace is pure data so this is a small
-# fixup pass over ``dataclasses.asdict`` output. The contract:
-#   * tuple fields → list on write, retuple on load
-#   * dict[BlockId, ...] → str-keyed dict on write (JSON), int-keyed
-#     ``BlockId`` dict on load
-#   * dict[OpId, ...] → same treatment as BlockId
-#   * BlockMode enum → string ``.value`` on write, ``BlockMode(s)`` on load
-#   * trace_version is embedded in the payload so loaders can reject
-#     mismatched versions (the filename hashes the version too, but a
-#     payload-level check is a defense-in-depth tripwire if the hash
-#     scheme ever changes).
-# ---------------------------------------------------------------------------
+# JSON (de)serialization: tuples→list, BlockId/OpId dict keys str→int, BlockMode str→enum.
 
 
 def _op_record_to_dict(op: OpRecord) -> dict[str, Any]:
@@ -312,10 +131,7 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "steady_fwd_block_peak_bytes": {
             str(int(k)): int(v) for k, v in trace.steady_fwd_block_peak_bytes.items()
         },
-        # ``steady_bwd_peak_bytes`` / ``steady_bwd_block_peak_bytes``
-        # (TRACE_VERSION 19). ``getattr`` keeps this defensive against
-        # ``ProfilerTrace`` builds that haven't yet exposed the field —
-        # the bump still invalidates v18 traces lacking the measurement.
+        # getattr-defensive against builds that haven't yet exposed newer fields.
         "steady_bwd_peak_bytes": int(getattr(trace, "steady_bwd_peak_bytes", 0)),
         "steady_bwd_block_peak_bytes": {
             str(int(k)): int(v)
@@ -330,19 +146,8 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_n_persist": int(trace.phase2_n_persist),
         "phase2_n_buffer": int(trace.phase2_n_buffer),
         "phase2_n_checkpoint": int(trace.phase2_n_checkpoint),
-        # ``phase2_n_offload`` (TRACE_VERSION 18) joins the persisted phase-2
-        # cfg tuple. ``getattr`` keeps this defensive against ``ProfilerTrace``
-        # builds that haven't yet exposed the field — the bump still
-        # invalidates v17 traces lacking the offload axis.
         "phase2_n_offload": int(getattr(trace, "phase2_n_offload", 0)),
         "phase2_per_block_recompute_s": float(trace.phase2_per_block_recompute_s),
-        # ``phase2_iter_s`` / ``phase2_analytical_iter_s`` /
-        # ``phase2_analytical_peak_bytes`` (TRACE_VERSION 20) anchor the
-        # cost model's α-calibration on the analytical path and the
-        # cfg-delta peak floor. ``getattr`` keeps the writer defensive
-        # against ``ProfilerTrace`` builds that haven't yet exposed the
-        # fields — the version bump still invalidates v19 entries that
-        # lacked them.
         "phase2_iter_s": float(getattr(trace, "phase2_iter_s", 0.0)),
         "phase2_analytical_iter_s": float(
             getattr(trace, "phase2_analytical_iter_s", 0.0)
@@ -350,11 +155,6 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_analytical_peak_bytes": int(
             getattr(trace, "phase2_analytical_peak_bytes", 0)
         ),
-        # Per-component phase-2 baselines (TRACE_VERSION 21). Same
-        # ``getattr`` defensive guard as the older optional fields above
-        # so an in-tree builder lagging the schema doesn't break the
-        # writer; the version bump still invalidates v20 entries that
-        # lacked the component decomposition.
         "phase2_fwd_s": float(getattr(trace, "phase2_fwd_s", 0.0)),
         "phase2_bwd_s": float(getattr(trace, "phase2_bwd_s", 0.0)),
         "phase2_step_s": float(getattr(trace, "phase2_step_s", 0.0)),
@@ -367,10 +167,6 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "phase2_analytical_step_s": float(
             getattr(trace, "phase2_analytical_step_s", 0.0)
         ),
-        # Per-component-prediction anchor (TRACE_VERSION 22) for the
-        # residual-α multiplier. Same defensive ``getattr`` so an
-        # in-tree builder lagging the schema doesn't break the writer;
-        # the version bump still invalidates v21 entries lacking it.
         "phase2_per_comp_pred_iter_s": float(
             getattr(trace, "phase2_per_comp_pred_iter_s", 0.0)
         ),
@@ -382,21 +178,8 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
 
 
 def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
-    """Reconstruct a ``ProfilerTrace`` from its JSON-decoded dict.
-
-    Raises ``AttributeError`` / ``KeyError`` / ``ValueError`` / ``TypeError``
-    if required fields are missing or malformed (including nested payload
-    shape corruption such as ``"intra_op_delta": []`` where ``.items()`` is
-    called on a non-mapping); callers treat that as a cache miss.
-    """
-    # ``phase2_n_offload`` (TRACE_VERSION 18) joined the phase-2 cfg tuple.
-    # ``steady_bwd_peak_bytes`` / ``steady_bwd_block_peak_bytes``
-    # (TRACE_VERSION 19) joined the bwd-aware peak measurements. Pass
-    # them as kwargs only when the live ``ProfilerTrace`` dataclass
-    # actually exposes the fields — older builds in the same tree (e.g.
-    # test fixtures pinned to a prior schema) would otherwise raise
-    # TypeError on the unexpected kwarg and turn every fresh-version
-    # hit into a cache miss.
+    """Reconstruct ProfilerTrace from JSON-decoded dict; raises on shape corruption."""
+    # Field-presence guard for optional fields the live dataclass may lack.
     _trace_field_names = {f.name for f in fields(ProfilerTrace)}
     extra: dict[str, Any] = {}
     if "phase2_n_offload" in _trace_field_names:
@@ -408,10 +191,6 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
             BlockId(int(k)): int(v)
             for k, v in data.get("steady_bwd_block_peak_bytes", {}).items()
         }
-    # Phase-2 analytical-baseline trio (TRACE_VERSION 20). Same
-    # field-presence guard as the older optional fields above so an
-    # in-tree builder lagging the schema doesn't turn a fresh-version
-    # hit into an unexpected-kwarg cache miss.
     if "phase2_iter_s" in _trace_field_names:
         extra["phase2_iter_s"] = float(data.get("phase2_iter_s", 0.0))
     if "phase2_analytical_iter_s" in _trace_field_names:
@@ -422,10 +201,6 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
         extra["phase2_analytical_peak_bytes"] = int(
             data.get("phase2_analytical_peak_bytes", 0)
         )
-    # Per-component phase-2 baselines (TRACE_VERSION 21). Same field-
-    # presence guard as the older optional fields above so an in-tree
-    # builder lagging the schema doesn't turn a fresh-version hit into
-    # an unexpected-kwarg cache miss.
     for _fname in (
         "phase2_fwd_s",
         "phase2_bwd_s",
@@ -436,10 +211,6 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     ):
         if _fname in _trace_field_names:
             extra[_fname] = float(data.get(_fname, 0.0))
-    # Per-component-prediction anchor (TRACE_VERSION 22). Same field-
-    # presence guard as the older optional fields above — the version
-    # bump invalidates v21 entries lacking this anchor, but in-tree
-    # builders lagging the schema still load gracefully.
     if "phase2_per_comp_pred_iter_s" in _trace_field_names:
         extra["phase2_per_comp_pred_iter_s"] = float(
             data.get("phase2_per_comp_pred_iter_s", 0.0)
@@ -501,11 +272,7 @@ def load_cached_trace(
     key: ProfilerCacheKey,
     cache_dir: str | os.PathLike[str] | None = None,
 ) -> ProfilerTrace | None:
-    """Load a previously-saved trace, or ``None`` if the key misses.
-
-    ``cache_dir`` overrides the XDG fallback when provided; see
-    :func:`_cache_root` for resolution semantics.
-    """
+    """Load a previously-saved trace, or None on cache miss."""
     path = _path_for(key, cache_dir)
     if not path.exists():
         return None
@@ -513,9 +280,6 @@ def load_cached_trace(
         with path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        # ``UnicodeDecodeError`` fires before ``json.JSONDecodeError`` when
-        # the cache file is not valid UTF-8 (e.g. truncated/corrupted on
-        # disk); treat it as a cache miss with the same warning path.
         LOG.warning("profiler cache miss due to read error at %s: %s", path, exc)
         return None
     if not isinstance(data, dict):
@@ -533,13 +297,7 @@ def load_cached_trace(
             TRACE_VERSION,
         )
         return None
-    # Defense-in-depth identity check: the on-disk filename hashes the
-    # ProfilerCacheKey fields plus TRACE_VERSION, so a path hit already
-    # implies field equality under the current hashing scheme. Re-verify
-    # the identifying fields against the payload anyway so that a stale
-    # file written under a different scheme (or a hash collision in the
-    # filename derivation, however unlikely) cannot silently return a
-    # foreign trace. Mirror the warning style used above for shape miss.
+    # Defense-in-depth identity check against stale-scheme files / hash collisions.
     payload_identity = (
         str(data.get("arch_hash", "")),
         int(data.get("bs", -1)) if isinstance(data.get("bs"), (int, float)) else -1,
@@ -561,10 +319,7 @@ def load_cached_trace(
     try:
         return _trace_from_dict(data)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
-        # ``AttributeError`` covers nested payload shape corruption — e.g. a
-        # malformed ``"intra_op_delta": []`` makes ``_trace_from_dict`` call
-        # ``.items()`` on a list, which would otherwise escape and abort
-        # startup instead of degrading to a clean cache miss.
+        # AttributeError covers nested shape corruption (e.g. dict→list).
         LOG.warning(
             "profiler cache at %s failed deserialization (%s); treating as miss.",
             path,
@@ -578,18 +333,12 @@ def save_cached_trace(
     trace: ProfilerTrace,
     cache_dir: str | os.PathLike[str] | None = None,
 ) -> Path:
-    """Persist ``trace`` under ``key``. Returns the on-disk path.
-
-    ``cache_dir`` overrides the XDG fallback when provided; see
-    :func:`_cache_root` for resolution semantics.
-    """
+    """Persist ``trace`` under ``key``; returns the on-disk path."""
     root = _cache_root(cache_dir)
     root.mkdir(parents=True, exist_ok=True)
     path = _path_for(key, cache_dir)
     data = _trace_to_dict(trace)
-    # Per-rank unique temp via mkstemp(dir=path.parent) so two ranks racing
-    # on the same key can't clobber each other's in-flight writes; os.replace
-    # then promotes whichever finished last to the final filename atomically.
+    # Per-rank unique temp so concurrent writes don't clobber; os.replace is atomic.
     fd, tmp_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f"{path.stem}.",
@@ -598,15 +347,10 @@ def save_cached_trace(
     tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            # Compact separators keep the file size close to the pickle
-            # output; trace files are O(MB) on real models so the savings
-            # over the default ", " / ": " are non-trivial.
             json.dump(data, fh, separators=(",", ":"))
         os.replace(tmp, path)
     finally:
-        # Cleanup is a no-op on the success path (replace already moved tmp);
-        # on failure it removes the partial JSON. ``missing_ok=True``
-        # covers both cases.
+        # Removes the partial JSON on failure; no-op after successful os.replace.
         tmp.unlink(missing_ok=True)
     LOG.debug("saved profiler trace to %s", path)
     return path
