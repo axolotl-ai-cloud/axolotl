@@ -1,16 +1,4 @@
-"""Bound derivation for the ProTrain 4-knob search (§3.3).
-
-The searcher enumerates ``(n_persist, n_buffer, n_swap, n_checkpoint)``
-within the ``Bounds`` returned here:
-
-- ``N_chunk`` — upper bound on ``n_persist`` and ``n_buffer`` (they sum
-  to at most ``N_chunk`` since they partition chunks).
-- ``N_block`` — upper bound on ``n_swap + n_checkpoint``.
-- ``N_interval`` — forward-pass ops per block, used to cap ``n_swap`` by
-  how much compute is available to hide prefetch behind.
-
-``Bounds`` is frozen and owned by ``types.py``; do not redefine.
-"""
+"""Bound derivation for the ProTrain knob search."""
 
 from __future__ import annotations
 
@@ -27,27 +15,11 @@ LOG = get_logger(__name__)
 
 
 def derive_bounds(trace: ProfilerTrace, layout: ChunkLayout) -> Bounds:
-    """Derive the upper bounds on the 4 knobs.
-
-    Parameters
-    ----------
-    trace:
-        Profiler output. ``op_order`` is scanned to compute
-        ``N_interval``; ``activation_sizes`` gives ``N_block``.
-    layout:
-        Chunk layout. ``N_chunk`` is lifted directly.
-
-    Returns
-    -------
-    Bounds
-        ``Bounds(N_chunk, N_block, N_interval)``.
-    """
+    """Derive (N_chunk, N_block, N_interval) bounds from trace + layout."""
     n_chunk = int(layout.N_chunk)
     n_block = len(trace.activation_sizes)
 
-    # ``N_interval`` is the number of forward ops per block. If
-    # activation_sizes is empty (degenerate test input) use 1 to keep
-    # downstream arithmetic total.
+    # N_interval = forward ops/block; degenerate → 1.
     if n_block <= 0:
         n_interval = 1
     else:
@@ -56,12 +28,10 @@ def derive_bounds(trace: ProfilerTrace, layout: ChunkLayout) -> Bounds:
             if op.is_forward and op.block_id is not None:
                 per_block[int(op.block_id)] += 1
         if per_block:
-            # Average ops per block; round down so bounds stay
-            # conservative. Taking the mean (not the min) avoids
-            # punishing blocks that happen to contain a single hot op.
+            # Mean (not min) so single-hot-op blocks don't tank the bound.
             n_interval = max(1, sum(per_block.values()) // max(1, n_block))
         else:
-            # No op has a block_id — fall back to the flat ratio.
+            # No block_id mapping; fall back to flat ratio.
             forward_op_count = sum(1 for op in trace.op_order if op.is_forward)
             n_interval = max(1, forward_op_count // max(1, n_block))
 
