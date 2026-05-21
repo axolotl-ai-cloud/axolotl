@@ -1,44 +1,4 @@
-"""Exhaustive 5-knob search for ProTrain (§3.3, Option B §4.3).
-
-Algorithm:
-
-1. Derive ``Bounds`` from ``(trace, layout)``.
-2. Enumerate ``(n_persist, n_buffer, n_swap, n_checkpoint, n_offload)``
-   within bounds, subject to:
-
-   - ``n_persist + n_buffer <= N_chunk``
-   - ``n_swap + n_checkpoint + n_offload <= N_block``
-   - ``n_swap <= min(N_block - n_checkpoint - n_offload, N_interval)``
-
-3. For each candidate, compute ``block_map = assign_modes(...)``.
-4. Evaluate ``estimate_peak``; drop candidates above ``capacity_bytes``.
-5. Drop runtime-inadmissible candidates: any block whose parameter
-   chunks are not all persistent must use ``CKPT``, ``OFFLOAD``, or
-   ``SWAP``. ``CKPT`` recomputes the forward through
-   ``torch.utils.checkpoint``; ``OFFLOAD``'s saved-tensors-hook
-   re-binds storage at backward via metadata + re-gather; ``SWAP``
-   persists every saved tensor to a pinned-CPU pool decoupled from
-   ``param.data`` and from the chunk buffer's GPU bytes (the
-   :class:`Scheduler` adds a ``prefetch_stream.wait_stream(swap_stream)``
-   barrier so a chunk's evicting H2D never overlaps a pack-time D2H
-   reading the same slot bytes). ``NONE`` installs no hooks and
-   therefore remains rejected on any block with non-persistent chunks
-   — autograd's saved-tensor table holds direct GPU storage references
-   that get clobbered by the chunk pool's slot reuse. See
-   ``block_map_runtime_admissible`` for the precise predicate.
-6. If ``cpu_capacity_bytes`` is not None, evaluate
-   ``estimate_cpu_footprint``; drop candidates above the host-RAM gate.
-7. Among survivors, evaluate ``estimate_runtime`` and pick argmin.
-8. Raise ``RuntimeError`` if no candidate fits — the message
-   distinguishes GPU-pressure failure (no cfg cleared the GPU gate)
-   from CPU-pressure failure (some cleared GPU but all busted CPU).
-
-The search space is tiny (~10^4 at most on realistic models even with
-the added ``n_offload`` axis) — no pruning cleverness is needed for
-correctness. We do sort candidates by a cheap static peak estimate so
-early OOMs filter out large chunks of the space without the full
-op-walk.
-"""
+"""Exhaustive 5-knob search for ProTrain."""
 
 from __future__ import annotations
 
@@ -71,34 +31,13 @@ LOG = get_logger(__name__)
 
 
 def min_n_buffer_for(layout: ChunkLayout, n_persist: int) -> int:
-    """Minimum n_buffer the scheduler needs at this n_persist.
-
-    The scheduler's lookahead prefetch (runtime/scheduler.py::pre_block_forward)
-    holds the current block's chunks resident while simultaneously prefetching
-    the next block's chunks. For any non-persistent chunk to be reachable via
-    the pool, the pool must be sized for the worst-case union across adjacent
-    block pairs. Persistent chunks bypass the pool, so we only count
-    non-persistent contributions.
-
-    The runtime persistent set is
-    ``{0..n_persist-1} ∪ layout.mandatory_persistent`` — the user-chosen
-    prefix UNIONED with the layout-level mandatory pin set (chunks the
-    block-granularity scheduler cannot gather on its own). Using the
-    augmented set here matches the runtime's actual gather pattern:
-    mandatory chunks NEVER consume a buffer slot.
-
-    Returns 0 when every chunk is persistent (``n_persist >= N_chunk``).
-    """
+    """Minimum n_buffer for the scheduler's lookahead prefetch at this n_persist."""
     persistent: set[ChunkId] = set(layout.effective_persistent_ids(n_persist))
     if len(persistent) >= layout.N_chunk:
         return 0
     block_ids = sorted(layout.block_to_chunks.keys())
     if not block_ids:
-        # Sparse/degenerate layout: ``n_persist < N_chunk`` above means at
-        # least one chunk is non-persistent, but block_to_chunks doesn't
-        # surface which block owns it. The pool allocator still needs one
-        # slot to materialize that chunk, so honour the same ``max(1, …)``
-        # invariant the dense branch enforces below.
+        # Sparse layout: pool needs ≥1 slot for any non-persistent chunk.
         return 1
     need = 0
     for i, bid in enumerate(block_ids):
@@ -111,8 +50,7 @@ def min_n_buffer_for(layout: ChunkLayout, n_persist: int) -> int:
                 if c not in persistent
             ]
         need = max(need, len({*cur_np, *nxt_np}))
-    # Every pool allocator path requires at least 1 buffer when any
-    # non-persistent chunk exists, even if block_to_chunks is sparse.
+    # ≥1 buffer required when any non-persistent chunk exists.
     return max(1, need)
 
 
@@ -123,60 +61,8 @@ def block_map_runtime_admissible(
 ) -> bool:
     """Return True iff the block strategy is safe for current chunk offload.
 
-    Four-mode admissibility (post-Option B with the SWAP x non-persistent
-    lift; see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.5 and §6.6):
-
-    * ``CKPT`` — always admissible. The recompute path re-binds storage by
-      replaying the wrapped forward inside ``torch.utils.checkpoint``; the
-      scheduler re-gathers the block's chunks immediately before recompute.
-    * ``OFFLOAD`` — always admissible. The wrapper installs a
-      saved-tensors-hook that records metadata only at pack time and
-      re-gathers the chunk at unpack time, so post-forward chunk release is
-      safe even with non-persistent params.
-    * ``SWAP`` — always admissible. The SwappedBlock wrapper installs a
-      ``saved_tensors_hooks`` context that COPIES every saved tensor to
-      a pinned CPU pool slot at pack time and reconstructs a fresh GPU
-      buffer from that slot at unpack time. The pinned-CPU pool slot is
-      the activation persistence mechanism and is fully decoupled from
-      ``param.data`` and from the chunk buffer's GPU bytes — so the
-      post-forward chunk release / re-acquire cycle does not endanger
-      saved-tensor correctness once the prefetch stream is sequenced
-      against the swap stream (see
-      :meth:`Scheduler._gather_on_prefetch_stream` for the load-bearing
-      ``prefetch_stream.wait_stream(swap_stream)`` barrier that gates a
-      slot's evicting H2D against any in-flight pack-time D2H reading
-      its bytes). Backward grad-accumulation reads ``param.data``, which
-      ``Scheduler.pre_block_backward`` already re-gathers symmetrically
-      with the CKPT/OFFLOAD paths, so no additional plumbing is needed
-      to make SWAP x non-persistent byte-exact.
-    * ``NONE`` — admissible iff every chunk owned by the block is in the
-      persistent set. NONE installs no hooks, so PyTorch's autograd
-      saved-tensors reference the original GPU storage directly; once
-      that storage is reused by another chunk's gather H2D, the saved
-      tensor's bytes are corrupt and backward produces silently wrong
-      gradients. There is no in-tree fix for NONE x non-persistent —
-      use CKPT, OFFLOAD, or SWAP for blocks with non-persistent chunks.
-
-    Pre-2026-05 history: SWAP x non-persistent was conservatively
-    rejected on the assumption that "saved tensors are not a safe
-    persistence mechanism once ``param.data`` is rebound to the empty
-    sentinel". The conjecture conflated NONE (which IS unsafe) with
-    SWAP (which has its own pinned-CPU persistence path); empirical
-    investigation 2026-05-05 confirmed that the SWAP wrapper's pack/
-    unpack pair already handles the chunk-buffer-view case correctly
-    once the prefetch / swap stream cross-dependency is added. Lifting
-    the restriction is paper-faithful (§3.3 treats ``n_swap``,
-    ``n_persist``, ``n_checkpoint`` as JOINTLY optimised knobs without
-    chunk-residency cross-restrictions) and unblocks faster
-    configurations the searcher previously could not reach.
+    CKPT/OFFLOAD/SWAP are always admissible; NONE requires all chunks persistent.
     """
-    # The runtime persistent set is the prefix UNIONED with
-    # ``layout.mandatory_persistent`` — single-source via
-    # ``ChunkLayout.effective_persistent_ids`` so this admissibility
-    # predicate matches the actual residency the runtime will install.
-    # NONE blocks whose chunks are *all* in the augmented set remain
-    # admissible even when the search's prefix is shorter, which is
-    # the whole point of the mandatory pin.
     persistent = set(layout.effective_persistent_ids(n_persist))
     for bid, chunks in layout.block_to_chunks.items():
         mode = block_map.get(bid, BlockMode.NONE)
@@ -185,12 +71,6 @@ def block_map_runtime_admissible(
             or mode is BlockMode.OFFLOAD
             or mode is BlockMode.SWAP
         ):
-            # CKPT recomputes; OFFLOAD's saved-tensors-hook re-binds
-            # storage at backward; SWAP persists saved tensors to a
-            # pinned-CPU pool independent of ``param.data``. All three
-            # are safe regardless of chunk persistence — the scheduler's
-            # gather discipline + prefetch/swap stream sequencing make
-            # the byte-level invariants hold (see docstring).
             continue
         if any(ChunkId(int(cid)) not in persistent for cid in chunks):
             return False
@@ -198,16 +78,7 @@ def block_map_runtime_admissible(
 
 
 def _iter_candidates(bounds: Bounds) -> Iterator[CostConfig]:
-    """Enumerate feasible ``CostConfig`` tuples within ``bounds``.
-
-    Five axes (Option B §4.3): ``n_checkpoint``, ``n_offload``,
-    ``n_swap``, ``n_persist``, ``n_buffer``. ``n_offload`` lives in
-    the outer-loop neighbourhood of ``n_ckpt`` because the two trade
-    against each other on the backward wall (Option B §4.2). Search
-    space grows by ~``N_block`` (~17K -> ~440K candidates on a
-    Llama-3B-class model with ``N_block=26``), still well under the
-    second-budget for closed-form per-candidate evaluation.
-    """
+    """Enumerate feasible ``CostConfig`` tuples within ``bounds``."""
     n_chunk = bounds.N_chunk
     n_block = bounds.N_block
     n_interval = bounds.N_interval
@@ -240,51 +111,7 @@ def _block_map_peak_contribution(
     tree_index_map: dict[BlockId, int] | None = None,
     n_persist: int | None = None,
 ) -> int:
-    """Compute the block-map-dependent part of the raw peak.
-
-    Matches the op-walk inside :func:`estimate_peak` but returns only
-    the terms that do not depend on ``(n_persist, n_buffer)``:
-
-        F(block_map) = max over forward ops i of
-            (live_none_at(i) + ckpt_extra_at(i) + offload_extra_at(i)
-             + cross_attn_at(i) + intra[i] + inter[i])
-
-    The returned value is the pre-alpha raw contribution; the caller
-    multiplies the full ``model_state_present + F`` sum by
-    ``ALPHA_FRAGMENTATION`` and ``int()``-casts to match
-    ``estimate_peak`` exactly.
-
-    ``forward_ops_by_block`` and ``tree_index_map`` depend only on
-    ``trace`` (not ``block_map``); when called inside the searcher's
-    hot loop callers should compute them once and pass them in to
-    skip the per-iteration rebuild.
-
-    The OFFLOAD bump term (``offload_extra_at``) lands at the LAST
-    forward op of each OFFLOAD block (Option B §4.1) and contributes
-    ``layout.S_chunk`` (the buffer-pool chunk gather only —
-    activations are already counted in ``live_none`` because OFFLOAD
-    retains them like NONE). The ``layout`` parameter is required to
-    provide ``S_chunk``.
-
-    ``n_persist``: when provided, the OFFLOAD bump is suppressed for
-    OFFLOAD blocks whose chunks are ALL in the persistent set
-    (``chunk_id < n_persist``). Rationale: ``ChunkManager.gather`` is
-    a no-op for persistent chunks (see ``chunk/manager.py::gather``
-    "Persistent chunks: no-op — they were never offloaded"), so the
-    backward-window chunk-gather residency that the bump models does
-    not occur when the block's chunks are already GPU-resident. When
-    ``n_persist`` is ``None`` (legacy callers — ``estimate_peak``'s
-    full op-walk path), every OFFLOAD block contributes the bump.
-    The searcher's hot loop varies ``n_persist`` independently of
-    ``block_map`` and so MUST pass this argument to avoid over-stating
-    the peak for high-``n_persist`` OFFLOAD configs (which would
-    spuriously prune feasible candidates via the ``max_sum`` ceiling
-    derived from ``f_bm``).
-
-    Cross-attention term mirrors ``estimate_peak``'s Fix-3 enc-dec
-    accounting — see the docstring of that function. For single-tree
-    causal-LM traces the term is 0 and this matches the legacy F_bm.
-    """
+    """Compute the block-map-dependent part of the raw peak (excluding n_persist/n_buffer)."""
     from axolotl.integrations.protrain.cost.memory import (
         block_tree_index_map,
         cross_attn_persist_bytes,
@@ -297,20 +124,11 @@ def _block_map_peak_contribution(
             if op.is_forward and op.block_id is not None:
                 forward_ops_by_block[op.block_id].append(i)
 
-    # Identify CKPT bump ops (first forward op of each CKPT block) and
-    # OFFLOAD bump ops (last forward op of each OFFLOAD block — closest
-    # forward index to that block's first backward op). When
-    # ``n_persist`` is provided, an OFFLOAD block whose chunks are ALL
-    # within the persistent set contributes NO bump — the runtime
-    # ``ChunkManager.gather`` short-circuits for persistent chunks so
-    # no backward-window chunk-buffer materialization happens.
+    # CKPT bump at first fwd op; OFFLOAD bump at last fwd op (skip when all chunks persistent).
     ckpt_bump_op: dict[int, int] = {}
     offload_bump_op: dict[int, int] = {}
     persistent_chunks: set[ChunkId] | None = None
     if n_persist is not None:
-        # Use the augmented persistent set (prefix ∪ mandatory_persistent)
-        # so OFFLOAD blocks whose chunks are *runtime-pinned* (not just
-        # search-prefixed) correctly suppress the gather bump.
         persistent_chunks = set(layout.effective_persistent_ids(n_persist))
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
@@ -321,20 +139,14 @@ def _block_map_peak_contribution(
         elif mode is BlockMode.OFFLOAD:
             if persistent_chunks is not None:
                 chunks = layout.block_to_chunks.get(block_id, ())
-                # All-persistent OFFLOAD block: gather is a no-op, so
-                # no backward chunk-buffer materialization. ``chunks``
-                # may be empty for sparse/degenerate layouts; treat
-                # that as "no bump" since there's no chunk to gather.
+                # All-persistent block: no gather, no bump.
                 if not chunks or all(
                     ChunkId(int(cid)) in persistent_chunks for cid in chunks
                 ):
                     continue
             offload_bump_op[op_idxs[-1]] = int(block_id)
 
-    # Cumulative NONE / OFFLOAD activation bytes at each forward-op index.
-    # OFFLOAD retains activations on GPU symmetrically to NONE; the
-    # additional chunk gather bump fires at the per-block backward window
-    # via ``offload_bump_op`` and is added separately below.
+    # Cumulative NONE/OFFLOAD activation bytes per fwd-op index.
     block_first_op = {bid: ops[0] for bid, ops in forward_ops_by_block.items() if ops}
     blocks_in_fwd_order = sorted(block_first_op.items(), key=lambda kv: kv[1])
     cumulative_none: list[tuple[int, int]] = []  # (first_op_idx, cumulative)
@@ -382,11 +194,7 @@ def _block_map_peak_contribution(
             best = candidate
 
     if not have_any_forward:
-        # Degenerate trace: fall back to the NONE/OFFLOAD retained-
-        # activation total so the caller's peak is at least
-        # ``model_state_present + retained``. (OFFLOAD retains
-        # activations like NONE — the chunk-gather bump term would
-        # only fire during the op-walk if forward ops were present.)
+        # Degenerate trace fallback: NONE/OFFLOAD retained activation total.
         total_none = 0
         for bid_raw, act_sz in trace.activation_sizes.items():
             bid = BlockId(int(bid_raw))
@@ -405,74 +213,10 @@ def search(
     hw: HardwareProfile,
     cpu_capacity_bytes: int | None = None,
 ) -> SearchResult:
-    """Return the minimum-runtime ``SearchResult`` fitting under
-    ``capacity_bytes`` (and ``cpu_capacity_bytes`` when provided).
-
-    Parameters
-    ----------
-    trace, layout, hw:
-        See module docstring.
-    capacity_bytes:
-        GPU per-rank memory budget. Configs whose predicted peak
-        exceeds this are dropped before runtime evaluation.
-    cpu_capacity_bytes:
-        Optional per-rank pinned CPU RAM budget. When provided,
-        configs whose ``estimate_cpu_footprint`` exceeds this are
-        also dropped — the searcher then guarantees its pick fits
-        BOTH the GPU and CPU envelopes. ``None`` (the default)
-        preserves the pre-CPU-filter behaviour for backward
-        compatibility.
-
-    Raises
-    ------
-    RuntimeError
-        If no candidate clears both the GPU capacity gate and the
-        optional CPU capacity gate. The message distinguishes the two
-        failure modes so callers can tell whether to scale up GPU
-        memory or host RAM.
-
-    Notes
-    -----
-    Correctness is equivalent to the naive 5-loop enumeration over
-    ``(n_persist, n_buffer, n_swap, n_ckpt, n_offload)`` that calls
-    ``estimate_peak`` and ``estimate_runtime`` inside the inner
-    (n_persist, n_buffer) iteration. We exploit two structural
-    invariants to avoid quadratic op-walks across the full search
-    space:
-
-    1. ``estimate_peak``'s raw peak decomposes as
-       ``model_state_present(cfg, layout, trace) + F(block_map)``,
-       where ``model_state_present`` is the persistent + buffer-pool
-       residency from ``cost/memory.py::model_state_present_bytes``
-       (full Adam state per persistent chunk under fp16+full-FT,
-       fp16-only under LoRA-with-frozen-base; see Eq. 11 derivation
-       in ``estimate_peak``). The block-map-dependent term ``F`` is
-       independent of ``(n_persist, n_buffer)`` so we compute it once
-       per ``(n_swap, n_ckpt, n_offload)`` triple
-       (O(N_swap*N_ckpt*N_offload*N_op)).
-    2. ``estimate_runtime`` is a closed-form function of the config,
-       evaluated only for configs that already clear the capacity
-       gate — keeping the inner loop purely arithmetic.
-
-    For a 7B-class model this cuts the search from ~50 billion op-walk
-    iterations down to ~1 million, without changing the selected
-    ``(cfg, block_map)``.
-    """
+    """Return the minimum-runtime SearchResult fitting under capacity_bytes."""
     bounds = derive_bounds(trace, layout)
 
-    # Under ZeRO-3 sharding (``hw.zero3_shard=True``) each rank holds
-    # only ``chunk_bytes / world_size`` per non-persistent chunk on
-    # CPU, so the CPU-pressure constraint that would otherwise shrink
-    # viable ``n_buffer`` ceilings goes away. We therefore let
-    # ``n_buffer`` roam up to its natural upper bound of
-    # ``N_chunk - n_persist`` in both modes — the search's GPU-capacity
-    # gate (``predicted_peak > capacity_bytes``) is the only
-    # feasibility filter, and it is sharding-agnostic because the
-    # gather materializes the full chunk on GPU regardless. See
-    # ``cost/memory.py::estimate_cpu_footprint`` for the per-rank CPU
-    # accounting that would feed a tighter CPU-budget filter if one
-    # is added downstream.
-    _ = hw.zero3_shard  # noqa: F841 — explicit acknowledgement
+    _ = hw.zero3_shard  # noqa: F841
 
     n_total = 0
     n_feasible = 0
@@ -485,11 +229,9 @@ def search(
     best_block_map: BlockStrategyMap | None = None
     best_peak: int = 0
 
-    # Pre-compute block-map-dependent terms once per (n_swap, n_ckpt).
-    # ``F(block_map)`` is the raw-peak contribution excluding the
-    # ``(n_persist + n_buffer) * S_chunk`` term, pre-alpha.
+    # Pre-compute F(block_map) once per (n_swap, n_ckpt, n_offload).
     from axolotl.integrations.protrain.cost.memory import (
-        ALPHA_FRAGMENTATION,  # noqa: F401 — re-exported for downstream consumers
+        ALPHA_FRAGMENTATION,  # noqa: F401
         alpha_fragmentation_for_dtype,
         apply_hot_iter_cap,
         block_tree_index_map,
@@ -497,12 +239,11 @@ def search(
         model_state_present_bytes,
     )
 
-    # Must mirror estimate_peak's per-dtype alpha so the search's GPU-gate and the wrapper's post-search calibration agree.
+    # Mirror estimate_peak's per-dtype alpha so search gate and post-search calibration agree.
     alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
     s_chunk = layout.S_chunk
 
-    # Hoist trace-only maps out of the (n_swap, n_ckpt) hot loop —
-    # both depend on ``trace`` only, not ``block_map``.
+    # Hoist trace-only maps; depend on trace only, not block_map.
     forward_ops_by_block: dict[BlockId, list[int]] = defaultdict(list)
     for i, op in enumerate(trace.op_order):
         if op.is_forward and op.block_id is not None:
@@ -510,11 +251,6 @@ def search(
     tree_index_map = block_tree_index_map(trace)
 
     for n_ckpt in range(0, bounds.N_block + 1):
-        # Option B §4.3: outer loop over n_offload — added as a sibling
-        # axis to n_ckpt because the two trade against each other on the
-        # backward wall (Option B §4.2). Search space grows ~N_block-fold but
-        # the per-candidate work is closed-form so it stays sub-second on
-        # realistic Llama-3B/7B-class models.
         for n_offload in range(0, bounds.N_block - n_ckpt + 1):
             max_swap = min(bounds.N_block - n_ckpt - n_offload, bounds.N_interval)
             for n_swap in range(0, max_swap + 1):
@@ -522,63 +258,8 @@ def search(
                     n_swap, n_ckpt, bounds.N_block, n_offload=n_offload
                 )
 
-                # For a fixed (n_ckpt, n_swap) sweep n_persist. The optimal
-                # n_buffer at each n_persist is the maximum feasible value
-                # in [0, N_chunk - n_persist]: ``estimate_runtime``'s
-                # n_buffer dependence enters only through ``n_cached =
-                # min(n_buffer, n_nonpersist)`` inside the backward
-                # communication term, and
-                # ``max(compute, comm_cached) <= max(compute, comm_uncached)``
-                # because cached chunks skip the re-gather. So moving a
-                # chunk from uncached to cached never increases ``t_iter``;
-                # the argmin is reached by maximising n_buffer within
-                # capacity. That collapses the inner (n_persist, n_buffer)
-                # loop from O(N_chunk^2) to O(N_chunk), which is the
-                # difference between finishing in ~1s and ~10min on 7B
-                # configurations where ``N_chunk`` lands in the hundreds.
-                #
-                # Peak bound on (n_persist + n_buffer):
-                #   int(alpha * (sum * S_chunk + F_bm)) <= capacity
-                #   => sum <= floor((capacity/alpha - F_bm) / S_chunk)
-                #
-                # CAVEAT: this uses the legacy 1xS_chunk per-chunk
-                # multiplier. Under full FT the true model-state cost
-                # per persistent chunk is up to ~8x S_chunk (full Adam
-                # state, see ``model_state_present_bytes``), so this
-                # bound is OPTIMISTIC — it lets through more sums than
-                # are actually feasible. That is safe (never excludes
-                # a feasible config); the inner loop's tight GPU gate
-                # via ``model_state_present_bytes`` does the real
-                # rejection. The looseness only costs a few extra
-                # inner iterations per (n_swap, n_ckpt, n_offload).
-                #
-                # CAVEAT: this bound uses the uncapped ``F_bm`` raw-peak
-                # decomposition. The inner loop later applies the LAYERED
-                # ``hot_iter_peak_cap`` (see ``apply_hot_iter_cap``) which
-                # caps only the activation portion of ``raw_peak``, leaving
-                # ``model_state_present`` intact through the cap. So when
-                # the cap fires the predicted peak becomes
-                # ``alpha * (model_state_present + min(op_walk_portion,
-                # measured_activation_cap))`` — STILL n_persist-dependent
-                # via ``model_state_present`` (which scales up to ~8x for
-                # full FT through Adam state).
-                #
-                # We can therefore widen ``max_sum`` to ``N_chunk`` only
-                # when the layered cap at the WORST-CASE model-state floor
-                # still fits in capacity. The worst case is "all chunks
-                # persistent" (n_persist = N_chunk, n_buffer = 0) which
-                # maximises ``model_state_present_bytes`` for any given
-                # trace. Probe cfg below uses n_persist=N_chunk so that
-                # ``_cap_dominates`` is sound under the layered cap.
-                # Pre-fix this used n_persist=0 — that probe ignored the
-                # Adam-state contribution and admitted high-n_persist
-                # configs the inner-loop layered gate then rejected,
-                # wasting iterations. Tightening to N_chunk preserves the
-                # widening shortcut where it's still sound (LoRA-shape
-                # traces where ``persistent_factor ~= 1.0``) and disables
-                # it for full-FT shapes where it never paid off anyway.
-                # ``hot_iter_peak_cap`` itself does not read n_persist/
-                # n_buffer; only the layered application does.
+                # Inner loop maximises n_buffer within capacity; F_bm uses uncapped raw-peak.
+                # Probe with n_persist=N_chunk so the cap-domination check honours full Adam state.
                 _cap_probe_cfg = CostConfig(
                     n_persist=bounds.N_chunk,
                     n_buffer=0,
@@ -594,11 +275,6 @@ def search(
                         _cap_probe_cfg, layout, trace
                     )
                     _probe_raw = apply_hot_iter_cap(
-                        # raw_peak floor at probe cfg: model_state_present
-                        # is the dominant term; F_bm contributes activation
-                        # bumps that the cap then bounds. Use the same
-                        # probe ``_hot_cap`` as ``measured_cap`` and a
-                        # large sentinel for raw_peak so the cap binds.
                         _probe_model_state + _hot_cap,
                         _probe_model_state,
                         _hot_cap,
@@ -608,18 +284,7 @@ def search(
                 else:
                     _cap_dominates = False
 
-                # F_bm depends on ``n_persist`` via the OFFLOAD-bump term:
-                # ``_block_map_peak_contribution`` charges ``S_chunk`` per
-                # OFFLOAD block at that block's last forward op, but the
-                # runtime ``ChunkManager.gather`` short-circuits for
-                # persistent chunks (``chunk/manager.py::gather`` "Persistent
-                # chunks: no-op — they were never offloaded"). When an
-                # OFFLOAD block's chunks are all in the persistent set the
-                # backward-window chunk-buffer materialization does not
-                # happen, so the bump must be suppressed. When ``n_offload``
-                # is 0 the contribution is ``n_persist``-invariant and we
-                # hoist a single computation outside the inner loop;
-                # otherwise the inner loop recomputes per-``n_persist``.
+                # F_bm depends on n_persist via OFFLOAD bump suppression; hoist when n_offload==0.
                 f_bm_invariant: int | None
                 if n_offload == 0:
                     f_bm_invariant = _block_map_peak_contribution(
@@ -632,18 +297,8 @@ def search(
                 else:
                     f_bm_invariant = None
 
-                # The partition bound below uses
-                # ``len(prefix ∪ mandatory_persistent) + n_buffer <= N_chunk``
-                # — mandatory chunks always live on GPU and never consume
-                # a buffer-pool slot at runtime, so they must be counted
-                # against the partition budget alongside the prefix.
+                # Partition: |prefix ∪ mandatory_persistent| + n_buffer ≤ N_chunk.
                 for n_persist in range(0, bounds.N_chunk + 1):
-                    # Recompute ``f_bm`` per ``n_persist`` when OFFLOAD
-                    # blocks exist — the OFFLOAD bump drops out for blocks
-                    # whose chunks are all persistent (see
-                    # ``_block_map_peak_contribution`` docstring). When
-                    # ``n_offload == 0`` the value is invariant and the
-                    # hoisted ``f_bm_invariant`` is reused.
                     if f_bm_invariant is not None:
                         f_bm = f_bm_invariant
                     else:
@@ -663,10 +318,7 @@ def search(
                         max_sum = bounds.N_chunk
                     max_sum = max(0, min(max_sum, bounds.N_chunk))
 
-                    # Max feasible n_buffer at this n_persist (partition + capacity).
-                    # The partition bound is the *augmented* persistent count
-                    # (prefix ∪ mandatory) — mandatory chunks consume neither
-                    # a buffer slot nor a search-budget slot at runtime.
+                    # Max n_buffer: partition bound uses augmented persistent count (prefix ∪ mandatory).
                     persistent_count_aug = len(
                         layout.effective_persistent_ids(n_persist)
                     )
@@ -675,53 +327,20 @@ def search(
                         max_sum - persistent_count_aug,
                     )
                     if max_buffer < 0:
-                        # n_persist alone exceeds the capacity budget at
-                        # this ``f_bm``. With OFFLOAD active, future
-                        # ``n_persist`` values may have a SMALLER ``f_bm``
-                        # (more OFFLOAD blocks become fully persistent →
-                        # fewer bumps survive), so the budget can re-open;
-                        # use ``continue`` instead of ``break`` to keep
-                        # scanning. With no OFFLOAD blocks the budget is
-                        # monotone in n_persist and we can break.
+                        # OFFLOAD: budget may re-open at higher n_persist; only break on monotone n_offload==0.
                         if f_bm_invariant is not None:
                             break
                         continue
 
-                    # Scheduler needs enough buffers to hold (current block's
-                    # non-persistent chunks) union (next block's non-persistent
-                    # chunks) simultaneously — that's how the lookahead
-                    # prefetch in runtime/scheduler.py::pre_block_forward
-                    # works. Skip n_persist values that can't support that
-                    # minimum within the capacity budget.
+                    # Scheduler lookahead needs enough buffers for current + next block's non-persistent chunks.
                     min_buffer = min_n_buffer_for(layout, n_persist)
                     if min_buffer > max_buffer:
                         continue
                     if not block_map_runtime_admissible(layout, block_map, n_persist):
                         continue
 
-                    # Optimum n_buffer is the max feasible: cached chunks
-                    # skip re-gather in backward, and estimate_runtime is
-                    # monotone non-increasing in n_buffer through the
-                    # ``min(n_buffer, n_nonpersist)`` cache-hit term. We also
-                    # evaluate n_buffer = min_buffer as the tie-break
-                    # boundary so the picked config doesn't over-commit
-                    # buffer capacity when the runtime is flat.
-                    #
-                    # When the CPU-RAM gate is active, the 2-point shortcut
-                    # is unsound: ``max_buffer`` may fail the host-side
-                    # ``estimate_cpu_footprint`` check (more buffered chunks
-                    # = more pinned CPU staging) while an intermediate
-                    # ``n_buffer`` is feasible AND faster than ``min_buffer``.
-                    # Iterate the full feasible range in that case so we
-                    # don't spuriously raise "no config fits" or pick a
-                    # slower ``min_buffer`` config. Capacity bounds are
-                    # unchanged — we still scan within ``[min_buffer,
-                    # max_buffer]`` so the GPU gate stays enforced.
+                    # 2-point shortcut (min, max) for GPU-only; full range when CPU gate active.
                     if cpu_capacity_bytes is None:
-                        # Ordered tuple (min first) so tie-breaks prefer the
-                        # smaller buffer — matches the searcher's
-                        # strict ``<`` replacement rule below where the first
-                        # candidate iterated wins on equal predicted cost.
                         n_buffer_candidates: Iterable[int] = (min_buffer, max_buffer)
                     else:
                         n_buffer_candidates = range(min_buffer, max_buffer + 1)
@@ -734,32 +353,12 @@ def search(
                             n_checkpoint=n_ckpt,
                             n_offload=n_offload,
                         )
-                        # Model-state residency must use the same
-                        # persistent_factor / buffer_factor derivation
-                        # as ``cost/memory.py::estimate_peak`` — the
-                        # naive ``(n_persist + n_buffer) * S_chunk``
-                        # form under-counts full Adam state on
-                        # persistent chunks (8x S_chunk under fp16+Adam,
-                        # not 1x), so the searcher's pruning would
-                        # let through configs that ``estimate_peak``
-                        # then rejects on the final validation pass.
-                        # Single-source via ``model_state_present_bytes``
-                        # so the two sites cannot drift again
-                        # (regression follow-up to commit d908bf28).
+                        # Single-source model_state via model_state_present_bytes to match estimate_peak.
                         model_state_present = model_state_present_bytes(
                             cfg, layout, trace
                         )
                         raw_peak = model_state_present + f_bm
-                        # Apply the hot-iter ground-truth cap (v6+ traces with
-                        # per-block peaks). Goes through the shared layered
-                        # helper so this site and ``cost/memory.py::estimate_peak``
-                        # cannot drift — the cap is a forward-only profiler
-                        # measurement that does NOT include Adam state, so a
-                        # naive ``raw_peak = min(raw_peak, _cap)`` clamp
-                        # silently erased ``model_state_present`` and made the
-                        # searcher disagree with ``estimate_peak`` by ~90x on
-                        # full-FT shapes (Codex-confirmed regression after the
-                        # 909fc9ea fix landed in cost/memory.py only).
+                        # Layered cap (apply_hot_iter_cap) preserves model_state through the cap.
                         _cap = hot_iter_peak_cap(trace, block_map, cfg, layout=layout)
                         raw_peak = apply_hot_iter_cap(
                             raw_peak, model_state_present, _cap, layout
@@ -768,12 +367,7 @@ def search(
                         if predicted_peak > capacity_bytes:
                             continue
                         n_gpu_feasible += 1
-                        # Hard CPU-RAM feasibility gate. Skipped when
-                        # ``cpu_capacity_bytes`` is None (caller opted out
-                        # of host-side filtering — backward-compatible
-                        # default). Estimated bytes are per-rank pinned
-                        # CPU; sharding is reflected via hw.zero3_shard
-                        # inside ``estimate_cpu_footprint``.
+                        # Optional CPU-RAM gate (per-rank pinned bytes).
                         if cpu_capacity_bytes is not None:
                             cpu_footprint = estimate_cpu_footprint(
                                 cfg, layout, hw, trace=trace
@@ -785,61 +379,11 @@ def search(
                         predicted_iter_s = estimate_runtime(
                             cfg, trace, layout, block_map, hw
                         )
-                        # Non-finite runtime (e.g. inf when CPU-Adam is
-                        # unavailable for non-persistent chunks, or NaN from
-                        # an underlying numerical failure) means this config
-                        # cleared every capacity gate but cannot be costed.
-                        # Track separately so the failure-mode disambiguator
-                        # below doesn't blame GPU/CPU capacity when the real
-                        # binding constraint is a runtime/dependency gap.
+                        # Non-finite runtime: track separately to disambiguate failure mode.
                         if not math.isfinite(predicted_iter_s):
                             n_runtime_rejected += 1
                             continue
-                        # Stability-aware tie-break.
-                        #
-                        # Phase-2 timing measurements have a 5-sample-median
-                        # noise floor around 5%. With strict ``<`` replacement
-                        # the searcher's pick can flip between consecutive
-                        # runs whenever two cfgs land within that noise band:
-                        # the runtime ranking re-orders, the searcher promotes
-                        # whichever cfg got the lucky measurement, and the 7B
-                        # integration test sees different ``n_checkpoint``
-                        # picks across nominally identical reruns. The
-                        # underlying cost ranking has no real preference
-                        # between near-tied cfgs — we just need the picker to
-                        # be deterministic when the analytical model can't
-                        # tell them apart.
-                        #
-                        # Replace with a near-tie-aware comparator: a cfg
-                        # only displaces the incumbent if it's BOTH
-                        # measurably faster (>= 1% improvement, which is
-                        # below the noise floor — anything below that is
-                        # "tied") OR strictly faster AND the tie-break
-                        # prefers it. The tie-break prefers cfgs that are
-                        # more robust to small cost perturbations:
-                        #
-                        #   1. lower ``n_checkpoint`` — fewer recompute
-                        #      blocks → less measurement-dependent runtime
-                        #      sensitivity (CKPT recompute wall scales
-                        #      with the chunked phase-2 wall, the most
-                        #      noisy term in the model).
-                        #   2. higher ``n_persist`` — more chunks pinned
-                        #      on GPU avoids the gather/H2D path entirely,
-                        #      which removes the noisiest bandwidth-derate
-                        #      term from the runtime model.
-                        #   3. lower ``n_buffer`` — among same-(persist,
-                        #      ckpt) pairs the smaller buffer is the more
-                        #      conservative pick.
-                        #
-                        # Outcome: when two cfgs predict iter times within
-                        # 1% of each other, the same cfg is picked
-                        # deterministically across runs. When they're
-                        # MEASURABLY different (> 1% gap), the faster cfg
-                        # always wins as before. The 1% threshold is well
-                        # below the cost-model's claimed accuracy floor
-                        # (~5% same-SKU same-rig variance per the 7B
-                        # integration test docstring), so we never lose a
-                        # genuine speed win to the tie-break.
+                        # Near-tie aware comparator (1% noise floor); prefer (lower ckpt, higher persist, lower buffer).
                         _NEAR_TIE_RATIO = 0.01
                         if best_cfg is None:
                             best_iter_s = predicted_iter_s
@@ -849,18 +393,12 @@ def search(
                         else:
                             improvement = best_iter_s - predicted_iter_s
                             if improvement >= best_iter_s * _NEAR_TIE_RATIO:
-                                # Measurably faster — always replace.
                                 best_iter_s = predicted_iter_s
                                 best_cfg = cfg
                                 best_block_map = block_map
                                 best_peak = predicted_peak
                             elif improvement > 0:
-                                # Within the noise band but strictly faster.
-                                # Apply tie-break: prefer (lower n_ckpt,
-                                # higher n_persist, lower n_buffer) tuple.
-                                # Lexicographic tuple comparison: smaller
-                                # tuple wins → use ``-n_persist`` to invert
-                                # n_persist into a "smaller-is-better" axis.
+                                # In noise band: tie-break by (n_ckpt, -n_persist, n_buffer).
                                 cur_key = (
                                     cfg.n_checkpoint,
                                     -cfg.n_persist,
@@ -878,12 +416,7 @@ def search(
                                     best_peak = predicted_peak
 
     if best_cfg is None or best_block_map is None:
-        # Disambiguate the failure mode for the caller. If every fully
-        # capacity-feasible config produced a non-finite runtime
-        # estimate, the binding constraint is a runtime/dependency gap
-        # (e.g. CPU-Adam unavailable for non-persistent chunks), not
-        # capacity — surface that explicitly so the user doesn't waste
-        # time chasing memory budgets.
+        # Disambiguate runtime-rejection vs capacity-rejection failure modes.
         if n_feasible > 0 and n_runtime_rejected == n_feasible:
             raise RuntimeError(
                 "no ProTrain config has a finite runtime estimate; every "
@@ -892,10 +425,7 @@ def search(
                 "for non-persistent chunks on this setup). Evaluated "
                 f"{n_total} configs total."
             )
-        # If at least one candidate cleared the GPU gate but every such
-        # candidate exceeded the CPU envelope, the binding constraint is
-        # host RAM, not GPU memory — surface that explicitly so the user
-        # knows to add nodes / system RAM rather than larger cards.
+        # CPU-bound failure: GPU gate cleared but CPU envelope exceeded.
         if (
             cpu_capacity_bytes is not None
             and n_gpu_feasible > 0
