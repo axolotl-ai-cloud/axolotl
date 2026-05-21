@@ -70,8 +70,7 @@ MODEL_STATE_BYTES_30B_QLORA = 16 * GiB
 
 
 def _build_layout() -> ChunkLayout:
-    """Reconstruct the audit's chunk layout (N_chunk=302 x 64 MiB) with the three layout-mandatory chunks pinned.
-    """
+    """Reconstruct the audit's chunk layout (N_chunk=302 x 64 MiB) with the three layout-mandatory chunks pinned."""
     chunks = tuple((ParamId(f"p.{cid}"),) for cid in range(N_CHUNK))
     param_to_chunk = {ParamId(f"p.{cid}"): ChunkId(cid) for cid in range(N_CHUNK)}
     # Single dummy block_to_chunks entry (the audit n_offload=0 cfg
