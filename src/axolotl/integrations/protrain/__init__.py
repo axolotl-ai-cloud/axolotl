@@ -1,12 +1,4 @@
-"""ProTrain: automatic memory management for Axolotl (arXiv 2406.08334, MLSys 2026).
-
-Exposed as an Axolotl plugin. User opt-in in YAML:
-
-    plugins:
-      - axolotl.integrations.protrain.ProTrainPlugin
-
-See DESIGN.md for module layout and paper-section references.
-"""
+"""ProTrain: automatic memory management for Axolotl."""
 
 from axolotl.integrations.protrain.api import (
     auto_wrap,

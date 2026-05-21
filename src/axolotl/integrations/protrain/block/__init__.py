@@ -1,15 +1,4 @@
-"""ProTrain block-manager subpackage (§3.1.2).
-
-Public surface:
-
-- ``BlockMode`` — activation strategy enum (re-exported from ``strategy.py``).
-- ``wrap_block`` / ``unwrap_block`` — per-block mode dispatcher.
-- ``assign_modes`` — layout rules (swap-early, unopt-late, interleave).
-- ``discover_blocks`` — find the transformer-block trees on a model.
-- ``BlockTree`` — one tree (encoder, decoder, or single causal-LM tree).
-- ``flatten_block_trees`` — concat trees into a forward-ordered block list.
-- ``block_id_path_map`` — dotted-path -> global BlockId, for the trace.
-"""
+"""ProTrain block-manager subpackage."""
 
 from __future__ import annotations
 

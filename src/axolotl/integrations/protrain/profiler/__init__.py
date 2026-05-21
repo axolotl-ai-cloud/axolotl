@@ -1,9 +1,4 @@
-"""ProTrain memory-aware profiler subpackage (M1).
-
-Public surface: a single-GPU, single-iteration tracer that records intra- and
-inter-operator memory deltas, hardware microbenchmarks, and a reusable
-on-disk cache.
-"""
+"""ProTrain memory-aware profiler subpackage."""
 
 from __future__ import annotations
 
@@ -29,23 +24,7 @@ from axolotl.integrations.protrain.types import ProfilerTrace
 
 
 def reconstruct_peak_bytes(trace: ProfilerTrace) -> int:
-    """SIMPLIFIED peak reconstruction for the M1 accuracy contract.
-
-    Returns
-
-        peak = model_state_bytes
-             + sum(activation_sizes.values())
-             + max(intra_op_delta.values())
-             + max(inter_op_delta.values())
-
-    This is intentionally cruder than the full Eqs. 8-11 from the ProTrain
-    paper (per-block retained-vs-checkpoint-vs-swap decisions, alpha=1.10
-    fragmentation, bumps at the first op of each CKPT block). The full
-    reconstruction lives in ``cost/memory.py:estimate_peak``; this simplified
-    version provides a peak estimate that matches ``torch.cuda.max_memory_allocated()``
-    within ~10 percent on a tiny model with no optimizations enabled, because
-    both numbers track the same physical quantity when every block is NONE.
-    """
+    """Simplified peak = model_state + sum(activations) + max(intra) + max(inter)."""
     activations = sum(trace.activation_sizes.values())
     intra = max(0, max(trace.intra_op_delta.values(), default=0))
     inter = max(0, max(trace.inter_op_delta.values(), default=0))
