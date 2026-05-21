@@ -1,14 +1,4 @@
-"""Per-block mode dispatcher.
-
-Takes an ``nn.Module`` plus a ``BlockMode`` and returns the wrapped
-module that implements that mode. The inverse ``unwrap_block`` returns
-the original block, letting callers re-wrap idempotently (rewrapping
-an already-wrapped block unwraps first, then re-wraps under the new
-mode).
-
-Wrapped modules carry a ``_protrain_wrapped_mode`` attribute so that
-inspection, unwrap, and re-wrap all work without needing a registry.
-"""
+"""Per-block mode dispatcher; idempotent wrap/unwrap via _protrain_wrapped_mode marker."""
 
 from __future__ import annotations
 
@@ -32,12 +22,7 @@ def _is_wrapped(block: nn.Module) -> bool:
 
 
 def unwrap_block(block: nn.Module) -> nn.Module:
-    """Return the original module underneath any ProTrain wrapper.
-
-    If ``block`` is not wrapped this is a no-op that returns ``block``
-    unchanged. Raises ``StrategyError`` if the marker is present but the
-    inner ``block`` attribute is missing (corrupt state).
-    """
+    """Return the original module under any ProTrain wrapper; no-op if unwrapped."""
     if not _is_wrapped(block):
         return block
     inner = getattr(block, "block", None)
@@ -50,19 +35,7 @@ def unwrap_block(block: nn.Module) -> nn.Module:
 
 
 def wrap_block(block: nn.Module, mode: BlockMode) -> nn.Module:
-    """Dispatch ``block`` to the wrapper implementing ``mode``.
-
-    - ``BlockMode.NONE`` — returns ``block`` unchanged (identity).
-    - ``BlockMode.CKPT`` — wraps with ``CheckpointedBlock``.
-    - ``BlockMode.SWAP`` — wraps with ``SwappedBlock``. The wrapper
-      pool + swap stream are injected post-construction by the model
-      wrapper via ``SwappedBlock.attach_runtime``; see ``swap.py``.
-
-    Idempotent: if ``block`` is already wrapped, it is unwrapped first
-    and then re-wrapped under ``mode``. This lets the searcher re-apply
-    a new layout without needing external state.
-    """
-    # Unwrap first to keep the operation idempotent.
+    """Dispatch block to NONE / CKPT / SWAP / OFFLOAD wrapper; idempotent (unwrap-then-rewrap)."""
     if _is_wrapped(block):
         block = unwrap_block(block)
 
