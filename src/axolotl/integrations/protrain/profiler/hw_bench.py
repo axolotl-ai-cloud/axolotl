@@ -14,65 +14,13 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# Serializes the global ``DeepSpeedCPUAdam.__del__`` monkey-patch installed
-# inside :func:`measure_cpu_adam` so two concurrent callers can't race each
-# other into observing a half-restored class attribute. The patch is still
-# globally visible to OTHER threads while the lock is held — see the docstring
-# of :func:`_patched_deepspeed_cpu_adam_del` for the rationale and the
-# tradeoff vs. a forked-subprocess isolation strategy.
+# Serialise the global DeepSpeedCPUAdam.__del__ monkey-patch.
 _CPU_ADAM_DEL_PATCH_LOCK = threading.Lock()
 
 
 @contextmanager
 def _patched_deepspeed_cpu_adam_del(deepspeed_cpu_adam_cls: type) -> Iterator[None]:
-    """Install a partial-init-safe ``__del__`` on ``DeepSpeedCPUAdam`` for the
-    duration of the context, restoring the original on exit.
-
-    Why this exists
-    ---------------
-    ``DeepSpeedCPUAdam.__del__`` calls ``self.ds_opt_adam.destroy_adam(...)``
-    unconditionally. When the constructor raises BEFORE ``ds_opt_adam`` is
-    set (common on dev rigs with CUDA toolchain mismatch), every GC pass
-    raises ``AttributeError`` from the finaliser. Python's unraisable-exception
-    handler fires, pytest's warning-capture hook intercepts it, and the
-    resulting traceback transitively pins autograd tensors from any
-    ``ProfilerTrace``'s traced forward pass (observed as +50 MB
-    ``memory_allocated`` on tiny-GPT2 in suite-level runs). Neutralising the
-    finaliser locally before construction is the cleanest way to avoid this.
-
-    Why a lock + monkey-patch instead of a subprocess
-    -------------------------------------------------
-    The cleaner alternative — running ``measure_cpu_adam`` in a child
-    process — does not work in practice:
-
-    * ``multiprocessing.get_context("fork")`` fails with "Cannot re-initialize
-      CUDA in forked subprocess" because callers (notably
-      ``profiler/trace.py``) routinely have CUDA initialised in the parent
-      before the benchmark runs, and ``DeepSpeedCPUAdam``'s op-builder load
-      path touches ``torch.cuda.*`` even though the optimizer itself is CPU-
-      only.
-    * ``multiprocessing.get_context("spawn")`` works in principle but adds
-      multi-second Python + torch + DeepSpeed import overhead per call, on
-      top of the JIT-compile cost that DeepSpeedCPUAdam pays the first time
-      ``CPUAdamBuilder().load()`` runs in a fresh interpreter. That cost
-      dominates the whole microbenchmark and breaks the lightweight-probe
-      contract callers rely on.
-
-    The lock therefore serialises only concurrent ``measure_cpu_adam``
-    invocations against each other; OTHER threads in the same process that
-    instantiate ``DeepSpeedCPUAdam`` while the benchmark is running can
-    still observe the patched ``__del__``. This matches the original
-    behaviour but with race-free attribute restoration. ProTrain's
-    profiling pipeline calls ``measure_cpu_adam`` once per trace from the
-    main thread before any production training optimizer is constructed,
-    so the residual exposure window is closed in practice.
-
-    Parameters
-    ----------
-    deepspeed_cpu_adam_cls:
-        The ``DeepSpeedCPUAdam`` class (passed in instead of imported here
-        so the import error path stays in the caller).
-    """
+    """Install a partial-init-safe ``__del__`` on DeepSpeedCPUAdam for the context."""
     with _CPU_ADAM_DEL_PATCH_LOCK:
         sentinel = object()
         original = deepspeed_cpu_adam_cls.__dict__.get("__del__", sentinel)
@@ -88,12 +36,7 @@ def _patched_deepspeed_cpu_adam_del(deepspeed_cpu_adam_cls: type) -> Iterator[No
         try:
             yield
         finally:
-            # Restore the EXACT prior state: if the class did not define
-            # ``__del__`` natively (rare; current DeepSpeed always does) we
-            # delete our override so attribute lookup falls through. If it
-            # did, we re-bind the original function object back onto the
-            # class — re-bind to the *original* class attribute, not a
-            # captured bound method, to avoid leaking stale ``self`` refs.
+            # Restore exact prior state: delete override if class lacked __del__, else rebind.
             if original is sentinel:
                 try:
                     del deepspeed_cpu_adam_cls.__del__  # type: ignore[attr-defined]
@@ -111,20 +54,7 @@ def _patched_deepspeed_cpu_adam_del(deepspeed_cpu_adam_cls: type) -> Iterator[No
 DEFAULT_COMPUTE_RATE_TFLOPS: float = 50.0
 
 
-# Bytes-per-param accounting used by the Adam microbenchmarks below.
-# Breakdown (simplified; see module docstring in cost/runtime.py):
-#   fp16 param    : 2 B read + 2 B write = 4 B
-#   fp16 grad     : 2 B read             = 2 B
-#   fp32 master   : 4 B read + 4 B write = 8 B
-#   fp32 momentum : 4 B read + 4 B write = 8 B
-#   fp32 variance : 4 B read + 4 B write = 8 B (counted as 2x momentum below)
-# Collapsing the two momenta into a single "2x momentum" term and rounding
-# to the roofline-style estimate the paper uses lands at ~30 B/param. We
-# keep the constant conservative (20 B/param) because DeepSpeedCPUAdam and
-# apex FusedAdam both fuse the master+momenta update into a single kernel
-# that does fewer round-trips to DRAM than the naive count predicts. The
-# MEASURED throughput returned is empirical regardless; this constant only
-# determines the units (bytes/sec) we report.
+# Adam bytes/param accounting; conservative 20 B/param (fused kernels lower the actual count).
 _ADAM_BYTES_PER_PARAM: int = 20
 
 
@@ -133,17 +63,7 @@ def measure_pcie(
     n_bytes: int = 256 * 1024 * 1024,
     n_iters: int = 5,
 ) -> tuple[float, float]:
-    """Measure sustained H2D and D2H bandwidth on a single device.
-
-    Uses a pinned host tensor and ``torch.cuda.Event`` for timing. Returns
-    ``(h2d_bps, d2h_bps)`` in bytes/sec.
-
-    Args:
-        device_idx: CUDA device ordinal.
-        n_bytes: payload size. 256 MiB is large enough to saturate PCIe 4.0 x16
-            on a 3090 (~26 GB/s peak) without blowing up small-device budgets.
-        n_iters: repetitions — the first is a warmup and is discarded.
-    """
+    """Measure sustained H2D and D2H bandwidth on a single device; returns (h2d_bps, d2h_bps)."""
     if n_iters < 1:
         raise ValueError(f"measure_pcie: n_iters must be >= 1, got {n_iters}")
 
@@ -158,15 +78,7 @@ def measure_pcie(
     host = torch.empty(n_bytes, dtype=torch.uint8, pin_memory=True)
     gpu = torch.empty(n_bytes, dtype=torch.uint8, device=device)
 
-    # Bind the timing events to ``device_idx`` so they record on the
-    # right device under CUDA_VISIBLE_DEVICES masking / multi-GPU rigs.
-    # ``torch.cuda.Event`` infers its device from the current device at
-    # construction time AND ``event.record()`` / ``torch.cuda.synchronize``
-    # are device-bound operations — if any of these run with a different
-    # default device than the events were created on, the events bind to
-    # the wrong stream/device and we get nonsensical ``elapsed_time``
-    # readings (or a hard error on cross-device record). Wrap event
-    # creation, record, and synchronize in a single device guard.
+    # Bind events + record + sync to device_idx under one device guard.
     h2d_times: list[float] = []
     d2h_times: list[float] = []
     with torch.cuda.device(device_idx):
@@ -206,34 +118,7 @@ def measure_pcie(
 
 
 def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
-    """Return bytes/sec throughput of CPU Adam on this host.
-
-    Benchmarks ``deepspeed.ops.adam.DeepSpeedCPUAdam`` (the kernel the
-    ``CpuFusedAdamAdapter`` uses in production) over a synthetic
-    ``n_params``-long fp16 parameter + fp16 grad + fp32 optimizer state.
-    Returns 0.0 if DeepSpeedCPUAdam cannot be imported or compiled —
-    the cost model falls back to a hardcoded prior in that case.
-
-    The default ``n_params = 10M`` yields ~200 MB of state (20 B/param) —
-    well beyond L2/L3 cache sizes on any relevant host, so the measurement
-    reflects sustained DRAM bandwidth rather than a cache-resident
-    microbench.
-
-    Parameters
-    ----------
-    n_params:
-        Number of scalar fp16 parameters in the synthetic model.
-    n_iters:
-        Step invocations timed. The first is a warmup and is discarded
-        from the median.
-
-    Returns
-    -------
-    float
-        Sustained Adam throughput in bytes/sec, where bytes = n_params *
-        20 (see ``_ADAM_BYTES_PER_PARAM`` for the accounting breakdown).
-        ``0.0`` on compile / import failure.
-    """
+    """Return bytes/sec throughput of CPU Adam; 0.0 on import/compile failure."""
     if n_iters < 1:
         raise ValueError(f"measure_cpu_adam: n_iters must be >= 1, got {n_iters}")
 
@@ -253,15 +138,8 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
     import torch
     from torch import nn
 
-    # The ``__del__`` monkey-patch is scoped to a context manager that is
-    # serialised on a module-level lock so concurrent ``measure_cpu_adam``
-    # callers can't race each other into a half-restored class attribute.
-    # See ``_patched_deepspeed_cpu_adam_del`` for the rationale and the
-    # tradeoff vs. a forked-subprocess isolation strategy (fork after
-    # parent CUDA-init fails; spawn adds prohibitive startup overhead).
     with _patched_deepspeed_cpu_adam_del(DeepSpeedCPUAdam):
-        # Synthetic fp16 param + fp16 grad on CPU; DeepSpeedCPUAdam allocates
-        # fp32 master + two fp32 momenta internally on first step.
+        # fp32 master + 2x momenta allocated internally on first step.
         param = nn.Parameter(
             torch.randn(n_params, dtype=torch.float16, device="cpu"),
             requires_grad=True,
@@ -275,10 +153,7 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
                 "measure_cpu_adam: DeepSpeedCPUAdam constructor failed (%s); returning 0.0",
                 repr(exc),
             )
-            # Drop the exception traceback before returning so it can't pin
-            # locals (and, via cycles, autograd tensors from the subsequent
-            # traced forward pass — observed as a +50 MB ``memory_allocated``
-            # ghost on tiny-GPT2 under pytest's unraisable-warning hook).
+            # Drop traceback so frame locals don't pin autograd tensors.
             exc.__traceback__ = None
             del exc, param
             return 0.0
@@ -292,8 +167,7 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
 
         iter_s: list[float] = []
         for _ in range(n_iters):
-            # Re-populate grad each iter — Adam consumes it in-place but the
-            # measurement should track the steady-state kernel cost.
+            # Re-populate grad each iter for steady-state kernel cost.
             param.grad = torch.randn(n_params, dtype=torch.float16, device="cpu")
             t0 = time.perf_counter()
             optim.step()
@@ -311,9 +185,7 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
                 median_iter,
                 bps / 1e9,
             )
-        # Explicit cleanup — same rationale as measure_gpu_adam. We omit
-        # gc.collect() here to avoid perturbing pytest's unraisable-exception
-        # tracking of a failed DeepSpeedCPUAdam __del__ path.
+        # Explicit cleanup; skip gc.collect to avoid pytest unraisable-warning interference.
         try:
             optim.zero_grad(set_to_none=True)
             optim.state.clear()
@@ -326,43 +198,7 @@ def measure_cpu_adam(n_params: int = 10_000_000, n_iters: int = 10) -> float:
 def measure_gpu_adam(
     device_idx: int = 0, n_params: int = 5_000_000, n_iters: int = 10
 ) -> float:
-    """Return bytes/sec throughput of GPU Adam on this device.
-
-    Uses the same fallback chain as
-    :class:`axolotl.integrations.protrain.chunk.optim.GpuFusedAdamAdapter`:
-    ``apex.optimizers.FusedAdam`` first (paper-cited), then
-    ``torch.optim.AdamW(fused=True)``, then stock ``torch.optim.AdamW``.
-    Returns 0.0 in either of two cases: (a) a CUDA outage (``torch.cuda``
-    not available on this device), or (b) a full fallback-chain failure
-    where every Adam backend fails to construct OR fails its warmup
-    step. Callers must treat 0.0 as "throughput unknown / unmeasurable"
-    rather than "GPU Adam is unsupported".
-
-    Parameters
-    ----------
-    device_idx:
-        CUDA ordinal.
-    n_params:
-        Scalar fp16 params in the synthetic model. The default 5M
-        (~5e6) yields ~100 MB of optimizer state — fp16 params + fp16
-        grads + fp32 master + fp32 exp_avg + fp32 exp_avg_sq totals
-        roughly 20 bytes/param × 5e6 = 100 MB. That's already outside
-        L2 on any 3090-class GPU (which carries a few MB of L2), so
-        the measurement reflects HBM bandwidth rather than L2
-        residency.
-    n_iters:
-        Timed step invocations. The first is a warmup, discarded.
-
-    Returns
-    -------
-    float
-        Throughput in bytes/sec (n_params * 20 / median_iter_s). Returns
-        0.0 on (a) CUDA outage / unavailable on this device, (b) every
-        candidate backend failing warmup or measurement, or (c) the
-        whole fallback chain failing to construct any Adam
-        implementation. Callers must treat 0.0 as "throughput unknown
-        / unmeasurable" rather than "GPU Adam is unsupported".
-    """
+    """Return bytes/sec throughput of GPU Adam; 0.0 when no backend works."""
     if n_iters < 1:
         raise ValueError(f"measure_gpu_adam: n_iters must be >= 1, got {n_iters}")
 
@@ -381,19 +217,13 @@ def measure_gpu_adam(
     )
     param.grad = torch.randn(n_params, dtype=torch.float16, device=device)
 
-    # Try each backend candidate in priority order. A backend is selected
-    # only if BOTH construction AND warmup succeed, so a runtime-bad
-    # backend (e.g. fused AdamW that builds but explodes on first step
-    # due to GPU/driver mismatch) falls through to the next candidate
-    # rather than poisoning the whole measurement with 0.0.
+    # Backend selected only if BOTH construction AND warmup succeed.
     def _try_apex() -> torch.optim.Optimizer:
         from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
 
         return FusedAdam([param], lr=1e-4)
 
     def _try_torch_fused() -> torch.optim.Optimizer:
-        # torch.optim.FusedAdam is a nightly-only alias; the stable
-        # name is AdamW with fused=True on CUDA.
         return torch.optim.AdamW([param], lr=1e-4, fused=True)
 
     def _try_torch_stock() -> torch.optim.Optimizer:
@@ -417,8 +247,7 @@ def measure_gpu_adam(
             LOG.debug(
                 "measure_gpu_adam: backend=%s failed (%s); trying next", name, exc
             )
-            # Discard the half-initialized optimizer + its state so the
-            # next candidate starts from a clean slate.
+            # Discard half-initialized optimizer so next candidate starts clean.
             try:
                 del candidate  # type: ignore[possibly-unused-variable]
             except UnboundLocalError:
@@ -468,10 +297,7 @@ def measure_gpu_adam(
     # Fused AdamW holds references to optim-state tensors in ``optim.state``
     # and sometimes via CUDA graph caches, so a plain ``del`` isn't enough.
     # We explicitly clear the state dict and zero out ``param.data`` so the
-    # caching allocator can reclaim the blocks; empty_cache is intentionally
-    # NOT called because it forces the upcoming traced forward pass to
-    # re-reserve memory from scratch, inflating its first-iter peak vs. the
-    # ground-truth run that the reconstruct-peak test compares against.
+    # No empty_cache; would force the traced forward to re-reserve memory.
     try:
         optim.zero_grad(set_to_none=True)
         optim.state.clear()
@@ -485,11 +311,7 @@ def measure_gpu_adam(
     return float(bps)
 
 
-# Payload sizes (bytes) swept by the multi-rank NCCL benchmark. Chosen to
-# bracket the realistic ProTrain chunk sizes — S_chunk is selected from
-# {32, 64, 128, 256} MiB per ``chunk/sizing.py``, so 64 MiB and 256 MiB sit
-# at the centre of the sweep. The 1/4/16 MiB end captures the small-collective
-# regime where launch latency dominates over bandwidth.
+# NCCL benchmark payload sizes spanning ProTrain's S_chunk range + small-collective regime.
 NCCL_PAYLOAD_SIZES_BYTES: tuple[int, ...] = (
     1 << 20,  # 1 MiB
     4 << 20,  # 4 MiB
@@ -506,49 +328,7 @@ def measure_nccl(
     n_iters: int = 8,
     n_warmup: int = 2,
 ) -> tuple[dict[int, float], dict[int, float]]:
-    """Measure NCCL gather + reduce latencies per payload size.
-
-    Returns ``(gather_table, reduce_table)`` where each table maps payload
-    bytes -> median collective time in seconds. Used by ``cost/runtime.py``
-    to predict per-chunk all_gather / reduce_scatter cost for a given
-    ``S_chunk`` choice.
-
-    Single-rank fast path returns ``({}, {})`` — no NCCL traffic on
-    ``world_size == 1`` and the searcher's communication term collapses.
-
-    Multi-rank path requires the caller to have already initialized
-    ``torch.distributed`` with GPU-backed collectives. ProTrain targets
-    NCCL here, and this benchmark requires CUDA tensors. Running under
-    ``torchrun`` is the standard way; ``scripts/protrain/measure_nccl.py``
-    is a standalone driver that bootstraps a rendezvous on-demand.
-
-    The benchmark uses ``all_gather_into_tensor`` (gather) and
-    ``reduce_scatter_tensor`` (reduce) — these are the exact collectives
-    ProTrain's M7 ZeRO-3 sharding path issues per chunk, so the measured
-    times are directly applicable. ``n_warmup`` iterations bring the NCCL
-    communicator + GPU IPC handles into steady state; the remaining
-    ``n_iters`` are timed and the median is recorded.
-
-    Parameters
-    ----------
-    world_size:
-        Expected distributed world size. Sanity-checked against
-        ``torch.distributed.get_world_size()`` to surface configuration
-        bugs early (e.g. caller passed ``world_size=4`` but the rendezvous
-        only sees 2 ranks).
-    payload_sizes_bytes:
-        Payload sizes to benchmark, in bytes. Default sweeps 1 MiB →
-        256 MiB which brackets the typical S_chunk range.
-    n_iters:
-        Timed iterations per payload. Median is recorded.
-    n_warmup:
-        Warm-up iterations per payload (discarded).
-
-    Returns
-    -------
-    tuple[dict[int, float], dict[int, float]]
-        ``(gather_seconds_by_size, reduce_seconds_by_size)``.
-    """
+    """Measure NCCL gather + reduce latencies per payload size."""
     if n_iters < 1:
         raise ValueError(f"measure_nccl: n_iters must be >= 1, got {n_iters}")
     if n_warmup < 0:
@@ -557,14 +337,7 @@ def measure_nccl(
     import torch
     import torch.distributed as dist
 
-    # Single-rank fast path: validate against the runtime distributed
-    # world size BEFORE returning empty tables. Otherwise a multi-rank
-    # job that accidentally calls ``measure_nccl(world_size=1)`` would
-    # silently skip the benchmark and produce empty tables — the
-    # downstream cost model then degrades to all-CPU bandwidth
-    # estimates without any signal that the NCCL measurement was
-    # bypassed. Only short-circuit when EITHER ``dist`` is unavailable
-    # / uninitialized OR the runtime world size also reports 1.
+    # Single-rank fast path: validate against runtime world size first to catch misconfig.
     if world_size == 1:
         if not dist.is_available() or not dist.is_initialized():
             return ({}, {})
@@ -604,15 +377,13 @@ def measure_nccl(
             "measure_nccl requires CUDA — NCCL collectives need GPU tensors."
         )
     device = torch.device(f"cuda:{torch.cuda.current_device()}")
-    # Extract the integer ordinal so ``torch.cuda.device(device_idx)`` can
-    # guard event construction + record + synchronize against a stale
-    # ``current_device()`` under multi-GPU / CUDA_VISIBLE_DEVICES masking.
+    # Extract ordinal for device guards against stale current_device under masking.
     device_idx = device.index if device.index is not None else 0
 
     gather_table: dict[int, float] = {}
     reduce_table: dict[int, float] = {}
 
-    # surface communicator-config asymmetry as a debuggable barrier hang instead of a SIGSEGV inside the first collective
+    # Pre-collective barrier surfaces communicator asymmetry as a debuggable hang.
     try:
         dist.barrier(device_ids=[device_idx])
     except Exception as exc:  # pragma: no cover - defensive
@@ -623,7 +394,7 @@ def measure_nccl(
         ) from exc
 
     for payload_bytes in payload_sizes_bytes:
-        # Key the table by actually-benchmarked bytes so non-divisible payloads don't mis-label the lookup.
+        # Key by actually-benchmarked bytes so non-divisible payloads don't mis-label.
         element_size = 4  # float32
         elements_per_shard = max(1, (payload_bytes // world_size) // element_size)
         actual_payload_bytes = elements_per_shard * world_size * element_size
@@ -639,8 +410,7 @@ def measure_nccl(
             dist.all_gather_into_tensor(gathered, shard)
         torch.cuda.synchronize(device)
 
-        # Timed — wrap event construction + record + synchronize in one
-        # device guard (cheaper than entering on each iter, equally correct).
+        # Timed under one device guard for amortised cost.
         gather_times: list[float] = []
         with torch.cuda.device(device_idx):
             start = torch.cuda.Event(enable_timing=True)
@@ -653,9 +423,7 @@ def measure_nccl(
                 gather_times.append(start.elapsed_time(end) / 1000.0)
         gather_table[actual_payload_bytes] = statistics.median(gather_times)
 
-        # reduce_scatter_tensor: input is full payload on every rank,
-        # output is one shard per rank. Inverse of all_gather; same-shape
-        # buffers reused.
+        # reduce_scatter_tensor: full payload in, one shard out per rank.
         full_payload = torch.zeros(
             elements_per_shard * world_size,
             dtype=torch.float32,
@@ -663,15 +431,12 @@ def measure_nccl(
         )
         reduced = torch.zeros(elements_per_shard, dtype=torch.float32, device=device)
 
-        # Warmup. Use op=AVG to mirror ProTrain's sharded update path so the
-        # measured kernel cost reflects production (NCCL implements AVG as
-        # SUM + post-divide on the receive shard, slightly more expensive).
+        # op=AVG mirrors production; NCCL AVG = SUM + post-divide (slightly costlier).
         for _ in range(n_warmup):
             dist.reduce_scatter_tensor(reduced, full_payload, op=dist.ReduceOp.AVG)
         torch.cuda.synchronize(device)
 
-        # Timed — wrap event construction + record + synchronize in one
-        # device guard (cheaper than entering on each iter, equally correct).
+        # Timed under one device guard for amortised cost.
         reduce_times: list[float] = []
         with torch.cuda.device(device_idx):
             start = torch.cuda.Event(enable_timing=True)
@@ -685,11 +450,7 @@ def measure_nccl(
         reduce_table[actual_payload_bytes] = statistics.median(reduce_times)
 
         del shard, gathered, full_payload, reduced
-        # Free the four buffers' caching-allocator blocks before the next
-        # payload bumps up. At world=4 / 256 MiB peak we hold ~640 MiB
-        # live across the four; without empty_cache the allocator keeps
-        # them reserved for a different stream's reuse, fragmenting the
-        # pool for any future payload-grid expansion.
+        # empty_cache before next payload to avoid fragmenting the pool at large sizes.
         if torch.cuda.is_available():
             try:
                 torch.cuda.empty_cache()
@@ -717,38 +478,7 @@ def measure_compute_rate(
     n_iters: int = 10,
     n_warmup: int = 3,
 ) -> float:
-    """Return sustained fp16 compute throughput in TFLOPS for ``device_idx``.
-
-    Runs a square fp16 matmul (``matrix_size`` × ``matrix_size``) over
-    ``n_iters`` timed iterations and reports the median throughput in
-    fp16-TFLOPS. The 3090 family lands around 45–55 TFLOPS sustained on
-    a 4K GEMM (compared with the 71-TFLOPS peak rated number); a 3090 Ti
-    is typically 5–10% faster on the same workload, which is exactly the
-    spread the cost-model SKU calibration needs to absorb.
-
-    Used by ``cost/runtime.py`` to scale per-op latencies when the cached
-    trace was captured on a different SKU than the live training device:
-    ``scale = trace.compute_rate_tflops / hw.gpu_compute_tflops``. Same-SKU
-    runs see ``scale ≈ 1.0`` (the GEMM benchmark has ~2% noise floor) and
-    the calibration is a no-op.
-
-    Returns 0.0 on CUDA outage; the caller falls back to the trace's
-    recorded value or the global default.
-
-    Parameters
-    ----------
-    device_idx:
-        CUDA device ordinal.
-    matrix_size:
-        Square matrix size for the synthetic GEMM. 4096 keeps a single
-        matmul under ~270 MB (fp16 4096²) — well within any 3090's HBM
-        and large enough that the kernel is firmly compute-bound.
-    n_iters:
-        Timed iterations. Median is reported.
-    n_warmup:
-        Warmup iterations (discarded). The first iter typically pays
-        cuBLAS handle init + JIT cost.
-    """
+    """Return sustained fp16 compute throughput in TFLOPS for ``device_idx``."""
     if n_iters < 1:
         raise ValueError(f"measure_compute_rate: n_iters must be >= 1, got {n_iters}")
     if n_warmup < 0:
@@ -763,12 +493,7 @@ def measure_compute_rate(
     device = torch.device(f"cuda:{device_idx}")
     a = torch.randn(matrix_size, matrix_size, dtype=torch.float16, device=device)
     b = torch.randn(matrix_size, matrix_size, dtype=torch.float16, device=device)
-    # Preallocate the output tensor BEFORE the timed loop. ``a @ b``
-    # would allocate a fresh ``c`` every iteration, contaminating the
-    # GEMM timing with allocator overhead — particularly bad when the
-    # caching allocator hits a fragmentation cliff. ``torch.matmul(a, b,
-    # out=c)`` writes into the preallocated buffer with no allocation
-    # on the hot path.
+    # Preallocate output so the hot loop has no allocator overhead.
     c = torch.empty(matrix_size, matrix_size, dtype=torch.float16, device=device)
 
     # Warmup
@@ -776,8 +501,7 @@ def measure_compute_rate(
         torch.matmul(a, b, out=c)
     torch.cuda.synchronize(device)
 
-    # Timed — bind events + record + synchronize to ``device_idx`` so they
-    # don't latch onto a stale ``current_device()`` under multi-GPU / masking.
+    # Timed under device guard so events don't latch onto stale current_device.
     iter_s: list[float] = []
     with torch.cuda.device(device_idx):
         start = torch.cuda.Event(enable_timing=True)
@@ -790,8 +514,7 @@ def measure_compute_rate(
             iter_s.append(start.elapsed_time(end) / 1000.0)
     median_iter = statistics.median(iter_s)
 
-    # FLOP count for a square matmul: 2 * N^3 (one multiply + one add per
-    # element of the output, summed over the inner dim).
+    # Square-matmul FLOP count: 2 * N^3.
     flops_per_iter = 2.0 * (matrix_size**3)
     tflops = flops_per_iter / median_iter / 1e12
 
