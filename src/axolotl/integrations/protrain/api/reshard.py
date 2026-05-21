@@ -1,60 +1,4 @@
-"""Core reshard logic for ProTrain Mode-C optimizer state.
-
-Pure-Python tensor algebra over a saved ``protrain_optim/`` directory:
-takes the per-rank shard files written at ``world_size=src_world`` and
-emits a fresh directory at ``world_size=target_world``. No GPUs, no
-``torch.distributed`` — only ``torch.load`` / ``torch.save`` /
-``torch.cat`` / contiguous slicing on CPU.
-
-This module is the single source of truth for the reshard arithmetic.
-Two callers consume it:
-
-* The offline CLI ``scripts/protrain/reshard_optim.py`` — a thin
-  argparse wrapper around :func:`reshard_mode_c_shards`. The CLI loads
-  this module via file-path-based ``importlib`` so it can run on a
-  host that doesn't have the full axolotl import chain (transformers,
-  etc.) — useful for "reshard a checkpoint on a CPU box, then move it
-  to the training node" workflows.
-* The online load path
-  (:func:`axolotl.integrations.protrain.api.checkpoint._load_protrain_optim_dir`)
-  when the user opts in via ``protrain_allow_online_reshard=True``.
-  Rank-0 calls :func:`reshard_mode_c_shards` into a temp dir, all
-  ranks barrier, and the load proceeds against the temp dir as if it
-  were a natively-saved-at-N2 checkpoint.
-
-Per-region resharding maths (paper's ZeRO-3 sharding rule):
-
-* Each region holds ``region_bytes`` of valid state plus padding so
-  every rank owns a whole number of elements. The pad rule operates in
-  element space: ``region_elements = ceil(region_bytes / elem_size)``,
-  ``region_elements_padded = ceil(region_elements / W) * W``,
-  ``region_bytes_padded = region_elements_padded * elem_size``, and
-  ``shard_bytes = region_bytes_padded / W``. Each rank's slice is
-  therefore exactly ``region_elements_padded / W`` whole elements. The
-  valid prefix length ``region_bytes / elem_size`` is independent of W.
-* For each region, concatenate the N1 saved per-rank ``exp_avg`` (and
-  ``exp_avg_sq``) tensors → flat tensor of length
-  ``region_bytes_padded_old / elem_size``.
-* The first ``region_bytes / elem_size`` elements are valid. Trailing
-  bytes are padding; on a clean save they are zero (the materialize
-  pad-zero plus zero gradient on padding bytes means Adam never
-  updates those positions).
-* Build a fresh tensor of length ``region_bytes_padded_new /
-  elem_size``, copy the valid prefix, zero-pad the rest, and split
-  into N2 contiguous slices of length ``shard_bytes_new / elem_size``
-  each. Slice ``r2`` becomes the new rank ``r2``'s state for that
-  region.
-* The Adam ``step`` scalar is rank-replicated; we copy it as-is.
-
-Constraints mirrored from ``api/checkpoint.py``: file-naming regex,
-schema constants, dtype-name lookup. Any drift between this module's
-constants and the checkpoint module's would silently break round-trip
-loads — the loader recomputes the layout signature against the new
-``world_size`` using the api module's
-:func:`_layout_signature_from_fingerprint`, so the formula here must
-stay byte-compatible with the api version. Tested via the offline +
-online reshard round-trip tests.
-"""
+"""Core reshard logic for ProTrain Mode-C optimizer state."""
 
 from __future__ import annotations
 
@@ -68,13 +12,7 @@ from typing import Any
 
 import torch
 
-# ---- Constants mirrored from api/checkpoint.py ----------------------------
-# We deliberately avoid importing the api module so the offline CLI's
-# importlib loader can pull this file in without dragging in the heavy
-# axolotl import chain (transformers, etc.). Drift between these
-# constants and the api module's would silently break round-trip loads —
-# guarded by the offline + online reshard round-trip tests.
-
+# Constants mirrored from api/checkpoint.py; avoid import to keep CLI loader light.
 METADATA_FILENAME = "metadata.json"
 GPU_OPTIM_FILENAME = "gpu_optim.pt"
 CPU_OPTIM_DIRNAME = "cpu_optim"
@@ -97,14 +35,7 @@ _DTYPE_NAME_TO_TORCH: dict[str, torch.dtype] = {
 
 
 def _layout_signature_from_fingerprint(fingerprint: dict[str, Any]) -> str:
-    """SHA-256 over a layout fingerprint dict.
-
-    Mirrors :func:`api.checkpoint._layout_signature_from_fingerprint`.
-    Re-implemented here so this module does not pull in the heavyweight
-    api module's transitive imports. The two implementations must stay
-    byte-compatible — the loader recomputes the expected signature using
-    the api version, so any drift would trip the layout-signature check.
-    """
+    """SHA-256 over a layout fingerprint dict (must stay byte-compatible with api version)."""
     payload = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -113,22 +44,7 @@ def _layout_signature_from_fingerprint(fingerprint: dict[str, Any]) -> str:
 
 
 def _padded_region_bytes(region_bytes: int, elem_size: int, world_size: int) -> int:
-    """Pad ``region_bytes`` so each rank owns a whole number of elements.
-
-    Computes the element count first (``ceil(region_bytes / elem_size)``),
-    rounds it up to a multiple of ``world_size`` so per-rank shards are
-    element-aligned, then converts back to bytes. The previous formulation
-    padded directly in bytes via ``lcm(elem_size, world_size)``, which can
-    produce sizes that don't align to whole elements per rank when
-    ``gcd(elem_size, world_size) > 1`` (e.g. elem_size=4, world_size=8:
-    pad_unit=8 bytes splits into 1-byte shards, half an element each).
-
-    Mirrors the formula in ``ChunkManager.materialize_offload`` (chunk/
-    manager.py around the ``region_plans`` block). Must stay
-    byte-compatible — the loader's region-layout match step compares
-    against the runtime's ``region_bytes_padded`` and any drift would
-    trip the regions_per_chunk validation.
-    """
+    """Pad region_bytes so each rank owns a whole number of elements."""
     elem_count = (region_bytes + elem_size - 1) // elem_size
     padded_elems = ((elem_count + world_size - 1) // world_size) * world_size
     return padded_elems * elem_size
@@ -189,21 +105,7 @@ def _reshard_region_state(
             region_bytes, elem_size, dst_world
         )
 
-    # All byte→numel conversions below use integer division. If any of
-    # these aren't exact multiples we'd silently truncate elements,
-    # which corrupts shards in subtle ways. Validate up-front and raise
-    # with the offending values so the failure is actionable.
-    #
-    # Critically, the per-rank shard numel computation is
-    # ``(region_bytes_padded // world) // elem_size``. Validating
-    # divisibility separately by ``elem_size`` and ``world`` is NOT
-    # sufficient: e.g. region_bytes_padded=12, elem_size=4, world=2 passes
-    # both checks (12 % 4 == 0, 12 % 2 == 0) yet ``(12 // 2) // 4 = 1.5
-    # → 1`` truncates half an element per rank. The combined divisor
-    # ``world * elem_size`` catches that case. ``_padded_region_bytes``
-    # already produces sizes divisible by ``world * elem_size``, but we
-    # accept caller-supplied paddings (typically from saved metadata) so
-    # the up-front guard remains load-bearing.
+    # Divisibility checks use the combined divisor (world * elem_size) to catch element truncation.
     if region_bytes % elem_size != 0:
         raise RuntimeError(
             f"reshard: region_bytes={region_bytes} is not divisible by "
@@ -234,12 +136,7 @@ def _reshard_region_state(
                 f"elem_size={elem_size}, src_world={src_world})"
             )
 
-    # Concatenate to the full padded region tensor (length
-    # region_bytes_padded_old / elem_size), then carry only the valid
-    # prefix forward — Adam never reads/writes padding bytes for a clean
-    # run (chunk/manager.py:802 zero-inits cpu_region_grad; materialize
-    # zero-pads region_scratch). Freeing full_old before allocating
-    # full_new halves peak working RAM per region.
+    # Concatenate, carry only valid prefix forward; free old before allocating new.
     full_old = torch.cat(per_rank_tensors, dim=0).contiguous()
     valid_numel = region_bytes // elem_size
     valid_prefix = full_old[:valid_numel].clone()
@@ -254,9 +151,7 @@ def _reshard_region_state(
     for r in range(dst_world):
         start = r * new_shard_numel
         end = start + new_shard_numel
-        # Clone so each output slice owns its own storage (defensive —
-        # the slices end up serialized via torch.save which deep-copies,
-        # but consumer code may inspect intermediates in tests).
+        # Clone so each slice owns its own storage (defensive for test inspection).
         out.append(full_new[start:end].clone())
     return out
 
@@ -351,27 +246,7 @@ def reshard_mode_c_shards(
     *,
     log_fn=None,
 ) -> None:
-    """Top-level driver. Reads ``src_dir``, writes ``dst_dir`` at
-    ``target_world_size`` ranks.
-
-    Writes a fresh output tree at ``dst_dir``. The function refuses to
-    run when ``dst_dir`` already exists and is non-empty, so callers
-    must provide an empty or nonexistent destination directory.
-
-    Parameters
-    ----------
-    src_dir, dst_dir:
-        Filesystem paths. ``src_dir`` must contain a Mode-C save
-        (``protrain_save_mode == "sharded"`` plus
-        ``layout_fingerprint`` in metadata.json).
-    target_world_size:
-        Target world_size N2; must be >= 1.
-    log_fn:
-        Optional ``Callable[[str], None]`` used for the two
-        informational log lines (default: print to stderr). The online
-        load path passes a logger-bound logger so the messages thread
-        through axolotl's logging setup.
-    """
+    """Read src_dir, write dst_dir at target_world_size ranks (refuses non-empty dst)."""
     if target_world_size < 1:
         raise ValueError(f"target_world_size must be >= 1 (got {target_world_size})")
 
@@ -383,8 +258,7 @@ def reshard_mode_c_shards(
 
     src_world = int(meta["protrain_world_size"])
     if src_world == target_world_size:
-        # Nothing to do; just copy. We still emit a fresh dst_dir for
-        # consistency with the "always produce a complete dir" contract.
+        # No reshape; copy to emit a fresh dst_dir per the contract.
         log_fn(
             f"reshard: src_world == target_world == {src_world}; "
             "copying source directory verbatim"
@@ -413,16 +287,14 @@ def reshard_mode_c_shards(
     os.makedirs(dst_dir, exist_ok=True)
     cpu_dst_dir = os.path.join(dst_dir, CPU_OPTIM_DIRNAME)
 
-    # Replicated artifacts: gpu_optim.pt is rank-independent (same on
-    # every rank in Mode-C), so just copy it.
+    # gpu_optim.pt is rank-independent in Mode-C; just copy.
     src_gpu = os.path.join(src_dir, GPU_OPTIM_FILENAME)
     if os.path.isfile(src_gpu):
         shutil.copyfile(src_gpu, os.path.join(dst_dir, GPU_OPTIM_FILENAME))
 
     saved_regions: dict[str, list[dict[str, Any]]] = meta["regions_per_chunk"]
 
-    # Build fresh regions_per_chunk for the target world_size — only
-    # region_bytes_padded and shard_bytes change with world_size.
+    # Only region_bytes_padded and shard_bytes change with world_size.
     new_regions: dict[str, list[dict[str, Any]]] = {}
     for cid_str, regs in saved_regions.items():
         new_list: list[dict[str, Any]] = []
@@ -466,8 +338,7 @@ def reshard_mode_c_shards(
         ]
         regs = saved_regions[str(cid)]
 
-        # Validate state shape consistency: every per-rank state_dict
-        # must have one ``state[i]`` entry per region, in order.
+        # Each per-rank state_dict must have state[i] per region in order.
         for r_idx, sd in enumerate(per_rank_state_dicts):
             if "state" not in sd or "param_groups" not in sd:
                 raise RuntimeError(
@@ -481,9 +352,7 @@ def reshard_mode_c_shards(
                     f"{list(range(len(regs)))} (one per region)"
                 )
 
-        # Build new per-rank state_dicts. Reuse rank-0's param_groups
-        # (it's rank-independent — defaults + the [0..N-1] params list).
-        # ``step`` is also rank-replicated; copy from rank-0.
+        # param_groups + step are rank-replicated; copy from rank-0.
         new_per_rank_states: list[dict[int, dict[str, Any]]] = [
             {} for _ in range(target_world_size)
         ]
@@ -498,13 +367,8 @@ def reshard_mode_c_shards(
                 per_rank_inputs = [
                     sd["state"][region_idx][state_key] for sd in per_rank_state_dicts
                 ]
-                # Defensive: ensure all are 1-D (they should be — the
-                # shard_param's flat storage view).
                 per_rank_inputs = [t.flatten() for t in per_rank_inputs]
-                # Validate dtype against saved metadata before resharding;
-                # a mismatch here would silently corrupt optimizer state
-                # because ``_reshard_region_state`` uses ``elem_size_int``
-                # (derived from metadata) for its byte-stride maths.
+                # Validate dtype against metadata; mismatch would silently corrupt via byte-stride math.
                 for r_idx, tensor in enumerate(per_rank_inputs):
                     if tensor.dtype != expected_dtype:
                         raise ValueError(
@@ -527,12 +391,7 @@ def reshard_mode_c_shards(
                         slice_
                     )
 
-            # Replicate ``step`` and any other per-region scalars from
-            # rank-0 — they're guaranteed identical across saving ranks
-            # since DeepSpeedCPUAdam steps in lockstep within a chunk.
-            # Validate that invariant explicitly: silently copying rank 0
-            # would otherwise mask drift caused by partial-save bugs or
-            # source-shard corruption.
+            # Validate rank-replicated scalars before copying rank-0.
             rank0_region = per_rank_state_dicts[0]["state"][region_idx]
             for r_other in range(1, src_world):
                 other_region = per_rank_state_dicts[r_other]["state"][region_idx]
@@ -565,11 +424,10 @@ def reshard_mode_c_shards(
                             f"rank 0 ({v!r}) and rank {r_other} ({other_v!r})"
                         )
                 for r2 in range(target_world_size):
-                    # Clone tensors per-rank so mutations don't propagate.
                     val = v.clone() if isinstance(v, torch.Tensor) else v
                     new_per_rank_states[r2].setdefault(region_idx, {})[k] = val
 
-        # ``param_groups`` is rank-replicated; verify before reusing rank 0.
+        # Verify rank-replicated param_groups before reusing rank 0.
         param_groups = per_rank_state_dicts[0]["param_groups"]
         for r_other in range(1, src_world):
             other_pg = per_rank_state_dicts[r_other]["param_groups"]
@@ -619,8 +477,7 @@ def reshard_mode_c_shards(
             out_path = os.path.join(cpu_dst_dir, f"chunk_{cid}_rank_{r2}.pt")
             torch.save(new_sd, out_path)
 
-    # Recompute layout_fingerprint with the new world_size and the
-    # corresponding signature.
+    # Recompute layout signature for the new world_size.
     fp = dict(meta["layout_fingerprint"])
     fp["world_size"] = int(target_world_size)
     new_signature = _layout_signature_from_fingerprint(fp)
@@ -630,10 +487,8 @@ def reshard_mode_c_shards(
     new_meta["layout_fingerprint"] = fp
     new_meta["protrain_layout_signature"] = new_signature
     new_meta["regions_per_chunk"] = new_regions
-    # Mark the source world for forensic-friendliness; the loader
-    # ignores unknown keys.
+    # Forensic field; loader ignores unknown keys. saving_rank preserved from original.
     new_meta["resharded_from_world_size"] = int(src_world)
-    # ``saving_rank`` is only meaningful for the original save; preserve it.
 
     with open(os.path.join(dst_dir, METADATA_FILENAME), "w", encoding="utf-8") as f:
         json.dump(new_meta, f, indent=2, sort_keys=True)
