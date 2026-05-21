@@ -196,14 +196,17 @@ def _resolve(root: nn.Module, dotted: str) -> nn.Module | None:
 
 def _looks_like_block(m: nn.Module) -> bool:
     """Heuristic for transformer block recognition; T5 nested-layer case via .layer ModuleList."""
-    if hasattr(m, "attention") or hasattr(m, "self_attn"):
+    # ``linear_attn`` covers Mamba-style linear-attention layers (Qwen3.5, Falcon-Mamba, Zamba, etc.).
+    if hasattr(m, "attention") or hasattr(m, "self_attn") or hasattr(m, "linear_attn"):
         return True
     if hasattr(m, "_protrain_wrapped_mode"):
         return True
     # CheckpointedBlock stores the original in .block.
     inner = getattr(m, "block", None)
     if inner is not None and (
-        hasattr(inner, "attention") or hasattr(inner, "self_attn")
+        hasattr(inner, "attention")
+        or hasattr(inner, "self_attn")
+        or hasattr(inner, "linear_attn")
     ):
         return True
     # T5Block-style nested .layer ModuleList.
