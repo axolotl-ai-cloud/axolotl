@@ -580,15 +580,10 @@ class BufferPool:
         """
         if self._closed:
             return
-        # Release pinned host memory FIRST. If this raises we leave the
-        # pool retryable (do NOT set ``_closed`` or clear state) so the
-        # caller can re-invoke close() once the underlying issue is
-        # resolved instead of leaking the pinned allocation forever.
+        # Release pinned host first; on raise leave pool retryable instead of leaking the pinned allocation.
         if self.pinned_host is not None:
             self.pinned_host.close()
             self.pinned_host = None  # type: ignore[assignment]
-        # Host release succeeded — now mark closed and drop GPU-side
-        # bookkeeping. Past this point all public ops short-circuit.
         self._closed = True
         self._buffers = []
         self._large_buffers.clear()

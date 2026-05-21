@@ -89,12 +89,7 @@ def _min_n_buffer_for_layout(layout: "ChunkLayout", n_persist: int) -> int:
                 if c not in persistent
             ]
         need = max(need, len({*cur_np, *nxt_np}))
-    # Allow ``need == 0`` to propagate when every chunk referenced by
-    # ``block_to_chunks`` is already in the effective-persistent set —
-    # a zero-buffer bootstrap is legitimate on all-persistent layouts
-    # and the previous ``max(1, need)`` overstated the floor, forcing
-    # ``select_bootstrap_config()`` to spuriously fall back to
-    # ``initial_result``.
+    # Return raw need; an all-persistent layout legitimately needs zero buffers.
     return need
 
 
@@ -514,17 +509,7 @@ def measure_chunked_steady(
                 chunk_manager, "snapshot_cpu_state"
             ):
                 chunk_state = chunk_manager.snapshot_cpu_state()
-            # Fail-fast on caller-held gradients: ``model_state`` /
-            # ``optim_state`` do NOT capture ``param.grad``, but the
-            # warmup loop below clears grads with
-            # ``optimizer.zero_grad(set_to_none=True)`` and the
-            # restore path will zero them again on the way out.
-            # Silently consuming a caller's accumulated grads would
-            # break the documented "rolls back to the
-            # pre-measurement state" contract, so surface the misuse
-            # here rather than letting it leak invisibly. Callers
-            # that want to profile mid-accumulation should clear
-            # grads themselves before invoking this helper.
+            # Snapshot/restore does not cover .grad; consuming caller grads here would silently violate the rollback contract.
             if any(param.grad is not None for param in model.parameters()):
                 raise RuntimeError(
                     "measure_chunked_steady requires gradients to be "

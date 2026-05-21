@@ -623,20 +623,7 @@ def measure_nccl(
         ) from exc
 
     for payload_bytes in payload_sizes_bytes:
-        # all_gather_into_tensor: each rank contributes one shard of size
-        # payload/world_size, output is the full payload on every rank.
-        # We size the SHARD to ``payload_bytes // world_size`` (rounded
-        # DOWN to a multiple of ``element_size`` — both divisions are
-        # integer floor) so the COMBINED output is at most payload_bytes.
-        # ``world_size ∈ {2, 4, 8}`` for production use, all power-of-two,
-        # so the rounding error is zero on the canonical payload grid.
-        #
-        # The table is keyed by ``actual_payload_bytes`` (the size we
-        # really benchmarked) rather than the requested ``payload_bytes``
-        # so a custom payload list that does NOT divide evenly into
-        # ``world_size * element_size`` does not mis-label the lookup
-        # entry, which would feed the runtime cost model a wrong
-        # communication prior.
+        # Key the table by actually-benchmarked bytes so non-divisible payloads don't mis-label the lookup.
         element_size = 4  # float32
         elements_per_shard = max(1, (payload_bytes // world_size) // element_size)
         actual_payload_bytes = elements_per_shard * world_size * element_size
