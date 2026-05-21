@@ -1,34 +1,4 @@
-"""Shared :class:`HardwareProfile` construction (§3.2, §7).
-
-Lifts the device-probe + world-size-resolution logic out of
-:mod:`axolotl.integrations.protrain.plugin` so both the plugin path
-(``post_model_load`` -> ``protrain_model_wrapper``) and the direct API
-helper (:func:`axolotl.integrations.protrain.api.auto_wrap`) share a
-single canonical recipe.
-
-Three knobs the helper exposes (all optional):
-
-* ``world_size_override`` — force a specific value when the caller knows
-  better than the live PG / env (mostly tests). When ``None``, the
-  helper prefers an initialised ``torch.distributed`` PG, then the
-  ``WORLD_SIZE`` env (only when ``RANK`` and ``LOCAL_RANK`` are also
-  set — mirrors :func:`_early_init_dist_for_nccl`'s launcher-env sanity
-  check), then 1.
-* ``zero3_shard`` — direct override for the ``HardwareProfile.zero3_shard``
-  bool. The plugin-side wrapper computes this from cfg flags + the
-  resolved world size; the direct API caller almost never wants
-  sharding, so default is False.
-* ``device_index`` — explicit CUDA ordinal. When ``None``, the helper
-  honours ``LOCAL_RANK`` (with a defensive fallback to
-  ``torch.cuda.current_device()`` on parse / range errors) so per-rank
-  heterogeneous-memory rigs report the correct ``capacity_bytes`` /
-  SKU instead of always reading device 0.
-
-PCIe bandwidth is seeded with :data:`DEFAULT_PCIE_BPS`. The profiler's
-microbenchmark overwrites this once a cache miss runs; the seed only
-feeds the cost model's effective-bandwidth prior between import time
-and the first profile.
-"""
+"""Shared HardwareProfile construction (device probe + world-size resolution + PCIe seed)."""
 
 from __future__ import annotations
 
@@ -44,34 +14,19 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
-# Default PCIe H2D bandwidth assumed for HardwareProfile construction when
-# no measured value is available. 13 GB/s matches a typical PCIe Gen4 x16
-# 3090 rig; the profiler's microbench will overwrite this once the cache
-# key misses and a full profile runs — this constant only seeds the
-# constructor for the cost model's effective-bandwidth prior.
+# Pre-profile seed for HardwareProfile; profiler overwrites with measured value.
 DEFAULT_PCIE_BPS = 13e9
 
 
 def resolve_world_size_from_env() -> int:
-    """Return ``WORLD_SIZE`` from the env, defaulting to 1.
-
-    Both torchrun and Accelerate's launchers populate ``WORLD_SIZE`` /
-    ``RANK`` / ``LOCAL_RANK`` / ``MASTER_ADDR`` / ``MASTER_PORT`` before
-    the user script starts. The plugin path treats the env as the source
-    of truth before the trainer (and thus Accelerate) has had a chance
-    to call :func:`torch.distributed.init_process_group`.
-    """
+    """Return WORLD_SIZE env (default 1)."""
     raw = os.environ.get("WORLD_SIZE")
     if raw is None:
         return 1
     try:
         world_size = int(raw)
     except ValueError as exc:
-        # A malformed WORLD_SIZE alongside RANK / LOCAL_RANK indicates a
-        # corrupted launcher env rather than a single-process run; silently
-        # collapsing to 1 there would misreport a distributed run, so raise
-        # explicitly. Fall back to 1 only when neither rank var is set
-        # (matches a single-process developer shell).
+        # Malformed WORLD_SIZE + set RANK/LOCAL_RANK → raise; collapse to 1 only without rank vars.
         if (
             os.environ.get("RANK") is not None
             or os.environ.get("LOCAL_RANK") is not None
@@ -86,11 +41,7 @@ def resolve_world_size_from_env() -> int:
                 "world size while RANK / LOCAL_RANK is set."
             ) from exc
         return 1
-    # Apply the same RANK-aware policy to non-positive integers
-    # (``WORLD_SIZE=0`` / negative): silently collapsing those to 1 alongside
-    # a set RANK / LOCAL_RANK would mask a corrupted launcher env in exactly
-    # the same way a malformed string would. Only single-process developer
-    # shells (no rank vars set) get the soft fallback to 1.
+    # Same RANK-aware policy for non-positive WORLD_SIZE.
     if world_size < 1:
         if (
             os.environ.get("RANK") is not None
@@ -109,25 +60,13 @@ def resolve_world_size_from_env() -> int:
 
 
 def _resolve_world_size() -> int:
-    """Prefer an initialised PG, then env, then 1.
-
-    Mirrors the resolution path documented on
-    :func:`axolotl.integrations.protrain.plugin._build_hardware_profile`:
-    the visible CUDA device count is NOT a substitute for the
-    distributed rank count, so on a single-process run on a multi-GPU
-    host this would otherwise inflate ``world_size`` from 1 to N and
-    skew the profiler cache key, the per-rank CPU-capacity budget, and
-    the cost-model sharding divisor.
-    """
+    """Prefer initialised PG, then env (gated on RANK/LOCAL_RANK), then 1."""
     try:
         import torch.distributed as _dist
 
         if _dist.is_available() and _dist.is_initialized():
             return max(1, int(_dist.get_world_size()))
-        # Sanity-check the launcher provided enough env to rendezvous: a
-        # bare ``WORLD_SIZE > 1`` without ``RANK`` / ``LOCAL_RANK``
-        # typically indicates a misconfigured manual export rather than a
-        # real torchrun-managed process.
+        # Gate env-WORLD_SIZE on RANK/LOCAL_RANK presence to catch misconfigured exports.
         if (
             os.environ.get("RANK") is not None
             and os.environ.get("LOCAL_RANK") is not None
@@ -139,13 +78,7 @@ def _resolve_world_size() -> int:
 
 
 def _resolve_device_index() -> int:
-    """Pick the CUDA ordinal this rank should report from.
-
-    Honours ``LOCAL_RANK`` so heterogeneous-memory multi-GPU rigs report
-    the correct ``capacity_bytes`` / SKU per rank instead of always
-    reading device 0. Falls back to ``torch.cuda.current_device()`` on
-    parse / range errors.
-    """
+    """Pick CUDA ordinal from LOCAL_RANK; falls back to current_device on parse/range errors."""
     import torch
 
     raw_local_rank = os.environ.get("LOCAL_RANK", "0")
@@ -178,34 +111,7 @@ def build_hardware_profile(
     zero3_shard: bool = False,
     device_index: int | None = None,
 ) -> HardwareProfile:
-    """Construct a :class:`HardwareProfile` from live ``torch.cuda`` state.
-
-    Shared between :func:`axolotl.integrations.protrain.plugin._build_hardware_profile`
-    (the plugin path) and :func:`axolotl.integrations.protrain.api.auto_wrap`
-    (the direct API path) so both paths agree on what fields a
-    HardwareProfile carries by default.
-
-    Parameters
-    ----------
-    world_size_override : int | None
-        Skip world-size auto-resolution and use this value verbatim. When
-        ``None``, prefer an initialised ``torch.distributed`` PG, then
-        the ``WORLD_SIZE`` env (gated on ``RANK`` / ``LOCAL_RANK`` being
-        set), then 1.
-    zero3_shard : bool
-        Pass-through to :class:`HardwareProfile.zero3_shard`. Direct API
-        callers default to False (no sharding); the plugin path computes
-        this from cfg flags and passes it explicitly.
-    device_index : int | None
-        Explicit CUDA ordinal to probe. When ``None``, honours
-        ``LOCAL_RANK``.
-
-    Raises
-    ------
-    RuntimeError
-        If ``torch.cuda.is_available()`` is False, or no visible CUDA
-        device exists.
-    """
+    """Construct HardwareProfile from torch.cuda state; raises if CUDA unavailable."""
     import torch
 
     if not torch.cuda.is_available():
@@ -235,8 +141,7 @@ def build_hardware_profile(
     gpu_sku = torch.cuda.get_device_name(device_index)
 
     if world_size_override is not None:
-        # Reject bool first — ``isinstance(True, int)`` is True in Python so
-        # ``int(True) == 1`` would otherwise sneak past the validation.
+        # bool check first; isinstance(True, int) would otherwise sneak past.
         if isinstance(world_size_override, bool):
             raise RuntimeError(
                 "world_size_override must be a positive int, got "
@@ -258,9 +163,7 @@ def build_hardware_profile(
     else:
         world_size = _resolve_world_size()
 
-    # Reject non-bool ``zero3_shard`` explicitly: ``bool(...)`` would truthy-coerce
-    # non-empty strings, dicts, ints, etc. into ``True`` and silently mark a
-    # cluster as sharded when the caller passed something nonsensical.
+    # Reject non-bool zero3_shard explicitly to avoid truthy-coerce of bogus values.
     if not isinstance(zero3_shard, bool):
         raise TypeError(
             f"zero3_shard must be a bool, got {type(zero3_shard).__name__}: "
