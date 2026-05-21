@@ -437,7 +437,7 @@ def _make_mistral_v7():
 @pytest.mark.parametrize("seed", list(range(50)))
 def test_process_labels_parity_fuzz(strategy_factory, legacy_fn, extra_ids, name, seed):
     """50 random batches per strategy: legacy vs fused must produce byte-identical labels."""
-    rng = random.Random(seed * 7919 + hash(name) % 1000)
+    rng = random.Random(seed * 7919 + sum(ord(c) for c in name) % 1000)
 
     strategy = strategy_factory()
     pad_id = strategy.processor.tokenizer.pad_token_id

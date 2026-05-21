@@ -280,9 +280,9 @@ class ProcessingStrategy:
                 image_value = load_image(image_value)
 
                 if self.image_size is not None:
-                    assert hasattr(
-                        image_value, "resize"
-                    ), "Image does not have a resize method"
+                    assert hasattr(image_value, "resize"), (
+                        "Image does not have a resize method"
+                    )
 
                     if isinstance(self.image_size, tuple):
                         image_value = image_value.resize(
@@ -358,8 +358,7 @@ class ProcessingStrategy:
                 )
             return torch.ones_like(input_ids, dtype=torch.bool)
 
-        # Vectorized path regresses 9-13x under multi-threaded torch; only
-        # ship it where it wins (DataLoader workers, threads=1).
+        # Vectorized path regresses 9-13x under multi-threaded torch.
         scanner = (
             _compute_role_keep_mask_vectorized
             if torch.get_num_threads() == 1
@@ -517,54 +516,35 @@ def _compute_role_keep_mask_vectorized(
     if labels.numel() == 0:
         return torch.zeros_like(labels, dtype=torch.bool)
     if not role_boundaries:
-        # Same all-mask semantics as the reference for empty boundaries
-        # (handled upstream in _mask_non_assistant_keep, but be defensive). The
-        # reference walks every position, finds no match, and ends with the
-        # mask all-zeros — which masks the entire batch to -100.
+        # Defensive: match reference all-mask semantics on empty boundaries.
         return torch.zeros_like(labels, dtype=torch.bool)
 
     B, L = labels.shape
     device = labels.device
 
-    # Stable order: longer start_tokens first so that the first-match wins for
-    # the longest-prefix tie-break. Carry original index for fast end-marker
-    # lookup.
+    # Longer start_tokens first so longest-prefix-wins tie-break holds.
     indexed = list(enumerate(role_boundaries))
     indexed.sort(key=lambda ib: -len(ib[1].start_tokens))
 
-    # ----------------------------------------------------------------- #
-    # Precompute start-match table per boundary in a single batched pass.
-    # start_winner[b, j] holds the index (into role_boundaries) of the
-    # longest-prefix boundary whose start matches at position j in row b,
-    # or -1 if nothing matches there.
-    # ----------------------------------------------------------------- #
     start_winner = torch.full((B, L), -1, dtype=torch.int64, device=device)
-    # We also accumulate match length so longest wins; equal-length ties keep
-    # the boundary that was assigned first (stable, matches the reference's
-    # "best_match is None or strictly longer" check).
+    # Track match length so equal-length ties keep the first writer (matches reference).
     start_winner_len = torch.zeros((B, L), dtype=torch.int64, device=device)
-
-    # Per-boundary end-match tables, indexed by *original* boundary index.
     end_match: list[Optional[Tensor]] = [None] * len(role_boundaries)
 
     for orig_idx, b in indexed:
         s_tok = b.start_tokens
         s_len = len(s_tok)
         if s_len == 0:
-            # Treat empty start as never-matches (defensive — not a valid
-            # boundary in practice).
-            continue
+            continue  # defensive: empty start never matches
 
-        # Build a [B, L - s_len + 1] bool mask of where this start matches.
         if s_len > L:
             start_mask = torch.zeros((B, 0), dtype=torch.bool, device=device)
         else:
             s_tok_t = torch.tensor(s_tok, dtype=labels.dtype, device=device)
-            # Slide a window: shape [B, L - s_len + 1, s_len]
             windows = labels.unfold(1, s_len, 1)
             start_mask = (windows == s_tok_t).all(dim=-1)
 
-        # Pad to full length L so we can index by absolute position j.
+        # Pad to L so absolute position j indexes into start_mask.
         pad_w = L - start_mask.shape[1]
         if pad_w > 0:
             start_mask = torch.cat(
@@ -575,10 +555,7 @@ def _compute_role_keep_mask_vectorized(
                 dim=1,
             )
 
-        # Update winner: this boundary wins at positions where it matches and
-        # the existing winner has a strictly shorter match length. Longest-
-        # first iteration order means the first writer at any position is
-        # already the longest, so subsequent writers are filtered.
+        # Strictly-longer gate + longest-first iteration => first writer sticks.
         update = start_mask & (start_winner_len < s_len)
         start_winner = torch.where(
             update, torch.full_like(start_winner, orig_idx), start_winner
@@ -587,8 +564,6 @@ def _compute_role_keep_mask_vectorized(
             update, torch.full_like(start_winner_len, s_len), start_winner_len
         )
 
-        # Precompute end-marker positions for this boundary (only used when
-        # end_tokens is non-empty).
         e_tok = b.end_tokens
         e_len = len(e_tok)
         if e_len == 0:
@@ -600,14 +575,12 @@ def _compute_role_keep_mask_vectorized(
             ewindows = labels.unfold(1, e_len, 1)
             end_match[orig_idx] = (ewindows == e_tok_t).all(dim=-1)
 
-    # Move match tables to CPU lists once — per-row walk is Python-level,
-    # avoiding many small tensor accesses in the hot loop.
+    # Lift to CPU lists: hot per-row loop is Python, tensor access is slow.
     start_winner_cpu = start_winner.cpu().tolist()
     end_match_cpu: list[Optional[list[list[bool]]]] = []
     for em in end_match:
         end_match_cpu.append(None if em is None else em.cpu().tolist())
 
-    # Cache boundary attributes for tight loop access.
     bnd_start_len = [len(b.start_tokens) for b in role_boundaries]
     bnd_end_len = [len(b.end_tokens) for b in role_boundaries]
     bnd_include_start = [b.include_start for b in role_boundaries]
@@ -618,12 +591,9 @@ def _compute_role_keep_mask_vectorized(
 
     for i in range(B):
         row_start = start_winner_cpu[i]
-        # Build a quick "next start at-or-after j" via a precomputed list of
-        # candidate positions; for typical sequences this list is tiny.
-        # Fall back to linear scan — still much cheaper than per-token match.
         n = L
         last_trainable_end_span: Optional[tuple[int, int]] = None
-        # row_mask is a small bytearray we OR into the [i] row at the end.
+        # bytearray is faster to write than a tensor per element.
         row_mask = bytearray(n)
 
         j = 0
@@ -640,16 +610,11 @@ def _compute_role_keep_mask_vectorized(
             include_end = bnd_include_end[bidx]
             role_in_loss = bnd_role_in_loss[bidx]
 
-            # Find the end. Use precomputed end_match where available.
             if e_len == 0:
                 end_after = n
                 found_end = False
             else:
                 em_row = end_match_cpu[bidx][i]  # type: ignore[index]
-                # Linear scan — but on a flat python list of bools, fastest
-                # is just the .index method when cast back via True lookup.
-                # We need first True at index >= start_of_content with
-                # k + e_len <= n.
                 limit = n - e_len
                 k = start_of_content
                 found_end = False
@@ -692,8 +657,7 @@ def _compute_role_keep_mask_vectorized(
             for p in range(s, e):
                 row_mask[p] = 1
 
-        # Commit the row mask in one shot (this is the only per-row
-        # heavyweight tensor op).
+        # One tensor write per row — keep heavyweight op out of inner loop.
         if any(row_mask):
             mask[i] = torch.tensor(row_mask, dtype=mask.dtype, device=device)
 
