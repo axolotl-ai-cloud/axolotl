@@ -1,34 +1,4 @@
-"""Allocate-before-use / free-after tensor context for profiling models > device memory.
-
-The profiler must be able to trace models whose full state (params + grads +
-optimizer state + activations) doesn't fit on a single GPU. ProTrain solves
-this with two coordinated mechanisms (paper §3.2):
-
-1. **Parameter offload** — every nn.Module's directly-owned parameters live
-   on pinned CPU memory between modules. A pre-forward hook gathers a
-   module's own params onto GPU just before its forward; a post-forward
-   hook releases them. The GPU therefore only holds *one* module's params
-   at a time during the traced forward, plus whatever the running op's
-   inputs/outputs require.
-
-2. **Saved-activation spill** — ``torch.autograd.graph.saved_tensors_hooks``
-   intercepts every tensor that autograd would retain for backward, copies
-   it to CPU at save time, and copies it back to ``self.device`` at unpack
-   time. Backward under on-demand IS supported (CPU->GPU copy in unpack
-   adds ~saved_activation_bytes / pcie_bw latency to the backward pass);
-   the trace driver currently passes ``include_backward=False`` when on-
-   demand engages because the bwd peak still exceeds device memory for the
-   target models, but the hook path is correct for callers that want to
-   run backward themselves.
-
-Together these bound peak GPU at roughly ``max_leaf_param_bytes +
-activation_workspace_per_op``, which is small enough that 13B / 70B-class
-models can be profiled on a 24 GB card without OOM.
-
-The disabled fast path (``disabled=True``) is a no-op context manager —
-used by the tiny-GPT2 unit tests and by the model_wrapper when the model
-fits on-device with headroom (no offload needed).
-"""
+"""Allocate-before-use / free-after tensor context for profiling models > device memory."""
 
 from __future__ import annotations
 
@@ -81,13 +51,7 @@ def _find_fused_kernel_containers(model: "nn.Module") -> "list[nn.Module]":
     return out
 
 
-# PEFT trainable-factor parameter name fragments. These are the canonical
-# attribute names PEFT uses for trainable LoRA factors on a wrapped layer.
-# We match by substring against ``named_parameters(recurse=False)`` so the
-# detector covers both bare ``lora_A`` and the ParameterDict-wrapped
-# ``lora_A.default`` form (PEFT serialises the active adapter under the
-# adapter-name key, defaulting to "default"). ``lora_magnitude_vector``
-# covers DoRA's per-output-channel magnitude scalar.
+# PEFT LoRA trainable-factor attribute name fragments (substring match).
 _PEFT_LORA_NAME_TAGS: frozenset[str] = frozenset(
     {
         "lora_A",
@@ -102,8 +66,8 @@ _PEFT_LORA_NAME_TAGS: frozenset[str] = frozenset(
 def _has_peft_lora_factor(
     module: "nn.Module", *, recurse_children: bool = True
 ) -> bool:
-    """True iff ``module`` *directly* owns a trainable LoRA factor (parameter attribute or one-level-child by tag name); grandparents are excluded because PEFT's direct-attribute reads happen on the LoraLayer itself."""
-    # Direct-Parameter scope: catches the bare ``nn.Parameter`` form.
+    """True iff ``module`` directly owns a trainable LoRA factor."""
+    # Bare nn.Parameter form.
     for name, p in module.named_parameters(recurse=False):
         if not p.requires_grad:
             continue
@@ -111,12 +75,7 @@ def _has_peft_lora_factor(
             return True
     if not recurse_children:
         return False
-    # Direct-child-module scope: PEFT's ParameterDict / wrapped-Linear
-    # form. The child's *attribute name on this module* carries the
-    # PEFT tag (``lora_A`` etc.). Verify the child actually contains
-    # at least one trainable parameter so we don't tag a frozen-only
-    # subtree as a container (the M6C bug only matters for params
-    # that produce gradients).
+    # PEFT's ParameterDict/wrapped-Linear: child attr name carries the tag.
     for child_name, child in module.named_children():
         if not any(tag in child_name for tag in _PEFT_LORA_NAME_TAGS):
             continue
@@ -141,28 +100,7 @@ def _find_peft_lora_containers(model: "nn.Module") -> "list[nn.Module]":
 
 @dataclass
 class _ParamSpill:
-    """Bookkeeping for one parameter that's been spilled to CPU.
-
-    Two original-device cases:
-
-    * GPU-resident param (typical Axolotl path): we copy GPU→CPU at
-      ``__enter__`` and DROP the reference to the original GPU tensor so
-      the caching allocator can reclaim its storage (``original_data`` is
-      ``None``). At ``__exit__`` we re-allocate a fresh tensor on
-      ``original_device`` and copy ``cpu_storage`` back. Parameter
-      identity (``id(param)``) is preserved; optimizer state keyed on
-      ``id(param)`` (the PyTorch convention) survives the round trip.
-
-    * CPU-resident param (paper's intent — model too big for GPU): no
-      copy needed; ``cpu_storage`` IS the original tensor (pinned in
-      place if possible). ``original_data`` is also ``None`` here. The
-      pre-gather hook copies to the target device on demand.
-
-    The ``original_data`` field stays in the dataclass for forward-compat
-    with any caller that still populates it (the restore paths still
-    handle the legacy retain-storage case), but the GPU spill path no
-    longer sets it.
-    """
+    """Bookkeeping for one parameter that's been spilled to CPU."""
 
     param: Any  # torch.nn.Parameter — Any keeps import light
     cpu_storage: Any  # torch.Tensor on CPU (pinned if possible)
@@ -171,53 +109,7 @@ class _ParamSpill:
 
 
 class OnDemandTensorMgr:
-    """Context manager that materializes each leaf's params just-in-time.
-
-    Disabled fast path
-    ------------------
-    When ``disabled=True``, the context manager is a no-op and the profiler
-    runs a normal forward/backward pass. This is the right choice when the
-    model fits on-device with headroom — pure profiling cost, zero spill
-    overhead. The model_wrapper uses this path for ~7B-class models on a
-    24 GB card.
-
-    Enabled mode (replay-equivalent)
-    --------------------------------
-    On ``__enter__``:
-
-    * Every parameter is detached and moved to pinned CPU memory (best-effort
-      pinning; falls back to pageable if pinning fails). The Parameter's
-      ``.data`` slot is replaced with an empty GPU tensor of matching dtype.
-    * A pre-forward hook is registered on every nn.Module to copy that
-      module's *direct* parameters (``parameters(recurse=False)``) from CPU
-      to GPU, replacing the empty placeholder.
-    * A post-forward hook on every module replaces those parameters' ``.data``
-      with empty placeholders again, releasing the GPU storage. The freshly-
-      gathered GPU tensor remains alive only as long as the autograd graph
-      (or downstream ops) hold a reference to it.
-    * ``torch.autograd.graph.saved_tensors_hooks`` is entered for the duration
-      of the traced forward. Every tensor autograd would retain for backward
-      is copied to CPU at save time. This is the activation-spill half of
-      the paper's allocate-before-use / free-after-use scheme; it makes
-      ``post_forward``'s ``p.data = empty()`` actually reclaim GPU memory
-      (otherwise the saved-for-backward slot would pin the gathered tensor).
-
-    On ``__exit__``: hooks are removed; every parameter is restored to its
-    original device (using the original GPU storage that the optimizer's
-    state already references via ``id(param)``).
-
-    Notes
-    -----
-    * Buffers (BatchNorm running stats, position-embedding buffers, etc.)
-      are NOT offloaded — they're typically small (<<1% of param state) and
-      offloading them complicates the BatchNorm fastpath. If a future model
-      shows non-trivial buffer footprint the same hook structure can be
-      extended.
-    * The ``allocate_inputs`` / ``free_after`` methods on this class are
-      kept for API compatibility with the original M1 scaffold (the
-      profiler driver does not call them — hook-based gathering replaces
-      that path) and to keep ``test_on_demand_disabled_fast_path`` green.
-    """
+    """Context manager that materializes each leaf's params just-in-time."""
 
     def __init__(
         self,
@@ -231,13 +123,7 @@ class OnDemandTensorMgr:
         self.disabled = disabled
         self.model = model
         self._spills: dict[int, _ParamSpill] = {}
-        # Active per-param gather ref-count, keyed on ``id(param)``.
-        # Tied ``Parameter`` objects are registered on multiple owning
-        # modules; pre/post hooks therefore fire once per owner. Without
-        # this counter, an inner module's post-release would clear the
-        # tied param's ``.data`` while the outer module still needs it.
-        # ``_pre_gather`` increments before re-gathering; ``_post_release``
-        # only resets the placeholder when the count drops to 0.
+        # Per-param ref-count by id(param); tied params fire hooks per owner.
         self._active_param_users: dict[int, int] = {}
         self._handles: list[Any] = []
         self._sthook_ctx: Any = None
@@ -252,16 +138,7 @@ class OnDemandTensorMgr:
     # ---- context-manager protocol --------------------------------------
 
     def __enter__(self) -> "OnDemandTensorMgr":
-        """Spill parameters to pinned CPU and install the gather/spill hooks.
-
-        Raises ``RuntimeError`` if the same manager instance is
-        re-entered before a matching ``__exit__``. Without this guard
-        a second ``__enter__`` would install another full hook set,
-        enter another ``saved_tensors_hooks`` context, but only
-        capture one spill snapshot — the inner ``__exit__`` would then
-        clear ``_spills`` / hook bookkeeping out from under the outer
-        scope, leaving restore order-dependent and unsafe.
-        """
+        """Spill parameters to pinned CPU and install the gather/spill hooks."""
         if self._entered:
             raise RuntimeError(
                 "OnDemandTensorMgr cannot be re-entered before __exit__ "
@@ -322,24 +199,10 @@ class OnDemandTensorMgr:
             for _name, param in self.model.named_parameters():
                 self._spill_param_to_cpu(param, target_device)
 
-            # Enabled mode only spills/gathers parameters. Direct buffers
-            # that stay on CPU while inputs/params are on CUDA become a
-            # device-mismatch footgun in ``forward``. Fail fast with an
-            # actionable message rather than letting backward crash with
-            # a confusing secondary device-mismatch downstream. Extending
-            # the spill hooks to cover buffers is tracked separately;
-            # until then, the contract is "no CPU-resident buffers when
-            # target is CUDA".
+            # Enabled mode spills params only; fail fast on CPU buffers when target is CUDA.
             if target_device is not None:
                 for buffer_name, buffer in self.model.named_buffers():
-                    # Strict device equality (not just CPU vs CUDA) so a
-                    # buffer pinned to a DIFFERENT CUDA index than the
-                    # target (e.g. caller dispatches to ``cuda:0`` but
-                    # ``register_buffer`` left this one on ``cuda:1``)
-                    # also fails fast — otherwise the device mismatch
-                    # would surface deep inside a forward kernel as an
-                    # opaque "expected all tensors to be on the same
-                    # device" runtime error.
+                    # Strict device equality catches cross-CUDA-index mismatches too.
                     if getattr(buffer, "device", None) != target_device:
                         raise RuntimeError(
                             f"OnDemandTensorMgr: buffer {buffer_name!r} on "
@@ -350,31 +213,13 @@ class OnDemandTensorMgr:
                         )
 
             for sub in self.model.modules():
-                # ``prepend=True`` on pre-hooks: the trace driver registers its
-                # own pre_forward (and pre_backward) hooks BEFORE we enter this
-                # context. PyTorch fires forward_pre hooks in registration
-                # order, so without ``prepend`` the trace's snapshot of
-                # allocated_before would be taken BEFORE our gather, and
-                # ``intra_op_delta = peak - allocated_before`` would absorb
-                # the per-leaf gather bytes for every op. By prepending, our
-                # gather fires FIRST; the trace's allocated_before then
-                # already includes the gathered param, and intra_op_delta
-                # captures only workspace + output (the cost model's
-                # peak-reconstruction expects exactly that).
+                # prepend=True so gather precedes the trace driver's allocated_before snapshot.
                 self._handles.append(
                     sub.register_forward_pre_hook(self._pre_gather, prepend=True)
                 )
-                # Post-release stays FIFO: it must fire AFTER the trace's
-                # post_forward measures peak/end, otherwise we'd release
-                # mid-measurement.
+                # FIFO post-release so it fires after the trace measures peak.
                 self._handles.append(sub.register_forward_hook(self._post_release))
-                # Backward path: re-gather params before each module's bwd
-                # and release them after. Forward-only callers pay nothing
-                # (the hooks never fire). Backward callers pay one extra
-                # H2D copy of the param + one D2H release per module per
-                # backward pass — the same per-module cost the forward
-                # path already pays. Same ordering rationale: prepend the
-                # pre-gather, FIFO the post-release.
+                # Symmetric backward pair: prepend pre-gather, FIFO post-release.
                 self._handles.append(
                     sub.register_full_backward_pre_hook(
                         self._pre_gather_bwd, prepend=True
@@ -384,7 +229,7 @@ class OnDemandTensorMgr:
                     sub.register_full_backward_hook(self._post_release_bwd)
                 )
 
-            # container-level gather/release for fused-kernel modules whose patched forward bypasses the per-Linear hooks; prepend=True so the gather precedes the trace driver's snapshot pre-hook
+            # Container-level gather for fused-kernel modules whose patched forward bypasses per-Linear hooks.
             self._fused_containers = _find_fused_kernel_containers(self.model)
             if self._fused_containers:
                 LOG.debug(
@@ -401,23 +246,7 @@ class OnDemandTensorMgr:
                 self._handles.append(
                     container.register_forward_hook(self._post_release_subtree)
                 )
-                # Backward hooks: the fused autograd Function (LoRA_MLP /
-                # LoRA_QKV / LoRA_O) stores raw weight Tensor refs as a
-                # plain Python attribute on ``ctx`` (e.g. ``ctx.weights``,
-                # not ``ctx.save_for_backward``), so the saved-tensors
-                # pack/unpack path does NOT spill them. By backward time
-                # the forward post-release has reset every base
-                # ``param.data`` to a length-0 placeholder, and the
-                # autograd backward's matmul against ``ctx.weights[i]``
-                # raises the same ``size mismatch ... vec (0)`` the M0
-                # spike captured — but firing in ``LoRA_MLP.backward``
-                # instead of forward (the fix's forward-only first cut
-                # got the trace forward past the failure but tripped on
-                # the backward equivalent during the trace's
-                # ``loss.backward()`` call). Re-gathering the container's
-                # subtree before its backward enters, then releasing
-                # after, makes the fused autograd Function's backward
-                # see real weights again. Symmetric with the forward pair.
+                # Backward subtree gather: fused autograd Function bypasses saved_tensors_hooks via ctx.weights.
                 self._handles.append(
                     container.register_full_backward_pre_hook(
                         self._pre_gather_subtree_bwd, prepend=True
@@ -429,7 +258,7 @@ class OnDemandTensorMgr:
                     )
                 )
 
-            # PEFT-LoRA containers: subtree gather keeps both LoRA factors and the wrapped base weight live across forward+backward so autograd shape-derivation sees real sizes
+            # PEFT-LoRA subtree gather keeps factors + base weight live for autograd shape-derivation.
             self._peft_lora_containers = _find_peft_lora_containers(self.model)
             if self._peft_lora_containers:
                 LOG.debug(
@@ -446,17 +275,7 @@ class OnDemandTensorMgr:
                 self._handles.append(
                     container.register_forward_hook(self._post_release_subtree)
                 )
-                # Symmetric backward hooks: the PEFT LoRA forward path's
-                # autograd graph is built against the gathered tensors;
-                # at backward time the same shape-derivation step that
-                # bites at forward (``ToCopyBackward0`` reading
-                # ``param.size()``) bites again. Without this pair, the
-                # per-Linear post-release would clear ``base_layer.weight``
-                # before the LoRA backward runs and grad accumulation
-                # against the saved-shape activation would see a length-0
-                # placeholder weight. Mirror the fused-kernel container's
-                # backward hooks so the LoRA backward window sees real
-                # weights too.
+                # Backward shape-derivation needs real weights; mirror fused-kernel pair.
                 self._handles.append(
                     container.register_full_backward_pre_hook(
                         self._pre_gather_subtree_bwd, prepend=True
@@ -468,16 +287,13 @@ class OnDemandTensorMgr:
                     )
                 )
 
-            # Saved-for-backward tensors spill to CPU. Without this, autograd
-            # would keep the gathered GPU param alive via the saved-for-
-            # backward slot of the linear's grad_fn, defeating post_release.
+            # Saved-tensors hooks spill to CPU; otherwise grad_fn pins gathered params alive.
             self._sthook_ctx = torch.autograd.graph.saved_tensors_hooks(
                 self._pack_hook, self._unpack_hook
             )
             self._sthook_ctx.__enter__()
         except BaseException:
-            # Mirror __exit__'s teardown path so partial setup leaves no
-            # wedged params with empty .data slots.
+            # Mirror __exit__'s teardown so partial setup doesn't wedge params.
             self._restore_after_partial_setup()
             raise
 
@@ -493,14 +309,7 @@ class OnDemandTensorMgr:
         return self
 
     def _restore_after_partial_setup(self) -> None:
-        """Undo whatever portion of __enter__ succeeded.
-
-        Mirrors __exit__'s teardown but is callable from a partially-
-        constructed enabled-mode state (some params spilled, some hooks
-        registered, saved_tensors_hooks possibly entered). Best-effort:
-        every step is independently try/except'd because we're already
-        on an exception path and must not mask the original failure.
-        """
+        """Undo partial __enter__ on the exception path; best-effort."""
         # Remove any hooks that were registered.
         for h in self._handles:
             try:
@@ -532,8 +341,7 @@ class OnDemandTensorMgr:
         for spill in self._spills.values():
             try:
                 if spill.original_data is not None:
-                    # Legacy retain-storage path (kept for forward-compat;
-                    # the GPU spill no longer populates original_data).
+                    # Legacy retain-storage path.
                     spill.original_data.copy_(
                         spill.cpu_storage.to(
                             spill.original_data.device, non_blocking=True
@@ -541,20 +349,14 @@ class OnDemandTensorMgr:
                     )
                     spill.param.data = spill.original_data
                 elif getattr(spill.original_device, "type", None) == "cuda":
-                    # GPU-origin without retained storage — allocate a
-                    # fresh tensor on the original device and copy from
-                    # the CPU spill. ``id(param)`` is preserved.
+                    # Fresh GPU alloc; id(param) preserved.
                     spill.param.data = spill.cpu_storage.to(
                         spill.original_device, non_blocking=True
                     )
                 else:
-                    # CPU-original: cpu_storage IS the original tensor.
+                    # CPU-original: cpu_storage IS the original.
                     spill.param.data = spill.cpu_storage
-                # Mirror __exit__'s grad restore: if a grad was moved to the
-                # gather device during partial setup, move it back so the
-                # caller doesn't see a param/grad device mismatch on the
-                # exception path. Unlikely to fire (no backward has run by
-                # the time setup unwinds), but symmetric with __exit__.
+                # Move grad back to original device for caller's device-match.
                 if (
                     spill.param.grad is not None
                     and spill.param.grad.device != spill.original_device
@@ -570,11 +372,7 @@ class OnDemandTensorMgr:
                     _e,
                 )
         if torch is not None and torch.cuda.is_available():
-            # Synchronize each unique CUDA target the restore loop wrote
-            # to. Bare ``torch.cuda.synchronize()`` only waits on the
-            # current device — non_blocking copies queued to other
-            # devices (cuda:1+ on multi-GPU hosts) would still be in
-            # flight when this method returns (CR 3191XXXXXX).
+            # Sync each CUDA target since bare synchronize() only waits on the current device.
             cuda_targets = {
                 spill.original_device
                 for spill in self._spills.values()
@@ -601,13 +399,7 @@ class OnDemandTensorMgr:
         if self.disabled:
             return
 
-        # Remove hooks first so partial forward calls during exit unwinding
-        # don't try to gather params that are mid-restore. NOTE: rebind
-        # ``except`` to ``_e`` (not ``exc``) because Python 3 deletes the
-        # except-binding after the block exits — a name collision with the
-        # ``exc`` parameter would silently delete the original and the
-        # later ``_sthook_ctx.__exit__(exc_type, exc, tb)`` call would
-        # raise ``NameError`` if any hook removal failed (CR 3191882429).
+        # Remove hooks first; rebind except to _e to avoid clobbering exc parameter.
         for h in self._handles:
             try:
                 h.remove()
@@ -615,8 +407,7 @@ class OnDemandTensorMgr:
                 LOG.debug("OnDemandTensorMgr: hook removal failed during exit (%s)", _e)
         self._handles.clear()
 
-        # Exit saved_tensors_hooks BEFORE restoring params — any in-flight
-        # backward has already completed by this point (run_trace synchs).
+        # Exit saved_tensors_hooks before restoring params; in-flight backward already drained.
         if self._sthook_ctx is not None:
             try:
                 self._sthook_ctx.__exit__(exc_type, exc, tb)
@@ -656,9 +447,7 @@ class OnDemandTensorMgr:
                     # CPU-original — cpu_storage is the original tensor.
                     spill.param.data = spill.cpu_storage
                 # Grad may have been computed (or moved) on the gather
-                # device while the param was spilled. If it's not on the
-                # param's original device, the next optimizer step / CPU-
-                # side use hits a device mismatch. Move it back.
+                # Move grad back to original device for caller's device-match.
                 if (
                     spill.param.grad is not None
                     and spill.param.grad.device != spill.original_device
@@ -673,22 +462,14 @@ class OnDemandTensorMgr:
                     spill.original_device,
                     _e,
                 )
-                # Make the "leaving on CPU storage" claim real: point
-                # ``param.data`` at the always-valid CPU spill copy and
-                # move any grad to CPU so the caller doesn't see a
-                # placeholder/transient tensor or a device-mismatched
-                # grad on the failure path (CR 3191961003).
+                # Point param.data + grad at the CPU spill for the failure path.
                 spill.param.data = spill.cpu_storage
                 if (
                     spill.param.grad is not None
                     and getattr(spill.param.grad.device, "type", None) != "cpu"
                 ):
                     spill.param.grad = spill.param.grad.to("cpu", non_blocking=True)
-        # Synchronize each unique CUDA target the restore loop wrote
-        # to. Bare ``torch.cuda.synchronize()`` only waits on the
-        # current device — non_blocking copies queued to other devices
-        # (cuda:1+ on multi-GPU hosts) would still be in flight when
-        # ``__exit__`` returns (CR 3191XXXXXX).
+        # Sync each CUDA target since bare synchronize() only waits on the current device.
         if torch.cuda.is_available():
             cuda_targets = {
                 spill.original_device
@@ -714,30 +495,17 @@ class OnDemandTensorMgr:
     def _spill_param_to_cpu(
         self, param: Any, target_device: "torch.device | None"
     ) -> None:
-        """Move ``param`` to pinned CPU storage; leave a placeholder in .data.
-
-        Handles both GPU-resident (copy GPU→CPU, replace .data with empty)
-        and CPU-resident (use param's existing tensor, pin if possible) cases.
-        """
+        """Move ``param`` to pinned CPU storage; leave a placeholder in .data."""
         import torch
 
-        # Tied/shared ``Parameter`` objects can be reached via multiple
-        # module paths; if we already spilled this exact object, return
-        # early. A second pass would see ``.data`` already replaced with
-        # the empty placeholder (numel==0), and would clobber the valid
-        # ``cpu_storage`` recorded in ``self._spills`` with that placeholder.
+        # Skip tied/shared params already spilled — repeat would clobber cpu_storage.
         if id(param) in self._spills:
             return
 
         original_device = param.device
 
         if original_device.type == "cpu":
-            # CPU-resident: capture the original tensor first so restore can
-            # always recover it, then attempt to pin a (possibly new) copy
-            # for async H2D in pre-gather. pin_memory() returns a NEW pinned
-            # tensor on success (only returns self if already pinned), so we
-            # must preserve the original reference separately — otherwise
-            # tied-weight / shared-storage relationships break on restore.
+            # Preserve original ref; pin_memory may return a new tensor that breaks tied weights.
             original_data = param.data
             try:
                 pinned = original_data.pin_memory()
@@ -745,10 +513,7 @@ class OnDemandTensorMgr:
             except Exception:  # noqa: BLE001 - pinning is best-effort
                 cpu_storage = original_data
                 self._n_pin_failures += 1
-            # If pin_memory returned self (already-pinned input), the two
-            # references alias the same tensor; restore via cpu_storage path
-            # is sufficient. Only set original_data when pinning produced a
-            # distinct tensor that would otherwise replace the original.
+            # Only set original_data when pinning produced a distinct tensor.
             spill_original = original_data if cpu_storage is not original_data else None
             self._spills[id(param)] = _ParamSpill(
                 param=param,
@@ -758,21 +523,7 @@ class OnDemandTensorMgr:
             )
             return
 
-        # GPU-resident: copy GPU→CPU, then drop our reference to the
-        # original GPU tensor so the caching allocator can actually
-        # reclaim its storage. ``original_data=None`` flags the GPU-origin
-        # branch in the restore paths, which allocate a fresh tensor on
-        # ``original_device`` and copy ``cpu_storage`` back. Parameter
-        # identity (``id(param)``) is preserved across the round trip;
-        # ``param.data_ptr()`` may differ post-restore. Optimizer state
-        # keys on ``id(param)`` (PyTorch convention), so this is safe.
-        #
-        # Fix for CR 3192478323 / 3192535995 — the previous code retained
-        # ``original_data`` for the whole context, which kept the
-        # original GPU storage live and defeated the spill: peak memory
-        # stayed inflated for GPU-resident models. Releasing the storage
-        # here is what actually buys the paper's "model > device memory"
-        # guarantee.
+        # GPU-resident: copy GPU→CPU, drop GPU ref so allocator reclaims storage.
         try:
             cpu_storage = param.data.detach().to("cpu", copy=True)
             try:
@@ -780,18 +531,7 @@ class OnDemandTensorMgr:
             except Exception:  # noqa: BLE001 - pinning is best-effort
                 self._n_pin_failures += 1
         except Exception as exc:  # noqa: BLE001 - defensive
-            # Spill failed: the param is still on ``original_device``.
-            # If the manager's gather destination differs from the
-            # param's current device, leaving the param here is a
-            # silent correctness bug — subsequent gather calls assume
-            # the spill happened and will fetch a stale tensor on the
-            # wrong device. Fail fast so the caller can recover.
-            #
-            # When ``target_device == original_device`` (in-place
-            # pinning case where the spill is purely a pinning
-            # optimization), best-effort warn-and-return preserves the
-            # legacy behavior — the param ends up where it would have
-            # been gathered anyway, just unpinned.
+            # Fail fast on cross-device spill failure; in-place fallback for same-device.
             if target_device is not None and target_device != original_device:
                 LOG.error(
                     "OnDemandTensorMgr: failed to spill param to CPU (%s); "
@@ -809,8 +549,7 @@ class OnDemandTensorMgr:
             )
             return
 
-        # Capture dtype before reassigning ``param.data`` — once the
-        # placeholder is in place the original tensor is unreachable.
+        # Capture dtype before reassigning param.data.
         orig_dtype = param.data.dtype
         placeholder = torch.empty(0, dtype=orig_dtype, device=original_device)
         param.data = placeholder
@@ -825,13 +564,7 @@ class OnDemandTensorMgr:
 
     @staticmethod
     def _normalize_device(device: "torch.device | str | int") -> "torch.device":
-        """Normalize a device-like value to a ``torch.device``.
-
-        ``torch.device(0)`` raises in PyTorch 2.6 (a bare int is not a
-        valid single-arg constructor). Funnel ints through
-        ``torch.device("cuda", index)`` and pass strings / existing
-        ``torch.device`` through unchanged.
-        """
+        """Normalize a device-like value to a ``torch.device``."""
         import torch
 
         if isinstance(device, torch.device):
@@ -841,16 +574,7 @@ class OnDemandTensorMgr:
         return torch.device(device)
 
     def _infer_model_device(self) -> "torch.device | None":
-        """Best-effort model-device inference for default target alignment.
-
-        Returns the device of the first parameter we can find, falling
-        back to the first buffer if the model has no parameters but does
-        have CUDA buffers (so callers like ``_unpack_hook`` don't end up
-        restoring activations to ``cuda:current_device`` on a non-default
-        rank). Returns ``None`` if both iterations are empty or attribute
-        access fails. Used only to pick a sensible default when the
-        caller did not supply ``device=``; explicit user input always wins.
-        """
+        """Best-effort model-device inference for default target alignment."""
         if self.model is None:
             return None
         try:
@@ -863,16 +587,7 @@ class OnDemandTensorMgr:
         return None
 
     def _gather_target_device(self) -> "torch.device | None":
-        """Resolve the target device for gathered params.
-
-        Falls back to the param's original device if the manager wasn't
-        constructed with an explicit ``device``. ``self.device`` is
-        already normalized to a ``torch.device`` (or ``None``) by
-        ``__enter__`` — but if the manager is invoked outside the
-        ``with`` block (e.g. by callers that drive hooks manually), or
-        was never entered, ``self.device`` may still be a raw
-        ``str``/``int``. Normalize defensively.
-        """
+        """Resolve the target device for gathered params."""
         if self.device is None:
             return None
         import torch
@@ -882,13 +597,7 @@ class OnDemandTensorMgr:
         return self._normalize_device(self.device)
 
     def _pre_gather(self, module: "nn.Module", inputs: Any) -> None:
-        """Copy the module's *direct* params from CPU to target_device before forward.
-
-        Tied params: hooks fire once per owning module. The first
-        owner's pre-hook actually gathers; nested owners just bump the
-        ref-count so the matching post-release defers placeholder reset
-        until every owner has finished. See ``_active_param_users``.
-        """
+        """Copy the module's direct params to target_device; tied params bump refcount."""
         target = self._gather_target_device()
         for param in module.parameters(recurse=False):
             spill = self._spills.get(id(param))
@@ -916,24 +625,12 @@ class OnDemandTensorMgr:
                 ):
                     param.data = spill.original_data
                 else:
-                    # Either CPU-original, OR a cross-device fallback where
-                    # original_data lives on a different device than the
-                    # current gather target. Both cases would leave a
-                    # device-mismatched weight in place that would fail with
-                    # a confusing secondary device-mismatch on the next op,
-                    # hiding the real gather error/OOM. Surface the real
-                    # cause (CR 3191961010).
+                    # Surface the real cause; device-mismatch fallback would hide it.
                     raise
             self._active_param_users[pid] = 1
 
     def _post_release(self, module: "nn.Module", inputs: Any, output: Any) -> None:
-        """Replace the module's *direct* params with empty placeholders.
-
-        Tied params: only the OUTERMOST owner's post-release actually
-        clears ``.data``. Inner owners decrement the ref-count and
-        return — clearing while an outer owner still needs the param
-        would leave an empty placeholder for the remaining ops.
-        """
+        """Replace direct params with empty placeholders; outermost owner clears."""
         import torch
 
         target = self._gather_target_device()
@@ -981,57 +678,17 @@ class OnDemandTensorMgr:
             self._post_release_bwd(sub, grad_input, grad_output)
 
     def _pre_gather_bwd(self, module: "nn.Module", grad_output: Any) -> None:
-        """Backward-pre hook: gather direct params before this module's bwd.
-
-        Linear's autograd computes ``grad_input = grad_output @ weight`` —
-        the weight tensor's full data must be live, but ``_post_release``
-        already cleared it to an empty placeholder. Re-running the gather
-        here makes backward see the real param. Mirrors ``_pre_gather``
-        but takes the backward-hook signature.
-        """
-        # Reuse the forward-gather logic; ``inputs`` is unused there.
+        """Backward-pre gather; reuses forward logic."""
         self._pre_gather(module, grad_output)
 
     def _post_release_bwd(
         self, module: "nn.Module", grad_input: Any, grad_output: Any
     ) -> None:
-        """Backward-post hook: release direct params after this module's bwd.
-
-        Caveat: ``register_full_backward_hook`` fires *prematurely* — before
-        the module's actual backward kernel runs — for modules whose inputs
-        do NOT require grad (e.g. ``nn.Embedding`` taking a ``LongTensor`` of
-        ``input_ids``). In that case PyTorch's ``BackwardHook`` calls the
-        user post-hook from within the *output* grad-fn callback (see
-        ``torch/utils/hooks.py:_BackwardHook.setup_output_hook`` — the
-        ``input_tensors_index is None`` branch warns and dispatches the
-        user post-hook immediately). If we release the param here, the
-        subsequent ``EmbeddingBackward`` runs against a length-0 placeholder
-        and ``AccumulateGrad`` fails with
-        ``"size of tensor a (0) must match the size of tensor b (...) at
-        non-singleton dimension 1"`` — the param-grad shape derived from the
-        live ``param.size()`` (now ``(0,)``) clashes with the real grad
-        produced by the embedding's saved-shape backward.
-
-        Detect the early-fire case by checking ``grad_input``: when no input
-        required grad, ``grad_input`` is a tuple of ``None`` entries (see
-        ``_pack_with_none([], [], n_inputs)`` in the hooks helper). Skip
-        the release in that case — the param will be released by
-        ``__exit__`` instead. Slightly inflates the post-trace peak (the
-        gathered weight stays live for the rest of backward) but preserves
-        correctness; the same modules are typically embeddings near the
-        leaves of the autograd graph so the residency overlap is bounded.
-        """
+        """Backward-post release; skip premature-fire when no input required grad."""
         if grad_input is not None and isinstance(grad_input, tuple):
             inputs_have_grad = any(g is not None for g in grad_input)
             if not inputs_have_grad:
-                # Premature-fire path: PyTorch dispatched this post-hook
-                # from the output-grad callback because no input required
-                # grad. The module's own backward (which produces the
-                # param grads) hasn't run yet. Decrement the active-user
-                # ref-counts that ``_pre_gather_bwd`` incremented so a
-                # later ``__exit__`` doesn't double-release, but leave
-                # the gathered ``param.data`` in place so
-                # ``AccumulateGrad`` sees the real shape.
+                # Embeddings: hook fires before module backward runs; defer release to __exit__.
                 for param in module.parameters(recurse=False):
                     pid = id(param)
                     users = self._active_param_users.get(pid, 0)
@@ -1042,21 +699,10 @@ class OnDemandTensorMgr:
                         else:
                             self._active_param_users[pid] = new_count
                 return
-        # Normal path: inputs received gradients → module backward already
-        # ran → param grads are accumulated → safe to release.
+        # Normal path: grads accumulated → safe to release.
         self._post_release(module, grad_input, grad_output)
 
-    # ---- saved-tensors spill / restore ---------------------------------
-    #
-    # Backward IS supported under on-demand: the unpack hook copies CPU-
-    # spilled tensors back to ``self.device`` before returning, so autograd
-    # receives a CUDA tensor on a CUDA backward. The H2D copy adds latency
-    # proportional to the saved-tensor footprint (a 7B forward saves on the
-    # order of a few GB of activations -> a few hundred ms of PCIe time
-    # per backward pass on a 26 GB/s link); the trace driver currently
-    # passes ``include_backward=False`` when on-demand engages, so this
-    # path is dormant in production but no longer a footgun for callers
-    # that want to run backward under on-demand themselves.
+    # Saved-tensors spill/restore — backward is supported (unpack copies back to GPU).
 
     def _pack_hook(self, tensor: Any) -> Any:
         """Spill autograd-retained GPU tensors to CPU at save time."""
@@ -1065,33 +711,20 @@ class OnDemandTensorMgr:
                 return tensor
             return tensor.detach().to("cpu", non_blocking=False)
         except Exception as _e:  # noqa: BLE001 - surface spill failures
-            # Returning the original CUDA tensor would silently keep the
-            # saved-for-backward buffer alive on GPU, invalidating the
-            # trace peak or causing a downstream OOM without exposing
-            # why spill broke. Mirror ``_unpack_hook``'s log+raise
-            # contract so failures are visible (CR 3191961017).
+            # Return-original would silently pin saved buffer alive on GPU.
             LOG.warning("OnDemandTensorMgr pack spill failed (%s)", _e)
             raise
 
     def _unpack_hook(self, packed: Any) -> Any:
-        """Restore a spilled tensor on the configured GPU device.
-
-        If ``packed`` is a CPU tensor and we know the target device
-        (``self.device`` set), copy it back to GPU before returning.
-        Backward under on-demand otherwise gets a CPU tensor on a CUDA
-        backward and fails deep in autograd C++.
-        """
+        """Restore a spilled tensor on the configured GPU device."""
         try:
-            # Non-tensor or already on GPU: nothing to do. ``torch.Tensor``
-            # exposes ``is_cuda`` but not ``is_cpu``; check device.type instead.
+            # Non-tensor or already-GPU: nothing to do.
             device = getattr(packed, "device", None)
             if device is None:
                 return packed
             if getattr(device, "type", None) != "cpu":
                 return packed
             if self.device is None:
-                # No target device known — autograd will surface the CPU/CUDA
-                # mismatch itself if it matters.
                 return packed
             try:
                 target = self._normalize_device(self.device)
@@ -1101,10 +734,7 @@ class OnDemandTensorMgr:
                 return packed
             return packed.to(target, non_blocking=True)
         except Exception as exc:  # noqa: BLE001 - defensive
-            # Surface H2D failures: previously the unpack would silently
-            # degrade and autograd later exploded with "expected CUDA,
-            # got CPU" — actionable error hidden. Backward IS supported
-            # publicly, so propagate the real cause.
+            # Surface H2D failures so the real cause isn't hidden behind a downstream CUDA mismatch.
             LOG.warning("OnDemandTensorMgr unpack restore failed (%s)", exc)
             raise
 
