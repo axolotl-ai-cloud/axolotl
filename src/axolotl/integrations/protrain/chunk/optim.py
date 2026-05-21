@@ -1,21 +1,4 @@
-"""Fused-Adam adapters for persistent (GPU) and non-persistent (CPU) chunks.
-
-Two classes with a similar shape:
-
-* :class:`CpuFusedAdamAdapter` wraps ``deepspeed.ops.adam.DeepSpeedCPUAdam``
-  and adds a ``step_async(chunk_id)`` path so the CPU optimizer step for
-  chunk ``c`` can launch the instant that chunk's grads have been
-  reduce-offloaded — overlapping with GPU backward for later chunks (§5).
-* :class:`GpuFusedAdamAdapter` wraps Apex ``FusedAdam`` (or falls back to
-  ``torch.optim.AdamW`` with a warning) for the persistent-resident subset.
-
-Async semantics: we use a single-worker ``ThreadPoolExecutor``. DeepSpeed's
-CPU Adam kernel releases the GIL inside its compiled op, so "async" here
-means "run overlapped with the GPU kernels the main Python thread is
-launching", not parallel across chunks. Serializing through one worker also
-sidesteps the CPU Adam op's internal state sharing between chunks of the
-same optimizer instance.
-"""
+"""Fused-Adam adapters for persistent (GPU) and non-persistent (CPU) chunks."""
 
 from __future__ import annotations
 
@@ -32,19 +15,7 @@ LOG = get_logger(__name__)
 
 
 class _DestroyedDsAdam:
-    """Replaces a destroyed DeepSpeedCPUAdam C-state binding.
-
-    DeepSpeed's ``DeepSpeedCPUAdam.__del__`` (``deepspeed/ops/adam/
-    cpu_adam.py:99``) unconditionally calls
-    ``self.ds_opt_adam.destroy_adam(self.opt_id)``. Once we have
-    explicitly destroyed the C state in :meth:`CpuFusedAdamAdapter.
-    _destroy_ds_adam_state`, we replace the live binding with this
-    stub so the wrapper's destructor (which can run at GC / interpreter
-    shutdown) is a harmless no-op rather than a double-free or an
-    ``AttributeError`` (the latter would surface as
-    ``PytestUnraisableExceptionWarning`` and accumulate into test
-    failures across repeated adapter rebuilds).
-    """
+    """Replaces a destroyed DeepSpeedCPUAdam C-state binding to neutralise __del__."""
 
     def destroy_adam(self, _opt_id):  # noqa: D401, ANN001
         return None
@@ -92,21 +63,7 @@ class CpuFusedAdamAdapter:
         self.eps = float(eps)
         self.weight_decay = float(weight_decay)
 
-        # One DeepSpeedCPUAdam per chunk — cheap; shares no state.
-        # DeepSpeedCPUAdam silently constructs a half-initialized object
-        # when the C++ adam_bindings extension fails to compile (e.g.
-        # under a system CUDA / torch CUDA version mismatch — the
-        # warning surfaces from `deepspeed.ops.op_builder` but the
-        # constructor doesn't raise). The half-init object lacks
-        # ``ds_opt_adam`` and crashes later in both ``.step()`` and
-        # ``__del__``. We probe for the attribute right after each
-        # construction; missing means the extension isn't loaded and we
-        # raise so callers' try/except can fall back to the inline GPU
-        # optimizer path. Without this guard the bad objects survive,
-        # their ``__del__`` AttributeErrors propagate as
-        # PytestUnraisableExceptionWarning and accumulate into test
-        # failures whenever multiple adapter constructions happen
-        # (phase-2 profiler bootstrap → rebuild → user optim wrapper).
+        # One DeepSpeedCPUAdam per chunk; probe for ds_opt_adam to catch half-init from extension load failure.
         self._optims: dict[ChunkId, Any] = {}
         for cid, params in self._params_per_chunk.items():
             if not params:
@@ -119,11 +76,7 @@ class CpuFusedAdamAdapter:
                 weight_decay=self.weight_decay,
             )
             if not hasattr(opt, "ds_opt_adam"):
-                # Suppress this object's __del__ AttributeError so the
-                # raise below propagates cleanly. DeepSpeed's destructor
-                # calls ``self.ds_opt_adam.destroy_adam(self.opt_id)``;
-                # planting a no-op stub keeps the destructor harmless
-                # without monkey-patching the special __del__ slot.
+                # Plant no-op stub so __del__ doesn't AttributeError before the raise below.
                 class _NoopDsAdam:  # noqa: N801 — internal stub
                     def destroy_adam(self, _opt_id):
                         return None
@@ -157,43 +110,14 @@ class CpuFusedAdamAdapter:
         d2h_event: Any = None,
         post_step: Any = None,
     ) -> "Future[None]":
-        """Submit the CPU Adam step for ``chunk_id`` to the worker thread.
-
-        Idempotent with :meth:`wait`: if a prior step is still pending for
-        the same chunk, we wait for it first so we never run two steps
-        concurrently against the same param shard.
-
-        Parameters
-        ----------
-        chunk_id:
-            The chunk whose CPU Adam step to run.
-        d2h_event:
-            Optional :class:`torch.cuda.Event` recorded by the caller on
-            the CUDA stream immediately after the grad D2H copy was
-            issued. When provided, the worker thread calls
-            ``event.synchronize()`` before invoking ``optim.step()`` —
-            this closes the CPU-Adam ↔ D2H race (BUG 1 fix): without
-            this wait, the worker can read uninitialized/partial bytes
-            from the pinned grad shard before the async D2H finishes.
-        post_step:
-            Optional zero-arg callable invoked on the worker thread
-            after ``optim.step()`` returns (before the future resolves).
-            The chunk manager uses this to repoint ``param.data`` back
-            to the GPU empty-placeholder so intermediate code between
-            iters doesn't see CPU-resident ``.data`` (BUG 4 fix).
-        """
+        """Submit the CPU Adam step for ``chunk_id`` to the worker thread."""
         prev = self._pending.get(chunk_id)
         if prev is not None:
-            # ``result()`` waits if pending; on a completed future it returns
-            # immediately for success or raises for failure. The earlier
-            # ``not prev.done()`` short-circuit dropped exceptions from
-            # already-finished failed futures (CR 3191882419).
+            # result() waits pending; raises for failed futures (don't short-circuit on done).
             prev.result()
         optim = self._optims.get(chunk_id)
         if optim is None:
-            # No params belonging to this chunk live on CPU (e.g. a fully
-            # persistent layout). Run the post_step (if any) inline and
-            # return an already-completed future.
+            # No CPU params for this chunk; run post_step inline.
             fut: Future[None] = Future()
             if post_step is not None:
                 try:
@@ -231,19 +155,7 @@ class CpuFusedAdamAdapter:
         fut.result()  # re-raises worker exceptions on the caller's thread
 
     def wait_all(self) -> None:
-        """Block until every in-flight chunk step has finished.
-
-        Every pending future is awaited even if one raises, so gradient
-        computation is not left in an incomplete state. The first captured
-        exception is re-raised after all futures have been awaited; any
-        additional exceptions are logged. ``KeyboardInterrupt`` and
-        ``SystemExit`` (the ``BaseException``-not-``Exception`` set)
-        propagate immediately rather than being aggregated — Ctrl-C
-        and process shutdown signals must escape the await loop so
-        the caller sees them on the first interruption rather than
-        having them deferred (and possibly suppressed) behind a worker
-        exception.
-        """
+        """Await every in-flight chunk step; re-raise first Exception, log the rest."""
         errors: list[Exception] = []
         for fut in list(self._pending.values()):
             try:
@@ -259,18 +171,7 @@ class CpuFusedAdamAdapter:
             raise errors[0]
 
     def zero_grad(self, set_to_none: bool = True) -> None:
-        """Zero gradients across every chunk's params.
-
-        Drains in-flight async ``step_async`` futures via :meth:`wait_all`
-        BEFORE clearing grads. Without this barrier the worker thread
-        could still be reading the grad shard for a chunk's CPU-Adam
-        step when ``zero_grad`` clears or nulls the corresponding
-        ``param.grad`` tensor — corrupting the in-progress step.
-        Adam's ``step`` reads ``param.grad`` and writes ``param.data`` /
-        ``state['exp_avg']`` / ``state['exp_avg_sq']``; nulling the
-        grad mid-step is the classic concurrent-mutation hazard, so
-        we synchronize the executor explicitly first.
-        """
+        """Zero grads after draining in-flight step_async futures; nulling mid-step would corrupt Adam."""
         self.wait_all()
         for optim in self._optims.values():
             optim.zero_grad(set_to_none=set_to_none)
@@ -278,36 +179,7 @@ class CpuFusedAdamAdapter:
     # ---- lifecycle ------------------------------------------------------
 
     def shutdown(self) -> None:
-        """Tear down the worker pool. Call explicitly before process exit.
-
-        ``wait_all()`` may re-raise a worker exception. We still need to
-        release the executor in that case — otherwise the thread pool
-        leaks on the explicit-cleanup path and ``__del__`` would swallow
-        the failure silently. Run the executor shutdown in ``finally``
-        and re-raise the original error after the pool is released.
-
-        Only catches ``Exception`` (not ``BaseException``) so
-        ``KeyboardInterrupt`` / ``SystemExit`` propagate immediately —
-        a Ctrl-C during teardown should not be deferred and re-raised
-        AFTER ``executor.shutdown(wait=True)`` (which itself blocks on
-        worker drain and could compound the wait).
-
-        After draining the executor we explicitly destroy each
-        ``DeepSpeedCPUAdam``'s C++ kernel state via
-        ``ds_opt_adam.destroy_adam(opt_id)`` (DeepSpeed 0.18.2
-        ``deepspeed/ops/adam/cpu_adam.py:102``). Relying on
-        ``DeepSpeedCPUAdam.__del__`` is unreliable: GC ordering at
-        interpreter shutdown can run the destructor on a partially
-        initialised object that lacks ``ds_opt_adam`` (we observed this
-        as ``AttributeError`` warnings under repeated adapter rebuilds),
-        and even on healthy objects ``__del__`` is only invoked when
-        the wrapper is unreachable — references held by the executor
-        thread, futures, or test fixtures keep the C state alive until
-        process exit. Calling destroy here is idempotent: we replace
-        ``ds_opt_adam`` with a :class:`_DestroyedDsAdam` sentinel after
-        the call and gate the second call on the attribute not being a
-        sentinel, so a duplicate ``shutdown()`` is a safe no-op.
-        """
+        """Tear down the worker pool + explicitly destroy DeepSpeedCPUAdam C state. Idempotent."""
         error: Exception | None = None
         try:
             self.wait_all()
@@ -320,18 +192,7 @@ class CpuFusedAdamAdapter:
             raise error
 
     def _destroy_ds_adam_state(self) -> None:
-        """Free each per-chunk DeepSpeedCPUAdam's C++ kernel state.
-
-        Idempotent: a missing or already-stubbed ``ds_opt_adam`` is
-        skipped, and we replace the live binding with a no-op stub
-        (:class:`_DestroyedDsAdam`) after destroy so the wrapper's
-        ``__del__`` — which calls ``self.ds_opt_adam.destroy_adam(
-        self.opt_id)`` unconditionally (DeepSpeed
-        ``cpu_adam.py:102``) — cannot double-free the C state and
-        cannot raise ``AttributeError``. Per-chunk failures are logged
-        as warnings rather than raised so a single misbehaving
-        optimizer cannot block teardown of the others.
-        """
+        """Free each per-chunk DeepSpeedCPUAdam C++ state; stub ds_opt_adam to neutralise __del__."""
         for cid, opt in self._optims.items():
             ds_opt_adam = getattr(opt, "ds_opt_adam", None)
             if ds_opt_adam is None or isinstance(ds_opt_adam, _DestroyedDsAdam):
@@ -354,12 +215,7 @@ class CpuFusedAdamAdapter:
         try:
             self.shutdown()
         except Exception:  # noqa: BLE001 — destructors must not throw
-            # Swallow but log: a CPU-Adam future failure plus a missed
-            # explicit ``shutdown()`` call would otherwise discard the
-            # only signal that the optimizer hit a teardown-time error.
-            # Use module logger via ``LOG`` (defined above); ``debug``
-            # rather than ``warning`` because GC ordering can cause
-            # spurious failures during interpreter teardown.
+            # GC ordering at shutdown causes spurious failures; debug-log only.
             LOG.debug(
                 "CpuFusedAdamAdapter.__del__: shutdown failed",
                 exc_info=True,
@@ -372,13 +228,7 @@ class CpuFusedAdamAdapter:
 
 
 class GpuFusedAdamAdapter:
-    """Synchronous fused GPU Adam for the persistent chunk set.
-
-    Prefers ``apex.optimizers.FusedAdam`` (paper-cited backend). Falls back
-    to stock ``torch.optim.AdamW`` with a warning when Apex is unavailable
-    — the cost model will be off in that case (AdamW is a distinct update
-    rule, not just a different kernel) but training stays correct.
-    """
+    """Synchronous fused GPU Adam for the persistent chunk set; falls back to torch.optim.AdamW."""
 
     def __init__(
         self,
@@ -396,12 +246,7 @@ class GpuFusedAdamAdapter:
         self.eps = float(eps)
         self.weight_decay = float(weight_decay)
 
-        # Empty persistent set is a valid Mode-C state (e.g. a config where
-        # all chunks are non-persistent / live on CPU). Both Apex FusedAdam
-        # and torch.optim.AdamW raise ValueError on an empty params list,
-        # so short-circuit to a no-op adapter: step()/zero_grad() do
-        # nothing and state_dict() returns the empty dict shape that
-        # torch optimizers use.
+        # Empty persistent set is valid (all-CPU Mode-C); short-circuit to a no-op adapter.
         if len(param_list) == 0:
             self._optim = None
             return
@@ -409,14 +254,7 @@ class GpuFusedAdamAdapter:
         self._optim = self._build_optim(param_list)
 
     def _build_optim(self, params: list["nn.Parameter"]) -> Any:
-        """Return Apex ``FusedAdam`` if importable and instantiable, else ``torch.optim.AdamW``.
-
-        Both the import and the ``FusedAdam(...)`` instantiation are guarded:
-        a broken Apex install (e.g. CUDA extensions missing) can raise
-        ``RuntimeError``/``AttributeError``/``AssertionError`` from
-        ``__init__`` rather than ``ImportError``. Any failure routes to the
-        torch.optim.AdamW fallback so the wrapper does not crash.
-        """
+        """Return Apex FusedAdam if importable+instantiable, else torch.optim.AdamW."""
         import torch
 
         def _fallback_adamw() -> Any:
@@ -431,11 +269,7 @@ class GpuFusedAdamAdapter:
         try:
             from apex.optimizers import FusedAdam  # type: ignore[import-not-found]
         except (ImportError, RuntimeError) as exc:
-            # ``ImportError`` covers the missing-package case; ``RuntimeError``
-            # covers the increasingly common "apex installed but its CUDA
-            # extensions (e.g. ``amp_C``) won't load on this driver/torch
-            # combination" failure mode that escapes ``ImportError``. Both
-            # paths fall back to ``torch.optim.AdamW``.
+            # ImportError + RuntimeError both indicate apex CUDA extension load failure.
             exc_repr = f"{type(exc).__name__}: {exc}"
             LOG.warning(
                 "apex.optimizers.FusedAdam import failure (%s); falling back to "
@@ -508,7 +342,7 @@ class GpuFusedAdamAdapter:
         return self._optim
 
 
-# bnb 8-bit Adam kernels are CUDA-only, so this adapter is restricted to persistent (GPU-resident) chunks; non-persistent chunks must use the CPU FusedAdam adapter.
+# bnb 8-bit Adam is CUDA-only: restricted to persistent chunks.
 
 
 class GpuAdamW8bitAdapter:
@@ -537,35 +371,21 @@ class GpuAdamW8bitAdapter:
             self._optim = None
             return
 
-        # Defer the bitsandbytes import: ``optim_wrapper`` only constructs
-        # this adapter when the user explicitly opts into an 8-bit
-        # optimizer name, so we must not pay the bnb import cost (it
-        # JIT-loads CUDA libraries) on every protrain bring-up.
+        # Defer bnb import; JIT-loads CUDA libs, opt-in only.
         try:
             from bitsandbytes.optim import (  # type: ignore[import-not-found]
                 AdamW8bit,
                 PagedAdamW8bit,
             )
         except (ImportError, RuntimeError) as err:
-            # ``bitsandbytes`` JIT-loads CUDA libraries on import; if the
-            # extension cannot be linked against the active CUDA toolkit
-            # the failure surfaces as ``RuntimeError`` rather than the
-            # canonical ``ImportError``. Catch both so callers see the
-            # adapter-level message instead of an opaque loader trace.
-            # Mirrors :class:`GpuFusedAdamAdapter`'s apex-import guard
-            # earlier in this module.
+            # Catch both: bnb's JIT-CUDA load can raise RuntimeError, not ImportError.
             raise ImportError(
                 "GpuAdamW8bitAdapter requires `bitsandbytes` (>=0.41) for "
                 "the 8-bit AdamW kernels. Install via "
                 "`pip install bitsandbytes`."
             ) from err
 
-        # Sanity check: bnb 8-bit Adam will crash inside the CUDA kernel
-        # if any param tensor lives on CPU (the per-param state tensors
-        # are allocated on the same device as the param). Catch this at
-        # construction time so callers see a comprehensible error
-        # instead of a downstream "All input tensors need to be on the
-        # same GPU" RuntimeError from inside ``optimizer_update_8bit``.
+        # bnb 8-bit Adam crashes on CPU params; fail fast at construction.
         for p in param_list:
             if not p.is_cuda:
                 raise RuntimeError(
