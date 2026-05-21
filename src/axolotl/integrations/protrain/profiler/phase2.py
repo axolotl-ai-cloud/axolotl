@@ -186,14 +186,15 @@ def measure_chunked_steady(
         raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
 
     # Match Trainer.autocast so non-quantized fp32 layers (e.g. Qwen3.5 linear_attn.conv1d) accept BF16 activations.
+    # Look explicitly for BF16/FP16 params; ignore fp32 (e.g. RMSNorm, Conv1d) and uint8 (bnb 4-bit packed storage).
     autocast_dtype: torch.dtype | None = None
     for _p in model.parameters():
-        if _p.is_floating_point():
+        if _p.dtype in (torch.bfloat16, torch.float16):
             autocast_dtype = _p.dtype
             break
     autocast_ctx = (
         torch.autocast(device_type="cuda", dtype=autocast_dtype)
-        if autocast_dtype in (torch.bfloat16, torch.float16)
+        if autocast_dtype is not None
         else contextlib.nullcontext()
     )
 

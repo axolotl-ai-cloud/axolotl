@@ -151,17 +151,15 @@ def run_trace(
     cuda_available_for_bench = device.type == "cuda" and torch.cuda.is_available()
 
     # Match Trainer.autocast so non-quantized fp32 modules (e.g. Qwen3.5 linear_attn.conv1d) accept BF16 activations.
+    # Look explicitly for BF16/FP16 params; ignore fp32 (e.g. RMSNorm, Conv1d) and uint8 (bnb 4-bit packed storage).
     autocast_dtype: torch.dtype | None = None
     for _param in model.parameters():
-        if _param.is_floating_point():
+        if _param.dtype in (torch.bfloat16, torch.float16):
             autocast_dtype = _param.dtype
             break
     autocast_ctx = (
         torch.autocast(device_type="cuda", dtype=autocast_dtype)
-        if (
-            cuda_available_for_bench
-            and autocast_dtype in (torch.bfloat16, torch.float16)
-        )
+        if (cuda_available_for_bench and autocast_dtype is not None)
         else contextlib.nullcontext()
     )
 
