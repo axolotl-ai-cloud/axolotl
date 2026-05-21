@@ -1,31 +1,4 @@
-"""Public optimizer-wrapper for the ProTrain runtime (§1, §5).
-
-``protrain_optimizer_wrapper`` returns a :class:`torch.optim.Optimizer`
-subclass that proxies ``step`` / ``zero_grad`` through the persistent
-(GPU FusedAdam) and non-persistent (CPU FusedAdam, async) adapters
-already instantiated by :func:`protrain_model_wrapper`.
-
-Semantics:
-
-* ``step()`` — synchronously runs the GPU step for persistent chunks,
-  then blocks on every outstanding CPU Adam future so the non-persistent
-  chunk updates have landed in their CPU shards before control returns.
-* ``zero_grad()`` — zeros grads on both adapters.
-* ``state_dict`` — returns a hollow shell tagged with a
-  ``_protrain_hollow_state_dict`` marker, preserving the
-  ``{"state": ..., "param_groups": ...}`` shape HF Trainer +
-  Accelerate expect at ``prepare`` time. Real adapter moments are
-  persisted via the dedicated ProTrain checkpoint hook
-  (``api/checkpoint.py``), NOT through this method.
-* ``load_state_dict`` — silently no-ops when fed back the hollow
-  shell (Accelerate prepare round-trip, or a user
-  ``torch.save(state_dict()) → torch.load`` over the same wrapper).
-  Raises ``NotImplementedError`` on any OTHER payload (e.g.
-  state from a stock optimizer the user wants to migrate from), with
-  a pointer at the ProTrain checkpoint hook. This is option (b) from
-  ``CHECKPOINT_DESIGN.md`` §1.7 — the explicit-error variant chosen
-  to close the silent-no-op footgun for direct ``auto_wrap`` users.
-"""
+"""Public optimizer-wrapper for the ProTrain runtime."""
 
 from __future__ import annotations
 
@@ -50,13 +23,7 @@ LOG = get_logger(__name__)
 
 
 class _ProTrainOptimizer(torch.optim.Optimizer):
-    """``torch.optim.Optimizer`` facade over the ProTrain adapter pair.
-
-    We inherit from ``torch.optim.Optimizer`` primarily for interface
-    compatibility with HuggingFace Trainer (which calls
-    ``isinstance(optim, torch.optim.Optimizer)``); the actual update
-    math is delegated to the two adapters.
-    """
+    """Optimizer facade over the ProTrain GPU/CPU adapter pair."""
 
     def __init__(
         self,
@@ -67,18 +34,8 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         chunk_manager: Any,
     ) -> None:
         """Wire the GPU/CPU adapter pair into a Trainer-compatible Optimizer facade."""
-        # ``torch.optim.Optimizer.__init__`` requires at least one non-empty
-        # parameter group. We pass the full param list so ``optim.param_groups``
-        # reflects the real set — schedulers iterating over it still see
-        # every tuneable param. The base class uses these only for
-        # ``load_state_dict`` bookkeeping; the actual updates are routed
-        # through the adapters in ``step``.
+        # Pass full param list so schedulers iterate over the real set.
         if not params:
-            # An empty-param optimizer is nonsensical — but during some smoke
-            # tests every chunk can end up persistent and cpu_optim can be
-            # None; we still need ``Optimizer`` super-init to succeed. Seed
-            # with a dummy zero tensor in that case (torch rejects an empty
-            # param group).
             raise ValueError(
                 "_ProTrainOptimizer: model has no tunable parameters; "
                 "nothing to optimize."
@@ -91,74 +48,16 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
     # ---- step / zero_grad ----------------------------------------------
 
     def step(self, closure: Any = None) -> Any:
-        """Drive both adapters then block on in-flight CPU futures.
-
-        Persistent chunks: run the GPU step synchronously.
-        Non-persistent chunks: per-param post-accumulate-grad hooks
-        (installed by :meth:`ChunkManager.materialize_offload`) already
-        kicked off the CPU FusedAdam step the instant each chunk's last
-        grad landed on CPU — except in the **sharded** path
-        (``zero3_shard=True``), where the per-param hook is intentionally
-        a counter-only no-op and the chunk-level reduce_scatter +
-        CPU-Adam kick lives in :meth:`reduce_grads_and_offload`, which
-        the block-backward hook fires through
-        :meth:`Scheduler.post_block_backward`.
-
-        Block-backward hooks only attach to modules discovered as
-        transformer blocks. Chunks owned by **non-block** modules
-        (top-level ``lm_head`` / ``embed_tokens`` on a ``LlamaForCausalLM``,
-        anything outside the decoder layer stack) therefore have no
-        hook driving their ``reduce_grads_and_offload`` call — in the
-        sharded path that means their grads sit unscattered, the CPU
-        Adam step never fires, and those params silently DON'T update
-        across iterations. Empirically this is enough to flatline the
-        M6 Mode-C loss curve (the lm_head dominates the iter-1 logits
-        and never leaves its init).
-
-        Fix: before we wait on the CPU futures, sweep every
-        non-persistent chunk and call ``reduce_grads_and_offload`` on
-        it. The call is idempotent — chunks already processed by a
-        block-backward hook find no live ``param.grad`` and early-return
-        out of ``_reduce_scatter_and_offload_shard`` without re-issuing
-        the collective; chunks whose block-backward hook never fired
-        (the lm_head / embed-tokens orphans above) get their reduce_scatter
-        + CPU-Adam kick HERE, then the wait_cpu_optim_all() below drains
-        them in the same window as the block-driven kicks.
-
-        Closure handling: ``torch.optim.Optimizer.step`` permits an
-        optional ``closure`` callable that re-evaluates the model and
-        returns the loss; per the PyTorch contract we call it under
-        :func:`torch.enable_grad` and return its result so LBFGS-style
-        optimizers / Trainer paths that pass a closure are not silently
-        broken. The replicated/offload paths rely on per-param
-        ``register_post_accumulate_grad_hook`` for the CPU-Adam kick, so
-        the orphan sweep below is gated on ``zero3_shard`` — running it
-        unconditionally would burn a no-op pass over every non-persistent
-        chunk on every step in the non-sharded paths.
-        """
+        """Drive both adapters then block on in-flight CPU futures."""
         loss = None
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
 
-        # Forward LR-scheduler-driven hyperparam updates from the facade's
-        # public ``param_groups`` (which torch ``LRScheduler`` mutates) into
-        # the inner adapters' wrapped torch ``Optimizer.param_groups`` —
-        # they are independent dict objects and would otherwise see stale
-        # values. We only copy keys that already exist on each inner
-        # group so we never invent hyperparams the inner optim doesn't
-        # understand. The facade has exactly one outer group with the
-        # full param list (see ``__init__``), so we use group 0 as the
-        # source of truth. ``GpuFusedAdamAdapter`` exposes its inner via
-        # ``._optim`` (single optimizer); ``CpuFusedAdamAdapter`` keeps
-        # one inner per chunk under ``._optims``.
+        # Forward LR-scheduler mutations to inner optim param_groups (separate dicts).
         self._forward_hyperparams_to_inner_optims()
 
-        # Orphan sweep: ensure every non-persistent chunk has been
-        # reduced+offloaded before we wait. See the docstring above for
-        # why this is necessary in the sharded path. Replicated/offload
-        # paths rely on per-param ``register_post_accumulate_grad_hook``
-        # so the sweep is unnecessary there.
+        # Sharded path: sweep orphan non-persistent chunks (lm_head/embed) that no block-backward hook reached.
         cm = self._chunk_manager
         if getattr(cm, "zero3_shard", False):
             non_persist = getattr(cm, "_non_persistent_ids", None)
@@ -168,44 +67,17 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 
         if self._gpu_optim is not None:
             self._gpu_optim.step()
-        # Drain every in-flight CPU Adam future (M4.5 Gap 2: per-param
-        # grad offload enqueued these from the grad hooks; the orphan
-        # sweep above enqueued the rest).
+        # Drain all CPU Adam futures enqueued by grad hooks + orphan sweep.
         self._chunk_manager.wait_cpu_optim_all()
         return loss
 
     # ---- LR-scheduler hyperparam forwarding -----------------------------
 
-    # ``weight_decay`` is intentionally NOT forwarded:
-    # ``_split_optim_param_groups`` builds two inner param groups for
-    # the GPU/CPU adapters — the regular group with the user's
-    # ``weight_decay``, and a no-decay group with ``weight_decay=0``
-    # for bias / LayerNorm-family params (mirrors HF Trainer's
-    # ``get_decay_parameter_names`` semantics). Forwarding the
-    # facade's single ``weight_decay`` would clobber the no-decay
-    # group's 0 and apply weight decay to bias / norm params,
-    # changing training behavior. If a future scheduler needs to
-    # vary weight decay, it must thread per-inner-group values
-    # through; the facade-level wd is not a valid source for the
-    # multi-group case.
+    # weight_decay excluded: inner has two groups (decay/no-decay) and the facade has one.
     _FORWARDED_HYPERPARAM_KEYS = ("lr", "betas", "eps")
 
     def _forward_hyperparams_to_inner_optims(self) -> None:
-        """Copy facade ``param_groups[0]`` hyperparams to each inner optim.
-
-        ``torch.optim.lr_scheduler.LRScheduler.step()`` mutates
-        ``self.param_groups[i]['lr']`` (and Adam-family schedulers may
-        also touch ``betas`` / ``eps``) on the outer facade. The inner
-        adapter optimizers (``self._gpu_optim._optim`` and each entry
-        in ``self._cpu_optim._optims``) hold their own ``param_groups``
-        list of dicts and never see those mutations, so without this
-        forwarding step their ``step()`` keeps using the construction-
-        time LR forever. Defensive: we only write keys that already
-        exist on the inner group dict so this never invents new fields
-        the inner optim's update math doesn't read. ``weight_decay`` is
-        explicitly excluded from the forwarded set — see the
-        ``_FORWARDED_HYPERPARAM_KEYS`` comment above.
-        """
+        """Copy facade ``param_groups[0]`` hyperparams to each inner optim."""
         if not self.param_groups:
             return
         src = self.param_groups[0]
@@ -331,11 +203,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         if state_dict.get(
             self._PROTRAIN_HOLLOW_MARKER_KEY
         ) is True and not state_dict.get("state"):
-            # Hollow shell round-trip — Accelerate prepare path or
-            # user ``torch.save(state_dict()) → torch.load →
-            # load_state_dict`` over the same wrapper. The shell has
-            # nothing to restore by construction; silent no-op is
-            # correct.
+            # Hollow-shell round-trip (Accelerate prepare); silent no-op.
             return None
         raise NotImplementedError(
             "_ProTrainOptimizer.load_state_dict cannot restore an arbitrary "
@@ -348,37 +216,9 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             "instead of torch.save / torch.load over state_dict."
         )
 
-    # ---- non-public snapshot of the REAL inner adapter state ------------
-    #
-    # The public ``state_dict``/``load_state_dict`` above are intentionally
-    # hollow: HF Trainer + Accelerate's ``prepare`` round-trips the
-    # optimizer state through ``move_to_device(state_dict, gpu)``, and a
-    # full snapshot would silently push every CPU FusedAdam moment tensor
-    # to the GPU, ballooning HBM (CHECKPOINT_DESIGN.md §1.7 Option P).
-    #
-    # Phase-2 measurement also needs to roll back optimizer state across a
-    # timed loop, but it neither serializes nor moves devices — it just
-    # captures and restores the moments on the same process. We expose a
-    # private snapshot/restore pair for that consumer; callers that don't
-    # know about it (Accelerate, Trainer) keep getting the hollow shell.
+    # Private snapshot/restore for phase-2 rollback — bypasses the hollow public shell.
     def _protrain_snapshot_inner_state(self) -> dict[str, Any]:
-        """Snapshot the REAL inner adapter state (not the hollow public shell).
-
-        Captures the underlying ``torch.optim.Optimizer.state_dict()`` of
-        each adapter's wrapped optimizer:
-
-        * ``"gpu"`` — ``self._gpu_optim._optim.state_dict()`` for the
-          persistent-chunk FusedAdam, or ``None`` when there is no GPU
-          adapter (or its inner optim is itself ``None`` for an empty
-          persistent set).
-        * ``"cpu_per_chunk"`` — mapping ``ChunkId -> state_dict`` for each
-          per-chunk DeepSpeedCPUAdam in ``self._cpu_optim._optims``.
-
-        Intended for the phase-2 profiler's snapshot-and-rollback path
-        (see ``profiler/phase2.py::measure_chunked_steady``); the public
-        ``state_dict`` MUST stay hollow for the Accelerate
-        ``move_to_device`` round-trip.
-        """
+        """Snapshot the REAL inner adapter state (not the hollow public shell)."""
         gpu_state: dict[str, Any] | None = None
         if self._gpu_optim is not None:
             inner = self._gpu_optim._optim
@@ -391,15 +231,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         return {"gpu": gpu_state, "cpu_per_chunk": cpu_state_per_chunk}
 
     def _protrain_restore_inner_state(self, snapshot: dict[str, Any]) -> None:
-        """Restore inner-adapter state previously captured by the snapshot helper.
-
-        Companion to :meth:`_protrain_snapshot_inner_state`. Calls
-        ``load_state_dict`` on each inner ``torch.optim.Optimizer`` —
-        unlike the public ``load_state_dict`` (which is a no-op so
-        Accelerate's ``prepare``-time payload round-trips harmlessly),
-        this routes the captured moments back into the adapters that
-        actually own training state.
-        """
+        """Restore inner-adapter state previously captured by the snapshot helper."""
         gpu_state = snapshot.get("gpu")
         if (
             gpu_state is not None
@@ -415,33 +247,8 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                     inner.load_state_dict(inner_state)
 
 
-# HF Trainer's ``get_decay_parameter_names`` excludes bias and norm-layer
-# parameters from weight decay by default; if we collapse everything into
-# a single global ``weight_decay`` here we silently change training behavior
-# relative to the stock Trainer path. HF's actual filter checks the parent
-# MODULE type (``nn.LayerNorm`` and any class whose name contains "Norm" —
-# RMSNorm, GroupNorm, etc.) and the parameter-name suffix ``"bias"``. Pure
-# name-token matching (the previous implementation) silently missed
-# LayerNorm-style weights that don't carry a ``norm`` infix in their dotted
-# parameter name (e.g. ``ln_1.weight`` on a GPT-2 block, where ``ln_1`` is
-# an ``nn.LayerNorm`` but the parameter name itself contains no "norm"
-# token).
-
-
 def _collect_no_decay_param_ids(module: "nn.Module") -> set[int]:
-    """Return ``id(p)`` for every parameter HF Trainer would put in the no-decay group.
-
-    Mirrors :meth:`transformers.Trainer.get_decay_parameter_names` —
-    excluding parameters whose parent module is :class:`nn.LayerNorm`
-    (or any class with ``Norm`` in its name, case-insensitive — RMSNorm,
-    GroupNorm, etc.) OR whose parameter name ends with ``"bias"`` (case-
-    insensitive). We do NOT depend on
-    :func:`transformers.trainer_pt_utils.get_decay_parameter_names` —
-    that symbol is not stably exposed across HF versions (it lives on
-    the :class:`Trainer` instance), and a hard import would couple this
-    file to a private import path. The module-walk below produces the
-    same set without that dependency.
-    """
+    """Return ``id(p)`` for params HF Trainer puts in the no-decay group (norm + bias)."""
     from torch import nn
 
     no_decay: set[int] = set()
@@ -461,50 +268,7 @@ def _collect_sharded_no_decay_shard_param_ids(
     cpu_params_per_chunk: "dict[ChunkId, list[nn.Parameter]]",
     no_decay_orig_param_ids: set[int],
 ) -> set[int]:
-    """Map the original-param no-decay set onto sharded ``shard_param`` ids.
-
-    In the M7 sharded path each chunk's CPU FusedAdam steps over the
-    flat per-region :class:`_DtypeRegion.shard_param` tensors rather
-    than the original ``nn.Parameter`` objects. The no-decay set
-    collected from ``module.named_parameters()`` is keyed by the
-    original-param ``id()``, so a direct id-match on the shard_params
-    finds nothing — and norm/bias params silently inherit the global
-    ``weight_decay`` (CR PR #17 R3190973417).
-
-    Strategy: for each sharded chunk we already have the byte layout in
-    ``chunk_manager._cpu_slots[cid]`` (each slot carries ``param_id`` +
-    ``byte_offset`` + ``numel * element_size``) and the per-region
-    ``[chunk_offset, chunk_offset + region_bytes)`` extent. A region
-    inherits no-decay status iff ANY source param whose byte range
-    intersects the region is in the original no-decay set. This is the
-    correctness-conservative direction: HF Trainer also drops the whole
-    norm/bias param into the wd=0 group, so we never under-decay any
-    source param that the upstream Trainer would have decayed; we may
-    over-cover a few decay-bytes that share a region with a norm scale,
-    but those bytes are the SAME bytes Mode-C would already keep at
-    fp32 (and which dtype-splitting tends to put in their own region
-    anyway).
-
-    Granularity trade-off (CR PR #17 round-2): a strictly HF-equivalent
-    fix would split each region into byte-precise decay / no-decay
-    sub-extents and emit a separate optimizer entry per sub-extent.
-    That requires synthesizing per-intersection slice views of
-    ``region.shard_param``, registering each as its own
-    ``nn.Parameter`` on the underlying FusedAdam, partitioning the
-    region's gradient buffer to match, and tracking distinct optimizer
-    state (``exp_avg`` / ``exp_avg_sq``) per sub-extent — a substantial
-    refactor of the per-region CPU-Adam interface and a perf risk on
-    the hot offload step. The over-cover surface is bounded in
-    practice because Mode-C's dtype-driven region split typically
-    isolates fp32 norm scales into their own region (no adjacent
-    decay-class weights to over-cover), so the residual decay leakage
-    is small. We keep the region-level mapping for v1 and revisit if
-    measured divergence from HF Trainer warrants the refactor.
-
-    Returns a set of ``id(shard_param)`` that should be treated as
-    no-decay. Empty when the chunk manager has no sharded chunks
-    populated, or when the no-decay source set is itself empty.
-    """
+    """Map original-param no-decay set onto sharded shard_param ids (correctness-conservative)."""
     if not no_decay_orig_param_ids:
         return set()
     chunk_shards = getattr(chunk_manager, "_chunk_shards", None)
@@ -548,24 +312,7 @@ def _split_optim_param_groups(
     inner: torch.optim.Optimizer | None,
     no_decay_param_ids: set[int],
 ) -> None:
-    """Split each of ``inner.param_groups`` into a decay/no-decay pair in place.
-
-    ``CpuFusedAdamAdapter`` / ``GpuFusedAdamAdapter`` accept a single
-    flat param list + a single ``weight_decay`` scalar, so the underlying
-    ``torch.optim.Optimizer`` ends up with exactly one param group whose
-    ``weight_decay`` applies uniformly to every param. To preserve the
-    HF Trainer.create_optimizer convention (bias/LayerNorm in a
-    ``weight_decay=0.0`` group), we post-process each underlying
-    optimizer's ``param_groups`` here: for any group containing at least
-    one no-decay param AND at least one decay param, we split it into
-    two groups — same hyperparams except the no-decay group's
-    ``weight_decay`` is forced to ``0.0``. Single-membership groups
-    (all-decay or all-no-decay) get their ``weight_decay`` set in place
-    without an extra group.
-
-    No-op when ``inner`` is ``None`` (empty-param adapter), when the
-    no-decay set is empty, or when no group needs splitting.
-    """
+    """Split each of ``inner.param_groups`` into a decay/no-decay pair in place."""
     if inner is None or not no_decay_param_ids:
         return
     new_groups: list[dict[str, Any]] = []
@@ -575,17 +322,15 @@ def _split_optim_param_groups(
         decay_params = [p for p in params if id(p) not in no_decay_param_ids]
         no_decay_params = [p for p in params if id(p) in no_decay_param_ids]
         if not no_decay_params:
-            # Fully-decay group: leave weight_decay as the caller set it.
             new_groups.append(group)
             continue
         if not decay_params:
-            # Fully-no-decay group: zero its weight_decay in place.
             if group.get("weight_decay", 0.0) != 0.0:
                 group["weight_decay"] = 0.0
                 changed = True
             new_groups.append(group)
             continue
-        # Mixed: split into two groups sharing every other hyperparam.
+        # Mixed: split into two groups; only weight_decay differs.
         decay_group = {**group, "params": decay_params}
         no_decay_group = {**group, "params": no_decay_params, "weight_decay": 0.0}
         new_groups.append(decay_group)
@@ -593,24 +338,11 @@ def _split_optim_param_groups(
         changed = True
     if not changed:
         return
-    # ``torch.optim.Optimizer`` stores param_groups as a list of dicts and
-    # ``step()`` reads ``group["weight_decay"]`` per group, so direct
-    # replacement is safe. Per-param state lives in ``optimizer.state``
-    # keyed by parameter ``id``, not by group index, so re-grouping the
-    # same params across two groups doesn't disturb existing moment
-    # buckets (we run this before the first step anyway — adapters are
-    # freshly built above and have no state yet).
+    # Safe direct replacement: optimizer state keys on id(param), not group index.
     inner.param_groups = new_groups
 
 
-#: Axolotl / HF Trainer optimizer-name strings that route the persistent
-#: chunk set through ``GpuAdamW8bitAdapter`` instead of
-#: ``GpuFusedAdamAdapter``. ``adamw_8bit`` and ``adamw_bnb_8bit`` are
-#: aliases in HF's ``OptimizerNames`` (training_args.py:128-129) that both
-#: dispatch to ``bnb.optim.AdamW`` with ``optim_bits=8``; we accept both
-#: spellings so users carrying configs from either origin work without
-#: edits. ``paged_adamw_8bit`` selects the paged variant (UVM-backed
-#: state) for the same set.
+# Optimizer-name strings routing persistent chunks through GpuAdamW8bitAdapter.
 _BNB_8BIT_OPTIMIZERS: frozenset[str] = frozenset(
     {"adamw_8bit", "adamw_bnb_8bit", "paged_adamw_8bit"}
 )
@@ -633,73 +365,18 @@ def protrain_optimizer_wrapper(
     weight_decay: float = 0.0,
     optimizer_name: str | None = None,
 ) -> torch.optim.Optimizer:
-    """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams.
-
-    ``protrain_model_wrapper`` instantiates transient adapters with
-    placeholder hyperparams so the chunk manager has something to drive
-    during bring-up. This function rebuilds them with the real
-    ``lr`` / ``betas`` / ``eps`` / ``weight_decay``, then swaps them
-    into the chunk manager in-place so the scheduler's async
-    ``reduce_grads_and_offload`` path continues to pump the right
-    optimizer.
-
-    The HF Trainer's ``create_optimizer`` splits parameters into a
-    decay group and a ``weight_decay=0.0`` group for bias / LayerNorm /
-    RMSNorm params. We honor that split here by post-processing each
-    underlying torch ``Optimizer.param_groups`` after adapter
-    construction (see :func:`_split_optim_param_groups`); the supplied
-    ``weight_decay`` argument applies only to the decay group.
-
-    Sharded path (``zero3_shard=True``): the CPU adapter steps over each
-    chunk's per-region flat ``shard_param`` rather than the original
-    ``nn.Parameter`` objects, so a direct id-match against the
-    no-decay source set finds nothing. We bridge that gap in
-    :func:`_collect_sharded_no_decay_shard_param_ids` by walking
-    ``ChunkManager._cpu_slots`` (which carries ``param_id`` +
-    ``byte_offset`` + ``numel * element_size`` per param) and
-    intersecting each slot's byte range against each region's
-    ``[chunk_offset, chunk_offset + region_bytes)`` extent: any region
-    overlapping at least one no-decay source param has its
-    ``shard_param`` added to the no-decay set fed to
-    :func:`_split_optim_param_groups`. This is correctness-conservative
-    — we may carry a few wd=decay bytes inside a region pinned to wd=0
-    by an adjoining norm scale, but we never silently decay a bias or
-    norm param the upstream Trainer would have left at ``wd=0``
-    (CR PR #17 R3190973417).
-    """
+    """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams."""
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
     layout = chunk_manager.layout
     persistent_ids = set(chunk_manager._persistent_ids)
 
-    # Partition params the same way ``protrain_model_wrapper`` did —
-    # persistent chunks go to GPU FusedAdam, the rest to per-chunk
-    # CPU FusedAdam adapters. Membership-test against the chunk
-    # manager's actual ``_persistent_ids`` set rather than a prefix
-    # ``cid < n_persist`` test: non-block-chunk pinning expands the
-    # persistent set into a non-contiguous shape (e.g. {0..110, 129}
-    # when an untied lm_head lands at chunk 129), and a prefix test
-    # would mis-route the high-cid persistent chunk's GPU params to
-    # CPU FusedAdam — which materialize_offload never offloaded, so
-    # the CPU adam would step against full-size GPU tensors and the
-    # mid-prefix non-persistent chunk's CPU shards would never get
-    # an optimizer step.
-    # Resolve params via ChunkManager._params_by_id (populated at chunk-
-    # manager construction, which runs PRE-block-wrap) rather than
-    # ``module.named_parameters()`` (which after wrapping carries a
-    # ``.block.`` infix from the OffloadedBlock/SwappedBlock/CheckpointedBlock
-    # wrappers, mismatching the layout's pre-wrap pid keys). Without this
-    # fix, the per-chunk param list comes back empty for any wrapped
-    # block — silently skipping optimizer construction for those chunks
-    # and leading to ``cpu_optim is None`` at backward (R2-05 fail-fast).
+    # Membership-test against _persistent_ids (non-block pinning makes the set non-contiguous).
+    # Resolve params via _params_by_id (pre-block-wrap) since named_parameters acquires a .block. infix.
     persistent_params: list["nn.Parameter"] = []
     cpu_params_per_chunk: dict[ChunkId, list["nn.Parameter"]] = {}
 
     for cid, chunk_param_ids in enumerate(layout.chunks):
-        # Fail fast on unresolvable pids: silently dropping them produced
-        # partial freezing (a chunk's optimizer would only step the params
-        # that happened to be registered) and wedged debugging because the
-        # symptom appeared far downstream as "no gradient update on
-        # weight X". Raise here so the user sees the exact chunk and pid.
+        # Fail fast on unresolvable pids; silent drop yielded partial freezing.
         missing_ids = [
             pid for pid in chunk_param_ids if pid not in chunk_manager._params_by_id
         ]
@@ -808,26 +485,11 @@ def protrain_optimizer_wrapper(
                 weight_decay=weight_decay,
             )
         except Exception as err:
-            # Only ``ImportError`` (DeepSpeed not installed) and
-            # ``CUDAMismatchException`` (a subclass of ``Exception``, not
-            # ``ImportError``, raised when system CUDA disagrees with
-            # torch's CUDA wheel) get translated into the install-DeepSpeed
-            # error path; any other exception is a real bug in
-            # ``CpuFusedAdamAdapter`` initialization and must propagate
-            # unchanged so it is not silently masked. We compare the
-            # CUDAMismatch class name as a string to avoid a hard import
-            # on a broken deepspeed install.
+            # Only ImportError + CUDAMismatchException are caught; others propagate.
             is_cuda_mismatch = type(err).__name__ == "CUDAMismatchException"
             if not isinstance(err, ImportError) and not is_cuda_mismatch:
                 raise
-            # Render the exception to a string before logging — passing
-            # the live ``err`` object into LOG.error propagates
-            # ``err.__traceback__`` → frame locals (the persistent /
-            # cpu-resident param lists in this scope) into LogRecord.args.
-            # Test runners that retain log records would then leak one
-            # full model footprint per failed wrap. The ``raise ... from
-            # err`` below is fine — that hands ``err`` to the caller's
-            # except path, not the logger's record retention.
+            # Stringify err before logging to avoid traceback->frame-locals leak in test log capture.
             err_kind = type(err).__name__
             err_str = str(err)
             base_msg = (
@@ -866,17 +528,7 @@ def protrain_optimizer_wrapper(
                 "config so no CPU optimizer is needed."
             ) from err
 
-    # Preserve HF Trainer's bias/norm no-decay split — the adapter
-    # constructors take a single ``weight_decay`` scalar, so we
-    # post-process each underlying torch Optimizer's param_groups to
-    # split out the no-decay subset. ``model_wrapper.py`` resolves
-    # ``wrapped.module`` to the original (pre-block-wrap) ``nn.Module``,
-    # which is the same names ``named_parameters()`` returned at chunk
-    # build time, so id-membership matches the GPU optim's persistent
-    # params directly. For the CPU optim's sharded chunks the shard_param
-    # ids do NOT match the original-param ids, so we bridge with
-    # :func:`_collect_sharded_no_decay_shard_param_ids` (region byte
-    # intersection); see its docstring for the correctness argument.
+    # Preserve HF Trainer's bias/norm no-decay split per inner optim's param_groups.
     no_decay_param_ids = _collect_no_decay_param_ids(wrapped.module)
     if no_decay_param_ids:
         if gpu_optim is not None:
@@ -887,45 +539,15 @@ def protrain_optimizer_wrapper(
                 cpu_params_per_chunk,
                 no_decay_param_ids,
             )
-            # Union: original-param ids cover the homogeneous-replicated
-            # path (where the CPU adapter holds the original nn.Parameters),
-            # shard_param ids cover the M7 sharded path. A given inner
-            # optimizer only sees one set or the other, so the union is
-            # always disjoint at lookup time.
+            # Union covers replicated (orig param ids) and sharded (shard_param ids); disjoint per inner.
             cpu_no_decay_ids = no_decay_param_ids | sharded_no_decay_ids
-            # ``CpuFusedAdamAdapter`` exposes per-chunk inner optimizers via
-            # the (private) ``_optims`` dict; there's no public iterator,
-            # and adding one would touch a sibling file. ``getattr`` keeps
-            # this resilient if a future refactor renames the slot.
             inner_optims = getattr(cpu_optim, "_optims", {}) or {}
             for inner in inner_optims.values():
                 _split_optim_param_groups(inner, cpu_no_decay_ids)
 
-    # Swap the freshly-built adapters into the chunk manager so the
-    # scheduler's post_block_backward -> reduce_grads_and_offload ->
-    # cpu_optim.step_async chain uses them. The chunk manager's
-    # ``gpu_optim`` slot is typed ``GpuFusedAdamAdapter | None`` (the
-    # legacy adapter); the ``GpuAdamW8bitAdapter`` is duck-compat
-    # at the call sites that consume the slot (``.step()``,
-    # ``.zero_grad()``, ``.state_dict()`` — see
-    # :class:`GpuAdamW8bitAdapter`). We assign through a typing cast
-    # rather than widening the chunk manager's type signature, which
-    # would touch a read-only file from this milestone's perspective.
-    #
-    # D3 lifecycle (shutdown-before-swap): ``CpuFusedAdamAdapter`` owns
-    # a live ``ThreadPoolExecutor`` and per-chunk DeepSpeedCPUAdam
-    # C-state; overwriting ``chunk_manager.cpu_optim`` without first
-    # tearing the old adapter down leaks executor threads + DeepSpeed
-    # state on every re-wrap (e.g. the resume hook's "Step 1" tears
-    # the adapter down at the plugin layer, but a direct second
-    # ``protrain_optimizer_wrapper`` invocation — e.g. user reruns the
-    # wrapper after changing optim hyperparams without going through
-    # the HF Trainer resume path — would otherwise GC-time the
-    # cleanup). Mirrors the same teardown the resume hook performs
-    # before ``restore_to_gpu``.
+    # Shutdown-before-swap: previous CpuFusedAdamAdapter owns thread pool + DeepSpeed C state.
     _old_cpu_optim = getattr(chunk_manager, "cpu_optim", None)
     if _old_cpu_optim is not None and _old_cpu_optim is not cpu_optim:
-        # Let shutdown failures abort the swap; masking would leave the rebuild in an inconsistent state.
         _old_cpu_optim.shutdown()
     chunk_manager.cpu_optim = cpu_optim
     chunk_manager.gpu_optim = cast("GpuFusedAdamAdapter | None", gpu_optim)
