@@ -14,20 +14,12 @@ LOG = get_logger(__name__)
 
 
 def intra_op_delta(before_bytes: int, peak_bytes: int) -> int:
-    """Transient bytes allocated *inside* an op: ``peak_during - allocated_before``.
-
-    Clamped at zero — a negative delta means the op freed memory before
-    allocating (rare) and we treat that as zero transient overhead.
-    """
+    """Transient bytes inside op: max(0, peak_during - allocated_before)."""
     return max(0, peak_bytes - before_bytes)
 
 
 def inter_op_delta(prev_end_bytes: int, curr_peak_bytes: int) -> int:
-    """Bytes allocated *between* recorded hooks (unhookable ``nn.functional.*`` etc.).
-
-    Paper §3.2 / Appendix A.2: this is the ~17% invisible peak that
-    ``torch.profiler`` and naive layer hooks miss.
-    """
+    """Bytes allocated between hooks; covers the ~17% invisible peak hooks miss."""
     return max(0, curr_peak_bytes - prev_end_bytes)
 
 
@@ -40,43 +32,21 @@ class MemorySnapshot:
 
 
 class MemoryDeltaTracker:
-    """Wraps ``torch.cuda.memory_stats`` so hooks can read/reset without import churn.
-
-    Usage pattern from ``trace.py``:
-
-        tracker = MemoryDeltaTracker(device)
-        # pre-forward hook:
-        tracker.reset()
-        before = tracker.snapshot()
-        # post-forward hook:
-        after = tracker.snapshot()
-        intra = intra_op_delta(before.allocated_bytes, after.peak_allocated_bytes)
-    """
+    """Wraps torch.cuda.memory_stats; reset → snapshot pre/post for hooks."""
 
     def __init__(self, device: "torch.device | str | int | None" = None) -> None:
-        """Bind the tracker to ``device`` and seed the inter-op baseline as unset."""
-        # Local import so this module can be parsed in environments without
-        # torch installed (e.g. syntax check in CI prep).
+        """Bind to device; seed inter-op baseline as unset (None sentinel)."""
         import torch
 
         self._torch = torch
         self._device = device
-        # ``None`` sentinel so the first ``delta_since_last`` call establishes
-        # the baseline and returns 0, instead of treating "0 bytes" as the
-        # previous end and reporting the entire current allocation as the
-        # delta. ``mark_end`` (explicit baseline-set) is unchanged.
+        # None sentinel: first delta_since_last returns 0 and sets baseline.
         self._last_end_bytes: int | None = None
 
     # ---- allocator interface --------------------------------------------
 
     def _stats(self) -> dict:
-        # ``torch.cuda.memory_stats`` raises on CPU-only hosts (it's a CUDA-
-        # specific API that requires an initialized CUDA context). Guard with
-        # ``is_available()`` so callers on CPU-only machines get an empty dict
-        # and ``snapshot()`` falls back to zeros via ``.get()`` defaults.
-        # Also guard against a non-CUDA device passed on a GPU host: ``int``
-        # is always a CUDA device index and ``None`` means "current device",
-        # but ``str``/``torch.device`` may resolve to ``"cpu"``/``"mps"`` etc.
+        # Guard CPU-only hosts and non-CUDA device strings; empty dict → snapshot zeros via .get.
         if self._device is not None and not isinstance(self._device, int):
             if self._torch.device(self._device).type != "cuda":
                 return {}
@@ -85,15 +55,7 @@ class MemoryDeltaTracker:
         return self._torch.cuda.memory_stats(self._device)
 
     def reset(self) -> None:
-        """Reset the ``peak_*`` tracker on the device so the next snapshot is local.
-
-        Guarded by ``torch.cuda.is_available()`` so external callers on CPU-only
-        hosts get a no-op rather than a CUDA-init error. ``snapshot()`` is
-        already safe because ``memory_stats()`` returns an empty dict when CUDA
-        is unavailable and ``.get()`` defaults handle the missing keys. Also
-        no-op when ``self._device`` resolves to a non-CUDA device on a GPU host
-        (``int``/``None`` always pass; ``str``/``torch.device`` are normalized).
-        """
+        """Reset peak tracker on device; no-op on CPU-only or non-CUDA device."""
         if self._torch.cuda.is_available() and (
             self._device is None
             or isinstance(self._device, int)
@@ -109,52 +71,22 @@ class MemoryDeltaTracker:
         return MemorySnapshot(allocated_bytes=allocated, peak_allocated_bytes=peak)
 
     def delta_since_last(self) -> int:
-        """Return bytes allocated since the last ``delta_since_last`` call.
-
-        First call establishes the baseline and returns 0. Intended for the
-        inter-op hook slot where the "previous end" is whatever the last
-        post-op hook observed.
-
-        Uses ``peak_allocated_bytes`` (not ``allocated_bytes``) for the delta
-        so transient spikes that allocate-then-free between hooks are still
-        counted — that inter-op transient is exactly what this module exists
-        to recover (paper §3.2 / Appendix A.2). The baseline is then advanced
-        with the current ``allocated_bytes`` so the next call measures growth
-        from the post-op resident set.
-        """
+        """Bytes allocated since last call; first call returns 0 and sets baseline."""
         snap = self.snapshot()
         current = snap.allocated_bytes
         if self._last_end_bytes is None:
             self._last_end_bytes = current
-            # Reset the peak window so the *next* call's
-            # ``peak_allocated_bytes`` reflects this interval only, not
-            # whatever high-water mark accumulated before the tracker was
-            # first read.
             self.reset()
             return 0
         delta = max(0, snap.peak_allocated_bytes - self._last_end_bytes)
         self._last_end_bytes = current
-        # Reset the peak window so subsequent ``delta_since_last`` calls
-        # measure a fresh interval. Without this, an interval that never
-        # exceeds the prior high-water mark would still report a stale
-        # positive delta.
+        # Reset peak window so next interval starts fresh.
         self.reset()
         return delta
 
     def mark_end(self, end_bytes: int) -> None:
-        """Record the ``allocated_bytes`` at the end of an op, for inter-op delta.
-
-        Also resets the device-side peak window so the *next* interval's
-        ``peak_allocated_bytes`` reflects post-``mark_end`` activity only.
-        Without this reset, a subsequent ``delta_since_last`` (or any
-        consumer reading ``peak_allocated_bytes``) would see the high-
-        water mark from the previous interval bleed into the new one,
-        attributing earlier transient allocations to the wrong op.
-        """
+        """Record allocated_bytes at op end; resets peak window for the next interval."""
         self._last_end_bytes = end_bytes
-        # Mirror the peak-window invariant that ``delta_since_last``
-        # maintains: advancing the baseline must coincide with a peak
-        # reset so the next interval starts from a fresh high-water mark.
         self.reset()
 
     @property
