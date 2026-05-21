@@ -296,9 +296,7 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     if trace.nccl_gather_s and trace.nccl_reduce_s and trace.world == world_size:
         return (False, False)
 
-    # Skip late NCCL re-search when all explicit overrides pin the plan, to avoid
-    # re-running search() and raising on a cost-optimal cfg that differs from the
-    # synthesized bootstrap cfg.
+    # With overrides pinning the plan, late NCCL re-search would raise on a cost-optimal cfg that differs from the bootstrap.
     if bool(getattr(wrapped, "_override_skip_trace", False)):
         LOG.info(
             "ProTrain: late NCCL re-search skipped — explicit override knobs "
@@ -1098,9 +1096,7 @@ class ProTrainPlugin(BasePlugin):
             float(args.weight_decay),
         )
 
-        # Patch _load_from_checkpoint so PEFT/HF load sees full-shape param.data
-        # (offloaded LoRA factors have size (0,) and would size-mismatch otherwise);
-        # cycle: restore_to_gpu -> original load -> materialize_offload -> rebuild optimizer.
+        # Patch _load_from_checkpoint: restore_to_gpu before load (offloaded LoRA factors are size (0,)) then re-offload + rebuild optim.
         _install_resume_hook(trainer, cfg, wrapped)
 
         # ---- Optimizer-state checkpoint/resume (CHECKPOINT_DESIGN.md) ----

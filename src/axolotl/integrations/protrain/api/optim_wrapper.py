@@ -718,9 +718,7 @@ def protrain_optimizer_wrapper(
         else:
             cpu_params_per_chunk[ChunkId(cid)] = chunk_params
 
-    # bnb 8-bit Adam kernels are CUDA-only, so only the persistent
-    # (GPU-resident) chunk set can use the 8-bit adapter; non-persistent
-    # CPU shards keep the 32-bit DeepSpeedCPUAdam path.
+    # bnb 8-bit Adam is CUDA-only; non-persistent CPU shards keep the 32-bit DeepSpeedCPUAdam path.
     normalized_optim_name = _normalize_optimizer_name(optimizer_name)
     use_bnb_8bit = normalized_optim_name in _BNB_8BIT_OPTIMIZERS
     use_paged_8bit = normalized_optim_name in _BNB_8BIT_PAGED_OPTIMIZERS
@@ -927,15 +925,7 @@ def protrain_optimizer_wrapper(
     # before ``restore_to_gpu``.
     _old_cpu_optim = getattr(chunk_manager, "cpu_optim", None)
     if _old_cpu_optim is not None and _old_cpu_optim is not cpu_optim:
-        # F-#3 (Major): let ``shutdown()`` failures abort the swap
-        # rather than warning-and-continuing. The whole point of
-        # calling ``shutdown()`` here is the D3 deterministic-cleanup
-        # invariant — masking a real teardown failure (e.g.,
-        # ``ThreadPoolExecutor`` hung, DeepSpeed C-state corrupted)
-        # puts the failed adapter back on the GC path AND silently
-        # accepts a broken state-machine on the rebuild side. If the
-        # shutdown raises, the rebuild is in an inconsistent state
-        # and the call should fail rather than silently degrading.
+        # Let shutdown failures abort the swap; masking would leave the rebuild in an inconsistent state.
         _old_cpu_optim.shutdown()
     chunk_manager.cpu_optim = cpu_optim
     chunk_manager.gpu_optim = cast("GpuFusedAdamAdapter | None", gpu_optim)

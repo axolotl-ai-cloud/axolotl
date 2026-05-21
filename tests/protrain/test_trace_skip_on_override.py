@@ -211,10 +211,7 @@ def test_run_trace_skipped_on_override_full_path(
         # The override path's SearchResult round-trips into the wrapper.
         assert wrapped.search_result is not None
         assert wrapped.search_result.cfg.n_swap == 0
-        # n_checkpoint is bounded by N_block which is what activation_sizes
-        # maps; the synthetic trace populates one entry per discovered
-        # block. The wrapper accepted the override so the bounds check
-        # passed — sanity check that we land at n_block from the synth.
+        # n_checkpoint must stay bounded by N_block (one activation_sizes entry per synth block).
         assert wrapped.search_result.cfg.n_checkpoint <= n_block_estimate
 
     finally:

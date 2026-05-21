@@ -185,9 +185,7 @@ def test_shutdown_logs_destroy_failure_but_continues(caplog):
     assert len(fakes[2].destroy_calls) == 1
     # The failing chunk attempted destroy exactly once.
     assert exploding.calls == 1
-    # And the failure surfaced via a warning. Inspect the mock's
-    # call args directly — match on the format-string prefix that
-    # uniquely identifies the destroy_adam-failure log site.
+    # Failure must surface via the destroy_adam warning log site.
     matching_calls = [
         call
         for call in mock_warn.call_args_list
@@ -199,9 +197,7 @@ def test_shutdown_logs_destroy_failure_but_continues(caplog):
         f"Expected a LOG.warning call matching 'destroy_adam failed' but got "
         f"{[call.args for call in mock_warn.call_args_list]}"
     )
-    # The warning's format args should include the failing chunk id (1) and
-    # the underlying exception. Sanity-check both so a future copy-edit of
-    # the warning text doesn't silently mask the diagnostic content.
+    # Sanity-check chunk id + exception in format args so a copy-edit can't silently lose diagnostic content.
     matching_call = matching_calls[0]
     assert ChunkId(1) in matching_call.args, (
         f"warning's chunk-id format arg should be ChunkId(1); got {matching_call.args}"
