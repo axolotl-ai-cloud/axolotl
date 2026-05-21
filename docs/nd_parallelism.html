@@ -797,6 +797,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#sec-dp" id="toc-sec-dp" class="nav-link" data-scroll-target="#sec-dp">Data Parallelism</a></li>
   <li><a href="#sec-tp" id="toc-sec-tp" class="nav-link" data-scroll-target="#sec-tp">[Experimental] Tensor Parallelism (TP)</a></li>
   <li><a href="#sec-cp" id="toc-sec-cp" class="nav-link" data-scroll-target="#sec-cp">Context Parallelism (CP)</a></li>
+  <li><a href="#sec-ep" id="toc-sec-ep" class="nav-link" data-scroll-target="#sec-ep">Expert Parallelism (EP)</a></li>
   <li><a href="#sec-hsdp" id="toc-sec-hsdp" class="nav-link" data-scroll-target="#sec-hsdp">Hybrid Sharding Data Parallel (HSDP)</a></li>
   </ul></li>
   <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
@@ -869,6 +870,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>The Solution (<code>ring-flash-attention</code>): An efficient communication protocol is used. To compute attention for its local sequence chunk, each GPU passes its Key-Value (KV) cache to its neighbor in a “ring.” After <code>N-1</code> steps, every GPU has seen the KV-cache from all other GPUs, allowing it to compute the correct attention values for its chunk. This is implemented using the highly optimized <code>flash-attention</code> kernel at each step.</li>
 </ul>
 </section>
+<section id="sec-ep" class="level3">
+<h3 class="anchored" data-anchor-id="sec-ep">Expert Parallelism (EP)</h3>
+<p>Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across GPUs. Each rank holds <code>num_experts / ep_size</code> experts; tokens are routed to the rank that owns the chosen expert via DeepEP’s fused dispatch/combine kernels.</p>
+<ul>
+<li>How it works: the EP plugin slices each <code>Experts</code> module’s <code>gate_up_proj</code> / <code>down_proj</code> along the experts dimension and replaces the dispatch/combine path with DeepEP. Each rank sees a different batch (so EP is data-parallel for <em>data</em>) but holds different expert shards (model-parallel for <em>expert weights</em>).</li>
+<li>When to use: MoE training where the experts dominate the parameter count and don’t fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.</li>
+<li>Composes with FSDP: <code>expert_parallel_size × dp_shard_size = world_size</code>. EP shards experts on the <code>ep</code> axis; FSDP shards non-experts (and the per-EP-slice expert weights) on the <code>dp_shard</code> axis. Process groups are disjoint.</li>
+<li>Requires the <a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a> library (Ampere or Hopper, NVLink). See <a href="../docs/custom_integrations.html#expert-parallelism-integration">Expert Parallelism Integration</a> for install + integration details.</li>
+</ul>
+</section>
 <section id="sec-hsdp" class="level3">
 <h3 class="anchored" data-anchor-id="sec-hsdp">Hybrid Sharding Data Parallel (HSDP)</h3>
 <p>HSDP is a 2D strategy that intelligently combines FSDP and DDP, typically for multi-node training.</p>
@@ -896,7 +907,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="fu">tensor_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # (default is 1, no TP)</span></span>
 <span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs for Context/Sequence Parallelism.</span></span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co"> # (default is 1, no CP)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a><span class="fu">context_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co"> # (default is 1, no CP)</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of GPUs to shard MoE experts across (Expert Parallel).</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="fu">expert_parallel_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">  # (default is 1, no EP)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Note: We recommend FSDP. DeepSpeed is only compatible with <code>tensor_parallel_size</code>.</p>
 </section>
 <section id="examples" class="level2">
@@ -930,6 +944,11 @@ Tip
 <li>You want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.</li>
 <li>Set <code>dp_shard_size: 8</code> and <code>context_parallel_size: 8</code>. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.</li>
 </ul></li>
+<li>FSDP + EP on a 4-GPU MoE training run:
+<ul>
+<li>You want EP to shard the experts and FSDP to shard non-expert params on orthogonal mesh axes.</li>
+<li>Set <code>expert_parallel_size: 2</code> and <code>dp_shard_size: 2</code> (<code>ep × dp_shard == world_size</code>). Add the <code>ExpertParallelPlugin</code> to <code>plugins:</code>.</li>
+</ul></li>
 </ol>
 </section>
 <section id="support-matrix" class="level2">
@@ -937,12 +956,13 @@ Tip
 <p>This matrix describes how different parallelism methods can be combined in Axolotl.</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 11%">
-<col style="width: 19%">
-<col style="width: 19%">
-<col style="width: 19%">
-<col style="width: 19%">
-<col style="width: 11%">
+<col style="width: 9%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 9%">
 </colgroup>
 <thead>
 <tr class="header">
@@ -951,6 +971,7 @@ Tip
 <th style="text-align: center;"><code>dp_shard_size</code></th>
 <th style="text-align: center;"><code>tp_size</code></th>
 <th style="text-align: center;"><code>cp_size</code></th>
+<th style="text-align: center;"><code>ep_size</code></th>
 <th>Status &amp; Notes</th>
 </tr>
 </thead>
@@ -961,12 +982,14 @@ Tip
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
 <td>✅ Fully supported. Shards model across all GPUs.</td>
 </tr>
 <tr class="even">
 <td><strong>HSDP</strong></td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td>✅ Fully supported. FSDP intra-node, DDP inter-node.</td>
@@ -977,6 +1000,7 @@ Tip
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
 <td>✅ <strong>2D Parallelism</strong>. Shards the model across a <code>dp_shard</code> group, and TP-splits layers within the <code>tp</code> group.</td>
 </tr>
 <tr class="even">
@@ -984,6 +1008,7 @@ Tip
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td>✅ <strong>3D Parallelism</strong>. A powerful but complex combination.</td>
 </tr>
@@ -993,6 +1018,7 @@ Tip
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td>✅ <strong>2D Parallelism</strong>. Combines FSDP with context parallelism.</td>
 </tr>
 <tr class="even">
@@ -1001,22 +1027,52 @@ Tip
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td>✅ <strong>3D Parallelism</strong>. Another advanced combination.</td>
 </tr>
 <tr class="odd">
+<td><strong>EP</strong></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>✅ Supported (MoE only). Shards experts across all ranks; non-experts replicated.</td>
+</tr>
+<tr class="even">
+<td><strong>FSDP + EP</strong></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>✅ <strong>2D Parallelism</strong> (MoE). EP shards experts on the <code>ep</code> axis; FSDP shards non-experts on <code>dp_shard</code>.</td>
+</tr>
+<tr class="odd">
+<td>EP + TP/CP</td>
+<td style="text-align: center;">1</td>
+<td style="text-align: center;">*</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">&gt;1</td>
+<td>❌ Not yet supported in v1; raises <code>NotImplementedError</code>.</td>
+</tr>
+<tr class="even">
 <td>DDP + TP/CP</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td>❌ <strong>Not Supported</strong>. The <code>ParallelismConfig</code> explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (<code>dp_shard_size &gt; 1</code>).</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td>Just TP / CP</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">1</td>
 <td style="text-align: center;">&gt;1</td>
 <td style="text-align: center;">&gt;1</td>
+<td style="text-align: center;">1</td>
 <td>✅ Supported. Useful for inference or when the model fits on one GPU but context is too long.</td>
 </tr>
 </tbody>
@@ -1024,6 +1080,7 @@ Tip
 <ul>
 <li><code>tp_size</code> refers to <code>tensor_parallel_size</code></li>
 <li><code>cp_size</code> refers to <code>context_parallel_size</code></li>
+<li><code>ep_size</code> refers to <code>expert_parallel_size</code></li>
 </ul>
 
 
