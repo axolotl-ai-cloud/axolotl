@@ -1,4 +1,4 @@
-"""Block-granularity forward/backward hooks plus per-PEFT-LoRA-container quartet hooks that re-bind chunk data across every autograd window where ``param.data`` could otherwise be observed as the empty placeholder."""
+"""Block-granularity hooks + PEFT-LoRA container hooks that keep chunk data live across autograd."""
 
 from __future__ import annotations
 
@@ -87,31 +87,25 @@ def _container_chunk_ids(
     container: nn.Module,
     chunk_manager: "ChunkManager",
 ) -> tuple[ChunkId, ...]:
-    """Return the sorted+deduped chunk-id set covering ``container``'s subtree; lookups go via ``id(param)`` because post-wrap names differ from chunk-manager construction-time names."""
-    # Reverse index: id(Parameter) -> ParamId (dotted name string).
+    """Return sorted chunk-ids covering container's subtree; id(param) lookup tolerates post-wrap rename."""
+    # Reverse index: id(Parameter) -> ParamId (dotted name).
     cm_id_to_name = {id(p): name for name, p in chunk_manager._params_by_id.items()}  # noqa: SLF001
     chunk_ids: set[ChunkId] = set()
     for param in container.parameters(recurse=True):
         cm_name = cm_id_to_name.get(id(param))
         if cm_name is None:
-            # Param post-dates chunk-manager construction (e.g. an
-            # adapter PEFT installed AFTER protrain_model_wrapper —
-            # not the supported flow but cheap to skip defensively).
             continue
         cid = chunk_manager.layout.param_to_chunk.get(cm_name)
         if cid is None:
             continue
         chunk_ids.add(cid)
-    # Sort for determinism — gather order doesn't matter (the chunk
-    # manager's gather is per-chunk independent), but a stable order
-    # keeps test-time enumeration reproducible.
     return tuple(sorted(chunk_ids))
 
 
 def _make_lora_container_pre_forward_hook(
     scheduler: "Scheduler", chunk_ids: tuple[ChunkId, ...]
 ):
-    """Build a forward-pre hook that gathers ``chunk_ids`` via idempotent ``ensure_chunks_resident``; chunk_ids is precomputed once per container to avoid walking parameters every forward."""
+    """Forward-pre hook gathering precomputed chunk_ids; idempotent via ensure_chunks_resident."""
 
     def _hook(module: nn.Module, inputs):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
@@ -123,7 +117,7 @@ def _make_lora_container_pre_forward_hook(
 def _make_lora_container_pre_backward_hook(
     scheduler: "Scheduler", chunk_ids: tuple[ChunkId, ...]
 ):
-    """Backward-pre mirror of the forward variant; the cold-path re-gather prevents the autograd ``shape compatible with [0]`` error when a chunk was evicted before the LoRA backward kernel runs."""
+    """Backward-pre re-gather; prevents autograd 'shape compatible with [0]' on evicted chunks."""
 
     def _hook(module: nn.Module, grad_output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
@@ -135,7 +129,7 @@ def _make_lora_container_pre_backward_hook(
 def _make_lora_container_post_forward_hook(
     scheduler: "Scheduler", chunk_ids: tuple[ChunkId, ...]
 ):
-    """Forward-post defensive re-bind; guarantees ``param.data`` is gathered before the block-level post-forward fires its release, even if an intermediate scheduler reentrancy nulled it mid-forward."""
+    """Forward-post defensive re-bind before block-level release."""
 
     def _hook(module: nn.Module, inputs, output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
@@ -147,7 +141,7 @@ def _make_lora_container_post_forward_hook(
 def _make_lora_container_post_backward_hook(
     scheduler: "Scheduler", chunk_ids: tuple[ChunkId, ...]
 ):
-    """Backward-post defensive re-bind; covers the gap between the outer container's pre-backward and the inner Linear's ``TBackward0`` apply where the block-level scheduler may have released the chunk."""
+    """Backward-post defensive re-bind across outer pre-backward → inner TBackward0 gap."""
 
     def _hook(module: nn.Module, grad_input, grad_output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
@@ -162,46 +156,10 @@ def install_hooks(
     block_map: BlockStrategyMap,
     scheduler: "Scheduler",
 ) -> list["RemovableHandle"]:
-    """Attach the four-per-block scheduler hooks.
-
-    The ``block_map`` parameter is accepted for API symmetry with the
-    design doc but is not consulted directly — the scheduler already
-    holds a reference. Keeping it in the signature lets the plugin
-    (M5) compose ``install_hooks`` without reaching into the
-    ``Scheduler``'s private state. The ``chunk_manager`` IS consumed
-    here: ``OffloadedBlock`` wrappers need it injected via
-    :meth:`OffloadedBlock.attach_runtime` so their saved-tensor pack
-    hook can resolve storage pointers to chunk ids and the unpack
-    hook can call ``gather_for_backward``.
-
-    Parameters
-    ----------
-    model:
-        The user model, post-block-wrapping. ``discover_blocks`` runs
-        against this to locate the transformer-block ModuleList.
-    chunk_manager:
-        Runtime chunk driver. Reserved.
-    block_map:
-        Per-block activation mode. Reserved.
-    scheduler:
-        The :class:`Scheduler` instance that owns the prefetch stream
-        and the per-block entry points.
-
-    Returns
-    -------
-    list[RemovableHandle]
-        One ``RemovableHandle`` per installed hook — pass to
-        :func:`uninstall_hooks` to restore the model to its pre-install
-        state.
-    """
+    """Attach four-per-block scheduler hooks; wire OffloadedBlock + PEFT-LoRA containers."""
     blocks = flatten_block_trees(discover_blocks(model))
 
-    # Fail fast if the discovered block layout disagrees with the
-    # ``block_map`` the scheduler was configured with. Without this
-    # guard a drift between wrapping and scheduler setup would still
-    # install hooks and silently call ``Scheduler.pre/post_*`` with
-    # the wrong ``BlockId``s — i.e. prefetch/release the wrong chunks
-    # — instead of failing at install time.
+    # Fail fast on block-id drift between discovery and configured block_map.
     expected_ids = set(block_map.keys())
     actual_ids = {cast(BlockId, idx) for idx in range(len(blocks))}
     if actual_ids != expected_ids:
@@ -225,9 +183,7 @@ def install_hooks(
         handles.append(
             block.register_forward_hook(_make_forward_post_hook(scheduler, block_id))
         )
-        # ``register_full_backward_pre_hook`` exists on nn.Module from
-        # PyTorch >= 2.0. We use the "full" variant so the hook observes
-        # grads to the entire block, not just the last parameter.
+        # "full" variant so hook observes grads to entire block.
         handles.append(
             block.register_full_backward_pre_hook(
                 _make_backward_pre_hook(scheduler, block_id)
@@ -244,19 +200,13 @@ def install_hooks(
             )
             handles.append(_RecomputePreHookHandle(block))  # type: ignore[arg-type]
 
-        # Wire OFFLOAD-mode wrappers to the runtime. Mirrors the SWAP
-        # wrapper path in ``api/model_wrapper.py``, but lives here so
-        # plugin authors composing ``install_hooks`` directly (without
-        # going through the full model wrapper) still get correctly-
-        # attached OFFLOAD blocks. ``attach_runtime`` is idempotent —
-        # re-calling with the same manager/scheduler is a no-op.
+        # OFFLOAD wrappers attach idempotently here for direct-install callers.
         if isinstance(block, OffloadedBlock):
             block.attach_runtime(chunk_manager, scheduler)
 
-    # per-PEFT-LoRA-container hooks gather LoRA-factor chunks before autograd shape-derivation runs, closing the cold-path ``shape compatible with [0]`` failure that block-level hooks miss
+    # PEFT-LoRA container quartet hooks close cold-path autograd shape-derivation race.
     peft_lora_containers = _find_peft_lora_containers(model)
     if peft_lora_containers:
-        # INFO so the load-bearing per-container hook install surfaces in production logs
         LOG.info(
             "install_hooks: %d PEFT-LoRA container(s) detected; "
             "installing per-container fwd/bwd pre+post-gather hook quartet",
@@ -265,16 +215,15 @@ def install_hooks(
     for container in peft_lora_containers:
         cids = _container_chunk_ids(container, chunk_manager)
         if not cids:
-            # container's params post-date chunk-manager construction; nothing to gather
             continue
-        # prepend=True so the gather precedes any trace-driver snapshot pre-hook that would otherwise read pre-gather state
+        # prepend so gather precedes trace-driver snapshot pre-hook.
         handles.append(
             container.register_forward_pre_hook(
                 _make_lora_container_pre_forward_hook(scheduler, cids),
                 prepend=True,
             )
         )
-        # post-forward re-assert: closes the mid-forward param.data null window before block-level offload(cid) release
+        # post-forward re-assert before block-level offload release.
         handles.append(
             container.register_forward_hook(
                 _make_lora_container_post_forward_hook(scheduler, cids)
@@ -285,7 +234,7 @@ def install_hooks(
                 _make_lora_container_pre_backward_hook(scheduler, cids)
             )
         )
-        # post-backward re-assert: pins the chunk across the gap between outer container's post-forward and inner Linear's TBackward0 apply
+        # post-backward re-assert across outer post-forward → inner TBackward0 gap.
         handles.append(
             container.register_full_backward_hook(
                 _make_lora_container_post_backward_hook(scheduler, cids)
@@ -306,19 +255,7 @@ def uninstall_hooks(
     handles: list["RemovableHandle"],
     model: "nn.Module | None" = None,
 ) -> None:
-    """Remove every handle produced by :func:`install_hooks`.
-
-    Safe to call multiple times — ``RemovableHandle.remove`` is
-    idempotent in modern PyTorch.
-
-    When ``model`` is provided, also detaches OFFLOAD-mode runtime
-    references (chunk_manager / scheduler) from every
-    ``OffloadedBlock`` in the discovered block forest. This mirrors
-    the ``attach_runtime`` call ``install_hooks`` makes, leaving the
-    model in its pre-install state with no lingering ProTrain
-    runtime refs. Pre-existing callers that omit ``model`` retain
-    the old hook-handle-only teardown semantics.
-    """
+    """Remove every handle; detach OFFLOAD wrappers when model passed. Idempotent."""
     failed: list["RemovableHandle"] = []
     for h in handles:
         try:
@@ -326,9 +263,7 @@ def uninstall_hooks(
         except Exception as exc:  # noqa: BLE001 — best-effort removal
             LOG.warning("uninstall_hooks: handle.remove() failed: %s", exc)
             failed.append(h)
-    # Retain handles whose .remove() raised so a future cleanup /
-    # re-install pass can try again; clearing them unconditionally
-    # would leak the only reference to a still-installed hook.
+    # Retain failed-remove handles for future cleanup attempts.
     handles[:] = failed
 
     if model is not None:
