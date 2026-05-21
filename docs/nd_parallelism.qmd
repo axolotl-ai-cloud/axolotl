@@ -40,6 +40,15 @@ Context Parallelism, also called [Sequence Parallelism](sequence_parallelism.qmd
 - The Challenge: Attention is not local; every token needs to "attend to" every other token. Splitting the sequence breaks this.
 - The Solution (`ring-flash-attention`): An efficient communication protocol is used. To compute attention for its local sequence chunk, each GPU passes its Key-Value (KV) cache to its neighbor in a "ring." After `N-1` steps, every GPU has seen the KV-cache from all other GPUs, allowing it to compute the correct attention values for its chunk. This is implemented using the highly optimized `flash-attention` kernel at each step.
 
+### Expert Parallelism (EP) {#sec-ep}
+
+Expert Parallelism shards the experts of a Mixture-of-Experts (MoE) model across GPUs. Each rank holds `num_experts / ep_size` experts; tokens are routed to the rank that owns the chosen expert via DeepEP's fused dispatch/combine kernels.
+
+- How it works: the EP plugin slices each `Experts` module's `gate_up_proj` / `down_proj` along the experts dimension and replaces the dispatch/combine path with DeepEP. Each rank sees a different batch (so EP is data-parallel for *data*) but holds different expert shards (model-parallel for *expert weights*).
+- When to use: MoE training where the experts dominate the parameter count and don't fit under FSDP alone, or where you want to compose with FSDP on orthogonal mesh axes.
+- Composes with FSDP: `expert_parallel_size × dp_shard_size = world_size`. EP shards experts on the `ep` axis; FSDP shards non-experts (and the per-EP-slice expert weights) on the `dp_shard` axis. Process groups are disjoint.
+- Requires the [DeepEP](https://github.com/deepseek-ai/DeepEP) library (Ampere or Hopper, NVLink). See [Expert Parallelism Integration](custom_integrations.qmd#expert-parallelism-integration) for install + integration details.
+
 ### Hybrid Sharding Data Parallel (HSDP) {#sec-hsdp}
 
 HSDP is a 2D strategy that intelligently combines FSDP and DDP, typically for multi-node training.
@@ -67,6 +76,9 @@ tensor_parallel_size: 1  # (default is 1, no TP)
 
 # Number of GPUs for Context/Sequence Parallelism.
 context_parallel_size: 1 # (default is 1, no CP)
+
+# Number of GPUs to shard MoE experts across (Expert Parallel).
+expert_parallel_size: 1  # (default is 1, no EP)
 ```
 
 Note: We recommend FSDP. DeepSpeed is only compatible with `tensor_parallel_size`.
@@ -89,20 +101,28 @@ See our example configs [here](https://github.com/axolotl-ai-cloud/axolotl/tree/
     - You want to shard the model across all 8 GPUs and also split the sequence length across all 8 GPUs.
     - Set `dp_shard_size: 8` and `context_parallel_size: 8`. Note: this means the data parallel group and context parallel group are the same. A more common setup might be to shard across a smaller group.
 
+4.  FSDP + EP on a 4-GPU MoE training run:
+    - You want EP to shard the experts and FSDP to shard non-expert params on orthogonal mesh axes.
+    - Set `expert_parallel_size: 2` and `dp_shard_size: 2` (`ep × dp_shard == world_size`). Add the `ExpertParallelPlugin` to `plugins:`.
+
 ## Support Matrix
 
 This matrix describes how different parallelism methods can be combined in Axolotl.
 
-| Combination | `dp_replicate_size` | `dp_shard_size` | `tp_size` | `cp_size` | Status & Notes |
-| --- | :---: | :---: |:---:|:---:|---|
-| **FSDP** (ZeRO-3) | 1 | >1 | 1 | 1 | ✅ Fully supported. Shards model across all GPUs. |
-| **HSDP** | >1 | >1 | 1 | 1 | ✅ Fully supported. FSDP intra-node, DDP inter-node. |
-| **FSDP + TP** | 1 | >1 | >1 | 1 | ✅ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. |
-| **HSDP + TP** | >1 | >1 | >1 | 1 | ✅ **3D Parallelism**. A powerful but complex combination. |
-| **FSDP + CP** | 1 | >1 | 1 | >1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism. |
-| **FSDP + TP + CP**| 1 | >1 | >1| >1| ✅ **3D Parallelism**. Another advanced combination. |
-| DDP + TP/CP | >1 | 1 | >1 | >1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
-| Just TP / CP | 1 | 1 | >1 | >1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
+| Combination | `dp_replicate_size` | `dp_shard_size` | `tp_size` | `cp_size` | `ep_size` | Status & Notes |
+| --- | :---: | :---: |:---:|:---:|:---:|---|
+| **FSDP** (ZeRO-3) | 1 | >1 | 1 | 1 | 1 | ✅ Fully supported. Shards model across all GPUs. |
+| **HSDP** | >1 | >1 | 1 | 1 | 1 | ✅ Fully supported. FSDP intra-node, DDP inter-node. |
+| **FSDP + TP** | 1 | >1 | >1 | 1 | 1 | ✅ **2D Parallelism**. Shards the model across a `dp_shard` group, and TP-splits layers within the `tp` group. |
+| **HSDP + TP** | >1 | >1 | >1 | 1 | 1 | ✅ **3D Parallelism**. A powerful but complex combination. |
+| **FSDP + CP** | 1 | >1 | 1 | >1 | 1 | ✅ **2D Parallelism**. Combines FSDP with context parallelism. |
+| **FSDP + TP + CP**| 1 | >1 | >1| >1| 1 | ✅ **3D Parallelism**. Another advanced combination. |
+| **EP** | 1 | 1 | 1 | 1 | >1 | ✅ Supported (MoE only). Shards experts across all ranks; non-experts replicated. |
+| **FSDP + EP** | 1 | >1 | 1 | 1 | >1 | ✅ **2D Parallelism** (MoE). EP shards experts on the `ep` axis; FSDP shards non-experts on `dp_shard`. |
+| EP + TP/CP | 1 | * | >1 | >1 | >1 | ❌ Not yet supported in v1; raises `NotImplementedError`. |
+| DDP + TP/CP | >1 | 1 | >1 | >1 | 1 | ❌ **Not Supported**. The `ParallelismConfig` explicitly prevents this, as composing pure DDP with TP or CP is currently not supported. You should use FSDP + TP/CP instead (`dp_shard_size > 1`). |
+| Just TP / CP | 1 | 1 | >1 | >1 | 1 | ✅ Supported. Useful for inference or when the model fits on one GPU but context is too long. |
 
 - `tp_size` refers to `tensor_parallel_size`
 - `cp_size` refers to `context_parallel_size`
+- `ep_size` refers to `expert_parallel_size`

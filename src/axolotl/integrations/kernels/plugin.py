@@ -76,6 +76,15 @@ class KernelsPlugin(BasePlugin):
         ):
             moe_model_type = cfg.model_config_type
 
+        # When expert parallelism is enabled, the EP plugin sets
+        # `experts_implementation` to `deep_ep_scattermoe` / `deep_ep_sonicmoe`
+        # and dispatches the kernel inside the experts-level forward (after
+        # DeepEP all-to-all). Skip the SparseMoeBlock-level patch in that case
+        # — patching the block-level forward bypasses EP routing and reads
+        # FSDP-sharded expert weights as DTensors, which the kernels do not
+        # accept.
+        ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
+
         if cfg.use_scattermoe:
             self._register_kernels()
             if is_experts_only_model(moe_model_type):
@@ -83,7 +92,14 @@ class KernelsPlugin(BasePlugin):
                 # — register ScatterMoE in the ExpertsInterface so that
                 # @use_experts_implementation dispatches to it.
                 self._register_experts_interface()
-                cfg.experts_implementation = "scattermoe"
+                if not ep_active:
+                    cfg.experts_implementation = "scattermoe"
+            elif ep_active:
+                LOG.info(
+                    "expert_parallel_size > 1: skipping SparseMoeBlock-level "
+                    "ScatterMoE patch; the deep_ep_scattermoe registered "
+                    "function handles the kernel under EP."
+                )
             else:
                 self._kernelize_model(moe_model_type)
         elif cfg.use_sonicmoe:
@@ -104,6 +120,24 @@ class KernelsPlugin(BasePlugin):
                     f"Applying SonicMoE experts-level patch for model type: {moe_model_type}"
                 )
                 patch_gemma4_sonicmoe()
+            # TODO(EP+SonicMoE): grad norms explode during training. Re-enable
+            # once the root cause is identified. Same shape as the ScatterMoE
+            # branch above, but SonicMoE additionally needs the gate_up_proj
+            # interleave converter since its w1 layout is [g0, u0, g1, u1, ...]
+            # while the checkpoint stores it concatenated [gate..., up...].
+            #
+            # elif ep_active:
+            #     from axolotl.integrations.kernels.libs.sonicmoe.weight_converter import (
+            #         register_sonicmoe_weight_converter,
+            #     )
+            #
+            #     LOG.info(
+            #         "expert_parallel_size > 1: skipping SparseMoeBlock-level "
+            #         "SonicMoE patch; the deep_ep_sonicmoe registered function "
+            #         "handles the kernel under EP. Registering gate_up_proj "
+            #         "interleave converter."
+            #     )
+            #     register_sonicmoe_weight_converter(moe_model_type)
             else:
                 from axolotl.integrations.kernels.libs.sonicmoe import patch_sonicmoe
 
