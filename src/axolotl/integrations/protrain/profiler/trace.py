@@ -143,10 +143,27 @@ def run_trace(
     optim_state_bytes_per_param: int = DEFAULT_OPTIM_STATE_BYTES_PER_PARAM,
 ) -> ProfilerTrace:
     """Run a single forward (+optional backward) pass and record memory deltas."""
+    import contextlib
+
     import torch
 
     device = torch.device(cfg.device)
     cuda_available_for_bench = device.type == "cuda" and torch.cuda.is_available()
+
+    # Match Trainer.autocast so non-quantized fp32 modules (e.g. Qwen3.5 linear_attn.conv1d) accept BF16 activations.
+    autocast_dtype: torch.dtype | None = None
+    for _param in model.parameters():
+        if _param.is_floating_point():
+            autocast_dtype = _param.dtype
+            break
+    autocast_ctx = (
+        torch.autocast(device_type="cuda", dtype=autocast_dtype)
+        if (
+            cuda_available_for_bench
+            and autocast_dtype in (torch.bfloat16, torch.float16)
+        )
+        else contextlib.nullcontext()
+    )
 
     # Adam microbenches BEFORE tracker so reserved-but-free bytes fold into the baseline.
     try:
@@ -422,7 +439,8 @@ def run_trace(
         for _i in range(N_WARMUP):
             try:
                 torch.cuda.synchronize(device)
-                warm_out = model(**batch)
+                with autocast_ctx:
+                    warm_out = model(**batch)
                 if cfg.include_backward:
                     warm_loss = _extract_loss(warm_out)
                     warm_loss.backward()
@@ -559,7 +577,8 @@ def run_trace(
                     pre_sf = torch.cuda.Event(enable_timing=True)
                     post_sf = torch.cuda.Event(enable_timing=True)
                     pre_sf.record()
-                steady_out = model(**batch)
+                with autocast_ctx:
+                    steady_out = model(**batch)
                 with torch.cuda.device(device_idx):
                     post_sf.record()
                 torch.cuda.synchronize(device)
@@ -676,7 +695,8 @@ def run_trace(
                 with torch.cuda.device(device_idx):
                     hooked_fwd_pre_event = torch.cuda.Event(enable_timing=True)
                     hooked_fwd_pre_event.record()
-            output = model(**batch)
+            with autocast_ctx:
+                output = model(**batch)
             if cuda_available and hooked_fwd_pre_event is not None:
                 with torch.cuda.device(device_idx):
                     hooked_fwd_post_event = torch.cuda.Event(enable_timing=True)

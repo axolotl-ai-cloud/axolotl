@@ -163,6 +163,8 @@ def measure_chunked_steady(
     n_iters: int = _PHASE2_N_ITERS,
 ) -> tuple[float, float, float, int]:
     """Run a chunked steady-state fwd→bwd→step loop; returns (fwd_s, bwd_s, step_s, peak_bytes)."""
+    import contextlib
+
     import torch
 
     if n_warmup < 0 or n_iters <= 0:
@@ -182,6 +184,18 @@ def measure_chunked_steady(
     device = next(model.parameters()).device
     if device.type != "cuda":
         raise RuntimeError(f"Phase-2 measurement expected a CUDA model, got {device!r}")
+
+    # Match Trainer.autocast so non-quantized fp32 layers (e.g. Qwen3.5 linear_attn.conv1d) accept BF16 activations.
+    autocast_dtype: torch.dtype | None = None
+    for _p in model.parameters():
+        if _p.is_floating_point():
+            autocast_dtype = _p.dtype
+            break
+    autocast_ctx = (
+        torch.autocast(device_type="cuda", dtype=autocast_dtype)
+        if autocast_dtype in (torch.bfloat16, torch.float16)
+        else contextlib.nullcontext()
+    )
 
     # Sentinels for safe partial-failure restore.
     model_state: dict[str, Any] | None = None
@@ -276,7 +290,8 @@ def measure_chunked_steady(
             optimizer.zero_grad(set_to_none=True)
             # Warmup — discard timings.
             for _ in range(n_warmup):
-                out = model(**batch)
+                with autocast_ctx:
+                    out = model(**batch)
                 loss = _extract_loss(out)
                 loss.backward()
                 optimizer.step()
@@ -296,7 +311,8 @@ def measure_chunked_steady(
                 step_end = torch.cuda.Event(enable_timing=True)
 
                 fwd_start.record()
-                out = model(**batch)
+                with autocast_ctx:
+                    out = model(**batch)
                 loss = _extract_loss(out)
                 fwd_end.record()
 
