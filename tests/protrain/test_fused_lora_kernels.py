@@ -1,20 +1,4 @@
-"""Unit tests for ProTrain M1 — fused LoRA kernel integration.
-
-The on-demand profiler installs per-Linear pre-/post-forward hooks that
-gather weights from CPU just before each ``nn.Linear.__call__``. Axolotl's
-fused LoRA kernels (``apply_lora_mlp_swiglu``, ``apply_lora_qkv``,
-``apply_lora_o``, ``apply_lora_embedding``) bypass that path entirely:
-they read child Linear weights via direct attribute access from inside a
-monkey-patched container forward. The M0 spike captured the resulting
-``RuntimeError: size mismatch ... vec (0)`` — the fused matmul saw the
-empty post-spill placeholder.
-
-These tests pin the M1 fix: the on-demand manager detects fused-kernel
-containers and installs an additional pre-/post-forward hook on each
-container that gathers ALL sub-parameters before the patched forward runs
-(symmetric release after). Verified at the helper level (no GPU) and at
-the live-hook level (no GPU — hook firing alone is observable on CPU).
-"""
+"""Fused LoRA kernels bypass per-Linear gather hooks; container-level hooks must gather all sub-params before the patched forward."""
 
 from __future__ import annotations
 
@@ -36,19 +20,11 @@ from axolotl.integrations.protrain.profiler.on_demand import (
 # trivial implementations that read child Linear weight refs directly
 # (the same access pattern the real fused kernels use).
 def apply_lora_mlp_swiglu(self, x):  # noqa: D401 — stand-in
-    """Stand-in MLP fused kernel: reads gate/up/down weights directly.
-
-    Mirrors the real kernel's access pattern (direct attribute reads on
-    child Linears) so the on-demand manager's per-Linear gather hooks
-    are bypassed exactly the same way. Math: ``down(silu(gate(x)) * up(x))``.
-    """
+    """Stand-in MLP fused kernel: direct child-Linear weight reads bypass per-Linear gather hooks."""
     gate_w = self.gate_proj.weight  # [hidden, dim]
     up_w = self.up_proj.weight  # [hidden, dim]
     down_w = self.down_proj.weight  # [dim, hidden]
-    # Exercise the failure mode the M0 spike found: the matmul
-    # ``x @ gate_w.t()`` blows up with size mismatch when gate_w.data is
-    # the empty post-spill placeholder. Under the M1 fix, the container
-    # pre-hook gathers gate_w before this matmul runs.
+    # Reproduces the size-mismatch crash when gate_w.data is the empty post-spill placeholder; container pre-hook must gather it first.
     h = torch.nn.functional.silu(x @ gate_w.t()) * (x @ up_w.t())
     return h @ down_w.t()
 
@@ -236,19 +212,7 @@ def test_find_containers_picks_up_mixed_set():
 
 
 def test_container_pregather_runs_before_fused_forward():
-    """Under the on-demand manager, fused-MLP forward sees gathered weights, not placeholders.
-
-    Direct repro of the M0 failure mode: without the fix, ``apply_lora_mlp_swiglu``
-    reads ``gate_proj.weight.data`` which the manager spilled to CPU and
-    replaced with a length-0 placeholder. The matmul then raises ``size
-    mismatch ... vec (0)``. With the M1 container hook, the pre-gather
-    fires before the patched forward and the matmul receives the real
-    weight tensor.
-
-    Runs on CPU using a CPU-original spill path — the spill replaces
-    ``param.data`` with an empty CPU tensor, the pre-hook restores it,
-    and we assert numerical equivalence with the un-spilled forward.
-    """
+    """Container pre-gather restores gate_proj.weight.data before fused MLP forward, avoiding vec(0) matmul crash."""
     torch.manual_seed(0)
     model = TinyModel(n_blocks=1, dim=8, hidden=16)
     _patch_mlp_swiglu(model)
@@ -353,21 +317,7 @@ def test_disabled_manager_skips_container_detection():
 
 
 def test_container_backward_under_fake_fused_autograd_function():
-    """Backward through a fake fused-autograd-Function sees real weights.
-
-    Models the exact failure mode the integration test surfaced: the
-    real ``LoRA_MLP`` keeps the base weight as a plain Python attribute
-    on ``ctx`` (``ctx.weights = (gate_weight, ...)``), bypassing
-    ``ctx.save_for_backward`` and therefore the saved-tensors pack/unpack
-    spill path. Without the M1 backward subtree hook, the forward
-    post-release would clear ``param.data`` to a length-0 placeholder
-    before bwd runs and the autograd's matmul against ``ctx.weights[i]``
-    would raise ``size mismatch ... vec (0)``.
-
-    Asserting the backward succeeds end-to-end and the param grads match
-    the un-spilled reference proves the container's
-    ``register_full_backward_pre_hook`` re-gather is the right fix.
-    """
+    """Backward subtree hook must re-gather weights when fused ctx keeps them outside save_for_backward."""
 
     class FakeFusedMatmul(torch.autograd.Function):
         @staticmethod
@@ -447,17 +397,14 @@ def test_container_backward_under_fake_fused_autograd_function():
         assert len(mgr._fused_containers) == 1
         y = model(x)
         loss = y.sum()
-        # The backward call is what the M1 backward subtree hook fixes.
-        # Without it, this raises ``size mismatch ... vec (0)`` from
-        # the autograd Function's bwd matmul against the post-release
-        # placeholder.
+        # Backward subtree hook re-gathers weights; absent it, autograd's bwd matmul against the post-release placeholder raises vec(0) size mismatch.
         loss.backward()
 
     # Param grads must match the un-spilled reference (within fp32 tol).
     for name, p in model.named_parameters():
         assert p.grad is not None, f"missing grad on {name}"
         assert torch.allclose(p.grad, grad_ref[name], atol=1e-6), (
-            f"grad on {name} differs under M1 hook path: "
+            f"grad on {name} differs under backward subtree hook path: "
             f"max_diff={(p.grad - grad_ref[name]).abs().max().item():.3e}"
         )
 

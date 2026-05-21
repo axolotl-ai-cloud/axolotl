@@ -1,27 +1,4 @@
-"""Unit tests for ProTrain + bitsandbytes quantization composability.
-
-The M2 + M3 milestones (collapsed per the M0 spike report) drop the
-``args.py`` validators that rejected ``load_in_8bit`` / ``load_in_4bit``
-when the ProTrain plugin is active. The M0 spike showed both bnb param
-types compose cleanly with the chunk manager in Mode A (all-persistent)
-because their ``.data`` is a packed-byte tensor (``torch.int8`` for
-``Int8Params``, ``torch.uint8`` for ``Params4bit``) that ``_param_bytes``
-sizes correctly via ``numel * element_size``.
-
-These tests pin two invariants:
-
-1. Validator drop — ``ProTrainArgs.model_validate`` accepts both
-   ``load_in_8bit: true`` and ``load_in_4bit: true`` when the ProTrain
-   plugin is registered (the previous behavior raised
-   ``ValidationError``; the new behavior must NOT).
-2. ``_param_bytes`` correctness for synthetic int8/uint8 tensors that
-   stand in for the storage layout bnb produces — the chunk layout's
-   byte math must equal ``numel * element_size`` regardless of dtype.
-
-Bnb itself is not imported here so the tests run in any env (the bnb
-storage layout is reproduced with stock ``torch.uint8`` / ``torch.int8``
-tensors of matching shapes).
-"""
+"""ProTrain + bitsandbytes quantization composability: validator drop and packed-byte param sizing."""
 
 from __future__ import annotations
 

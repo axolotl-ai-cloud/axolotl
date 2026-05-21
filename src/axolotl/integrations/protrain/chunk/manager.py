@@ -542,51 +542,7 @@ class ChunkManager:
         # tensor per param (cheap but not free).
         self._empty_by_dtype: dict["torch.dtype", "torch.Tensor"] = {}
 
-        # M6C-fix-7: shape-preserving placeholder mode. When True, the
-        # post-release "placeholder" bound to ``param.data`` is a
-        # zero-stride view (one 1-element scratch tensor per dtype,
-        # ``.expand(slot.shape)``) instead of a ``torch.Size([0])`` empty
-        # tensor. This preserves ``param.size()`` / ``param.shape`` /
-        # ``param.dim()`` consistency across the release window so any
-        # autograd op that records input metadata while the chunk is in
-        # the released state captures the REAL logical shape rather
-        # than ``[0]``.
-        #
-        # Rationale (M6C-fix-7 root-cause synthesis from M6C-fix-{3..6}
-        # empirical findings): PyTorch autograd captures Function input
-        # shape metadata at Node-construction time (see
-        # ``torch/csrc/autograd/generated/Functions.h``
-        # ``self_sym_sizes`` captured by-value as
-        # ``std::vector<c10::SymInt>``). When PEFT's ``LoraLayer.forward``
-        # dispatches ``nn.functional.linear`` on a LoRA factor in
-        # multi-GPU sharded mode with non-persistent chunks at
-        # production scale (32-layer Llama-3-8B x 4 ranks x n_buffer=8),
-        # there is a ~rare race window where the autograd op records
-        # its input shape against the still-``[0]``-shape placeholder
-        # before the per-LoRA-container gather hook's rebind takes
-        # effect — surfacing at backward as ``RuntimeError: Function
-        # ToCopyBackward0 returned an invalid gradient ... expected
-        # shape compatible with [0]``. The shape-preserving placeholder
-        # closes the window architecturally: even if the gather
-        # rebind hasn't reached the LoRA factor yet, ``param.size()``
-        # returns the real shape that autograd will eventually expect
-        # at backward.
-        #
-        # Storage footprint: ONE 1-element scratch tensor per dtype
-        # ``(self._shape_scratch_by_dtype)``. The per-param "view" is
-        # constructed on demand via ``scratch.expand(slot.shape)`` —
-        # zero strides, zero additional storage.
-        #
-        # Default OFF (``False``): the legacy ``torch.Size([0])``
-        # placeholder is preserved so the wide test surface that
-        # asserts ``param.data.numel() == 0`` post-offload
-        # (test_chunk_manager_offload.py, test_offload_mode_m{2,3}.py,
-        # test_lora_offload_mode.py, test_fused_lora_kernels.py,
-        # test_multi_gpu_7b.py, test_profiler.py — 14+ assertions
-        # across 7 files) continues to hold without modification. The
-        # API surface is opt-in via the constructor flag (or the
-        # ``protrain_shape_preserving_placeholders: true`` YAML knob
-        # plumbed through ``protrain_model_wrapper``).
+        # Opt-in: bind released param.data to a zero-stride view of the real shape so autograd captures the logical shape instead of [0].
         self._shape_preserving_placeholders: bool = bool(shape_preserving_placeholders)
         self._shape_scratch_by_dtype: dict["torch.dtype", "torch.Tensor"] = {}
 
@@ -695,15 +651,7 @@ class ChunkManager:
             for i in range(self.layout.N_chunk)
             if cast(ChunkId, i) not in new_persistent_ids
         }
-        # CodeRabbit R2-04 fix: once chunks have been materialized into
-        # CPU placeholder slots or persistent GPU buffers, the residency
-        # split is baked into the runtime state — a previously offloaded
-        # chunk newly tagged persistent would early-return in ``gather``
-        # while its params still point at empty GPU placeholders, and a
-        # previously persistent chunk newly tagged non-persistent would
-        # have no ``_cpu_slots`` to drain grads into. Reject the change
-        # so the failure surfaces immediately rather than as silent
-        # weight corruption many steps later.
+        # After materialization the residency split is baked in; flipping it would silently corrupt weights since gather/offload paths skip already-resident chunks.
         if (self._cpu_slots or self._persistent_buffers) and (
             new_persistent_ids != self._persistent_ids
             or new_non_persistent_ids != self._non_persistent_ids
@@ -910,9 +858,7 @@ class ChunkManager:
                     if param is None:
                         continue
                     dtype_here = param.data.dtype
-                    # CodeRabbit R07 fix: split regions on requires_grad
-                    # in addition to dtype so each region is uniformly
-                    # trainable or uniformly frozen.
+                    # Region must be uniformly trainable or uniformly frozen so grad allocation matches.
                     trainable_here = bool(param.requires_grad)
                     param_end = off + nbytes
                     if cur_dtype is None:
@@ -1179,15 +1125,7 @@ class ChunkManager:
                 cpu_param = cpu_view.view(dtype).view(shape)
                 cpu_param.copy_(orig_data)
 
-                # Release GPU storage by rebinding .data to a
-                # placeholder. M6C-fix-7: when
-                # ``shape_preserving_placeholders`` is on, the
-                # placeholder is a zero-stride view of shape ``shape``
-                # so ``param.size()`` returns the real logical shape
-                # even in the released state — closes the autograd
-                # shape-capture race window for multi-GPU sharded
-                # non-persistent chunks. Default OFF preserves the
-                # legacy ``torch.Size([0])`` placeholder semantics.
+                # Release GPU storage; opt-in shape-preserving placeholder keeps param.size() correct for autograd while released.
                 if self._shape_preserving_placeholders:
                     param.data = self._shape_preserving_placeholder(shape, dtype)
                 else:
@@ -1290,12 +1228,7 @@ class ChunkManager:
                     )
                     region_param_off += r_shard_bytes
 
-                    # CodeRabbit R07 fix: only allocate the pinned grad
-                    # shard for trainable regions. Frozen-only regions
-                    # never receive a reduce/copy in
-                    # :meth:`reduce_grads_and_offload`; binding a
-                    # zero-grad view as ``shard_param.grad`` would
-                    # let Adam's weight-decay rewrite frozen bytes.
+                    # Frozen regions get no grad shard; otherwise Adam's weight decay would rewrite frozen bytes.
                     cpu_region_grad: "torch.Tensor | None" = None
                     if r_is_trainable:
                         assert chunk_grad_view is not None
@@ -1378,41 +1311,7 @@ class ChunkManager:
             freed / 1e9,
         )
 
-        # M6C-fix-8: keep ``model._ddp_params_and_buffers_to_ignore`` in
-        # sync with the just-released param set so DDP's
-        # ``_sync_module_states`` broadcast skips every chunk-managed
-        # param. See ``api/model_wrapper.py`` for the full architectural
-        # rationale; the load-bearing reason this needs to ALSO live in
-        # ``materialize_offload`` (not only at first wrap) is the cross-
-        # mode resume hook in ``plugin.py``: it tears down the offload
-        # via ``restore_to_gpu``, runs PEFT's ``load_adapter``, then
-        # calls ``materialize_offload`` AGAIN — between the two
-        # materialize calls the model attribute would otherwise still
-        # carry the FIRST run's name set; if the layout changed (or any
-        # name shifted) the broadcast filter would miss the new
-        # placeholders. Re-registering on every materialize closes that
-        # gap with one O(N_params) walk.
-        #
-        # Lifecycle (D2 — replace, don't union): the prior union logic
-        # accumulated stale names across rebuild cycles because the
-        # second ``materialize_offload`` saw the first call's names in
-        # ``_existing`` and merged them in. A name that moves from
-        # non-persistent to persistent between calls (e.g. user changes
-        # ``n_persist`` on resume, or a sharded layout collapses to
-        # replicated) would then stay in the ignore set and DDP would
-        # skip syncing a weight that is now live. Snapshot the
-        # pre-protrain value once (in ``_protrain_ddp_original_ignore``
-        # on the model) so every materialize call rebuilds from that
-        # canonical "what was there before ProTrain touched it" basis
-        # rather than from the previous protrain set. The snapshot is
-        # restored on ``close()`` (deterministic teardown) and on the
-        # non-shape-preserving rebuild path in
-        # ``api/model_wrapper.py`` (so a Mode C -> Mode A rebuild
-        # cleanly drops the marker + ignore list).
-        #
-        # Default OFF: ``self._shape_preserving_placeholders`` False on
-        # single-GPU / replicated paths, no DDP collision possible (the
-        # legacy ``[0]`` placeholder is write-tolerant), no-op.
+        # Rebuild model._ddp_params_and_buffers_to_ignore from the pre-protrain snapshot + current chunk-managed names so a re-materialize after resume cannot accumulate stale names.
         if self._shape_preserving_placeholders and self.model is not None:
             try:
                 protrain_set = self.chunk_managed_param_names()
@@ -1420,12 +1319,7 @@ class ChunkManager:
                     _pre_existing = getattr(
                         self.model, "_ddp_params_and_buffers_to_ignore", None
                     )
-                    # ``None`` (no pre-existing attribute) vs ``[]``
-                    # (caller registered an empty ignore list) are
-                    # different terminal states on teardown: the former
-                    # means delete the attribute, the latter means
-                    # restore to an empty list. Preserve the distinction
-                    # by writing ``None`` only when no attribute was set.
+                    # Distinguish unset (None) from empty-list so teardown can restore exactly.
                     self.model._protrain_ddp_original_ignore = (  # type: ignore[attr-defined]
                         None if _pre_existing is None else list(_pre_existing)
                     )
@@ -1437,26 +1331,16 @@ class ChunkManager:
                         set(_original) | protrain_set
                     )
                 LOG.info(
-                    "ChunkManager.materialize_offload (M6C-fix-8 / D2): "
-                    "rebuilt model._ddp_params_and_buffers_to_ignore "
-                    "from snapshot + %d chunk-managed names "
-                    "(pre-protrain original: %s)",
+                    "ChunkManager.materialize_offload: rebuilt "
+                    "model._ddp_params_and_buffers_to_ignore from snapshot "
+                    "+ %d chunk-managed names (pre-protrain original: %s)",
                     len(protrain_set),
                     "<unset>" if _original is None else f"{len(_original)} names",
                 )
             except Exception as _exc:  # noqa: BLE001 — defensive
-                # The DDP-ignore registration is a defense-in-depth
-                # measure; if the model object doesn't support
-                # attribute assignment (extremely unusual — would mean
-                # some custom subclass with __slots__ and no
-                # ``_ddp_params_and_buffers_to_ignore`` slot) we log
-                # and continue rather than break the offload. The
-                # downstream DDP wrap will then trip the shared-
-                # storage hazard, surfacing the issue loudly.
                 LOG.warning(
-                    "ChunkManager.materialize_offload (M6C-fix-8 / D2): "
-                    "failed to register _ddp_params_and_buffers_to_ignore "
-                    "on model: %s",
+                    "ChunkManager.materialize_offload: failed to register "
+                    "_ddp_params_and_buffers_to_ignore on model: %s",
                     _exc,
                 )
         return freed
@@ -1775,10 +1659,7 @@ class ChunkManager:
         # placeholders are unreferenced from torch's perspective. Drop
         # the dict so the next gather builds fresh ones if needed.
         self._empty_by_dtype.clear()
-        # M6C-fix-7: drop the per-dtype shape-scratch cache symmetric
-        # with ``_empty_by_dtype``. Any param.data still aliasing one
-        # of these scratches was just rebound to a fresh GPU tensor
-        # above, so the scratches are now unreferenced.
+        # Symmetric teardown with _empty_by_dtype; the rebind above already dropped any aliases.
         self._shape_scratch_by_dtype.clear()
 
         # Release + close the unified pinned pools.
@@ -1879,54 +1760,7 @@ class ChunkManager:
         shape: "torch.Size | tuple[int, ...]",
         dtype: "torch.dtype",
     ) -> "torch.Tensor":
-        """Return a tensor with logical ``shape``/``dtype`` but ~zero storage.
-
-        M6C-fix-7: closes the autograd shape-capture race window for
-        multi-GPU non-persistent chunks. PyTorch autograd captures
-        Function input shape metadata at Node-construction (forward)
-        time — see ``torch/csrc/autograd/generated/Functions.h``
-        ``self_sym_sizes`` captured by-value as
-        ``std::vector<c10::SymInt>``. The legacy ``_empty_placeholder``
-        returns a ``torch.Size([0])`` tensor; when an autograd op
-        records its input shape from a parameter still in the released
-        state (race with the gather-hook rebind on the 4-rank
-        Llama-3-8B sharded path under heavy pool-eviction pressure),
-        the recorded shape is ``[0]`` and backward fails with
-        "expected shape compatible with [0]".
-
-        This helper returns a tensor of the *correct* logical shape
-        backed by a 1-element scratch tensor expanded with all-zero
-        strides. Storage footprint per dtype is exactly one element
-        (e.g. 2 bytes for bf16) shared across every param of that
-        dtype currently in the released state. ``param.size()`` /
-        ``param.shape`` / ``param.dim()`` return real values; autograd
-        Node construction captures the real shape regardless of where
-        in the gather→forward→backward sequence the autograd op
-        records its metadata.
-
-        The returned tensor is intentionally non-contiguous (zero
-        strides) — reading from it would yield repeated copies of the
-        single scratch element, which is correct only as a release-
-        state sentinel. The chunk manager's ``_rebind_params_to_buffer``
-        replaces ``param.data`` with a real typed view before any
-        kernel consumes the param's elements; the placeholder is
-        only the post-release sentinel held while no kernel is
-        reading.
-
-        Caching: one scratch tensor per dtype, allocated lazily and
-        held in ``self._shape_scratch_by_dtype``. Cleared by
-        ``restore_to_gpu`` and ``close`` alongside
-        ``self._empty_by_dtype``.
-
-        Notes
-        -----
-        Even when ``self._shape_preserving_placeholders`` is False
-        (the default — see ``__init__``), this method remains callable
-        from external code (tests, future hook code). The release-
-        path call sites in this module gate the swap-in on the flag
-        so existing ``param.data.numel() == 0`` test assertions
-        continue to hold under default behavior.
-        """
+        """Return a zero-stride view of ``shape``/``dtype`` so released params keep their real shape for autograd."""
         import torch
 
         from axolotl.integrations.protrain.runtime.streams import (
@@ -1943,73 +1777,12 @@ class ChunkManager:
                 scratch = torch.empty(1, device=self.device, dtype=dtype)
             self._shape_scratch_by_dtype[dtype] = scratch
 
-        # ``expand`` produces a non-contiguous view with all-zero
-        # strides; storage cost is the single scratch element. The
-        # view shares storage with ``scratch`` so the storage_ptr
-        # equals the scratch's storage_ptr — distinguishable from a
-        # real chunk-buffer view (which has its own storage) by
-        # storage-identity comparison if the caller needs that
-        # distinction.
         if shape == torch.Size([]):
-            # 0-dim scalar param — ``expand([])`` returns the scratch
-            # itself reshaped as a 0-dim tensor.
             return scratch.view(())
         return scratch.expand(tuple(shape))
 
     def chunk_managed_param_names(self) -> set[str]:
-        """Return every param name backed by a non-persistent (released) chunk.
-
-        M6C-fix-8: required by ``api/model_wrapper.py`` to populate
-        ``model._ddp_params_and_buffers_to_ignore`` before
-        ``accelerator.prepare`` wraps the model in
-        :class:`torch.nn.parallel.DistributedDataParallel`.
-
-        Why this matters
-        ----------------
-        On the multi-GPU sharded path (``zero3_shard=True`` and
-        ``world_size > 1``) the model wrapper engages
-        ``shape_preserving_placeholders=True`` so that the released-state
-        ``param.data`` carries the param's REAL logical shape via a
-        ``scratch.expand(slot.shape)`` zero-stride view (M6C-fix-7
-        architectural fix that closes the autograd shape-capture race for
-        PEFT LoRA factors). The expanded view shares one physical
-        element across every logical position; reading is fine but ANY
-        in-place WRITE trips PyTorch's shared-storage hazard:
-
-            RuntimeError: unsupported operation: more than one element
-            of the written-to tensor refers to a single memory location.
-            Please clone() the tensor before performing the operation.
-
-        ``DistributedDataParallel.__init__`` calls
-        ``_sync_module_states`` → ``_broadcast_coalesced``, which
-        iterates ``module.named_parameters()`` and broadcasts the
-        rank-0 contents into every rank's tensor. The broadcast is an
-        in-place write — into the still-released expanded placeholder —
-        so it trips the hazard on every chunk-managed param.
-
-        ProTrain owns the parallelism contract for these params anyway
-        (init-time sharding via :meth:`materialize_offload`, gather-time
-        ``all_gather_into_tensor`` reconstruction, grad-time
-        ``reduce_scatter`` drain). DDP's broadcast/allreduce on them is
-        not just unnecessary, it is INCORRECT for sharded init —
-        every rank holds a different shard and broadcasting one rank's
-        bytes to every rank would corrupt the other ranks' shards. The
-        correct shape of the integration is "tell DDP to ignore these
-        params entirely" via
-        ``model._ddp_params_and_buffers_to_ignore`` (the documented
-        opt-out hook PyTorch's DDP honours via the attribute lookup at
-        ``DistributedDataParallel.__init__`` line ~718).
-
-        Returns
-        -------
-        set[str]
-            Every dotted parameter name (matching ``named_parameters``
-            keys) whose backing chunk is in ``_non_persistent_ids``.
-            Persistent chunks are excluded — their params stay GPU-
-            resident, do not pass through the released-state
-            placeholder, and DO need the standard DDP broadcast for
-            correctness.
-        """
+        """Return param names backed by released (non-persistent) chunks so DDP can be told to ignore them."""
         names: set[str] = set()
         for cid in self._non_persistent_ids:
             for slot in self._cpu_slots.get(cid, []):
@@ -2095,18 +1868,7 @@ class ChunkManager:
             remaining = cm._grad_remaining.get(captured_cid, 0) - 1
             cm._grad_remaining[captured_cid] = remaining
             if remaining == 0:
-                # All of the chunk's trainable params are drained. The
-                # CPU FusedAdam adapter is responsible for actually
-                # updating the offloaded weights — without it, the CPU
-                # master shards never advance and every offloaded chunk
-                # silently retains its iter-0 weights forever.
-                #
-                # CodeRabbit R2-05 fix: fail fast the FIRST time an
-                # offloaded chunk reaches its CPU-step path with no
-                # ``cpu_optim`` attached. Prior code skipped the
-                # ``step_async`` and just reset ``_grad_remaining`` so
-                # the next backward could fire again — which masked the
-                # missing optimizer behind silently stale weights.
+                # Fail fast on missing cpu_optim; skipping it would silently retain iter-0 weights on every offloaded chunk.
                 if cm.cpu_optim is None:
                     raise RuntimeError(
                         "ChunkManager: missing CPU optimizer for offloaded "
@@ -2207,8 +1969,6 @@ class ChunkManager:
                 # trainable slots round-trip through this callback.
                 if param.data.device.type != "cpu":
                     continue
-                # M6C-fix-7: shape-preserving placeholder swap (opt-in)
-                # — see the materialize_offload site for rationale.
                 if cm._shape_preserving_placeholders:
                     param.data = cm._shape_preserving_placeholder(
                         slot.shape, slot.dtype
@@ -2702,11 +2462,6 @@ class ChunkManager:
             # post-step repoint will null it back to a GPU placeholder.
             if param.data.device.type == "cpu":
                 continue
-            # M6C-fix-7: shape-preserving placeholder swap (opt-in
-            # via constructor flag) keeps ``param.size()`` consistent
-            # with the slot's logical shape across the release window
-            # so autograd Node-construction shape-capture sees the
-            # real shape even on the multi-GPU sharded fast path.
             if self._shape_preserving_placeholders:
                 param.data = self._shape_preserving_placeholder(slot.shape, slot.dtype)
             else:
@@ -2750,25 +2505,7 @@ class ChunkManager:
             # when it detects DDP composition) tells us to leave the
             # grads alone.
             #
-            # In the non-DDP distributed path (e.g. a bare ZeRO-3 run
-            # or Mode-A-no-DDP / Mode-C-no-DDP) the flag is False and
-            # we own the cross-rank reduction. To minimize NCCL launch
-            # latency on small persistent chunks (Item 5 profiling
-            # showed ~19 ops × 17MB unbucketed on a Llama-3B 4-GPU run,
-            # ~30 ms / 1300 ms iter), we COALESCE every same-dtype grad
-            # in the chunk into a single flat buffer and issue one
-            # ``all_reduce`` per dtype group. PyTorch's
-            # ``_flatten_dense_tensors`` / ``_unflatten_dense_tensors``
-            # is the same primitive DDP uses internally; it handles
-            # the contiguous-buffer staging and the per-tensor view
-            # restoration without any copy back when the grads were
-            # already contiguous (the common case).
-            #
-            # Mixed-dtype chunks (e.g. fp16 attention weights next to
-            # fp32 layernorm scales in a Llama block) issue ONE
-            # all_reduce per dtype run, not one per param. Homogeneous
-            # chunks issue exactly one collective — the structurally
-            # cleanest case.
+            # When ProTrain owns the cross-rank reduction (no outer DDP), coalesce same-dtype grads into one all_reduce per dtype to cut NCCL launch latency.
             if (
                 torch.distributed.is_available()
                 and torch.distributed.is_initialized()
@@ -2793,29 +2530,7 @@ class ChunkManager:
         self.offload(chunk_id)
 
     def _coalesced_all_reduce_persistent_grads(self, chunk_id: ChunkId) -> None:
-        """Bucket persistent-chunk grads by dtype and issue one all_reduce per bucket.
-
-        Replaces the per-param ``dist.all_reduce`` loop that dominated
-        launch latency on the Mode-C / Mode-A-no-DDP path (Item 5
-        profiling: 19 ops × 17MB unbucketed → ~30 ms/iter). Equivalent
-        to PyTorch DDP's internal bucketed allreduce (which uses the
-        same ``_flatten_dense_tensors`` primitive).
-
-        Algorithm:
-
-        1. Group every live ``param.grad`` in ``chunk_id`` by dtype.
-        2. For each dtype group: flatten into one contiguous buffer,
-           ``all_reduce(op=AVG)`` it once, then unflatten back to
-           per-param views and copy each view into the original
-           ``param.grad``. The copy_back handles the case where
-           ``_flatten_dense_tensors`` materialized a fresh buffer (it
-           always does — the input grads' storage is independent).
-
-        Mixed-dtype chunks (Llama: fp16 weights + fp32 RMSNorm scales)
-        issue one collective per dtype run, exactly like the sharded
-        path's per-region collectives. Empty chunks issue zero
-        collectives.
-        """
+        """Bucket persistent-chunk grads by dtype and issue one all_reduce per bucket."""
         import torch.distributed as dist
         from torch._utils import (
             _flatten_dense_tensors,
@@ -2935,18 +2650,7 @@ class ChunkManager:
         d2h_event = None
         any_trainable_region = False
         for region in shard_state.regions:
-            # CodeRabbit R07 fix: skip frozen-only regions outright.
-            # Their ``shard_param`` was constructed with
-            # ``requires_grad=False`` and ``cpu_shard_grad_bytes=None``;
-            # there is nothing to reduce or D2H here. Running the
-            # collective + binding a zero-grad view as
-            # ``shard_param.grad`` would re-introduce the original
-            # bug — Adam's weight-decay path would mutate frozen
-            # bytes against a silently-zero grad. The trainability
-            # flag is authoritative because region segmentation in
-            # :meth:`materialize_offload` splits on ``requires_grad``,
-            # so any param contributing bytes to a frozen region is
-            # guaranteed itself frozen and will never produce a grad.
+            # Frozen regions have no grad shard; reducing here would let weight-decay mutate frozen bytes.
             if not region.is_trainable:
                 continue
             any_trainable_region = True
@@ -3041,16 +2745,7 @@ class ChunkManager:
             else:
                 region.shard_param.grad.copy_(my_shard_grad_gpu)  # type: ignore[union-attr]
 
-        # CodeRabbit R2-05 fix: if we just reduce_scatter'd / D2H'd grads
-        # for at least one trainable region but no CPU optimizer is
-        # attached, the offloaded master weights would silently never
-        # advance. Raise BEFORE resetting ``_grad_remaining`` so the
-        # next backward fires the same condition again rather than
-        # silently masking the bad state. Distinct from the R07
-        # frozen-region guard above (which is about ``is_trainable``
-        # per region — purely a routing concern within this loop):
-        # this check fires when at least one trainable region exists
-        # and the chunk-level ``cpu_optim`` hook is missing entirely.
+        # Raise before resetting ``_grad_remaining`` so a missing cpu_optim re-fires next backward instead of silently retaining stale weights.
         if any_trainable_region and self.cpu_optim is None:
             raise RuntimeError(
                 "ChunkManager: missing CPU optimizer for offloaded "
@@ -3101,23 +2796,7 @@ class ChunkManager:
         self._grad_hook_handles.clear()
 
     def _restore_protrain_ddp_ignore_snapshot(self) -> None:
-        """Restore ``model._ddp_params_and_buffers_to_ignore`` to its
-        pre-protrain snapshot (D2 lifecycle teardown).
-
-        Called from :meth:`close` (deterministic teardown) and from
-        :func:`api.model_wrapper.protrain_model_wrapper`'s
-        non-shape-preserving rebuild path so a Mode-C → Mode-A
-        rebuild cleanly drops the ignore list.
-
-        - If ``_protrain_ddp_original_ignore`` is missing on the model,
-          this is a no-op (we never snapshotted).
-        - If the snapshot is ``None``, the attribute was absent before
-          ProTrain touched it → delete ``_ddp_params_and_buffers_to_ignore``.
-        - Else, restore the saved list verbatim.
-
-        Always clears the ``_protrain_ddp_original_ignore`` sentinel
-        on success so the next wrap re-snapshots from a clean baseline.
-        """
+        """Restore ``model._ddp_params_and_buffers_to_ignore`` to its pre-protrain snapshot so teardown leaves no residue."""
         model = self.model
         if model is None:
             return
@@ -3149,29 +2828,7 @@ class ChunkManager:
             )
 
     def close(self) -> None:
-        """Tear down every manager-owned resource. Idempotent.
-
-        Cascade order matters:
-
-        1. Drain + shut down the CPU optimizer worker pool so no
-           background thread can touch ``_cpu_slots`` / ``_cpu_grad_pool``
-           bytes after we drop them.
-        2. ``uninstall()`` — drop the per-param grad hooks so a
-           late-firing autograd path cannot reach into the freed pools.
-        3. Clear ``_cpu_slots`` / ``_chunk_shards`` / ``_persistent_buffers``
-           and the various per-chunk bookkeeping dicts BEFORE freeing
-           the pinned pools — every per-slot ``cpu_data`` / ``cpu_grad``
-           view borrows from the unified pool, and live borrows would
-           block ``PinnedHostMemory.close``.
-        4. ``_close_cpu_pools()`` — release the borrow on slot 0 and
-           free both pinned regions.
-        5. Close the GPU buffer pool (drops its slot tensors and the
-           paired pinned-host region).
-        6. Drop adapter references.
-        7. Restore the pre-protrain ``_ddp_params_and_buffers_to_ignore``
-           snapshot on the model so a future non-protrain DDP wrap of
-           the same model is not silently constrained by our ignore set.
-        """
+        """Tear down every manager-owned resource. Idempotent."""
         if self._closed:
             return
         self._closed = True
@@ -3198,7 +2855,6 @@ class ChunkManager:
         self._grad_initial.clear()
         self._chunk_bytes_by_id.clear()
         self._empty_by_dtype.clear()
-        # M6C-fix-7: symmetric teardown with ``_empty_by_dtype``.
         self._shape_scratch_by_dtype.clear()
 
         try:
@@ -3387,19 +3043,7 @@ class ChunkManager:
         return 0 if s is None else s.shard_bytes
 
     def per_rank_cpu_bytes(self) -> int:
-        """Total pinned CPU bytes this rank holds across every sharded chunk.
-
-        Sums BOTH the per-region shard buffer (``cpu_shard_bytes``) and
-        the per-region grad buffer (``cpu_shard_grad_bytes``) when
-        present. ``cpu_shard_bytes`` is allocated for every sharded
-        region; ``cpu_shard_grad_bytes`` is allocated only for trainable
-        regions (frozen-only regions skip it as part of the CodeRabbit
-        R07 fix — no Adam step, no need for the pinned grad shard).
-        Convenience accessor for the 4-GPU sharding test which asserts
-        per-rank CPU footprint roughly equals
-        ``total_non_persistent_bytes / world_size`` and for benchmark
-        scripts reporting Mode-C host RAM.
-        """
+        """Total pinned CPU bytes this rank holds across every sharded chunk (shard buffers plus per-trainable-region grad buffers)."""
         total = 0
         for shard_state in self._chunk_shards.values():
             for region in shard_state.regions:

@@ -504,64 +504,15 @@ class GpuFusedAdamAdapter:
 
     @property
     def underlying(self) -> Any:
-        """The wrapped optimizer instance (useful for LR schedulers).
-
-        ``None`` when the adapter wraps an empty persistent param set.
-        """
+        """Return the wrapped optimizer (None when adapter has no persistent params)."""
         return self._optim
 
 
-# ---------------------------------------------------------------------------
-# GPU bnb.AdamW8bit / bnb.PagedAdamW8bit — persistent chunks (M2.5)
-# ---------------------------------------------------------------------------
-#
-# Bail-condition note (phase2.md §M2.5).
-# ``bitsandbytes`` 8-bit Adam variants (``AdamW8bit`` / ``PagedAdamW8bit``)
-# unconditionally call CUDA kernels in ``optimizer_update_8bit_blockwise`` —
-# every per-param state tensor (``state1``, ``state2``, ``qmap1``,
-# ``qmap2``, ``absmax1``, ``absmax2``) is asserted on-GPU at step time.
-# This rules out the original phase2.md plan #4 of mounting bnb 8-bit
-# Adam onto the CPU non-persistent chunk path: CPU-resident shards
-# would crash on the first ``step()``.
-#
-# Hitting the M2.5 bail condition explicitly: chunks managed by the
-# 8-bit adapter must be **persistent** (GPU-resident). Non-persistent
-# chunks continue to use the existing 32-bit ``CpuFusedAdamAdapter``
-# (DeepSpeedCPUAdam) — a smaller win than "bnb 8-bit everywhere", but
-# composable: the persistent set still gets ~half the optimizer-state
-# memory it would under ``GpuFusedAdamAdapter`` + Apex FusedAdam.
-#
-# Mode selection (validated in :mod:`api.optim_wrapper`):
-# * ``adamw_8bit`` / ``adamw_bnb_8bit``: ``bnb.optim.AdamW8bit``.
-# * ``paged_adamw_8bit``: ``bnb.optim.PagedAdamW8bit`` — same on-GPU
-#   step semantics, state pages spill to system RAM via CUDA UVM. Paged
-#   variant is composable with ProTrain because UVM page management is
-#   internal to bnb and does not collide with the CPU-shard allocator
-#   ProTrain owns for non-persistent chunks (the two systems address
-#   disjoint memory pools).
+# bnb 8-bit Adam kernels are CUDA-only, so this adapter is restricted to persistent (GPU-resident) chunks; non-persistent chunks must use the CPU FusedAdam adapter.
 
 
 class GpuAdamW8bitAdapter:
-    """Synchronous bitsandbytes 8-bit AdamW for the persistent chunk set.
-
-    Wraps ``bnb.optim.AdamW8bit`` (or ``bnb.optim.PagedAdamW8bit`` when
-    ``paged=True``). Mirrors :class:`GpuFusedAdamAdapter`'s
-    ``step`` / ``zero_grad`` / ``state_dict`` / ``load_state_dict`` /
-    ``underlying`` interface so :mod:`api.optim_wrapper` can swap
-    persistent-chunk adapters by class without rewiring the chunk
-    manager.
-
-    State shape per param: ``state1`` (uint8, exp_avg-quantized),
-    ``state2`` (uint8, exp_avg_sq-quantized), ``qmap1`` / ``qmap2``
-    (fp32 codebooks, 256 entries), ``absmax1`` / ``absmax2`` (fp32
-    block scale factors, one per ``block_wise`` block). Round-trips
-    cleanly through bnb's overridden ``state_dict`` /
-    ``load_state_dict``.
-
-    Empty-param set (``params == []``) is a valid Mode-C state — see
-    :class:`GpuFusedAdamAdapter`. We construct no underlying optimizer
-    in that case and ``step`` / ``zero_grad`` become no-ops.
-    """
+    """Synchronous bitsandbytes 8-bit AdamW for persistent (GPU-resident) chunks."""
 
     def __init__(
         self,
@@ -620,11 +571,10 @@ class GpuAdamW8bitAdapter:
                 raise RuntimeError(
                     "GpuAdamW8bitAdapter received a parameter on device "
                     f"{p.device}; bitsandbytes' 8-bit AdamW kernels run "
-                    "on CUDA only. ProTrain non-persistent (CPU-resident) "
-                    "chunks must continue to use CpuFusedAdamAdapter "
-                    "(DeepSpeedCPUAdam) — only persistent (GPU) chunks "
-                    "may use the 8-bit adapter (phase2.md §M2.5 bail "
-                    "condition)."
+                    "on CUDA only. Non-persistent (CPU-resident) chunks "
+                    "must continue to use CpuFusedAdamAdapter "
+                    "(DeepSpeedCPUAdam) - only persistent (GPU) chunks "
+                    "may use the 8-bit adapter."
                 )
 
         cls = PagedAdamW8bit if self.paged else AdamW8bit
@@ -653,13 +603,7 @@ class GpuAdamW8bitAdapter:
         optim.zero_grad(set_to_none=set_to_none)
 
     def state_dict(self) -> dict[str, Any]:
-        """Return the wrapped 8-bit optimizer's state dict (empty when no-op).
-
-        ``bnb.optim.Optimizer8bit`` overrides ``state_dict`` to surface the
-        per-param 8-bit ``state1`` / ``state2`` plus the ``qmap1`` /
-        ``qmap2`` / ``absmax1`` / ``absmax2`` companion tensors needed to
-        dequantize them. Round-trips cleanly through ``load_state_dict``.
-        """
+        """Return the wrapped 8-bit optimizer's state dict (empty when no-op)."""
         optim = self._optim
         if optim is None:
             return {"state": {}, "param_groups": []}
@@ -681,10 +625,7 @@ class GpuAdamW8bitAdapter:
 
     @property
     def underlying(self) -> Any:
-        """The wrapped optimizer instance (useful for LR schedulers).
-
-        ``None`` when the adapter wraps an empty persistent param set.
-        """
+        """Return the wrapped optimizer (None when adapter has no persistent params)."""
         return self._optim
 
 

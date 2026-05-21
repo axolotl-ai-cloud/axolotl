@@ -1,31 +1,4 @@
-"""Mixed trainable/frozen + LoRA + ProTrain smoke test (M6A test 3).
-
-The phase2.md spec calls for a vision-LM hybrid (LLaVA-class) with LoRA
-on the LM tower and full fine-tuning on the vision tower. The chunk-
-manager invariant under test is its handling of *mixed trainable and
-frozen parameters across model sub-components* — the per-chunk region
-split must transparently absorb a non-uniform requires_grad map.
-
-A custom 2-tower nn.Module with a non-standard forward signature breaks
-the profiler's warmup pass (which assumes the wrapped module accepts
-``input_ids``); we therefore exercise the same invariant on a
-standards-compliant tiny Llama by:
-
-* Wrapping the LM with LoRA on q/v projections (LoRA factors are
-  trainable; the base attention/MLP weights are frozen).
-* Marking ``embed_tokens.weight`` as ``requires_grad=True`` so a
-  large base-model parameter is fully trainable alongside the LoRA
-  factors.
-* Driving 5 forward+backward+step iters with ProTrain Mode-A.
-
-Result: the chunk regions split across "fully-frozen base", "LoRA-
-trainable factors", and "fully-trainable embedding" boundaries — the
-same shape of split a real LLaVA-class hybrid stresses.
-
-Substitution rationale: documented in the docstring above. Real LLaVA
-8B+ runs are out of scope post-crash safety constraint; the architecture-
-independent chunk-region invariant is what matters here.
-"""
+"""Mixed trainable/frozen + LoRA + ProTrain smoke: chunk-region split must absorb a non-uniform requires_grad map."""
 
 from __future__ import annotations
 
@@ -67,12 +40,7 @@ def _build_tiny_llama_mixed_trainable():
     )
     peft_model = get_peft_model(base_lm, lora_cfg)
 
-    # Make the base-model embedding fully trainable in addition to the
-    # LoRA factors. This produces the same kind of per-chunk-region
-    # split a real vision-LM hybrid would: fully-frozen base attention/
-    # MLP weights, LoRA-trainable factors, and a fully-trainable large
-    # base parameter (the embedding standing in for the projector or
-    # vision tower in the real spec).
+    # Trainable embedding alongside LoRA factors yields the 3-way frozen/LoRA/dense requires_grad split.
     embed = peft_model.get_input_embeddings()
     for p in embed.parameters():
         p.requires_grad = True
@@ -88,12 +56,7 @@ def test_protrain_mixed_trainable_frozen_smoke() -> None:
     if not torch.cuda.is_available():
         pytest.skip("ProTrain mixed trainable/frozen smoke requires CUDA.")
 
-    # Seed BEFORE building the model so LoRA layer init + wrapped runtime
-    # state is reproducible across runs. The later seed at the batch-
-    # generation site re-seeds for the randint call so the synthetic
-    # batch is also deterministic even though the build above consumed
-    # some RNG state. Both seeds together make the test's loss-descent
-    # assertion (``losses[-1] < losses[0]``) reproducible end-to-end.
+    # Seed before model build so LoRA init is reproducible; re-seed at randint to make the synthetic batch deterministic.
     torch.manual_seed(0)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(0)

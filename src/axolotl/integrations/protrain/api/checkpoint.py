@@ -2062,7 +2062,10 @@ def install_load_hook(
     The closed-over ``optim`` is captured at install time (in
     ``post_trainer_create``, BEFORE Accelerate.prepare wraps the
     optimizer), so it's already raw. We unwrap defensively in case
-    the caller hands in a wrapper.
+    the caller hands in a wrapper. At ``_patched()`` runtime we
+    re-resolve from ``trainer.optimizer`` so a cross-mode resume
+    rebuild that swaps the facade lands the load into the live
+    instance (falls back to the install-time raw on swap failure).
 
     The ``allow_online_reshard`` flag plumbs through to
     :func:`_load_protrain_optim_dir`. Default False keeps the Mode-C
@@ -2071,8 +2074,8 @@ def install_load_hook(
     dir, all ranks barrier and load). See CHECKPOINT_DESIGN_PHASE2.md
     §4.1.
     """
-    raw = _unwrap_protrain_optim(optim)
-    if raw is None:
+    raw_at_install = _unwrap_protrain_optim(optim)
+    if raw_at_install is None:
         # Caller passed something that isn't a ProTrain optimizer —
         # silently no-op rather than installing a hook that would
         # never fire.
@@ -2081,6 +2084,11 @@ def install_load_hook(
     original = trainer._load_optimizer_and_scheduler
 
     def _patched(checkpoint: str | None) -> None:
+        # Re-resolve from ``trainer.optimizer`` so the cross-mode resume rebuild
+        # (which swaps trainer.optimizer = new_optim) loads into the live instance.
+        raw = _unwrap_protrain_optim(getattr(trainer, "optimizer", None))
+        if raw is None:
+            raw = raw_at_install
         # Failure protocol: ``original(checkpoint)`` (the native HF
         # optimizer/scheduler load) is outside any cluster-wide status
         # handling, but the patched method still executes a distributed

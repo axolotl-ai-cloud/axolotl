@@ -85,7 +85,7 @@ class ProfilerConfig:
     # caller's ``force_all_persistent`` flag so a user who has explicitly
     # opted into Mode A doesn't get on-demand offloading silently re-
     # engaged during the trace pass (which can hang or destabilize the
-    # host on borderline configurations — see Phase 2 M5 post-mortem).
+    # host on borderline configurations).
     # The trace pass still runs the trainable forward+backward; the
     # caller is responsible for ensuring the model fits.
     force_all_persistent: bool = False
@@ -551,13 +551,7 @@ class ChunkLayout:
     mandatory_persistent: frozenset[ChunkId] = field(default_factory=frozenset)
 
     def effective_persistent_ids(self, n_persist: int) -> frozenset[ChunkId]:
-        """Return ``{0..n_persist-1} | mandatory_persistent`` as a frozenset.
-
-        Single source of truth for "which chunks are GPU-resident under
-        ``n_persist``" so the searcher, cost model, and runtime construction
-        cannot disagree. Clamps ``n_persist`` defensively into
-        ``[0, N_chunk]``.
-        """
+        """Return ``{0..n_persist-1} | mandatory_persistent`` as a frozenset."""
         n = max(0, min(int(n_persist), int(self.N_chunk)))
         prefix = {ChunkId(i) for i in range(n)}
         return frozenset(prefix | set(self.mandatory_persistent))
@@ -598,33 +592,7 @@ class Bounds:
 
 @dataclass(frozen=True)
 class SearchResult:
-    """Output of `search.exhaustive.search`.
-
-    ``predicted_init_transient_peak_bytes`` (Coverage audit Block G follow-up)
-    is the predicted GPU high-water mark during the brief init window between
-    HF Trainer's full-on-GPU model construction and
-    :meth:`ChunkManager.materialize_offload`. In that window every non-persistent
-    chunk is still GPU-resident, so the peak resembles ``sum_chunk_bytes x alpha``
-    rather than the steady-state ``predicted_peak_bytes`` (which assumes
-    only persistent + buffer chunks are live).
-
-    Empirically (audit Block G) the steady predictor reports ~2.5 GiB for a
-    30B-class bnb-4-bit Mode-C config while the measured iter-1 peak is
-    ~17.2 GiB — a 6.9x under-prediction. This field surfaces the transient
-    prediction so callers (searcher feasibility gate, multi-GPU OOM forecasts,
-    log telemetry) can see "steady prediction is X, but during init you'll
-    see Y." It is populated by
-    :func:`axolotl.integrations.protrain.api.model_wrapper.predict_init_transient_peak_bytes`
-    inside ``protrain_model_wrapper`` once the chunk_manager + layout are
-    available (the prediction needs actual per-chunk bytes via
-    :func:`_chunk_bytes`).
-
-    Default 0 means "not computed" — preserves backward compatibility with
-    every legacy ``SearchResult(...)`` construction site (search.exhaustive,
-    synth-cfg paths) where the chunk manager is not yet available. Downstream
-    consumers should treat 0 as a "no transient prediction available" sentinel
-    and fall back to ``predicted_peak_bytes`` for feasibility decisions.
-    """
+    """Output of `search.exhaustive.search`."""
 
     cfg: CostConfig
     block_map: BlockStrategyMap
@@ -675,19 +643,7 @@ class HardwareProfile:
     # scale. Populated by ``profiler.hw_bench.measure_compute_rate`` from
     # the model_wrapper just before the searcher runs.
     gpu_compute_tflops: float = 0.0
-    # Dominant param byte-size-per-element across the model's trainable
-    # parameter set. Drives the per-dtype alpha fragmentation factor
-    # lookup in :func:`cost.memory.alpha_fragmentation_for_dtype`
-    # (Coverage audit Block G — alpha=1.10 was calibrated for fp16/bf16
-    # patterns and over-predicts bnb-4-bit Mode-A peak by ~37%;
-    # per-dtype alpha uses 0.75 for bnb-4-bit and 1.10 for
-    # fp16/bf16/8-bit). Default 2.0 (fp16/bf16) so legacy callers and
-    # tests that construct ``HardwareProfile`` without populating this
-    # field continue to land at alpha=1.10 unchanged. Populated by
-    # ``protrain_model_wrapper`` after the live model is available via
-    # a modal-bytes-per-element scan; uint8-storage bnb-4-bit
-    # ``Params4bit`` instances are mapped to 0.5 (two packed elements
-    # per stored byte) rather than the storage byte size.
+    # Drives per-dtype alpha lookup; bnb-4-bit ``Params4bit`` is mapped to 0.5 (packed) not the uint8 storage size.
     dominant_param_bytes_per_element: float = 2.0
 
 

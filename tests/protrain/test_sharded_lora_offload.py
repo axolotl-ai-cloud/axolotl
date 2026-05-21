@@ -1,38 +1,4 @@
-"""Multi-rank smoke for the sharded LoRA gather path (M6C-fix-4).
-
-The single-GPU PEFT-LoRA E2E smoke
-(``test_lora_offload_mode.py::test_runtime_lora_e2e_under_offload_mode_smoke``)
-exercises the runtime container hooks (M6C-fix-3) but with
-``zero3_shard=False`` — the chunk manager takes the *replicated*
-gather path (per-slot H2D copies into the pool buffer). The remaining
-M6C gap surfaces only when ``zero3_shard=True`` AND ``world_size > 1``:
-the chunk manager's ``_gather_sharded`` path issues an
-``all_gather_into_tensor`` collective per dtype region. Without
-M6C-fix-4, container-hook ``ensure_chunks_resident`` calls were routed
-through the prefetch stream (``_gather_on_prefetch_stream`` →
-``_sync_prefetch_with_compute``); under the multi-GPU sharded
-``_gather_sharded`` collective, this race surfaces as the canonical
-``ToCopyBackward0 returned an invalid gradient at index 0 - got
-[14336, 16] but expected shape compatible with [0]`` at iter-0
-backward.
-
-The two tests below exercise the sharded LoRA gather + bind path on a
-2-rank gloo cluster (CPU-backed; gloo is the only backend reliable
-inside ``mp.spawn`` without requiring multiple physical GPUs):
-
-* :func:`test_sharded_lora_gather_rebinds_param_data_2rank` — pins the
-  M6C-fix-4 invariant: after a sharded gather, every LoRA factor
-  ``param.data`` reflects the FULL shape (not the empty
-  ``[0]`` placeholder), so any subsequent autograd op recording its
-  source-shape against ``param.size()`` sees the real shape.
-
-* :func:`test_sharded_lora_ensure_chunks_resident_2rank` — exercises
-  the ``Scheduler.ensure_chunks_resident`` entry point itself (the
-  M6C-fix-3 container-hook driver). After M6C-fix-4 this routes the
-  gather directly through the chunk manager (no prefetch-stream
-  hop) so the LoRA-factor ``param.data`` rebind is observable on
-  the same execution stream the autograd op will run on.
-"""
+"""Multi-rank sharded LoRA gather must restore full param.data shape on the compute stream, avoiding the ToCopyBackward [0] shape mismatch."""
 
 from __future__ import annotations
 
@@ -50,31 +16,14 @@ pytestmark = pytest.mark.gpu
 
 
 def _build_tiny_lora_model_cpu():
-    """Build a tiny CPU LoRA-wrapped Linear stack — enough to exercise the
-    chunk manager's per-PEFT-LoRA-factor gather path.
-
-    The model has one ``nn.Module`` block holding a wrapped Linear with a
-    ``lora_A`` / ``lora_B`` ``nn.ParameterDict`` pair. We mirror PEFT's
-    default behavior of upcasting the LoRA factor weights to fp32 even
-    when the base is bf16 — that is the production setup the multi-GPU
-    failure surfaces under, and the ``_DtypeRegion`` mixed-dtype split is
-    one of the moving parts the M6C-fix-4 routing change has to leave
-    intact.
-    """
+    """Tiny CPU LoRA-wrapped Linear stack; bf16 base + fp32 lora factors reproduces the mixed-dtype region split."""
     import torch
     from torch import nn
 
     torch.manual_seed(13)
 
     class _LoraWrappedLinear(nn.Module):
-        """A tiny module that mimics PEFT's LoRA-wrapped Linear shape.
-
-        Direct-attribute LoRA factor parameters (``lora_A.default.weight``
-        / ``lora_B.default.weight``) so the chunk manager's offload sees
-        them as separate slots in the same chunk — matching the production
-        layout where a wrapped ``q_proj`` carries ``lora_A``/``lora_B``
-        as ``nn.ModuleDict`` children of itself.
-        """
+        """Mimics PEFT's LoRA-wrapped Linear so chunk-manager offload sees lora_A/lora_B as separate slots in the same chunk."""
 
         def __init__(self, in_dim: int, out_dim: int, r: int) -> None:
             super().__init__()
@@ -107,15 +56,8 @@ def _build_tiny_lora_model_cpu():
 def _worker_sharded_lora_gather_rebinds(
     rank: int, world_size: int, tmpdir: str
 ) -> None:
-    """2-rank gloo body: gather a sharded LoRA chunk, assert param.data
-    is rebound to the full shape (not the [0] empty placeholder).
-
-    This is the M6C-fix-4 invariant under the simplest possible
-    workload: build a chunk-managed model whose chunk contains a
-    PEFT-LoRA factor weight, materialize_offload (which sets every
-    param.data to the [0] empty placeholder), then call gather() and
-    verify every param.data has its real shape back.
-    """
+    """2-rank gloo: after sharded gather, every LoRA factor param.data must have its full shape back, not the [0] placeholder."""
+    import contextlib
     import os as _os
 
     import torch
@@ -147,9 +89,7 @@ def _worker_sharded_lora_gather_rebinds(
         S_chunk = 1 << 14  # 16 KB — fits the tiny model
         layout = build_layout(model, exec_order, S_chunk, block_spans)
 
-        # Snapshot pre-offload param shapes so we can assert the rebind
-        # restores them. Used by both the M6C-fix-4 invariant and the
-        # roundtrip data check.
+        # Snapshot pre-offload shapes so the rebind invariant can be asserted post-gather.
         pre_shapes = {str(name): tuple(p.shape) for name, p in model.named_parameters()}
         pre_data = {
             str(name): p.detach().clone().cpu() for name, p in model.named_parameters()
@@ -197,12 +137,7 @@ def _worker_sharded_lora_gather_rebinds(
                 f"be the [0] empty placeholder, got shape {tuple(p.shape)}"
             )
 
-        # Gather: M6C-fix-4 routing change exercises the same
-        # ``_gather_sharded`` collective the multi-GPU failure surfaces
-        # against. After this call, every LoRA factor's param.data must
-        # reflect its real shape — autograd source-shape derivation
-        # against this state records the correct shape, and backward
-        # ``ToCopyBackward0`` matches.
+        # Sharded gather collective: after this, every LoRA factor's param.data must reflect its real shape so autograd records the correct source-shape.
         try:
             mgr.gather(ChunkId(0))
         except RuntimeError as exc:
@@ -212,9 +147,7 @@ def _worker_sharded_lora_gather_rebinds(
                 return
             raise
 
-        # M6C-fix-4 invariant: every LoRA-factor param.data has its
-        # real shape after the sharded gather. THIS is the assertion
-        # that pins the multi-GPU failure mode at unit scope.
+        # Every LoRA-factor param.data must hold its real shape after the sharded gather; pins the multi-GPU failure mode at unit scope.
         for name, p in model.named_parameters():
             assert tuple(p.shape) == pre_shapes[str(name)], (
                 f"rank {rank}: post-gather, '{name}' shape "
@@ -225,9 +158,7 @@ def _worker_sharded_lora_gather_rebinds(
                 "'ToCopyBackward0 ... shape compatible with [0]'."
             )
 
-        # Bonus: gathered bytes match the pre-offload snapshot. Mirrors
-        # the existing zero3_sharded_roundtrip_2rank assertion. This
-        # ensures the M6C-fix-4 routing didn't perturb the byte layout.
+        # Gathered bytes must match the pre-offload snapshot; ensures the routing did not perturb the byte layout.
         for name, p in model.named_parameters():
             snap = pre_data[str(name)]
             assert torch.allclose(p.data.cpu().float(), snap.float(), atol=0.0), (
@@ -239,28 +170,16 @@ def _worker_sharded_lora_gather_rebinds(
         host.close()
 
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dist.barrier()
-        except Exception:  # noqa: BLE001 — defensive
-            pass
         dist.destroy_process_group()
 
 
 def _worker_sharded_lora_ensure_chunks_resident(
     rank: int, world_size: int, tmpdir: str
 ) -> None:
-    """2-rank gloo body: drive ``Scheduler.ensure_chunks_resident``
-    against a sharded LoRA chunk and assert it restores the LoRA
-    factor's real shape.
-
-    This is the same workload as
-    :func:`_worker_sharded_lora_gather_rebinds` but driven through
-    the SCHEDULER entry point (the one M6C-fix-3 container hooks call).
-    After M6C-fix-4 the scheduler routes the gather synchronously
-    through the chunk manager (no prefetch-stream hop), so the rebind
-    is observable on the same logical execution stream the autograd
-    op will eventually run on.
-    """
+    """2-rank gloo: Scheduler.ensure_chunks_resident must restore LoRA-factor shape on the compute stream (no prefetch-stream hop)."""
+    import contextlib
     import os as _os
 
     import torch
@@ -334,9 +253,7 @@ def _worker_sharded_lora_ensure_chunks_resident(
         # ``ensure_chunks_resident`` which doesn't actually consult
         # block-mode keys, so OFFLOAD-everywhere is fine.
         block_map = {BlockId(0): BlockMode.OFFLOAD}
-        # ``effective_h2d_bps`` / ``effective_d2h_bps`` are required by the
-        # Scheduler constructor for telemetry but unused by
-        # ``ensure_chunks_resident`` itself; pass any positive value.
+        # effective_h2d_bps / effective_d2h_bps are telemetry-only here; ensure_chunks_resident does not consult them.
         scheduler = Scheduler(
             chunk_manager=mgr,
             block_map=block_map,
@@ -345,10 +262,7 @@ def _worker_sharded_lora_ensure_chunks_resident(
             effective_d2h_bps=1.0e10,
         )
 
-        # Drive ensure_chunks_resident against the LoRA chunk. After
-        # M6C-fix-4 this routes synchronously through the chunk
-        # manager. The rebind happens inline; the post-call assertion
-        # below pins the M6C-fix-4 contract.
+        # ensure_chunks_resident routes synchronously through the chunk manager so the rebind is inline.
         try:
             scheduler.ensure_chunks_resident([ChunkId(0)])
         except RuntimeError as exc:
@@ -372,9 +286,7 @@ def _worker_sharded_lora_ensure_chunks_resident(
                 "record [0] as the source shape and backward fails."
             )
 
-        # Bonus: a SECOND call must hit the manager's _active_chunks
-        # fast path with no behavior change (idempotency contract that
-        # the M6C-fix-3 docstring relies on).
+        # Second call must hit the _active_chunks fast path without behavior change (idempotency contract).
         scheduler.ensure_chunks_resident([ChunkId(0)])
         for name, p in model.named_parameters():
             assert tuple(p.shape) == pre_shapes[str(name)], (
@@ -387,10 +299,8 @@ def _worker_sharded_lora_ensure_chunks_resident(
         host.close()
 
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dist.barrier()
-        except Exception:  # noqa: BLE001
-            pass
         dist.destroy_process_group()
 
 
@@ -415,16 +325,7 @@ def _check_skip_files(tmpdir: str, world_size: int) -> None:
 
 @pytest.mark.slow
 def test_sharded_lora_gather_rebinds_param_data_2rank(tmp_path) -> None:
-    """M6C-fix-4 invariant: sharded gather restores LoRA factor shapes.
-
-    Spawns a 2-rank gloo cluster and runs the sharded gather body in
-    each rank. Asserts that every LoRA factor's ``param.data`` has its
-    real shape after the gather (NOT the ``[0]`` empty placeholder).
-    Without M6C-fix-4 the multi-GPU failure mode would manifest as
-    ``ToCopyBackward0 ... shape compatible with [0]`` — at unit scope
-    we pin the rebind invariant directly so future regressions surface
-    here without needing a 4x3090 rig.
-    """
+    """Sharded gather across 2 ranks must restore every LoRA factor's full shape, not the [0] placeholder."""
     import torch.multiprocessing as mp
 
     if sys.platform != "linux":
@@ -442,16 +343,7 @@ def test_sharded_lora_gather_rebinds_param_data_2rank(tmp_path) -> None:
 
 @pytest.mark.slow
 def test_sharded_lora_ensure_chunks_resident_2rank(tmp_path) -> None:
-    """M6C-fix-4 invariant via the Scheduler entry point.
-
-    Same workload as
-    :func:`test_sharded_lora_gather_rebinds_param_data_2rank` but
-    driven through ``Scheduler.ensure_chunks_resident`` — the M6C-fix-3
-    container-hook driver. After M6C-fix-4 this routes synchronously
-    through the chunk manager (no prefetch-stream hop), so the rebind
-    is observable on the same logical execution stream the autograd
-    op will eventually run on.
-    """
+    """Same sharded gather invariant driven via Scheduler.ensure_chunks_resident; routing must be synchronous on the compute stream."""
     import torch.multiprocessing as mp
 
     if sys.platform != "linux":

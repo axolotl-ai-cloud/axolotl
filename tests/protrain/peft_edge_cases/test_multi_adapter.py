@@ -1,25 +1,4 @@
-"""Multiple-LoRA-adapter + ProTrain composition smoke test (M6A test 2).
-
-PEFT supports loading several named LoRA adapter configs onto a single
-base model and switching between them via ``set_adapter``. ProTrain's
-chunk manager segments per-chunk regions on a ``(dtype, requires_grad)``
-boundary; switching the active adapter changes which sub-Parameters'
-``requires_grad`` is True, so the chunk-region split must absorb the
-``set_adapter`` transition without state-dict corruption.
-
-Smoke contract:
-
-* Build a tiny Llama-arch LM, attach two named PEFT LoRA adapters
-  ("alpha" and "beta") with different ranks.
-* Train 3 iters with ``alpha`` active, then 3 iters with ``beta``
-  active, against ProTrain in Mode-A.
-* Assert: no crash on the ``set_adapter`` switch; per-adapter loss is
-  finite and decreases across its 3 iters on a fixed batch.
-
-Substitution rationale: same as ``test_dora.py`` — uses tiny synthetic
-Llama (no HF download) to keep the smoke under 30s wall-clock and
-avoid any 8B+ memory pressure (which crashed the prior M5 attempt).
-"""
+"""Multi-LoRA + ProTrain smoke: set_adapter transitions must not corrupt the chunk-region split."""
 
 from __future__ import annotations
 
@@ -143,15 +122,7 @@ def test_protrain_multi_lora_adapter_switch() -> None:
     input_ids = torch.randint(0, vocab, (bs, seq), device=device, dtype=torch.long)
     labels = input_ids.clone()
 
-    # Wrap once with adapter alpha active. Train 3 iters. Explicit
-    # ``wrapped_a.close()`` in ``finally`` before re-wrapping so the
-    # D2 lifecycle teardown restores the model's pre-protrain
-    # ``_ddp_params_and_buffers_to_ignore`` snapshot AND the prior
-    # ``CpuFusedAdamAdapter``'s executor + DeepSpeed C-state are
-    # released deterministically. Without explicit close, GC timing
-    # decides whether hooks / pinned memory live into the beta phase
-    # and the test's reproducibility depends on Python's reference-
-    # counting heuristics.
+    # Explicit close before re-wrap so DDP-ignore restoration and CPU-adapter teardown are deterministic, not GC-timing dependent.
     wrapped_b = None
     try:
         peft_model.set_adapter("alpha")

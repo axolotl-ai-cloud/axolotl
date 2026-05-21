@@ -123,7 +123,7 @@ def block_map_runtime_admissible(
 ) -> bool:
     """Return True iff the block strategy is safe for current chunk offload.
 
-    Four-mode admissibility (post-Option B with the SWAP × non-persistent
+    Four-mode admissibility (post-Option B with the SWAP x non-persistent
     lift; see ``BLOCK_MODE_OFFLOAD_DESIGN.md`` §3.5 and §6.6):
 
     * ``CKPT`` — always admissible. The recompute path re-binds storage by
@@ -148,16 +148,16 @@ def block_map_runtime_admissible(
       its bytes). Backward grad-accumulation reads ``param.data``, which
       ``Scheduler.pre_block_backward`` already re-gathers symmetrically
       with the CKPT/OFFLOAD paths, so no additional plumbing is needed
-      to make SWAP × non-persistent byte-exact.
+      to make SWAP x non-persistent byte-exact.
     * ``NONE`` — admissible iff every chunk owned by the block is in the
       persistent set. NONE installs no hooks, so PyTorch's autograd
       saved-tensors reference the original GPU storage directly; once
       that storage is reused by another chunk's gather H2D, the saved
       tensor's bytes are corrupt and backward produces silently wrong
-      gradients. There is no in-tree fix for NONE × non-persistent —
+      gradients. There is no in-tree fix for NONE x non-persistent —
       use CKPT, OFFLOAD, or SWAP for blocks with non-persistent chunks.
 
-    Pre-2026-05 history: SWAP × non-persistent was conservatively
+    Pre-2026-05 history: SWAP x non-persistent was conservatively
     rejected on the assumption that "saved tensors are not a safe
     persistence mechanism once ``param.data`` is rebound to the empty
     sentinel". The conjecture conflated NONE (which IS unsafe) with
@@ -497,11 +497,7 @@ def search(
         model_state_present_bytes,
     )
 
-    # Per-dtype α (Coverage audit Block G — bnb 4-bit picks 0.75
-    # instead of the fp16/8-bit default 1.10). The fast-path inline
-    # peak computation below must use the same α that
-    # :func:`estimate_peak` uses, otherwise the search's GPU-gate
-    # filter and the wrapper's post-search calibration disagree.
+    # Must mirror estimate_peak's per-dtype alpha so the search's GPU-gate and the wrapper's post-search calibration agree.
     alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
     s_chunk = layout.S_chunk
 

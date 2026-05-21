@@ -1,27 +1,4 @@
-"""Tests for the trace-pass override-skip gate (Phase 2 M5 stretch goal).
-
-When the user supplies all four explicit-override knobs
-(``protrain_n_persist_override`` / ``n_buffer_override`` /
-``n_swap_override`` / ``n_checkpoint_override``), the searcher AND the
-cost model are bypassed downstream by the ``all_overrides_set`` branch
-in :func:`protrain_model_wrapper`. The trace pass itself becomes wasted
-work, and on big-model offload configurations (e.g. 30B + 4-bit, 8B +
-4-bit at seq=2048 offload) the un-offloaded trace OOMs the device
-*before* chunk offload can engage. The model_wrapper short-circuits the
-trace pass on this exact path; these tests pin that behaviour.
-
-Two tests:
-
-1. ``test_synth_trace_from_overrides_shape`` — pure unit-level: build
-   the synthetic trace and assert the field shapes that downstream
-   consumers depend on. CPU-only, no monkey-patching.
-2. ``test_run_trace_skipped_on_override_full_path`` — end-to-end on a
-   tiny GPT-2 with all four overrides set; monkey-patches ``run_trace``
-   so any invocation raises immediately. Asserts the wrapper runs to
-   completion. The companion ``test_run_trace_invoked_without_override``
-   uses the same setup with overrides cleared and verifies ``run_trace``
-   IS called.
-"""
+"""Trace pass must be skipped when all four override knobs are set; un-offloaded trace would OOM big offload configs."""
 
 from __future__ import annotations
 
@@ -58,12 +35,7 @@ def _hw_profile_3090():
 
 
 def _tiny_gpt2(device):
-    """Return a TINY GPT-2 LM head model already on ``device``.
-
-    Matches the shape used in ``test_api.py`` so the layout discovery
-    path here is identical to the existing wrapper smoke tests. 4
-    layers so we have room for distinct n_swap / n_checkpoint values.
-    """
+    """Tiny GPT-2 LM head on device; 4 layers leaves room for distinct n_swap / n_checkpoint values."""
     pytest.importorskip("transformers")
     import torch
     from transformers import GPT2Config, GPT2LMHeadModel
@@ -85,13 +57,7 @@ def _tiny_gpt2(device):
 
 
 def test_synth_trace_from_overrides_shape() -> None:
-    """The synthetic ``ProfilerTrace`` has the field shape downstream needs.
-
-    CPU-only test: skips the PCIe measurement, asserts that op_order
-    is empty, activation_sizes is keyed per discovered block, and
-    model_state_bytes is a real (non-zero) measurement of the model's
-    param + grad + optim footprint.
-    """
+    """Synthetic ProfilerTrace must have field shapes downstream consumers depend on."""
     pytest.importorskip("torch")
     pytest.importorskip("transformers")
     import torch
@@ -148,8 +114,7 @@ def test_synth_trace_from_overrides_shape() -> None:
     assert trace.world == 1
     assert isinstance(trace.arch_hash, str) and len(trace.arch_hash) == 64
 
-    # Phase-2 / chunked-runtime fields default to "no measurement"
-    # sentinels so the cost model collapses to its v8-or-earlier path.
+    # Chunked-runtime fields default to "no measurement" sentinels so the cost model collapses to its earlier path.
     assert trace.cpu_adam_bytes_per_sec == 0.0
     assert trace.gpu_adam_bytes_per_sec == 0.0
     assert trace.steady_bwd_chunked_wall_s == 0.0
@@ -165,14 +130,7 @@ def test_synth_trace_from_overrides_shape() -> None:
 def test_run_trace_skipped_on_override_full_path(
     gpu_device, monkeypatch, tmp_path
 ) -> None:  # noqa: ARG001 — gpu_device fixture activates CUDA masking
-    """``run_trace`` MUST NOT be called when all four overrides are set.
-
-    Monkey-patches ``run_trace`` to raise immediately if invoked. The
-    wrapper must complete by going through the synthetic-trace path.
-    Uses a fresh ``cache_dir=tmp_path`` to guarantee a cache miss (so
-    we exercise the override-skip branch rather than the cache-hit
-    branch which would also avoid the trace pass).
-    """
+    """run_trace must not be called when all four overrides are set; fresh cache_dir forces the skip path, not cache-hit."""
     pytest.importorskip("torch")
     import torch
 
@@ -197,21 +155,7 @@ def test_run_trace_skipped_on_override_full_path(
     model = _tiny_gpt2(device)
     hw = _hw_profile_3090()
 
-    # Pick valid override values: persist all chunks, no offload — the
-    # SearchResult synthesizer in model_wrapper.py:2140 enforces
-    # ``n_swap + n_checkpoint <= N_block`` and ``min_n_buffer_for``
-    # invariants. We use the safe "all-persistent" pattern that
-    # matches the test_swap.py override pattern.
-    #
-    # R3-#8: compute N_chunk and N_block dynamically rather than
-    # hard-coding ``n_chunk_estimate=1``. If the layout builder /
-    # block-discovery heuristics shift (e.g. S_chunk default
-    # changes, or block discovery starts pulling in embed/norm as
-    # blocks), a hard-coded ``1`` would fail ``min_n_buffer_for``'s
-    # validation before we even reach the trace-skip gate the test
-    # is supposed to validate — turning this into a flaky
-    # non-target failure. The dynamic values mirror what the
-    # production wrapper itself computes one layer up.
+    # Compute N_chunk/N_block dynamically so layout heuristic shifts don't trip min_n_buffer_for before the skip gate engages.
     from axolotl.integrations.protrain.block.layout_rules import (
         discover_blocks,
         flatten_block_trees,
@@ -221,12 +165,7 @@ def test_run_trace_skipped_on_override_full_path(
     discovered = discover_blocks(model)
     flat_blocks = flatten_block_trees(discovered)
     n_block_estimate = len(flat_blocks)
-    # Build a layout exactly the way ``protrain_model_wrapper`` does
-    # (same S_chunk pick + same block_spans derivation) so the
-    # ``n_persist_override == N_chunk`` invariant we want to assert
-    # downstream actually holds. ``cfg.num_hidden_layers=4`` produces
-    # block_spans for layers 0..3 + embeddings — but the chunk
-    # builder operates over named_parameters().
+    # Mirror the wrapper's layout build so n_persist_override == N_chunk holds when the override path runs.
     block_spans: dict = {}
     for name, param in model.named_parameters():
         # Find which block (if any) this param belongs to via the
@@ -278,7 +217,6 @@ def test_run_trace_skipped_on_override_full_path(
         # passed — sanity check that we land at n_block from the synth.
         assert wrapped.search_result.cfg.n_checkpoint <= n_block_estimate
 
-        # Tear down to release CUDA state for the next test.
     finally:
         wrapped.close()
 
@@ -286,12 +224,7 @@ def test_run_trace_skipped_on_override_full_path(
 @pytest.mark.gpu
 @pytest.mark.skipif(not _SEARCH_AVAILABLE, reason=_SEARCH_SKIP_REASON)
 def test_run_trace_invoked_without_override(gpu_device, monkeypatch, tmp_path) -> None:  # noqa: ARG001 — gpu_device fixture activates CUDA masking
-    """The control: same setup WITHOUT overrides ⇒ ``run_trace`` IS called.
-
-    Wraps ``run_trace`` with a counter so we can assert it ran exactly
-    once. Otherwise the override-skip test above could pass trivially
-    if the wrapper somehow stopped calling ``run_trace`` on every path.
-    """
+    """Control: without overrides, run_trace must fire exactly once on a fresh cache_dir."""
     pytest.importorskip("torch")
     import torch
 
@@ -347,14 +280,7 @@ def test_run_trace_invoked_without_override(gpu_device, monkeypatch, tmp_path) -
 @pytest.mark.gpu
 @pytest.mark.skipif(not _SEARCH_AVAILABLE, reason=_SEARCH_SKIP_REASON)
 def test_partial_overrides_do_not_skip_trace(gpu_device, monkeypatch, tmp_path) -> None:  # noqa: ARG001 — gpu_device fixture activates CUDA masking
-    """A SUBSET of overrides (e.g. only n_persist) must NOT trigger the skip.
-
-    The override-skip gate requires ALL FOUR knobs; partial specifications
-    are documented to be ignored on the searcher path. We pin that here:
-    setting only ``n_persist_override`` should still invoke ``run_trace``
-    (and the searcher), matching the documented contract on the pydantic
-    field at ``args.py``.
-    """
+    """Partial overrides (e.g. only n_persist) must not trigger the skip; the gate requires all four knobs."""
     pytest.importorskip("torch")
     import torch
 

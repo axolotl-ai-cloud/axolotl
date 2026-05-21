@@ -1,35 +1,4 @@
-"""bnb 4-bit / 8-bit composition with the ProTrain offload path (M3).
-
-These tests close the M3 audit gap: ``load_in_4bit: true`` (QLoRA) +
-ProTrain offload mode (Mode C-style — non-persistent chunks live on
-pinned CPU and are gathered on demand). The empirical question the
-audit raised was whether the bnb-quantized weight tensors (uint8
-storage with a Python ``quant_state`` attribute holding the NF4
-absmax / double-quant state) survive ProTrain's chunk gather/offload
-round-trip.
-
-The investigation that produced this test file (see
-``M3 bnb offload-mode integration agent report``) found that the
-existing chunk-manager primitives compose with bnb 4-bit cleanly:
-
-1. ``layout._param_bytes`` uses ``numel * element_size`` against the
-   uint8-packed storage → byte counts are correct.
-2. ``materialize_offload`` copies the uint8 ``param.data`` to pinned
-   CPU and rebinds ``param.data`` to an empty placeholder. The
-   ``Params4bit`` instance's ``quant_state`` Python attribute and
-   its GPU-resident ``absmax`` tensor survive untouched (they live
-   on the Parameter object, not on the storage we replaced).
-3. ``gather`` rebinds ``param.data`` to a typed view into the GPU
-   pool buffer — the ``quant_state`` attribute is still attached
-   to the same ``Params4bit`` instance, so ``bnb.MatMul4Bit.forward``
-   reads correct dequant metadata.
-
-These tests assert each of those invariants. The third (``5_steps``
-e2e) is gated behind ``@pytest.mark.gpu`` because it walks the
-ChunkManager + a real ``bnb.nn.Linear4bit`` forward+backward; it
-would silently no-op on a CPU-only host because bnb's MatMul4Bit
-kernel is CUDA-only.
-"""
+"""bnb 4-bit / 8-bit composition with the ProTrain offload path: gather/offload must not perturb ``quant_state``."""
 
 from __future__ import annotations
 
@@ -48,13 +17,7 @@ from axolotl.integrations.protrain.types import (
 
 
 def _bnb_or_skip():
-    """Import bitsandbytes, skipping the test if the install is missing.
-
-    bnb is an optional dependency of axolotl (and a hard requirement
-    of QLoRA), so it is reasonable for a CPU-only CI lane to lack
-    the package. The protrain test lane runs on hosts with a CUDA
-    runtime AND bnb available.
-    """
+    """Import bitsandbytes or skip — CPU-only CI lanes may lack the optional package."""
     try:
         import bitsandbytes as bnb  # noqa: F401
 
@@ -64,16 +27,7 @@ def _bnb_or_skip():
 
 
 def _tiny_bnb_model(hidden: int = 64, n_layers: int = 2):
-    """A tiny model whose transformer-like blocks use ``bnb.nn.Linear4bit``.
-
-    Mirrors ``_tiny_model`` in ``test_chunk_manager_offload.py`` but
-    swaps the per-block ``nn.Linear`` for a ``bnb.nn.Linear4bit`` so the
-    offload path exercises real ``Params4bit`` storage. Block layout
-    matches Llama (``model.layers.{i}``) so ``discover_blocks`` finds
-    the block list via ``_KNOWN_BLOCK_PATHS``; each block exposes a
-    ``self_attn`` attribute so the attention-heuristic fallback would
-    also catch it.
-    """
+    """A tiny Llama-shaped model whose blocks use ``bnb.nn.Linear4bit`` so the offload path hits real ``Params4bit`` storage."""
     bnb = _bnb_or_skip()
 
     import torch
@@ -179,16 +133,7 @@ def _build_chunk_manager(
 
 @pytest.mark.gpu
 def test_bnb_4bit_module_discovery_in_trace() -> None:
-    """``discover_blocks`` finds blocks containing ``bnb.nn.Linear4bit``.
-
-    The trace pass relies on ``layout_rules.discover_blocks`` to find
-    transformer-like ``nn.ModuleList`` block roots. Because bnb's
-    ``Linear4bit`` is a regular ``nn.Module`` subclass, blocks whose
-    children are quantized linears must be discovered identically to
-    blocks whose children are ``nn.Linear``. This test guards against
-    a future refactor that special-cases standard linears in the
-    discovery walk and accidentally drops bnb modules.
-    """
+    """``discover_blocks`` finds blocks containing ``bnb.nn.Linear4bit`` (no special-casing of standard linears)."""
     bnb = _bnb_or_skip()
 
     import torch
@@ -239,17 +184,7 @@ def test_bnb_4bit_module_discovery_in_trace() -> None:
 
 @pytest.mark.gpu
 def test_quant_state_survives_offload_round_trip() -> None:
-    """A ``Params4bit``'s ``quant_state`` survives a chunk-manager round trip.
-
-    The offload path replaces ``param.data`` with an empty placeholder,
-    then ``gather`` rebinds it to a typed view into the GPU pool. The
-    ``quant_state`` Python attribute (and its GPU-resident ``absmax``)
-    must remain attached to the ``Params4bit`` instance throughout, and
-    a forward through ``bnb.nn.Linear4bit`` must still produce sensible
-    output afterwards.
-
-    This is the key correctness invariant for QLoRA + ProTrain Mode C.
-    """
+    """A ``Params4bit``'s ``quant_state`` survives a chunk-manager offload/gather round trip (QLoRA + Mode C invariant)."""
     # Skip-if-missing probe; we don't need the bnb handle here because
     # the model's bnb modules are accessed via their PyTorch instances.
     _bnb_or_skip()
@@ -261,13 +196,7 @@ def test_quant_state_survives_offload_round_trip() -> None:
 
     torch.cuda.empty_cache()
 
-    # 4 Linear4bit blocks. With S_chunk sized to fit one block's
-    # uint8-packed weight per chunk, ``embed_tokens`` and ``lm_head``
-    # (the non-block params) absorb the first/last chunk and get
-    # marked ``mandatory_persistent`` by the layout — leaving 2-4
-    # block-only chunks free to be non-persistent. n_persist=1
-    # therefore reliably yields >= 2 non-persistent chunks for the
-    # offload pass.
+    # n_persist=1 with this S_chunk leaves >= 2 non-persistent block-only chunks to exercise.
     hidden = 64
     n_layers = 4
     model = _tiny_bnb_model(hidden=hidden, n_layers=n_layers).to("cuda")
@@ -306,73 +235,69 @@ def test_quant_state_survives_offload_round_trip() -> None:
     # and each block weight its own chunk.
     S_chunk = 4096
     mgr, layout, pool, host = _build_chunk_manager(model, n_persist=1, S_chunk=S_chunk)
-    # Sanity: layout produced enough non-persistent chunks to exercise.
-    nonp_count = sum(
-        1
-        for cid in range(layout.N_chunk)
-        if cid >= 1 and cid not in layout.mandatory_persistent
-    )
-    assert nonp_count >= 2, (
-        f"test setup wants >= 2 non-persistent chunks, got {nonp_count} "
-        f"(N_chunk={layout.N_chunk}, "
-        f"mandatory={sorted(layout.mandatory_persistent)})"
-    )
-
-    # Offload — non-persistent chunks' param.data goes to pinned CPU.
-    freed = mgr.materialize_offload()
-    assert freed > 0, "materialize_offload freed 0 bytes (expected > 0)"
-
-    # The Params4bit instance's quant_state must still be attached even
-    # though param.data is now an empty placeholder. This is the
-    # critical post-offload invariant — without it, a subsequent
-    # gather + forward would crash inside bnb.MatMul4Bit because dequant
-    # metadata went missing.
-    for i in range(n_layers):
-        layer = model.model.layers[i].self_attn
-        qs = layer.weight.quant_state
-        assert qs is not None, (
-            f"layers.{i}.self_attn.weight.quant_state vanished after offload"
+    try:
+        # Sanity: layout produced enough non-persistent chunks to exercise.
+        nonp_count = sum(
+            1
+            for cid in range(layout.N_chunk)
+            if cid >= 1 and cid not in layout.mandatory_persistent
         )
-        assert id(qs) == pre_state[i]["qs_id"], (
-            f"layers.{i}.self_attn.weight.quant_state was replaced (id mismatch)"
-        )
-        # absmax stays on the GPU — it's owned by the QuantState
-        # Python object, not the chunk-managed ``data`` storage.
-        assert qs.absmax.device == pre_state[i]["absmax_device"], (
-            f"layers.{i}.self_attn.weight.quant_state.absmax migrated devices: "
-            f"was {pre_state[i]['absmax_device']}, now {qs.absmax.device}"
-        )
-        assert torch.equal(qs.absmax, pre_state[i]["absmax_bytes"]), (
-            f"layers.{i}.self_attn.weight.quant_state.absmax bytes changed"
+        assert nonp_count >= 2, (
+            f"test setup wants >= 2 non-persistent chunks, got {nonp_count} "
+            f"(N_chunk={layout.N_chunk}, "
+            f"mandatory={sorted(layout.mandatory_persistent)})"
         )
 
-    # Gather every non-persistent chunk back. Linear4bit forward must
-    # then succeed and produce numerically-identical output.
-    for cid in sorted(mgr._non_persistent_ids):
-        mgr.gather(cid)
+        # Offload — non-persistent chunks' param.data goes to pinned CPU.
+        freed = mgr.materialize_offload()
+        assert freed > 0, "materialize_offload freed 0 bytes (expected > 0)"
 
-    # Confirm post-gather quant_state attribute is still intact and
-    # param.data is GPU-resident at the right shape.
-    for i in range(n_layers):
-        layer = model.model.layers[i].self_attn
-        assert layer.weight.data.device.type == "cuda"
-        assert layer.weight.data.numel() > 0
-        qs = layer.weight.quant_state
-        assert id(qs) == pre_state[i]["qs_id"], (
-            f"layers.{i}.self_attn quant_state replaced during gather"
+        # quant_state must still be attached after offload; otherwise gather + forward would crash in bnb.MatMul4Bit.
+        for i in range(n_layers):
+            layer = model.model.layers[i].self_attn
+            qs = layer.weight.quant_state
+            assert qs is not None, (
+                f"layers.{i}.self_attn.weight.quant_state vanished after offload"
+            )
+            assert id(qs) == pre_state[i]["qs_id"], (
+                f"layers.{i}.self_attn.weight.quant_state was replaced (id mismatch)"
+            )
+            # absmax is owned by the QuantState object, not the chunk-managed storage.
+            assert qs.absmax.device == pre_state[i]["absmax_device"], (
+                f"layers.{i}.self_attn.weight.quant_state.absmax migrated devices: "
+                f"was {pre_state[i]['absmax_device']}, now {qs.absmax.device}"
+            )
+            assert torch.equal(qs.absmax, pre_state[i]["absmax_bytes"]), (
+                f"layers.{i}.self_attn.weight.quant_state.absmax bytes changed"
+            )
+
+        # Gather every non-persistent chunk back; Linear4bit forward must still produce identical output.
+        for cid in sorted(mgr._non_persistent_ids):
+            mgr.gather(cid)
+
+        # Confirm post-gather quant_state attribute is still intact and
+        # param.data is GPU-resident at the right shape.
+        for i in range(n_layers):
+            layer = model.model.layers[i].self_attn
+            assert layer.weight.data.device.type == "cuda"
+            assert layer.weight.data.numel() > 0
+            qs = layer.weight.quant_state
+            assert id(qs) == pre_state[i]["qs_id"], (
+                f"layers.{i}.self_attn quant_state replaced during gather"
+            )
+
+        # End-to-end correctness: forward should match pre-offload bit-for-bit
+        # because we never modified any weight bytes — only moved them.
+        y_post = model(x0)
+        assert torch.allclose(y_pre, y_post, rtol=0, atol=0), (
+            "Linear4bit forward produced different output after offload-restore "
+            "round trip — quant_state metadata is out of sync with stored bytes"
         )
-
-    # End-to-end correctness: forward should match pre-offload bit-for-bit
-    # because we never modified any weight bytes — only moved them.
-    y_post = model(x0)
-    assert torch.allclose(y_pre, y_post, rtol=0, atol=0), (
-        "Linear4bit forward produced different output after offload-restore "
-        "round trip — quant_state metadata is out of sync with stored bytes"
-    )
-
-    mgr.uninstall()
-    host.close()
-    del pool
+    finally:
+        # Always free pinned-host buffers and chunk-manager state so a failure cannot bleed into later GPU tests.
+        mgr.uninstall()
+        host.close()
+        del pool
 
 
 # ---------------------------------------------------------------------------
@@ -382,21 +307,7 @@ def test_quant_state_survives_offload_round_trip() -> None:
 
 @pytest.mark.gpu
 def test_offload_mode_4bit_e2e_5_steps() -> None:
-    """Five-step training through Linear4bit + ProTrain offload mode.
-
-    Builds a tiny LoRA-adapted bnb 4-bit model, materializes the
-    offload, and runs 5 manual forward + backward + gather/offload
-    iterations. Asserts:
-
-    1. All five steps complete without exception (gather + bnb dequant
-       + LoRA adapter forward + backward + offload all compose).
-    2. The last step's loss is strictly less than the first step's
-       — proves real gradients flowed back through the LoRA adapters.
-
-    This is the unit-scale analogue of the 8B + 4-bit Mode C smoke
-    that gated the M3 acceptance. Keeping it tiny means the test
-    runs in a few seconds in CI rather than minutes.
-    """
+    """Five-step Linear4bit + ProTrain offload training smoke; loss must descend across the window."""
     # Skip-if-missing probe; the bnb instances live inside the model
     # factory and are accessed via PyTorch's module tree, not directly.
     _bnb_or_skip()
@@ -467,65 +378,49 @@ def test_offload_mode_4bit_e2e_5_steps() -> None:
     x = torch.randn(2, hidden, dtype=torch.bfloat16, device="cuda")
     _ = model(x)
 
-    # Build chunk manager with overrides forcing the offload path:
-    # n_persist=1, S_chunk small enough that each block's params land in
-    # their own chunk separate from embed_tokens/lm_head (the non-block
-    # params, which become mandatory_persistent). n_buffer is sized to
-    # the number of non-persistent chunks so a naive "gather all up
-    # front" pattern fits — a real run uses a tighter scheduling rhythm
-    # but the correctness invariant we're checking (bnb dequant works
-    # against the rebound buffer) doesn't depend on the schedule.
+    # n_persist=1, S_chunk sized so each block weight gets its own chunk and embed/lm_head become mandatory_persistent.
     S_chunk = 4096
     mgr, layout, pool, host = _build_chunk_manager(
         model, n_persist=1, S_chunk=S_chunk, n_buffer=n_layers
     )
-    freed = mgr.materialize_offload()
-    assert freed > 0, (
-        f"materialize_offload freed 0 bytes — no non-persistent chunks "
-        f"(N_chunk={layout.N_chunk}, "
-        f"mandatory={sorted(layout.mandatory_persistent)})"
-    )
+    try:
+        freed = mgr.materialize_offload()
+        assert freed > 0, (
+            f"materialize_offload freed 0 bytes — no non-persistent chunks "
+            f"(N_chunk={layout.N_chunk}, "
+            f"mandatory={sorted(layout.mandatory_persistent)})"
+        )
 
-    # Build a tiny optimizer over the LoRA-adapter params only — we
-    # don't need ProTrain's per-chunk optim adapter for this test;
-    # the goal is to prove the gather + bnb dequant + adapter
-    # backprop + offload sequence works.
-    trainable = [p for p in model.parameters() if p.requires_grad]
-    assert trainable, "no trainable params — LoRA wrap didn't take"
-    optim = torch.optim.AdamW(trainable, lr=1e-3)
+        # Optimizer over LoRA-adapter params only; we only need to prove gather + dequant + backprop + offload composes.
+        trainable = [p for p in model.parameters() if p.requires_grad]
+        assert trainable, "no trainable params — LoRA wrap didn't take"
+        optim = torch.optim.AdamW(trainable, lr=1e-3)
 
-    # Helper: gather every non-persistent chunk before forward, offload
-    # after the optim step. This mimics the all-resident approximation
-    # of what the block scheduler does on a real run; a finer-grained
-    # gather/offload schedule isn't needed to validate the bnb
-    # composition correctness invariant the M3 audit cares about.
-    nonp = sorted(mgr._non_persistent_ids)
+        # All-resident approximation: gather every non-persistent chunk before forward, offload after step.
+        nonp = sorted(mgr._non_persistent_ids)
 
-    losses: list[float] = []
-    target = torch.zeros(2, hidden, dtype=torch.bfloat16, device="cuda")
+        losses: list[float] = []
+        target = torch.zeros(2, hidden, dtype=torch.bfloat16, device="cuda")
 
-    for _step in range(5):
-        for cid in nonp:
-            mgr.gather(cid)
-        out = model(x)
-        loss = (out - target).pow(2).mean()
-        loss.backward()
-        optim.step()
-        optim.zero_grad()
-        for cid in nonp:
-            mgr.offload(cid)
-        losses.append(float(loss.detach()))
+        for _step in range(5):
+            for cid in nonp:
+                mgr.gather(cid)
+            out = model(x)
+            loss = (out - target).pow(2).mean()
+            loss.backward()
+            optim.step()
+            optim.zero_grad()
+            for cid in nonp:
+                mgr.offload(cid)
+            losses.append(float(loss.detach()))
 
-    # 5 steps completed; loss should descend monotonically on this
-    # trivial regression-to-zero objective. Use a tolerance so the
-    # last step is required to be at least 5% lower than the first
-    # — far enough below noise that a regression in the gather path
-    # (e.g. quant_state desyncs across iterations) would fail it.
-    assert len(losses) == 5
-    assert losses[-1] < losses[0] * 0.95, (
-        f"loss did not descend across 5 steps: {losses}"
-    )
-
-    mgr.uninstall()
-    host.close()
-    del pool
+        # 5% headroom over noise: a regression in the gather path (e.g. quant_state desync) would fail this.
+        assert len(losses) == 5
+        assert losses[-1] < losses[0] * 0.95, (
+            f"loss did not descend across 5 steps: {losses}"
+        )
+    finally:
+        # Always free pinned-host buffers and chunk-manager state so a failure cannot bleed into later GPU tests.
+        mgr.uninstall()
+        host.close()
+        del pool

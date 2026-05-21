@@ -1,24 +1,4 @@
-"""Unit tests for the M2.5 ``GpuAdamW8bitAdapter`` and its dispatch path.
-
-Covers:
-
-* Construction round-trip: ``state1`` / ``state2`` are uint8, plus the
-  ``qmap`` / ``absmax`` companion tensors required to dequantize them.
-* ``state_dict`` / ``load_state_dict`` round-trip preserves the 8-bit
-  state byte-exactly (bnb's overridden ``Optimizer8bit`` methods do the
-  serialization heavy lifting; we just assert the adapter forwards them
-  intact).
-* CPU-param construction raises with a clear message — bnb's 8-bit Adam
-  kernels are CUDA-only (M2.5 bail condition).
-* Dispatch test: ``protrain_optimizer_wrapper(optimizer_name=...)``
-  routes the persistent set through ``GpuAdamW8bitAdapter`` for each of
-  the three supported Axolotl/HF optimizer-name strings, and through
-  ``GpuFusedAdamAdapter`` for the default ``adamw_torch`` baseline.
-
-The dispatch test uses a tiny synthetic ``WrappedModel`` shim — no real
-model load — so it runs in ~1 s on any GPU host without touching the
-chunk manager bring-up.
-"""
+"""Unit tests for ``GpuAdamW8bitAdapter`` construction, state round-trip, and the wrapper dispatch path."""
 
 from __future__ import annotations
 
@@ -43,16 +23,7 @@ pytestmark = pytest.mark.gpu
 
 
 def _gpu_device() -> "torch.device":
-    """Pick a CUDA device that respects ``CUDA_VISIBLE_DEVICES`` masking.
-
-    Centralized CUDA-availability guard (CodeRabbit F-#8): each
-    gpu-marked test in this module calls ``_gpu_device()`` to acquire
-    its target device. If the pytest invocation deselects ``-m gpu``
-    but somehow ends up running these tests on a CPU-only context
-    (e.g., custom marker filter, conftest override), the unconditional
-    ``cuda:0`` return would surface as a torch error before the test
-    body — ``pytest.skip`` here yields a clean skip instead.
-    """
+    """Pick a CUDA device that respects ``CUDA_VISIBLE_DEVICES`` and skip cleanly when CUDA is absent."""
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available; test_adamw8bit_adapter requires GPU.")
     return torch.device("cuda:0")
@@ -188,12 +159,7 @@ def test_step_actually_updates_params() -> None:
 
 
 class _FakeChunkLayout:
-    """Minimal stand-in for ``ChunkLayout`` consumed by the optim wrapper.
-
-    We only need ``chunks`` (list of per-chunk param-id lists). The
-    wrapper iterates this and looks up each pid in
-    ``ChunkManager._params_by_id``.
-    """
+    """Minimal stand-in for ``ChunkLayout`` exposing only the ``chunks`` field the wrapper iterates."""
 
     def __init__(self, chunks: list[list[int]]) -> None:
         self.chunks = chunks
@@ -309,12 +275,7 @@ def test_dispatch_default_optimizer_uses_fused_adam() -> None:
 
 
 def test_dispatch_warns_when_8bit_requested_with_cpu_chunks() -> None:
-    """Bail-condition warning fires when 8-bit + non-persistent chunks coexist.
-
-    Captures the warning via a direct mock on the optim_wrapper module's
-    ``LOG`` instance — ``caplog`` is not provided by this repo's pytest
-    plugin set, so we intercept the call at the logger level.
-    """
+    """Bail-condition warning fires when 8-bit + non-persistent chunks coexist."""
     pytest.importorskip("bitsandbytes")
     pytest.importorskip("deepspeed")
     from axolotl.integrations.protrain.api.optim_wrapper import (
@@ -361,16 +322,7 @@ def test_dispatch_warns_when_8bit_requested_with_cpu_chunks() -> None:
     ), captured_warnings
 
 
-# ---------------------------------------------------------------------------
-# End-to-end smoke — wires the full ProTrain pipeline with adamw_8bit on a
-# tiny GPT-2 so we exercise: optimizer-name plumb-through, persistent-set
-# routing onto the bnb 8-bit kernel, and ``_ProTrainOptimizer.step()``
-# driving ``GpuAdamW8bitAdapter.step()`` for 5 iterations with descending
-# loss. Smaller than the 8B integration test by 8 orders of magnitude on
-# parameter count — ~200 ms wall-clock vs. ~10+ minutes of cost-search
-# overhead — but exercises the same plumbing, which is the integration
-# property M2.5 must guard.
-# ---------------------------------------------------------------------------
+# End-to-end smoke: full ProTrain pipeline with adamw_8bit on tiny GPT-2.
 
 
 def _tiny_gpt2(device):
@@ -391,18 +343,7 @@ def _tiny_gpt2(device):
 
 @pytest.mark.slow
 def test_end_to_end_5_steps_descending_loss() -> None:
-    """5 forward+backward+step iterations on tiny GPT-2 with adamw_8bit.
-
-    Verifies:
-    1. ``protrain_optimizer_wrapper(optimizer_name="adamw_8bit")`` builds a
-       ``_ProTrainOptimizer`` whose persistent adapter is the bnb 8-bit
-       variant (when the searcher places the layout in Mode A — the
-       default for a tiny model on a 24 GB+ device).
-    2. Five training steps complete without raising.
-    3. Loss decreases over the 5 steps (loosely — not strictly monotone,
-       but final < initial). bnb 8-bit Adam is approximate; we tolerate
-       small bumps but require net descent over the window.
-    """
+    """5 forward+backward+step iterations on tiny GPT-2 with adamw_8bit yield descending loss."""
     pytest.importorskip("torch")
     pytest.importorskip("transformers")
     pytest.importorskip("bitsandbytes")
@@ -419,42 +360,35 @@ def test_end_to_end_5_steps_descending_loss() -> None:
     model = _tiny_gpt2(device)
 
     wrapped = auto_wrap(model, batch_size=2, seq_len=8)
+    try:
+        optim = protrain_optimizer_wrapper(
+            wrapped,
+            lr=1e-2,  # high enough to see loss move in 5 steps
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0.0,
+            optimizer_name="adamw_8bit",
+        )
+        # Persistent set on tiny model routes to the 8-bit adapter; no CPU chunks in Mode A.
+        assert isinstance(optim._gpu_optim, GpuAdamW8bitAdapter), (
+            f"expected GpuAdamW8bitAdapter, got {type(optim._gpu_optim).__name__}"
+        )
 
-    optim = protrain_optimizer_wrapper(
-        wrapped,
-        lr=1e-2,  # high enough to see loss move in 5 steps
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        weight_decay=0.0,
-        optimizer_name="adamw_8bit",
-    )
-    # Confirm the routing happened (persistent set on tiny model -> 8-bit
-    # adapter; no CPU chunks expected in Mode A so cpu_optim is None).
-    assert isinstance(optim._gpu_optim, GpuAdamW8bitAdapter), (
-        f"expected GpuAdamW8bitAdapter, got {type(optim._gpu_optim).__name__}"
-    )
+        # Overfit a single fixed batch so per-iter noise cannot mask the descent.
+        torch.manual_seed(42)
+        fixed_input = torch.randint(0, 128, (2, 8), device=device)
+        losses: list[float] = []
+        for _ in range(5):
+            out = wrapped.module(input_ids=fixed_input, labels=fixed_input)
+            loss = out.loss
+            losses.append(float(loss.detach()))
+            loss.backward()
+            optim.step()
+            optim.zero_grad()
 
-    # 5 training steps overfitting a SINGLE fixed batch — the classic
-    # "single-batch convergence" smoke test. Random per-iter inputs add
-    # noise that can mask 5-step descent on a tiny model with small
-    # params (where bnb's min_8bit_size=4096 floor sends them down the
-    # fp32 fallback anyway). With a fixed batch a healthy optimizer
-    # step path produces strictly-monotone loss descent.
-    torch.manual_seed(42)
-    fixed_input = torch.randint(0, 128, (2, 8), device=device)
-    losses: list[float] = []
-    for _ in range(5):
-        out = wrapped.module(input_ids=fixed_input, labels=fixed_input)
-        loss = out.loss
-        losses.append(float(loss.detach()))
-        loss.backward()
-        optim.step()
-        optim.zero_grad()
-
-    # Loss must descend net-of-noise on the fixed batch. With LR=1e-2
-    # on a 2-layer model, 5 iters comfortably clear the bnb 8-bit
-    # quantization floor for any param > min_8bit_size; smaller params
-    # use bnb's fp32 fallback internally and behave as plain AdamW.
-    assert len(losses) == 5
-    assert all(loss > 0 for loss in losses), f"non-positive loss: {losses}"
-    assert losses[-1] < losses[0], f"loss did not descend: {losses}"
+        assert len(losses) == 5
+        assert all(loss > 0 for loss in losses), f"non-positive loss: {losses}"
+        assert losses[-1] < losses[0], f"loss did not descend: {losses}"
+    finally:
+        # Release CUDA/chunk resources so a failure cannot leak into later GPU tests.
+        wrapped.close()

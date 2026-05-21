@@ -557,17 +557,7 @@ def test_on_demand_engaged_path_in_run_trace(gpu_device, monkeypatch):
 def test_force_all_persistent_suppresses_on_demand_in_run_trace(
     gpu_device, monkeypatch, caplog
 ):
-    """force_all_persistent=True must skip the on-demand trace gate.
-
-    Even with the device-memory threshold pinned to 0% (which would
-    normally force on-demand engagement), passing
-    ``force_all_persistent=True`` to ``run_trace`` via ``ProfilerConfig``
-    must short-circuit the gate and run the trace's forward+backward
-    fully on GPU. Pins the Phase 2 M5 post-mortem fix: prior behavior
-    silently re-engaged on-demand offloading even when the user had
-    explicitly opted into Mode A, which can hang or destabilize the
-    host on borderline 7-13B configurations.
-    """
+    """force_all_persistent=True must skip the on-demand trace gate even at 0% device-memory threshold."""
     import logging
 
     import torch

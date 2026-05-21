@@ -12,8 +12,8 @@ Design contract (see DESIGN.md §Design Decisions):
   overestimate on best-selected configurations" claim. Per-dtype
   refinement lives in :func:`alpha_fragmentation_for_dtype`: fp16 /
   bf16 / 8-bit keep alpha=1.10; bnb 4-bit drops to
-  ``ALPHA_FRAGMENTATION_4BIT = 0.75`` (Coverage audit Block G —
-  alpha=1.10 over-predicts bnb-4-bit Mode-A peak by ~37%).
+  ``ALPHA_FRAGMENTATION_4BIT = 0.75`` because alpha=1.10 empirically
+  over-predicts bnb-4-bit Mode-A peak by ~37%.
 - SWAP blocks do not contribute to the op-walk peak: the paper argues
   swap-in "only fires when memory is available", so activation swapping
   is assumed to trade runtime for zero steady-state peak.
@@ -172,58 +172,15 @@ def _saved_tensor_bytes_per_block(trace: ProfilerTrace) -> dict[BlockId, int]:
 #: lookup.
 ALPHA_FRAGMENTATION: float = 1.10
 
-#: Per-dtype alpha floor for bnb-4-bit weights. Coverage audit Block G
-#: (Phase 2) observed alpha_measured ≈ 0.70 across four Mode-A 4-bit
-#: configurations (8B Llama, seq ∈ {512, 1024}, fused-on and
-#: fused-off); 0.75 keeps a small conservative cushion above that
-#: empirical floor while still letting the searcher pick larger
-#: chunk sets / persistent partitions than alpha=1.10 would admit. See
-#: :func:`alpha_fragmentation_for_dtype` for the full lookup table.
+#: alpha floor for bnb-4-bit weights; empirical alpha_measured ~= 0.70 (Mode-A 8B Llama sweeps), 0.75 keeps a small cushion.
 ALPHA_FRAGMENTATION_4BIT: float = 0.75
 
 
 def alpha_fragmentation_for_dtype(bytes_per_element: float) -> float:
-    """Per-dtype Eq. 11 fragmentation factor.
-
-    The alpha=1.10 paper default was calibrated against fp16 activation /
-    grad allocation patterns. Coverage audit Block G (Phase 2)
-    re-derived the empirical alpha across the M5 / M0-spike / Block-A
-    matrices and found:
-
-    - fp16 / bf16 (2 bytes / element): alpha_measured ≈ 0.96. alpha=1.10 is
-      mildly conservative (the predictor over-allocates headroom by
-      ~14 %). Acceptable — keep alpha=1.10.
-    - bnb 8-bit (1 byte / element): alpha_measured ≈ 0.93. alpha=1.10 is
-      mildly conservative by ~17 %. Acceptable — keep alpha=1.10. (The
-      activation / gradient streams stay fp16 even when the base
-      weights are int8, so the fragmentation profile is fp16-like.)
-    - bnb 4-bit Mode-A (0.5 bytes / logical element via
-      ``Params4bit``'s 2-elements-per-uint8 packing): alpha_measured ≈
-      0.70 across four config rows. alpha=1.10 over-predicts by ~37 %.
-      Drop to alpha=0.75 (slightly conservative vs. the empirical floor).
-
-    Coverage audit Block G also observed a 6.9x iter-1 transient
-    peak in bnb-4-bit Mode-C (offload) configurations during the
-    model-load → ``materialize_offload`` window when chunks are
-    briefly all-GPU-resident. This is an INIT-window transient, not
-    a fragmentation phenomenon — it is documented separately in
-    :func:`axolotl.integrations.protrain.api.model_wrapper.protrain_model_wrapper`
-    and is NOT covered by this alpha lookup. The steady-state Mode-C
-    alpha_measured (~1.47) is over-predict-ish but its residual is an
-    activation-accounting issue, not a fragmentation one — also not
-    addressed here.
+    """Return ALPHA_FRAGMENTATION_4BIT for sub-byte dtypes, else ALPHA_FRAGMENTATION.
 
     Args:
-        bytes_per_element: dominant param storage cost per logical
-            element across the model. Use 2.0 for fp16/bf16, 1.0 for
-            bnb int8, 0.5 for bnb 4-bit (``Params4bit`` packs two
-            logical elements per stored byte; the caller passes the
-            *logical* density, not the storage byte size).
-
-    Returns:
-        ``ALPHA_FRAGMENTATION_4BIT`` (0.75) when
-        ``bytes_per_element < 1.0``, otherwise
-        ``ALPHA_FRAGMENTATION`` (1.10).
+        bytes_per_element: logical bytes per element (0.5 for bnb 4-bit, 1.0 for int8, 2.0 for fp16/bf16).
     """
     if bytes_per_element < 1.0:
         return ALPHA_FRAGMENTATION_4BIT
@@ -348,14 +305,10 @@ def cross_attn_persist_bytes(
       (OFFLOAD retains forward activations on GPU symmetrically to
       NONE — see the ``retained_none_bytes`` / ``cumulative_none``
       construction below), so we return ``0`` to avoid double-counting.
-    - When that block is in CKPT mode the
-      ``ckpt_chain_bytes`` term in :func:`estimate_peak` (Coverage
-      audit Block G) already accounts for the block's INPUT residual
-      that the activation-checkpoint framework retains across the
-      whole backward window. Since ``activation_sizes[bid]`` is the
-      block-output / next-block-input residual proxy, the CKPT-chain
-      surcharge ALREADY covers the encoder→decoder hidden tensor.
-      Return ``0`` to avoid double-counting it here.
+    - When that block is in CKPT mode ``ckpt_chain_bytes`` already
+      covers the block-input residual that the checkpoint framework
+      retains across the backward window; return 0 to avoid
+      double-counting.
     - When that block is in SWAP mode its block-output IS evicted to
       pinned CPU (the swap pool offloads saved tensors including the
       block boundary); the cross-attention reference forces it back to
@@ -381,11 +334,26 @@ def cross_attn_persist_bytes(
         # tracked separately via ``offload_bump_op`` in estimate_peak).
         return 0
     if last_enc_mode is BlockMode.CKPT:
-        # Already counted in ckpt_chain_bytes (Coverage audit Block G):
-        # the CKPT framework retains the block-input/output residual
-        # across the whole backward window, and ``activation_sizes[bid]``
-        # is the block-output proxy. Adding the cross-attn surcharge
-        # here would double-count the same residual stream.
+        # CKPT chain bytes already cover this block's residual; avoid double-count.
+        return 0
+    return int(trace.activation_sizes.get(last_enc_bid, 0))
+
+
+def cross_attn_handoff_bytes(
+    trace: ProfilerTrace,
+    block_map: BlockStrategyMap,
+    tree_index_map: dict[BlockId, int],
+) -> int:
+    """Return encoder-decoder handoff bytes regardless of encoder-last mode (cap-path use)."""
+    if not _has_multiple_trees(tree_index_map):
+        return 0
+    encoder_bids = sorted(bid for bid, idx in tree_index_map.items() if idx == 0)
+    if not encoder_bids:
+        return 0
+    last_enc_bid = encoder_bids[-1]
+    last_enc_mode = block_map.get(last_enc_bid, BlockMode.NONE)
+    # NONE/OFFLOAD already retain the full block bytes on GPU so the cap need not preserve them again.
+    if last_enc_mode is BlockMode.NONE or last_enc_mode is BlockMode.OFFLOAD:
         return 0
     return int(trace.activation_sizes.get(last_enc_bid, 0))
 
@@ -554,7 +522,8 @@ def hot_iter_peak_cap(
         # traces are unaffected because ``cross_attn_persist_bytes``
         # returns 0 outside the multi-tree path.
         tree_index_map = block_tree_index_map(trace)
-        cross_attn_bytes_for_cap = cross_attn_persist_bytes(
+        # Cap path must preserve handoff bytes even when encoder-last is CKPT (op-walk's zero is double-count avoidance, not absence).
+        cross_attn_bytes_for_cap = cross_attn_handoff_bytes(
             trace, block_map, tree_index_map
         )
         encoder_last_bid: BlockId | None = None
@@ -1083,24 +1052,11 @@ def estimate_peak(
     forward_ops_by_block = _group_ops_by_block(trace)
     tree_index_map = block_tree_index_map(trace)
     cross_attn_bytes = cross_attn_persist_bytes(trace, block_map, tree_index_map)
-    # Per-block saved-tensor proxy (forward-diff if real trace, else falls
-    # back to ``activation_sizes``). Used below to size the CKPT
-    # recomputation bump as the BLOCK-INTERNAL saved tensors only —
-    # the block-input residual is already in ``ckpt_chain_bytes`` (see
-    # the Coverage audit Block G comment block below), so re-charging
-    # the residual here would double-count.
+    # Block-internal saved tensors only; the block-input residual lives in ``ckpt_chain_bytes``.
     saved_bytes_proxy_for_op_walk = _saved_tensor_bytes_per_block(trace)
 
-    # Resolve "first op index" for each CKPT block; used to schedule the
-    # checkpoint recomputation bump. If the block has no ops (degenerate
-    # test input) the bump lands at op index -1 and is ignored below.
     ckpt_bump_op: dict[int, int] = {}
-    # Resolve "last op index" for each OFFLOAD block; used to schedule the
-    # backward-window chunk-gather bump (§4.1). The last forward op is the
-    # closest forward index to the block's first backward op — backward
-    # walks blocks in reverse forward order, so the OFFLOAD-block gather
-    # peak materializes at that op-walk position when the forward
-    # activations are still resident.
+    # OFFLOAD bump fires at the last forward op (closest to the block's backward window).
     offload_bump_op: dict[int, int] = {}
     for block_id, op_idxs in forward_ops_by_block.items():
         if not op_idxs:
@@ -1111,79 +1067,15 @@ def estimate_peak(
         elif mode is BlockMode.OFFLOAD:
             offload_bump_op[op_idxs[-1]] = int(block_id)
 
-    # Retained-activation contribution from NONE + OFFLOAD blocks —
-    # constant across the op-walk (these activations are live from their
-    # first op through the end of forward). OFFLOAD retains activations
-    # symmetrically to NONE; the additional chunk-gather bump fires only
-    # at the per-block backward window via ``offload_bump_op``.
     retained_none_bytes = 0
-    # CKPT-chain residual contribution (Coverage audit Block G, Mode-C
-    # steady-state under-prediction).
-    #
-    # Under ``torch.utils.checkpoint`` with ``use_reentrant=True`` (the
-    # default the runtime uses to wrap every CKPT block), the
-    # activation-checkpoint framework DOES retain the block's INPUT
-    # tensor across the entire backward window for that block — only the
-    # block-INTERNAL saved tensors (Q/K/V projections, attention scores,
-    # FFN intermediates, ...) are freed and rematerialized inside the
-    # recompute window. The block input ≡ the previous block's output
-    # residual stream, sized ``bs * seq * hidden * dtype_bytes`` for a
-    # standard transformer. When the production block_map has K CKPT
-    # blocks, all K of those block-input tensors are simultaneously live
-    # across the backward pass — they cannot overlap free GPU memory
-    # like SWAP slots, because each one is the autograd-checkpoint
-    # boundary tensor for its segment and must be held until that
-    # segment's backward completes.
-    #
-    # ``trace.activation_sizes[bid]`` is the per-block OUTPUT-bytes
-    # proxy (real-trace path: from ``_output_bytes`` over the block's
-    # module hook; synth-trace path: ``bs * seq * intermediate * 2`` —
-    # an over-estimate of the residual stream by the FFN expansion
-    # factor ~3.5x but conservative). Use it as the per-CKPT-block
-    # chain contribution, summed once across all CKPT blocks and added
-    # to the candidate at every op-walk position (the chain is live for
-    # the whole backward, not just one op).
-    #
-    # Empirical match (Coverage audit Block G):
-    #   - 30B Llama (60 blocks), bnb 4-bit Mode-C (n_persist=0,
-    #     n_buffer=12, n_checkpoint=60), batch=1:
-    #         seq=512  meas=2.91 GiB
-    #         seq=1024 meas=3.50 GiB
-    #         seq=2048 meas=4.68 GiB
-    #     Pre-fix predictor:
-    #         seq=512  pred=2.49 (alpha=1.10 era) → alpha_steady ≈ 1.17
-    #         seq=1024 pred=2.50              → alpha_steady ≈ 1.40
-    #         seq=2048 pred=2.54              → alpha_steady ≈ 1.84
-    #     The alpha_steady drift with seq is the smoking gun: ``estimate_peak``'s
-    #     activation contribution did not scale with seq for CKPT-only
-    #     configs (retained_none=0 ⇒ only the single ``ckpt_extra`` bump
-    #     fires, which is a per-op max, not a per-block sum). Adding
-    #     ``ckpt_chain_bytes`` recovers the per-block-per-seq scaling and
-    #     drives alpha_steady toward 1.0 across the seq sweep.
-    #
-    # Semantic distinction vs ``ckpt_extra`` (per-CKPT first-op bump):
-    #   - ``ckpt_chain_bytes`` models the block-input residual that the
-    #     CKPT framework retains across the WHOLE backward window for
-    #     every CKPT block; it's a constant addition across the op-walk.
-    #   - ``ckpt_extra`` models the per-block recomputation bump that
-    #     materializes ONE block's saved-tensor set at a time inside the
-    #     recompute window (paper §3.3: "one block at a time, serially");
-    #     it fires per-op-max so only the largest single contributes to
-    #     the modeled peak. These are NON-OVERLAPPING contributions:
-    #     chain bytes are the block boundary tensors held by autograd,
-    #     recompute bytes are the block-internal saved tensors freshly
-    #     re-created during backward.
+    # CKPT blocks retain the block-input boundary tensor across the full backward window; sum once per CKPT block, separate from the per-op recompute bump in ``ckpt_extra``.
     ckpt_chain_bytes = 0
     for block_id_raw, act_sz in trace.activation_sizes.items():
-        # ``activation_sizes`` is typed ``dict[BlockId, int]`` but
-        # pickled maps may use int keys; normalize.
         bid = BlockId(int(block_id_raw))
         mode = block_map.get(bid, BlockMode.NONE)
         if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
             retained_none_bytes += act_sz
         elif mode is BlockMode.CKPT:
-            # Block-input residual retained by CKPT framework across the
-            # entire backward window — see comment block above.
             ckpt_chain_bytes += act_sz
         # SWAP: live only during the block's forward compute; assumed
         #       to overlap free GPU memory (§3.3). The CKPT-chain term
@@ -1239,34 +1131,13 @@ def estimate_peak(
 
     for i, op in enumerate(trace.op_order):
         if not op.is_forward:
-            # Backward-only ops are out of scope for the forward
-            # op-walk. Eq. 8-10 explicitly walk forward ops.
             continue
 
         intra = trace.intra_op_delta.get(op.op_id, 0)
         inter = trace.inter_op_delta.get(op.op_id, 0)
         live_none = _none_live_at(i)
 
-        # CKPT bump: when we hit the first op of a CKPT block, the
-        # recomputation materializes that block's BLOCK-INTERNAL saved
-        # tensors (Q/K/V/output projections, attention scores, FFN
-        # intermediate states, ...) in addition to any retained
-        # activations. The block's INPUT residual is already accounted
-        # for by ``ckpt_chain_bytes`` (Coverage audit Block G fix),
-        # which adds every CKPT block's ``activation_sizes[bid]`` proxy
-        # as a constant chain across the op-walk — so the recomp bump
-        # is sized at the INTERNAL delta only:
-        #     ckpt_extra = max(0, saved_bytes_proxy[bid] - activation_sizes[bid])
-        # In real-trace paths the saved-tensor proxy (forward-diff) is
-        # ~30x ``activation_sizes`` (block-output) so the bump tracks
-        # the dominant per-block recompute footprint. In synth / toy
-        # paths where the proxy falls back to ``activation_sizes`` the
-        # delta is 0 and ``ckpt_chain_bytes`` carries the full per-block
-        # contribution — preserving the constant-across-ops invariant
-        # the legacy ``test_estimate_peak_monotonic_in_n_checkpoint``
-        # relied on (peak no longer DROPS with n_checkpoint under that
-        # fallback abstraction, but it also no longer RISES — chain and
-        # recomp are bookended cleanly).
+        # CKPT recompute bump = internal saved-tensor delta; block-input residual already in ``ckpt_chain_bytes``.
         ckpt_extra = 0
         if i in ckpt_bump_op:
             bid = BlockId(ckpt_bump_op[i])
@@ -1304,17 +1175,7 @@ def estimate_peak(
         if candidate > raw_peak:
             raw_peak = candidate
 
-    # If the trace has no forward ops (degenerate test input or the
-    # explicit-override skip-trace path that synthesizes a trace with
-    # ``op_order=()``; see ``synth_trace_from_overrides``) fall back to
-    # a static estimate. Includes ``ckpt_chain_bytes`` so the synth /
-    # override path that hits this branch still scales activation
-    # accounting with ``bs * seq`` for CKPT-dominated configs (the
-    # primary motivation for the audit Block G fix — see comment block
-    # at ``ckpt_chain_bytes`` definition above). ``retained_none_bytes``
-    # and ``ckpt_chain_bytes`` are disjoint by construction (NONE/OFFLOAD
-    # vs CKPT in the per-block accumulator above), so summing both is
-    # not double-counting.
+    # Degenerate trace (no forward ops): static estimate. ckpt_chain_bytes and retained_none_bytes are disjoint by construction so summing both does not double-count.
     if raw_peak == 0:
         raw_peak = model_state_present + retained_none_bytes + ckpt_chain_bytes
 
@@ -1410,6 +1271,7 @@ __all__ = [
     "alpha_fragmentation_for_dtype",
     "_saved_tensor_bytes_per_block",
     "block_tree_index_map",
+    "cross_attn_handoff_bytes",
     "cross_attn_persist_bytes",
     "estimate_cpu_footprint",
     "estimate_peak",

@@ -302,78 +302,13 @@ class Scheduler:
         self._sync_prefetch_with_compute()
 
     def ensure_chunks_resident(self, chunk_ids: Iterable[ChunkId]) -> None:
-        """Synchronously ensure an arbitrary chunk set is GPU-resident.
-
-        Lower-granularity sibling of :meth:`ensure_block_resident` —
-        used by the per-LoRA-container hooks (M6C-fix-3) so the
-        scheduler can re-gather a sub-block-granularity chunk set
-        before a PEFT ``LoraLayer.forward`` runs. The standard
-        block-level pre-forward hook already gathers a *superset* of
-        these chunks (every PEFT-LoRA factor lives in a chunk owned
-        by the enclosing transformer block), so this call is in
-        steady state a fast-path tag-lookup that bumps no leases —
-        the value is correctness coverage on the cold paths where the
-        block hook hasn't yet fired (e.g. the autograd
-        shape-derivation step at the moment the LoRA forward records
-        its ``ToCopyBackward0`` cast op against the LoRA factor's
-        ``param.size()``).
-
-        M6C-fix-4: the gather runs SYNCHRONOUSLY on the *compute*
-        stream — NOT routed through the prefetch stream like
-        :meth:`ensure_block_resident`. The container-hook entry point
-        is a defensive correctness barrier (cold-path coverage for the
-        ``ToCopyBackward0 ... shape compatible with [0]`` failure
-        mode). On the multi-GPU sharded path, ``_gather_sharded``
-        issues an ``all_gather_into_tensor`` collective; if that
-        collective is queued on the prefetch stream the chunk's full
-        bytes don't materialise on the compute stream until the next
-        ``compute.wait_stream(prefetch)`` barrier — but the
-        ``param.data`` rebind (Python-level, immediate) AND every
-        autograd op that follows it (the bf16 cast in PEFT's
-        ``LoraLayer.forward``) run on the compute stream WITHOUT
-        an intervening barrier in some sharded cold-paths. Routing
-        the gather through the compute stream directly removes the
-        cross-stream coordination as a failure mode and matches the
-        synchronous-fallback path the manager already takes when
-        ``self._prefetch_stream is None`` (CPU-only test lanes).
-
-        Idempotent. ``ChunkManager.gather`` itself short-circuits on
-        persistent / already-active chunks, so calling this on a
-        chunk set that's already covered by an outer ``gather`` is
-        cheap. ``ensure_chunks_resident`` is the analogue of
-        ``ensure_block_resident`` for non-``BlockId``-keyed chunk
-        sets — the LoRA-container hook computes its own chunk set at
-        install time (one per container) and passes it in here.
-        """
+        """Synchronously gather an arbitrary chunk set on the compute stream so autograd shape-derivation sees real ``param.size()`` even on cold paths."""
         # Materialize once so we can both check emptiness and iterate
         # twice (gather + the fast-path persistent-skip in the manager).
         cids = tuple(chunk_ids)
         if not cids:
             return
-        # Cross-stream safety barriers (CodeRabbit R3-#1 + F-#6).
-        # Bypassing ``_gather_on_prefetch_stream`` also bypasses the
-        # barriers that path establishes. Two distinct races need
-        # closing:
-        #
-        # 1. SWAP D2H race (R3-#1). ``_gather_on_prefetch_stream``
-        #    does ``self._prefetch_stream.wait_stream(self._swap_stream)``
-        #    so pool buffers aren't overwritten while a SWAP D2H is
-        #    still reading. On the compute-stream sync path the same
-        #    pool buffer races between the SWAP D2H and the
-        #    ``gather()``'s H2D / fill, just shifted onto the compute
-        #    stream. The compute stream waits on ``_swap_stream``.
-        #
-        # 2. Prefetch-stream race (F-#6). If a chunk is already being
-        #    prefetched, ``ChunkManager.gather()`` may hit the
-        #    ``_active_chunks`` resident fast path and rebind
-        #    ``param.data`` immediately — even though the original H2D
-        #    or ``all_gather_into_tensor`` on ``_prefetch_stream`` is
-        #    still running. In that case the synchronous path returns
-        #    BEFORE the chunk is actually compute-stream-safe, and a
-        #    LoRA forward consuming ``param.data`` reads stale /
-        #    not-yet-written bytes. The compute stream also waits on
-        #    ``_prefetch_stream`` so the rebind is sequenced after the
-        #    in-flight prefetch's completion.
+        # Wait on swap + prefetch streams so pool buffers and in-flight gathers complete before the compute-stream rebind.
         try:
             import torch as _torch
         except ImportError:  # pragma: no cover — defensive, CPU-only lanes
@@ -384,23 +319,7 @@ class Scheduler:
                 compute.wait_stream(self._swap_stream)
             if self._prefetch_stream is not None:
                 compute.wait_stream(self._prefetch_stream)
-        # M6C-fix-4: bypass the prefetch stream. Issuing
-        # ``chunk_manager.gather(cid)`` directly here makes the
-        # underlying ``_gather_sharded`` collective land on the
-        # compute stream the LoRA forward uses, so the all_gather
-        # completes before the autograd ``_to_copy`` op records its
-        # source-shape against the rebound ``param.data``. The
-        # synchronous fallback path in
-        # :meth:`_gather_on_prefetch_stream` (taken when
-        # ``self._prefetch_stream is None``) already does exactly
-        # this; we extend the same guarantee to the multi-GPU
-        # sharded path. Cost: the per-LoRA-container hook fires
-        # once per container per fwd/bwd window (224 hooks on
-        # Llama-3-8B) and on the steady-state hot path each call
-        # hits the manager's ``_active_chunks`` fast path with a
-        # zero-GPU-work tag re-bind, so the synchronous routing
-        # carries no measurable wall-clock overhead beyond the
-        # cold-path first-time gathers.
+        # gather on the compute stream so the sharded all_gather completes before autograd records source-shape against the rebound param.data
         for cid in cids:
             self.chunk_manager.gather(cid)
 

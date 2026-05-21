@@ -296,36 +296,14 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     if trace.nccl_gather_s and trace.nccl_reduce_s and trace.world == world_size:
         return (False, False)
 
-    # Override-skip gate (M6C-fix-5). When the user supplied all four
-    # explicit-override knobs (n_persist / n_buffer / n_swap /
-    # n_checkpoint), the bootstrap ``search_result`` was *synthesized*
-    # from those knobs (no searcher / cost-model input — see the
-    # ``all_overrides_set`` branch in ``model_wrapper.py``). Re-running
-    # ``search()`` on the late path would either:
-    #
-    # * pick the same synthesized cfg back (best case — wasted work
-    #   plus a wasted NCCL bench), or
-    # * pick a *different* cost-optimal cfg, hit the
-    #   ``cfg_changed=True`` branch below, and raise
-    #   ``RuntimeError("ProTrain: late NCCL re-search picked a different
-    #   plan than the bootstrap.")`` — even though the user's overrides
-    #   are documented to pin the plan and the runtime is already wired
-    #   for that pinned plan. This was the M6C-fix-5 Blocker 1 trip:
-    #   any multi-GPU Mode C run with explicit override knobs failed
-    #   here regardless of whether the rest of the cross-mode resume
-    #   chain worked.
-    #
-    # Skip the measurement + re-search entirely on this path. The
-    # synthetic trace's empty NCCL tables stay empty (the cost model is
-    # not consulted on the override path; downstream consumers that
-    # would read the tables are not on the override path either). Emit
-    # an INFO so the operator sees the gate engaged.
+    # Skip late NCCL re-search when all explicit overrides pin the plan, to avoid
+    # re-running search() and raising on a cost-optimal cfg that differs from the
+    # synthesized bootstrap cfg.
     if bool(getattr(wrapped, "_override_skip_trace", False)):
         LOG.info(
             "ProTrain: late NCCL re-search skipped — explicit override knobs "
             "are fully set so the bootstrap cfg is pinned. world_size=%d, "
-            "bootstrap cfg=%s. (See model_wrapper.py override-skip gate; "
-            "M6C-fix-5.)",
+            "bootstrap cfg=%s.",
             world_size,
             wrapped.search_result.cfg,
         )
@@ -463,25 +441,7 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
 
 
 def _install_resume_hook(trainer, cfg, wrapped) -> None:
-    """Wrap ``trainer._load_from_checkpoint`` so cross-mode resume succeeds.
-
-    See the call-site docstring in :meth:`ProTrainPlugin.post_trainer_create`
-    for the structural rationale (M6C-fix-1). This helper is a separate
-    free function so the patching can be unit-tested independently of the
-    full plugin lifecycle.
-
-    The wrapped method runs ONLY when:
-
-    * ``checkpoint`` is non-None (resume path active), AND
-    * The chunk manager has live offloaded state (Mode C-style
-      non-persistent chunks). For Mode A / all-persistent layouts the
-      wrapper short-circuits to the original method — no offload state
-      to gather, nothing to rebuild.
-
-    Idempotency: ``trainer._protrain_resume_hook_installed`` is set to
-    ``True`` after the patch lands. A second call from a re-entrant
-    ``post_trainer_create`` finds the flag and skips the second wrap.
-    """
+    """Wrap ``trainer._load_from_checkpoint`` so cross-mode resume gathers offloaded chunks before reload."""
     if getattr(trainer, "_protrain_resume_hook_installed", False):
         LOG.debug(
             "ProTrain: resume hook already installed on this trainer; "
@@ -554,25 +514,17 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
             + len(getattr(chunk_manager, "_chunk_shards", {}) or {}),
         )
 
-        # Step 1 (precondition for restore_to_gpu): tear down the CPU
-        # FusedAdam adapter. Its inner DeepSpeedCPUAdam objects hold
-        # refs into the per-region ``shard_param`` tensors that
-        # ``restore_to_gpu`` is about to invalidate (see
-        # ChunkManager.restore_to_gpu's "Caveat" — "Callers MUST tear
-        # down the optimizer (or any other consumer of the
-        # shard_params / cpu_data / cpu_grad views) BEFORE calling
-        # restore_to_gpu in the rebuild flow.")
+        # Tear down the CPU adapter before restore_to_gpu invalidates the shard views it holds.
         cpu_optim = getattr(chunk_manager, "cpu_optim", None)
         if cpu_optim is not None:
             try:
                 cpu_optim.shutdown()
-            except Exception as exc:  # noqa: BLE001 — best-effort
-                LOG.warning(
-                    "ProTrain resume hook: cpu_optim.shutdown raised %s; "
-                    "continuing with restore_to_gpu (the rebuild will "
-                    "construct a fresh adapter regardless).",
-                    exc,
+            except Exception:  # noqa: BLE001 — fail closed
+                LOG.exception(
+                    "ProTrain resume hook: cpu_optim.shutdown failed; "
+                    "aborting before restore_to_gpu invalidates shard views."
                 )
+                raise
             chunk_manager.cpu_optim = None
         # Drop the GPU adapter ref too — we'll rebuild it after the
         # load. Persistent params keep their data across restore_to_gpu
@@ -672,13 +624,7 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
 
 
 def _resolve_optimizer_name(args, cfg) -> str | None:
-    """Return the optimizer name (HF ``args.optim`` first, then ``cfg.optimizer``).
-
-    Mirrors the resolution used in :meth:`ProTrainPlugin.post_trainer_create`
-    (and :meth:`ProTrainPlugin.create_optimizer`). Hoisted to a free
-    function so the resume hook closure can capture the resolved value at
-    install time without re-running the same five-line dance inline.
-    """
+    """Return the optimizer name, preferring HF ``args.optim`` over ``cfg.optimizer``."""
     optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
     if optimizer_name is not None and not isinstance(optimizer_name, str):
         optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
@@ -1050,11 +996,7 @@ class ProTrainPlugin(BasePlugin):
         betas = (float(args.adam_beta1), float(args.adam_beta2))
         eps = float(args.adam_epsilon)
         weight_decay = float(args.weight_decay)
-        # M2.5: forward the user's configured optimizer name so the
-        # wrapper can route 8-bit-bnb selections through
-        # GpuAdamW8bitAdapter on the persistent chunk set. ``cfg.optimizer``
-        # is an Axolotl pydantic enum at validate time but ``args.optim``
-        # (HF TrainingArguments) is the canonical post-validate string.
+        # Forward the optimizer name so the wrapper can route 8-bit-bnb to GpuAdamW8bitAdapter.
         optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
         if optimizer_name is not None and not isinstance(optimizer_name, str):
             optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
@@ -1150,47 +1092,9 @@ class ProTrainPlugin(BasePlugin):
             float(args.weight_decay),
         )
 
-        # ---- Cross-mode resume hook (M6C-fix-1) -------------------------
-        # HF Trainer's ``_load_from_checkpoint`` (transformers/trainer.py
-        # ~line 3394 for the PEFT path, ~3373 for the standard load) runs
-        # AFTER ``post_model_load`` has already wrapped the model with
-        # ProTrain and ``materialize_offload`` has zeroed ``param.data``
-        # on every non-persistent chunk. PEFT's
-        # ``set_peft_model_state_dict`` (and ``model.load_state_dict`` on
-        # the standard path) calls ``model.load_state_dict`` which does
-        # shape-checking against the live ``param.size()``: every
-        # offloaded LoRA factor has ``size = (0,)`` and the load fails
-        # with ``RuntimeError: Error(s) in loading state_dict ... size
-        # mismatch ... shape in current model is torch.Size([0])``. HF
-        # has no ``on_load_checkpoint`` callback (and ``on_train_begin``
-        # fires AFTER the load slot — see the load-hook comment below
-        # for the parallel reasoning that drove the optimizer-state
-        # patch), so we wrap the trainer method directly. The resume
-        # cycle is:
-        #
-        # 1. ``chunk_manager.restore_to_gpu()`` — rebind every offloaded
-        #    param's ``.data`` to a fresh standalone GPU tensor of the
-        #    full shape. The optimizer adapter built in ``post_trainer_create``
-        #    holds refs into the now-freed pinned pools and is invalidated
-        #    by this step (see ``ChunkManager.restore_to_gpu``'s "Caveat"
-        #    docstring). We tear it down explicitly before ``restore_to_gpu``
-        #    to avoid leaking the worker thread + DeepSpeedCPUAdam C state.
-        # 2. Run the original ``_load_from_checkpoint`` — HF copies the
-        #    saved weights into the now-full-shape ``param.data`` slots
-        #    via PEFT's standard load path.
-        # 3. ``chunk_manager.materialize_offload()`` — re-build the offload
-        #    state from the freshly-loaded ``param.data`` (which now holds
-        #    the resumed weights, not the pre-resume weights), allocating
-        #    fresh pinned pools.
-        # 4. Rebuild the optimizer adapter via ``protrain_optimizer_wrapper``
-        #    against the new chunk-manager state and swap into ``trainer.optimizer``.
-        #
-        # Idempotency: a second invocation finds ``materialize_offload``
-        # was a no-op (no offloaded chunks), so the cycle is dead code
-        # for Mode A (``force_all_persistent=True``) and other layouts
-        # where every chunk is persistent. The ``_install_resume_hook``
-        # helper sets ``trainer._protrain_resume_hook_installed`` so
-        # ``post_trainer_create`` re-entry doesn't stack patches.
+        # Patch _load_from_checkpoint so PEFT/HF load sees full-shape param.data
+        # (offloaded LoRA factors have size (0,) and would size-mismatch otherwise);
+        # cycle: restore_to_gpu -> original load -> materialize_offload -> rebuild optimizer.
         _install_resume_hook(trainer, cfg, wrapped)
 
         # ---- Optimizer-state checkpoint/resume (CHECKPOINT_DESIGN.md) ----

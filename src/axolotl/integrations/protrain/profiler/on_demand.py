@@ -47,22 +47,7 @@ LOG = get_logger(__name__)
 
 
 def _fused_kernel_func_names() -> frozenset[str]:
-    """Names of ``axolotl.kernels.lora`` apply_* functions that bypass per-Linear hooks.
-
-    Axolotl's fused LoRA kernels are installed by
-    ``axolotl/monkeypatch/lora_kernels.py`` as ``types.MethodType`` bindings
-    on transformer-block submodules. Each fused entry-point reads weight
-    tensors via direct attribute access (e.g. ``self.gate_proj.weight``),
-    NOT by calling the wrapped ``nn.Linear``'s ``__call__`` — so the
-    standard per-leaf forward-pre hook the on-demand manager registers
-    never fires for those projections, and the fused matmul reads the
-    empty post-spill placeholder. Detecting these names lets us install
-    a container-level pre-gather hook that gathers every sub-parameter
-    before the fused forward runs.
-
-    Listed by name (not import) so a missing kernel module does not break
-    on-demand for non-fused users.
-    """
+    """Names of fused LoRA apply_* functions whose direct-attribute weight reads bypass per-Linear gather hooks; listed by name (not import) so a missing kernel module stays non-fatal."""
     return frozenset(
         {
             "apply_lora_mlp_swiglu",
@@ -76,13 +61,7 @@ def _fused_kernel_func_names() -> frozenset[str]:
 
 
 def _is_fused_method(attr: Any) -> bool:
-    """True iff ``attr`` is a ``types.MethodType`` bound to a fused-kernel function.
-
-    Handles both ``mlp.forward`` (instance-level forward swap) and
-    ``self_attn.apply_qkv`` / ``self_attn.apply_o`` (instance-level
-    method bindings). The bound-method's ``__func__.__name__`` is the
-    apply_lora_* function we registered on the module.
-    """
+    """True iff ``attr`` is an instance-bound method whose underlying function is one of the fused-kernel apply_* entries."""
     if not isinstance(attr, types.MethodType):
         return False
     fn = getattr(attr, "__func__", None)
@@ -91,27 +70,7 @@ def _is_fused_method(attr: Any) -> bool:
 
 
 def _find_fused_kernel_containers(model: "nn.Module") -> "list[nn.Module]":
-    """Return modules whose forward-path bypasses per-Linear gather hooks.
-
-    A container is any ``nn.Module`` carrying at least one fused-kernel
-    method binding installed by ``apply_lora_kernel_patches``:
-
-    * ``mlp.forward`` swapped to ``apply_lora_mlp_swiglu`` / ``..._geglu``
-      (the swiglu/geglu kernel reads ``gate_proj``/``up_proj``/``down_proj``
-      weight refs directly).
-    * ``self_attn.apply_qkv`` swapped to ``apply_lora_qkv`` / ``apply_lora_qk``
-      (the QKV kernel reads ``q_proj``/``k_proj``/``v_proj`` weight refs
-      directly when ``self_attn.forward`` later calls ``self.apply_qkv``).
-    * ``self_attn.apply_o`` swapped to ``apply_lora_o`` (analogous, for
-      the output projection invoked from the patched attention forward).
-    * ``embed_tokens.forward`` swapped to ``apply_lora_embedding`` (reads
-      the embed weight + lora_embedding_A/B sub-Parameter refs directly).
-
-    Returned in deterministic ``model.modules()`` order so test assertions
-    can rely on a stable enumeration. Empty when no fused-kernel
-    monkey-patch has been applied — the on-demand manager then falls back
-    to its per-Linear-only hook path with no behavior change.
-    """
+    """Return modules with at least one fused-kernel method binding; deterministic ``model.modules()`` order so tests can rely on stable enumeration."""
     out: list["nn.Module"] = []
     for sub in model.modules():
         for attr_name in ("forward", "apply_qkv", "apply_o"):
@@ -143,36 +102,7 @@ _PEFT_LORA_NAME_TAGS: frozenset[str] = frozenset(
 def _has_peft_lora_factor(
     module: "nn.Module", *, recurse_children: bool = True
 ) -> bool:
-    """True iff ``module`` directly owns a trainable PEFT LoRA factor.
-
-    "Directly owns" means: the LoRA factor is reachable as a *direct*
-    attribute access on ``module`` (``getattr(module, "lora_A")``), not
-    via a child module that itself qualifies. This matches the PEFT
-    runtime convention — ``LoraLayer.forward`` reads
-    ``self.lora_A[active]`` and ``self.lora_B[active]`` as direct
-    attribute accesses. A grandparent module (e.g. the enclosing
-    transformer block) might transitively contain a LoraLayer in its
-    subtree, but it is NOT a LoRA container in the hookability sense:
-    its forward delegates to the LoraLayer's forward, where the actual
-    direct-attribute reads of the factors happen.
-
-    Detection scopes:
-
-    * Direct ``Parameter`` attributes (``self.lora_magnitude_vector``
-      as a bare ``nn.Parameter`` — DoRA's per-out-channel magnitude
-      scalar); ``named_parameters(recurse=False)`` catches these by
-      attribute name.
-    * Direct child ``nn.Module`` attributes whose attribute NAME
-      contains a PEFT tag (e.g. ``self.lora_A`` is a
-      ``nn.ParameterDict`` or a wrapped ``nn.Linear``);
-      ``named_children()`` returns these by their attribute name on
-      ``module``, and a tag substring match on the child name catches
-      both the ParameterDict and the child-Linear adapter forms.
-
-    When ``recurse_children=False`` only the parameter scope is
-    checked (skip the child-module scan); used in non-default callers
-    that want pure direct-Parameter ownership.
-    """
+    """True iff ``module`` *directly* owns a trainable LoRA factor (parameter attribute or one-level-child by tag name); grandparents are excluded because PEFT's direct-attribute reads happen on the LoraLayer itself."""
     # Direct-Parameter scope: catches the bare ``nn.Parameter`` form.
     for name, p in module.named_parameters(recurse=False):
         if not p.requires_grad:
@@ -197,53 +127,7 @@ def _has_peft_lora_factor(
 
 
 def _find_peft_lora_containers(model: "nn.Module") -> "list[nn.Module]":
-    """Return modules that directly own trainable PEFT LoRA factor parameters.
-
-    ProTrain's offload mode (Mode C) zeroes ``param.data`` on non-
-    persistent chunks via ``ChunkManager.materialize_offload``. PEFT's
-    standard ``LoraLayer.forward`` reads its ``lora_A`` / ``lora_B``
-    factor weights via direct attribute access (the ``nn.ParameterDict``
-    or the wrapped ``nn.Linear`` child); like the M1 fused-kernel case,
-    these reads bypass the per-Linear gather hook. At backward time the
-    fp16-cast ``ToCopyBackward0`` derives its expected gradient shape
-    from the live ``param.size()`` (now ``[0]``) and rejects the real-
-    shape grad with ``RuntimeError: ToCopyBackward0 returned an invalid
-    gradient at index 0 - got [...] but expected shape compatible with
-    [0]``.
-
-    This detector mirrors :func:`_find_fused_kernel_containers` for the
-    PEFT path: it returns the *outermost* module whose direct or one-
-    level-child parameters include a trainable LoRA factor. The
-    container's pre-/post-forward and pre-/post-backward hooks then
-    gather every sub-parameter (including the LoRA factors and the
-    underlying base weight) for the duration of the forward / backward
-    pass — same machinery as the fused-kernel containers, same memory
-    trade-off (one container's worth of params lives on GPU during its
-    own forward + backward window).
-
-    Filtering rules:
-
-    * **Direct-attribute ownership only** (see
-      :func:`_has_peft_lora_factor`). A module qualifies iff it owns
-      a LoRA factor as a *direct* attribute — i.e. the LoRA factor
-      is reachable as ``getattr(module, "lora_A")`` or via a bare
-      direct ``Parameter`` named ``lora_*``. Enclosing blocks that
-      transitively contain a LoraLayer in their subtree do NOT
-      qualify; their forward delegates to the LoraLayer's forward,
-      where the actual direct-attribute reads happen.
-    * **Not also a fused container.** If a module is already returned
-      by :func:`_find_fused_kernel_containers` (e.g. a ``mlp`` whose
-      ``forward`` has been swapped for ``apply_lora_mlp_swiglu``), the
-      fused-container hooks already gather its full subtree — there's
-      no value in registering a second pair of hooks for the same
-      gather scope. The fused-kernel set wins.
-
-    Returned in deterministic ``model.modules()`` order so tests can
-    rely on a stable enumeration. Empty when no trainable PEFT LoRA
-    factors are present anywhere in the model — the on-demand manager
-    then falls back to its per-Linear + fused-kernel hook path with
-    no behavior change.
-    """
+    """Return modules that directly own trainable LoRA factors; excludes fused-kernel containers (their hooks already cover the same subtree). Deterministic ``model.modules()`` order."""
     fused = set(id(m) for m in _find_fused_kernel_containers(model))
     out: list["nn.Module"] = []
     for sub in model.modules():
@@ -362,11 +246,7 @@ class OnDemandTensorMgr:
         # Populated by ``__enter__`` after fused-kernel detection. Tests
         # may inspect this to verify per-container hook installation.
         self._fused_containers: list["nn.Module"] = []
-        # Populated by ``__enter__`` after PEFT-LoRA detection (M6C-fix-2).
-        # Modules that own trainable PEFT LoRA factors and need the same
-        # subtree gather/release treatment as fused-kernel containers so
-        # ``param.data`` is GPU-resident at backward time. Tests may
-        # inspect this to verify per-container hook installation.
+        # PEFT-LoRA containers needing subtree gather/release so param.data stays live across backward
         self._peft_lora_containers: list["nn.Module"] = []
 
     # ---- context-manager protocol --------------------------------------
@@ -487,23 +367,7 @@ class OnDemandTensorMgr:
                     sub.register_full_backward_hook(self._post_release_bwd)
                 )
 
-            # M1: container-level gather/release for fused-kernel modules.
-            # When Axolotl's fused LoRA kernels are active, the host
-            # module's forward (mlp / self_attn / embed_tokens) reads
-            # child Linear weights via direct attribute access and never
-            # invokes the children's ``__call__`` — the per-Linear
-            # pre-hooks above therefore don't fire and the matmul reads
-            # the empty placeholder. Detect those containers and install
-            # a pre-/post-forward hook pair that gathers every sub-param
-            # before the patched forward runs and releases after. The
-            # ref-counter in ``_pre_gather`` makes this safe even if any
-            # nested per-Linear hook does fire (it just bumps the count).
-            #
-            # ``prepend=True`` on pre: same rationale as the per-Linear
-            # path — container gather must precede the trace driver's
-            # snapshot so ``intra_op_delta`` doesn't absorb the gather
-            # bytes. Post-release stays FIFO so the trace's
-            # ``post_forward`` peak read happens before we release.
+            # container-level gather/release for fused-kernel modules whose patched forward bypasses the per-Linear hooks; prepend=True so the gather precedes the trace driver's snapshot pre-hook
             self._fused_containers = _find_fused_kernel_containers(self.model)
             if self._fused_containers:
                 LOG.debug(
@@ -548,33 +412,7 @@ class OnDemandTensorMgr:
                     )
                 )
 
-            # M6C-fix-2: PEFT-LoRA containers (standard, non-fused path).
-            # Same root cause as the fused-kernel case: PEFT's
-            # ``LoraLayer.forward`` reads ``self.lora_A[active]`` /
-            # ``self.lora_B[active]`` (or, for the bare-Parameter form,
-            # ``self.lora_magnitude_vector[active]``) via direct attribute
-            # access. The per-Linear gather hook on the wrapped child
-            # ``nn.Linear`` does fire — but the LoRA factor parameters
-            # themselves don't sit on a separately hookable forward path,
-            # and the autograd ``ToCopyBackward0`` (from PEFT's bf16
-            # cast inside ``LoraLayer.forward``) reads the *current*
-            # ``param.size()`` to derive its expected grad shape. By
-            # backward time the per-Linear post-release has cleared the
-            # base weight to a length-0 placeholder; the LoRA factors
-            # themselves were never gathered in the first place because
-            # they live on a sibling ParameterDict, not a child Linear
-            # whose ``__call__`` would fire the per-leaf pre-hook. The
-            # subtree gather on the LoRA container makes both the LoRA
-            # factor weights and the wrapped base linear's weight live
-            # for the duration of the container's forward + backward
-            # window, so autograd's shape-derivation step sees the real
-            # shape and the grad copy succeeds.
-            #
-            # Skips containers already in ``_fused_containers`` (when an
-            # MLP container has both fused-kernel patches AND PEFT LoRA
-            # factors on its child Linears, the fused-container hooks
-            # already cover the same subtree — see
-            # ``_find_peft_lora_containers``'s "fused-set wins" rule).
+            # PEFT-LoRA containers: subtree gather keeps both LoRA factors and the wrapped base weight live across forward+backward so autograd shape-derivation sees real sizes
             self._peft_lora_containers = _find_peft_lora_containers(self.model)
             if self._peft_lora_containers:
                 LOG.debug(
@@ -1102,80 +940,26 @@ class OnDemandTensorMgr:
                 LOG.debug("OnDemandTensorMgr post-release no-op (%s)", exc)
 
     def _pre_gather_subtree(self, module: "nn.Module", inputs: Any) -> None:
-        """Container-level pre-gather for fused-kernel modules (M1).
-
-        Walks every submodule under ``module`` and runs the standard
-        ``_pre_gather`` over each so that *all* parameters owned by the
-        fused container (its own + every descendant's) are GPU-resident
-        for the duration of the patched forward.
-
-        Why this is needed: Axolotl's fused LoRA kernels swap the host
-        module's ``forward`` (or ``apply_qkv``/``apply_o`` method) with
-        an entrypoint that reads child ``nn.Linear`` weight tensors via
-        direct attribute access (``self.gate_proj.weight``). The per-
-        Linear pre-gather hook therefore never fires for those leaves
-        during the fused matmul, and the kernel reads the empty post-
-        spill placeholder — the failure mode the M0 spike reproduced
-        as ``RuntimeError: size mismatch ... vec (0)``. Container-level
-        gathering covers every leaf the fused kernel might touch in one
-        pre-forward pass; the per-Linear ref-counter (``_active_param_users``)
-        keeps re-entrant per-Linear hooks safe even when both fire.
-
-        Memory trade-off: a Llama transformer block's MLP container is
-        ~135 MB fp16 (3 * gate/up/down at hidden=4096 -> 4096*14336*2 B);
-        the self_attn container is ~67 MB; the embedding is ~525 MB on
-        Llama-3-8B (vocab=128256 * hidden=4096 * 2 B). Forward peak
-        rises by at most one container's worth of params relative to
-        the per-leaf-only path. Documented in phase2.md §M1.
-        """
+        """Run ``_pre_gather`` over every submodule so the fused/PEFT container's whole subtree is GPU-resident before the patched forward reads weights by direct attribute access."""
         for sub in module.modules():
             self._pre_gather(sub, inputs)
 
     def _post_release_subtree(
         self, module: "nn.Module", inputs: Any, output: Any
     ) -> None:
-        """Container-level post-release: mirror of ``_pre_gather_subtree``.
-
-        Walks the same submodule set in reverse order so the active-user
-        ref-counts that ``_pre_gather_subtree`` incremented unwind in
-        the opposite order they were taken — matches the LIFO ownership
-        pattern the per-Linear path already relies on for tied params.
-        """
+        """Mirror of ``_pre_gather_subtree`` but walks submodules in reverse so the active-user refcounts unwind LIFO (matches the tied-param ownership pattern)."""
         for sub in reversed(list(module.modules())):
             self._post_release(sub, inputs, output)
 
     def _pre_gather_subtree_bwd(self, module: "nn.Module", grad_output: Any) -> None:
-        """Backward-pre hook: gather every sub-param before container bwd.
-
-        Mirrors ``_pre_gather_subtree`` for the backward direction. The
-        fused autograd Function (LoRA_MLP / LoRA_QKV / LoRA_O) keeps
-        Tensor refs to the base weights as plain Python attributes on
-        ``ctx`` (e.g. ``ctx.weights``), bypassing
-        ``ctx.save_for_backward`` and therefore bypassing the saved-
-        tensors pack/unpack spill path. By the time the autograd
-        backward runs, the forward post-release has already reset every
-        base ``param.data`` to an empty placeholder; without this
-        re-gather the bwd matmul against ``ctx.weights[i]`` raises the
-        same ``size mismatch ... vec (0)`` error the M0 spike captured.
-        """
+        """Backward-pre subtree gather; needed because fused autograd Functions stash raw weight refs on ``ctx`` (bypassing ``save_for_backward``), so the forward post-release left them as empty placeholders."""
         for sub in module.modules():
             self._pre_gather(sub, grad_output)
 
     def _post_release_subtree_bwd(
         self, module: "nn.Module", grad_input: Any, grad_output: Any
     ) -> None:
-        """Backward-post hook: release after container bwd, mirror of subtree-fwd.
-
-        Defers to ``_post_release_bwd`` per submodule so the
-        premature-fire guard (the ``inputs_have_grad`` check around
-        ``register_full_backward_hook``) still applies — leaf
-        embeddings reached via the fused embedding container would
-        otherwise see their post-bwd fire before the embedding's own
-        backward kernel runs and clear the gathered weight to a length-0
-        placeholder mid-AccumulateGrad. Walking in reverse keeps the
-        active-user ref-count unwind LIFO, matching the pre-gather
-        order.
-        """
+        """Backward-post subtree release; defers to ``_post_release_bwd`` per submodule so the ``inputs_have_grad`` premature-fire guard still applies (otherwise embeddings would clear their weight mid-AccumulateGrad)."""
         for sub in reversed(list(module.modules())):
             self._post_release_bwd(sub, grad_input, grad_output)
 

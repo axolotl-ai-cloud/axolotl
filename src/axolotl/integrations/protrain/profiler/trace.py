@@ -608,16 +608,7 @@ def run_trace(
     # (identity scale, default bwd_fwd ratio) for traces marked on-demand.
     engage_on_demand = False
     if cfg.force_all_persistent:
-        # Caller explicitly opted into Mode A (all chunks GPU-resident);
-        # respect their intent and skip the on-demand auto-engagement
-        # even if model_state exceeds the device-memory threshold. The
-        # trace pass will run the trainable forward+backward un-offloaded
-        # — the caller is on the hook for ensuring the model fits.
-        # Required to prevent the trace from re-engaging on-demand on
-        # borderline 7-13B configs where the user has chosen Mode A
-        # explicitly (see Phase 2 M5 post-mortem: 8B trace pass auto-
-        # engaged on-demand despite force_all_persistent=True and
-        # destabilized the host).
+        # force_all_persistent overrides the on-demand auto-engagement gate so the trace honors Mode A even on borderline configs
         LOG.info(
             "Profiler force_all_persistent=True; skipping on-demand "
             "engagement gate. Trace pass will run the trainable "
@@ -1323,24 +1314,7 @@ def _extract_loss(output: Any) -> "torch.Tensor":
 
 
 def _infer_hidden_size(model: "nn.Module") -> int:
-    """Best-effort hidden-size inference for analytical activation sizing.
-
-    Used by :func:`synth_trace_from_overrides` to populate per-block
-    activation_sizes when the trace pass is skipped. The synthetic value
-    is only consulted on the override path, where the searcher and
-    cost-model are both bypassed — it just needs to be non-zero so
-    downstream consumers (SWAP slot sizing, n_block bounds checks)
-    behave consistently with a real trace.
-
-    Resolution order:
-
-    1. ``model.config.hidden_size`` (HF causal-LM, BERT, T5, ...).
-    2. ``model.config.d_model`` (T5 alias).
-    3. ``model.config.n_embd`` (GPT-2).
-    4. ``2048`` fallback — non-zero so the SWAP slot sizing fallback
-       (which already takes max over per-param sizes) still computes a
-       finite slot.
-    """
+    """Best-effort hidden-size inference; falls back to 2048 so synthetic SWAP slot sizing stays finite."""
     cfg = getattr(model, "config", None)
     if cfg is not None:
         for attr in ("hidden_size", "d_model", "n_embd"):
@@ -1351,29 +1325,7 @@ def _infer_hidden_size(model: "nn.Module") -> int:
 
 
 def _infer_intermediate_size(model: "nn.Module", hidden_size: int) -> int:
-    """Best-effort intermediate (FFN) size inference for activation sizing.
-
-    Llama-style models typically have ``intermediate_size ≈ 3.5 *
-    hidden_size`` (e.g. 8B Llama: 14336 / 4096 = 3.5). The FFN
-    intermediate activation tensor (``bs * seq * intermediate``) is
-    often the largest single saved tensor that backward retains, so
-    sizing the SWAP pool slot off the block-output residual alone
-    under-shoots and triggers the runtime "exceeds pool slot" warning
-    path. We use this larger value for the synthetic per-block
-    activation estimate so the SWAP slot sizing in
-    :func:`protrain_model_wrapper` lands closer to a real trace's
-    measurement.
-
-    Resolution order:
-
-    1. ``model.config.intermediate_size`` (Llama, Mistral, Qwen, ...).
-    2. ``model.config.ffn_hidden_size`` (some encoder-decoder configs).
-    3. ``model.config.d_ff`` (T5).
-    4. ``model.config.n_inner`` (GPT-2; can be None to mean ``4 *
-       n_embd``).
-    5. ``4 * hidden_size`` fallback — the canonical transformer FFN
-       expansion factor.
-    """
+    """Best-effort FFN intermediate size; sized larger than hidden so synthetic SWAP slot sizing doesn't under-shoot the largest saved activation."""
     cfg = getattr(model, "config", None)
     if cfg is not None:
         for attr in ("intermediate_size", "ffn_hidden_size", "d_ff", "n_inner"):
@@ -1394,55 +1346,7 @@ def synth_trace_from_overrides(
     param_grad_bytes_per_param: int = DEFAULT_PARAM_GRAD_BYTES_PER_PARAM,
     optim_state_bytes_per_param: int = DEFAULT_OPTIM_STATE_BYTES_PER_PARAM,
 ) -> ProfilerTrace:
-    """Build a synthetic ``ProfilerTrace`` for the explicit-override skip path.
-
-    When the user has supplied all four of
-    ``protrain_n_persist_override`` / ``n_buffer_override`` /
-    ``n_swap_override`` / ``n_checkpoint_override``, the searcher AND
-    the cost model are both bypassed by the explicit-override branch
-    in :func:`protrain_model_wrapper`. The trace pass itself becomes
-    wasted work — and on big-model offload configurations (e.g. 30B +
-    4-bit, or 8B + 4-bit at seq=2048) it OOMs the trace before chunk
-    offload can engage. This helper synthesizes a ``ProfilerTrace``
-    that is just complete enough for the downstream layout / runtime
-    construction:
-
-    * ``op_order=()`` — :func:`_param_exec_order` falls back to
-      ``named_parameters`` declaration order, which is correct for
-      uniform transformer stacks (the only regime where overrides are
-      useful in practice).
-    * ``intra_op_delta={}`` / ``inter_op_delta={}`` — every consumer
-      reads via ``.get(op_id, 0)``, so empty dicts collapse cleanly.
-    * ``activation_sizes`` — populated per discovered block with an
-      analytical estimate ``bs * seq * hidden_size * 2 B`` (block-output
-      residual stream at bf16/fp16). The SWAP-slot sizing path takes
-      ``max`` over this, the per-op intra delta (empty here), and the
-      walked per-param sizes — the per-param walk already provides a
-      safe upper bound for ``F.linear`` saved-weight cases, so the
-      analytical activation estimate is redundant but cheap.
-    * ``model_state_bytes`` from :func:`_count_model_state_bytes` — a
-      real measurement of params + grads + optim state. Used by the
-      peak-prediction calibration's ``persistent_factor``; an
-      under-estimate would inflate the buffer factor.
-    * ``pcie_h2d_bps`` / ``pcie_d2h_bps`` — measured via
-      :func:`measure_pcie` (cheap: ~0.5 s on a 3090). Falls back to a
-      conservative ``13 GB/s`` (Gen3) prior on failure or when CUDA is
-      unavailable.
-    * ``nccl_gather_s={}`` / ``nccl_reduce_s={}`` — empty. The
-      cost model's communication term degrades to 0.0 on multi-GPU
-      override paths, which is acceptable because the override path
-      doesn't consult the cost model anyway. For multi-GPU runs that
-      need NCCL calibration, the user should run a fresh trace once
-      with overrides cleared.
-    * ``op_latencies={}``, ``cpu_adam_bytes_per_sec=0.0``,
-      ``gpu_adam_bytes_per_sec=0.0``, etc. — defaults are fine because
-      the cost model's ``estimate_runtime`` is never invoked on the
-      override path.
-
-    Returns a fully-populated ``ProfilerTrace`` that satisfies every
-    field-access pattern in :func:`protrain_model_wrapper` after the
-    cache-miss branch.
-    """
+    """Synthesize a minimally-populated ProfilerTrace so the explicit-override skip path can bypass the OOM-prone real trace pass."""
     import torch
 
     # Lazy import to avoid pulling block layout deps at module import.
@@ -1462,7 +1366,6 @@ def synth_trace_from_overrides(
         blocks = flatten_block_trees(trees)
         block_count = max(1, len(blocks))
         path_map = block_id_path_map(model, trees)
-        # Compute tree index map for the same flatten order
         block_tree_index: dict[BlockId, int] = {}
         flat_idx = 0
         for tree in sorted(trees, key=lambda t: t.forward_order):

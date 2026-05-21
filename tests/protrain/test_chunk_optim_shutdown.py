@@ -159,29 +159,7 @@ def test_shutdown_skips_missing_ds_opt_adam():
 
 
 def test_shutdown_logs_destroy_failure_but_continues(caplog):
-    """A per-chunk destroy failure is logged and does not block other chunks.
-
-    CI hardening (2026-05-12): the assertion that
-    ``LOG.warning(...)`` was invoked is done by patching the
-    module-level ``LOG`` rather than by inspecting ``caplog.records``
-    under ``caplog.at_level("axolotl")``. The caplog-based capture
-    is brittle under pytest-xdist + axolotl's
-    ``MultiProcessAdapter`` LoggerAdapter wrapper: the log record
-    DOES emit (visible in CI stderr as
-    ``[WARNING] [axolotl.integrations.protrain.chunk.optim]
-    DeepSpeedCPUAdam destroy_adam failed for chunk 1: boom``) but
-    ``caplog.records`` is intermittently empty depending on which
-    other tests ran first in the same xdist worker (an autouse
-    fixture in ``test_logging_config_file_capture.py`` removes
-    handlers from ``logging.root`` which can disrupt caplog's
-    propagation path mid-session).
-
-    Patching ``optim_module.LOG.warning`` directly bypasses both
-    the LoggerAdapter shape concern and the cross-test handler-
-    removal risk: we're asserting the wrapper's intent ("a warning
-    was logged when destroy_adam failed"), not the global logging
-    plumbing's ability to route it.
-    """
+    """A per-chunk destroy failure is logged and does not block other chunks."""
     from axolotl.integrations.protrain.chunk import optim as optim_module
 
     adapter, fakes = _make_adapter_with_mock_ds(n_chunks=3)

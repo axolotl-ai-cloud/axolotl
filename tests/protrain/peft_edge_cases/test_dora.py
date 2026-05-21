@@ -1,38 +1,4 @@
-"""DoRA + ProTrain composition smoke test (M6A test 1).
-
-DoRA (Weight-Decomposed Low-Rank Adaptation, ``LoraConfig(use_dora=True)``)
-adds a per-Linear ``lora_magnitude_vector`` trainable tensor on top of the
-standard LoRA A/B factors. ProTrain's chunk manager segments per-chunk
-regions on a ``(dtype, requires_grad)`` boundary (see
-``chunk/manager.py:864`` — "CodeRabbit R07 fix"); the DoRA magnitude
-vectors land in the same chunks as the LoRA A/B factors but with a
-different shape, so the per-region split logic must transparently absorb
-them.
-
-Smoke contract:
-
-* Wrap a tiny Llama-architecture LM (SmolLM2-135M when cached, else a
-  fresh-init tiny Llama) with DoRA on q/k/v/o + MLP linears.
-* Verify magnitude vectors actually exist (otherwise we'd be testing
-  plain LoRA again).
-* Drive 5 forward+backward+optimizer-step iterations with ProTrain in
-  Mode-A (``force_all_persistent=True``) on a single GPU.
-* Assert loss strictly decreases (final < first) over the 5 iters on a
-  fixed batch.
-
-Substitution rationale
-----------------------
-The ``phase2.md`` spec calls for Llama-3-8B + DoRA. We use SmolLM2-135M
-(also Llama-architecture; HuggingFaceTB/SmolLM2-135M is cached locally
-in this lab and shares the ``model.layers`` block-discovery surface with
-Llama-3-8B). The chunk-manager region-split logic that DoRA stresses is
-entirely architecture-independent; what matters is that DoRA introduces
-the ``lora_magnitude_vector`` parameters into the Linear modules and
-that ProTrain's ``requires_grad``-based segmentation handles them. A
-135M model exercises the same code path as 8B in <1 minute wall-clock
-versus ~30 minutes for the 8B variant — well within the M6A 8-minute
-per-test budget.
-"""
+"""DoRA + ProTrain smoke: magnitude vectors must traverse the per-region split alongside LoRA factors."""
 
 from __future__ import annotations
 
@@ -44,12 +10,7 @@ pytestmark = pytest.mark.gpu
 
 
 def _build_tiny_llama_with_dora():
-    """Construct a tiny Llama-arch LM and apply a DoRA LoRA config.
-
-    Tries cached SmolLM2-135M first (real pretrained weights → cleaner
-    loss-decrease signal); falls back to fresh-init tiny Llama if the HF
-    cache is cold.
-    """
+    """Tiny Llama-arch LM with DoRA LoRA; prefers cached SmolLM2-135M, falls back to fresh-init."""
     pytest.importorskip("torch")
     pytest.importorskip("transformers")
     pytest.importorskip("peft")
@@ -63,25 +24,7 @@ def _build_tiny_llama_with_dora():
         LlamaForCausalLM,
     )
 
-    # --- Base model -------------------------------------------------------
-    # Try the cached SmolLM2-135M for a real arch first, fall back to a
-    # hand-crafted tiny LlamaConfig when the cache miss / disk / cache /
-    # permission paths fire. We catch the documented offline-load failure
-    # families specifically so that a real bug in
-    # ``AutoConfig.from_pretrained`` / ``AutoModelForCausalLM.from_pretrained``
-    # (e.g. API breakage, deserialization regression, dtype mismatch)
-    # surfaces as a test failure rather than getting silently
-    # masked by the synthetic fallback.
-    #
-    # Documented failure surfaces for ``local_files_only=True``:
-    # - ``ValueError`` — unrecognised config / unknown model_type
-    #   (transformers' canonical "not found in cache" surface)
-    # - ``OSError`` — filesystem unreadable, cache pruned,
-    #   ``FileNotFoundError`` (its subclass), ``PermissionError``
-    #   (subclass), disk full / IO error
-    # - ``EnvironmentError`` — alias for OSError on Python 3, kept
-    #   explicit for clarity with the transformers / huggingface_hub
-    #   error wiring docs.
+    # Narrow to offline-load failure families so genuine API breakage still surfaces.
     try:
         cfg = AutoConfig.from_pretrained(
             "HuggingFaceTB/SmolLM2-135M", local_files_only=True
@@ -167,11 +110,7 @@ def test_protrain_dora_smoke() -> None:
     )
 
     bs, seq = 1, 64
-    # R3-#2: deterministic teardown — wrap the training loop in
-    # try/finally so ``wrapped.close()`` runs even when an assertion
-    # fails mid-test. Without this, hook handles + pinned-host
-    # borrows + CPU adapter threads leak into the next GPU test on
-    # the same pytest session.
+    # try/finally ensures hook handles, pinned-host borrows, and CPU adapter threads release on assertion failure.
     wrapped = protrain_model_wrapper(
         peft_model,
         model_config=cfg,
@@ -205,12 +144,7 @@ def test_protrain_dora_smoke() -> None:
 
         print(f"\nProTrain + DoRA smoke (tiny Llama): losses={losses}")
 
-        # Strict descent over the window — the spec asks for "loss strictly
-        # decreases", interpreted as final < first on a fixed batch (the
-        # same convention used by ``test_full_ft_smoke.py`` / the bnb
-        # ``test_end_to_end_5_steps_descending_loss`` smoke). With LR=1e-3
-        # and a fixed batch, the DoRA magnitude vectors and LoRA A/B
-        # factors all receive nonzero updates and the loss must move.
+        # final < first on a fixed batch confirms DoRA magnitude vectors and LoRA factors actually receive gradient updates.
         assert all(math.isfinite(v) for v in losses), f"non-finite loss in {losses}"
         assert losses[-1] < losses[0], (
             f"DoRA + ProTrain loss did not decrease over {n_iters} iters: "

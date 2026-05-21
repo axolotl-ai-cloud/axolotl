@@ -612,12 +612,7 @@ def measure_nccl(
     gather_table: dict[int, float] = {}
     reduce_table: dict[int, float] = {}
 
-    # Defensive barrier: surface any communicator-config asymmetry across
-    # ranks (e.g. asymmetric NCCL_P2P_DISABLE from a buggy P2P probe) as a
-    # hang on this barrier rather than as a native SIGSEGV inside the
-    # first all_gather collective. A hang is debuggable with
-    # TORCH_DISTRIBUTED_DEBUG=DETAIL; a SIGSEGV is not. See ProTrain
-    # Phase 2 audit follow-up (multigpu_segfault_diagnosis.md).
+    # surface communicator-config asymmetry as a debuggable barrier hang instead of a SIGSEGV inside the first collective
     try:
         dist.barrier(device_ids=[device_idx])
     except Exception as exc:  # pragma: no cover - defensive

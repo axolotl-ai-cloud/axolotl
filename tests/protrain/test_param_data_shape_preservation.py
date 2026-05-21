@@ -1,63 +1,4 @@
-"""M6C-fix-7 architectural-attempt unit tests.
-
-These tests pin the invariant introduced by ``M6C-fix-7``: when
-``ChunkManager`` is constructed with ``shape_preserving_placeholders=True``,
-the "released" state of every chunk-managed parameter preserves its
-logical shape (``param.size()`` / ``param.shape`` / ``param.dim()``).
-
-Background (synthesised from the M6C-fix-{3..6} empirical record):
-
-PyTorch autograd captures Function input shape metadata at NODE
-CONSTRUCTION time (forward) — see
-``torch/csrc/autograd/generated/Functions.h``'s ``self_sym_sizes`` field
-captured by-value as ``std::vector<c10::SymInt>``. The legacy
-chunk-manager release path rebinds ``param.data`` to a
-``torch.Size([0])`` placeholder; a rare race window on multi-GPU sharded
-non-persistent chunks at production scale (32-layer Llama-3-8B × 4 ranks
-× heavy pool-eviction pressure) lets an autograd op record its input
-shape against the still-``[0]``-shape placeholder before the per-LoRA-
-container gather hook's rebind takes effect — surfacing at backward as
-``RuntimeError: Function ToCopyBackward0 returned an invalid gradient
-... expected shape compatible with [0]``.
-
-The shape-preserving placeholder closes the race architecturally: the
-post-release ``param.data`` is a zero-stride view over a 1-element
-per-dtype scratch (``scratch.expand(slot.shape)``), so ``param.size()``
-returns the real logical shape regardless of where in the gather→forward
-sequence an autograd op records its metadata.
-
-Storage footprint: ONE 1-element scratch tensor per dtype shared across
-every released param of that dtype. The expand view contributes zero
-additional bytes.
-
-Test surface:
-
-* ``test_release_state_preserves_shape`` — the central invariant: post-
-  materialize ``param.shape`` matches the param's original shape (not
-  ``[0]``) when the flag is on.
-* ``test_release_state_default_off_is_unchanged`` — default behavior
-  (``shape_preserving_placeholders=False``) is unchanged: post-
-  materialize ``param.shape == torch.Size([0])`` exactly as before
-  M6C-fix-7. Guards the entire pre-existing test surface
-  (test_chunk_manager_offload.py, test_offload_mode_m{2,3}.py,
-  test_lora_offload_mode.py, test_fused_lora_kernels.py,
-  test_multi_gpu_7b.py, test_profiler.py — 14+ assertions across 7
-  files all asserting ``param.data.numel() == 0`` post-offload).
-* ``test_gather_offload_round_trip_shape`` — after a full
-  ``gather → forward → offload`` round-trip the released param's shape
-  matches the slot shape (not ``[0]``). Pins that ``offload()`` honours
-  the flag too, not just initial materialize.
-* ``test_storage_footprint_is_bounded`` — the per-dtype scratch is
-  ONE 1-element tensor; expand views contribute no extra bytes
-  regardless of how many params are released.
-* ``test_autograd_shape_capture_on_released_param`` — concrete
-  reproducer of the autograd race-window root cause: a forward
-  dispatched against a ``[0]``-shape released param records the
-  ``[0]`` shape (and fails); the same dispatch against a shape-
-  preserving placeholder records the real shape (and the inner op
-  surfaces a real size mismatch — not the misleading
-  ``ToCopyBackward0 ... expected [0]`` from the autograd side).
-"""
+"""Pin the shape-preserving placeholder invariant: released params keep their logical shape so autograd records the real size."""
 
 from __future__ import annotations
 
@@ -72,11 +13,7 @@ from axolotl.integrations.protrain.types import (
 
 
 def _tiny_model(hidden: int = 64, n_layers: int = 4):
-    """A tiny 4-layer transformer-ish model.
-
-    Mirrors ``test_chunk_manager_offload._tiny_model`` so the layout
-    builder picks each ``h.{i}`` Linear up as its own block / chunk.
-    """
+    """A tiny 4-layer transformer-shaped model so each ``h.{i}`` Linear becomes its own block / chunk."""
     import torch
     from torch import nn
 
@@ -120,7 +57,7 @@ def _build_chunk_manager(
     shape_preserving_placeholders: bool,
     n_buffer: int | None = None,
 ):
-    """Assemble a :class:`ChunkManager` with the M6C-fix-7 flag toggled."""
+    """Assemble a :class:`ChunkManager` with the shape-preserving-placeholders flag toggled."""
     import torch
 
     from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
@@ -151,16 +88,7 @@ def _build_chunk_manager(
 
 
 def _teardown_chunk_manager(mgr, host, pool) -> None:
-    """Best-effort fail-safe teardown for the test-helper-built
-    chunk manager + pinned-host + buffer-pool triple (R3-#5).
-
-    Called from a ``finally`` block in each test so the resources
-    are released even when an assertion fails mid-test — without
-    this, an early-exit assertion failure would skip the teardown
-    and leak per-param grad hooks + pinned-host borrows + CUDA
-    buffer-pool state into subsequent GPU tests on the same pytest
-    session.
-    """
+    """Best-effort teardown so an assertion failure cannot leak hooks, pinned-host borrows, or buffer-pool state into later tests."""
     try:
         mgr.uninstall()
     except Exception:  # noqa: BLE001 — best-effort teardown
@@ -177,16 +105,7 @@ def _teardown_chunk_manager(mgr, host, pool) -> None:
 
 @pytest.mark.gpu
 def test_release_state_preserves_shape() -> None:
-    """M6C-fix-7 central invariant.
-
-    With ``shape_preserving_placeholders=True``, every non-persistent
-    chunk-managed param has its ORIGINAL logical shape after
-    ``materialize_offload`` — NOT ``torch.Size([0])``. The new
-    placeholder's storage is still effectively zero (one 1-element
-    scratch per dtype shared across every released param), but
-    ``param.size()`` / ``param.shape`` / ``param.dim()`` return the
-    real values that autograd will eventually expect at backward.
-    """
+    """With the flag on, every non-persistent param keeps its real shape after ``materialize_offload`` (not ``Size([0])``)."""
     pytest.importorskip("torch")
     import torch
 
@@ -255,15 +174,7 @@ def test_release_state_preserves_shape() -> None:
 
 @pytest.mark.gpu
 def test_release_state_default_off_is_unchanged() -> None:
-    """Default ``shape_preserving_placeholders=False`` preserves legacy semantics.
-
-    Guards the pre-existing test surface (``test_chunk_manager_offload.py``,
-    ``test_offload_mode_m{2,3}.py``, ``test_lora_offload_mode.py``,
-    ``test_fused_lora_kernels.py``, ``test_multi_gpu_7b.py``,
-    ``test_profiler.py``) that asserts ``param.data.numel() == 0`` after
-    materialize_offload. M6C-fix-7 must NOT regress this invariant on
-    the default-off code path.
-    """
+    """Default ``shape_preserving_placeholders=False`` keeps the legacy ``numel()==0`` placeholder semantics intact."""
     pytest.importorskip("torch")
     import torch
 
@@ -303,13 +214,7 @@ def test_release_state_default_off_is_unchanged() -> None:
 
 @pytest.mark.gpu
 def test_gather_offload_round_trip_shape() -> None:
-    """After gather → offload round-trip, released shape is preserved.
-
-    Pins ``offload()`` honours the flag in addition to
-    ``materialize_offload``. Without the offload-path fix the gather
-    rebind would briefly show the real shape, but a subsequent offload
-    would re-zero it — defeating the architectural purpose.
-    """
+    """After gather→offload, released shape is preserved — confirms ``offload()`` honours the flag, not just ``materialize_offload``."""
     pytest.importorskip("torch")
     import torch
 
@@ -362,20 +267,7 @@ def test_gather_offload_round_trip_shape() -> None:
 
 @pytest.mark.gpu
 def test_storage_footprint_is_bounded() -> None:
-    """The shape-preserving placeholder costs ~zero extra bytes.
-
-    The per-dtype scratch is a 1-element tensor. Every released
-    param of that dtype shares the same scratch via ``expand``; the
-    expanded view has all-zero strides and contributes no additional
-    storage. We verify by:
-
-    1. ``self._shape_scratch_by_dtype`` has exactly one entry per dtype
-       across all released params.
-    2. Every released param's ``param.data.untyped_storage().data_ptr()``
-       equals the scratch's storage pointer for that dtype.
-    3. Each scratch is 1 element wide regardless of the number of
-       params sharing it.
-    """
+    """The shape-preserving placeholder costs ~zero extra bytes: one 1-element scratch per dtype, shared via expand."""
     pytest.importorskip("torch")
     import torch
 
@@ -414,7 +306,7 @@ def test_storage_footprint_is_bounded() -> None:
             assert scratch is not None, (
                 f"no scratch cached for dtype={dtype} but released params exist"
             )
-            # One element wide → numel()==1 for the scratch itself.
+            # Scratch is 1 element wide; expand views share that storage.
             assert scratch.numel() == 1, (
                 f"scratch for dtype={dtype} should be 1-element, got "
                 f"numel={scratch.numel()}"
@@ -431,21 +323,7 @@ def test_storage_footprint_is_bounded() -> None:
 
 @pytest.mark.gpu
 def test_autograd_shape_capture_on_released_param() -> None:
-    """Direct reproducer of the M6C-fix-7 root-cause autograd race.
-
-    The legacy ``torch.Size([0])`` placeholder lets a forward op
-    dispatched on a released param record ``[0]`` in its autograd
-    Node's input metadata. The shape-preserving placeholder lets the
-    Node record the REAL shape; if the op fails it's a real size
-    mismatch surfaced from the at::linear kernel, not the misleading
-    ``ToCopyBackward0 ... expected [0]`` from the autograd side at
-    backward.
-
-    This test exercises the autograd path directly on a single
-    Parameter rebound through ``_shape_preserving_placeholder`` and
-    confirms ``param.size()`` returns the real shape during a forward
-    that captures the param's shape into an autograd Node.
-    """
+    """Direct reproducer of the autograd race: a forward over the placeholder must record the real shape, not ``[0]``."""
     pytest.importorskip("torch")
     import torch
     from torch import nn
@@ -495,20 +373,7 @@ def test_autograd_shape_capture_on_released_param() -> None:
         assert param.size() == torch.Size(real_shape)
         assert param.dim() == 2
 
-        # D10 — run forward WHILE THE PLACEHOLDER IS STILL BOUND so the
-        # placeholder's reported shape is what autograd records. The
-        # previous test ordering (rebind to real_data BEFORE the linear
-        # call) meant autograd recorded weight.shape from the real-storage
-        # tensor and never exercised the placeholder; a regression in
-        # ``_shape_preserving_placeholder`` returning ``[0]`` (the legacy
-        # placeholder shape) would have left this test silently green.
-        #
-        # Forward writes nothing to param.data — it reads it for the
-        # ``x @ weight.T`` matmul — so the placeholder's
-        # not-write-safe-ness is irrelevant here. The matmul output uses
-        # the scratch's value broadcast across the expanded view; we
-        # don't care about y's values, only that autograd records the
-        # placeholder's reported (real) shape.
+        # Forward must run while the placeholder is still bound so autograd records its shape (not the real-data rebind).
         x = torch.randn(
             4, real_shape[1], dtype=dtype, device="cuda", requires_grad=True
         )
@@ -524,14 +389,7 @@ def test_autograd_shape_capture_on_released_param() -> None:
             f"placeholder.size() likely regressed."
         )
 
-        # Simulate the runtime's gather step: rebind to real storage
-        # BEFORE backward fires (the gather hook runs between forward
-        # and backward in production). Backward then writes
-        # ``param.grad`` against the real storage's shape, but the
-        # earlier shape recording happened against the placeholder —
-        # so a regression in the placeholder's reported shape would
-        # surface as the ``ToCopyBackward0 ... shape compatible with
-        # [0]`` autograd error class that M6C-fix-7 closes.
+        # Rebind to real storage before backward; a placeholder-shape regression would surface as a ToCopyBackward0 error.
         real_data = torch.randn(*real_shape, dtype=dtype, device="cuda")
         param.data = real_data
 
@@ -540,8 +398,8 @@ def test_autograd_shape_capture_on_released_param() -> None:
         assert param.grad is not None
         assert param.grad.shape == torch.Size(real_shape), (
             f"autograd recorded the WRONG shape: expected {real_shape}, "
-            f"got {tuple(param.grad.shape)} — the M6C-fix-7 "
-            f"shape-preserving placeholder invariant has regressed."
+            f"got {tuple(param.grad.shape)} — the shape-preserving "
+            f"placeholder invariant has regressed."
         )
 
         # Also exercise the post-gather steady-state forward+backward
@@ -563,29 +421,7 @@ def test_autograd_shape_capture_on_released_param() -> None:
 
 @pytest.mark.gpu
 def test_release_state_placeholder_is_write_unsafe() -> None:
-    """M6C-fix-8 root-cause pin: the expand placeholder is NOT write-safe.
-
-    The shape-preserving placeholder is a ``scratch.expand(slot.shape)``
-    zero-stride view. ``.size()`` / ``.shape`` / ``.dim()`` return the
-    real values (M6C-fix-7 invariant — see
-    ``test_release_state_preserves_shape``), but any in-place WRITE
-    fails with PyTorch's shared-storage hazard:
-
-        RuntimeError: unsupported operation: more than one element of
-        the written-to tensor refers to a single memory location.
-
-    This is the exact failure that DDP's ``_sync_module_states``
-    (``dist._broadcast_coalesced``) hits at construction time on the
-    multi-GPU sharded path — DDP iterates ``named_parameters()`` and
-    broadcasts rank-0's bytes into every rank's tensor, the broadcast
-    writes IN-PLACE into the placeholder, and every rank fails. See
-    ``model_wrapper.py``'s M6C-fix-8 block for the
-    ``model._ddp_params_and_buffers_to_ignore`` workaround.
-
-    This test pins the underlying invariant so future "let's just make
-    DDP write to it" attempts trip a unit test before they trip a
-    multi-GPU integration test.
-    """
+    """The expand placeholder is NOT write-safe: any in-place write trips PyTorch's shared-storage hazard (DDP broadcast root cause)."""
     pytest.importorskip("torch")
     import torch
 
@@ -607,7 +443,7 @@ def test_release_state_placeholder_is_write_unsafe() -> None:
         placeholder = mgr._shape_preserving_placeholder(
             torch.Size([hidden, hidden]), torch.float32
         )
-        # Shape preserved (M6C-fix-7 invariant).
+        # Shape preserved by the placeholder.
         assert placeholder.shape == torch.Size([hidden, hidden])
         # Storage points at the per-dtype scratch (1 element).
         assert placeholder.untyped_storage().nbytes() == placeholder.element_size()
@@ -624,22 +460,7 @@ def test_release_state_placeholder_is_write_unsafe() -> None:
 
 @pytest.mark.gpu
 def test_chunk_managed_param_names_excludes_persistent() -> None:
-    """M6C-fix-8 helper invariant.
-
-    ``ChunkManager.chunk_managed_param_names()`` must return EXACTLY the
-    param names whose backing chunks are non-persistent (the ones whose
-    ``param.data`` is currently the released-state expand placeholder
-    on the M6C-fix-7 path). Persistent-chunk params must NOT appear:
-    they live on GPU through the released window, never trip the
-    write-hazard, and DO need DDP's standard broadcast/allreduce.
-
-    This is the load-bearing invariant for the
-    ``model._ddp_params_and_buffers_to_ignore`` registration in
-    ``model_wrapper.py`` — the wrong set passed to DDP would either
-    leave the hazard in (false negatives — broadcast still tries to
-    write the placeholder) or skip persistent params (false positives
-    — persistent param weights would diverge across ranks).
-    """
+    """``chunk_managed_param_names()`` returns exactly the non-persistent param names that DDP must skip on broadcast."""
     pytest.importorskip("torch")
     import torch
 
@@ -695,22 +516,7 @@ def test_chunk_managed_param_names_excludes_persistent() -> None:
 
 @pytest.mark.gpu
 def test_release_state_is_write_safe_through_gather_round_trip() -> None:
-    """M6C-fix-8 gather-roundtrip safety.
-
-    The released-state placeholder is write-UNSAFE by construction
-    (see ``test_release_state_placeholder_is_write_unsafe``), but the
-    chunk manager's gather path must NEVER trigger an in-place write
-    against it. ``gather()`` rebinds ``param.data`` to a fresh GPU
-    typed-view of the pool buffer BEFORE any caller can write to the
-    param; the H2D copy that fills the buffer writes into the buffer
-    slice (a fresh contiguous view), not into the still-released
-    placeholder.
-
-    This test pins that ordering: a forward pass that consumes the
-    gathered param (potentially writing to it via in-place ops the
-    caller chose to dispatch) must succeed without tripping the
-    shared-storage hazard.
-    """
+    """Gather must rebind ``param.data`` to fresh storage before any write so the write-unsafe placeholder is never written to."""
     pytest.importorskip("torch")
     import torch
 

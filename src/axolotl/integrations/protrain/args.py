@@ -72,10 +72,9 @@ _PROTRAIN_PLUGIN_KEYS = frozenset(
 #   ``GpuFusedAdamAdapter`` (Apex FusedAdam, falls back to
 #   ``torch.optim.AdamW``) for persistent chunks and
 #   ``CpuFusedAdamAdapter`` (DeepSpeedCPUAdam) for non-persistent chunks.
-# * ``adamw_8bit`` / ``adamw_bnb_8bit`` / ``paged_adamw_8bit`` (M2.5) —
+# * ``adamw_8bit`` / ``adamw_bnb_8bit`` / ``paged_adamw_8bit`` —
 #   route persistent chunks through ``GpuAdamW8bitAdapter``
-#   (``bnb.optim.AdamW8bit`` / ``bnb.optim.PagedAdamW8bit``); see
-#   ``api/optim_wrapper._BNB_8BIT_OPTIMIZERS``.
+#   (``bnb.optim.AdamW8bit`` / ``bnb.optim.PagedAdamW8bit``).
 #
 # All other optimizer names (Lion, Adafactor, GaLore, Sophia, Muon,
 # torchao, plain SGD, etc.) have state shapes that do not match the
@@ -301,10 +300,7 @@ class ProTrainArgs(BaseModel):
         },
     )
 
-    # ------------------------------------------------------------------
-    # Optimizer-state checkpoint/resume (CHECKPOINT_DESIGN.md Phase 1,
-    # CHECKPOINT_DESIGN_PHASE2.md Modes B + C)
-    # ------------------------------------------------------------------
+    # Optimizer-state checkpoint/resume.
 
     protrain_save_optimizer_state: bool | None = Field(
         default=False,
@@ -551,24 +547,7 @@ class ProTrainArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_unsupported_optimizer(cls, data):
-        """Reject ``cfg.optimizer`` values that ProTrain's adapters cannot drive.
-
-        ProTrain's per-chunk optimizer wrapper only knows AdamW-shaped
-        state (see :data:`_SUPPORTED_OPTIMIZERS` and
-        ``api/optim_wrapper.protrain_optimizer_wrapper``). Unsupported
-        optimizers (Lion, Adafactor, GaLore, Sophia, Muon, torchao, plain
-        SGD, ...) silently corrupt the chunk manager because their per-
-        param state shapes don't match what the adapter expects. We
-        catch the misconfiguration here rather than letting it surface
-        as a confusing crash deep inside the chunk-manager step path.
-
-        Compares case-insensitively (``str(...).strip().lower()``) to
-        match :func:`api.optim_wrapper._normalize_optimizer_name`. A
-        missing / ``None`` ``optimizer`` is permitted: Axolotl's training
-        schema picks a supported default (``adamw_torch_fused``) when
-        the user omits it, so this validator must not over-reject the
-        unset case.
-        """
+        """Reject ``cfg.optimizer`` values that ProTrain's adapters cannot drive."""
         if not isinstance(data, dict):
             return data
         if not data.get("protrain_auto_memory"):

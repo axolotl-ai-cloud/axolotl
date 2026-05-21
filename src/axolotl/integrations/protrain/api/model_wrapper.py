@@ -99,41 +99,7 @@ def _sku(device: "torch.device | str") -> str:
 
 
 def _detect_dominant_param_bytes_per_element(model: nn.Module) -> float:
-    """Return the modal logical bytes-per-element across the model's params.
-
-    Drives the per-dtype alpha fragmentation factor lookup in
-    :func:`axolotl.integrations.protrain.cost.memory.alpha_fragmentation_for_dtype`
-    via :attr:`HardwareProfile.dominant_param_bytes_per_element`.
-    Coverage audit Block G found that alpha=1.10 over-predicts bnb 4-bit
-    Mode-A peak by ~37%, while fp16/bf16/8-bit predictors are
-    slightly conservative within tolerance — so this signal needs
-    to distinguish 4-bit from everything else.
-
-    Detection rules:
-
-    - ``bitsandbytes.nn.Params4bit`` instances are mapped to 0.5
-      bytes-per-logical-element regardless of their storage dtype
-      (``Params4bit`` stores its weights as a packed uint8 tensor
-      with two 4-bit values per byte, so ``param.element_size()``
-      returns 1 even though each logical weight occupies half a
-      byte). Detection is by ``isinstance(p, Params4bit)`` when
-      bitsandbytes is importable; for envs without bnb the path is
-      skipped and the storage byte size wins.
-    - Every other parameter contributes its ``param.element_size()``
-      directly (fp32→4, fp16/bf16→2, int8/uint8→1).
-
-    "Dominant" = the bytes-per-element value that accounts for the
-    most aggregate logical-element count across params (weighted
-    sum), not a simple count of params. This biases the detection
-    toward the base-model weight dtype rather than letting a few
-    auxiliary fp32 params (e.g. layer-norm scales) override the
-    classification on a quantized model.
-
-    Falls back to 2.0 (fp16/bf16) when the model has no parameters
-    or when every aggregate accumulator is zero — matches the
-    :class:`HardwareProfile` default so the per-dtype lookup picks
-    the conservative alpha=1.10 ceiling.
-    """
+    """Return the modal logical bytes-per-element across the model's params."""
     # Best-effort detection of bnb 4-bit param class. The import is
     # behind a try/except because bitsandbytes is an optional dep —
     # CPU-only test rigs and minimal installs may not have it.
@@ -390,99 +356,7 @@ def predict_init_transient_peak_bytes(
     hw: HardwareProfile,
     chunk_manager=None,
 ) -> int:
-    """Predict the GPU high-water mark during the init transient window.
-
-    Coverage audit Block G (Phase 2) observed a 6.9x iter-1 transient peak
-    in bnb-4-bit Mode-C (chunk-offload) runs vs. the steady-state predictor:
-
-    +-----------------------------------------+---------+---------+---------+
-    | Config                                  | pred GiB| meas it1| meas std|
-    +-----------------------------------------+---------+---------+---------+
-    | ext_30b_safe seq=512 4-bit Mode-C       |  2.49   |  17.20  |  2.91   |
-    | A1 30B seq=1024  4-bit Mode-C           |  2.50   |  17.20  |  3.50   |
-    | A2 30B seq=2048  4-bit Mode-C           |  2.54   |  17.20  |  4.68   |
-    +-----------------------------------------+---------+---------+---------+
-
-    The 17.20 GiB peak is NOT a fragmentation phenomenon — it is the
-    chunked pool's GPU-resident model-load window BEFORE
-    :meth:`ChunkManager.materialize_offload` runs. HF Trainer constructs
-    the model fully on GPU; ProTrain then discharges every non-persistent
-    chunk to pinned CPU memory. Between those two events the peak briefly
-    resembles ``sum_chunk_bytes x alpha`` (full-residence pool + cudactx
-    overhead), while the steady predictor reports
-    ``persistent_subset x alpha`` (only the persistent chunks survive
-    materialize_offload).
-
-    This function returns the transient prediction so the searcher's
-    feasibility gate can see both numbers and warn when an otherwise-
-    feasible steady config will OOM during init. The runtime already
-    logs both values today ("alloc 17.20 -> 2.08 GB (torch measured)");
-    surfacing the predicted transient lets us catch the OOM at search
-    time rather than at iter 1.
-
-    Formula
-    -------
-
-    Let ``sum_chunk_bytes`` be the sum of per-chunk param bytes across
-    the entire layout (every chunk, persistent and non-persistent —
-    the full GPU-resident model at init). When ``chunk_manager`` is
-    provided, this is computed exactly via :func:`_chunk_bytes`;
-    otherwise it falls back to the layout's soft-cap upper bound
-    ``N_chunk * S_chunk`` (over-predicts by ~10-20% under typical
-    greedy packing).
-
-    The transient peak is
-
-        ``predicted = sum_chunk_bytes * ALPHA_FRAGMENTATION``
-
-    where ``ALPHA_FRAGMENTATION`` is the fp16/bf16 paper default
-    (1.10) — NOT the per-dtype alpha from
-    :func:`alpha_fragmentation_for_dtype`.
-
-    Architectural decision (audit Block G)
-    --------------------------------------
-
-    The per-dtype alpha lookup
-    (``{fp16/bf16/8-bit: 1.10, bnb-4-bit: 0.75}``) was calibrated
-    against the *steady-state* peak, where fp16 activation / grad
-    streams overlap with the on-GPU param subset. For bnb-4-bit
-    weights the relative fragmentation cost shrinks because params
-    occupy 0.5 B/element vs. activations' 2 B/element, so the
-    steady-state alpha drops to 0.75.
-
-    At the iter-1 init transient, however, the GPU contains only
-    raw model bytes + CUDA context overhead — no activations,
-    no gradient buffers, no recompute windows. The alpha=0.75 reduction
-    does NOT apply: the under-prediction observed in the audit
-    (15.27 GiB x 0.75 = 11.45 GiB vs. measured 17.20 GiB → ~50%
-    under-call) is too large a safety regression. Empirically
-    alpha=1.10 holds across the three Block-G data points:
-
-        ``15.27 GiB * 1.10 = 16.80 GiB``  (vs. measured 17.20 GiB,
-                                          residual within 3%)
-
-    See the audit report at
-    ``/home/rgilbreth/Desktop/ProTrain/coverage_audit_close_report.md``
-    Block G for the underlying empirical derivation.
-
-    Args:
-        layout: The chunk layout. ``N_chunk * S_chunk`` is used as the
-            upper-bound fallback when ``chunk_manager`` is None.
-        hw: HardwareProfile. The ``dominant_param_bytes_per_element``
-            field is read for logging / future per-dtype refinement;
-            today the alpha=1.10 ceiling is dtype-agnostic for the reasons
-            documented above.
-        chunk_manager: Optional ChunkManager handle. When provided,
-            ``_chunk_bytes(layout, chunk_manager)`` is summed for the
-            exact GPU-resident byte total; otherwise the loose
-            ``N_chunk * S_chunk`` upper bound is used.
-
-    Returns:
-        Predicted init-transient peak in bytes. Returns 0 when
-        ``N_chunk`` is 0 (degenerate empty layout) so the SearchResult
-        sentinel (``predicted_init_transient_peak_bytes == 0``) is
-        preserved.
-    """
+    """Predict the GPU high-water mark during the init transient window."""
     # Local import to avoid a module-level cost.memory dependency cycle
     # at import time (cost.memory pulls in profiler/types which would
     # otherwise drag this api module in via Python's circular import
@@ -1500,39 +1374,15 @@ def _construct_runtime(
         zero3_shard,
     )
 
-    # M6C-fix-7: shape-preserving release-state placeholders. PEFT's
-    # ``LoraLayer.forward`` on multi-GPU sharded non-persistent chunks
-    # at production scale (32-layer Llama-3-8B x 4 ranks x heavy
-    # pool-eviction pressure) hits a rare race window where an autograd
-    # op records its input shape against a still-``torch.Size([0])``
-    # placeholder before the per-LoRA-container gather hook's rebind
-    # takes effect — surfacing at backward as ``RuntimeError: Function
-    # ToCopyBackward0 returned an invalid gradient ... expected shape
-    # compatible with [0]`` (the multi-GPU plain-LoRA Mode C cross-mode
-    # resume xfail in tests/protrain/test_cross_mode_resume.py).
-    #
-    # The shape-preserving placeholder closes the window architecturally:
-    # the post-release ``param.data`` is a zero-stride view over a
-    # 1-element per-dtype scratch (``scratch.expand(slot.shape)``), so
-    # ``param.size()`` returns the real logical shape regardless of
-    # where in the gather→forward sequence an autograd op records its
-    # metadata. See ChunkManager.__init__ + tests/protrain/
-    # test_param_data_shape_preservation.py for the architectural
-    # invariant.
-    #
-    # Engagement policy: enable ONLY on the multi-GPU sharded
-    # zero3_shard path. The single-GPU / replicated paths keep the
-    # legacy ``torch.Size([0])`` placeholder so the wide test surface
-    # asserting ``param.data.numel() == 0`` post-offload
-    # (test_chunk_manager_offload.py, test_offload_mode_m{2,3}.py,
-    # test_lora_offload_mode.py, test_fused_lora_kernels.py,
-    # test_multi_gpu_7b.py, test_profiler.py — 14+ assertions across
-    # 7 files) continues to hold without modification. The
-    # ``zero3_shard`` gate is the same one that auto-detected the
-    # multi-rank multi-GPU sharded path above (lines around 1250);
-    # single-rank tests with ``zero3_shard=True`` (which silently
-    # degrades to ``False`` inside ChunkManager.__init__) also keep
-    # the legacy placeholder.
+    # Shape-preserving release-state placeholders close a multi-GPU
+    # sharded PEFT race where autograd recorded ``torch.Size([0])`` on
+    # the placeholder before the per-container gather hook rebound it,
+    # yielding ``ToCopyBackward0`` shape mismatches at backward. The
+    # zero-stride view over a per-dtype scratch keeps ``param.size()``
+    # reporting the real logical shape regardless of gather ordering.
+    # Engaged only on the multi-GPU sharded zero3_shard path so existing
+    # single-GPU / replicated tests asserting ``param.data.numel() == 0``
+    # post-offload continue to hold.
     _shape_preserving = bool(_zero3)
     chunk_manager = ChunkManager(
         model=model,
@@ -1602,15 +1452,9 @@ def _construct_runtime(
         block_map=result.block_map,
         hw=hardware_profile,
     )
-    # ---- iter-1 init-transient peak prediction (audit Block G follow-up) -
     # Predict the GPU high-water mark during the brief window between
-    # full-model GPU construction and ``materialize_offload``. Coverage
-    # audit Block G observed this transient is 6.9x the steady predictor
-    # for bnb-4-bit Mode-C; surfacing it on SearchResult lets downstream
-    # consumers (searcher feasibility gate, telemetry) catch
-    # init-window OOM before iter 1. See
-    # :func:`predict_init_transient_peak_bytes` for the empirical
-    # derivation.
+    # full-model GPU construction and ``materialize_offload`` so the
+    # searcher / telemetry can flag init-window OOM ahead of iter 1.
     init_transient_peak = predict_init_transient_peak_bytes(
         layout, hardware_profile, chunk_manager
     )
@@ -1693,13 +1537,12 @@ def _construct_runtime(
     )
     _sys2.stderr.flush()
 
-    # ---- 4.5b: DDP-ignore the chunk-managed params (M6C-fix-8) ---------
+    # ---- 4.5b: DDP-ignore the chunk-managed params ---------------------
     # On the multi-GPU sharded path we engaged
     # ``shape_preserving_placeholders=True`` above. The released-state
     # ``param.data`` is now a ``scratch.expand(slot.shape)`` zero-stride
-    # view: shape-preserving (autograd-safe — closes the M6C-fix-7
-    # race window) but NOT write-safe (multiple logical positions share
-    # one physical element).
+    # view: shape-preserving (autograd-safe) but NOT write-safe (multiple
+    # logical positions share one physical element).
     #
     # Downstream, ``transformers.Trainer._prepare_for_training`` calls
     # ``self.accelerator.prepare(model, optimizer)`` which wraps the
@@ -1715,9 +1558,7 @@ def _construct_runtime(
     #     Please clone() the tensor before performing the operation.
     #
     # Failure is universal across all 4 ranks at DDP construction time,
-    # BEFORE the trainer's training loop starts. See
-    # ``/home/rgilbreth/Desktop/ProTrain/m0_artifacts/m6c_fix7_modeC_resume.log``
-    # for the multi-rank trace.
+    # BEFORE the trainer's training loop starts.
     #
     # Architecturally the fix is a no-op on correctness: ProTrain owns
     # the parallelism contract for chunk-managed params. Init-time
@@ -1747,7 +1588,7 @@ def _construct_runtime(
     # ``_shape_preserving`` gate guarantees we only set the ignore
     # attribute on the path that needs it.
     if _shape_preserving:
-        # M6C-fix-8 (DDP-init-sync bypass). Empirically, registering
+        # Empirically, registering
         # ``model._ddp_params_and_buffers_to_ignore`` is INSUFFICIENT
         # on the production multi-GPU sharded path even when 100 % of
         # chunk-managed names match ``model.named_parameters()``
@@ -1898,7 +1739,7 @@ def _construct_runtime(
         # place would silently desynchronize weights or gradients on
         # the rebuilt runtime because:
         #
-        # - ``_protrain_ddp_skip_init_sync`` ⇒ the M6C-fix-8 monkey-
+        # - ``_protrain_ddp_skip_init_sync`` ⇒ the monkey-
         #   patch on ``DDP.__init__`` skips ``init_sync`` entirely on
         #   the rebuilt model, even though replicated Mode A NEEDS
         #   the init-time broadcast (every rank loaded the same
@@ -1938,7 +1779,7 @@ def _construct_runtime(
                     pass
                 LOG.info(
                     "ProTrain (D1): rebuild path detected — stripped stale "
-                    "M6C-fix-8 DDP skip state from model so the rebuilt "
+                    "DDP skip state from model so the rebuilt "
                     "runtime (non-shape-preserving) receives normal "
                     "init_sync + backward allreduce semantics."
                 )
@@ -2189,32 +2030,17 @@ def _construct_runtime(
     )
 
     # ---- 6.5: post-wrap re-registration of ``_ddp_params_and_buffers_to_ignore``
-    # (CodeRabbit R4 Critical).
     #
-    # The M6C-fix-8 registration earlier in this function (line 1852
-    # and ``ChunkManager.materialize_offload``'s D2 registration site)
-    # populated the ignore set from
-    # ``chunk_manager.chunk_managed_param_names()``, which returns
-    # ``slot.param_id`` strings captured at ChunkManager construction
-    # time — BEFORE the block-wrap step at line 2018+ ran. The block
-    # wrappers (``block/checkpoint.py``, ``block/swap.py``,
-    # ``block/offload.py``) all bind the wrapped module as
-    # ``self.block = block``, which means PyTorch's
-    # ``named_parameters()`` traversal now injects a ``.block.`` infix
-    # into the parameter namespace (``layers.0.attn.q_proj.weight``
-    # ⇒ ``layers.0.block.attn.q_proj.weight``).
-    #
-    # The M6C-fix-8 ``init_sync=False`` monkey-patch on DDP's
-    # ``__init__`` makes the init-time broadcast irrelevant to the
-    # ignore-list contents (the broadcast is skipped wholesale on the
-    # chunk-managed model). But DDP's BACKWARD-pass allreduce still
-    # consults ``_ddp_params_and_buffers_to_ignore`` when deciding
-    # which parameters to reduce — and that consultation uses the
-    # POST-wrap parameter names returned by the model's
-    # ``named_parameters()`` walk at DDP construction time. A stale
-    # ignore set (pre-wrap names) means DDP's backward allreduce
-    # would attempt to all-reduce the chunk-managed LoRA factors'
-    # gradients, conflicting with ProTrain's per-chunk
+    # The earlier ignore-set registration used pre-block-wrap param names
+    # from ``chunk_manager.chunk_managed_param_names()``. Block wrappers
+    # (``block/checkpoint.py``, ``block/swap.py``, ``block/offload.py``)
+    # rebind the wrapped module as ``self.block = block``, so PyTorch's
+    # ``named_parameters()`` now injects a ``.block.`` infix
+    # (``layers.0.attn.q_proj.weight`` ⇒
+    # ``layers.0.block.attn.q_proj.weight``). DDP's backward allreduce
+    # consults ``_ddp_params_and_buffers_to_ignore`` using post-wrap
+    # names, so a stale ignore set would let DDP all-reduce
+    # chunk-managed grads in conflict with ProTrain's per-chunk
     # ``reduce_scatter`` drain.
     #
     # The chunk_manager's slot.param_id strings can't be rebuilt
@@ -2811,10 +2637,9 @@ def protrain_model_wrapper(
         _hw_updates["pcie_h2d_bps"] = trace.pcie_h2d_bps
     if hardware_profile.pcie_d2h_bps <= 13e9 + 1e6 and trace.pcie_d2h_bps > 13e9 + 1e6:
         _hw_updates["pcie_d2h_bps"] = trace.pcie_d2h_bps
-    # Detect dominant param dtype for the per-dtype alpha fragmentation
-    # lookup (Coverage audit Block G). Default 2.0 (fp16/bf16) means
-    # the cost model lands at alpha=1.10; bnb-4-bit weights drop the
-    # dominant bpe to 0.5 which lands at alpha=0.75. Only stamp the
+    # Detect dominant param dtype to drive the per-dtype alpha
+    # fragmentation lookup. Default 2.0 (fp16/bf16) → alpha=1.10;
+    # bnb-4-bit weights drop bpe to 0.5 → alpha=0.75. Only stamp the
     # profile when the detection differs from the caller-provided
     # value AND the caller passed the default — so tests that
     # explicitly hand-craft a profile with a specific bpe keep it.
@@ -3522,23 +3347,14 @@ def protrain_model_wrapper(
                     block_map=new_result.block_map,
                     hw=hardware_profile,
                 )
-                # Iter-1 transient prediction (audit Block G follow-up).
                 # The init transient window has already passed by the
-                # time the phase-2 post-measurement calibration runs,
-                # so we REUSE the bootstrap-time prediction rather than
-                # recomputing from the post-offload chunk_manager.
-                # CodeRabbit R4-#2 (Major): re-computing here would
-                # drift the value — the chunk_manager has been through
-                # ``materialize_offload`` since the bootstrap call, so
-                # its ``_chunk_bytes()`` walk now sees the zero-size
-                # placeholders (replicated path) or
-                # ``scratch.expand(slot.shape)`` views (sharded path)
-                # rather than the full-residence tensors that drive
-                # the init-time peak. The bootstrap value captured at
-                # ``_construct_runtime`` line 1614 is the authoritative
-                # one for the iter-1 transient and is what every
-                # downstream consumer (SearchResult publish, LOG.info
-                # at line 3620) expects.
+                # time post-measurement calibration runs, so we REUSE
+                # the bootstrap-time prediction rather than recomputing
+                # from the post-offload chunk_manager — its
+                # ``_chunk_bytes()`` walk now sees zero-size placeholders
+                # (replicated path) or ``scratch.expand(slot.shape)``
+                # views (sharded path) rather than full-residence
+                # tensors that drove the init-time peak.
                 init_transient_peak = boot_result.predicted_init_transient_peak_bytes
                 if (
                     calibrated_peak != new_result.predicted_peak_bytes
@@ -3682,20 +3498,10 @@ def protrain_model_wrapper(
     # Carry the user-supplied cache_dir so post_trainer_create's NCCL
     # re-measure path can persist the spliced trace under the same root.
     wrapped._cache_dir = cache_dir  # type: ignore[attr-defined]
-    # Carry the override-skip flag through so the plugin's
-    # ``_remeasure_nccl_and_research`` path (post_trainer_create) can
-    # ALSO short-circuit when the user pinned every layout knob via
-    # explicit overrides. Without this, the late re-search (which runs
-    # after the post-bootstrap NCCL benchmark splices real tables into
-    # the trace) would re-invoke ``search()`` and may pick a different
-    # plan than the bootstrap; the runtime is already wired for the
-    # bootstrap plan and cannot be rebuilt mid-flight, so the helper
-    # would raise ``RuntimeError("ProTrain: late NCCL re-search picked
-    # a different plan than the bootstrap.")``. The user's explicit
-    # override knobs are documented to pin the plan; ``cfg`` was
-    # synthesized from those knobs (no searcher / cost-model input on
-    # this branch — see ``all_overrides_set`` branch above), so the
-    # late-search outcome is meaningless on this path. M6C-fix-5.
+    # Carry the override-skip flag so the plugin's late NCCL re-search
+    # also short-circuits when the user pinned every layout knob via
+    # explicit overrides — the runtime is already wired for the
+    # bootstrap plan and cannot be rebuilt mid-flight.
     wrapped._override_skip_trace = bool(_override_skip_trace)  # type: ignore[attr-defined]
     return wrapped
 

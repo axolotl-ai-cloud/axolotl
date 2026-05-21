@@ -1,50 +1,4 @@
-"""Resume robustness regression sweep (D1/D2/D3 in-process rebuild lifecycle).
-
-The existing :mod:`test_cross_mode_resume` tests cover the cross-mode A↔C
-state_dict round-trip but never call :meth:`ChunkManager.restore_to_gpu` /
-:meth:`ChunkManager.materialize_offload` a second time on the same
-manager instance — the actual hot path the production resume hook
-(``plugin._install_resume_hook``) takes. This module pins that
-in-process rebuild cycle so the D1/D2/D3 lifecycle fixes don't
-regress:
-
-* **D2 — replace, don't union, the DDP ignore set.** Calling
-  ``materialize_offload`` twice on the same chunk manager used to grow
-  ``model._ddp_params_and_buffers_to_ignore`` unboundedly because the
-  second call unioned the new protrain set into the previous protrain
-  set; a chunk that moved between persistent/non-persistent between
-  calls would stay in the ignore set forever and DDP would silently
-  skip syncing a now-live weight. The fix snapshots the pre-protrain
-  value once into ``model._protrain_ddp_original_ignore`` and rebuilds
-  from that canonical baseline on every call. Tests:
-  :func:`test_ddp_ignore_set_does_not_grow_on_repeat_materialize` and
-  :func:`test_ddp_ignore_snapshot_survives_restore_and_rematerialize`.
-
-* **D3 — shutdown previous CPU adapter before swap.**
-  ``protrain_optimizer_wrapper`` rebuilds adapters in place and the
-  pre-existing ``chunk_manager.cpu_optim`` owns a live
-  ``ThreadPoolExecutor`` + DeepSpeed C-state. The fix calls
-  ``shutdown()`` on the old reference before assigning the new one,
-  matching the resume hook's existing teardown at the plugin layer.
-  Test: :func:`test_cpu_optim_replaced_calls_shutdown_on_previous`.
-
-* **D1 — strip stale DDP skip state on non-shape-preserving rebuild.**
-  A future Mode C → Mode A/B rebuild path (or a stale single-GPU
-  re-wrap after a shape-preserving wrap) must not leave
-  ``_protrain_ddp_skip_init_sync`` on the model — DDP's init-time
-  broadcast is required for normal Mode A replicated semantics. Test:
-  :func:`test_rewrap_non_shape_preserving_clears_ddp_skip_state`.
-
-Plus an end-to-end smoke that simulates the resume hook's full
-:meth:`restore_to_gpu` → load-state-dict → :meth:`materialize_offload`
-cycle on the same chunk manager, then continues training and asserts
-finite losses + monotonic-ish loss descent: :func:`test_resume_hook_inprocess_cycle_continues_training`.
-
-All tests are GPU-marked (require CUDA at runtime) and skip cleanly
-on CPU-only rigs. They use a tiny LlamaForCausalLM + LoRA model so
-the wall-clock per case is sub-second; the sweep can run on a single
-3090 in ~5 seconds.
-"""
+"""In-process rebuild lifecycle invariants: DDP ignore rebuilds from snapshot, CPU adapter shuts down before swap, stale skip-state clears on non-shape-preserving rewrap."""
 
 from __future__ import annotations
 
@@ -54,11 +8,7 @@ import pytest
 
 
 def _build_tiny_lora_model():
-    """A minimal LoRA-on-Llama setup that fits the chunk manager + searcher.
-
-    Mirrors :func:`tests.protrain.test_cross_mode_resume._build_tiny_llama_lora`
-    so the two test suites share a single canonical small-model recipe.
-    """
+    """Minimal LoRA-on-Llama setup small enough for the chunk manager + searcher to fit on any test rig."""
     pytest.importorskip("peft")
     pytest.importorskip("transformers")
 
@@ -104,19 +54,7 @@ def _wrap_protrain(
     n_offload_override: int | None = None,
     small_chunk: bool = False,
 ):
-    """Wrap a model in ProTrain and return the wrapped runtime + optimizer.
-
-    Override knobs are forwarded straight through to
-    ``protrain_model_wrapper`` so individual tests can force
-    non-persistent chunks (``n_persist_override=0``) — necessary to
-    exercise the CPU-adapter path on a tiny model where the searcher
-    would otherwise pick ``n_persist == N_chunk`` and no
-    ``CpuFusedAdamAdapter`` would be constructed.
-
-    ``small_chunk=True`` monkey-patches ``pick_S_chunk`` so the layout
-    builder produces multiple chunks even on the tiny test model,
-    matching the pattern used in ``test_lora_offload_mode``.
-    """
+    """Wrap a model in ProTrain; small_chunk + overrides let tests force the CPU-adapter / non-persistent paths the searcher would otherwise skip."""
     import torch
 
     from axolotl.integrations.protrain.api import (
@@ -194,15 +132,7 @@ def _make_batch(cfg):
 
 @pytest.mark.gpu
 def test_ddp_ignore_set_does_not_grow_on_repeat_materialize() -> None:
-    """D2 invariant: a second ``materialize_offload`` does NOT grow the
-    DDP ignore set.
-
-    Construct a chunk manager with shape-preserving placeholders (the
-    multi-GPU sharded path's flag), run ``materialize_offload`` once
-    and record the ignore set size, then run it again on the same
-    manager (simulating the resume-hook cycle) and verify the size is
-    identical — not the sum of the two protrain sets.
-    """
+    """A second materialize_offload must not grow the DDP ignore set; rebuild from the original snapshot, do not union."""
     pytest.importorskip("torch")
     import torch
 
@@ -281,14 +211,7 @@ def test_ddp_ignore_set_does_not_grow_on_repeat_materialize() -> None:
 
 @pytest.mark.gpu
 def test_ddp_ignore_snapshot_survives_restore_and_rematerialize() -> None:
-    """D2 + teardown: a pre-existing user value in
-    ``_ddp_params_and_buffers_to_ignore`` is preserved across the
-    materialize_offload cycle AND restored on close.
-
-    Set a fake pre-existing ignore name on the model before wrapping,
-    then verify the snapshot captures it, the protrain set merges with
-    it correctly, and ``wrapped.close()`` restores the original value.
-    """
+    """Pre-existing _ddp_params_and_buffers_to_ignore is preserved across materialize_offload and restored on close()."""
     pytest.importorskip("torch")
     import torch
 
@@ -350,17 +273,7 @@ def test_ddp_ignore_snapshot_survives_restore_and_rematerialize() -> None:
 
 @pytest.mark.gpu
 def test_cpu_optim_replaced_calls_shutdown_on_previous() -> None:
-    """D3 invariant: re-running ``protrain_optimizer_wrapper`` on the
-    same wrapped runtime calls ``shutdown()`` on the previous
-    ``chunk_manager.cpu_optim`` before installing the new one.
-
-    Forces non-persistent chunks via ``force_all_persistent=False`` +
-    explicit overrides + ``small_chunk=True`` so the tiny test model
-    actually produces a ``CpuFusedAdamAdapter``. Without the
-    overrides + small_chunk the searcher picks
-    ``n_persist == N_chunk == 1`` and no CPU adapter is built — the
-    test would then silently self-skip (CodeRabbit R3-#6).
-    """
+    """Re-wrapping the optimizer must call shutdown() on the previous cpu_optim before installing the new one."""
     pytest.importorskip("torch")
     import torch
 
@@ -402,11 +315,7 @@ def test_cpu_optim_replaced_calls_shutdown_on_previous() -> None:
         n_buffer_override=16,
         n_swap_override=0,
         n_checkpoint_override=0,
-        # All non-persistent transformer blocks in OFFLOAD mode
-        # (Option B) — saved tensors re-gather on backward via the
-        # M3 block manager's per-block hook rather than relying on
-        # NONE-mode hooks (which would clobber autograd's saved
-        # tensors when the chunk pool slot is reused).
+        # OFFLOAD mode re-gathers saved tensors on backward via the per-block hook, avoiding the NONE-mode chunk-slot-reuse hazard.
         n_offload_override=cfg.num_hidden_layers,
         small_chunk=True,
     )
@@ -455,15 +364,7 @@ def test_cpu_optim_replaced_calls_shutdown_on_previous() -> None:
 
 @pytest.mark.gpu
 def test_rewrap_non_shape_preserving_clears_ddp_skip_state() -> None:
-    """D1 invariant: rebuilding a model with non-shape-preserving wrap
-    clears any stale ``_protrain_ddp_skip_init_sync`` + ignore-list
-    state from a prior shape-preserving wrap.
-
-    Manually set the shape-preserving markers on a model (simulating
-    a prior Mode C wrap), then call ``protrain_model_wrapper`` with
-    ``force_all_persistent=True`` (Mode A — not shape-preserving) and
-    verify the markers are gone after the second wrap returns.
-    """
+    """Non-shape-preserving rewrap must clear stale _protrain_ddp_skip_init_sync and ignore-list state from a prior shape-preserving wrap."""
     pytest.importorskip("torch")
     import torch
 
@@ -509,25 +410,7 @@ def test_rewrap_non_shape_preserving_clears_ddp_skip_state() -> None:
 
 @pytest.mark.gpu
 def test_resume_hook_inprocess_cycle_continues_training() -> None:
-    """End-to-end resume robustness: train a few steps, simulate the
-    resume hook's restore_to_gpu → materialize_offload cycle in-process,
-    train more steps, and verify finite losses + continued descent.
-
-    This is the smallest cycle that exercises D1/D2/D3 together:
-
-    1. Wrap model in ProTrain offload mode (force_all_persistent=False
-       with ``n_persist_override=0`` so chunks are ACTUALLY offloaded;
-       without the override the searcher picks ``n_persist == N_chunk``
-       on a tiny model and ``materialize_offload`` becomes a no-op,
-       making the D2 hot path untested — CodeRabbit R3-#7).
-    2. Train 3 steps, capture state_dict.
-    3. Simulate the resume hook: explicitly tear down the CPU optim,
-       call ``restore_to_gpu``, load the state_dict, call
-       ``materialize_offload`` again, rebuild the optimizer wrapper.
-    4. Train 3 more steps from the resumed state.
-    5. Assert all losses are finite and the resumed run's first loss
-       is not catastrophically larger than the pre-resume tail.
-    """
+    """In-process resume hook cycle (restore_to_gpu, reload state_dict, re-materialize) must produce finite losses without catastrophic divergence."""
     pytest.importorskip("torch")
     import torch
 
@@ -571,16 +454,12 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
         n_buffer_override=16,
         n_swap_override=0,
         n_checkpoint_override=0,
-        # All non-persistent transformer blocks in OFFLOAD mode
-        # (Option B) — saved tensors re-gather on backward via the
-        # M3 block manager's per-block hook rather than relying on
-        # NONE-mode hooks (which would clobber autograd's saved
-        # tensors when the chunk pool slot is reused).
+        # OFFLOAD mode re-gathers saved tensors on backward via the per-block hook, avoiding the NONE-mode chunk-slot-reuse hazard.
         n_offload_override=cfg.num_hidden_layers,
         small_chunk=True,
     )
     try:
-        # ---- Phase 1: train 3 steps under the initial wrap ----------
+        # Train 3 steps under the initial wrap.
         losses_pre = [
             _train_one_step(wrapped, optim, input_ids=input_ids, labels=labels)
             for _ in range(3)
@@ -588,7 +467,7 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
         for i, lv in enumerate(losses_pre):
             assert math.isfinite(lv), f"phase 1 step {i}: non-finite loss {lv}"
 
-        # ---- Phase 2: simulate the resume hook's in-process cycle ---
+        # Simulate the resume hook's in-process cycle.
         underlying = getattr(wrapped, "module", wrapped)
         chunk_manager = wrapped.chunk_manager
         assert chunk_manager is not None
@@ -621,22 +500,13 @@ def test_resume_hook_inprocess_cycle_continues_training() -> None:
         }
         underlying.load_state_dict(saved_state, strict=False)
 
-        # Step 4: re-build the offload state. This is the D2 hot path —
-        # second materialize_offload on the same chunk manager. With
-        # ``n_persist_override=0`` + ``n_offload_override=N_layers``
-        # this actually moves bytes (7 non-persistent chunks → pinned
-        # CPU pool) rather than being a no-op on a force-all-persistent
-        # config (CodeRabbit R3-#7).
+        # Second materialize_offload on the same manager actually moves bytes thanks to the non-persistent overrides.
         chunk_manager.materialize_offload()
 
-        # Step 5: rebuild the optimizer adapter (exercises D3 — the
-        # old cpu_optim is None at this point because of step 1, so
-        # this exercises the "no prior adapter" branch; a full test of
-        # the swap-without-shutdown path is in
-        # ``test_cpu_optim_replaced_calls_shutdown_on_previous`` above).
+        # Rebuild the optimizer adapter; cpu_optim is None here so this exercises the "no prior adapter" branch.
         optim_resumed = protrain_optimizer_wrapper(wrapped, lr=1e-3)
 
-        # ---- Phase 3: train 3 more steps after the simulated resume -
+        # Train 3 more steps after the simulated resume.
         losses_post = [
             _train_one_step(wrapped, optim_resumed, input_ids=input_ids, labels=labels)
             for _ in range(3)

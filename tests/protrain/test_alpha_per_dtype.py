@@ -1,24 +1,4 @@
-"""Pin the per-dtype alpha fragmentation factor lookup.
-
-Coverage audit Block G (Phase 2) re-derived the empirical alpha=1.10
-fragmentation factor against the M5 / M0-spike / Block-A matrices
-and found:
-
-- fp16 / bf16 (2 B/element): alpha_measured ≈ 0.96 → alpha=1.10 is mildly
-  conservative; keep.
-- bnb 8-bit (1 B/element): alpha_measured ≈ 0.93 → alpha=1.10 is mildly
-  conservative; keep. (Activation / gradient streams stay fp16
-  even when base weights are int8, so the fragmentation profile
-  is fp16-like.)
-- bnb 4-bit Mode-A (0.5 B/element via ``Params4bit``'s
-  2-elements-per-uint8 packing): alpha_measured ≈ 0.70 → alpha=1.10
-  over-predicts by ~37%. Drop to alpha=0.75 (slightly conservative
-  vs the empirical floor).
-
-This test pins the per-dtype lookup in
-``cost/memory.py::alpha_fragmentation_for_dtype`` so a future
-recalibration cannot silently regress the 4-bit branch.
-"""
+"""Pin the per-dtype alpha fragmentation factor lookup so the 4-bit branch can't silently regress."""
 
 from __future__ import annotations
 
@@ -32,8 +12,7 @@ from axolotl.integrations.protrain.cost.memory import (
 
 
 def test_constants_have_expected_values():
-    """Lock the two named constants so unrelated edits cannot drift
-    the calibration silently."""
+    """Lock the two named constants so unrelated edits cannot drift the calibration."""
     assert ALPHA_FRAGMENTATION == pytest.approx(1.10)
     assert ALPHA_FRAGMENTATION_4BIT == pytest.approx(0.75)
 
@@ -58,11 +37,7 @@ def test_alpha_lookup_by_dtype(bpe: float, expected_alpha: float, description: s
 
 
 def test_alpha_lookup_threshold_is_one_byte():
-    """The fp16/8-bit-vs-4-bit cutoff is exactly 1.0 B/element.
-
-    Values < 1.0 are routed to the 4-bit alpha; values >= 1.0 (including
-    exactly 1.0 for bnb int8) are routed to the fp16 alpha.
-    """
+    """The fp16/8-bit-vs-4-bit cutoff is exactly 1.0 B/element."""
     # Strictly below the cutoff — 4-bit branch.
     assert alpha_fragmentation_for_dtype(0.99) == pytest.approx(
         ALPHA_FRAGMENTATION_4BIT
@@ -74,15 +49,7 @@ def test_alpha_lookup_threshold_is_one_byte():
 
 
 def test_alpha_lookup_extreme_bpe_does_not_crash():
-    """Boundary / out-of-range inputs land in one of the two known branches.
-
-    A future calibration may add bands (e.g. fp4 vs nf4 at 0.5
-    B/element, fp8 at 1.0 B/element with a tighter alpha), but today
-    the function is binary: 4-bit branch (<1.0) vs fp16 branch
-    (>=1.0). Pin both extremes so a future refactor that introduces
-    NaN / zero / negative handling has to update this test on
-    purpose.
-    """
+    """Boundary / out-of-range inputs land in one of the two known branches."""
     # Tiny positive value — still routes to 4-bit branch.
     assert alpha_fragmentation_for_dtype(0.001) == pytest.approx(
         ALPHA_FRAGMENTATION_4BIT
@@ -100,10 +67,7 @@ def test_alpha_lookup_extreme_bpe_does_not_crash():
 
 
 def test_dominant_param_dtype_detector_default_for_fp16_model():
-    """The detector in ``model_wrapper`` returns 2.0 (fp16) for a
-    typical bf16 model — keeping the alpha=1.10 ceiling unchanged for
-    non-quantized callers.
-    """
+    """The detector returns 2.0 (fp16) for a typical bf16 model so non-quantized callers stay at alpha=1.10."""
     import torch
     from torch import nn
 
@@ -128,9 +92,7 @@ def test_dominant_param_dtype_detector_default_for_fp16_model():
 
 
 def test_dominant_param_dtype_detector_returns_default_on_empty_model():
-    """The detector falls back to 2.0 (fp16/bf16) when the model has
-    no parameters — matches the HardwareProfile default so the
-    cost model picks alpha=1.10 in the absence of signal."""
+    """The detector falls back to 2.0 (fp16/bf16) on a paramless model so the cost model picks alpha=1.10."""
     from torch import nn
 
     from axolotl.integrations.protrain.api.model_wrapper import (
@@ -144,9 +106,7 @@ def test_dominant_param_dtype_detector_returns_default_on_empty_model():
 
 
 def test_dominant_param_dtype_detector_classifies_int8_dominant_model():
-    """A model where the bulk of the logical-element mass is int8
-    (e.g. bnb 8-bit base) but with bf16 LoRA factors on top classifies
-    as bpe=1.0, landing on the conservative alpha=1.10."""
+    """An int8-dominant model with bf16 LoRA factors still classifies as bpe=1.0 and lands on alpha=1.10."""
     import torch
     from torch import nn
 
@@ -175,11 +135,7 @@ def test_dominant_param_dtype_detector_classifies_int8_dominant_model():
 
 
 def test_estimate_peak_uses_per_dtype_alpha():
-    """End-to-end pin: a HardwareProfile with bpe=0.5 makes
-    ``estimate_peak`` return the raw peak scaled by 0.75 (the 4-bit
-    alpha) instead of 1.10. With the default bpe=2.0 the existing 1.10
-    ceiling is preserved — matching every legacy test.
-    """
+    """End-to-end pin: bpe=0.5 makes ``estimate_peak`` scale by 0.75 (4-bit alpha) while bpe=2.0 stays at 1.10."""
     from axolotl.integrations.protrain.cost.memory import estimate_peak
     from axolotl.integrations.protrain.types import (
         BlockId,

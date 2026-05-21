@@ -1,71 +1,4 @@
-"""Cross-mode (Mode A ↔ Mode C) checkpoint resume smoke test (M6C).
-
-ProTrain has multiple operating modes:
-
-* Mode A: all chunks persistent on GPU (``force_all_persistent=True``).
-* Mode C: chunks sharded with offload (``zero3_shard=True``).
-
-Different modes have different chunk layouts and optimizer-state shapes.
-This module exercises whether a checkpoint saved in one mode loads cleanly
-in the other.
-
-Two layers of coverage:
-
-* **Single-process (synthetic) round-trip** — :func:`test_cross_mode_resume_a_to_c`
-  and :func:`test_cross_mode_resume_c_to_a`. Tiny Llama-arch LM, no CLI.
-  Pins the state-dict round-trip + re-wrap invariant. Note: under
-  ``world_size <= 1`` the wrapper auto-coerces ``zero3_shard`` to
-  ``False`` (see ``model_wrapper.py:1019-1023``), so these tests
-  exercise Mode A → Mode A with a different ``force_all_persistent``
-  setting — i.e., the round-trip path runs but the *sharded layout*
-  property the spec targets is NOT exercised. The next layer adds it.
-
-* **Real multi-GPU subprocess** — :func:`test_real_multigpu_cross_mode_resume_a_to_c`
-  and :func:`test_real_multigpu_cross_mode_resume_c_to_a`. Llama-3-8B +
-  LoRA on 4×3090 via ``accelerate launch`` (subprocess). With
-  ``world_size > 1`` the auto-coercion no longer fires and Mode C
-  actually engages chunk sharding. These tests are marked ``slow`` +
-  ``gpu`` and auto-skip when ``nvidia-smi`` reports < 4 GPUs.
-
-  Empirical state on the 4×3090 rig (commit ``91e0912e``): both
-  directions originally FAILED with structural bugs (see
-  ``ProTrain/m6c_real_multigpu_report.md``):
-
-  * A→C originally failed at HF Trainer's ``_load_from_checkpoint``
-    with ``size mismatch ... shape in current model is torch.Size([0])``
-    on every offloaded LoRA tensor. **M6C-fix-1 closes this gap** —
-    the resume hook (``plugin.py:_install_resume_hook``)
-    restore_to_gpu's the offloaded chunks, lets HF copy the loaded
-    weights into full-shape ``param.data`` slots, then re-runs
-    ``materialize_offload`` and rebuilds the optimizer adapter.
-  * **M6C-fix-7** closed the autograd shape-capture race window at
-    forward construction time via the shape-preserving expand
-    placeholder (``chunk/manager.py::_shape_preserving_placeholder``;
-    pinned by ``test_param_data_shape_preservation.py``). The 4×3090
-    multi-GPU verification leg then surfaced a follow-on DDP
-    ``_sync_module_states`` shared-storage hazard at construction
-    time (the expand placeholder is shape-preserving but not write-
-    safe; DDP's init-time broadcast tries to write it).
-  * **M6C-fix-8** closes that follow-on by auto-injecting
-    ``init_sync=False`` at DDP construction whenever the wrapped
-    module carries the ProTrain marker (set in
-    ``api/model_wrapper.py`` only on the multi-GPU sharded path).
-    Architectural rationale: every rank already agrees on init state
-    via ``materialize_offload``'s deterministic partition, so the
-    construction-time broadcast is redundant for replicated params
-    and INCORRECT for sharded params (broadcasting one rank's bytes
-    over all ranks would corrupt per-rank shards). The
-    ``_ddp_params_and_buffers_to_ignore`` registration also stays in
-    place so the backward-pass allreduce skips chunk-managed params.
-    Both ``test_real_multigpu_*`` tests now PASS on the 4×3090 rig.
-
-Substitution rationale (single-process tests): real LLaMA-3-8B + CLI
-subprocess invocations were the post-crash unsafe path at the time the
-synthetic tests were written; the tested invariant (state-dict
-round-trip across modes) is architecture-independent. The multi-GPU
-subprocess tests below are now also exercised because the P2P fix in
-commit ``91e0912e`` made 4×3090 launches stable.
-"""
+"""Cross-mode (Mode A persistent vs Mode C sharded+offload) checkpoint resume smoke tests."""
 
 from __future__ import annotations
 
@@ -162,13 +95,7 @@ def _train(wrapped, optim, *, n_iters, input_ids, labels) -> list[float]:
 
 
 def _resume(wrapped, optim, model_state, optim_state):
-    """Best-effort cross-mode load. Tolerates partial layouts: if Mode A's
-    optimizer state cannot be remapped to Mode C's sharded layout (or
-    vice versa), the load_state_dict is allowed to skip the optimizer
-    state — we only require it not to crash, and that subsequent training
-    still produces finite losses (the optimizer cold-starts, which is the
-    documented limitation per phase2.md M6C bail criterion).
-    """
+    """Best-effort cross-mode load: never crash, allow optimizer-state cold-start when layouts differ."""
     underlying = getattr(wrapped, "module", wrapped)
     try:
         # Allow strict=False because LoRA-PEFT state dicts contain only
@@ -204,17 +131,7 @@ def _make_inputs(cfg, *, bs: int, seq: int):
 
 
 def test_cross_mode_resume_a_to_c() -> None:
-    """Mode A → Mode C: train, save, re-wrap in Mode C, resume, assert finite training.
-
-    Uses an explicit lifecycle (``wrapped_a.close()`` before re-wrapping,
-    ``wrapped_c.close()`` in ``finally``) rather than relying on GC to
-    drop hooks / pinned memory between phases. This exercises the
-    D1/D2/D3 rebuild lifecycle: the chunk manager's
-    ``_restore_protrain_ddp_ignore_snapshot`` runs on close, and the
-    Mode-C → Mode-A path (via the D1 else branch in
-    ``protrain_model_wrapper``) cleans up the markers if any leak past
-    close.
-    """
+    """Mode A trains+saves, Mode C re-wraps and resumes; assert finite loss with explicit close()."""
     pytest.importorskip("torch")
     import torch
 
@@ -284,12 +201,7 @@ def test_cross_mode_resume_a_to_c() -> None:
 
 
 def test_cross_mode_resume_c_to_a() -> None:
-    """Mode C → Mode A: symmetric. Train Mode C, save, resume in Mode A.
-
-    Uses an explicit lifecycle (``wrapped_c.close()`` before re-wrapping,
-    ``wrapped_a.close()`` in ``finally``) — see :func:`test_cross_mode_resume_a_to_c`
-    for the rationale.
-    """
+    """Mode C trains+saves, Mode A re-wraps and resumes; symmetric to A-to-C."""
     pytest.importorskip("torch")
     import torch
 
@@ -348,50 +260,19 @@ def test_cross_mode_resume_c_to_a() -> None:
                 close_a()
 
 
-# =============================================================================
-# Real multi-GPU subprocess-based cross-mode resume tests (M6C audit close).
-#
-# The single-process tests above silently degrade Mode C → Mode A under
-# ``world_size <= 1`` (see module docstring for the auto-coercion at
-# ``model_wrapper.py:1019-1023``). The two ``test_real_multigpu_*`` tests
-# below close that gap by invoking ``accelerate launch --num_processes 4``
-# in a subprocess with a real Llama-3-8B + LoRA workload, so the
-# ``world_size > 1`` branch runs and Mode C actually engages chunk
-# sharding (``zero3_shard=True (requested=True)`` in the log).
-#
-# Originally on commit ``91e0912e`` (4×3090 rig, GPUs 1/4/5/7, ProTrain
-# Phase 2 branch) both directions FAILED — see the report at
-# ``ProTrain/m6c_real_multigpu_report.md``. The M6C-fix-{1..8} chain
-# closes the path: M6C-fix-1 the cross-mode resume monkey-patch in
-# ``plugin.py:_install_resume_hook`` (load_from_checkpoint shape-
-# mismatch); M6C-fix-{2..6} the per-LoRA-container gather hook
-# coverage in profiler/on_demand.py and runtime/hooks.py; M6C-fix-7
-# the architectural shape-preserving expand placeholder in
-# ``chunk/manager.py::_shape_preserving_placeholder`` (autograd
-# shape-capture race window); M6C-fix-8 the DDP init_sync=False
-# auto-injection in ``api/model_wrapper.py`` (DDP construction-time
-# broadcast hazard on the expand placeholder). Both
-# ``test_real_multigpu_*`` tests now PASS on the 4×3090 rig (xfail
-# markers removed in the M6C-fix-8 commit).
-# =============================================================================
+# Multi-GPU subprocess tests: single-process tests above auto-coerce to Mode A under
+# world_size<=1, so these accelerate-launch a real LoRA workload to exercise real sharding.
 
 
 def _pick_free_port() -> int:
-    """Bind to port 0 so the OS hands back a free port. Mirrors the
-    helper in :mod:`test_multi_gpu_7b` to avoid MASTER_PORT collisions
-    on a busy box."""
+    """Bind to port 0 so the OS hands back a free port (avoids MASTER_PORT collisions)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("localhost", 0))
         return s.getsockname()[1]
 
 
 def _nvidia_smi_gpu_indices() -> list[int]:
-    """Return the list of GPU indices reported by ``nvidia-smi``.
-
-    Uses the subprocess-level invocation rather than torch so that the
-    pytest host process's CUDA_VISIBLE_DEVICES masking does not under-
-    report visibility.
-    """
+    """Return GPU indices from nvidia-smi (subprocess sidesteps CUDA_VISIBLE_DEVICES masking)."""
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader,nounits"],
@@ -417,11 +298,7 @@ def _nvidia_smi_gpu_indices() -> list[int]:
 
 
 def _nvidia_smi_gpu_count() -> int:
-    """Return the number of GPUs reported by ``nvidia-smi``.
-
-    Thin wrapper over :func:`_nvidia_smi_gpu_indices` for callers that
-    only need the count.
-    """
+    """Return the GPU count from nvidia-smi."""
     return len(_nvidia_smi_gpu_indices())
 
 
@@ -557,14 +434,7 @@ _MODE_C_YAML = textwrap.dedent(
 
 
 def _launch_axolotl(yaml_path: Path, log_path: Path, repo_root: Path) -> int:
-    """Run a single ``accelerate launch`` of ``axolotl.cli.train``.
-
-    Returns the subprocess exit code. Uses GPUs 1,4,5,7 via
-    CUDA_VISIBLE_DEVICES + PCI_BUS_ID, the only stable 4-GPU set on
-    this rig (GPUs 0/3/6 are heterogeneous Blackwell/RTX 5090 cards
-    that fail the P2P check). PYTHONPATH is forced to the worktree
-    ``src/`` so accelerate doesn't pick up a different axolotl install.
-    """
+    """Spawn ``accelerate launch`` of ``axolotl.cli.train``; pins GPUs 1/4/5/7 (stable P2P set)."""
     env = os.environ.copy()
     env["DS_SKIP_CUDA_CHECK"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
@@ -621,7 +491,7 @@ def _require_real_multigpu() -> None:
 
 
 def _repo_root() -> Path:
-    """Resolve the worktree root (parent of ``src/axolotl``)."""
+    """Resolve the worktree root (parent of src/axolotl)."""
     here = Path(__file__).resolve()
     # tests/protrain/test_cross_mode_resume.py -> tests/protrain -> tests -> repo
     return here.parents[2]
@@ -630,33 +500,7 @@ def _repo_root() -> Path:
 @pytest.mark.slow
 @pytest.mark.gpu
 def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
-    """4×3090 cross-mode A→C: train+save Mode A, resume in Mode C.
-
-    Two subprocess launches, sequentially. Phase 1 trains 5 steps in
-    Mode A and writes ``checkpoint-5/`` under ``modeA_ckpt/``. Phase 2
-    sets ``resume_from_checkpoint`` to that path, forces Mode C
-    (``protrain_zero3_shard: true`` + non-persistent overrides), and
-    asks for max_steps=10 (so 5 more steps after resume).
-
-    Acceptance: both phases exit 0; Phase 2's stdout shows loss values
-    for steps 6..10 with no Traceback.
-
-    Status (M6C-fix-8): PASSING. The full M6C chain (fixes 1..8) closed
-    the multi-GPU plain-LoRA Mode C cross-mode resume path. M6C-fix-7
-    architecturally closed the autograd shape-capture race window via
-    the shape-preserving expand placeholder; M6C-fix-8 closed the
-    follow-on DDP ``_sync_module_states`` shared-storage hazard by
-    auto-injecting ``init_sync=False`` on the chunk-managed model
-    (every rank already agreed on init state via
-    ``materialize_offload``'s deterministic partition, so the
-    construction-time broadcast was redundant; the module-level
-    ``_ddp_params_and_buffers_to_ignore`` registration also stays in
-    place so the backward-pass allreduce skips chunk-managed params,
-    matching ProTrain's reduce_scatter contract). See
-    ``api/model_wrapper.py``'s M6C-fix-8 block and
-    ``tests/protrain/test_param_data_shape_preservation.py`` for the
-    full architectural invariant + 8 unit tests.
-    """
+    """4x3090 cross-mode A->C: subprocess trains Mode A 5 steps, resumes Mode C for 5 more."""
     _require_real_multigpu()
 
     repo_root = _repo_root()
@@ -664,7 +508,6 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
     modeA_ckpt_dir = workdir / "modeA_ckpt"
     modeC_resumed_dir = workdir / "modeC_resumed"
 
-    # ---- Phase 1: Mode A train + save ------------------------------------
     yaml_a = workdir / "modeA_save.yml"
     yaml_a.write_text(
         _MODE_A_YAML.format(
@@ -685,7 +528,6 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
         f"contents: {list(modeA_ckpt_dir.iterdir()) if modeA_ckpt_dir.exists() else 'NONE'}"
     )
 
-    # ---- Phase 2: Mode C resume from Mode A's checkpoint -----------------
     yaml_c = workdir / "modeC_resume.yml"
     yaml_c.write_text(
         _MODE_C_YAML.format(
@@ -717,23 +559,7 @@ def test_real_multigpu_cross_mode_resume_a_to_c(tmp_path: Path) -> None:
 @pytest.mark.slow
 @pytest.mark.gpu
 def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
-    """4×3090 cross-mode C→A: train+save Mode C, resume in Mode A.
-
-    Symmetric to A→C. Two subprocess launches, sequentially. Phase 1
-    forces Mode C (sharded chunks, non-persistent) and trains 5 steps;
-    Phase 2 resumes in Mode A.
-
-    Acceptance: both phases exit 0; Phase 2's stdout shows 5 resumed
-    step losses with no Traceback.
-
-    Status (M6C-fix-8): PASSING. See A→C test docstring for the full
-    M6C chain close. Phase 1 (Mode C train) exercises the same DDP
-    init_sync bypass as the A→C Phase 2 (Mode C resume); Phase 2 here
-    (Mode A resume) goes through the standard DDP path (no shape-
-    preserving placeholders engaged in Mode A — the bypass marker is
-    not set on the model so DDP's __init__ runs the normal init_sync
-    broadcast, correct for the all-persistent path).
-    """
+    """4x3090 cross-mode C->A: subprocess trains Mode C 5 steps, resumes Mode A for 5 more."""
     _require_real_multigpu()
 
     repo_root = _repo_root()
@@ -741,7 +567,6 @@ def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
     modeC_ckpt_dir = workdir / "modeC_ckpt"
     modeA_resumed_dir = workdir / "modeA_resumed"
 
-    # ---- Phase 1: Mode C train + save ------------------------------------
     yaml_c = workdir / "modeC_save.yml"
     yaml_c.write_text(
         _MODE_C_YAML.format(
@@ -761,7 +586,6 @@ def test_real_multigpu_cross_mode_resume_c_to_a(tmp_path: Path) -> None:
         f"Mode C did not produce checkpoint-5/ under {modeC_ckpt_dir}"
     )
 
-    # ---- Phase 2: Mode A resume from Mode C's checkpoint -----------------
     yaml_a = workdir / "modeA_resume.yml"
     yaml_a.write_text(
         _MODE_A_YAML.format(

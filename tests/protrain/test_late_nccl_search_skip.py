@@ -1,45 +1,4 @@
-"""Tests for the late NCCL re-search override-skip gate (M6C-fix-5).
-
-When the user supplies all four explicit-override knobs
-(``protrain_n_persist_override`` / ``n_buffer_override`` /
-``n_swap_override`` / ``n_checkpoint_override``), the bootstrap
-``search_result`` is *synthesized* from those knobs (the searcher AND
-the cost model are bypassed — see ``model_wrapper.py``'s
-``all_overrides_set`` branch). The trace pass is also already skipped
-on this path (see ``test_trace_skip_on_override.py``).
-
-The remaining gap before M6C-fix-5: ``post_trainer_create`` invokes
-``_remeasure_nccl_and_research(wrapped)`` after Accelerate brings up
-dist. With multi-rank + an empty NCCL table, that helper would measure
-NCCL, splice the tables, and re-invoke ``search()``. The re-run search
-is free to pick a *different* cost-optimal plan than the bootstrap
-synthesis; ``cfg_changed=True`` then trips the documented fail-fast
-``RuntimeError("ProTrain: late NCCL re-search picked a different plan
-than the bootstrap.")`` — even though the user's overrides are
-documented to pin the plan and the runtime is already wired for the
-bootstrap (synthesized) plan.
-
-M6C-fix-5 closes this by carrying ``_override_skip_trace`` from
-``protrain_model_wrapper`` onto the ``WrappedModel`` and short-
-circuiting ``_remeasure_nccl_and_research`` when the flag is set
-*before* any measurement / search call fires.
-
-These tests pin:
-
-1. ``test_late_search_skipped_when_overrides_set`` — with the flag
-   True on a multi-rank fake dist setup, neither ``measure_nccl`` nor
-   ``search.search`` is called; the helper returns ``(False, False)``
-   and the trace / search_result are untouched.
-2. ``test_late_search_runs_when_overrides_not_set`` — control: with
-   the flag False (the existing non-override path), ``measure_nccl``
-   and ``search.search`` are both invoked exactly once, mirroring the
-   pre-M6C-fix-5 behaviour.
-3. ``test_late_search_skipped_when_attr_missing_does_not_skip`` — the
-   gate is a positive opt-in: a wrapped model that lacks the attribute
-   entirely (e.g. an older bring-up path that didn't stash it) is
-   treated as override-not-set, so behaviour is unchanged for callers
-   that haven't been updated to set the flag.
-"""
+"""Late NCCL re-search must short-circuit when all four override knobs pin the bootstrap plan, avoiding cfg_changed RuntimeError."""
 
 from __future__ import annotations
 
@@ -70,8 +29,7 @@ from axolotl.integrations.protrain.types import (
 
 
 def _make_trace(*, world: int = 1) -> ProfilerTrace:
-    """Minimal ProfilerTrace stub with empty NCCL tables (the override-skip
-    path's synthesized trace looks like this)."""
+    """Minimal ProfilerTrace stub with empty NCCL tables matching the override-skip synthesized trace."""
     op = OpRecord(
         op_id=cast(OpId, 0),
         module_path="layer0",
@@ -132,14 +90,7 @@ def _make_search_result() -> SearchResult:
 
 
 def _make_wrapped(*, with_override_flag: bool | None = False) -> WrappedModel:
-    """Build a WrappedModel-like object with the private attrs the helper
-    needs.
-
-    ``with_override_flag``:
-      * ``True``  → set ``_override_skip_trace=True`` (M6C-fix-5 gate active).
-      * ``False`` → set ``_override_skip_trace=False`` (the searcher path).
-      * ``None``  → do NOT set the attribute at all (legacy bring-up).
-    """
+    """Build a WrappedModel-like object with the private attrs the helper needs (flag True/False/missing)."""
     import torch.nn as nn
 
     trace = _make_trace(world=1)
@@ -182,16 +133,7 @@ def _patch_dist(*, initialized: bool, world_size: int = 4):
 
 
 def test_late_search_skipped_when_overrides_set():
-    """With ``_override_skip_trace=True`` the helper short-circuits to a
-    no-op BEFORE ``measure_nccl`` or ``search.search`` would run.
-
-    This is the core M6C-fix-5 gate: the user's explicit overrides pin
-    the bootstrap plan and the runtime is already wired for it; running
-    the late-search path could either redundantly re-pick the same
-    synthesized cfg (wasted work) or pick a different cost-optimal plan
-    and trip the documented fail-fast RuntimeError. Skip the whole
-    helper instead.
-    """
+    """With _override_skip_trace=True the helper short-circuits before measure_nccl or search.search runs."""
     pytest.importorskip("torch")
 
     from axolotl.integrations.protrain import plugin as plugin_mod
@@ -235,11 +177,11 @@ def test_late_search_skipped_when_overrides_set():
     # Crucially: neither measurement nor search ran.
     assert measure_calls == [], (
         f"measure_nccl was called {measure_calls} times on the override-skip "
-        "path; the M6C-fix-5 gate should short-circuit before the measurement."
+        "path; the gate should short-circuit before the measurement."
     )
     assert search_calls == [], (
         f"search.search was called {len(search_calls)} times on the override-"
-        "skip path; the M6C-fix-5 gate should short-circuit before the re-run."
+        "skip path; the gate should short-circuit before the re-run."
     )
 
     # Trace and search_result untouched (still the bootstrap synthesis).
@@ -253,13 +195,7 @@ def test_late_search_skipped_when_overrides_set():
 
 
 def test_late_search_runs_when_overrides_not_set(tmp_path, monkeypatch):
-    """Control: ``_override_skip_trace=False`` ⇒ measure + search both fire.
-
-    Mirrors the pre-M6C-fix-5 behaviour for the non-override path so we
-    can prove the new gate is the *only* thing changed: with the flag
-    cleared, the helper still runs the full re-measure → re-search dance
-    that ``test_plugin_nccl_remeasure.py`` already covers in detail.
-    """
+    """Control: _override_skip_trace=False makes measure_nccl and search.search both fire."""
     pytest.importorskip("torch")
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
@@ -318,13 +254,7 @@ def test_late_search_runs_when_overrides_not_set(tmp_path, monkeypatch):
 
 
 def test_late_search_skipped_when_attr_missing_does_not_skip(tmp_path, monkeypatch):
-    """Defensive: a wrapped model WITHOUT ``_override_skip_trace`` (older
-    bring-up path) must NOT short-circuit — the gate is positive opt-in.
-
-    The helper uses ``getattr(wrapped, "_override_skip_trace", False)``
-    so a missing attribute reads as ``False`` and the existing
-    re-measure → re-search behaviour is preserved.
-    """
+    """Missing _override_skip_trace must not short-circuit; gate is positive opt-in."""
     pytest.importorskip("torch")
 
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
