@@ -1,38 +1,4 @@
-"""Task-type-aware sample batch construction for the calibration profiler.
-
-The profiler needs to drive a single forward (and optionally backward)
-pass on the user's model so it can record per-op memory deltas, op
-order, and steady-state timings. Until now the wrapper hard-coded a
-``{"input_ids": ..., "labels": ...}`` batch which is correct for
-HuggingFace causal LMs but wrong for other heads — a sequence
-classifier wants integer ``labels`` of shape ``(batch_size,)``, a token
-classifier wants per-token labels of shape ``(batch_size, seq_len)``,
-and an encoder-decoder model needs a ``decoder_input_ids`` (and
-``labels`` shaped to the decoder, not the encoder).
-
-This module introduces a small registry of *batch factories* keyed by
-the HuggingFace auto-class taxonomy that axolotl already uses
-elsewhere (``AutoModelForCausalLM`` /
-``AutoModelForSequenceClassification`` /
-``AutoModelForTokenClassification`` /
-``AutoModelForSeq2SeqLM``) so the profiler can ask the model for an
-appropriate batch instead of hard-coding causal-LM shapes.
-
-Detection priority — see :func:`detect_task_type`:
-
-1. ``model.config.architectures`` — HF stamps the concrete class name
-   here (``BertForSequenceClassification``, ``T5ForConditionalGeneration``,
-   ...). We string-match suffixes against the taxonomy.
-2. ``model.config.is_encoder_decoder`` — covers seq2seq models whose
-   architectures attribute is missing or generic.
-3. Fall back to causal-LM, which preserves the prior wrapper behaviour.
-
-The taxonomy is intentionally aligned with axolotl's existing
-``type_of_model`` / ``model_type`` strings (see
-``utils/schemas/validation.py::set_reward_model_defaults``) so the same
-set of strings flows from the user-facing schema through the loader to
-the profiler without a translation layer.
-"""
+"""Task-type-aware sample batch construction for the calibration profiler."""
 
 from __future__ import annotations
 
@@ -48,11 +14,7 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
-# ---- task-type taxonomy --------------------------------------------------
-# Strings rather than an Enum so callers (the plugin, future factories
-# registered from a different package) can pass the HF auto-class name
-# directly without an extra import.
-
+# String constants so callers pass HF auto-class names without enum imports.
 TASK_CAUSAL_LM = "causal_lm"
 TASK_SEQ_CLASSIFICATION = "seq_classification"
 TASK_TOKEN_CLASSIFICATION = "token_classification"  # nosec B105  # noqa: S105 - task type label, not a password
@@ -65,12 +27,7 @@ KNOWN_TASKS: tuple[str, ...] = (
     TASK_SEQ2SEQ_LM,
 )
 
-# Mapping from a class-name SUFFIX to the canonical task string. The
-# match is suffix-based because HF spells the class names as
-# ``<ModelName>ForCausalLM`` etc. — both the auto-class
-# (``AutoModelForCausalLM``) and the concrete class (``LlamaForCausalLM``)
-# end in the same suffix. Keep the longest suffixes first so a
-# ``ForConditionalGeneration`` match beats a generic ``ForGeneration``.
+# Suffix-based HF class-name match; longest suffixes first.
 _ARCHITECTURE_SUFFIX_TASKS: tuple[tuple[str, str], ...] = (
     ("ForConditionalGeneration", TASK_SEQ2SEQ_LM),
     ("ForSeq2SeqLM", TASK_SEQ2SEQ_LM),
@@ -82,16 +39,10 @@ _ARCHITECTURE_SUFFIX_TASKS: tuple[tuple[str, str], ...] = (
 
 
 def detect_task_type(model: "nn.Module") -> str:
-    """Return the canonical task-type string for ``model``.
-
-    Inspection order matches the module docstring. Always returns one of
-    the ``TASK_*`` constants; defaults to :data:`TASK_CAUSAL_LM` so the
-    profiler keeps its prior behaviour when detection cannot conclude.
-    """
+    """Return canonical task-type for model (config.architectures → is_encoder_decoder → causal_lm)."""
     cfg = getattr(model, "config", None)
 
-    # 1. config.architectures — most authoritative; HF stamps the
-    #    concrete class name(s) here.
+    # config.architectures is authoritative when present.
     archs = getattr(cfg, "architectures", None) if cfg is not None else None
     if archs:
         for arch in archs:
@@ -134,19 +85,13 @@ def _infer_vocab_size(model: "nn.Module") -> int:
 
 
 def _infer_num_labels(model: "nn.Module", default: int = 2) -> int:
-    """Best-effort label count for classification heads.
-
-    Reads ``config.num_labels`` first (HF's canonical attribute). Falls
-    back to inspecting the head's ``out_features`` and finally to
-    ``default`` (binary classification).
-    """
+    """Best-effort label count: config.num_labels → last Linear out_features → default."""
     cfg = getattr(model, "config", None)
     if cfg is not None:
         n = getattr(cfg, "num_labels", None)
         if isinstance(n, int) and n > 0:
             return n
-    # Walk the model for the last Linear; HF classifiers typically end in
-    # ``classifier`` (Bert) or ``score`` (Llama-for-classification).
+    # Last Linear out_features matches HF classifier head (Bert: classifier, Llama: score).
     last_linear_out: int | None = None
     from torch import nn as _nn
 
@@ -164,16 +109,7 @@ def causal_lm_batch_factory(
     seq_len: int,
     device: "torch.device | str",
 ) -> dict:
-    """Causal-LM batch: ``input_ids`` + ``labels`` of identical shape.
-
-    Preserves the exact behaviour of the legacy ``_dummy_batch`` so
-    existing causal-LM calibration paths see no change. Note that
-    ``attention_mask`` is intentionally OMITTED — the cached profiler
-    fingerprint is keyed off the *batch keys*, and adding a mask would
-    invalidate every cached trace from prior runs without any
-    corresponding accuracy gain (HF causal LMs synthesize a default
-    mask when none is supplied).
-    """
+    """Causal-LM batch: input_ids + labels (no attention_mask to keep cache fingerprint stable)."""
     import torch
 
     vocab_size = _infer_vocab_size(model)
@@ -194,24 +130,7 @@ def seq_classification_batch_factory(
     seq_len: int,
     device: "torch.device | str",
 ) -> dict:
-    """Sequence-classification batch: ``input_ids`` + per-sequence labels.
-
-    Includes ``attention_mask`` because BERT-style encoders compute the
-    pooled representation as a masked mean over the sequence dimension
-    and HF errors out without one on some checkpoints.
-
-    Label shape/dtype follows ``model.config.problem_type`` so we exercise
-    the same loss path the real training run would:
-
-    * ``"regression"`` — float tensor of shape ``(batch_size,)`` for
-      single-target regression or ``(batch_size, num_labels)`` for
-      multi-target regression (HF uses MSE; integer labels would either
-      crash or silently cast).
-    * ``"multi_label_classification"`` — float tensor of shape
-      ``(batch_size, num_labels)`` with 0/1 entries (HF uses BCE-with-logits).
-    * Anything else (single-label / unset) — long tensor of shape
-      ``(batch_size,)`` drawn uniformly over ``[0, num_labels)``.
-    """
+    """Seq-classification batch; label shape/dtype follows config.problem_type."""
     import torch
 
     vocab_size = _infer_vocab_size(model)
@@ -231,9 +150,7 @@ def seq_classification_batch_factory(
         problem_type is None and num_labels == 1
     )
     if inferred_regression:
-        # Multi-target regression uses (batch_size, num_labels); single-target
-        # uses (batch_size,). HF's MSELoss path squeezes/handles both, but the
-        # shapes must match num_labels to avoid broadcasting bugs / crashes.
+        # Match num_labels to avoid broadcasting bugs in HF's MSELoss path.
         regression_shape = (batch_size, num_labels) if num_labels > 1 else (batch_size,)
         labels = torch.randn(
             regression_shape,
@@ -269,13 +186,7 @@ def token_classification_batch_factory(
     seq_len: int,
     device: "torch.device | str",
 ) -> dict:
-    """Token-classification batch: per-token integer labels.
-
-    Labels are shape ``(batch_size, seq_len)``. We deliberately do NOT
-    set any positions to ``-100`` (HF's "ignore" index) — every token
-    contributes to the loss so the gradient graph the profiler walks
-    has the same fan-out as a real training batch.
-    """
+    """Token-classification batch with per-token labels; no -100 ignore positions."""
     import torch
 
     vocab_size = _infer_vocab_size(model)
@@ -308,25 +219,7 @@ def seq2seq_lm_batch_factory(
     seq_len: int,
     device: "torch.device | str",
 ) -> dict:
-    """Encoder-decoder batch: encoder ``input_ids`` + decoder ``labels``.
-
-    HF seq2seq models accept ``labels`` directly and internally derive
-    ``decoder_input_ids`` by right-shifting them with the model's
-    ``decoder_start_token_id``. We keep encoder and decoder lengths
-    equal because the profiler's cache key only carries a single
-    ``seq_len``; a future extension can split this if needed.
-
-    We also synthesize ``decoder_input_ids`` explicitly here. Models
-    whose config has ``decoder_start_token_id is None`` (a small but
-    real subset — some custom checkpoints, encoder-only-style heads
-    pretending to be seq2seq) raise ``ValueError`` inside the model's
-    own ``shift_tokens_right`` helper, breaking the profile loop. We
-    prefer the model's canonical
-    ``prepare_decoder_input_ids_from_labels`` helper when present
-    (BART, T5, EncoderDecoderModel, ...) so we benefit from any
-    model-specific shift logic; otherwise we right-shift ``labels``
-    ourselves with a best-effort start-token id.
-    """
+    """Seq2seq batch with explicit decoder_input_ids for configs lacking decoder_start_token_id."""
     import torch
 
     vocab_size = _infer_vocab_size(model)
@@ -345,13 +238,7 @@ def seq2seq_lm_batch_factory(
         device=device,
         dtype=torch.long,
     )
-    # Prefer the model's canonical helper, which encodes any
-    # checkpoint-specific quirks (e.g. T5's pad-token handling). Some
-    # HF encoder-decoder configs expose the helper but raise inside it
-    # when ``decoder_start_token_id`` is unset (TypeError on the int
-    # cast, ValueError from the explicit guard) — fall through to the
-    # manual right-shift fallback in that case so the profiler can
-    # still build a usable batch.
+    # Prefer model's canonical helper; fall back to manual right-shift on TypeError/ValueError.
     prepare = getattr(model, "prepare_decoder_input_ids_from_labels", None)
     decoder_input_ids = None
     if callable(prepare):
@@ -392,9 +279,7 @@ _DEFAULT_FACTORIES: dict[str, BatchFactory] = {
     TASK_SEQ2SEQ_LM: seq2seq_lm_batch_factory,
 }
 
-# Module-level dict so users (or another integration) can register a
-# custom factory. The default mapping is restored by
-# :func:`reset_factories` (test-only convenience).
+# Module-level dict; reset_factories() restores defaults.
 _FACTORIES: dict[str, BatchFactory] = dict(_DEFAULT_FACTORIES)
 
 
@@ -410,11 +295,7 @@ def reset_factories() -> None:
 
 
 def get_factory(task_type: str) -> BatchFactory:
-    """Return the registered factory for ``task_type``.
-
-    Falls back to the causal-LM factory for unknown task types so the
-    profiler degrades gracefully instead of raising.
-    """
+    """Return the registered factory; falls back to causal-LM for unknown tasks."""
     factory = _FACTORIES.get(task_type)
     if factory is None:
         LOG.debug(
