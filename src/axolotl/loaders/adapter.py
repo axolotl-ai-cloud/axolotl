@@ -148,6 +148,10 @@ def _build_lora_config_kwargs(cfg: DictDefault) -> dict[str, Any]:
         LOG.info("Initializing LoRA weights using dora. This might take longer.")
     if cfg.peft_use_rslora:
         lora_config_kwargs["use_rslora"] = cfg.peft_use_rslora
+    if cfg.lora_rank_pattern:
+        lora_config_kwargs["rank_pattern"] = cfg.lora_rank_pattern
+    if cfg.lora_alpha_pattern:
+        lora_config_kwargs["alpha_pattern"] = cfg.lora_alpha_pattern
     if cfg.peft_layer_replication:
         lora_config_kwargs["layer_replication"] = cfg.peft_layer_replication
     if cfg.peft_trainable_token_indices:
@@ -333,6 +337,13 @@ def load_lora(
 
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT adapter")
+        if cfg.lora_rank_pattern or cfg.lora_alpha_pattern:
+            # PeftModel.from_pretrained uses the adapter's saved config, so cfg-side patterns would be silently dropped.
+            LOG.warning(
+                "lora_rank_pattern/lora_alpha_pattern are ignored when loading an "
+                "existing adapter via lora_model_dir; the saved adapter_config.json "
+                "governs per-module rank/alpha."
+            )
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}
