@@ -224,17 +224,20 @@ def _comm_time_chunk(
     """Return the communication time for a single non-persistent chunk."""
     collective = nccl_gather_s
 
-    # Defensive: pathological eff_*2d collapses the PCIe term to 0.
-    h2d = S_chunk / eff_h2d if eff_h2d > 0 else 0.0
-    d2h = S_chunk / eff_d2h if eff_d2h > 0 else 0.0
-
+    # Fail closed: zero PCIe bandwidth would make a broken candidate look cheaper than a valid one.
     if not is_backward:
-        return collective + h2d
+        if eff_h2d <= 0:
+            return float("inf")
+        return collective + S_chunk / eff_h2d
+
+    if eff_d2h <= 0 or (not buffer_cached and eff_h2d <= 0):
+        return float("inf")
+
+    d2h = S_chunk / eff_d2h
     if buffer_cached:
         # Cache-hit: skip gather + H2D; reduce_scatter still required (Eq. 6).
         return d2h + nccl_reduce_s
-    # Uncached backward: H2D reload + gather + D2H drain + reduce_scatter.
-    return collective + h2d + d2h + nccl_reduce_s
+    return collective + S_chunk / eff_h2d + d2h + nccl_reduce_s
 
 
 def _pick_nccl(nccl_table: dict, payload_bytes: int) -> float:
