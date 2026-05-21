@@ -1,25 +1,4 @@
-"""Gradient-checkpointing wrapper for a single transformer block.
-
-This wrapper implements the **CKPT path only** (it is no longer the
-"three-way" entry point). It defers to
-``torch.utils.checkpoint.checkpoint`` with ``use_reentrant=False`` so
-activations for the wrapped block are dropped after forward and
-recomputed during backward.
-
-The no-recompute equivalent for non-persistent param chunks lives in
-``BlockMode.OFFLOAD`` (see ``block/offload.py``); SWAP/NONE live in
-their own modules. This file is the CKPT wrapper exclusively.
-
-Kwargs handling
----------------
-HuggingFace transformer blocks take positional tensors plus keyword
-arguments such as ``attention_mask``, ``position_ids``, ``past_key_value``,
-``output_attentions``, ``use_cache``. With ``use_reentrant=False``,
-``torch.utils.checkpoint.checkpoint`` natively forwards keyword arguments
-to the wrapped callable, so we pass ``*args, **kwargs`` straight through
-without a wrapping closure. This preserves the block's native call
-signature.
-"""
+"""Gradient-checkpointing wrapper (CKPT path); use_reentrant=False natively forwards kwargs."""
 
 from __future__ import annotations
 
@@ -36,63 +15,37 @@ LOG = get_logger(__name__)
 
 
 class CheckpointedBlock(nn.Module):
-    """Wrap an ``nn.Module`` so its forward activations are recomputed in backward.
-
-    Marks the wrapper with ``_protrain_wrapped_mode = BlockMode.CKPT`` so the
-    dispatcher can recognise and unwrap it idempotently.
-    """
+    """Wrap an nn.Module so its forward activations are recomputed in backward."""
 
     def __init__(self, block: nn.Module) -> None:
-        """Wrap ``block`` for activation checkpointing under ``torch.utils.checkpoint``."""
+        """Wrap ``block`` for activation checkpointing."""
         super().__init__()
         self.block = block
-        # Public marker consumed by dispatcher.unwrap_block and inspection code.
         self._protrain_wrapped_mode: BlockMode = BlockMode.CKPT
-        # Optional callback installed by runtime.hooks. It re-gathers
-        # this block's parameter chunks before checkpoint recompute,
-        # because the recompute calls ``self.block`` directly and does
-        # not pass through hooks attached to this wrapper module.
+        # Recompute callback re-gathers chunks before backward replay.
         self._protrain_recompute_pre_hook: Callable[[], None] | None = None
 
     def set_recompute_pre_hook(self, hook: Callable[[], None] | None) -> None:
-        """Install a callback run before recompute (backward) forwards only.
-
-        The callback is suppressed on the initial forward — the wrapper's
-        forward-pre hooks already ensure block residency for that pass.
-        It fires only on the recompute that ``torch.utils.checkpoint``
-        triggers during backward, when the dropped activations are
-        reconstructed by re-running ``self.block`` directly (bypassing
-        any hooks attached to this wrapper module).
-        """
+        """Install a callback that fires before recompute only (not initial forward)."""
         self._protrain_recompute_pre_hook = hook
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
-        """Run the wrapped block under ``torch.utils.checkpoint`` (activations recomputed)."""
+        """Run the wrapped block under torch.utils.checkpoint."""
         block = self.block
-        # Per-invocation call counter captured by the ``_run`` closure.
-        # ``torch.utils.checkpoint`` invokes ``_run`` twice per top-level
-        # forward when activations are dropped: once during the initial
-        # forward (count == 1) and once during the backward replay /
-        # recompute pass (count >= 2). Keeping the counter local to this
-        # ``forward()`` invocation avoids cross-talk when the same wrapped
-        # block is called multiple times before backward.
+        # _run fires twice per top-level forward when activations drop: initial + recompute.
         fwd_call_count = 0
 
         def _run(*inner_args: Any, **inner_kwargs: Any) -> Any:
             nonlocal fwd_call_count
             fwd_call_count += 1
-            # Skip the hook on the initial forward (count == 1): the
-            # wrapper's forward-pre hooks have already gathered this
-            # block's params. Fire only on recompute (count >= 2).
+            # Skip hook on initial forward; fire on recompute (count >= 2).
             if fwd_call_count >= 2:
                 hook = self._protrain_recompute_pre_hook
                 if hook is not None:
                     hook()
             return block(*inner_args, **inner_kwargs)
 
-        # ``use_reentrant=False`` natively threads kwargs to the wrapped
-        # callable, so HF block kwargs (attention_mask=, position_ids=, ...)
-        # flow through without manual capture.
+        # use_reentrant=False natively threads kwargs to the wrapped callable.
         return torch_checkpoint.checkpoint(
             _run,
             *args,
