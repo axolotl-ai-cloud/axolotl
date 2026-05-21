@@ -68,16 +68,16 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
             return os.path.join(self.image_base_dir, src)
         return src
 
-    def _load_images_for_row(
-        self, sources: list, row_index: int
-    ) -> list[Image.Image]:
+    def _load_images_for_row(self, sources: list, row_index: int) -> list[Image.Image]:
         out: list[Image.Image] = []
         for raw in sources:
             try:
                 img = load_image(self._resolve_image_source(raw))
             except Exception as exc:
                 label = (
-                    os.path.basename(raw) if isinstance(raw, str) else type(raw).__name__
+                    os.path.basename(raw)
+                    if isinstance(raw, str)
+                    else type(raw).__name__
                 )
                 msg = (
                     f"Row {row_index}: failed to load image {label!r} "
