@@ -99,18 +99,25 @@ def detect_task_type(model: "nn.Module") -> str:
                 if isinstance(arch, str) and arch.endswith(suffix):
                     return task
 
-    # 2. is_encoder_decoder — covers T5/BART/etc. whose architectures
-    #    attribute might be missing in trimmed configs.
-    if cfg is not None and getattr(cfg, "is_encoder_decoder", False):
-        return TASK_SEQ2SEQ_LM
-
-    # 3. Module-class fallback for models constructed without
+    # 2. Module-class fallback for models constructed without
     #    config.architectures populated (common in tests and tiny
-    #    randomly-initialised models).
+    #    randomly-initialised models). Runs BEFORE the generic
+    #    ``is_encoder_decoder`` check so a concrete head like
+    #    ``T5ForSequenceClassification`` is not misrouted to
+    #    ``seq2seq_lm`` just because the architecture happens to be
+    #    encoder-decoder under the hood.
     cls_name = type(model).__name__
     for suffix, task in _ARCHITECTURE_SUFFIX_TASKS:
         if cls_name.endswith(suffix):
             return task
+
+    # 3. is_encoder_decoder — covers T5/BART/etc. whose architectures
+    #    attribute might be missing in trimmed configs AND whose
+    #    module class doesn't match any of the known task-specific
+    #    suffixes above. This is the generic encoder-decoder fallback;
+    #    a concrete task head would already have returned at step 2.
+    if cfg is not None and getattr(cfg, "is_encoder_decoder", False):
+        return TASK_SEQ2SEQ_LM
 
     # 4. Default — preserve the legacy causal-LM behaviour.
     return TASK_CAUSAL_LM

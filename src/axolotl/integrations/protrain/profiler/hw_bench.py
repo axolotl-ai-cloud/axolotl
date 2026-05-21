@@ -629,11 +629,17 @@ def measure_nccl(
         # DOWN to a multiple of ``element_size`` — both divisions are
         # integer floor) so the COMBINED output is at most payload_bytes.
         # ``world_size ∈ {2, 4, 8}`` for production use, all power-of-two,
-        # so the rounding error is zero on the canonical payload grid;
-        # the table is still keyed by the requested payload_bytes since
-        # the cost model thinks in chunk-transfer units.
+        # so the rounding error is zero on the canonical payload grid.
+        #
+        # The table is keyed by ``actual_payload_bytes`` (the size we
+        # really benchmarked) rather than the requested ``payload_bytes``
+        # so a custom payload list that does NOT divide evenly into
+        # ``world_size * element_size`` does not mis-label the lookup
+        # entry, which would feed the runtime cost model a wrong
+        # communication prior.
         element_size = 4  # float32
         elements_per_shard = max(1, (payload_bytes // world_size) // element_size)
+        actual_payload_bytes = elements_per_shard * world_size * element_size
         shard = torch.zeros(elements_per_shard, dtype=torch.float32, device=device)
         gathered = torch.zeros(
             elements_per_shard * world_size,
@@ -658,7 +664,7 @@ def measure_nccl(
                 end.record()
                 torch.cuda.synchronize(device)
                 gather_times.append(start.elapsed_time(end) / 1000.0)
-        gather_table[payload_bytes] = statistics.median(gather_times)
+        gather_table[actual_payload_bytes] = statistics.median(gather_times)
 
         # reduce_scatter_tensor: input is full payload on every rank,
         # output is one shard per rank. Inverse of all_gather; same-shape
@@ -689,7 +695,7 @@ def measure_nccl(
                 end.record()
                 torch.cuda.synchronize(device)
                 reduce_times.append(start.elapsed_time(end) / 1000.0)
-        reduce_table[payload_bytes] = statistics.median(reduce_times)
+        reduce_table[actual_payload_bytes] = statistics.median(reduce_times)
 
         del shard, gathered, full_payload, reduced
         # Free the four buffers' caching-allocator blocks before the next

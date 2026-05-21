@@ -252,7 +252,24 @@ class OnDemandTensorMgr:
     # ---- context-manager protocol --------------------------------------
 
     def __enter__(self) -> "OnDemandTensorMgr":
-        """Spill parameters to pinned CPU and install the gather/spill hooks."""
+        """Spill parameters to pinned CPU and install the gather/spill hooks.
+
+        Raises ``RuntimeError`` if the same manager instance is
+        re-entered before a matching ``__exit__``. Without this guard
+        a second ``__enter__`` would install another full hook set,
+        enter another ``saved_tensors_hooks`` context, but only
+        capture one spill snapshot — the inner ``__exit__`` would then
+        clear ``_spills`` / hook bookkeeping out from under the outer
+        scope, leaving restore order-dependent and unsafe.
+        """
+        if self._entered:
+            raise RuntimeError(
+                "OnDemandTensorMgr cannot be re-entered before __exit__ "
+                "completes. Each context-manager scope must pair exactly "
+                "one __enter__ with one __exit__; nested re-entry on the "
+                "same instance would duplicate hook registrations and "
+                "corrupt spill bookkeeping."
+            )
         if self.disabled:
             self._entered = True
             return self

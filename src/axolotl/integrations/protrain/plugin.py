@@ -794,11 +794,23 @@ class ProTrainPlugin(BasePlugin):
             # to keep the next wrap's allocator math honest.
             try:
                 existing.close()
-            except Exception as exc:  # noqa: BLE001 — best-effort
-                LOG.debug(
-                    "ProTrain: stale-wrapper close() failed during re-wrap: %s",
-                    exc,
+            except Exception as exc:  # noqa: BLE001
+                # Fail closed: a stale wrapper that cannot tear down
+                # cleanly will leak pinned pools, hook registrations,
+                # and the CPU-Adam worker thread across the re-wrap.
+                # Leaving ``cfg._protrain_wrapped`` populated lets the
+                # caller retry teardown explicitly (or surface a
+                # deterministic failure) instead of silently
+                # double-wrapping over the leaked runtime.
+                LOG.exception(
+                    "ProTrain: stale-wrapper close() failed during re-wrap; "
+                    "aborting to avoid leaking pinned pools / Adam worker / "
+                    "tensor hooks across the next wrap."
                 )
+                raise RuntimeError(
+                    "ProTrain failed to close the previous wrapped model "
+                    "during re-wrap; aborting to keep teardown deterministic."
+                ) from exc
             cfg._protrain_wrapped = None  # type: ignore[attr-defined]
 
         from axolotl.integrations.protrain.api import protrain_model_wrapper

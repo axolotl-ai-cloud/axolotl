@@ -89,7 +89,13 @@ def _min_n_buffer_for_layout(layout: "ChunkLayout", n_persist: int) -> int:
                 if c not in persistent
             ]
         need = max(need, len({*cur_np, *nxt_np}))
-    return max(1, need)
+    # Allow ``need == 0`` to propagate when every chunk referenced by
+    # ``block_to_chunks`` is already in the effective-persistent set —
+    # a zero-buffer bootstrap is legitimate on all-persistent layouts
+    # and the previous ``max(1, need)`` overstated the floor, forcing
+    # ``select_bootstrap_config()`` to spuriously fall back to
+    # ``initial_result``.
+    return need
 
 
 def select_bootstrap_config(
@@ -508,6 +514,26 @@ def measure_chunked_steady(
                 chunk_manager, "snapshot_cpu_state"
             ):
                 chunk_state = chunk_manager.snapshot_cpu_state()
+            # Fail-fast on caller-held gradients: ``model_state`` /
+            # ``optim_state`` do NOT capture ``param.grad``, but the
+            # warmup loop below clears grads with
+            # ``optimizer.zero_grad(set_to_none=True)`` and the
+            # restore path will zero them again on the way out.
+            # Silently consuming a caller's accumulated grads would
+            # break the documented "rolls back to the
+            # pre-measurement state" contract, so surface the misuse
+            # here rather than letting it leak invisibly. Callers
+            # that want to profile mid-accumulation should clear
+            # grads themselves before invoking this helper.
+            if any(param.grad is not None for param in model.parameters()):
+                raise RuntimeError(
+                    "measure_chunked_steady requires gradients to be "
+                    "cleared before profiling: at least one parameter "
+                    "has a non-None .grad and the helper does not "
+                    "snapshot/restore grads. Call "
+                    "optimizer.zero_grad(set_to_none=True) on the "
+                    "caller side before invoking measure_chunked_steady."
+                )
             # Start from a clean grad state so leftover grads from
             # prior trace work (e.g. the phase-1 profile pass) cannot
             # pollute the first warmup step's peak-memory and timing

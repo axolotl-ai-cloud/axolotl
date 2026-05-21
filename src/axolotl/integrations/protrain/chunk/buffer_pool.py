@@ -236,7 +236,19 @@ class BufferPool:
         from the slot pool's perspective — the pool's
         ``M_buffer = n_buffer * S_chunk`` paper-Eq. 11 ceiling stays
         valid for the slot pool itself.
+
+        Raises ``RuntimeError`` if the pool has been closed via
+        :meth:`close`; surfacing the lifecycle error here keeps a stale
+        re-wrap path from silently re-allocating buffers behind a
+        torn-down pool.
         """
+        if self._closed:
+            raise RuntimeError(
+                "BufferPool.acquire: pool is closed; cannot acquire "
+                f"chunk {chunk_id}. This indicates a lifecycle bug — "
+                "the pool was torn down (close() called) before the "
+                "caller stopped issuing acquires."
+            )
         # Oversize fast path: route through the side-table BEFORE
         # touching any slot state. This keeps the slot lease counter,
         # free-set, and tag table identical to a model with no oversize
@@ -353,7 +365,15 @@ class BufferPool:
         optimization for oversize chunks (the next gather will re-allocate
         and re-copy), but the bytes saved by freeing eagerly outweigh the
         rare reuse hit.
+
+        After :meth:`close`, ``release`` is a silent no-op — close()
+        has already dropped all pool state so there is nothing to
+        return, and surfacing an error here would mask the real
+        lifecycle bug at the matching acquire() call site (which is
+        guarded explicitly).
         """
+        if self._closed:
+            return
         # Oversize fast path: free the side-table buffer eagerly when
         # the lease drops to zero. Done BEFORE the slot-pool path
         # because the two state spaces are disjoint by construction
@@ -403,7 +423,16 @@ class BufferPool:
         Oversize chunks: a present entry in :attr:`_large_buffers` is
         always safe to read — there's no concurrent eviction path
         because oversize buffers are dropped only at :meth:`release`.
+
+        After :meth:`close`, returns ``None`` — there is no resident
+        state left to peek at. This is the safe, non-raising
+        counterpart to the lease-taking :meth:`acquire_if_resident`
+        guard: lookups can legitimately race against teardown, so
+        returning ``None`` (rather than raising) lets callers fall
+        through their miss path.
         """
+        if self._closed:
+            return None
         large = self._large_buffers.get(chunk_id)
         if large is not None:
             return large
@@ -435,7 +464,18 @@ class BufferPool:
         the side-table lease (mirroring the slot-pool path at line
         425) so the matching ``release(chunk_id)`` only drops the
         buffer when the LAST holder releases.
+
+        Raises ``RuntimeError`` if the pool has been closed — mirrors
+        :meth:`acquire` so post-close residency probes surface the
+        lifecycle bug instead of silently returning stale state.
         """
+        if self._closed:
+            raise RuntimeError(
+                "BufferPool.acquire_if_resident: pool is closed; cannot "
+                f"acquire chunk {chunk_id}. This indicates a lifecycle "
+                "bug — the pool was torn down (close() called) before "
+                "the caller stopped issuing residency probes."
+            )
         large = self._large_buffers.get(chunk_id)
         if large is not None:
             self._large_leases[chunk_id] = self._large_leases.get(chunk_id, 0) + 1
@@ -519,10 +559,19 @@ class BufferPool:
     def close(self) -> None:
         """Drop every pool-owned buffer and free the paired pinned region.
 
-        Idempotent. Drops references to the pre-allocated GPU slot
-        buffers and any oversize side-table allocations, clears the
-        free-list / tag bookkeeping, and closes the paired
-        :class:`PinnedHostMemory` region. Repeated calls are no-ops.
+        Idempotent on success. Closes the paired :class:`PinnedHostMemory`
+        region FIRST so a release failure (CUDA error, double-close from
+        a misordered teardown, etc.) leaves the pool retryable; once
+        host memory is actually released, the GPU-side bookkeeping is
+        cleared and the pool is marked closed.
+
+        If ``pinned_host.close()`` raises, the exception propagates and
+        the pool state is left untouched — ``_closed`` stays ``False``,
+        the slot tables remain intact, and ``self.pinned_host`` keeps
+        its reference so the caller can retry teardown. Swallowing the
+        error here would drop the only handle to the pinned allocation
+        and leak it across a re-wrap (the runtime cannot reconstruct
+        the handle once it goes out of scope).
 
         The pool is the sole owner of its ``pinned_host`` (constructed
         alongside the pool in :func:`_construct_runtime`) so closing it
@@ -531,6 +580,15 @@ class BufferPool:
         """
         if self._closed:
             return
+        # Release pinned host memory FIRST. If this raises we leave the
+        # pool retryable (do NOT set ``_closed`` or clear state) so the
+        # caller can re-invoke close() once the underlying issue is
+        # resolved instead of leaking the pinned allocation forever.
+        if self.pinned_host is not None:
+            self.pinned_host.close()
+            self.pinned_host = None  # type: ignore[assignment]
+        # Host release succeeded — now mark closed and drop GPU-side
+        # bookkeeping. Past this point all public ops short-circuit.
         self._closed = True
         self._buffers = []
         self._large_buffers.clear()
@@ -540,12 +598,6 @@ class BufferPool:
         self._tag_to_slot.clear()
         self._tags = [None] * self.n_buffer
         self._leases = [0] * self.n_buffer
-        if self.pinned_host is not None:
-            try:
-                self.pinned_host.close()
-            except Exception as exc:  # noqa: BLE001 — best-effort
-                LOG.debug("BufferPool.close: pinned_host.close failed: %s", exc)
-            self.pinned_host = None  # type: ignore[assignment]
 
 
 __all__ = ["BufferPool"]
