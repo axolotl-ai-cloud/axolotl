@@ -753,6 +753,36 @@ def _structure_match(
     Boot's ``n_swap`` is always 0 by phase-2 spec
     (:func:`profiler.phase2.bootstrap_config`), so we compare prod's
     ``cfg.n_swap`` to 0 directly without needing a ``phase2_n_swap`` field.
+
+    DEFERRED: a TRACE_VERSION 23 refactor attempted to make this gate
+    obsolete by decomposing each analytical component into a roofline-
+    compute fraction (cfg-invariant) and a synthetic non-compute / per-
+    block-dispatch predictor (``N_block × tau`` derived from
+    ``hooked_fwd_wall_s - steady_fwd_wall_s``). The per-component α
+    would calibrate against the non-compute fraction only, making it
+    cfg-invariant by construction and dropping the gate. That direction
+    foundered on two issues empirically:
+
+    1. The analytical full pred is often dominated by the compute
+       fraction at boot (compute > comm per chunk on small chunks),
+       leaving the non-compute residual ``measured - analytical`` near
+       zero or negative. Solving for α produces values pinned to the
+       clamp floor, after which the residual α machinery has to absorb
+       the bulk of the bias — degenerating into the v22 gate's
+       behaviour with extra plumbing.
+    2. The chunked-wall override path at prod cfg returns measurement-
+       anchored predictions; adding a synthetic non-compute term on top
+       double-counts the dispatch overhead the chunked wall already
+       contains, while subtracting the boot's nc_pred via a delta
+       over-corrects when n_checkpoint changes (the override path
+       already rebuilds ``t_bwd_recompute`` for prod's cfg).
+
+    The gate stays in place pending a deeper rework that captures the
+    per-block dispatch overhead at prod-cfg-aware granularity (e.g. a
+    per-block runtime hook microbench rather than a constant tau, or a
+    decomposition that distinguishes "Python interpreter overhead per
+    iter" from "per-chunk PCIe roofline overhead"). See ticket B
+    deferred report for details.
     """
     boot_n_persist = int(getattr(trace, "phase2_n_persist", -1))
     boot_n_checkpoint = int(getattr(trace, "phase2_n_checkpoint", -1))
