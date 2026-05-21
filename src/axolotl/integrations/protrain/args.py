@@ -12,12 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Pydantic argument model for the ProTrain plugin (M5, DESIGN.md §Plugin Integration).
-
-Merged into the top-level Axolotl config schema at validation time via the
-``plugins:`` entry in the user YAML. Mirrors the shape of
-``axolotl.integrations.liger.LigerArgs`` / ``axolotl.integrations.spectrum.SpectrumArgs``.
-"""
+"""Pydantic argument model for the ProTrain plugin."""
 
 from __future__ import annotations
 
@@ -28,35 +23,8 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# Canonical plugin identifier strings that activate the ProTrain validators.
-#
-# THIS IS THE SINGLE SOURCE OF TRUTH for the strict allow-list used at
-# Pydantic config-validation time. ``axolotl.integrations.protrain.plugin
-# ::_is_plugin_active`` (the runtime activation gate) imports
-# :func:`_has_protrain_plugin` / :data:`_PROTRAIN_PLUGIN_KEYS` from this
-# module so both sites agree on what counts as "the ProTrain plugin is
-# registered". If you add a new accepted form, add it here — do not
-# fork the list in ``plugin.py``.
-#
-# Only `axolotl.integrations.protrain.ProTrainPlugin` is accepted — that's
-# the form used by tests, the example config
-# (examples/protrain/3090-8b-lora.yml), and the docstrings in this file,
-# and it's the only form that actually loads (the integration loader
-# rsplits on '.' for module/class). The bare module form
-# `axolotl.integrations.protrain` is intentionally REJECTED: it would
-# silently bypass plugin registration entirely (the loader can't resolve
-# a class from it), so accepting it here would let
-# `protrain_auto_memory: true` pass validation while the runtime hooks
-# never install. Users who type the bare module form get the same
-# "missing plugin" ValueError as users who omit `plugins:` altogether,
-# pointing them at the correct class form.
-#
-# The runtime gate ``plugin._is_plugin_active`` historically accepted
-# additional fully-qualified spellings (e.g. ``...plugin.ProTrainPlugin``)
-# under a case-insensitive normalize — those forms are not produced by
-# the documented user-facing config and are NOT part of this allow-list.
-# Unifying on the strict set here is intentional: the runtime gate
-# should never fire for an id the config validator would have rejected.
+# Canonical plugin id strict allow-list; runtime gate and validator both import from here.
+# Only the dotted class form loads via the integration loader; bare module form is rejected.
 _PROTRAIN_PLUGIN_KEYS = frozenset(
     {
         "axolotl.integrations.protrain.ProTrainPlugin",
@@ -64,22 +32,7 @@ _PROTRAIN_PLUGIN_KEYS = frozenset(
 )
 
 
-# Strict allow-list of Axolotl/HF optimizer names that ProTrain's chunk
-# manager + per-chunk adapters can drive correctly. The set is the union
-# of names dispatched by ``api/optim_wrapper.protrain_optimizer_wrapper``:
-#
-# * ``adamw_torch`` / ``adamw_torch_fused`` — default route through
-#   ``GpuFusedAdamAdapter`` (Apex FusedAdam, falls back to
-#   ``torch.optim.AdamW``) for persistent chunks and
-#   ``CpuFusedAdamAdapter`` (DeepSpeedCPUAdam) for non-persistent chunks.
-# * ``adamw_8bit`` / ``adamw_bnb_8bit`` / ``paged_adamw_8bit`` —
-#   route persistent chunks through ``GpuAdamW8bitAdapter``
-#   (``bnb.optim.AdamW8bit`` / ``bnb.optim.PagedAdamW8bit``).
-#
-# All other optimizer names (Lion, Adafactor, GaLore, Sophia, Muon,
-# torchao, plain SGD, etc.) have state shapes that do not match the
-# AdamW-shaped adapters and are silently broken — the validator below
-# rejects them at config-load time.
+# Optimizer names the chunk manager's AdamW-shaped adapters drive correctly.
 _SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
     {
         "adamw_torch",
@@ -92,50 +45,18 @@ _SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
 
 
 def _has_protrain_plugin(plugins) -> bool:
-    """Return True iff the iterable contains an explicit ProTrain plugin id.
-
-    Uses exact-match against ``_PROTRAIN_PLUGIN_KEYS`` rather than a
-    substring check so that unrelated plugin names containing the
-    substring ``"protrain"`` (or future plugins under a different module
-    path) cannot accidentally activate the ProTrain validators.
-
-    This helper is the single source of truth for "is the ProTrain
-    plugin registered in ``plugins:``": both the Pydantic validators in
-    this module AND ``plugin._is_plugin_active`` (the runtime activation
-    gate) call it so config validation and runtime activation cannot
-    drift apart on which ids count as registered.
-
-    Tolerates malformed ``plugins`` values: a non-iterable scalar (None,
-    int, bool, dict, etc.) returns False rather than raising
-    ``TypeError`` from ``any(... for p in plugins)``, and non-string
-    entries inside the iterable are skipped via the ``isinstance(p, str)``
-    guard. This keeps config-validation failures actionable — the user
-    sees the schema-level type error on ``plugins`` itself rather than
-    a confusing crash from this helper.
-    """
+    """Return True iff the iterable contains an explicit ProTrain plugin id."""
     if not isinstance(plugins, (list, tuple, set, frozenset)):
         return False
     return any(isinstance(p, str) and p in _PROTRAIN_PLUGIN_KEYS for p in plugins)
 
 
-# Re-exported so ``plugin.py`` (and any future call site that needs the
-# strict ProTrain-plugin allow-list) can import a single canonical name
-# rather than copy-pasting the set. Keeping this in ``__all__`` also
-# documents the public-to-the-package contract: this constant + helper
-# are the answer to "which strings count as the ProTrain plugin id".
+# Re-exported for plugin.py so the allow-list lives in one place.
 __all__ = ["ProTrainArgs", "_has_protrain_plugin", "_PROTRAIN_PLUGIN_KEYS"]
 
 
 class ProTrainArgs(BaseModel):
-    """Input args for the ProTrain plugin.
-
-    The plugin is opt-in at two levels: (1) the YAML must list
-    ``axolotl.integrations.protrain.ProTrainPlugin`` in ``plugins:``,
-    and (2) ``protrain_auto_memory`` must be True. The second gate lets
-    users add the plugin import for args-schema registration without
-    actually rewiring the training path (useful for validation /
-    documentation).
-    """
+    """Input args for the ProTrain plugin (opt-in: plugins entry + protrain_auto_memory=True)."""
 
     protrain_auto_memory: bool | None = Field(
         default=False,
@@ -238,9 +159,7 @@ class ProTrainArgs(BaseModel):
         },
     )
 
-    # Debugging escape hatches — bypass the searcher. Intended for
-    # reproducibility experiments and bug-hunting; production runs should
-    # leave these None and let the cost model pick.
+    # Debugging escape hatches — bypass the searcher. Production runs leave these None.
     protrain_n_persist_override: int | None = Field(
         default=None,
         ge=0,
@@ -401,27 +320,13 @@ class ProTrainArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _require_plugin_registration(cls, data):
-        """``protrain_auto_memory=True`` requires the plugin in ``plugins:``.
-
-        Clone of the enable-guard pattern used by Liger / Spectrum: the
-        plugin being present in ``plugins:`` is what causes its args
-        model to be merged in, but a user could set the YAML flag without
-        the plugin import — this validator surfaces that misconfiguration
-        as a clear ValueError instead of a silently-ignored flag.
-        """
+        """protrain_auto_memory=True requires the plugin in plugins:."""
         if not isinstance(data, dict):
             return data
         if not data.get("protrain_auto_memory"):
             return data
         plugins = data.get("plugins") or []
-        # Shape guard: if the user passed a malformed (non-iterable)
-        # ``plugins`` value, return ``data`` unchanged so Pydantic emits
-        # its standard field-type error rather than masking it with a
-        # misleading "missing plugin" ValueError below. The accepted
-        # iterable set mirrors :func:`_has_protrain_plugin` so a
-        # programmatic ``set`` / ``frozenset`` config doesn't return
-        # early here while ``_has_protrain_plugin`` would happily check
-        # it.
+        # Let Pydantic emit its standard field-type error for malformed plugins.
         if not isinstance(plugins, (list, tuple, set, frozenset)):
             return data
         if not _has_protrain_plugin(plugins):
@@ -436,39 +341,7 @@ class ProTrainArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_incompatible_features(cls, data):
-        """Mutex with features that conflict with ProTrain's runtime.
-
-        ProTrain owns per-rank memory policy (chunk placement, activation
-        checkpointing, optimizer-state hosting). Several Axolotl features
-        either duplicate that policy or operate on representations the
-        chunk manager cannot see:
-
-        * ``deepspeed`` / ``fsdp`` / ``fsdp_config`` — alternative
-          per-rank model-state managers; running either alongside
-          ProTrain double-manages params, grads, and optim state.
-        * ``gradient_checkpointing: true`` — ProTrain's M3 block manager
-          installs its own CKPT hooks from ``n_checkpoint``; adding
-          HuggingFace's ckpt wrapper on top double-checkpoints forwards
-          (recomputes twice, doubles activation traffic).
-        * ``tensor_parallel_size`` / ``context_parallel_size`` /
-          ``sequence_parallel_degree`` > 1 — scope-excluded per plan.md
-          (M6 single-3090 focus); the chunk layout does not shard
-          correctly across TP/CP ranks in this milestone.
-
-        Note: ``load_in_8bit`` / ``load_in_4bit`` are NOT in this mutex
-        list. M0 spike + M2/M3 audit validation established that bnb
-        weight quantization composes with ProTrain in both Mode A
-        (all-persistent) AND offload mode — ``Params4bit.data`` and
-        ``Int8Params.data`` are uint8/int8 storage tensors, so the
-        chunk manager's ``numel * element_size`` byte math handles them
-        correctly, and ``quant_state`` lives as a Python attribute on
-        the param instance and survives ``param.data`` rebinding (see
-        ``chunk/manager.py``). Pinned by
-        ``tests/protrain/test_bnb_offload.py``.
-
-        Each rejection surfaces at config-load time rather than as a
-        silent mis-training run.
-        """
+        """Mutex with deepspeed/fsdp/gradient_checkpointing/TP/CP/SP that conflict with ProTrain."""
         if not isinstance(data, dict):
             return data
         if not data.get("protrain_auto_memory"):
@@ -501,8 +374,7 @@ class ProTrainArgs(BaseModel):
             try:
                 tp_size_int = int(tp_size)
             except (TypeError, ValueError):
-                # Non-numeric value (e.g., "auto") — let Pydantic surface
-                # the type error from its own field validators.
+                # Non-numeric value (e.g., "auto"); let Pydantic surface the type error.
                 tp_size_int = None
             if tp_size_int is not None and tp_size_int > 1:
                 raise ValueError(
@@ -535,13 +407,7 @@ class ProTrainArgs(BaseModel):
                     "(scope-excluded per plan.md — single-3090 target). Set "
                     "sequence_parallel_degree=1 or remove the ProTrain plugin."
                 )
-        # M0 spike + M3 audit validation: bnb 8-bit / 4-bit weights compose with
-        # ProTrain in BOTH Mode A (all-persistent) AND offload mode (Mode C / single-GPU
-        # n_persist_override<N_chunk). Int8Params.data and Params4bit.data are int8/uint8
-        # tensors so chunk numel*element_size byte math handles them correctly; quant_state
-        # lives as a Python attribute on the param instance and survives the chunk gather/
-        # offload path because chunk/manager.py rebinds param.data without touching python
-        # attrs. Pinned by tests/protrain/test_bnb_offload.py.
+        # bnb 8-bit / 4-bit composes with ProTrain in both Mode A and offload paths.
         return data
 
     @model_validator(mode="before")
@@ -558,8 +424,7 @@ class ProTrainArgs(BaseModel):
         optimizer = data.get("optimizer")
         if optimizer is None:
             return data
-        # Tolerate enum values supplied programmatically (e.g.
-        # ``OptimizerNames.ADAMW_TORCH``) as well as the YAML string.
+        # Tolerate enum + str values.
         optimizer_str = getattr(optimizer, "value", optimizer)
         normalized = str(optimizer_str).strip().lower()
         if normalized not in _SUPPORTED_OPTIMIZERS:
