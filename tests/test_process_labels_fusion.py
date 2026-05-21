@@ -9,6 +9,7 @@ between the legacy ``process_labels`` and the new fused implementation.
 from __future__ import annotations
 
 import random
+from types import SimpleNamespace
 from typing import List
 
 import pytest
@@ -18,13 +19,17 @@ from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
     Gemma4ProcessingStrategy,
+    Glm4vProcessingStrategy,
+    InternVLProcessingStrategy,
     Llama3_2VisionProcessingStrategy,
     Llama4ProcessingStrategy,
+    Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,
     Qwen3_5ProcessingStrategy,
+    VoxtralProcessingStrategy,
     _apply_role_boundaries,
 )
 
@@ -243,11 +248,21 @@ def _build_alternating_turns(
     assistant spans too, which is the realistic case.
     """
     role_b = list(boundaries)
-    if not role_b:
-        # No boundaries: just emit random tokens
-        return [rng.randint(10000, 30000) for _ in range(target_len)]
-
     ids: List[int] = []
+    if not role_b:
+        # No boundaries (Voxtral/Mistral3/InternVL/Glm4v): still inject pad and
+        # media tokens so the fused vs legacy parity check exercises the
+        # pad/media masking path even with role-masking opted out.
+        for _ in range(target_len):
+            r = rng.random()
+            if r < pad_rate:
+                ids.append(pad_id)
+            elif r < pad_rate + extra_rate and extra_token_ids:
+                ids.append(rng.choice(extra_token_ids))
+            else:
+                ids.append(rng.randint(10000, 30000))
+        return ids
+
     turn = 0
     while len(ids) < target_len:
         b = role_b[turn % len(role_b)]
@@ -411,6 +426,67 @@ def _make_mistral_v7():
 
 
 # --------------------------------------------------------------------------- #
+# Strategies that opt out of role-masking (no role_boundaries declared)
+# --------------------------------------------------------------------------- #
+#
+# These four fall back to pad+media masking only. We still want parity fuzz
+# coverage of the fused vs legacy paths because the per-strategy media-token
+# combinations differ (audio for Voxtral, three image markers for Mistral3,
+# variable-length image_ids list for InternVL, six markers for Glm4v).
+
+
+def _make_voxtral():
+    """VoxtralProcessor stub.
+
+    The strategy resolves audio token ids via the nested mistral-common path
+    ``processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder.special_ids``.
+    Mirror just enough of that shape for __init__ to read the two ids.
+    """
+    tok = _Tokenizer({}, pad_id=0, unk_id=3)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    return VoxtralProcessingStrategy(_Processor(tok))
+
+
+def _make_mistral3():
+    """Mistral3 stub: image_encoder.special_ids carries (img, img_break, img_end)."""
+    tok = _Tokenizer({}, pad_id=0, unk_id=3)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    return Mistral3ProcessingStrategy(_Processor(tok))
+
+
+def _make_internvl():
+    """InternVL stub: processor.image_ids is a list of media-token ids."""
+    tok = _Tokenizer({}, pad_id=0, unk_id=3)
+    proc = _Processor(tok)
+    proc.image_ids = [500, 501, 502]
+    return InternVLProcessingStrategy(proc)
+
+
+def _make_glm4v():
+    """Glm4v / Glm46V stub: convert_tokens_to_ids resolves six media markers."""
+    vocab = {
+        "<|image|>": [600],
+        "<|begin_of_image|>": [601],
+        "<|end_of_image|>": [602],
+        "<|video|>": [610],
+        "<|begin_of_video|>": [611],
+        "<|end_of_video|>": [612],
+    }
+    tok = _Tokenizer(vocab, pad_id=0, unk_id=3)
+    return Glm4vProcessingStrategy(_Processor(tok))
+
+
+# --------------------------------------------------------------------------- #
 # Parameterized parity fuzz
 # --------------------------------------------------------------------------- #
 
@@ -432,6 +508,25 @@ def _make_mistral_v7():
         (_make_llama4, legacy_base_process_labels, [], "llama4"),
         (_make_pixtral, legacy_base_process_labels, [], "pixtral"),
         (_make_mistral_v7, legacy_base_process_labels, [], "mistral_v7"),
+        (_make_voxtral, legacy_voxtral_process_labels, [300, 301], "voxtral"),
+        (
+            _make_mistral3,
+            legacy_mistral3_process_labels,
+            [400, 401, 402],
+            "mistral3",
+        ),
+        (
+            _make_internvl,
+            legacy_internvl_process_labels,
+            [500, 501, 502],
+            "internvl",
+        ),
+        (
+            _make_glm4v,
+            legacy_glm4v_process_labels,
+            [600, 601, 602, 610, 611, 612],
+            "glm4v",
+        ),
     ],
 )
 @pytest.mark.parametrize("seed", list(range(50)))
