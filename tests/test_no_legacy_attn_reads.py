@@ -16,7 +16,6 @@ LEGACY_FLAGS = (
     "xformers_attention",
     "flex_attention",
     "sage_attention",
-    "s2_attention",
     "eager_attention",
 )
 

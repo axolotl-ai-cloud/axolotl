@@ -92,6 +92,7 @@ def test_ray_train_func_validates_with_worker_capabilities(monkeypatch):
     the result into `validate_config` before training runs."""
     cfg_dict = {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
         "gradient_accumulation_steps": 1,
     }
 
@@ -134,6 +135,7 @@ def test_ray_train_func_registers_plugins_before_validate_config(monkeypatch):
     """
     cfg_dict = {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
         "gradient_accumulation_steps": 1,
         "plugins": ["axolotl.integrations.liger.LigerPlugin"],
     }
@@ -178,6 +180,7 @@ def test_ray_train_func_skips_plugin_registration_when_no_plugins(monkeypatch):
     `plugin_set_cfg` should be invoked on the worker."""
     cfg_dict = {
         "base_model": "HuggingFaceTB/SmolLM2-135M",
+        "micro_batch_size": 1,
         "gradient_accumulation_steps": 1,
     }
 

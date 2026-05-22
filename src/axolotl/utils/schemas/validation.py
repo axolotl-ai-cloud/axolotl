@@ -203,15 +203,6 @@ class AttentionValidationMixin:
         return self
 
     @model_validator(mode="after")
-    def check_sample_packing_with_s2attn(self):
-        if self.sample_packing and self.attn_implementation == "s2":
-            raise ValueError(
-                "Received `sample_packing=true` and `attn_implementation=s2`; "
-                "shifted-sparse attention does not currently support sample packing."
-            )
-        return self
-
-    @model_validator(mode="after")
     def check_scaling_softmax_requires_flex(self):
         if self.scaling_softmax and self.attn_implementation != "flex_attention":
             raise ValueError(
@@ -913,6 +904,48 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_qgalore(cls, data):
+        if data.get("optimizer") != "q_galore_adamw8bit":
+            return data
+        adapter = data.get("adapter")
+        if adapter:
+            raise ValueError(
+                "q_galore_adamw8bit operates on full-precision parameters and is "
+                f"incompatible with adapter='{adapter}'. Remove the adapter setting "
+                "or pick a different optimizer."
+            )
+        if data.get("deepspeed"):
+            raise ValueError(
+                "q_galore_adamw8bit is not yet validated with DeepSpeed. "
+                "Use DDP or FSDP2 with use_orig_params=True."
+            )
+        if data.get("fsdp") or data.get("fsdp_config"):
+            fsdp_version = cls._resolve_fsdp_version(data)
+            if str(fsdp_version) != "2":
+                raise ValueError(
+                    "q_galore_adamw8bit requires FSDP2. Set fsdp_version: 2."
+                )
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("use_orig_params") is not True:
+                raise ValueError(
+                    "q_galore_adamw8bit requires fsdp_config.use_orig_params=True so "
+                    "that per-parameter projection state survives FSDP sharding."
+                )
+        if not (data.get("bf16") or data.get("bfloat16") or data.get("fp16")):
+            LOG.warning(
+                "q_galore_adamw8bit benefits from mixed-precision (bf16/fp16). "
+                "Running in fp32 will negate most of the memory savings."
+            )
+        if data.get("optim_target_modules") is None:
+            # Match the reference impl's defaults: attention + MLP linears.
+            data["optim_target_modules"] = [
+                "attn",
+                "mlp",
+            ]
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_flashoptim_deepspeed_fsdp(cls, data):
         optimizer = data.get("optimizer") or ""
         if str(optimizer).startswith("flash_"):
@@ -1209,7 +1242,6 @@ class SystemValidationMixin:
                 "flash_attention_2",
                 "flash_attention_3",
                 "sdpa",
-                "s2",
             }
             attn_impl = data.get("attn_implementation")
             if attn_impl and attn_impl in unsupported_npu_impls:
@@ -1217,7 +1249,7 @@ class SystemValidationMixin:
                     f"attn_implementation={attn_impl!r} is currently not supported on Ascend NPU."
                 )
             # Legacy flags still present at this point (normalizer strips them later).
-            attn_list = ["flash_attention", "sdp_attention", "s2_attention"]
+            attn_list = ["flash_attention", "sdp_attention"]
             for attn in attn_list:
                 if data.get(attn):
                     raise NotImplementedError(
@@ -1539,7 +1571,7 @@ class ComplexValidationMixin:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
                     "context_parallel_size > 1 requires flash attention "
-                    "(attn_implementation: flash or s2)."
+                    "(attn_implementation: flash_attention_2 or flash_attention_3)."
                 )
 
             if self.sample_packing and self.micro_batch_size > 1:
@@ -1567,6 +1599,13 @@ class ComplexValidationMixin:
                 sys.modules[
                     "transformers.modeling_flash_attention_utils"
                 ].is_flash_attn_greater_or_equal = is_flash_attn_greater_or_equal
+                if not hasattr(
+                    transformers.modeling_flash_attention_utils,
+                    "is_flash_attn_greater_or_equal_2_10",
+                ):
+                    transformers.modeling_flash_attention_utils.is_flash_attn_greater_or_equal_2_10 = is_flash_attn_greater_or_equal(
+                        "2.10"
+                    )
                 sys.modules[
                     "transformers.modeling_flash_attention_utils"
                 ].is_flash_attn_greater_or_equal_2_10 = (
@@ -1588,6 +1627,24 @@ class ComplexValidationMixin:
                 "Please see https://github.com/axolotl-ai-cloud/axolotl/pull/2495#issuecomment-2784022042 "
                 "for more details."
             )
+
+            _SSM_HYBRID_MODEL_TYPES = {
+                "nemotron_h",
+                "falcon_h1",
+                "granitemoehybrid",
+            }
+            _model_config_type = getattr(self, "model_config_type", None) or ""
+            if _model_config_type in _SSM_HYBRID_MODEL_TYPES:
+                LOG.warning(
+                    f"context_parallel_size={self.context_parallel_size} with "
+                    f"model_type={_model_config_type}: SSM/Mamba layers use P2P "
+                    "hidden-state passing and additive output correction across "
+                    "CP ranks. Attention layers use ring attention. This is "
+                    "mathematically exact but has not been extensively validated "
+                    "end-to-end — verify loss curves match single-GPU baselines. "
+                    "Recommended: run a short training job and compare loss curves "
+                    "against a single-GPU baseline with the same data/seed."
+                )
 
         return self
 

@@ -772,13 +772,6 @@ class AxolotlInputConfig(
             "description": "[DEPRECATED] Use `attn_implementation: sdpa`."
         },
     )
-    s2_attention: bool | None = Field(
-        default=None,
-        deprecated="Use `attn_implementation: s2` instead.",
-        json_schema_extra={
-            "description": "[DEPRECATED] Use `attn_implementation: s2`. Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf"
-        },
-    )
     flex_attention: bool | None = Field(
         default=None,
         deprecated="Use `attn_implementation: flex_attention` instead.",
@@ -795,12 +788,6 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Whether to use flash-attention cross entropy implementation - advanced use only"
-        },
-    )
-    flash_attn_rms_norm: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
     flash_attn_fuse_mlp: bool | None = Field(
@@ -831,7 +818,7 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
-                "flash_attention_3, flex_attention, xformers, sage, s2, fp8. Hub-kernel "
+                "flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel "
                 "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
                 "through to transformers."
             )

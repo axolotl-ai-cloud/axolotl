@@ -62,11 +62,11 @@ class TestCapabilityTables:
     def test_supports_packing(self, impl):
         assert impl in ATTN_IMPLS_SUPPORTING_PACKING
 
-    @pytest.mark.parametrize("impl", ["eager", "sdpa", "s2", "fp8"])
+    @pytest.mark.parametrize("impl", ["eager", "sdpa", "fp8"])
     def test_does_not_support_packing(self, impl):
         assert impl not in ATTN_IMPLS_SUPPORTING_PACKING
 
-    @pytest.mark.parametrize("impl", ["flash_attention_2", "flash_attention_3", "s2"])
+    @pytest.mark.parametrize("impl", ["flash_attention_2", "flash_attention_3"])
     def test_uses_flash_lib(self, impl):
         assert impl in ATTN_IMPLS_USING_FLASH_LIB
 
@@ -88,7 +88,6 @@ class TestCapabilityTables:
             "flex_attention",
             "xformers",
             "sage",
-            "s2",
             "fp8",
         ],
     )
@@ -195,7 +194,6 @@ class TestLegacyFlagDeprecation:
             ("flex_attention", "flex_attention"),
             ("sage_attention", "sage"),
             ("eager_attention", "eager"),
-            ("s2_attention", "s2"),
         ],
     )
     def test_legacy_flag_maps_to_canonical(self, flag, expected):
@@ -211,13 +209,8 @@ class TestLegacyFlagDeprecation:
             "flex_attention",
             "sage_attention",
             "eager_attention",
-            "s2_attention",
         ]:
             assert flag not in result
-
-    def test_s2_plus_flash_priority_is_s2(self):
-        result = self._normalize({"s2_attention": True, "flash_attention": True})
-        assert result["attn_implementation"] == "s2"
 
     def test_sage_plus_flash_priority_is_sage(self):
         result = self._normalize({"sage_attention": True, "flash_attention": True})
@@ -249,12 +242,6 @@ class TestLegacyFlagDeprecation:
         )
         with pytest.raises(ValueError, match="cannot be combined with legacy"):
             validate_config(cfg)
-
-    def test_s2_plus_flash_maps_to_s2_on_full_validation(self, min_base_cfg):
-        """Priority resolution applies through the full validator chain too."""
-        cfg = min_base_cfg | DictDefault(s2_attention=True, flash_attention=True)
-        validated = validate_config(cfg)
-        assert validated.attn_implementation == "s2"
 
 
 class TestCanonicalValueAcceptance:
@@ -391,13 +378,6 @@ class TestSamplePackingValidation:
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
-
-    def test_s2_raises(self, min_base_cfg):
-        cfg = min_base_cfg | DictDefault(attn_implementation="s2", sample_packing=True)
-        with pytest.raises(
-            ValueError, match="shifted-sparse attention does not currently support"
-        ):
-            validate_config(cfg)
 
 
 class TestScalingSoftmaxValidation:

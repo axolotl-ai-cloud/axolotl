@@ -121,6 +121,15 @@ def ray_train_func(kwargs: dict):
         env_capabilities=env_capabilities,
     )
 
+    # Derive here (not in controller normalize_config) so the worker's
+    # validate_config above doesn't see both set and trip check_gas_bsz.
+    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+        cfg.batch_size // cfg.micro_batch_size
+    )
+    cfg.batch_size = (
+        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+    )
+
     prepare_optim_env(cfg)
     normalize_config(cfg)
     resolve_dtype(cfg)

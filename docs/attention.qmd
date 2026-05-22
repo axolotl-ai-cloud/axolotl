@@ -177,21 +177,6 @@ Recommended for Turing GPUs or below (e.g. Colab T4).
 
 :::
 
-### Shifted Sparse Attention
-
-::: {.callout-warning}
-
-Planned for deprecation. Prefer one of the backends above.
-
-:::
-
-Requirements: LLaMA model architecture. Loaded as FA2 under the hood and
-patched to implement shifted-sparse attention. Does not support sample packing.
-
-```yaml
-attn_implementation: s2
-```
-
 ### FP8
 
 torchao low-precision attention. Loaded as SDPA and patched post-load.
@@ -227,7 +212,6 @@ the validated config.
 | `xformers_attention: true` | `attn_implementation: xformers` |
 | `flex_attention: true` | `attn_implementation: flex_attention` |
 | `sage_attention: true` | `attn_implementation: sage` |
-| `s2_attention: true` | `attn_implementation: s2` |
 | `eager_attention: true` | `attn_implementation: eager` |
 
 Combining `attn_implementation` with a legacy flag (e.g. `attn_implementation:
