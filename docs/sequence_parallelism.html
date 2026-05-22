@@ -797,7 +797,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
   <li><a href="#implementation-details" id="toc-implementation-details" class="nav-link" data-scroll-target="#implementation-details">Implementation Details</a></li>
   <li><a href="#requirements" id="toc-requirements" class="nav-link" data-scroll-target="#requirements">Requirements</a></li>
-  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a></li>
+  <li><a href="#limitations" id="toc-limitations" class="nav-link" data-scroll-target="#limitations">Limitations</a>
+  <ul class="collapse">
+  <li><a href="#mambassm-hybrid-models" id="toc-mambassm-hybrid-models" class="nav-link" data-scroll-target="#mambassm-hybrid-models">Mamba/SSM Hybrid Models</a></li>
+  </ul></li>
   <li><a href="#example" id="toc-example" class="nav-link" data-scroll-target="#example">Example</a></li>
   <li><a href="#sample-packing-with-sequence-parallelism" id="toc-sample-packing-with-sequence-parallelism" class="nav-link" data-scroll-target="#sample-packing-with-sequence-parallelism">Sample Packing with Sequence Parallelism</a></li>
   <li><a href="#effect-on-batch-size" id="toc-effect-on-batch-size" class="nav-link" data-scroll-target="#effect-on-batch-size">Effect on Batch Size</a></li>
@@ -888,6 +891,60 @@ through a ring communication pattern.</p>
 <li>Flash attention must be enabled for this to work (<code>attn_implementation: flash_attention_2</code> in config YAML)</li>
 <li>May have a small performance overhead due to communication between GPUs</li>
 </ul>
+<section id="mambassm-hybrid-models" class="level3">
+<h3 class="anchored" data-anchor-id="mambassm-hybrid-models">Mamba/SSM Hybrid Models</h3>
+<p>Context parallelism is supported for hybrid models that combine attention and Mamba2 SSM
+layers. These models require special handling because:</p>
+<ul>
+<li><strong>Attention layers</strong> work correctly via ring flash attention (same as pure-attention models).</li>
+<li><strong>SSM (Mamba2) layers</strong> are recurrent and need cross-rank hidden-state propagation.</li>
+</ul>
+<p>Axolotl handles both aspects:</p>
+<ol type="1">
+<li><p><strong>Sample packing boundaries</strong> (<code>seq_idx</code>): When multiple sequences are packed into one
+row, the SSM kernels need <code>seq_idx</code> to reset state at boundaries. Under CP, chunks may
+start mid-sample, so <code>seq_idx</code> is derived from <code>position_ids</code> using a CP-safe cumsum
+normalization (see <code>mamba_utils.get_seq_idx</code>).</p></li>
+<li><p><strong>Cross-rank SSM state passing</strong>: After each SSM scan, the final hidden state is sent to
+the next rank via P2P communication (<code>ring_shift_ssm_state</code>), and an additive correction
+is applied to account for the missing initial state (<code>mamba2_cp_correction</code>). This uses
+the linearity property of SSMs to avoid a second forward pass.</p></li>
+</ol>
+<section id="supported-architectures" class="level4">
+<h4 class="anchored" data-anchor-id="supported-architectures">Supported Architectures</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Model family</th>
+<th><code>model_config_type</code></th>
+<th>Architecture notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Nemotron-H</td>
+<td><code>nemotron_h</code></td>
+<td>Mamba2 / Attention / MoE hybrid; block type selected per layer</td>
+</tr>
+<tr class="even">
+<td>Falcon-H1</td>
+<td><code>falcon_h1</code></td>
+<td>Mamba2 and Attention run <strong>in parallel</strong> in every layer</td>
+</tr>
+<tr class="odd">
+<td>Granite MoE Hybrid</td>
+<td><code>granitemoehybrid</code></td>
+<td>Mamba2 / Attention / MoE hybrid</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
 </section>
 <section id="example" class="level2">
 <h2 class="anchored" data-anchor-id="example">Example</h2>

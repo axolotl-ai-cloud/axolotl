@@ -2360,145 +2360,174 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <span id="cb1-1540"><a href="#cb1-1540" aria-hidden="true" tabindex="-1"></a><span class="co"># be useful to ensure even sharding.</span></span>
 <span id="cb1-1541"><a href="#cb1-1541" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_rank_multiple_of</span><span class="kw">:</span><span class="at"> int | None = 1</span></span>
 <span id="cb1-1542"><a href="#cb1-1542" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1543"><a href="#cb1-1543" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
-<span id="cb1-1544"><a href="#cb1-1544" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1545"><a href="#cb1-1545" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
-<span id="cb1-1546"><a href="#cb1-1546" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1547"><a href="#cb1-1547" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1548"><a href="#cb1-1548" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
-<span id="cb1-1549"><a href="#cb1-1549" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1550"><a href="#cb1-1550" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
-<span id="cb1-1551"><a href="#cb1-1551" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1552"><a href="#cb1-1552" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
-<span id="cb1-1553"><a href="#cb1-1553" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
-<span id="cb1-1554"><a href="#cb1-1554" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1555"><a href="#cb1-1555" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
-<span id="cb1-1556"><a href="#cb1-1556" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1557"><a href="#cb1-1557" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
-<span id="cb1-1558"><a href="#cb1-1558" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1559"><a href="#cb1-1559" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1560"><a href="#cb1-1560" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
-<span id="cb1-1561"><a href="#cb1-1561" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
-<span id="cb1-1562"><a href="#cb1-1562" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1563"><a href="#cb1-1563" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1564"><a href="#cb1-1564" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1565"><a href="#cb1-1565" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
-<span id="cb1-1566"><a href="#cb1-1566" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1567"><a href="#cb1-1567" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
-<span id="cb1-1568"><a href="#cb1-1568" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1569"><a href="#cb1-1569" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
-<span id="cb1-1570"><a href="#cb1-1570" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1571"><a href="#cb1-1571" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
-<span id="cb1-1572"><a href="#cb1-1572" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1573"><a href="#cb1-1573" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1574"><a href="#cb1-1574" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
-<span id="cb1-1575"><a href="#cb1-1575" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1576"><a href="#cb1-1576" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
-<span id="cb1-1577"><a href="#cb1-1577" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1578"><a href="#cb1-1578" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
-<span id="cb1-1579"><a href="#cb1-1579" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1580"><a href="#cb1-1580" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
-<span id="cb1-1581"><a href="#cb1-1581" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1582"><a href="#cb1-1582" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
-<span id="cb1-1583"><a href="#cb1-1583" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
-<span id="cb1-1584"><a href="#cb1-1584" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1585"><a href="#cb1-1585" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
-<span id="cb1-1586"><a href="#cb1-1586" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
-<span id="cb1-1587"><a href="#cb1-1587" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1588"><a href="#cb1-1588" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
-<span id="cb1-1589"><a href="#cb1-1589" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
-<span id="cb1-1590"><a href="#cb1-1590" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1591"><a href="#cb1-1591" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
-<span id="cb1-1592"><a href="#cb1-1592" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1593"><a href="#cb1-1593" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1594"><a href="#cb1-1594" aria-hidden="true" tabindex="-1"></a><span class="fu">use_trackio</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1595"><a href="#cb1-1595" aria-hidden="true" tabindex="-1"></a><span class="co"># Your trackio project name</span></span>
-<span id="cb1-1596"><a href="#cb1-1596" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1597"><a href="#cb1-1597" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your trackio run</span></span>
-<span id="cb1-1598"><a href="#cb1-1598" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1599"><a href="#cb1-1599" aria-hidden="true" tabindex="-1"></a><span class="co"># Hugging Face Space ID to sync dashboard to (optional, runs locally if not provided)</span></span>
-<span id="cb1-1600"><a href="#cb1-1600" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_space_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1601"><a href="#cb1-1601" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1602"><a href="#cb1-1602" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable OpenTelemetry metrics collection and Prometheus export</span></span>
-<span id="cb1-1603"><a href="#cb1-1603" aria-hidden="true" tabindex="-1"></a><span class="fu">use_otel_metrics</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
-<span id="cb1-1604"><a href="#cb1-1604" aria-hidden="true" tabindex="-1"></a><span class="co"># Host to bind the OpenTelemetry metrics server to</span></span>
-<span id="cb1-1605"><a href="#cb1-1605" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_host</span><span class="kw">:</span><span class="at"> str | None = localhost</span></span>
-<span id="cb1-1606"><a href="#cb1-1606" aria-hidden="true" tabindex="-1"></a><span class="co"># Port for the Prometheus metrics HTTP server</span></span>
-<span id="cb1-1607"><a href="#cb1-1607" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_port</span><span class="kw">:</span><span class="at"> int | None = 8000</span></span>
-<span id="cb1-1608"><a href="#cb1-1608" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1609"><a href="#cb1-1609" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
-<span id="cb1-1610"><a href="#cb1-1610" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1611"><a href="#cb1-1611" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
-<span id="cb1-1612"><a href="#cb1-1612" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1613"><a href="#cb1-1613" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
-<span id="cb1-1614"><a href="#cb1-1614" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
-<span id="cb1-1615"><a href="#cb1-1615" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1616"><a href="#cb1-1616" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1617"><a href="#cb1-1617" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1618"><a href="#cb1-1618" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1619"><a href="#cb1-1619" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1620"><a href="#cb1-1620" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1621"><a href="#cb1-1621" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1543"><a href="#cb1-1543" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: rank r of the low-rank gradient projection. Smaller r reduces optimizer</span></span>
+<span id="cb1-1544"><a href="#cb1-1544" aria-hidden="true" tabindex="-1"></a><span class="co"># state but loses gradient information.</span></span>
+<span id="cb1-1545"><a href="#cb1-1545" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_rank</span><span class="kw">:</span><span class="at"> int | None = 256</span></span>
+<span id="cb1-1546"><a href="#cb1-1546" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: maximum number of steps between SVD recomputations of the projection matrix.</span></span>
+<span id="cb1-1547"><a href="#cb1-1547" aria-hidden="true" tabindex="-1"></a><span class="co"># The adaptive scheduler may skip updates earlier based on cos_threshold.</span></span>
+<span id="cb1-1548"><a href="#cb1-1548" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_update_proj_gap</span><span class="kw">:</span><span class="at"> int | None = 200</span></span>
+<span id="cb1-1549"><a href="#cb1-1549" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: scaling factor applied to the projected gradient after project_back.</span></span>
+<span id="cb1-1550"><a href="#cb1-1550" aria-hidden="true" tabindex="-1"></a><span class="co"># Equivalent to GaLore's `galore_scale`.</span></span>
+<span id="cb1-1551"><a href="#cb1-1551" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_scale</span><span class="kw">:</span><span class="at"> float | None = 0.25</span></span>
+<span id="cb1-1552"><a href="#cb1-1552" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: projection type for the GaLoreProjector. One of 'std', 'reverse_std',</span></span>
+<span id="cb1-1553"><a href="#cb1-1553" aria-hidden="true" tabindex="-1"></a><span class="co"># 'right', 'left', 'full'.</span></span>
+<span id="cb1-1554"><a href="#cb1-1554" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_type</span><span class="kw">:</span><span class="at"> str | None = std</span></span>
+<span id="cb1-1555"><a href="#cb1-1555" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: enable INT-quantization of the projection matrix P (the resilient-to-</span></span>
+<span id="cb1-1556"><a href="#cb1-1556" aria-hidden="true" tabindex="-1"></a><span class="co"># quantization observation from the paper).</span></span>
+<span id="cb1-1557"><a href="#cb1-1557" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_quant</span><span class="kw">:</span><span class="at"> bool | None = True</span></span>
+<span id="cb1-1558"><a href="#cb1-1558" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: bitwidth for the quantized projection matrix when qgalore_proj_quant is True</span></span>
+<span id="cb1-1559"><a href="#cb1-1559" aria-hidden="true" tabindex="-1"></a><span class="co"># (paper default: 4).</span></span>
+<span id="cb1-1560"><a href="#cb1-1560" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_bits</span><span class="kw">:</span><span class="at"> int | None = 4</span></span>
+<span id="cb1-1561"><a href="#cb1-1561" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: group size for projection-matrix quantization. Must evenly divide the</span></span>
+<span id="cb1-1562"><a href="#cb1-1562" aria-hidden="true" tabindex="-1"></a><span class="co"># projection's last dimension.</span></span>
+<span id="cb1-1563"><a href="#cb1-1563" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_group_size</span><span class="kw">:</span><span class="at"> int | None = 256</span></span>
+<span id="cb1-1564"><a href="#cb1-1564" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: cosine-similarity threshold for the lazy subspace update. If the new P is</span></span>
+<span id="cb1-1565"><a href="#cb1-1565" aria-hidden="true" tabindex="-1"></a><span class="co"># within this similarity of the previous one, the SVD is skipped.</span></span>
+<span id="cb1-1566"><a href="#cb1-1566" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_cos_threshold</span><span class="kw">:</span><span class="at"> float | None = 0.4</span></span>
+<span id="cb1-1567"><a href="#cb1-1567" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: multiplicative factor by which update_proj_gap grows once a layer's subspace</span></span>
+<span id="cb1-1568"><a href="#cb1-1568" aria-hidden="true" tabindex="-1"></a><span class="co"># is judged stable.</span></span>
+<span id="cb1-1569"><a href="#cb1-1569" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_gamma_proj</span><span class="kw">:</span><span class="at"> int | None = 2</span></span>
+<span id="cb1-1570"><a href="#cb1-1570" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore: length of the moving-average queue used by the adaptive-frequency scheduler.</span></span>
+<span id="cb1-1571"><a href="#cb1-1571" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_queue_size</span><span class="kw">:</span><span class="at"> int | None = 5</span></span>
+<span id="cb1-1572"><a href="#cb1-1572" aria-hidden="true" tabindex="-1"></a><span class="co"># Gradient clipping max norm</span></span>
+<span id="cb1-1573"><a href="#cb1-1573" aria-hidden="true" tabindex="-1"></a><span class="fu">max_grad_norm</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1574"><a href="#cb1-1574" aria-hidden="true" tabindex="-1"></a><span class="fu">num_epochs</span><span class="kw">:</span><span class="at"> float = 1.0</span></span>
+<span id="cb1-1575"><a href="#cb1-1575" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1576"><a href="#cb1-1576" aria-hidden="true" tabindex="-1"></a><span class="fu">use_wandb</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1577"><a href="#cb1-1577" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your wandb run</span></span>
+<span id="cb1-1578"><a href="#cb1-1578" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1579"><a href="#cb1-1579" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the ID of your wandb run</span></span>
+<span id="cb1-1580"><a href="#cb1-1580" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_run_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1581"><a href="#cb1-1581" aria-hidden="true" tabindex="-1"></a><span class="co"># "offline" to save run metadata locally and not sync to the server, "disabled" to turn</span></span>
+<span id="cb1-1582"><a href="#cb1-1582" aria-hidden="true" tabindex="-1"></a><span class="co"># off wandb</span></span>
+<span id="cb1-1583"><a href="#cb1-1583" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1584"><a href="#cb1-1584" aria-hidden="true" tabindex="-1"></a><span class="co"># Your wandb project name</span></span>
+<span id="cb1-1585"><a href="#cb1-1585" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_project</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1586"><a href="#cb1-1586" aria-hidden="true" tabindex="-1"></a><span class="co"># A wandb Team name if using a Team</span></span>
+<span id="cb1-1587"><a href="#cb1-1587" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_entity</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1588"><a href="#cb1-1588" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_watch</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1589"><a href="#cb1-1589" aria-hidden="true" tabindex="-1"></a><span class="co"># "checkpoint" to log model to wandb Artifacts every `save_steps` or "end" to log only</span></span>
+<span id="cb1-1590"><a href="#cb1-1590" aria-hidden="true" tabindex="-1"></a><span class="co"># at the end of training</span></span>
+<span id="cb1-1591"><a href="#cb1-1591" aria-hidden="true" tabindex="-1"></a><span class="fu">wandb_log_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1592"><a href="#cb1-1592" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1593"><a href="#cb1-1593" aria-hidden="true" tabindex="-1"></a><span class="fu">use_mlflow</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1594"><a href="#cb1-1594" aria-hidden="true" tabindex="-1"></a><span class="co"># URI to mlflow</span></span>
+<span id="cb1-1595"><a href="#cb1-1595" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_tracking_uri</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1596"><a href="#cb1-1596" aria-hidden="true" tabindex="-1"></a><span class="co"># Your experiment name</span></span>
+<span id="cb1-1597"><a href="#cb1-1597" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_experiment_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1598"><a href="#cb1-1598" aria-hidden="true" tabindex="-1"></a><span class="co"># Your run name</span></span>
+<span id="cb1-1599"><a href="#cb1-1599" aria-hidden="true" tabindex="-1"></a><span class="fu">mlflow_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1600"><a href="#cb1-1600" aria-hidden="true" tabindex="-1"></a><span class="co"># set to true to copy each saved checkpoint on each save to mlflow artifact registry</span></span>
+<span id="cb1-1601"><a href="#cb1-1601" aria-hidden="true" tabindex="-1"></a><span class="fu">hf_mlflow_log_artifacts</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1602"><a href="#cb1-1602" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1603"><a href="#cb1-1603" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable or disable Comet integration.</span></span>
+<span id="cb1-1604"><a href="#cb1-1604" aria-hidden="true" tabindex="-1"></a><span class="fu">use_comet</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1605"><a href="#cb1-1605" aria-hidden="true" tabindex="-1"></a><span class="co"># API key for Comet. Recommended to set via `comet login`.</span></span>
+<span id="cb1-1606"><a href="#cb1-1606" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_api_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1607"><a href="#cb1-1607" aria-hidden="true" tabindex="-1"></a><span class="co"># Workspace name in Comet. Defaults to the user's default workspace.</span></span>
+<span id="cb1-1608"><a href="#cb1-1608" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_workspace</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1609"><a href="#cb1-1609" aria-hidden="true" tabindex="-1"></a><span class="co"># Project name in Comet. Defaults to Uncategorized.</span></span>
+<span id="cb1-1610"><a href="#cb1-1610" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1611"><a href="#cb1-1611" aria-hidden="true" tabindex="-1"></a><span class="co"># Identifier for the experiment. Used to append data to an existing experiment or</span></span>
+<span id="cb1-1612"><a href="#cb1-1612" aria-hidden="true" tabindex="-1"></a><span class="co"># control the key of new experiments. Default to a random key.</span></span>
+<span id="cb1-1613"><a href="#cb1-1613" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_key</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1614"><a href="#cb1-1614" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a new experiment ("create") or log to an existing one ("get"). Default</span></span>
+<span id="cb1-1615"><a href="#cb1-1615" aria-hidden="true" tabindex="-1"></a><span class="co"># ("get_or_create") auto-selects based on configuration.</span></span>
+<span id="cb1-1616"><a href="#cb1-1616" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_mode</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1617"><a href="#cb1-1617" aria-hidden="true" tabindex="-1"></a><span class="co"># Set to True to log data to Comet server, or False for offline storage. Default is</span></span>
+<span id="cb1-1618"><a href="#cb1-1618" aria-hidden="true" tabindex="-1"></a><span class="co"># True.</span></span>
+<span id="cb1-1619"><a href="#cb1-1619" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_online</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1620"><a href="#cb1-1620" aria-hidden="true" tabindex="-1"></a><span class="co"># Dictionary for additional configuration settings, see the doc for more details.</span></span>
+<span id="cb1-1621"><a href="#cb1-1621" aria-hidden="true" tabindex="-1"></a><span class="fu">comet_experiment_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
 <span id="cb1-1622"><a href="#cb1-1622" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1623"><a href="#cb1-1623" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
-<span id="cb1-1624"><a href="#cb1-1624" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1625"><a href="#cb1-1625" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
-<span id="cb1-1626"><a href="#cb1-1626" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
-<span id="cb1-1627"><a href="#cb1-1627" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1628"><a href="#cb1-1628" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
-<span id="cb1-1629"><a href="#cb1-1629" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
-<span id="cb1-1630"><a href="#cb1-1630" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
-<span id="cb1-1631"><a href="#cb1-1631" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
-<span id="cb1-1632"><a href="#cb1-1632" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
-<span id="cb1-1633"><a href="#cb1-1633" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
-<span id="cb1-1634"><a href="#cb1-1634" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
-<span id="cb1-1635"><a href="#cb1-1635" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1636"><a href="#cb1-1636" aria-hidden="true" tabindex="-1"></a><span class="co"># Opt-in override for the MM mask scanner's per-role boundary markers. Non-empty list</span></span>
-<span id="cb1-1637"><a href="#cb1-1637" aria-hidden="true" tabindex="-1"></a><span class="co"># replaces built-ins wholesale; unset or empty falls back to built-ins. See</span></span>
-<span id="cb1-1638"><a href="#cb1-1638" aria-hidden="true" tabindex="-1"></a><span class="co"># docs/multimodal_assistant_mask.md.</span></span>
-<span id="cb1-1639"><a href="#cb1-1639" aria-hidden="true" tabindex="-1"></a><span class="fu">role_boundaries</span><span class="kw">:</span><span class="at"> list[RoleBoundarySpec] | None</span></span>
-<span id="cb1-1640"><a href="#cb1-1640" aria-hidden="true" tabindex="-1"></a><span class="co">  # For RoleBoundarySpec:</span></span>
-<span id="cb1-1641"><a href="#cb1-1641" aria-hidden="true" tabindex="-1"></a><span class="co">  # Role name as it appears in cfg.roles_to_train (e.g. 'assistant', 'user', 'system',</span></span>
-<span id="cb1-1642"><a href="#cb1-1642" aria-hidden="true" tabindex="-1"></a><span class="co">  # 'tool', 'ipython').</span></span>
-<span id="cb1-1643"><a href="#cb1-1643" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">role</span><span class="kw">:</span><span class="at"> str (required)</span></span>
-<span id="cb1-1644"><a href="#cb1-1644" aria-hidden="true" tabindex="-1"></a><span class="co">  # Literal string that marks the start of this role's span in the rendered chat</span></span>
-<span id="cb1-1645"><a href="#cb1-1645" aria-hidden="true" tabindex="-1"></a><span class="co">  # template. Tokenized via ``tokenizer.encode(..., add_special_tokens=False)`` at</span></span>
-<span id="cb1-1646"><a href="#cb1-1646" aria-hidden="true" tabindex="-1"></a><span class="co">  # strategy init.</span></span>
-<span id="cb1-1647"><a href="#cb1-1647" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">start</span><span class="kw">:</span><span class="at"> str (required)</span></span>
-<span id="cb1-1648"><a href="#cb1-1648" aria-hidden="true" tabindex="-1"></a><span class="co">  # Literal string that marks the end of this role's span. Set to ``eos_token`` to</span></span>
-<span id="cb1-1649"><a href="#cb1-1649" aria-hidden="true" tabindex="-1"></a><span class="co">  # terminate at the tokenizer's EOS. Leave unset / null to terminate at end-of-</span></span>
-<span id="cb1-1650"><a href="#cb1-1650" aria-hidden="true" tabindex="-1"></a><span class="co">  # sequence.</span></span>
-<span id="cb1-1651"><a href="#cb1-1651" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">end</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1652"><a href="#cb1-1652" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether the start marker tokens contribute to loss on trainable turns. Default</span></span>
-<span id="cb1-1653"><a href="#cb1-1653" aria-hidden="true" tabindex="-1"></a><span class="co">  # False.</span></span>
-<span id="cb1-1654"><a href="#cb1-1654" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">include_start</span><span class="kw">:</span><span class="at"> bool = False</span></span>
-<span id="cb1-1655"><a href="#cb1-1655" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether the end marker tokens contribute to loss on trainable turns (honoring</span></span>
-<span id="cb1-1656"><a href="#cb1-1656" aria-hidden="true" tabindex="-1"></a><span class="co">  # cfg.train_on_eos). Default True.</span></span>
-<span id="cb1-1657"><a href="#cb1-1657" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">include_end</span><span class="kw">:</span><span class="at"> bool = True</span></span>
-<span id="cb1-1658"><a href="#cb1-1658" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1659"><a href="#cb1-1659" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
-<span id="cb1-1660"><a href="#cb1-1660" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1661"><a href="#cb1-1661" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
-<span id="cb1-1662"><a href="#cb1-1662" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
-<span id="cb1-1663"><a href="#cb1-1663" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
-<span id="cb1-1664"><a href="#cb1-1664" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
-<span id="cb1-1665"><a href="#cb1-1665" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1666"><a href="#cb1-1666" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
-<span id="cb1-1667"><a href="#cb1-1667" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1668"><a href="#cb1-1668" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-1669"><a href="#cb1-1669" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1670"><a href="#cb1-1670" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
-<span id="cb1-1671"><a href="#cb1-1671" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1672"><a href="#cb1-1672" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1673"><a href="#cb1-1673" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
-<span id="cb1-1674"><a href="#cb1-1674" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_table_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1675"><a href="#cb1-1675" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
-<span id="cb1-1676"><a href="#cb1-1676" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_use_logits_to_keep</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1677"><a href="#cb1-1677" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_generate_during_eval</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1678"><a href="#cb1-1678" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_norm_loss</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1679"><a href="#cb1-1679" aria-hidden="true" tabindex="-1"></a><span class="fu">rpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
-<span id="cb1-1680"><a href="#cb1-1680" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
-<span id="cb1-1681"><a href="#cb1-1681" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-1623"><a href="#cb1-1623" aria-hidden="true" tabindex="-1"></a><span class="fu">use_trackio</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1624"><a href="#cb1-1624" aria-hidden="true" tabindex="-1"></a><span class="co"># Your trackio project name</span></span>
+<span id="cb1-1625"><a href="#cb1-1625" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_project_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1626"><a href="#cb1-1626" aria-hidden="true" tabindex="-1"></a><span class="co"># Set the name of your trackio run</span></span>
+<span id="cb1-1627"><a href="#cb1-1627" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1628"><a href="#cb1-1628" aria-hidden="true" tabindex="-1"></a><span class="co"># Hugging Face Space ID to sync dashboard to (optional, runs locally if not provided)</span></span>
+<span id="cb1-1629"><a href="#cb1-1629" aria-hidden="true" tabindex="-1"></a><span class="fu">trackio_space_id</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1630"><a href="#cb1-1630" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1631"><a href="#cb1-1631" aria-hidden="true" tabindex="-1"></a><span class="co"># Enable OpenTelemetry metrics collection and Prometheus export</span></span>
+<span id="cb1-1632"><a href="#cb1-1632" aria-hidden="true" tabindex="-1"></a><span class="fu">use_otel_metrics</span><span class="kw">:</span><span class="at"> bool | None = False</span></span>
+<span id="cb1-1633"><a href="#cb1-1633" aria-hidden="true" tabindex="-1"></a><span class="co"># Host to bind the OpenTelemetry metrics server to</span></span>
+<span id="cb1-1634"><a href="#cb1-1634" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_host</span><span class="kw">:</span><span class="at"> str | None = localhost</span></span>
+<span id="cb1-1635"><a href="#cb1-1635" aria-hidden="true" tabindex="-1"></a><span class="co"># Port for the Prometheus metrics HTTP server</span></span>
+<span id="cb1-1636"><a href="#cb1-1636" aria-hidden="true" tabindex="-1"></a><span class="fu">otel_metrics_port</span><span class="kw">:</span><span class="at"> int | None = 8000</span></span>
+<span id="cb1-1637"><a href="#cb1-1637" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1638"><a href="#cb1-1638" aria-hidden="true" tabindex="-1"></a><span class="co"># the number of activate layers in LISA</span></span>
+<span id="cb1-1639"><a href="#cb1-1639" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_n_layers</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1640"><a href="#cb1-1640" aria-hidden="true" tabindex="-1"></a><span class="co"># how often to switch layers in LISA</span></span>
+<span id="cb1-1641"><a href="#cb1-1641" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_step_interval</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1642"><a href="#cb1-1642" aria-hidden="true" tabindex="-1"></a><span class="co"># path under the model to access the layers</span></span>
+<span id="cb1-1643"><a href="#cb1-1643" aria-hidden="true" tabindex="-1"></a><span class="fu">lisa_layers_attribute</span><span class="kw">:</span><span class="at"> str | None = model.layers</span></span>
+<span id="cb1-1644"><a href="#cb1-1644" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1645"><a href="#cb1-1645" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_title</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1646"><a href="#cb1-1646" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_share</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1647"><a href="#cb1-1647" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1648"><a href="#cb1-1648" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_server_port</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1649"><a href="#cb1-1649" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1650"><a href="#cb1-1650" aria-hidden="true" tabindex="-1"></a><span class="fu">gradio_temperature</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1651"><a href="#cb1-1651" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1652"><a href="#cb1-1652" aria-hidden="true" tabindex="-1"></a><span class="fu">use_ray</span><span class="kw">:</span><span class="at"> bool = False</span></span>
+<span id="cb1-1653"><a href="#cb1-1653" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_run_name</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1654"><a href="#cb1-1654" aria-hidden="true" tabindex="-1"></a><span class="fu">ray_num_workers</span><span class="kw">:</span><span class="at"> int = 1</span></span>
+<span id="cb1-1655"><a href="#cb1-1655" aria-hidden="true" tabindex="-1"></a><span class="fu">resources_per_worker</span><span class="kw">:</span><span class="at"> dict</span></span>
+<span id="cb1-1656"><a href="#cb1-1656" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1657"><a href="#cb1-1657" aria-hidden="true" tabindex="-1"></a><span class="co"># The size of the image to resize to. It can be an integer (resized into padded-square</span></span>
+<span id="cb1-1658"><a href="#cb1-1658" aria-hidden="true" tabindex="-1"></a><span class="co"># image) or a tuple (width, height).If not provided, we will attempt to load from</span></span>
+<span id="cb1-1659"><a href="#cb1-1659" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessor.size, otherwise, images won't be resized.</span></span>
+<span id="cb1-1660"><a href="#cb1-1660" aria-hidden="true" tabindex="-1"></a><span class="fu">image_size</span><span class="kw">:</span><span class="at"> int | tuple[int, int] | None</span></span>
+<span id="cb1-1661"><a href="#cb1-1661" aria-hidden="true" tabindex="-1"></a><span class="co"># The resampling algorithm to use for image resizing. Default is bilinear. Please refer</span></span>
+<span id="cb1-1662"><a href="#cb1-1662" aria-hidden="true" tabindex="-1"></a><span class="co"># to PIL.Image.Resampling for more details.</span></span>
+<span id="cb1-1663"><a href="#cb1-1663" aria-hidden="true" tabindex="-1"></a><span class="fu">image_resize_algorithm</span><span class="kw">:</span><span class="at"> Literal['bilinear', 'bicubic', 'lanczos'] | Resampling | None</span></span>
+<span id="cb1-1664"><a href="#cb1-1664" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1665"><a href="#cb1-1665" aria-hidden="true" tabindex="-1"></a><span class="co"># Opt-in override for the MM mask scanner's per-role boundary markers. Non-empty list</span></span>
+<span id="cb1-1666"><a href="#cb1-1666" aria-hidden="true" tabindex="-1"></a><span class="co"># replaces built-ins wholesale; unset or empty falls back to built-ins. See</span></span>
+<span id="cb1-1667"><a href="#cb1-1667" aria-hidden="true" tabindex="-1"></a><span class="co"># docs/multimodal_assistant_mask.md.</span></span>
+<span id="cb1-1668"><a href="#cb1-1668" aria-hidden="true" tabindex="-1"></a><span class="fu">role_boundaries</span><span class="kw">:</span><span class="at"> list[RoleBoundarySpec] | None</span></span>
+<span id="cb1-1669"><a href="#cb1-1669" aria-hidden="true" tabindex="-1"></a><span class="co">  # For RoleBoundarySpec:</span></span>
+<span id="cb1-1670"><a href="#cb1-1670" aria-hidden="true" tabindex="-1"></a><span class="co">  # Role name as it appears in cfg.roles_to_train (e.g. 'assistant', 'user', 'system',</span></span>
+<span id="cb1-1671"><a href="#cb1-1671" aria-hidden="true" tabindex="-1"></a><span class="co">  # 'tool', 'ipython').</span></span>
+<span id="cb1-1672"><a href="#cb1-1672" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">role</span><span class="kw">:</span><span class="at"> str (required)</span></span>
+<span id="cb1-1673"><a href="#cb1-1673" aria-hidden="true" tabindex="-1"></a><span class="co">  # Literal string that marks the start of this role's span in the rendered chat</span></span>
+<span id="cb1-1674"><a href="#cb1-1674" aria-hidden="true" tabindex="-1"></a><span class="co">  # template. Tokenized via ``tokenizer.encode(..., add_special_tokens=False)`` at</span></span>
+<span id="cb1-1675"><a href="#cb1-1675" aria-hidden="true" tabindex="-1"></a><span class="co">  # strategy init.</span></span>
+<span id="cb1-1676"><a href="#cb1-1676" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">start</span><span class="kw">:</span><span class="at"> str (required)</span></span>
+<span id="cb1-1677"><a href="#cb1-1677" aria-hidden="true" tabindex="-1"></a><span class="co">  # Literal string that marks the end of this role's span. Set to ``eos_token`` to</span></span>
+<span id="cb1-1678"><a href="#cb1-1678" aria-hidden="true" tabindex="-1"></a><span class="co">  # terminate at the tokenizer's EOS. Leave unset / null to terminate at end-of-</span></span>
+<span id="cb1-1679"><a href="#cb1-1679" aria-hidden="true" tabindex="-1"></a><span class="co">  # sequence.</span></span>
+<span id="cb1-1680"><a href="#cb1-1680" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">end</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1681"><a href="#cb1-1681" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether the start marker tokens contribute to loss on trainable turns. Default</span></span>
+<span id="cb1-1682"><a href="#cb1-1682" aria-hidden="true" tabindex="-1"></a><span class="co">  # False.</span></span>
+<span id="cb1-1683"><a href="#cb1-1683" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">include_start</span><span class="kw">:</span><span class="at"> bool = False</span></span>
+<span id="cb1-1684"><a href="#cb1-1684" aria-hidden="true" tabindex="-1"></a><span class="co">  # Whether the end marker tokens contribute to loss on trainable turns (honoring</span></span>
+<span id="cb1-1685"><a href="#cb1-1685" aria-hidden="true" tabindex="-1"></a><span class="co">  # cfg.train_on_eos). Default True.</span></span>
+<span id="cb1-1686"><a href="#cb1-1686" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">include_end</span><span class="kw">:</span><span class="at"> bool = True</span></span>
+<span id="cb1-1687"><a href="#cb1-1687" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1688"><a href="#cb1-1688" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides to the base model configuration</span></span>
+<span id="cb1-1689"><a href="#cb1-1689" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_config</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1690"><a href="#cb1-1690" aria-hidden="true" tabindex="-1"></a><span class="co"># optional overrides the base model loading from_pretrained</span></span>
+<span id="cb1-1691"><a href="#cb1-1691" aria-hidden="true" tabindex="-1"></a><span class="fu">overrides_of_model_kwargs</span><span class="kw">:</span><span class="at"> dict[str, Any] | None</span></span>
+<span id="cb1-1692"><a href="#cb1-1692" aria-hidden="true" tabindex="-1"></a><span class="co"># If you want to specify the type of model to load, AutoModelForCausalLM is a good</span></span>
+<span id="cb1-1693"><a href="#cb1-1693" aria-hidden="true" tabindex="-1"></a><span class="co"># choice too</span></span>
+<span id="cb1-1694"><a href="#cb1-1694" aria-hidden="true" tabindex="-1"></a><span class="fu">type_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1695"><a href="#cb1-1695" aria-hidden="true" tabindex="-1"></a><span class="co"># You can specify to choose a specific model revision from huggingface hub</span></span>
+<span id="cb1-1696"><a href="#cb1-1696" aria-hidden="true" tabindex="-1"></a><span class="fu">revision_of_model</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1697"><a href="#cb1-1697" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-1698"><a href="#cb1-1698" aria-hidden="true" tabindex="-1"></a><span class="fu">max_packed_sequence_len</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1699"><a href="#cb1-1699" aria-hidden="true" tabindex="-1"></a><span class="fu">rope_scaling</span><span class="kw">:</span><span class="at"> Any | None</span></span>
+<span id="cb1-1700"><a href="#cb1-1700" aria-hidden="true" tabindex="-1"></a><span class="fu">noisy_embedding_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1701"><a href="#cb1-1701" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_beta</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1702"><a href="#cb1-1702" aria-hidden="true" tabindex="-1"></a><span class="fu">evaluation_strategy</span><span class="kw">:</span><span class="at"> str | None</span></span>
+<span id="cb1-1703"><a href="#cb1-1703" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_table_size</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1704"><a href="#cb1-1704" aria-hidden="true" tabindex="-1"></a><span class="fu">eval_max_new_tokens</span><span class="kw">:</span><span class="at"> int | None</span></span>
+<span id="cb1-1705"><a href="#cb1-1705" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_use_logits_to_keep</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1706"><a href="#cb1-1706" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_generate_during_eval</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1707"><a href="#cb1-1707" aria-hidden="true" tabindex="-1"></a><span class="fu">dpo_norm_loss</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1708"><a href="#cb1-1708" aria-hidden="true" tabindex="-1"></a><span class="fu">rpo_alpha</span><span class="kw">:</span><span class="at"> float | None</span></span>
+<span id="cb1-1709"><a href="#cb1-1709" aria-hidden="true" tabindex="-1"></a><span class="fu">s2_attention</span><span class="kw">:</span><span class="at"> bool | None</span></span>
+<span id="cb1-1710"><a href="#cb1-1710" aria-hidden="true" tabindex="-1"></a><span class="fu">flash_attn_rms_norm</span><span class="kw">:</span><span class="at"> bool | None</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 

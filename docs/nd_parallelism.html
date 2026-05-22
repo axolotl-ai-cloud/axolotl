@@ -868,6 +868,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <li>How it works: If you have a sequence of 8192 tokens and a <code>context_parallel_size</code> of 4, each GPU will only handle a chunk of 2048 tokens.</li>
 <li>The Challenge: Attention is not local; every token needs to “attend to” every other token. Splitting the sequence breaks this.</li>
 <li>The Solution (<code>ring-flash-attention</code>): An efficient communication protocol is used. To compute attention for its local sequence chunk, each GPU passes its Key-Value (KV) cache to its neighbor in a “ring.” After <code>N-1</code> steps, every GPU has seen the KV-cache from all other GPUs, allowing it to compute the correct attention values for its chunk. This is implemented using the highly optimized <code>flash-attention</code> kernel at each step.</li>
+<li><strong>Mamba/SSM Hybrid Models</strong>: For hybrid architectures (Nemotron-H, Falcon-H1, Granite MoE Hybrid), attention layers use ring attention as above, while SSM (Mamba2) layers use P2P state passing across ranks with an additive output correction. See <a href="../docs/sequence_parallelism.html">Sequence Parallelism</a> for details.</li>
 </ul>
 </section>
 <section id="sec-ep" class="level3">
