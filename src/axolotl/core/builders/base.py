@@ -122,11 +122,8 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
-        gc_collect_steps = getattr(self.cfg, "gc_collect_steps", None) or getattr(
-            self.cfg, "gc_steps", None
-        )
-        if gc_collect_steps:
-            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
+        if self.cfg.gc_steps:
+            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -358,6 +355,32 @@ class TrainerBuilderBase(abc.ABC):
                 eps2 = training_args_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
                 adam_kwargs["eps"] = (eps1, eps2)
+
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "q_galore_adamw8bit":
+                from axolotl.utils.optimizers.qgalore import (
+                    build_qgalore_param_groups,
+                    patch_q_galore_for_modern_bnb,
+                )
+
+                patch_q_galore_for_modern_bnb()
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                optimizer_cls = QGaLoreAdamW8bit
+                optimizer_kwargs["params"] = build_qgalore_param_groups(
+                    self.model,
+                    self.cfg.optim_target_modules,
+                    rank=self.cfg.qgalore_rank,
+                    update_proj_gap=self.cfg.qgalore_update_proj_gap,
+                    scale=self.cfg.qgalore_scale,
+                    proj_type=self.cfg.qgalore_proj_type,
+                    proj_quant=self.cfg.qgalore_proj_quant,
+                    proj_bits=self.cfg.qgalore_proj_bits,
+                    proj_group_size=self.cfg.qgalore_proj_group_size,
+                    cos_threshold=self.cfg.qgalore_cos_threshold,
+                    gamma_proj=self.cfg.qgalore_gamma_proj,
+                    queue_size=self.cfg.qgalore_queue_size,
+                )
 
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "flash_adamw":

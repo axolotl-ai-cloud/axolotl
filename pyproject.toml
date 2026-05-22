@@ -120,6 +120,7 @@ optimizers = [
     "lomo-optim==0.1.1",
     "torch-optimi==0.2.1",
     "came_pytorch==0.1.3",
+    "q-galore-torch==1.0",
 ]
 ray = [
     "ray[train]>=2.52.1",

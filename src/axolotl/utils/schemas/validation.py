@@ -904,6 +904,48 @@ class OptimizationValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_qgalore(cls, data):
+        if data.get("optimizer") != "q_galore_adamw8bit":
+            return data
+        adapter = data.get("adapter")
+        if adapter:
+            raise ValueError(
+                "q_galore_adamw8bit operates on full-precision parameters and is "
+                f"incompatible with adapter='{adapter}'. Remove the adapter setting "
+                "or pick a different optimizer."
+            )
+        if data.get("deepspeed"):
+            raise ValueError(
+                "q_galore_adamw8bit is not yet validated with DeepSpeed. "
+                "Use DDP or FSDP2 with use_orig_params=True."
+            )
+        if data.get("fsdp") or data.get("fsdp_config"):
+            fsdp_version = cls._resolve_fsdp_version(data)
+            if str(fsdp_version) != "2":
+                raise ValueError(
+                    "q_galore_adamw8bit requires FSDP2. Set fsdp_version: 2."
+                )
+            fsdp_config = data.get("fsdp_config") or {}
+            if fsdp_config.get("use_orig_params") is not True:
+                raise ValueError(
+                    "q_galore_adamw8bit requires fsdp_config.use_orig_params=True so "
+                    "that per-parameter projection state survives FSDP sharding."
+                )
+        if not (data.get("bf16") or data.get("bfloat16") or data.get("fp16")):
+            LOG.warning(
+                "q_galore_adamw8bit benefits from mixed-precision (bf16/fp16). "
+                "Running in fp32 will negate most of the memory savings."
+            )
+        if data.get("optim_target_modules") is None:
+            # Match the reference impl's defaults: attention + MLP linears.
+            data["optim_target_modules"] = [
+                "attn",
+                "mlp",
+            ]
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_flashoptim_deepspeed_fsdp(cls, data):
         optimizer = data.get("optimizer") or ""
         if str(optimizer).startswith("flash_"):
