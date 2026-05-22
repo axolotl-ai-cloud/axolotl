@@ -222,6 +222,31 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_force_replicated_cpu_offload: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Explicit override for the Mode B (replicated CPU-offload) "
+                "mode. Parity knob with ``protrain_force_all_persistent`` "
+                "(Mode A) and ``protrain_zero3_shard`` (Mode C). When "
+                "``protrain_auto_mode`` is True (default) this flag is "
+                "IGNORED — the plugin auto-picks A/B/C based on workload fit "
+                "+ CPU-RAM-per-rank. When ``protrain_auto_mode`` is False, "
+                "True forces the wrapper into Mode B by pinning "
+                "``force_all_persistent=False`` AND ``zero3_shard=False`` "
+                "(non-persistent chunks live on CPU, replicated across "
+                "ranks). Set ``protrain_auto_mode: false`` alongside to make "
+                "this effective. Mutually exclusive with "
+                "``protrain_force_all_persistent: true`` and "
+                "``protrain_zero3_shard: true`` (the model validator rejects "
+                "two or more force flags set simultaneously). Useful for "
+                "reproducing benchmark configurations where the auto-picker "
+                "would otherwise pick Mode C; in particular this is the only "
+                "way today to explicitly select Mode B in isolation."
+            )
+        },
+    )
+
     # Optimizer-state checkpoint/resume.
 
     protrain_save_optimizer_state: bool | None = Field(
@@ -441,6 +466,49 @@ class ProTrainArgs(BaseModel):
                 f"supported adapter list. Supported optimizers: "
                 f"{supported}. Set `optimizer: adamw_torch` (or another "
                 f"supported value above) or remove the ProTrain plugin."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_multiple_force_modes(cls, data):
+        """Reject more than one ``protrain_force_*`` mode flag set at once.
+
+        Forces are explicit overrides. Two of them on at the same time would
+        contradict each other (e.g. ``force_all_persistent=true`` together
+        with ``force_replicated_cpu_offload=true`` would tell the wrapper
+        to keep everything on GPU AND offload everything to CPU). Reject at
+        config-load time with an actionable error rather than silently
+        having one flag win inside the mode-selector.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not data.get("protrain_auto_memory"):
+            return data
+        plugins = data.get("plugins") or []
+        if not _has_protrain_plugin(plugins):
+            return data
+        # Only count flags that are explicitly truthy (None / False / unset = inactive).
+        set_flags = [
+            name
+            for name in (
+                "protrain_force_all_persistent",
+                "protrain_force_replicated_cpu_offload",
+                "protrain_zero3_shard",
+            )
+            if bool(data.get(name))
+        ]
+        if len(set_flags) > 1:
+            joined = ", ".join(f"`{f}: true`" for f in set_flags)
+            raise ValueError(
+                f"ProTrain mode-force flags are mutually exclusive but multiple "
+                f"are set: {joined}. The three force flags correspond to "
+                f"different multi-GPU modes — "
+                f"`protrain_force_all_persistent` (Mode A, GPU-resident), "
+                f"`protrain_force_replicated_cpu_offload` (Mode B, replicated "
+                f"CPU offload), and `protrain_zero3_shard` (Mode C, sharded "
+                f"CPU offload). Pick at most one, or set "
+                f"`protrain_auto_mode: true` to let the searcher pick."
             )
         return data
 

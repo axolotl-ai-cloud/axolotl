@@ -597,6 +597,23 @@ class ProTrainPlugin(BasePlugin):
         if auto_mode is None:
             auto_mode = True
 
+        # Mode B parity knob: force replicated CPU-offload (force_all_persistent=False,
+        # zero3_shard=False) when auto_mode is off. The args validator already rejects
+        # multiple force_* flags being set, so this branch is only reachable when no
+        # other force flag is true. No-op under auto_mode (consistent with how
+        # force_all_persistent / zero3_shard behave there).
+        force_replicated_cpu_offload = bool(
+            getattr(cfg, "protrain_force_replicated_cpu_offload", False)
+        )
+        if force_replicated_cpu_offload and not auto_mode:
+            force_all_persistent = False
+            zero3_shard = False
+            LOG.info(
+                "ProTrain: protrain_force_replicated_cpu_offload=True with "
+                "auto_mode=False; forcing Mode B "
+                "(force_all_persistent=False, zero3_shard=False)."
+            )
+
         wrapped = protrain_model_wrapper(
             model,
             model_config=getattr(model, "config", None),

@@ -261,3 +261,86 @@ def test_optimizer_validator_skips_when_protrain_inactive() -> None:
         "optimizer": "lion_pytorch",
     }
     ProTrainArgs.model_validate(cfg)
+
+
+# ---------------------------------------------------------------------
+# Mode-force flag mutex (Mode A vs Mode B vs Mode C explicit overrides)
+# ---------------------------------------------------------------------
+
+
+def test_force_replicated_cpu_offload_default_is_none() -> None:
+    """Mode B force knob defaults to None (auto-mode picks unless overridden)."""
+    args = ProTrainArgs()
+    assert args.protrain_force_replicated_cpu_offload is None
+
+
+def test_force_replicated_cpu_offload_alone_validates() -> None:
+    """Mode B knob set in isolation is the supported single-flag path."""
+    cfg = _minimal_active_cfg(
+        protrain_auto_mode=False,
+        protrain_force_replicated_cpu_offload=True,
+    )
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_force_mode_mutex_rejects_modeA_plus_modeB() -> None:
+    cfg = _minimal_active_cfg(
+        protrain_auto_mode=False,
+        protrain_force_all_persistent=True,
+        protrain_force_replicated_cpu_offload=True,
+    )
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    msg = str(exc.value)
+    assert "mutually exclusive" in msg
+    assert "protrain_force_all_persistent" in msg
+    assert "protrain_force_replicated_cpu_offload" in msg
+
+
+def test_force_mode_mutex_rejects_modeB_plus_modeC() -> None:
+    cfg = _minimal_active_cfg(
+        protrain_auto_mode=False,
+        protrain_force_replicated_cpu_offload=True,
+        protrain_zero3_shard=True,
+    )
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    msg = str(exc.value)
+    assert "mutually exclusive" in msg
+    assert "protrain_force_replicated_cpu_offload" in msg
+    assert "protrain_zero3_shard" in msg
+
+
+def test_force_mode_mutex_rejects_modeA_plus_modeC() -> None:
+    cfg = _minimal_active_cfg(
+        protrain_auto_mode=False,
+        protrain_force_all_persistent=True,
+        protrain_zero3_shard=True,
+    )
+    with pytest.raises(ValidationError) as exc:
+        ProTrainArgs.model_validate(cfg)
+    msg = str(exc.value)
+    assert "mutually exclusive" in msg
+    assert "protrain_force_all_persistent" in msg
+    assert "protrain_zero3_shard" in msg
+
+
+def test_force_mode_mutex_allows_modeC_with_modeA_false() -> None:
+    """Only one truthy force flag is fine; explicit False on others must not trip the mutex."""
+    cfg = _minimal_active_cfg(
+        protrain_auto_mode=False,
+        protrain_force_all_persistent=False,
+        protrain_force_replicated_cpu_offload=False,
+        protrain_zero3_shard=True,
+    )
+    ProTrainArgs.model_validate(cfg)
+
+
+def test_force_mode_mutex_skips_when_protrain_inactive() -> None:
+    """With ProTrain off, even contradictory force flags must not raise."""
+    cfg = {
+        "protrain_auto_memory": False,
+        "protrain_force_all_persistent": True,
+        "protrain_zero3_shard": True,
+    }
+    ProTrainArgs.model_validate(cfg)
