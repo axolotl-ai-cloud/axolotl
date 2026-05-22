@@ -272,54 +272,15 @@ class PretrainingDataset(BaseModel):
     )
 
 
-class MultiModalEvalDataset(BaseModel):
+class MultiModalEvalDataset(PretrainingDataset):
     """Multimodal CPT eval dataset configuration (test_datasets entry).
 
-    Use type='multimodal_pretrain' (or multimodal=True). The dataset must
-    expose a text column and a list[str] image-paths column; their names
-    default to 'text' and 'images' and can be overridden per-entry.
+    Inherits all fields from :class:`PretrainingDataset` and only overrides
+    the `type` default (no `"pretrain"` fallback for eval entries) plus adds
+    a validator that requires an explicit MM marker.
     """
 
-    path: str | None = None
-    name: str | None = None
-    split: str | None = "train"
-    data_files: str | list[str] | None = None
-    ds_type: str | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Dataset loader type when `path` points to local files (e.g. 'json', 'csv', 'parquet')."
-        },
-    )
-    skip: int | None = None
     type: str | None = None
-    trust_remote_code: bool | None = False
-
-    multimodal: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Opt in to multimodal eval. Auto-enabled when type='multimodal_pretrain'."
-        },
-    )
-    text_column: str | None = Field(
-        default="text",
-        json_schema_extra={"description": "Column holding the row's text."},
-    )
-    image_column: str | None = Field(
-        default="images",
-        json_schema_extra={
-            "description": "Column holding a list of image paths per row."
-        },
-    )
-    image_base_dir: str | None = Field(
-        default=None,
-        json_schema_extra={"description": "Base directory for relative image paths."},
-    )
-    image_token: str | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Override the image placeholder token (autodetected from processor if unset)."
-        },
-    )
 
     @model_validator(mode="before")
     @classmethod

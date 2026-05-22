@@ -102,8 +102,7 @@ class MultiModalPretrainDataCollator(DataCollatorMixin):
                 raise KeyError(
                     f"MultiModalPretrainDataCollator: row {i} is missing "
                     f"'_mm_text' or 'images'. Did you wire the multimodal CPT "
-                    f"encoder (encode_streaming_multimodal or "
-                    f"MultimodalPretrainTokenizationStrategy)?"
+                    f"encoder (encode_streaming_multimodal)?"
                 )
             mm_text = ex["_mm_text"]
             if not isinstance(mm_text, str):

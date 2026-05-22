@@ -372,6 +372,15 @@ Intended for use cases like OCR/transcription corpora where every row is a
 tight `(image, target_text)` pair and any user/assistant framing would pollute
 the learned signal.
 
+::: {.callout-note}
+**Currently supported via the streaming `pretraining_dataset` route only.**
+A non-streaming `datasets:` route (`type: multimodal_pretrain` under
+`datasets:`) is intentionally not wired — the collator selection inside
+`build_collator` only routes MM CPT batches under the pretraining branch.
+Configure MM CPT under `pretraining_dataset:` with `streaming: true` as
+shown below.
+:::
+
 ### Dataset format (JSONL)
 
 Two keys per row: `text` (the raw string) and `images` (list of local paths).

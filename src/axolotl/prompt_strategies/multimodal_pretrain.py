@@ -1,16 +1,17 @@
-"""Multimodal CPT tokenization strategy."""
+"""Multimodal CPT helpers (image-token autodetection + processor compat).
+
+Only the streaming `pretraining_dataset` route is wired in v1; the
+non-streaming `datasets:` route (strategy class + `load()`) is deferred to a
+follow-on PR that also wires `build_collator` to route MM CPT batches outside
+the `training_args.pretraining` branch.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
-from transformers import BatchEncoding, PreTrainedTokenizerBase, ProcessorMixin
+from transformers import ProcessorMixin
 
-from axolotl.prompt_strategies.pretrain import (
-    PretrainTokenizationStrategy,
-    PretrainTokenizer,
-)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -204,128 +205,3 @@ def check_processor_compatibility(processor: ProcessorMixin) -> None:
             raise ValueError(
                 f"Multimodal CPT is not supported for {base_cls.__name__}: {reason}"
             )
-
-
-class MultimodalPretrainTokenizationStrategy(PretrainTokenizationStrategy):
-    def __init__(
-        self,
-        *args: Any,
-        image_token: str,
-        image_token_id: int,
-        image_column: str = "images",
-        image_base_dir: str | None = None,
-        image_token_spec: ImageTokenSpec | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        self.image_token = image_token
-        self.image_token_id = image_token_id
-        self.image_column = image_column
-        self.image_base_dir = image_base_dir
-        self.image_token_spec = image_token_spec
-
-    def _tokenize(
-        self,
-        prompt: str,
-        add_eos_token: bool = True,
-        strip_bos_token: bool = False,
-    ) -> BatchEncoding:
-        # No truncation: collator re-tokenizes the full text without truncation;
-        # truncating here decouples the stored ids from what the model receives.
-        res = self.tokenizer(prompt, add_special_tokens=True)
-        ids = list(res["input_ids"])
-        mask = list(res["attention_mask"])
-        bos_id = getattr(self.tokenizer, "bos_token_id", None)
-        if strip_bos_token and ids and bos_id is not None and ids[0] == bos_id:
-            ids = ids[1:]
-            mask = mask[1:]
-        eos_id = getattr(self.tokenizer, "eos_token_id", None)
-        if add_eos_token and eos_id is not None:
-            ids = ids + [eos_id]
-            mask = mask + [1]
-        res["input_ids"] = [ids]
-        res["attention_mask"] = [mask]
-        return res
-
-    def tokenize_prompt(self, prompt: dict[str, Any]) -> dict[str, list]:
-        text = prompt[self.text_column]
-        raw_images = prompt.get(self.image_column)
-        if raw_images is None:
-            images: list = []
-        elif isinstance(raw_images, (list, tuple)):
-            images = list(raw_images)
-        else:
-            raise ValueError(
-                f"Row's `{self.image_column}` must be a list of image paths, "
-                f"got {type(raw_images).__name__}."
-            )
-
-        res = self._tokenize(text)
-        ids = res["input_ids"][0]
-        # Count by token id — `text.count` substring-matches `<image>` in `<image_soft_token>`.
-        n_placeholders = sum(1 for t in ids if t == self.image_token_id)
-        if n_placeholders != len(images):
-            raise ValueError(
-                f"Multimodal CPT row has {n_placeholders} occurrence(s) of "
-                f"{self.image_token!r} in text but {len(images)} image path(s) "
-                f"in `{self.image_column}`. They must match — the text column "
-                f"must contain exactly one placeholder per image."
-            )
-        if len(ids) > self.max_length:
-            raise ValueError(
-                f"Multimodal CPT row tokenizes to {len(ids)} tokens which "
-                f"exceeds sequence_len={self.max_length}. Pre-chunk your text "
-                f"or raise sequence_len (image patch expansion at the "
-                f"processor may push the final length even higher)."
-            )
-
-        # `_tokenize` produces exactly one chunk; the assert keeps that
-        # invariant explicit so a future change there can't silently
-        # mis-align `images` / `_mm_text` against `input_ids`.
-        assert len(res["input_ids"]) == 1
-        res["images"] = [list(images)]
-        res["_mm_text"] = [text]
-        return res
-
-
-def load(
-    tokenizer: PreTrainedTokenizerBase,
-    cfg: Any,
-    ds_cfg: dict | None = None,
-    processor: ProcessorMixin | None = None,
-) -> MultimodalPretrainTokenizationStrategy:
-    if processor is None:
-        raise ValueError(
-            "multimodal_pretrain requires a processor. Set `processor_type: "
-            "AutoProcessor` (or the concrete processor class) in your config "
-            "so axolotl loads it at startup."
-        )
-    check_processor_compatibility(processor)
-
-    ds_cfg = dict(ds_cfg or {})
-    text_column = ds_cfg.get("text_column") or ds_cfg.get("field") or "text"
-    image_column = ds_cfg.get("image_column") or "images"
-    image_base_dir = ds_cfg.get("image_base_dir")
-    image_token_override = ds_cfg.get("image_token")
-
-    spec = build_image_token_spec(processor, override=image_token_override)
-    LOG.info(
-        f"multimodal_pretrain: placeholder={spec.image_token!r} "
-        f"(id={spec.image_token_id}), masking {len(spec.image_family_token_ids)} "
-        f"image-family token ids in labels"
-    )
-
-    strat = MultimodalPretrainTokenizationStrategy(
-        PretrainTokenizer(),
-        tokenizer,
-        cfg.train_on_inputs,
-        cfg.sequence_len,
-        text_column=text_column,
-        image_column=image_column,
-        image_base_dir=image_base_dir,
-        image_token=spec.image_token,
-        image_token_id=spec.image_token_id,
-        max_length=cfg.sequence_len,
-        image_token_spec=spec,
-    )
-    return strat
