@@ -180,6 +180,10 @@ class TestShardingSingleRank:
             os.environ.setdefault("WORLD_SIZE", "1")
             dist.init_process_group(backend="gloo", rank=0, world_size=1)
 
+    def teardown_method(self):
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
     def test_no_op_at_world_size_1(self):
         block = _build_qwen3moe_block(num_experts=16)
         original_shape = tuple(block.experts.gate_up_proj.shape)
