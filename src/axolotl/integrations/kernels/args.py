@@ -11,9 +11,18 @@ LOG = get_logger(__name__)
 # - "grouped_mm" : transformers' built-in grouped matmul path (cache-efficient)
 # - "scattermoe" : axolotl-registered Triton kernels with LoRA support
 # - "sonicmoe"   : axolotl-registered CUTLASS / cute-DSL kernels with LoRA support
+# - "deep_ep[_*]": EP-plugin composites; passed through when expert_parallel_size > 1
 _BUILTIN_EXPERTS_IMPLS = {"eager", "batched_mm", "grouped_mm"}
 _KERNEL_EXPERTS_IMPLS = {"scattermoe", "sonicmoe"}
-_VALID_EXPERTS_IMPLS = _BUILTIN_EXPERTS_IMPLS | _KERNEL_EXPERTS_IMPLS
+_EP_EXPERTS_IMPLS = {
+    "deep_ep",
+    "deep_ep_grouped_mm",
+    "deep_ep_scattermoe",
+    "deep_ep_sonicmoe",
+}
+_VALID_EXPERTS_IMPLS = (
+    _BUILTIN_EXPERTS_IMPLS | _KERNEL_EXPERTS_IMPLS | _EP_EXPERTS_IMPLS
+)
 
 
 class KernelsArgs(BaseModel):
@@ -39,6 +48,17 @@ class KernelsArgs(BaseModel):
             )
             data["use_kernels"] = True
 
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_sonicmoe_ep_unsupported(cls, data):
+        """SonicMoE + EP is not yet implemented (EP `_sonicmoe_local` raises)."""
+        if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
+            raise ValueError(
+                "use_sonicmoe=true is not supported with expert_parallel_size > 1. "
+                "Use use_scattermoe=true under EP, or set expert_parallel_size=1."
+            )
         return data
 
     @model_validator(mode="before")

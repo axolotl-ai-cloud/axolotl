@@ -39,14 +39,11 @@ use_sonicmoe: true
 - PyTorch 2.7+
 - For B300: Triton 3.6.x
 
-Install [`sonic-moe`](https://github.com/Dao-AILab/sonic-moe) `>= 0.1.2` from source:
+The sonic-moe kernel ships through the HF [`kernels`](https://github.com/huggingface/kernels) package. Transformers v5.8+ auto-fetches a prebuilt kernel from [`kernels-community/sonic-moe`](https://huggingface.co/kernels-community/sonic-moe) on first use:
 
 ```bash
-pip install --no-deps "sonic-moe @ git+https://github.com/Dao-AILab/sonic-moe.git@0.1.2" \
-            "nvidia-cutlass-dsl==4.4.2" "quack-kernels>=0.3.11"
+pip install kernels "nvidia-cutlass-dsl==4.4.2"
 ```
-
-The plugin checks the installed version at startup and raises if it's below `0.1.2`.
 
 **Note:** Blackwell support is in upstream beta. On Blackwell GPUs Axolotl automatically sets `USE_QUACK_GEMM=1` to enable the Blackwell kernels.
 
@@ -87,9 +84,9 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `ernie4_5_moe`    |    Yes    |   Yes    |
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |
 | `gemma4_text`     |    Yes    |   Yes    |
-| `gpt_oss`         |    Yes    |   Yes    |
+| `gpt_oss`         |    No     |   Yes    |
 
-For `gpt_oss` the upstream decorator carries `is_concatenated=False, is_transposed=True, has_bias=True`; the registered forward reads these flags off `self` and adjusts permutation / bias handling accordingly.
+`gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. The SonicMoE forward reads these flags off `self` and dispatches accordingly. The ScatterMoE forward assumes the standard `[E, 2*I, H]` concat layout and SiLU-GLU without bias, so it does not yet support `gpt_oss`.
 
 ## Feature comparison
 

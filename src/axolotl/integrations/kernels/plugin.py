@@ -1,32 +1,12 @@
 import importlib
 import os
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 import torch
-from packaging.version import Version
 
 from axolotl.integrations.base import BasePlugin
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-_SONICMOE_MIN_VERSION = "0.1.2"
-
-
-def _check_sonicmoe_version():
-    """Require sonic-moe >= 0.1.2 for the ``concat_layout=True`` path."""
-    try:
-        installed = _pkg_version("sonic-moe")
-    except PackageNotFoundError as err:
-        raise RuntimeError(
-            f"sonic-moe is not installed. Install >= {_SONICMOE_MIN_VERSION} from "
-            "https://github.com/Dao-AILab/sonic-moe."
-        ) from err
-    if Version(installed) < Version(_SONICMOE_MIN_VERSION):
-        raise RuntimeError(
-            f"sonic-moe {installed} is too old; require >= {_SONICMOE_MIN_VERSION}. "
-            "Upgrade from https://github.com/Dao-AILab/sonic-moe."
-        )
 
 
 def _check_sonicmoe_gpu_compat():
@@ -85,16 +65,21 @@ class KernelsPlugin(BasePlugin):
         Architecture-agnostic: routing stays in each model's SparseMoEBlock; only
         the experts call is dispatched through the registry.
         """
+        # When EP is active, the ExpertParallelPlugin selects a `deep_ep_*`
+        # composite for `experts_implementation`. Don't overwrite that here —
+        # plugin order is YAML-defined, so we can't rely on EP running last.
+        ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
+
         if cfg.use_scattermoe:
             from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
                 register_scattermoe_experts,
             )
 
             register_scattermoe_experts()
-            cfg.experts_implementation = "scattermoe"
+            if not ep_active:
+                cfg.experts_implementation = "scattermoe"
             LOG.info("Registered 'scattermoe' in transformers ExpertsInterface")
         elif cfg.use_sonicmoe:
-            _check_sonicmoe_version()
             _check_sonicmoe_gpu_compat()
 
             from axolotl.integrations.kernels.libs.sonicmoe.experts import (
@@ -102,7 +87,8 @@ class KernelsPlugin(BasePlugin):
             )
 
             register_sonicmoe_experts()
-            cfg.experts_implementation = "sonicmoe"
+            if not ep_active:
+                cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
 
     def add_callbacks_pre_trainer(self, cfg, model):
