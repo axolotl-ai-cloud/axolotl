@@ -615,18 +615,43 @@ def _estimate_runtime_components(
                 (trace.steady_fwd_chunked_wall_s - t_fwd_compute_base)
                 / n_nonpersist_bootstrap_fwd,
             )
+            # Overlap-aware floor: in the analytical model a non-persistent
+            # chunk only contributes max(0, comm - compute) to wall-time when
+            # the buffer pool is large enough to pipeline. If the bootstrap
+            # measured high per-chunk overhead with a small n_buffer, that
+            # overhead reflects *missing* overlap rather than real comm cost,
+            # so the credit for adding persistents must not exceed what an
+            # overlap-realised plan would save (else the override over-credits
+            # compute-bound candidates and ranks fully-resident above offload).
+            if layout.N_chunk > 0:
+                fwd_compute_per_chunk = t_fwd_compute_base / layout.N_chunk
+            else:
+                fwd_compute_per_chunk = 0.0
+            overlap_aware_fwd_save = max(
+                0.0, fwd_persist_theoretical_per_chunk - fwd_compute_per_chunk
+            )
             fwd_persist_save_per_chunk = min(
-                fwd_persist_theoretical_per_chunk, empirical_fwd_overhead_per_chunk
+                fwd_persist_theoretical_per_chunk,
+                empirical_fwd_overhead_per_chunk,
+                overlap_aware_fwd_save,
             )
         else:
             # Degenerate bootstrap (fully persistent); delta is zero anyway.
             fwd_persist_save_per_chunk = fwd_persist_theoretical_per_chunk
         t_fwd_persist_correction = -delta_persist_fwd * fwd_persist_save_per_chunk
+        # Fix 2 (defense-in-depth): penalise candidates whose n_buffer drops
+        # below the bootstrap's, because the override measured overhead under
+        # the bootstrap's pipelining and silently assumes the same overlap.
+        buffer_shortfall_fwd = max(0, trace.phase2_n_buffer - n_buffer)
+        t_fwd_buffer_shortfall = (
+            buffer_shortfall_fwd * fwd_persist_theoretical_per_chunk
+        )
         t_fwd = max(
             0.0,
             trace.steady_fwd_chunked_wall_s
             + t_fwd_swap_transfer
-            + t_fwd_persist_correction,
+            + t_fwd_persist_correction
+            + t_fwd_buffer_shortfall,
         )
     else:
         # Per-chunk forward roofline: max(compute, comm) per non-persistent chunk.
@@ -744,20 +769,39 @@ def _estimate_runtime_components(
                 )
                 / n_nonpersist_bootstrap_bwd,
             )
+            # Overlap-aware floor mirrors the forward branch: cap the credit
+            # at max(0, comm - compute) per chunk so the override never
+            # double-counts a save the analytical overlap model would have
+            # absorbed for free.
+            if layout.N_chunk > 0:
+                bwd_compute_per_chunk = bwd_compute_floor / layout.N_chunk
+            else:
+                bwd_compute_per_chunk = 0.0
+            overlap_aware_bwd_save = max(
+                0.0, bwd_persist_theoretical_per_chunk - bwd_compute_per_chunk
+            )
             bwd_persist_save_per_chunk = min(
                 bwd_persist_theoretical_per_chunk,
                 empirical_bwd_overhead_per_chunk,
+                overlap_aware_bwd_save,
             )
         else:
             bwd_persist_save_per_chunk = bwd_persist_theoretical_per_chunk
         t_bwd_persist_correction = -delta_persist_bwd * bwd_persist_save_per_chunk
+        # Fix 2 (defense-in-depth): symmetric buffer-shortfall surcharge for
+        # the backward override.
+        buffer_shortfall_bwd = max(0, trace.phase2_n_buffer - n_buffer)
+        t_bwd_buffer_shortfall = (
+            buffer_shortfall_bwd * bwd_persist_theoretical_per_chunk
+        )
 
         t_bwd = max(
             0.0,
             t_bwd_compute_total
             + t_bwd_swap_prefetch
             + t_bwd_buffer_correction
-            + t_bwd_persist_correction,
+            + t_bwd_persist_correction
+            + t_bwd_buffer_shortfall,
         )
     else:
         if layout.N_chunk > 0:
