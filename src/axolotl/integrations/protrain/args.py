@@ -33,10 +33,13 @@ _PROTRAIN_PLUGIN_KEYS = frozenset(
 
 
 # Optimizer names the chunk manager's AdamW-shaped adapters drive correctly.
+# ``adamw_apex_fused`` routes to ``chunk/optim.py:GpuFusedAdamAdapter`` which already
+# tries ``apex.optimizers.FusedAdam`` first and falls back to ``torch.optim.AdamW``.
 _SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
     {
         "adamw_torch",
         "adamw_torch_fused",
+        "adamw_apex_fused",
         "adamw_8bit",
         "adamw_bnb_8bit",
         "paged_adamw_8bit",
