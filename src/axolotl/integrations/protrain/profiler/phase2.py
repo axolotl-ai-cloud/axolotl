@@ -203,6 +203,16 @@ def measure_chunked_steady(
     optim_state: dict[str, Any] | None = None
     # Placeholder keys filtered from snapshot; non-listed missing keys → hard error.
     expected_missing_keys: frozenset[str] = frozenset()
+    # bnb 4-bit/8-bit ``Linear`` modules emit companion entries
+    # (``weight.absmax``, ``weight.quant_map``, ``weight.nested_absmax``,
+    # ``weight.nested_quant_map``, ``weight.quant_state.<algo>``) via
+    # ``_save_to_state_dict`` but do NOT consume them in
+    # ``_load_from_state_dict`` — ``QuantState`` is stored as a Python
+    # attribute on the param, not a registered buffer. The companion
+    # bytes round-trip implicitly through ``chunk/manager.py``'s
+    # ``param.data``-only rebind path. Track these so the post-restore
+    # gate doesn't false-positive on a benign bnb asymmetry.
+    expected_unexpected_keys: frozenset[str] = frozenset()
     # state_dict() misses offloaded chunk bytes; use chunk-manager snapshot for Mode-C correctness.
     chunk_state: dict[Any, Any] | None = None
     chunk_manager = getattr(optimizer, "_chunk_manager", None)
@@ -260,6 +270,23 @@ def measure_chunked_steady(
             }
             # Track offloaded-placeholder keys to distinguish expected vs real missing in restore.
             expected_missing_keys = frozenset(full_state.keys() - filtered_state.keys())
+            # bnb companion-buffer suffix list (post the param name).
+            # Pattern: ``<param>.absmax``, ``<param>.quant_map``,
+            # ``<param>.nested_absmax``, ``<param>.nested_quant_map``,
+            # ``<param>.quant_state.<algo>``. The set is small + stable
+            # across bnb >= 0.42 (when QuantState landed) and bnb 0.49.x.
+            _BNB_COMPANION_SUFFIXES = (
+                ".absmax",
+                ".quant_map",
+                ".nested_absmax",
+                ".nested_quant_map",
+            )
+            expected_unexpected_keys = frozenset(
+                k
+                for k in full_state.keys()
+                if any(k.endswith(s) for s in _BNB_COMPANION_SUFFIXES)
+                or ".quant_state." in k
+            )
             model_state = _clone_state_dict(
                 filtered_state, target_device=torch.device("cpu")
             )
@@ -353,12 +380,15 @@ def measure_chunked_steady(
                             "investigate the harness or the model for "
                             "a parameter add / submodule rebuild."
                         )
-                    if _result.unexpected_keys:
+                    extra_unexpected = (
+                        set(_result.unexpected_keys) - expected_unexpected_keys
+                    )
+                    if extra_unexpected:
                         # unexpected_keys = snapshot keys absent in live model → incomplete rollback.
                         raise RuntimeError(
                             "Phase-2 state_dict restore saw "
-                            f"{len(_result.unexpected_keys)} unexpected snapshot "
-                            f"keys (first 3: {_result.unexpected_keys[:3]}). "
+                            f"{len(extra_unexpected)} unexpected snapshot "
+                            f"keys (first 3: {sorted(extra_unexpected)[:3]}). "
                             "The live model dropped or renamed state during "
                             "the timed measurement, so rollback is incomplete."
                         )
