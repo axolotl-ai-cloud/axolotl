@@ -297,7 +297,7 @@ def search(
                 else:
                     f_bm_invariant = None
 
-                # Partition: |prefix ∪ mandatory_persistent| + n_buffer ≤ N_chunk.
+                # Partition: |prefix U mandatory_persistent| + n_buffer <= N_chunk.
                 for n_persist in range(0, bounds.N_chunk + 1):
                     if f_bm_invariant is not None:
                         f_bm = f_bm_invariant
@@ -318,7 +318,7 @@ def search(
                         max_sum = bounds.N_chunk
                     max_sum = max(0, min(max_sum, bounds.N_chunk))
 
-                    # Max n_buffer: partition bound uses augmented persistent count (prefix ∪ mandatory).
+                    # Max n_buffer: partition bound uses augmented persistent count (prefix U mandatory).
                     persistent_count_aug = len(
                         layout.effective_persistent_ids(n_persist)
                     )
