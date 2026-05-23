@@ -788,20 +788,20 @@ def _estimate_runtime_components(
         else:
             bwd_persist_save_per_chunk = bwd_persist_theoretical_per_chunk
         t_bwd_persist_correction = -delta_persist_bwd * bwd_persist_save_per_chunk
-        # Fix 2 (defense-in-depth): symmetric buffer-shortfall surcharge for
-        # the backward override.
-        buffer_shortfall_bwd = max(0, trace.phase2_n_buffer - n_buffer)
-        t_bwd_buffer_shortfall = (
-            buffer_shortfall_bwd * bwd_persist_theoretical_per_chunk
-        )
-
+        # NOTE: backward branch does NOT add a separate buffer-shortfall surcharge.
+        # Unlike the forward branch (which starts from steady_fwd_chunked_wall_s
+        # without an explicit cache-delta term), the backward branch already
+        # converts a smaller n_buffer into a positive surcharge via
+        # t_bwd_buffer_correction = -delta_cached * gather_save_per_hit
+        # (delta_cached < 0 when n_buffer < phase2_n_buffer). Adding a symmetric
+        # buffer_shortfall term here would charge the same shortage twice and
+        # systematically over-price low-buffer candidates, mis-ranking the search.
         t_bwd = max(
             0.0,
             t_bwd_compute_total
             + t_bwd_swap_prefetch
             + t_bwd_buffer_correction
-            + t_bwd_persist_correction
-            + t_bwd_buffer_shortfall,
+            + t_bwd_persist_correction,
         )
     else:
         if layout.N_chunk > 0:
