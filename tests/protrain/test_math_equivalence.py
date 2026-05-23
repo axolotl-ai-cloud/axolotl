@@ -440,6 +440,145 @@ def test_math_equivalence_force_all_persistent() -> None:
     _compare(losses_v, losses_p, sd_v, sd_p, label="force_all_persistent")
 
 
+def _math_equiv_worker_w2_partitioned(
+    rank: int, world_size: int, tmpdir: str
+) -> None:
+    """w=2 partitioned worker — runs the force_all_persistent flow under
+    a real ``torch.distributed`` group so the post-step all-reduce(SUM)
+    actually fires, then compares to a vanilla single-rank AdamW reference."""
+    import os as _os
+
+    import torch
+    import torch.distributed as dist
+
+    _os.environ.setdefault("DS_SKIP_CUDA_CHECK", "1")
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", "29555")
+
+    if not torch.cuda.is_available():
+        return
+    # Pin each worker to its own visible device.
+    torch.cuda.set_device(rank)
+
+    backend = "nccl" if torch.distributed.is_nccl_available() else "gloo"
+    dist.init_process_group(
+        backend=backend,
+        init_method=f"file://{tmpdir}/rendezvous-math-w2",
+        rank=rank,
+        world_size=world_size,
+    )
+    try:
+        cfg, init_state = _build_init_state(_INIT_SEED)
+        # Same fixed batch across ranks — DDP would all-reduce grads to identical.
+        cpu_gen = torch.Generator(device="cpu")
+        cpu_gen.manual_seed(7)
+        input_ids = torch.randint(
+            0, cfg.vocab_size, (_BATCH, _SEQ), generator=cpu_gen, dtype=torch.long
+        ).cuda()
+        labels = input_ids.clone()
+
+        # Vanilla single-rank reference — every rank computes the same thing
+        # since input + init state are deterministic.
+        losses_v, sd_v = _run_vanilla(
+            cfg,
+            init_state,
+            input_ids,
+            labels,
+            n_iters=_N_ITERS,
+            lr=_LR,
+            betas=_BETAS,
+            eps=_EPS,
+        )
+        torch.cuda.empty_cache()
+
+        # ProTrain under partition (force_all_persistent → every chunk persistent,
+        # exercises the new round-robin slice + post-step all-reduce).
+        losses_p, sd_p = _run_protrain(
+            cfg,
+            init_state,
+            input_ids,
+            labels,
+            n_iters=_N_ITERS,
+            lr=_LR,
+            betas=_BETAS,
+            eps=_EPS,
+            force_persist=True,
+        )
+
+        _compare(
+            losses_v,
+            losses_p,
+            sd_v,
+            sd_p,
+            label=f"force_all_persistent_partitioned_w{world_size}_rank{rank}",
+        )
+
+        with open(_os.path.join(tmpdir, f"math_w2_rank{rank}.done"), "w") as f:
+            f.write("ok")
+    except Exception as exc:
+        import traceback as _tb
+
+        with open(_os.path.join(tmpdir, f"math_w2_rank{rank}.err"), "w") as f:
+            f.write(f"{type(exc).__name__}: {exc}\n")
+            _tb.print_exc(file=f)
+        raise
+    finally:
+        try:
+            dist.barrier()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            dist.destroy_process_group()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@pytest.mark.slow
+@pytest.mark.gpu
+def test_math_equivalence_force_all_persistent_partitioned_w2(tmp_path) -> None:
+    """ProTrain ≡ vanilla AdamW under w=2 round-robin persistent partition.
+
+    Spawns 2 mp.spawn workers, each on its own CUDA device. Both workers
+    take the same deterministic batch + init state through the
+    force_all_persistent ProTrain pipeline. The post-step all-reduce(SUM)
+    must propagate each rank's owner-step value to the other rank before
+    the next forward, otherwise loss / param comparisons against the
+    single-rank reference diverge beyond tolerance.
+    """
+    pytest.importorskip("torch")
+    pytest.importorskip("transformers")
+    import torch
+
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+    if not torch.distributed.is_available():
+        pytest.skip("torch.distributed unavailable")
+    if torch.cuda.device_count() < 2:
+        pytest.skip(
+            f"partitioned w=2 test needs >= 2 CUDA devices "
+            f"(got {torch.cuda.device_count()})"
+        )
+
+    import torch.multiprocessing as mp
+
+    world_size = 2
+    mp.spawn(
+        _math_equiv_worker_w2_partitioned,
+        args=(world_size, str(tmp_path)),
+        nprocs=world_size,
+        join=True,
+    )
+
+    err_files = sorted(tmp_path.glob("math_w2_rank*.err"))
+    if err_files:
+        bodies = "\n---\n".join(f.read_text() for f in err_files)
+        pytest.fail(f"partitioned w=2 worker errors:\n{bodies}")
+    for r in range(world_size):
+        assert (tmp_path / f"math_w2_rank{r}.done").is_file(), (
+            f"rank {r} did not reach sentinel"
+        )
+
+
 @pytest.mark.slow
 @pytest.mark.gpu
 def test_math_equivalence_offload_and_checkpoint() -> None:

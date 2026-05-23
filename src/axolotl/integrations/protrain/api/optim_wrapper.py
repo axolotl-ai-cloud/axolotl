@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
+# Sentinel for v48 exact-token grep; bump when the partition scheme changes shape.
+_PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION = 1
+
 
 class _ProTrainOptimizer(torch.optim.Optimizer):
     """Optimizer facade over the ProTrain GPU/CPU adapter pair."""
@@ -32,6 +35,10 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         params: list["nn.Parameter"],
         defaults: dict[str, Any],
         chunk_manager: Any,
+        *,
+        persistent_params_full: list["nn.Parameter"] | None = None,
+        persistent_owner_rank: list[int] | None = None,
+        persistent_world_size: int = 1,
     ) -> None:
         """Wire the GPU/CPU adapter pair into a Trainer-compatible Optimizer facade."""
         # Pass full param list so schedulers iterate over the real set.
@@ -44,6 +51,12 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         self._gpu_optim = gpu_optim
         self._cpu_optim = cpu_optim
         self._chunk_manager = chunk_manager
+        # Round-robin partition state for post-step persistent param sync.
+        self._persistent_params_full: list["nn.Parameter"] = list(
+            persistent_params_full or []
+        )
+        self._persistent_owner_rank: list[int] = list(persistent_owner_rank or [])
+        self._persistent_world_size: int = int(persistent_world_size)
 
     # ---- step / zero_grad ----------------------------------------------
 
@@ -67,9 +80,54 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
 
         if self._gpu_optim is not None:
             self._gpu_optim.step()
+        # Broadcast each owner's persistent-param update to peers before next forward.
+        self._sync_persistent_params_after_step()
         # Drain all CPU Adam futures enqueued by grad hooks + orphan sweep.
         self._chunk_manager.wait_cpu_optim_all()
         return loss
+
+    def _sync_persistent_params_after_step(self) -> None:
+        """All-reduce(SUM)-with-zeros to broadcast each owner's post-step update.
+
+        Each rank only steps its owned persistent params (round-robin
+        partition). Non-owned params hold their pre-step value. Zeroing
+        non-owned param.data and then summing across ranks yields the
+        owner's post-step value everywhere. param.data is the only
+        write; ``state[param]`` is untouched (Adam keys by tensor id).
+        """
+        if self._persistent_world_size <= 1:
+            return
+        if not self._persistent_params_full:
+            return
+        import torch.distributed as dist
+        from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
+
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+
+        rank = int(dist.get_rank())
+        # Zero non-owned param.data BEFORE the collective so the SUM lands the owner's value.
+        for i, param in enumerate(self._persistent_params_full):
+            if self._persistent_owner_rank[i] != rank:
+                param.data.zero_()
+
+        # Bucket by (dtype, device) so a single collective covers each homogeneous group.
+        buckets: dict[tuple[Any, Any], list["nn.Parameter"]] = {}
+        for param in self._persistent_params_full:
+            key = (param.data.dtype, param.data.device)
+            buckets.setdefault(key, []).append(param)
+
+        for params in buckets.values():
+            if len(params) == 1:
+                dist.all_reduce(params[0].data, op=dist.ReduceOp.SUM)
+                continue
+            tensors = [p.data for p in params]
+            flat = _flatten_dense_tensors(tensors)
+            dist.all_reduce(flat, op=dist.ReduceOp.SUM)
+            for orig, synced in zip(
+                tensors, _unflatten_dense_tensors(flat, tensors), strict=True
+            ):
+                orig.copy_(synced)
 
     # ---- LR-scheduler hyperparam forwarding -----------------------------
 
@@ -400,19 +458,36 @@ def protrain_optimizer_wrapper(
     use_bnb_8bit = normalized_optim_name in _BNB_8BIT_OPTIMIZERS
     use_paged_8bit = normalized_optim_name in _BNB_8BIT_PAGED_OPTIMIZERS
 
+    # Round-robin partition the persistent set across ranks so each rank only owns 1/W of state.
+    persistent_world_size = int(getattr(chunk_manager, "world_size", 1) or 1)
+    persistent_rank = int(getattr(chunk_manager, "rank", 0) or 0)
+    persistent_params_full: list["nn.Parameter"] = list(persistent_params)
+    persistent_owner_rank: list[int] = [
+        i % persistent_world_size for i in range(len(persistent_params_full))
+    ]
+    if persistent_world_size > 1:
+        owned_persistent_params: list["nn.Parameter"] = persistent_params_full[
+            persistent_rank::persistent_world_size
+        ]
+    else:
+        owned_persistent_params = persistent_params_full
+
     gpu_optim: GpuFusedAdamAdapter | GpuAdamW8bitAdapter | None = None
     cpu_optim: CpuFusedAdamAdapter | None = None
-    if persistent_params:
+    if owned_persistent_params:
         if use_bnb_8bit:
             LOG.info(
-                "protrain_optimizer_wrapper: routing %d persistent params "
-                "through bnb %s (optimizer_name=%s)",
-                len(persistent_params),
+                "protrain_optimizer_wrapper: routing %d/%d persistent params "
+                "through bnb %s (optimizer_name=%s, rank=%d, world=%d)",
+                len(owned_persistent_params),
+                len(persistent_params_full),
                 "PagedAdamW8bit" if use_paged_8bit else "AdamW8bit",
                 optimizer_name,
+                persistent_rank,
+                persistent_world_size,
             )
             gpu_optim = GpuAdamW8bitAdapter(
-                params=persistent_params,
+                params=owned_persistent_params,
                 lr=lr,
                 betas=betas,
                 eps=eps,
@@ -421,7 +496,7 @@ def protrain_optimizer_wrapper(
             )
         else:
             gpu_optim = GpuFusedAdamAdapter(
-                params=persistent_params,
+                params=owned_persistent_params,
                 lr=lr,
                 betas=betas,
                 eps=eps,
@@ -577,6 +652,9 @@ def protrain_optimizer_wrapper(
         params=unique_params,
         defaults=defaults,
         chunk_manager=chunk_manager,
+        persistent_params_full=persistent_params_full,
+        persistent_owner_rank=persistent_owner_rank,
+        persistent_world_size=persistent_world_size,
     )
 
 
