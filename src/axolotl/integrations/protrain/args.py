@@ -440,6 +440,49 @@ class ProTrainArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _warn_bs1_low_ga_throughput_cliff(cls, data):
+        """Warn when ``micro_batch_size=1`` + ``gradient_accumulation_steps<4`` under ProTrain.
+
+        ProTrain's per-iter scheduler walk and chunk-management hook fan-out
+        carry a fixed overhead that amortizes once the optimizer step is
+        amortized across enough forward/backward passes. Below the bs * ga = 4
+        threshold the per-step overhead dominates and users see ~5-7x
+        throughput regressions vs vanilla bs=1 (documented in proposal §6.d
+        and §16 follow-up PR #4 for the eventual hot-path fix). Emit a warning
+        so the user doesn't open a "ProTrain is mysteriously slow" support
+        thread when the right answer is "raise gradient_accumulation_steps".
+        """
+        if not isinstance(data, dict):
+            return data
+        if not data.get("protrain_auto_memory"):
+            return data
+        plugins = data.get("plugins") or []
+        if not _has_protrain_plugin(plugins):
+            return data
+        mbs = data.get("micro_batch_size", 1)
+        ga = data.get("gradient_accumulation_steps", 1)
+        try:
+            effective = int(mbs) * int(ga)
+        except (TypeError, ValueError):
+            return data
+        if effective < 4:
+            LOG.warning(
+                "ProTrain throughput cliff: micro_batch_size=%s * "
+                "gradient_accumulation_steps=%s = effective bs=%d < 4. "
+                "Per-iter overhead (scheduler walk + chunk-hook fan-out) "
+                "amortizes poorly below this threshold; expect ~5-7x slower "
+                "than vanilla. Either raise gradient_accumulation_steps to "
+                ">= 4 (recommended; same effective batch, much better "
+                "throughput) or drop ProTrain if memory permits. See "
+                "proposal §6.d and §16 follow-up PR #4.",
+                mbs,
+                ga,
+                effective,
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def _reject_unsupported_optimizer(cls, data):
         """Reject ``cfg.optimizer`` values that ProTrain's adapters cannot drive."""
         if not isinstance(data, dict):
