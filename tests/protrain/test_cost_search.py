@@ -1770,7 +1770,12 @@ def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
        at the bootstrap pin.
     2. ``t_iter`` at ``n_persist=N_chunk`` equals the bootstrap
        measurement minus ``N_chunk * (fwd_save + bwd_save)`` (clamped
-       at 0).
+       at 0). Per ``be34538d8``, ``fwd_save`` / ``bwd_save`` are the
+       overlap-aware-clamped per-chunk save: ``min(theoretical,
+       empirical, max(0, theoretical - compute_per_chunk))`` — the
+       analytical overlap model would have absorbed up to
+       ``compute_per_chunk`` of comm into compute already, so the
+       persistence credit must not double-count that.
     3. ``t_iter`` is monotonically non-increasing in ``n_persist``
        across the full sweep — adding a persistent chunk strictly
        reduces (or keeps constant if clamped at 0) the predicted
@@ -1833,21 +1838,46 @@ def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
     )
 
     # ---- Invariant 2: at n_persist=N_chunk the correction is exactly
-    #      N_chunk * (fwd_save + bwd_save). ----
+    #      N_chunk * (fwd_save + bwd_save), with the per-chunk save clamped
+    #      by max(0, theoretical - compute_per_chunk) per ``be34538d8`` to
+    #      avoid double-crediting savings that the analytical overlap model
+    #      would absorb for free on compute-bound chunks. ----
     cfg_full = CostConfig(n_persist=n_chunk, n_buffer=0, n_swap=0, n_checkpoint=0)
     t_full = estimate_runtime(cfg_full, trace, layout, bm, hw)
     nccl_gather = trace.nccl_gather_s[layout.S_chunk]
     pcie_per_chunk_h2d = layout.S_chunk / hw.pcie_h2d_bps
     pcie_per_chunk_d2h = layout.S_chunk / hw.pcie_d2h_bps
-    fwd_save_per_chunk = nccl_gather + pcie_per_chunk_h2d
-    bwd_save_per_chunk = nccl_gather + pcie_per_chunk_h2d + pcie_per_chunk_d2h
+    fwd_theoretical_per_chunk = nccl_gather + pcie_per_chunk_h2d
+    bwd_theoretical_per_chunk = nccl_gather + pcie_per_chunk_h2d + pcie_per_chunk_d2h
+    # Mirror the cost-model's overlap-aware clamp introduced in be34538d8:
+    # ``fwd_persist_save_per_chunk = min(theoretical, empirical,
+    # max(0, theoretical - compute_per_chunk))``. With the fixture's op
+    # latencies (5 ops/block * 8 blocks * 200µs = 8ms total fwd compute) the
+    # ``empirical`` term (~166ms/chunk) never binds, but the overlap-aware
+    # floor does: it shaves ``compute_per_chunk`` off each persistent-chunk
+    # credit. Backward uses ``bwd_compute_floor = t_fwd_compute_base *
+    # _BWD_FWD_COMPUTE_RATIO`` (2.0) because steady_bwd_wall_s == 0 here.
+    _BWD_FWD_COMPUTE_RATIO = 2.0
+    fwd_compute_base = sum(trace.op_latencies.values())  # 0.008
+    bwd_compute_floor = fwd_compute_base * _BWD_FWD_COMPUTE_RATIO  # 0.016
+    fwd_compute_per_chunk = fwd_compute_base / n_chunk
+    bwd_compute_per_chunk = bwd_compute_floor / n_chunk
+    fwd_save_per_chunk = min(
+        fwd_theoretical_per_chunk,
+        max(0.0, fwd_theoretical_per_chunk - fwd_compute_per_chunk),
+    )
+    bwd_save_per_chunk = min(
+        bwd_theoretical_per_chunk,
+        max(0.0, bwd_theoretical_per_chunk - bwd_compute_per_chunk),
+    )
     expected_full = max(0.0, chunked_fwd - n_chunk * fwd_save_per_chunk) + max(
         0.0, chunked_bwd - n_chunk * bwd_save_per_chunk
     )
     assert t_full == pytest.approx(expected_full, abs=1e-9), (
         f"n_persist=N_chunk must subtract N_chunk * (fwd_save + bwd_save) "
-        f"per paper Eqs. 4 & 6: expected t_iter={expected_full:.6f}, "
-        f"got {t_full:.6f}; fwd_save_per_chunk={fwd_save_per_chunk:.6f} "
+        f"per paper Eqs. 4 & 6 (overlap-aware-clamped per be34538d8): "
+        f"expected t_iter={expected_full:.6f}, got {t_full:.6f}; "
+        f"fwd_save_per_chunk={fwd_save_per_chunk:.6f} "
         f"bwd_save_per_chunk={bwd_save_per_chunk:.6f}"
     )
 
