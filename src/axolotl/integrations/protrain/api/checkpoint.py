@@ -31,7 +31,9 @@ CPU_OPTIM_DIRNAME = "cpu_optim"
 # Mode-B: chunk_<N>.pt (no rank suffix). Mode-C: chunk_<N>_rank_<R>.pt.
 CHUNK_FILE_RE = re.compile(r"^chunk_(\d+)\.pt$")
 CHUNK_SHARD_FILE_RE = re.compile(r"^chunk_(\d+)_rank_(\d+)\.pt$")
-SCHEMA_FORMAT_VERSION = 2
+# v3 persistent partition: gpu_optim_rank_<R>.pt (one per rank).
+GPU_OPTIM_RANK_FILE_RE = re.compile(r"^gpu_optim_rank_(\d+)\.pt$")
+SCHEMA_FORMAT_VERSION = 3
 SAVE_MODE_REPLICATED = "replicated"
 SAVE_MODE_SHARDED = "sharded"
 DEFAULT_SAVE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB; mirrors args.py default
@@ -262,11 +264,16 @@ def _estimate_optim_state_bytes(optim: Any) -> int:
         else:
             local_shard += delta
 
+    # v3 round-robin partition: GPU adapter holds only 1/W of persistent state on each rank.
+    persistent_world_size = int(getattr(optim, "_persistent_world_size", 1) or 1)
+    persistent_params_full = getattr(optim, "_persistent_params_full", None) or []
+    partition_active = persistent_world_size > 1 and len(persistent_params_full) > 0
+
     gpu_optim = getattr(optim, "_gpu_optim", None)
     if gpu_optim is not None:
         inner = getattr(gpu_optim, "_optim", None)
         if inner is not None:
-            _add_inner(inner, "replicated")
+            _add_inner(inner, "local_shard" if partition_active else "replicated")
 
     cpu_optim = getattr(optim, "_cpu_optim", None)
     if cpu_optim is not None:
@@ -520,8 +527,14 @@ def _save_protrain_optim_dir(
 
     target = os.path.join(output_dir, PROTRAIN_OPTIM_DIRNAME)
 
+    # v3 round-robin partition: active iff multi-rank AND persistent set non-empty on this build.
+    persistent_partition_active = bool(
+        int(getattr(optim, "_persistent_world_size", 1) or 1) > 1
+        and len(getattr(optim, "_persistent_params_full", None) or []) > 0
+    )
+
     if zero3_shard:
-        # Mode-C sharded save. Rank-0 metadata+GPU; every rank writes its own shards.
+        # Mode-C sharded save. Rank-0 metadata; per-rank gpu+cpu shards when partition active.
         rank0_status = 0
         try:
             if rank == 0:
@@ -549,10 +562,13 @@ def _save_protrain_optim_dir(
                     "estimated_optim_state_bytes": int(estimate),
                     "regions_per_chunk": _build_regions_per_chunk(chunk_manager),
                 }
+                if persistent_partition_active:
+                    metadata["protrain_persistent_partition_version"] = 1
+                    metadata["protrain_persistent_owner_world_size"] = int(world_size)
                 with open(os.path.join(target, METADATA_FILENAME), "w") as f:
                     json.dump(metadata, f, indent=2, sort_keys=True)
 
-                if optim._gpu_optim is not None:
+                if not persistent_partition_active and optim._gpu_optim is not None:
                     torch.save(
                         optim._gpu_optim._optim.state_dict(),
                         os.path.join(target, GPU_OPTIM_FILENAME),
@@ -575,6 +591,19 @@ def _save_protrain_optim_dir(
 
         per_rank_status = 0
         try:
+            # Each rank writes its own GPU optim shard when partition active.
+            if persistent_partition_active and optim._gpu_optim is not None:
+                if not os.path.isdir(target):
+                    raise RuntimeError(
+                        f"ProTrain optimizer save: checkpoint directory "
+                        f"{target!r} is not visible on rank {rank}. Mode-C "
+                        "saves require a shared filesystem across all ranks."
+                    )
+                torch.save(
+                    optim._gpu_optim._optim.state_dict(),
+                    os.path.join(target, f"gpu_optim_rank_{int(rank)}.pt"),
+                )
+
             if optim._cpu_optim is not None and optim._cpu_optim._optims:
                 cpu_dir = os.path.join(target, CPU_OPTIM_DIRNAME)
                 # Cross-rank visibility check: catch node-local FS pretending to be shared.
@@ -603,7 +632,7 @@ def _save_protrain_optim_dir(
             LOG.info(
                 "ProTrain optimizer save: wrote %s (estimate=%d bytes, "
                 "persistent=%d chunks, cpu_chunks=%d, step=%d, "
-                "world_size=%d, save_mode=%s)",
+                "world_size=%d, save_mode=%s, partition=%s)",
                 target,
                 estimate,
                 len(_effective_persistent_ids(chunk_manager)),
@@ -611,6 +640,7 @@ def _save_protrain_optim_dir(
                 step,
                 world_size,
                 SAVE_MODE_SHARDED,
+                "v1-round-robin" if persistent_partition_active else "none",
             )
         return True
 
@@ -640,10 +670,13 @@ def _save_protrain_optim_dir(
                 "torch_version": str(torch.__version__),
                 "estimated_optim_state_bytes": int(estimate),
             }
+            if persistent_partition_active:
+                metadata["protrain_persistent_partition_version"] = 1
+                metadata["protrain_persistent_owner_world_size"] = int(world_size)
             with open(os.path.join(target, METADATA_FILENAME), "w") as f:
                 json.dump(metadata, f, indent=2, sort_keys=True)
 
-            if optim._gpu_optim is not None:
+            if not persistent_partition_active and optim._gpu_optim is not None:
                 torch.save(
                     optim._gpu_optim._optim.state_dict(),
                     os.path.join(target, GPU_OPTIM_FILENAME),
@@ -665,11 +698,36 @@ def _save_protrain_optim_dir(
             rank0_status, src=0, op="save (replicated rank-0 write)"
         )
 
+    # Under partition every rank writes its own gpu_optim_rank_<R>.pt.
+    if persistent_partition_active:
+        _barrier_or_noop()
+        per_rank_status = 0
+        try:
+            if optim._gpu_optim is not None:
+                if not os.path.isdir(target):
+                    raise RuntimeError(
+                        f"ProTrain optimizer save: checkpoint directory "
+                        f"{target!r} is not visible on rank {rank}. "
+                        "Per-rank persistent-partition save requires a "
+                        "shared filesystem across all ranks."
+                    )
+                torch.save(
+                    optim._gpu_optim._optim.state_dict(),
+                    os.path.join(target, f"gpu_optim_rank_{int(rank)}.pt"),
+                )
+        except Exception:
+            per_rank_status = 1
+            raise
+        finally:
+            _allreduce_status_or_raise(
+                per_rank_status, op="save (replicated per-rank gpu_optim)"
+            )
+
     if rank == 0:
         LOG.info(
             "ProTrain optimizer save: wrote %s (estimate=%d bytes, "
             "persistent=%d chunks, cpu_chunks=%d, step=%d, "
-            "world_size=%d, save_mode=%s)",
+            "world_size=%d, save_mode=%s, partition=%s)",
             target,
             estimate,
             len(persistent_ids),
@@ -677,6 +735,7 @@ def _save_protrain_optim_dir(
             step,
             world_size,
             SAVE_MODE_REPLICATED,
+            "v1-round-robin" if persistent_partition_active else "none",
         )
     return True
 
@@ -684,6 +743,73 @@ def _save_protrain_optim_dir(
 # ---------------------------------------------------------------------------
 # Load
 # ---------------------------------------------------------------------------
+
+
+def _load_persistent_gpu_optim(
+    optim: Any,
+    target: str,
+    *,
+    metadata: dict[str, Any],
+    current_rank: int,
+    current_world: int,
+) -> None:
+    """Load the persistent GPU optimizer state from disk.
+
+    Three cases:
+      * ``protrain_persistent_partition_version`` in metadata: each rank
+        loads its own ``gpu_optim_rank_<R>.pt``. world_size match was
+        already enforced earlier.
+      * Legacy ``gpu_optim.pt`` (v2 or v3 no-partition save): rank-0
+        loads + broadcasts to peers when distributed; otherwise rank-0
+        loads directly.
+      * No file on disk + no GPU adapter currently: legal no-op.
+    """
+    partition_active = (
+        metadata.get("protrain_persistent_partition_version") is not None
+    )
+    legacy_path = os.path.join(target, GPU_OPTIM_FILENAME)
+    rank_path = os.path.join(target, f"gpu_optim_rank_{int(current_rank)}.pt")
+    if partition_active:
+        if optim._gpu_optim is None:
+            return
+        if not os.path.isfile(rank_path):
+            raise RuntimeError(
+                "ProTrain optimizer load: missing per-rank persistent "
+                f"file {rank_path!r}. Saved with partition_version=1; "
+                "expected one gpu_optim_rank_<R>.pt per rank."
+            )
+        loaded = torch.load(rank_path, map_location="cpu", weights_only=True)
+        optim._gpu_optim._optim.load_state_dict(loaded)
+        return
+    # Legacy single-file or no GPU adapter present.
+    if os.path.isfile(legacy_path):
+        if optim._gpu_optim is None:
+            raise RuntimeError(
+                "ProTrain optimizer load: gpu_optim.pt present on disk but "
+                "current optimizer has no persistent (GPU) inner — partition "
+                "mismatch slipped past the layout-signature check."
+            )
+        # Single-rank or rank-0-only on-disk file. Rank-0 loads from
+        # disk; non-zero ranks pull via broadcast (avoids per-rank
+        # reads on a shared FS + matches the v2-into-v3 migration
+        # path where the file came from a single-rank save).
+        if current_world > 1 and _dist_is_active():
+            payload: list[Any] = [None]
+            if current_rank == 0:
+                payload[0] = torch.load(
+                    legacy_path, map_location="cpu", weights_only=True
+                )
+            torch.distributed.broadcast_object_list(payload, src=0)
+            optim._gpu_optim._optim.load_state_dict(payload[0])
+        else:
+            loaded = torch.load(legacy_path, map_location="cpu", weights_only=True)
+            optim._gpu_optim._optim.load_state_dict(loaded)
+    elif optim._gpu_optim is not None:
+        raise RuntimeError(
+            "ProTrain optimizer load: current optimizer has a persistent "
+            "(GPU) inner but no gpu_optim.pt / gpu_optim_rank_*.pt files "
+            "are present on disk."
+        )
 
 
 def _perform_online_reshard(
@@ -782,7 +908,8 @@ def _load_protrain_optim_dir(
         metadata.setdefault("saving_rank", 0)
         metadata.setdefault("protrain_world_size", 1)
         metadata.setdefault("protrain_zero3_shard", False)
-    elif fmt == SCHEMA_FORMAT_VERSION:
+    elif fmt == 2:
+        # v2 (Phase 2 pre-partition): no partition metadata; gpu_optim.pt is full state on rank-0.
         if "protrain_save_mode" not in metadata:
             raise RuntimeError(
                 "ProTrain optimizer load: v2 metadata missing required "
@@ -793,11 +920,40 @@ def _load_protrain_optim_dir(
                 "ProTrain optimizer load: v2 metadata missing required "
                 "field 'saving_rank'. Refusing to load."
             )
+    elif fmt == SCHEMA_FORMAT_VERSION:
+        if "protrain_save_mode" not in metadata:
+            raise RuntimeError(
+                "ProTrain optimizer load: v3 metadata missing required "
+                "field 'protrain_save_mode'. Refusing to load."
+            )
+        if "saving_rank" not in metadata:
+            raise RuntimeError(
+                "ProTrain optimizer load: v3 metadata missing required "
+                "field 'saving_rank'. Refusing to load."
+            )
     else:
         raise RuntimeError(
             f"ProTrain optimizer load: unknown format_version={fmt} "
             f"(this build expects {SCHEMA_FORMAT_VERSION}). Refusing to load."
         )
+
+    # v3 round-robin partition: when present on disk, world_size must match exactly.
+    saved_partition_version = metadata.get("protrain_persistent_partition_version")
+    if saved_partition_version is not None:
+        saved_world_for_partition = int(
+            metadata.get(
+                "protrain_persistent_owner_world_size",
+                metadata.get("protrain_world_size", 0),
+            )
+        )
+        current_world_for_partition = _current_world_size()
+        if int(saved_world_for_partition) != int(current_world_for_partition):
+            raise RuntimeError(
+                "world_size mismatch on resume: persistent fp32 master is "
+                "round-robin partitioned and offline reshard does not "
+                "support repartitioning. Resume with the original "
+                f"world_size of {int(saved_world_for_partition)}."
+            )
 
     chunk_manager = optim._chunk_manager
     current_world = _current_world_size()
@@ -924,24 +1080,13 @@ def _load_protrain_optim_dir(
         )
         load_status = 0
         try:
-            # GPU state is replicated; map_location='cpu' defeats HF's hostile default.
-            gpu_path = os.path.join(target, GPU_OPTIM_FILENAME)
-            if os.path.isfile(gpu_path):
-                if optim._gpu_optim is None:
-                    raise RuntimeError(
-                        "ProTrain optimizer load: gpu_optim.pt present on "
-                        "disk but current optimizer has no persistent (GPU) "
-                        "inner — partition mismatch slipped past the layout-"
-                        "signature check."
-                    )
-                loaded = torch.load(gpu_path, map_location="cpu", weights_only=True)
-                optim._gpu_optim._optim.load_state_dict(loaded)
-            elif optim._gpu_optim is not None:
-                raise RuntimeError(
-                    "ProTrain optimizer load: current optimizer has a "
-                    "persistent (GPU) inner but gpu_optim.pt is absent on "
-                    "disk."
-                )
+            _load_persistent_gpu_optim(
+                optim,
+                target,
+                metadata=metadata,
+                current_rank=current_rank,
+                current_world=current_world,
+            )
 
             if os.path.isdir(cpu_dir):
                 for name in os.listdir(cpu_dir):
@@ -1086,25 +1231,20 @@ def _load_protrain_optim_dir(
         )
 
     # Lockstep failure protocol — local torch.load failure must not wedge peers at the barrier.
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        current_rank_mb = int(torch.distributed.get_rank())
+    else:
+        current_rank_mb = 0
     load_status = 0
     captured_exc: Exception | None = None
     try:
-        # GPU optim: load if both saved file and current optim slot exist.
-        gpu_path = os.path.join(target, GPU_OPTIM_FILENAME)
-        if os.path.isfile(gpu_path):
-            if optim._gpu_optim is None:
-                raise RuntimeError(
-                    "ProTrain optimizer load: gpu_optim.pt present on disk but "
-                    "current optimizer has no persistent (GPU) inner — partition "
-                    "mismatch slipped past the layout-signature check."
-                )
-            loaded = torch.load(gpu_path, map_location="cpu", weights_only=True)
-            optim._gpu_optim._optim.load_state_dict(loaded)
-        elif optim._gpu_optim is not None:
-            raise RuntimeError(
-                "ProTrain optimizer load: current optimizer has a persistent "
-                "(GPU) inner but gpu_optim.pt is absent on disk."
-            )
+        _load_persistent_gpu_optim(
+            optim,
+            target,
+            metadata=metadata,
+            current_rank=current_rank_mb,
+            current_world=current_world,
+        )
 
         # CPU optim: walk saved chunk files; require an exact match against the
         # current set of non-persistent chunk IDs.
@@ -1159,7 +1299,9 @@ def _load_protrain_optim_dir(
         raise captured_exc
 
     # Cross-rank state-equality check: catches divergent restores on non-shared FS.
-    _verify_replicated_state_across_ranks(optim, world_size=current_world)
+    # Skip under v3 round-robin partition: per-rank GPU state is intentionally different.
+    if metadata.get("protrain_persistent_partition_version") is None:
+        _verify_replicated_state_across_ranks(optim, world_size=current_world)
 
     # Hyperparam drift: warn but accept; normalize for JSON betas tuple→list round-trip.
     saved_hp = metadata.get("param_groups_meta", [])
@@ -1414,6 +1556,7 @@ def install_load_hook(
 __all__ = [
     "CHUNK_SHARD_FILE_RE",
     "DEFAULT_SAVE_MAX_BYTES",
+    "GPU_OPTIM_RANK_FILE_RE",
     "PROTRAIN_OPTIM_DIRNAME",
     "SAVE_MODE_REPLICATED",
     "SAVE_MODE_SHARDED",

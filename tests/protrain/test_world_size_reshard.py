@@ -1355,3 +1355,71 @@ def test_sharded_world_size_online_reshard_lockstep_failure(tmp_path):
         f"only ranks {sorted(rank_to_err.keys())} surfaced an error — "
         "lockstep failure protocol broken; expected every rank to raise"
     )
+
+
+# ===========================================================================
+# v3 persistent partition: world_size IDENTITY required on resume
+# ===========================================================================
+
+
+def test_persistent_partition_refuses_world_size_change_on_resume(tmp_path):
+    """A v3 save with ``protrain_persistent_partition_version: 1`` and
+    ``protrain_persistent_owner_world_size: 4`` must hard-error when
+    loaded into a w=2 build (online reshard does NOT support
+    repartitioning the persistent fp32 master).
+
+    Single-process test — exercises the metadata-driven refuse path,
+    not the multi-rank live save. The live save+load cycle is covered
+    by the partitioned tests in ``test_modec_persistent_partition.py``
+    and ``test_optimizer_checkpoint.py``.
+    """
+    from unittest import mock
+
+    from axolotl.integrations.protrain.api.checkpoint import (
+        SCHEMA_FORMAT_VERSION,
+        _load_protrain_optim_dir,
+        _layout_signature,
+    )
+
+    proot = tmp_path / PROTRAIN_OPTIM_DIRNAME
+    proot.mkdir()
+
+    fake_layout = mock.MagicMock(S_chunk=1024, N_chunk=1, chunks=(("a",),))
+    fake_mgr = mock.MagicMock(
+        layout=fake_layout,
+        _persistent_ids={0},
+        zero3_shard=False,
+        _chunk_shards={},
+    )
+    sig = _layout_signature(fake_mgr, world_size=4, zero3_shard=False)
+    meta = {
+        "format_version": SCHEMA_FORMAT_VERSION,
+        "protrain_layout_signature": sig,
+        "protrain_persistent_ids": [0],
+        "protrain_n_buffer": 1,
+        "protrain_world_size": 4,
+        "protrain_zero3_shard": False,
+        "protrain_save_mode": "replicated",
+        "saving_rank": 0,
+        "param_groups_meta": [],
+        "saved_at_step": 0,
+        "torch_version": "x",
+        "estimated_optim_state_bytes": 0,
+        "protrain_persistent_partition_version": 1,
+        "protrain_persistent_owner_world_size": 4,
+    }
+    (proot / METADATA_FILENAME).write_text(json.dumps(meta))
+
+    fake_optim = mock.MagicMock(spec=["_gpu_optim", "_cpu_optim", "_chunk_manager"])
+    fake_optim._chunk_manager = fake_mgr
+    fake_optim._gpu_optim = None
+    fake_optim._cpu_optim = None
+
+    # Saved w=4, but pretend current_world=2. Loader must error with the
+    # documented identity-required message.
+    with mock.patch(
+        "axolotl.integrations.protrain.api.checkpoint._current_world_size",
+        return_value=2,
+    ):
+        with pytest.raises(RuntimeError, match="world_size mismatch on resume"):
+            _load_protrain_optim_dir(fake_optim, str(tmp_path))

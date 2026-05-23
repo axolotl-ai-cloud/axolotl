@@ -290,6 +290,39 @@ def test_estimate_optim_state_bytes_handles_none_adapters():
     assert _estimate_optim_state_bytes(fake_optim) == 0
 
 
+def test_estimate_optim_state_bytes_partitioned_local_shard():
+    """When partition is active, GPU adapter state counts as local_shard
+    (multiplied by world_size at cluster aggregation), not replicated."""
+    import torch
+
+    # Mock inner GPU optim with 100 bytes of state, on a "world=4" partition.
+    fake_inner_gpu = mock.MagicMock()
+    fake_inner_gpu.state = {
+        0: {"exp_avg": torch.zeros(25, dtype=torch.float32)},  # 100 bytes
+    }
+    fake_optim = mock.MagicMock(spec=[
+        "_gpu_optim",
+        "_cpu_optim",
+        "_persistent_world_size",
+        "_persistent_params_full",
+    ])
+    fake_optim._gpu_optim = mock.MagicMock(_optim=fake_inner_gpu)
+    fake_optim._cpu_optim = None
+    fake_optim._persistent_world_size = 4
+    # Non-empty list signals "partition active" path.
+    fake_optim._persistent_params_full = [object(), object(), object(), object()]
+
+    # No distributed group active → global_sharded_bytes == local_bytes.
+    # Estimator returns 100 (replicated=0, local_shard=100, global=100).
+    assert _estimate_optim_state_bytes(fake_optim) == 100
+
+    # Sanity: when partition is OFF (single-rank world), the path treats
+    # GPU state as replicated and still returns 100.
+    fake_optim._persistent_world_size = 1
+    fake_optim._persistent_params_full = []
+    assert _estimate_optim_state_bytes(fake_optim) == 100
+
+
 def test_layout_signature_stable_across_calls():
     fake_layout = mock.MagicMock(
         S_chunk=1024, N_chunk=3, chunks=(("a",), ("b", "c"), ("d",))
@@ -638,7 +671,7 @@ def test_save_metadata_contains_expected_fields(saved_checkpoint):
         meta = json.load(f)
 
     assert meta["format_version"] == SCHEMA_FORMAT_VERSION
-    assert SCHEMA_FORMAT_VERSION == 2
+    assert SCHEMA_FORMAT_VERSION == 3
     assert isinstance(meta["protrain_layout_signature"], str)
     assert len(meta["protrain_layout_signature"]) == 64
     assert meta["protrain_persistent_ids"] == sorted(
@@ -1416,6 +1449,80 @@ def test_replicated_load_v1_checkpoint_is_forward_compat(
 
     # Loader must accept this without raising.
     assert _load_protrain_optim_dir(optim, str(fresh_checkpoint_dir)) is True
+
+
+@pytest.mark.gpu
+def test_resume_from_legacy_v2_into_v3(fresh_checkpoint_dir, saved_checkpoint):
+    """Legacy v2 metadata + gpu_optim.pt loads into a v3 build cleanly.
+
+    Mutates the saved metadata to look like a v2 save (drops the
+    partition_version field and rewrites format_version=2). The legacy
+    ``gpu_optim.pt`` file stays in place. Loader must accept this on
+    rank-0 (broadcast disabled in single-process) and the next save
+    activates the partition.
+    """
+    _, _, optim = saved_checkpoint
+    meta_path = fresh_checkpoint_dir / PROTRAIN_OPTIM_DIRNAME / "metadata.json"
+    meta = json.loads(meta_path.read_text())
+    meta.pop("protrain_persistent_partition_version", None)
+    meta.pop("protrain_persistent_owner_world_size", None)
+    meta["format_version"] = 2
+    meta_path.write_text(json.dumps(meta))
+
+    # The on-disk file is gpu_optim.pt — the v3 build (with partition
+    # disabled at world=1) must load it without raising.
+    assert _load_protrain_optim_dir(optim, str(fresh_checkpoint_dir)) is True
+
+
+@pytest.mark.gpu
+def test_partitioned_persistent_save_load_roundtrip(tmp_path, saved_checkpoint):
+    """Manually craft a partition-active save (w=2) and verify the
+    loader rejects mismatched world_size with the documented error.
+
+    The full multi-rank live round-trip is covered by the mp.spawn test
+    in test_world_size_reshard.py. This test exercises the
+    single-process schema-check path on a hand-rolled directory.
+    """
+    _, _, optim = saved_checkpoint
+    target = tmp_path / "partitioned_save" / PROTRAIN_OPTIM_DIRNAME
+    target.mkdir(parents=True)
+
+    chunk_manager = optim._chunk_manager
+    saved_world = 2  # claim a partitioned w=2 save
+
+    import torch as _torch
+
+    meta = {
+        "format_version": SCHEMA_FORMAT_VERSION,
+        "protrain_layout_signature": _layout_signature(
+            chunk_manager,
+            world_size=saved_world,
+            zero3_shard=bool(getattr(chunk_manager, "zero3_shard", False)),
+        ),
+        "protrain_persistent_ids": sorted(int(x) for x in chunk_manager._persistent_ids),
+        "protrain_n_buffer": int(getattr(chunk_manager, "n_buffer", 0)),
+        "protrain_world_size": saved_world,
+        "protrain_zero3_shard": False,
+        "protrain_save_mode": SAVE_MODE_REPLICATED,
+        "saving_rank": 0,
+        "param_groups_meta": [],
+        "saved_at_step": 1,
+        "torch_version": str(_torch.__version__),
+        "estimated_optim_state_bytes": 0,
+        "protrain_persistent_partition_version": 1,
+        "protrain_persistent_owner_world_size": saved_world,
+    }
+    (target / METADATA_FILENAME).write_text(json.dumps(meta))
+    # Two per-rank gpu_optim files — proof the writer would have laid them down.
+    for r in range(saved_world):
+        _torch.save(
+            optim._gpu_optim._optim.state_dict() if optim._gpu_optim else {},
+            target / f"gpu_optim_rank_{r}.pt",
+        )
+
+    # Single-rank load attempts to resume a w=2 partitioned save → reject.
+    with pytest.raises(RuntimeError, match="world_size mismatch on resume"):
+        _load_protrain_optim_dir(optim, str(tmp_path / "partitioned_save"))
 
 
 # ---------------------------------------------------------------------------
