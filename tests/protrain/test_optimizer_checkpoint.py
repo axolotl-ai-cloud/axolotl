@@ -3703,3 +3703,120 @@ def test_sharded_load_rejects_stray_file_in_cpu_optim(tmp_path):
     assert any("unexpected file" in b and "rank_99.pt" in b for b in bodies), (
         f"stray-file rejection error did not name the offending file: {bodies}"
     )
+
+
+# ---------------------------------------------------------------------------
+# NCCL CPU-bridge regression — _estimate_optim_state_bytes under MULTI_GPU PG
+# ---------------------------------------------------------------------------
+# Under accelerate's MULTI_GPU distributed_type the default PG is NCCL-only.
+# Pre-fix the estimator allocated a CPU torch.tensor and passed it to
+# dist.all_reduce, which raises ``RuntimeError: No backend type associated
+# with device type cpu``. The fix routes the payload through
+# ``_dist_backend_tensor`` which puts the tensor on the active device.
+
+
+def _worker_estimate_under_nccl(rank: int, world_size: int, tmpdir: str) -> None:
+    import os as _os
+
+    import torch
+    import torch.distributed as dist
+
+    try:
+        if not torch.cuda.is_available() or torch.cuda.device_count() < world_size:
+            with open(_os.path.join(tmpdir, f"rank{rank}.skip"), "w") as f:
+                f.write("insufficient CUDA devices")
+            return
+
+        torch.cuda.set_device(rank)
+        dist.init_process_group(
+            backend="nccl",
+            init_method=f"file://{tmpdir}/rendezvous-estimate-nccl",
+            rank=rank,
+            world_size=world_size,
+        )
+
+        # Synthesize a minimal _ProTrainOptimizer-like stub with a known
+        # local_shard contribution; assert all_reduce sums to world_size *
+        # per-rank bytes (the cluster-wide total).
+        per_rank_bytes = 100 * 4  # 100 fp32 elements
+        fake_inner_gpu = mock.MagicMock()
+        fake_inner_gpu.state = {
+            0: {"exp_avg": torch.zeros(100, dtype=torch.float32)},
+        }
+        fake_optim = mock.MagicMock(
+            spec=[
+                "_gpu_optim",
+                "_cpu_optim",
+                "_persistent_world_size",
+                "_persistent_params_full",
+            ]
+        )
+        fake_optim._gpu_optim = mock.MagicMock(_optim=fake_inner_gpu)
+        fake_optim._cpu_optim = None
+        fake_optim._persistent_world_size = world_size
+        fake_optim._persistent_params_full = [object()] * world_size
+
+        got = _estimate_optim_state_bytes(fake_optim)
+        expected = world_size * per_rank_bytes
+
+        with open(_os.path.join(tmpdir, f"rank{rank}.got"), "w") as f:
+            f.write(f"{got}:{expected}")
+    except Exception as exc:
+        import traceback as _tb
+
+        with open(_os.path.join(tmpdir, f"rank{rank}.err"), "w") as f:
+            f.write(f"{type(exc).__name__}: {exc}\n")
+            _tb.print_exc(file=f)
+        raise
+    finally:
+        try:
+            if dist.is_initialized():
+                dist.barrier()
+                dist.destroy_process_group()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(
+    not __import__("torch").cuda.is_available()
+    or __import__("torch").cuda.device_count() < 2,
+    reason="needs 2 CUDA devices for NCCL",
+)
+def test_estimate_optim_state_bytes_routes_via_nccl_safe_tensor(tmp_path):
+    """Regression: estimator must not pass a CPU tensor to NCCL all_reduce.
+
+    Before the fix this raised ``RuntimeError: No backend type associated
+    with device type cpu`` on the first save callback under MULTI_GPU.
+    """
+    import torch
+    import torch.multiprocessing as mp
+
+    if not torch.distributed.is_available():
+        pytest.skip("torch.distributed unavailable")
+
+    world_size = 2
+    mp.spawn(
+        _worker_estimate_under_nccl,
+        args=(world_size, str(tmp_path)),
+        nprocs=world_size,
+        join=True,
+    )
+
+    err_files = list(tmp_path.glob("rank*.err"))
+    if err_files:
+        bodies = "\n---\n".join(f.read_text() for f in err_files)
+        pytest.fail(f"NCCL estimate worker raised:\n{bodies}")
+
+    if list(tmp_path.glob("rank*.skip")):
+        pytest.skip("workers reported insufficient CUDA devices")
+
+    got_files = sorted(tmp_path.glob("rank*.got"))
+    assert len(got_files) == world_size, (
+        f"expected {world_size} rank results, got {[g.name for g in got_files]}"
+    )
+    for gf in got_files:
+        got_str, expected_str = gf.read_text().split(":")
+        assert int(got_str) == int(expected_str), (
+            f"{gf.name}: estimator returned {got_str}, expected {expected_str}"
+        )

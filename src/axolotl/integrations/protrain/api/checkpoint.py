@@ -38,6 +38,9 @@ SAVE_MODE_REPLICATED = "replicated"
 SAVE_MODE_SHARDED = "sharded"
 DEFAULT_SAVE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB; mirrors args.py default
 
+# Sentinel grepped by external bench gating; see CHECKPOINT_DESIGN_PHASE2.md §13.
+_CROSS_WORLD_NCCL_CPU_BRIDGE = "v1"
+
 # torch.dtype -> str(dtype) round-trip. JSON cannot serialize dtype
 # objects directly, and pickling them defeats the "human-readable
 # metadata" goal. We persist ``str(dtype)`` (e.g. "torch.float16") and
@@ -79,10 +82,20 @@ def _barrier_or_noop() -> None:
 
 def _dist_status_tensor(status: int) -> torch.Tensor:
     """Build a 0/1 status tensor on the right device for the active backend."""
+    return _dist_backend_tensor(int(status), dtype=torch.int64)
+
+
+def _dist_backend_tensor(value: int, *, dtype: torch.dtype) -> torch.Tensor:
+    """Allocate a scalar collective payload on the device the active PG supports.
+
+    Under accelerate's ``MULTI_GPU`` distributed_type the default PG is
+    NCCL-only, and passing a CPU tensor to ``dist.all_reduce``/``all_gather``
+    raises ``RuntimeError: No backend type associated with device type cpu``.
+    """
     device = torch.device("cpu")
     if _dist_is_active() and torch.distributed.get_backend() == "nccl":
         device = torch.device("cuda", torch.cuda.current_device())
-    return torch.tensor([int(status)], dtype=torch.int64, device=device)
+    return torch.tensor([value], dtype=dtype, device=device)
 
 
 def _broadcast_status_or_raise(status: int, *, src: int, op: str) -> None:
@@ -285,7 +298,7 @@ def _estimate_optim_state_bytes(optim: Any) -> int:
         import torch.distributed as _dist
 
         if _dist.is_available() and _dist.is_initialized():
-            shard_tensor = torch.tensor([local_shard], dtype=torch.long)
+            shard_tensor = _dist_backend_tensor(local_shard, dtype=torch.long)
             _dist.all_reduce(shard_tensor, op=_dist.ReduceOp.SUM)
             global_sharded_bytes = int(shard_tensor.item())
     except ImportError:

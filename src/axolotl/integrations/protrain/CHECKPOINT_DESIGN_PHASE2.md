@@ -812,3 +812,22 @@ gates — they need separate-process infra and run on the slow lane.
 `protrain-optim-checkpoint` (Phase 1 landed first), shipped as
 `protrain-optim-checkpoint-phase2-mode-c`. The §8 questions were
 answered during implementation and the answers are recorded above.*
+
+---
+
+## 13. CPU collectives under NCCL-only PGs
+
+When the default process group is NCCL-only (accelerate's
+`distributed_type: MULTI_GPU`), CPU tensors **cannot** be passed directly
+to `dist.all_reduce` / `dist.all_gather` — the call raises
+`RuntimeError: No backend type associated with device type cpu`.
+
+Design rule: every scalar collective payload in this module routes through
+`_dist_backend_tensor(value, dtype=...)` (or the `_dist_status_tensor`
+0/1-flag wrapper that delegates to it). The helper allocates the tensor on
+`cuda:current_device` when the backend is NCCL and on CPU otherwise, so
+the same call site is correct for gloo, NCCL, and uninitialized PGs.
+
+The module-level sentinel `_CROSS_WORLD_NCCL_CPU_BRIDGE` is the canonical
+grep target for external bench scripts (e.g. v50 cross-world-resume) that
+need to gate on this fix being present in the working tree.
