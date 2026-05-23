@@ -7,7 +7,7 @@ import math
 import os
 from functools import cached_property
 from importlib.util import find_spec
-from typing import Any, Sequence
+from typing import Any
 
 import peft
 import torch
@@ -56,109 +56,17 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.fp32_norms import (
+    _matches_norm_class,
+    get_fp32_norm_patterns,
+    tag_model_fp32_norms,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
-
-
-# Shard RMSNorm/LayerNorm as fp32 before decoder wrapping so FSDP2 can keep
-# per-module MixedPrecisionPolicy (workaround for FSDP1 flat-param dtype constraints).
-
-DEFAULT_FP32_NORM_SUFFIXES: tuple[str, ...] = ("RMSNorm", "LayerNorm")
-
-
-def _matches_norm_class(module: "torch.nn.Module", patterns: Sequence[str]) -> bool:
-    """Match a module against class-name patterns.
-
-    Two matching modes, chosen per-pattern by presence of a dot:
-      - Fully qualified (contains "."): matches f"{module.__module__}.{cls}" exactly.
-      - Suffix (no dot): matches type(module).__name__.endswith(pattern).
-    Empty / whitespace-only patterns are skipped (``cls_name.endswith("")``
-    is True for every class, which would silently match everything).
-    """
-    cls = type(module)
-    cls_name = cls.__name__
-    qualified = f"{cls.__module__}.{cls_name}"
-    for pattern in patterns:
-        if not pattern or not pattern.strip():
-            continue
-        if "." in pattern:
-            if qualified == pattern:
-                return True
-        elif cls_name.endswith(pattern):
-            return True
-    return False
-
-
-def shard_norms_fp32(model: "torch.nn.Module", cfg) -> int:
-    """Wrap matching norm modules with FSDP2 + fp32 MixedPrecisionPolicy.
-
-    Must run AFTER model materialization and BEFORE accelerator.prepare().
-    Returns the number of modules sharded.
-
-    Norms are sharded on the default process group; mesh-scoped sharding for
-    composed TP + FSDP2 is not handled here (the device mesh is only available
-    once accelerator.prepare() runs), so combining fp32_norms with tensor
-    parallelism is unsupported.
-    """
-    if not getattr(cfg, "fp32_norms", False):
-        return 0
-
-    from torch.distributed.fsdp import MixedPrecisionPolicy, fully_shard
-
-    if getattr(cfg, "fsdp_version", None) != 2:
-        raise ValueError(
-            "fp32_norms requires fsdp_version: 2. FSDP1 enforces flat-param "
-            "dtype uniformity within each wrap group, which is incompatible "
-            "with keeping norms in fp32 while the rest of the layer is bf16."
-        )
-
-    patterns = (
-        list(cfg.fp32_norm_classes)
-        if cfg.fp32_norm_classes
-        else list(DEFAULT_FP32_NORM_SUFFIXES)
-    )
-
-    fp32_policy = MixedPrecisionPolicy(
-        param_dtype=torch.float32,
-        reduce_dtype=torch.float32,
-    )
-
-    matches = [
-        (name, module)
-        for name, module in model.named_modules()
-        if _matches_norm_class(module, patterns)
-    ]
-
-    if not matches:
-        LOG.warning(
-            "fp32_norms enabled but no modules matched patterns %s. Check "
-            "fp32_norm_classes against the model's actual norm class names.",
-            patterns,
-        )
-        return 0
-
-    for name, module in matches:
-        if any(p.is_meta for p in module.parameters(recurse=False)):
-            raise RuntimeError(
-                f"Cannot shard meta-device module {name!r} "
-                f"({type(module).__name__}). fp32_norms currently requires "
-                "materialized parameters. Disable cpu_ram_efficient_loading "
-                "or materialize before this call."
-            )
-
-    for _name, module in matches:
-        fully_shard(module, mp_policy=fp32_policy)
-
-    LOG.info(
-        "Sharded %d norm modules with fp32 MixedPrecisionPolicy (patterns=%s)",
-        len(matches),
-        patterns,
-    )
-    return len(matches)
 
 
 class ModelLoader:
@@ -289,7 +197,7 @@ class ModelLoader:
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
 
         if self.cfg.fp32_norms:
-            shard_norms_fp32(self.model, self.cfg)
+            tag_model_fp32_norms(self.model, self.cfg)
 
         return self.model, lora_config
 
@@ -1011,8 +919,11 @@ class ModelLoader:
         dest = {"dtype": dist_dtype}
         if self.cfg.lora_on_cpu:
             dest["device"] = "cpu"
+        fp32_norm_patterns = get_fp32_norm_patterns(self.cfg)
         for name, module in self.model.named_modules():
-            if "norm" in name:
+            if fp32_norm_patterns and _matches_norm_class(module, fp32_norm_patterns):
+                module.to(torch.float32)
+            elif "norm" in name:
                 module.to(dist_dtype)
             if before_kbit_train_or_finetune:
                 if name.endswith(".gate"):

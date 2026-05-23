@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import yaml
 from accelerate.test_utils import execute_subprocess_async
 from transformers.testing_utils import get_torch_dist_unique_port
@@ -25,7 +26,9 @@ from tests.e2e.utils import require_torch_2_7_0
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-def _base_fp32_norms_config(temp_dir: str, **overrides) -> DictDefault:
+def _base_fp32_norms_config(
+    temp_dir: str, *, cpu_ram_efficient_loading: bool = False, **overrides
+) -> DictDefault:
     """Base config for fp32_norms + FSDP2 multi-GPU."""
     cfg = {
         "base_model": "axolotl-ai-co/tiny-qwen3-129m",
@@ -54,7 +57,7 @@ def _base_fp32_norms_config(temp_dir: str, **overrides) -> DictDefault:
         "fsdp_version": 2,
         "fsdp_config": {
             "offload_params": False,
-            "cpu_ram_efficient_loading": False,
+            "cpu_ram_efficient_loading": cpu_ram_efficient_loading,
             "transformer_layer_cls_to_wrap": "Qwen3DecoderLayer",
             "state_dict_type": "FULL_STATE_DICT",
             "auto_wrap_policy": "TRANSFORMER_BASED_WRAP",
@@ -98,10 +101,20 @@ class TestFSDP2Fp32Norms:
     """Verifies the fp32_norms FSDP2 path end-to-end across 2 GPUs."""
 
     @require_torch_2_7_0
-    def test_norms_stay_fp32_under_fsdp2_bf16(self, temp_dir):
+    @pytest.mark.parametrize(
+        "cpu_ram_efficient_loading",
+        [False, True],
+        ids=["materialized-load", "cpu-ram-efficient-load"],
+    )
+    def test_norms_stay_fp32_under_fsdp2_bf16(
+        self, temp_dir, cpu_ram_efficient_loading
+    ):
         """fp32_norms keeps RMSNorm params in fp32 while the rest stays bf16."""
         dump_path = Path(temp_dir) / "dtype_capture.json"
-        cfg = _base_fp32_norms_config(temp_dir)
+        cfg = _base_fp32_norms_config(
+            temp_dir,
+            cpu_ram_efficient_loading=cpu_ram_efficient_loading,
+        )
         _run_training(temp_dir, cfg, dump_path)
 
         # Training completed (no FSDP1-style flat-param dtype crash) AND the
