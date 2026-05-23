@@ -701,7 +701,19 @@ class ProTrainPlugin(BasePlugin):
         )
 
     def post_trainer_create(self, cfg, trainer: "Trainer") -> None:
-        """Install the ProTrain optimizer on the trainer + DDP-composition detection."""
+        """Install the ProTrain optimizer on the trainer + DDP-composition detection.
+
+        Why ``post_trainer_create`` and not ``post_model_load``: the trainer's
+        ``optim_cls_and_kwargs`` and dataloader configuration are only available
+        after the HF ``Trainer`` is constructed. The persistent-chunk optimizer
+        needs the trainer's optimizer name (to route adamw_torch / adamw_8bit /
+        paged_adamw_8bit / adamw_apex_fused), and the DDP-composition detection
+        needs the resolved ``accelerator`` from the trainer to decide whether to
+        engage Mode A / B / C. Installing earlier (in ``post_model_load``) would
+        force ProTrain to either duplicate trainer state-resolution logic or
+        miss the optimizer-name routing. See ``DESIGN.md`` §6 for the full
+        sequencing argument.
+        """
         if not _is_plugin_active(cfg):
             return
 

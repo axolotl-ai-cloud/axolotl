@@ -1,4 +1,15 @@
-"""Precise-size pinned host memory via cudaHostAlloc + ctypes; falls back to torch pin_memory."""
+"""Precise-size pinned host memory via cudaHostAlloc + ctypes; falls back to torch pin_memory.
+
+Platform compatibility: the ``cudaHostAlloc`` fast path requires ``libcudart``
+to be loadable via ``ctypes.util.find_library`` or one of the explicit
+``libcudart.so.{major}`` candidates. If libcudart is not present (some
+container builds, exotic Linux distros, non-Linux platforms) the loader
+returns ``None`` and ``PinnedHostMemory.alloc`` silently falls back to
+``torch.empty(..., pin_memory=True)``, which is functionally equivalent for
+ProTrain's swap traffic but loses the precise-size allocation (torch's
+pin_memory rounds up to a power-of-2-ish pool). The fallback path is tested
+on the supported Linux x86_64 + CUDA 13.0 path; document non-Linux behavior
+as deferred (Axolotl itself is Linux-supported)."""
 
 from __future__ import annotations
 
