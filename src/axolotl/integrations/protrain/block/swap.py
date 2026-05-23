@@ -19,6 +19,7 @@ except Exception:  # noqa: BLE001 — older torches lack torch.compiler.disable
     def _compile_disable(fn=None, *, recursive=True):  # noqa: ARG001
         return fn if fn is not None else (lambda f: f)
 
+
 if TYPE_CHECKING:
     from axolotl.integrations.protrain.block.swap_pool import ActivationSwapPool
 

@@ -440,9 +440,7 @@ def test_math_equivalence_force_all_persistent() -> None:
     _compare(losses_v, losses_p, sd_v, sd_p, label="force_all_persistent")
 
 
-def _math_equiv_worker_w2_partitioned(
-    rank: int, world_size: int, tmpdir: str
-) -> None:
+def _math_equiv_worker_w2_partitioned(rank: int, world_size: int, tmpdir: str) -> None:
     """w=2 partitioned worker — runs the force_all_persistent flow under
     a real ``torch.distributed`` group so the post-step all-reduce(SUM)
     actually fires, then compares to a vanilla single-rank AdamW reference."""

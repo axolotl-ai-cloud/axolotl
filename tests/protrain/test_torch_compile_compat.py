@@ -17,7 +17,6 @@ import pytest
 import torch
 from torch import nn
 
-
 # ---------------------------------------------------------------------------
 # CPU-portable fixture: 2-block model with self_attn (so discover_blocks
 # treats the ModuleList as the block list under the attention heuristic).

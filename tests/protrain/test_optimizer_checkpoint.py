@@ -300,12 +300,14 @@ def test_estimate_optim_state_bytes_partitioned_local_shard():
     fake_inner_gpu.state = {
         0: {"exp_avg": torch.zeros(25, dtype=torch.float32)},  # 100 bytes
     }
-    fake_optim = mock.MagicMock(spec=[
-        "_gpu_optim",
-        "_cpu_optim",
-        "_persistent_world_size",
-        "_persistent_params_full",
-    ])
+    fake_optim = mock.MagicMock(
+        spec=[
+            "_gpu_optim",
+            "_cpu_optim",
+            "_persistent_world_size",
+            "_persistent_params_full",
+        ]
+    )
     fake_optim._gpu_optim = mock.MagicMock(_optim=fake_inner_gpu)
     fake_optim._cpu_optim = None
     fake_optim._persistent_world_size = 4
@@ -1499,7 +1501,9 @@ def test_partitioned_persistent_save_load_roundtrip(tmp_path, saved_checkpoint):
             world_size=saved_world,
             zero3_shard=bool(getattr(chunk_manager, "zero3_shard", False)),
         ),
-        "protrain_persistent_ids": sorted(int(x) for x in chunk_manager._persistent_ids),
+        "protrain_persistent_ids": sorted(
+            int(x) for x in chunk_manager._persistent_ids
+        ),
         "protrain_n_buffer": int(getattr(chunk_manager, "n_buffer", 0)),
         "protrain_world_size": saved_world,
         "protrain_zero3_shard": False,

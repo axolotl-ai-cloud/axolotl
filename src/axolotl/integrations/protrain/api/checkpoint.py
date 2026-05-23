@@ -777,9 +777,7 @@ def _load_persistent_gpu_optim(
         loads directly.
       * No file on disk + no GPU adapter currently: legal no-op.
     """
-    partition_active = (
-        metadata.get("protrain_persistent_partition_version") is not None
-    )
+    partition_active = metadata.get("protrain_persistent_partition_version") is not None
     legacy_path = os.path.join(target, GPU_OPTIM_FILENAME)
     rank_path = os.path.join(target, f"gpu_optim_rank_{int(current_rank)}.pt")
     if partition_active:

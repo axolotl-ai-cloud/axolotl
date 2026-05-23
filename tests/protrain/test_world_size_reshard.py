@@ -1377,8 +1377,8 @@ def test_persistent_partition_refuses_world_size_change_on_resume(tmp_path):
 
     from axolotl.integrations.protrain.api.checkpoint import (
         SCHEMA_FORMAT_VERSION,
-        _load_protrain_optim_dir,
         _layout_signature,
+        _load_protrain_optim_dir,
     )
 
     proot = tmp_path / PROTRAIN_OPTIM_DIRNAME

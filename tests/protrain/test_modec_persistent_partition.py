@@ -13,12 +13,11 @@ correctness assertions.
 
 from __future__ import annotations
 
-import os
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
-from axolotl.integrations.protrain.types import BlockId, ChunkId, ParamId
+from axolotl.integrations.protrain.types import BlockId, ParamId
 
 
 def _tiny_cpu_model(n_params: int = 8, hidden: int = 4):
@@ -222,9 +221,7 @@ def _worker_math_equivalence(rank: int, world_size: int, tmpdir: str) -> None:
         torch.manual_seed(0)
         model = _tiny_cpu_model(n_params=8)
         # Snapshot pre-step params for the reference.
-        init_state = {
-            n: p.detach().clone() for n, p in model.named_parameters()
-        }
+        init_state = {n: p.detach().clone() for n, p in model.named_parameters()}
 
         mgr, layout, pool, host = _build_persistent_chunk_manager_cpu(model)
         optim, persistent_full, _ = _build_persistent_optim(
@@ -405,12 +402,8 @@ def _worker_stable_across_resume(rank: int, world_size: int, tmpdir: str) -> Non
             )
 
         # Owner-rank sequence (by name) must also be stable.
-        owner_a = [
-            (n, i % world_size) for i, n in enumerate(persistent_names_a)
-        ]
-        owner_b = [
-            (n, i % world_size) for i, n in enumerate(persistent_names_b)
-        ]
+        owner_a = [(n, i % world_size) for i, n in enumerate(persistent_names_a)]
+        owner_b = [(n, i % world_size) for i, n in enumerate(persistent_names_b)]
         if owner_a != owner_b:
             raise RuntimeError(
                 f"rank {rank}: owner_rank assignment drifted between "
