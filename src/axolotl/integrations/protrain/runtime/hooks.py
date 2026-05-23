@@ -21,6 +21,17 @@ from axolotl.integrations.protrain.types import (
 )
 from axolotl.utils.logging import get_logger
 
+try:
+    from torch.compiler import disable as _compile_disable
+except Exception:  # noqa: BLE001 — older torches lack torch.compiler.disable
+
+    def _compile_disable(fn=None, *, recursive=True):  # noqa: ARG001
+        return fn if fn is not None else (lambda f: f)
+
+
+# Sentinel for external grep-based detection that the torch.compile compat layer is present.
+_PROTRAIN_TORCH_COMPILE_COMPAT = 1
+
 if TYPE_CHECKING:
     from torch.utils.hooks import RemovableHandle
 
@@ -46,6 +57,7 @@ class _RecomputePreHookHandle:
 def _make_forward_pre_hook(scheduler: "Scheduler", block_id: BlockId):
     """Build a forward-pre hook bound to ``scheduler`` and ``block_id``."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, inputs):  # noqa: ARG001 — signature required
         scheduler.pre_block_forward(block_id)
         return None  # allow default arg flow
@@ -56,6 +68,7 @@ def _make_forward_pre_hook(scheduler: "Scheduler", block_id: BlockId):
 def _make_forward_post_hook(scheduler: "Scheduler", block_id: BlockId):
     """Build a forward-post hook bound to ``scheduler`` and ``block_id``."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, inputs, output):  # noqa: ARG001
         scheduler.post_block_forward(block_id)
         return None
@@ -66,6 +79,7 @@ def _make_forward_post_hook(scheduler: "Scheduler", block_id: BlockId):
 def _make_backward_pre_hook(scheduler: "Scheduler", block_id: BlockId):
     """Build a backward-pre hook bound to ``scheduler`` and ``block_id``."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, grad_output):  # noqa: ARG001
         scheduler.pre_block_backward(block_id)
         return None
@@ -76,6 +90,7 @@ def _make_backward_pre_hook(scheduler: "Scheduler", block_id: BlockId):
 def _make_backward_post_hook(scheduler: "Scheduler", block_id: BlockId):
     """Build a backward-post hook bound to ``scheduler`` and ``block_id``."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, grad_input, grad_output):  # noqa: ARG001
         scheduler.post_block_backward(block_id)
         return None
@@ -107,6 +122,7 @@ def _make_lora_container_pre_forward_hook(
 ):
     """Forward-pre hook gathering precomputed chunk_ids; idempotent via ensure_chunks_resident."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, inputs):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
         return None
@@ -119,6 +135,7 @@ def _make_lora_container_pre_backward_hook(
 ):
     """Backward-pre re-gather; prevents autograd 'shape compatible with [0]' on evicted chunks."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, grad_output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
         return None
@@ -131,6 +148,7 @@ def _make_lora_container_post_forward_hook(
 ):
     """Forward-post defensive re-bind before block-level release."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, inputs, output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
         return None
@@ -143,6 +161,7 @@ def _make_lora_container_post_backward_hook(
 ):
     """Backward-post defensive re-bind across outer pre-backward → inner TBackward0 gap."""
 
+    @_compile_disable(recursive=True)
     def _hook(module: nn.Module, grad_input, grad_output):  # noqa: ARG001
         scheduler.ensure_chunks_resident(chunk_ids)
         return None
@@ -195,9 +214,12 @@ def install_hooks(
             )
         )
         if hasattr(block, "set_recompute_pre_hook"):
-            block.set_recompute_pre_hook(
-                lambda block_id=block_id: scheduler.ensure_block_resident(block_id)
-            )
+
+            @_compile_disable(recursive=True)
+            def _recompute_pre_hook(block_id=block_id):
+                scheduler.ensure_block_resident(block_id)
+
+            block.set_recompute_pre_hook(_recompute_pre_hook)
             handles.append(_RecomputePreHookHandle(block))  # type: ignore[arg-type]
 
         # OFFLOAD wrappers attach idempotently here for direct-install callers.

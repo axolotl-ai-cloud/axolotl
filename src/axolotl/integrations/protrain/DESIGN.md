@@ -398,3 +398,14 @@ Architecturally, ProTrain now owns the parallelism contract for chunk-managed pa
 - **Quantized base + LoRA** — pair LoRA with bnb 4-bit or 8-bit weight quantization. `bitsandbytes.nn.Linear4bit` / `Linear8bitLt` use typed `param.data` views that survive the non-persistent slot lifecycle in both single- and multi-GPU; the M3 13B headline test exercises this combination.
 
 Coverage: `tests/protrain/test_lora_offload_mode.py` (22 tests, single-GPU plain LoRA Mode C end-to-end, all PASS); `tests/protrain/test_cross_mode_resume.py` real-multigpu tests `_a_to_c` and `_c_to_a` PASS as of M6C-fix-8 (xfail markers removed in commit `17ffb8d1`); `tests/protrain/test_paged_adam_offload_mgpu.py` regresses the bnb 4-bit + paged_adamw_8bit + Mode C at seq=2048 multi-GPU path that M6C-fix-8 also closed. The M6C report under `docs/protrain/` traces the historical failure modes.
+
+### torch.compile compatibility
+
+ProTrain hooks call into the `Scheduler` / `ChunkManager` (dicts, CUDA streams, NCCL collectives, ctypes via `BackwardHandle`) — none of which Dynamo can trace. The compatibility layer wraps every hook body and every wrapper-block `forward` with `torch.compiler.disable(recursive=True)`:
+
+- `runtime/hooks.py` — each of the 6 `_make_*_hook` factories decorates its returned `_hook` plus the `set_recompute_pre_hook` callback. A module-scope sentinel `_PROTRAIN_TORCH_COMPILE_COMPAT = 1` allows external grep-based detection (used by bench scripts).
+- `block/offload.py::OffloadedBlock.forward` and `block/swap.py::SwappedBlock.forward` carry the same decorator so the `saved_tensors_hooks` context manager (also Dynamo-unsupported) runs eagerly.
+
+Hook bodies fire eagerly between compiled graph segments; the attention/MLP/RMSNorm math inside transformer blocks still compiles on Inductor. The pattern mirrors `integrations/liger/utils.py::patch_with_compile_disable`. Coverage in `tests/protrain/test_torch_compile_compat.py` (CPU unit + GPU smoke `@pytest.mark.gpu`).
+
+**Orthogonal follow-up:** `torch_compile: true` together with `load_in_4bit: true` / `adapter: qlora` raises `ctypes.ArgumentError` inside `axolotl/kernels/quantize.py::dequantize` (bnb-4bit dequant uses ctypes calls that Dynamo cannot trace). This is independent of ProTrain — drop `load_in_4bit` (or use bf16 LoRA / bf16 full-FT) when validating ProTrain + `torch_compile`.

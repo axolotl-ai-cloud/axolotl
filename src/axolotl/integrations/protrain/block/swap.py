@@ -12,6 +12,13 @@ from axolotl.integrations.protrain.block.strategy import BlockMode
 from axolotl.integrations.protrain.runtime.streams import SingleStreamAllocator
 from axolotl.utils.logging import get_logger
 
+try:
+    from torch.compiler import disable as _compile_disable
+except Exception:  # noqa: BLE001 — older torches lack torch.compiler.disable
+
+    def _compile_disable(fn=None, *, recursive=True):  # noqa: ARG001
+        return fn if fn is not None else (lambda f: f)
+
 if TYPE_CHECKING:
     from axolotl.integrations.protrain.block.swap_pool import ActivationSwapPool
 
@@ -321,6 +328,7 @@ class SwappedBlock(nn.Module):
         self._swap_pool = None
         self._swap_stream = None
 
+    @_compile_disable(recursive=True)
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the wrapped block under saved_tensors_hooks that swap to pinned CPU."""
         pool = self._swap_pool

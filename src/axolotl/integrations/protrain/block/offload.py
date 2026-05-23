@@ -12,6 +12,13 @@ from torch import nn
 from axolotl.integrations.protrain.block.strategy import BlockMode
 from axolotl.utils.logging import get_logger
 
+try:
+    from torch.compiler import disable as _compile_disable
+except Exception:  # noqa: BLE001 — older torches lack torch.compiler.disable
+
+    def _compile_disable(fn=None, *, recursive=True):  # noqa: ARG001
+        return fn if fn is not None else (lambda f: f)
+
 if TYPE_CHECKING:
     from axolotl.integrations.protrain.chunk.manager import ChunkManager
     from axolotl.integrations.protrain.types import ChunkId
@@ -116,6 +123,7 @@ class OffloadedBlock(nn.Module):
         self._scheduler = None
         self._runtime_id = None
 
+    @_compile_disable(recursive=True)
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         """Run the wrapped block under saved_tensors_hooks that record param handles."""
         mgr = self._chunk_manager
