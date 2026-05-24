@@ -875,6 +875,50 @@ def _construct_runtime(
     )
     _sys2.stderr.flush()
 
+    # Diagnostic: post-materialize param accounting for v53 OOM investigation.
+    try:
+        import torch as _diag_torch
+
+        _diag_persistent_ids = set(getattr(chunk_manager, "_persistent_ids", set()))
+        _diag_non_persistent_ids = set(
+            getattr(chunk_manager, "_non_persistent_ids", set())
+        )
+        _diag_total_numel = 0
+        _diag_total_storage_bytes = 0
+        _diag_param_count = 0
+        for _name, _p in model.named_parameters():
+            _diag_param_count += 1
+            try:
+                _diag_total_numel += int(_p.numel())
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _diag_total_storage_bytes += int(_p.untyped_storage().nbytes())
+            except Exception:  # noqa: BLE001
+                pass
+        _diag_alloc_gib = (
+            _diag_torch.cuda.memory_allocated(device) / (1 << 30)
+            if _diag_torch.cuda.is_available()
+            else 0.0
+        )
+        LOG.warning(
+            "[protrain-diag] post-materialize: alloc=%.2f GiB "
+            "persistent_chunks=%d non_persistent_chunks=%d "
+            "total_params=%d sum_numel=%d sum_storage_bytes=%d "
+            "(sum_numel * 2B = %.2f GiB ideal-bf16-weights, "
+            "sum_storage = %.2f GiB actual-resident)",
+            _diag_alloc_gib,
+            len(_diag_persistent_ids),
+            len(_diag_non_persistent_ids),
+            _diag_param_count,
+            _diag_total_numel,
+            _diag_total_storage_bytes,
+            (_diag_total_numel * 2) / (1 << 30),
+            _diag_total_storage_bytes / (1 << 30),
+        )
+    except Exception as _diag_exc:  # noqa: BLE001
+        LOG.warning("[protrain-diag] post-materialize accounting failed: %s", _diag_exc)
+
     # DDP _sync_module_states broadcast trips shared-storage hazard on expand placeholders.
     # ProTrain owns parallelism contract for chunk-managed params (shard at init, gather, reduce_scatter).
     if _shape_preserving:
@@ -952,6 +996,25 @@ def _construct_runtime(
             len(ignore - unmatched),
             len(ignore),
         )
+        # Diagnostic: ignore-list state at registration site for v53 OOM investigation.
+        try:
+            _diag_ignore_list = list(
+                getattr(model, "_ddp_params_and_buffers_to_ignore", []) or []
+            )
+            _diag_total_params = len(list(model.parameters()))
+            _diag_sample = _diag_ignore_list[:3]
+            _diag_truncated = [
+                (n[:80] + "...") if len(n) > 80 else n for n in _diag_sample
+            ]
+            LOG.warning(
+                "[protrain-diag] ignore-list post-register: size=%d "
+                "total_params=%d first3=%s",
+                len(_diag_ignore_list),
+                _diag_total_params,
+                _diag_truncated,
+            )
+        except Exception as _diag_exc:  # noqa: BLE001
+            LOG.warning("[protrain-diag] ignore-list logging failed: %s", _diag_exc)
     else:
         # Rebuild path: strip stale DDP-skip state from a prior shape-preserving wrap.
         if getattr(model, "_protrain_ddp_skip_init_sync", False):
@@ -1168,6 +1231,24 @@ def _construct_runtime(
                 "allreduce filter sees the .block.-infixed names).",
                 len(post_wrap_ignore),
             )
+            # Diagnostic: post-block-wrap ignore-list state for v53 OOM investigation.
+            try:
+                _diag_final = list(
+                    getattr(model, "_ddp_params_and_buffers_to_ignore", []) or []
+                )
+                _diag_total = len(list(model.parameters()))
+                LOG.warning(
+                    "[protrain-diag] ignore-list post-block-wrap: "
+                    "size=%d total_params=%d non_persistent_chunks=%d",
+                    len(_diag_final),
+                    _diag_total,
+                    len(chunk_manager._non_persistent_ids),
+                )
+            except Exception as _diag_exc:  # noqa: BLE001
+                LOG.warning(
+                    "[protrain-diag] post-block-wrap logging failed: %s",
+                    _diag_exc,
+                )
         except Exception as _exc:  # noqa: BLE001 — defensive
             LOG.warning(
                 "ProTrain: failed to "

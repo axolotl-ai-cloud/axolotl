@@ -500,9 +500,7 @@ class ProTrainPlugin(BasePlugin):
             set_default_ckpt_internal_residual_factor,
         )
 
-        residual_factor = getattr(
-            cfg, "protrain_ckpt_internal_residual_factor", None
-        )
+        residual_factor = getattr(cfg, "protrain_ckpt_internal_residual_factor", None)
         if residual_factor is not None:
             set_default_ckpt_internal_residual_factor(float(residual_factor))
 
@@ -851,6 +849,36 @@ class ProTrainPlugin(BasePlugin):
                 getattr(trainer, "model_wrapped", None), DistributedDataParallel
             )
         )
+        # Diagnostic: state at post_trainer_create entry for v53 OOM investigation.
+        try:
+            _diag_inner = trainer.model
+            if isinstance(_diag_inner, DistributedDataParallel):
+                _diag_inner = _diag_inner.module
+            _diag_has_attr = hasattr(_diag_inner, "_ddp_params_and_buffers_to_ignore")
+            _diag_ignore_size = (
+                len(_diag_inner._ddp_params_and_buffers_to_ignore)  # type: ignore[attr-defined]
+                if _diag_has_attr
+                else 0
+            )
+            _diag_alloc_gib = (
+                torch.cuda.memory_allocated() / (1 << 30)
+                if torch.cuda.is_available()
+                else 0.0
+            )
+            LOG.warning(
+                "[protrain-diag] post_trainer_create entry: "
+                "alloc=%.2f GiB is_ddp_wrapped=%s "
+                "inner_has_ignore_attr=%s inner_ignore_size=%d",
+                _diag_alloc_gib,
+                is_ddp,
+                _diag_has_attr,
+                _diag_ignore_size,
+            )
+        except Exception as _diag_exc:  # noqa: BLE001
+            LOG.warning(
+                "[protrain-diag] post_trainer_create logging failed: %s",
+                _diag_exc,
+            )
         if is_ddp:
             # DDP + zero3_shard double-synchronizes grads; hard-raise so user reconfigures.
             chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
