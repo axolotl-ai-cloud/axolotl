@@ -31,13 +31,15 @@ def test_dequantize_shape_preservation():
 
 
 def test_dequantize_transposed():
-    """Transposed input → transposed output. Production callers do .t() after to undo."""
+    """Transposed input → transposed output (values, not just shape)."""
     shape = (128, 64)  # non-square: catches dim-swap bugs
     packed, quant_state = _nf4_pair(shape)
     # packed is (4096, 1); packed.t() is (1, 4096), the leading-dim-1 signal.
     # bnb dequants to quant_state.shape (128, 64) then returns out.t() → (64, 128).
+    expected = bnb.functional.dequantize_4bit(packed, quant_state, quant_type="nf4").t()
     result = dequantize(packed.t(), quant_state)
     assert tuple(result.shape) == (shape[1], shape[0])
+    torch.testing.assert_close(result, expected)
 
 
 def test_dequantize_non_nested():
