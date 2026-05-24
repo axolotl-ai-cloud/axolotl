@@ -803,11 +803,13 @@ def _construct_runtime(
     )
 
     # Sanity check: drift between residency sets would misroute chunks between optimisers.
-    assert chunk_manager._persistent_ids == set(effective_persistent_ids), (
-        "ChunkManager residency drift: expected "
-        f"{sorted(effective_persistent_ids)}, got "
-        f"{sorted(chunk_manager._persistent_ids)}"
-    )
+    if chunk_manager._persistent_ids != set(effective_persistent_ids):
+        raise RuntimeError(
+            "ProTrain invariant violated: "
+            "ChunkManager residency drift: expected "
+            f"{sorted(effective_persistent_ids)}, got "
+            f"{sorted(chunk_manager._persistent_ids)}"
+        )
 
     calibrated_peak = _calibrate_peak_with_actual_chunk_bytes(
         original_peak=result.predicted_peak_bytes,

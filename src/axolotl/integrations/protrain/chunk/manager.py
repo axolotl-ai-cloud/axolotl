@@ -1107,10 +1107,12 @@ class ChunkManager:
         if chunk_id not in self._cpu_slots:
             return
 
-        assert self.buffer_pool is not None, (
-            "gather() reached the non-persistent path with no buffer_pool; "
-            "all-persistent layouts must early-return above"
-        )
+        if self.buffer_pool is None:
+            raise RuntimeError(
+                "ProTrain invariant violated: "
+                "gather() reached the non-persistent path with no buffer_pool; "
+                "all-persistent layouts must early-return above"
+            )
 
         # Wait for any in-flight CPU-Adam worker on this chunk; gather mid-step would SIGSEGV.
         cpu_optim = self.cpu_optim
@@ -1124,10 +1126,12 @@ class ChunkManager:
         # Active fast path: tag-lookup-only re-gather (lease-idempotent).
         if chunk_id in self._active_chunks:
             resident_buf = self.buffer_pool.lookup_resident(chunk_id)
-            assert resident_buf is not None, (
-                f"chunk {chunk_id} marked active but pool has no resident "
-                "tag — _active_chunks invariant violated"
-            )
+            if resident_buf is None:
+                raise RuntimeError(
+                    "ProTrain invariant violated: "
+                    f"chunk {chunk_id} marked active but pool has no resident "
+                    "tag — _active_chunks invariant violated"
+                )
             self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
             return
 
@@ -1252,10 +1256,12 @@ class ChunkManager:
         """Release ``chunk_id``'s GPU storage (non-persistent only)."""
         if chunk_id in self._persistent_ids:
             return
-        assert self.buffer_pool is not None, (
-            "offload() reached the non-persistent path with no buffer_pool; "
-            "all-persistent layouts must early-return above"
-        )
+        if self.buffer_pool is None:
+            raise RuntimeError(
+                "ProTrain invariant violated: "
+                "offload() reached the non-persistent path with no buffer_pool; "
+                "all-persistent layouts must early-return above"
+            )
 
         # Defer if any BackwardHandle still pins this chunk; drain on handle drop.
         if self._backward_refcount.get(chunk_id, 0) > 0:
@@ -1448,7 +1454,12 @@ class ChunkManager:
             )
 
             # Re-bind .grad to pinned CPU view if zero_grad(set_to_none=True) cleared it.
-            assert region.cpu_shard_grad_bytes is not None
+            if region.cpu_shard_grad_bytes is None:
+                raise RuntimeError(
+                    "ProTrain invariant violated: "
+                    "region.cpu_shard_grad_bytes is None during reduce-scatter "
+                    "grad rebind; CPU-side shard grad buffer must be allocated"
+                )
             if region.shard_param.grad is None:
                 region.shard_param.grad = region.cpu_shard_grad_bytes.view(
                     region.dtype
