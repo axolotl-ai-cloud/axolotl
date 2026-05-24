@@ -11,8 +11,8 @@ cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
 cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
 cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
 
-# Cached: per-call current_stream() measurably slows this hot path.
-CUDA_STREAM: torch.cuda.Stream | None = None
+# Cached per-device: per-call current_stream() measurably slows this hot path.
+CUDA_STREAM: dict[torch.device, torch.cuda.Stream] = {}
 
 
 def _ctypes_nf4_dequant(
@@ -34,10 +34,11 @@ def _ctypes_nf4_dequant(
         n_elements_absmax, dtype=torch.float32, device=target_device
     )
 
-    global CUDA_STREAM
-    if CUDA_STREAM is None:
-        CUDA_STREAM = torch.cuda.current_stream(target_device)
-    stream = CUDA_STREAM
+    stream = CUDA_STREAM.get(target_device)
+    if stream is None:
+        stream = CUDA_STREAM.setdefault(
+            target_device, torch.cuda.current_stream(target_device)
+        )
 
     cdequantize_blockwise_fp32(
         get_ptr(code2),
