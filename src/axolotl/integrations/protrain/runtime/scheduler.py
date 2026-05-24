@@ -111,6 +111,13 @@ class Scheduler:
 
         self._prefetch_stream: "torch.cuda.Stream | None" = None
         self._swap_stream: "torch.cuda.Stream | None" = None
+        # Dedicated stream for backward OFFLOAD re-gather (H2D + NCCL all_gather).
+        # Mirror of _swap_stream; lets re-gather of block N-1 overlap backward
+        # compute of block N on non-NVLink topology where the compute stream
+        # would otherwise serialize with the PCIe copy + collective.
+        # Only created when n_offload > 0; None otherwise (no overhead on inert
+        # / no-offload configs).
+        self._offload_stream: "torch.cuda.Stream | None" = None
         # Lazy ActivationSwapPool attach by wrapper when n_swap > 0.
         self.swap_pool: object | None = None
         self._closed: bool = False
@@ -170,8 +177,20 @@ class Scheduler:
         """Public accessor for the dedicated activation-swap stream (None on CPU)."""
         return self._swap_stream
 
+    @property
+    def offload_stream(self) -> "torch.cuda.Stream | None":
+        """Public accessor for the dedicated OFFLOAD backward-regather stream (None when n_offload == 0 or CPU)."""
+        return self._offload_stream
+
+    def _has_offloaded_blocks(self) -> bool:
+        """True iff any block in the strategy map is in OFFLOAD mode (needs backward re-gather)."""
+        for mode in self.block_map.values():
+            if mode is BlockMode.OFFLOAD:
+                return True
+        return False
+
     def _init_streams(self) -> None:
-        """Create dedicated CUDA streams for prefetch + activation swap."""
+        """Create dedicated CUDA streams for prefetch + activation swap + OFFLOAD re-gather."""
         try:
             import torch
         except ImportError:  # pragma: no cover — torch is required at runtime
@@ -180,17 +199,27 @@ class Scheduler:
         self._has_cuda = bool(torch.cuda.is_available())
         if not self._has_cuda:
             LOG.debug(
-                "Scheduler: CUDA unavailable; prefetch/swap streams are None "
+                "Scheduler: CUDA unavailable; prefetch/swap/offload streams are None "
                 "(scheduler degrades to synchronous transfers)."
             )
             self._prefetch_stream = None
             self._swap_stream = None
+            self._offload_stream = None
             return
 
         # Non-default stream lets compute overlap PCIe copies.
         self._prefetch_stream = torch.cuda.Stream()
         # Separate swap stream avoids contention with chunk prefetch.
         self._swap_stream = torch.cuda.Stream()
+        # Dedicated OFFLOAD re-gather stream — only when at least one block is OFFLOAD.
+        # Without this, per-chunk H2D + NCCL all_gather during backward run on the
+        # compute stream and serialize with backward compute (bs=2 hang on
+        # non-NVLink topology). Skipping creation for n_offload == 0 keeps inert
+        # configs free of any per-step wait_stream overhead.
+        if self._has_offloaded_blocks():
+            self._offload_stream = torch.cuda.Stream()
+        else:
+            self._offload_stream = None
 
     # ---- helpers -------------------------------------------------------
 
@@ -289,6 +318,45 @@ class Scheduler:
         compute = torch.cuda.current_stream()
         compute.wait_stream(self._prefetch_stream)
 
+    def _gather_on_offload_stream(self, chunk_ids: Iterable[ChunkId]) -> None:
+        """Async-regather offloaded chunk_ids on the OFFLOAD stream during backward.
+
+        Mirrors :meth:`_gather_on_prefetch_stream` but targets ``_offload_stream``
+        so per-chunk H2D copy + NCCL all_gather overlap backward compute on the
+        default compute stream. Sequences after prefetch (any in-flight forward
+        gathers) and after swap (D2H reads) for correctness.
+        """
+        if self._offload_stream is None or not self._has_cuda:
+            for cid in chunk_ids:
+                self.chunk_manager.gather(cid, phase="backward_regather")
+            return
+
+        import torch
+
+        # Sequence after any in-flight forward gathers + activation swap D2H.
+        if self._prefetch_stream is not None:
+            self._offload_stream.wait_stream(self._prefetch_stream)
+        if self._swap_stream is not None:
+            self._offload_stream.wait_stream(self._swap_stream)
+
+        with torch.cuda.stream(self._offload_stream):
+            for cid in chunk_ids:
+                self.chunk_manager.gather(cid, phase="backward_regather")
+
+    def _sync_offload_with_compute(self) -> None:
+        """Make the default compute stream wait on the OFFLOAD re-gather stream.
+
+        Backward compute on block N must not start reading the chunk's data
+        before the H2D + NCCL all_gather scheduled on ``_offload_stream`` has
+        completed.
+        """
+        if self._offload_stream is None or not self._has_cuda:
+            return
+        import torch
+
+        compute = torch.cuda.current_stream()
+        compute.wait_stream(self._offload_stream)
+
     def ensure_block_resident(self, block_id: BlockId) -> None:
         """Sync gather block's chunks; used by checkpoint recompute path that bypasses pre-hooks."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
@@ -298,8 +366,16 @@ class Scheduler:
             chunk_ids = self._chunks_for(block_id)
             if not chunk_ids:
                 return
-            self._gather_on_prefetch_stream(chunk_ids)
-            self._sync_prefetch_with_compute()
+            # OFFLOAD blocks route re-gather via _offload_stream so the per-chunk
+            # H2D + NCCL all_gather overlaps backward compute instead of
+            # serializing with it on the compute stream.
+            mode = self.block_map.get(block_id, BlockMode.NONE)
+            if mode is BlockMode.OFFLOAD and self._offload_stream is not None:
+                self._gather_on_offload_stream(chunk_ids)
+                self._sync_offload_with_compute()
+            else:
+                self._gather_on_prefetch_stream(chunk_ids)
+                self._sync_prefetch_with_compute()
         finally:
             if self._step_timing_enabled:
                 self._record_step_timing(
@@ -325,12 +401,15 @@ class Scheduler:
             if self._has_cuda:
                 import torch as _torch
 
-                # Wait on swap+prefetch so pool buffers and in-flight gathers complete pre-rebind.
+                # Wait on swap+prefetch+offload so pool buffers and in-flight
+                # gathers complete pre-rebind.
                 compute = _torch.cuda.current_stream()
                 if self._swap_stream is not None:
                     compute.wait_stream(self._swap_stream)
                 if self._prefetch_stream is not None:
                     compute.wait_stream(self._prefetch_stream)
+                if self._offload_stream is not None:
+                    compute.wait_stream(self._offload_stream)
             # gather on compute stream so sharded all_gather completes before autograd records source-shape.
             for cid in cids:
                 self.chunk_manager.gather(cid)
@@ -444,18 +523,28 @@ class Scheduler:
 
         # Resident tag means slot is assigned but H2D may still be in flight; sync prefetch first.
         self._sync_prefetch_with_compute()
+        # OFFLOAD re-gather from a prior block must complete before backward
+        # reads chunk data; mirrors _sync_prefetch_with_compute for the
+        # dedicated offload stream.
+        self._sync_offload_with_compute()
 
-        # Consult pool: hits are free, misses trigger fresh H2D on prefetch stream.
+        is_offload = mode is BlockMode.OFFLOAD and self._offload_stream is not None
+
+        # Consult pool: hits are free, misses trigger fresh H2D on prefetch (or offload) stream.
         misses: list[ChunkId] = []
         for cid in chunk_ids:
             if self.chunk_manager.buffer_pool.lookup_resident(cid) is None:
                 misses.append(cid)
             else:
                 # Re-claim the slot (removes from free list if present).
-                self.chunk_manager.gather(cid)
+                self.chunk_manager.gather(cid, phase="backward_regather")
         if misses:
-            self._gather_on_prefetch_stream(misses)
-            self._sync_prefetch_with_compute()
+            if is_offload:
+                self._gather_on_offload_stream(misses)
+                self._sync_offload_with_compute()
+            else:
+                self._gather_on_prefetch_stream(misses)
+                self._sync_prefetch_with_compute()
 
         # Mirror forward look-ahead: async prefetch next-in-backward block's chunks.
         nxt_bwd = self._prev_block_of(block_id)
@@ -470,7 +559,14 @@ class Scheduler:
             if self.chunk_manager.buffer_pool.lookup_resident(cid) is None
         ]
         if need:
-            self._gather_on_prefetch_stream(need)
+            # Route next-in-backward look-ahead via the offload stream when the
+            # upcoming block is OFFLOAD; otherwise stay on the prefetch stream
+            # (SWAP / NONE blocks).
+            nxt_mode = self.block_map.get(nxt_bwd, BlockMode.NONE)
+            if nxt_mode is BlockMode.OFFLOAD and self._offload_stream is not None:
+                self._gather_on_offload_stream(need)
+            else:
+                self._gather_on_prefetch_stream(need)
 
     def post_block_backward(self, block_id: BlockId) -> None:
         """Finalize block's backward: release buffers + maybe kick CPU Adam."""
@@ -500,12 +596,14 @@ class Scheduler:
         if self._first_iter_trace_enabled:
             self._first_iter_log("drain enter (stream sync + cpu_optim drain)")
 
-        # Drain in-flight prefetch/swap traffic for stable peak-memory stats.
+        # Drain in-flight prefetch/swap/offload traffic for stable peak-memory stats.
         if self._has_cuda:
             if self._prefetch_stream is not None:
                 self._prefetch_stream.synchronize()
             if self._swap_stream is not None:
                 self._swap_stream.synchronize()
+            if self._offload_stream is not None:
+                self._offload_stream.synchronize()
 
         if self._first_iter_trace_enabled:
             self._first_iter_log("drain post stream-sync; pre drain_deferred_offloads")
@@ -537,7 +635,11 @@ class Scheduler:
             return
         self._closed = True
         if self._has_cuda:
-            for stream in (self._prefetch_stream, self._swap_stream):
+            for stream in (
+                self._prefetch_stream,
+                self._swap_stream,
+                self._offload_stream,
+            ):
                 if stream is None:
                     continue
                 try:
@@ -546,6 +648,7 @@ class Scheduler:
                     LOG.debug("Scheduler.close: stream synchronize failed: %s", exc)
         self._prefetch_stream = None
         self._swap_stream = None
+        self._offload_stream = None
         if self.swap_pool is not None:
             try:
                 self.swap_pool.close()  # type: ignore[attr-defined]

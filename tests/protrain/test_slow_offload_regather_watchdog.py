@@ -29,7 +29,7 @@ def test_slow_backward_regather_fires_warning(caplog):
     # Threshold tight enough that a 50ms sleep trips it but a 0ms gather skates by.
     threshold_s = 0.02
 
-    def _slow_gather_impl(self, chunk_id):
+    def _slow_gather_impl(self, chunk_id, stream=None):
         time.sleep(0.05)
 
     with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", threshold_s):
@@ -63,7 +63,7 @@ def test_fast_regather_does_not_warn(caplog):
     cid = cast(ChunkId, 5)
     threshold_s = 5.0  # well above any reasonable fast path
 
-    def _fast_gather_impl(self, chunk_id):
+    def _fast_gather_impl(self, chunk_id, stream=None):
         # No-op; instantaneous.
         return None
 
@@ -95,7 +95,7 @@ def test_forward_regather_phase_tag(caplog):
     cid = cast(ChunkId, 9)
     threshold_s = 0.02
 
-    def _slow_gather_impl(self, chunk_id):
+    def _slow_gather_impl(self, chunk_id, stream=None):
         time.sleep(0.05)
 
     with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", threshold_s):
@@ -123,7 +123,7 @@ def test_watchdog_disabled_when_threshold_zero(caplog):
     """Setting threshold to 0 disables the watchdog entirely."""
     cid = cast(ChunkId, 13)
 
-    def _slow_gather_impl(self, chunk_id):
+    def _slow_gather_impl(self, chunk_id, stream=None):
         time.sleep(0.05)
 
     with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", 0.0):
@@ -174,11 +174,11 @@ def test_gather_for_backward_passes_backward_regather_phase(caplog):
 
     real_gather = manager_mod.ChunkManager.gather
 
-    def _spy_gather(self, chunk_id, phase="forward_regather"):
+    def _spy_gather(self, chunk_id, phase="forward_regather", stream=None):
         captured_phases.append(phase)
-        return real_gather(self, chunk_id, phase=phase)
+        return real_gather(self, chunk_id, phase=phase, stream=stream)
 
-    def _slow_gather_impl(self, chunk_id):
+    def _slow_gather_impl(self, chunk_id, stream=None):
         time.sleep(0.05)
 
     with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", threshold_s):

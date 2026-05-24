@@ -1158,7 +1158,10 @@ class ChunkManager:
     # ---- gather / offload ---------------------------------------------
 
     def gather(
-        self, chunk_id: ChunkId, phase: str = "forward_regather"
+        self,
+        chunk_id: ChunkId,
+        phase: str = "forward_regather",
+        stream: "torch.cuda.Stream | None" = None,
     ) -> None:
         """Make ``chunk_id``'s params GPU-resident; WARN-logs slow gathers.
 
@@ -1167,16 +1170,22 @@ class ChunkManager:
         chunk), ``"backward_regather"`` (re-gather during backward via
         :meth:`gather_for_backward` or the saved-tensor unpack fallback), or
         ``"resume_restore"`` (one-shot teardown from :meth:`restore_to_gpu`).
+
+        ``stream`` (optional) routes the H2D copy + NCCL ``all_gather_into_tensor``
+        onto a caller-provided CUDA stream. Used by the scheduler's dedicated
+        ``_offload_stream`` to overlap backward re-gather with backward compute.
+        When ``None`` the gather runs on whatever stream is current at the call
+        site (preserves prior behavior for prefetch / compute callers).
         """
         slow_g = _SLOW_GATHER_THRESHOLD_S > 0.0
         slow_or = _SLOW_OFFLOAD_REGATHER_S > 0.0
 
         if not slow_g and not slow_or:
-            return self._gather_impl(chunk_id)
+            return self._gather_impl(chunk_id, stream=stream)
 
         t0 = time.perf_counter()
         try:
-            self._gather_impl(chunk_id)
+            self._gather_impl(chunk_id, stream=stream)
         finally:
             elapsed = time.perf_counter() - t0
             if slow_g and elapsed >= _SLOW_GATHER_THRESHOLD_S:
@@ -1217,14 +1226,36 @@ class ChunkManager:
                     ),
                 )
 
-    def _gather_impl(self, chunk_id: ChunkId) -> None:
-        """Untimed gather body; split out so the public wrapper can attach watchdog timing."""
+    def _gather_impl(
+        self,
+        chunk_id: ChunkId,
+        stream: "torch.cuda.Stream | None" = None,
+    ) -> None:
+        """Untimed gather body; split out so the public wrapper can attach watchdog timing.
+
+        ``stream`` (optional) is honored only when provided AND CUDA is available;
+        the H2D copy + sharded all_gather are wrapped in ``torch.cuda.stream(stream)``
+        so they execute on the caller's stream rather than the default compute stream.
+        """
         if chunk_id in self._persistent_ids:
             return
 
         if chunk_id not in self._cpu_slots:
             return
 
+        if stream is not None:
+            try:
+                import torch as _torch
+            except ImportError:  # pragma: no cover
+                _torch = None
+            if _torch is not None and _torch.cuda.is_available():
+                with _torch.cuda.stream(stream):
+                    self._gather_impl_body(chunk_id)
+                return
+        self._gather_impl_body(chunk_id)
+
+    def _gather_impl_body(self, chunk_id: ChunkId) -> None:
+        """Original untimed gather body, kept stream-context-agnostic for both call paths."""
         if self.buffer_pool is None:
             raise RuntimeError(
                 "ProTrain invariant violated: "
@@ -1743,9 +1774,18 @@ class ChunkManager:
         """Look up the chunk whose pool buffer storage starts at ``ptr``."""
         return self._storage_ptr_to_chunk.get(ptr)
 
-    def gather_for_backward(self, chunk_id: ChunkId) -> "BackwardHandle":
-        """Re-gather a chunk for the backward pass and pin it via refcount."""
-        self.gather(chunk_id, phase="backward_regather")
+    def gather_for_backward(
+        self,
+        chunk_id: ChunkId,
+        stream: "torch.cuda.Stream | None" = None,
+    ) -> "BackwardHandle":
+        """Re-gather a chunk for the backward pass and pin it via refcount.
+
+        ``stream`` (optional) routes the underlying H2D + NCCL all_gather onto
+        a dedicated stream (e.g. the scheduler's ``_offload_stream``) so the
+        re-gather overlaps backward compute instead of serializing with it.
+        """
+        self.gather(chunk_id, phase="backward_regather", stream=stream)
         self._backward_refcount[chunk_id] = self._backward_refcount.get(chunk_id, 0) + 1
         return BackwardHandle(chunk_id, self)
 

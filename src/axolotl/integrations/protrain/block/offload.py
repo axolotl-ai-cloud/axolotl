@@ -207,8 +207,14 @@ class OffloadedBlock(nn.Module):
                 "saved-tensor handles are outstanding."
             )
 
+        # Route backward re-gather via the scheduler's dedicated _offload_stream
+        # (when present) so the per-chunk H2D + NCCL all_gather overlap backward
+        # compute on the default stream. None on inert / no-offload / CPU paths
+        # — gather() degrades to the prior behavior.
+        offload_stream = getattr(self._scheduler, "_offload_stream", None)
+
         # Bump backward refcount; BackwardHandle.__del__ decrements via the view's lifetime.
-        backward_handle = mgr.gather_for_backward(handle.chunk_id)
+        backward_handle = mgr.gather_for_backward(handle.chunk_id, stream=offload_stream)
 
         # Any failure path before the final view binding must release backward_handle.
         released = False
@@ -223,8 +229,13 @@ class OffloadedBlock(nn.Module):
                 )
             buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
             if buf is None:
-                # Defensive: an evict-then-deferred-offload race; re-gather sync.
-                mgr.gather(handle.chunk_id, phase="backward_regather")
+                # Defensive: an evict-then-deferred-offload race; re-gather sync
+                # via the offload stream when available.
+                mgr.gather(
+                    handle.chunk_id,
+                    phase="backward_regather",
+                    stream=offload_stream,
+                )
                 buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
                 if buf is None:
                     raise RuntimeError(
@@ -255,6 +266,14 @@ class OffloadedBlock(nn.Module):
 
             if handle.requires_grad:
                 view.requires_grad_(True)
+
+            # Ensure backward compute (default stream) waits for any in-flight
+            # H2D / NCCL writes scheduled on _offload_stream before reading the
+            # view; pre_block_backward already syncs for chunks it gathered,
+            # but a per-tensor unpack on a non-pre-warmed chunk needs its own
+            # barrier or autograd races with the copy.
+            if offload_stream is not None and torch.cuda.is_available():
+                torch.cuda.current_stream().wait_stream(offload_stream)
 
             # Pin BackwardHandle to view's lifetime; GC of view drops the handle's __del__.
             view._protrain_backward_handle = backward_handle  # type: ignore[attr-defined]
