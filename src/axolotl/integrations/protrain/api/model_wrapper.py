@@ -785,8 +785,9 @@ def _construct_runtime(
         zero3_shard,
     )
 
-    # Shape-preserving placeholders only on multi-GPU sharded path (autograd shape race).
-    _shape_preserving = bool(_zero3)
+    # Always-on: zero-element placeholders break custom autograd functions (lora_mlp_kernel)
+    # that capture param shape via save_for_backward; per-param scratch cost is one element.
+    _shape_preserving = True
     chunk_manager = ChunkManager(
         model=model,
         layout=layout,

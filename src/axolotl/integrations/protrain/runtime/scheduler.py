@@ -86,6 +86,11 @@ class Scheduler:
         # lets per-step LoRA-container hooks dispatch on an attribute lookup
         # instead of a CUDA syscall (§16 PR #4).
         self._has_cuda: bool = False
+        # Set by install_hooks when the runtime is provably inert (all chunks
+        # persistent, no OFFLOAD, modes NONE/CKPT). Per-step methods short-
+        # circuit so stragglers (e.g. recompute callbacks) skip stream-wait
+        # syscalls that would no-op anyway.
+        self._is_inert: bool = False
         self._init_streams()
 
     @property
@@ -158,6 +163,8 @@ class Scheduler:
 
     def ensure_block_resident(self, block_id: BlockId) -> None:
         """Sync gather block's chunks; used by checkpoint recompute path that bypasses pre-hooks."""
+        if self._is_inert:
+            return
         chunk_ids = self._chunks_for(block_id)
         if not chunk_ids:
             return
@@ -170,6 +177,8 @@ class Scheduler:
         # class) drives this method hot — keep the CPU lane an attribute-
         # lookup-only no-op past the empty-tuple guard. The cuda.is_available
         # check is read off the cached scheduler flag, not the syscall.
+        if self._is_inert:
+            return
         if isinstance(chunk_ids, tuple):
             cids = chunk_ids
         else:
@@ -193,6 +202,8 @@ class Scheduler:
 
     def pre_block_forward(self, block_id: BlockId) -> None:
         """Prefetch the next block's chunks; ensure current block's are resident."""
+        if self._is_inert:
+            return
         # gather() is idempotent on persistent / already-resident chunks.
         self.ensure_block_resident(block_id)
 
@@ -213,6 +224,8 @@ class Scheduler:
 
     def post_block_forward(self, block_id: BlockId) -> None:
         """Release this block's non-persistent chunks except those used by the next block."""
+        if self._is_inert:
+            return
         # frozenset from the init-time cache; avoids the per-step set() build.
         next_chunks = self._next_chunks_set_cached.get(block_id, frozenset())
         for cid in self._chunks_for(block_id):
@@ -225,6 +238,8 @@ class Scheduler:
 
     def pre_block_backward(self, block_id: BlockId) -> None:
         """Ensure block's chunks are resident before backward; cover chunk-state path only (SWAP handles activations)."""
+        if self._is_inert:
+            return
         mode = self.block_map.get(block_id, BlockMode.NONE)
         if mode is BlockMode.SWAP:
             LOG.debug(
@@ -280,6 +295,8 @@ class Scheduler:
 
     def post_block_backward(self, block_id: BlockId) -> None:
         """Finalize block's backward: release buffers + maybe kick CPU Adam."""
+        if self._is_inert:
+            return
         for cid in self._chunks_for(block_id):
             # Shared chunks: only earliest-forward owner finalizes.
             if self._chunk_last_bwd_owner.get(cid, block_id) != block_id:

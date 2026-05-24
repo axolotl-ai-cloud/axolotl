@@ -755,7 +755,7 @@ class AxolotlTrainer(
             logs["memory/max_allocated (GiB)"] = round(local_allocated_gib, 2)
             logs["memory/device_reserved (GiB)"] = round(local_reserved_gib, 2)
             if len(per_rank_active_bytes) > 1:
-                logs["memory/per_rank_active (GiB)"] = [
+                logs["memory/per_rank_active (GiB)"] = [  # type: ignore[assignment]
                     round(b / (1024.0**3), 2) for b in per_rank_active_bytes
                 ]
 
