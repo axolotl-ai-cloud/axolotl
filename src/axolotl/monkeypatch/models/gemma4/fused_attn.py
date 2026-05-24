@@ -145,7 +145,11 @@ def _make_fused_forward(original_forward):
         )
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
+        # Use apply_o if present (LoRA O kernel patch), otherwise direct proj
+        if hasattr(self, "apply_o"):
+            attn_output = self.apply_o(attn_output)
+        else:
+            attn_output = self.o_proj(attn_output)
         return attn_output, attn_weights
 
     return fused_forward

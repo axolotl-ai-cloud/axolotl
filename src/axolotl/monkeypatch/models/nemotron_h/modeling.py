@@ -1,26 +1,28 @@
-"""Sample-packing patch for NemotronH (Mamba2/Attention/MoE hybrid).
+"""Sample-packing and context-parallelism patch for NemotronH (Mamba2/Attention/MoE hybrid).
 
 Threads seq_idx (derived from position_ids) into the Mamba2 SSM kernels so
 packed-sequence boundaries reset SSM state. Upstream hard-codes seq_idx=None,
 which leaks hidden state across boundaries. Attention and MoE blocks need no
 changes — only the Mamba2 mixer is patched.
+
+CP correction (ring-shift of SSM state + additive output fix) is handled by
+``wrap_mamba_scan_for_cp`` from ``mamba_utils``, which wraps the
+``mamba_chunk_scan_combined`` call at the module level.
 """
 
 import importlib
 
 import torch
 
+from axolotl.monkeypatch.models.mamba_utils import (
+    ensure_mamba_kernels_loaded,
+    get_seq_idx,
+    is_cp_active,
+    wrap_mamba_scan_for_cp,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-
-def get_seq_idx(position_ids: torch.Tensor) -> torch.Tensor:
-    """Convert position_ids [B, T] → seq_idx [B, T] int32 for mamba-ssm kernels.
-
-    Example: position_ids [[0,1,2,3,0,1,2]] → seq_idx [[0,0,0,0,1,1,1]]
-    """
-    return (torch.cumsum((position_ids == 0).int(), dim=-1) - 1).to(torch.int32)
 
 
 def patch_nemotron_h_modeling_packing():
@@ -36,6 +38,8 @@ def patch_nemotron_h_modeling_packing():
     except ImportError:
         LOG.warning("nemotron_h not found in transformers, skipping packing patches")
         return
+
+    ensure_mamba_kernels_loaded(mod)
 
     NemotronHMamba2Mixer = mod.NemotronHMamba2Mixer
     NemotronHBlock = mod.NemotronHBlock
@@ -141,7 +145,7 @@ def patch_nemotron_h_modeling_packing():
                 and self.training
                 and cache_params is None
                 and input_not_masked
-                and seq_idx is None
+                and not is_cp_active()
             ):
                 out, ssm_state = mod.mamba_split_conv1d_scan_combined(
                     projected_states,
@@ -212,12 +216,13 @@ def patch_nemotron_h_modeling_packing():
                         dtype
                     )
 
+                C_reshaped = C.view(batch_size, seq_len, self.n_groups, -1)
                 scan_output, ssm_state = mod.mamba_chunk_scan_combined(
                     hidden_states.view(batch_size, seq_len, -1, self.head_dim),
                     time_step,
                     A,
                     B.view(batch_size, seq_len, self.n_groups, -1),
-                    C.view(batch_size, seq_len, self.n_groups, -1),
+                    C_reshaped,
                     chunk_size=self.chunk_size,
                     D=self.D,
                     z=None,
@@ -227,6 +232,7 @@ def patch_nemotron_h_modeling_packing():
                     dt_softplus=True,
                     **dt_limit_kwargs,
                 )
+
                 if ssm_state is not None and cache_params is not None:
                     cache_params.ssm_states[self.layer_idx].copy_(ssm_state)
                 scan_output = scan_output.view(batch_size, seq_len, -1)
@@ -311,5 +317,7 @@ def patch_nemotron_h_modeling_packing():
         return hidden_states
 
     NemotronHBlock.forward = patched_block_forward
+
+    wrap_mamba_scan_for_cp(mod)
 
     LOG.info("Applied NemotronH sample packing patch (seq_idx threading into Mamba2)")

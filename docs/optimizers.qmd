@@ -127,3 +127,43 @@ dion_lr: 0.01
 dion_momentum: 0.95
 lr: 0.00001  # learning rate for embeddings and parameters that fallback to AdamW
 ```
+
+### q_galore_adamw8bit
+
+Q-GaLore extends [GaLore](https://arxiv.org/abs/2403.03507) with two extra ideas:
+an INT4-quantized projection matrix and an adaptive SVD scheduler that skips
+re-projection when a layer's gradient subspace stabilizes. Both are wired up in
+axolotl. The third Q-GaLore trick — INT8 weight wrapping — is not yet
+implemented and is tracked as a follow-up.
+
+GitHub: [https://github.com/VITA-Group/Q-GaLore](https://github.com/VITA-Group/Q-GaLore)
+Paper: [https://arxiv.org/abs/2407.08296](https://arxiv.org/abs/2407.08296)
+
+Install: `pip install axolotl[qgalore]`
+
+This optimizer is for **full fine-tuning**. It is incompatible with `adapter`
+(LoRA/QLoRA), `load_in_8bit`, and `load_in_4bit`. DeepSpeed is currently gated
+off; FSDP requires `fsdp_version: 2` with `use_orig_params: true`.
+
+```yaml
+optimizer: q_galore_adamw8bit
+bf16: true
+
+# which parameter substrings get the low-rank projection
+# (defaults to ["attn", "mlp"] if unset — matches the reference impl)
+optim_target_modules:
+  - attn
+  - mlp
+
+# Q-GaLore hyperparameters (defaults shown)
+qgalore_rank: 256
+qgalore_update_proj_gap: 200       # max steps between SVD refreshes
+qgalore_scale: 0.25
+qgalore_proj_type: std
+qgalore_proj_quant: true           # INT-quantize the projection matrix P
+qgalore_proj_bits: 4               # bitwidth for P
+qgalore_proj_group_size: 256       # must divide P's last dim evenly
+qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
+qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
+qgalore_queue_size: 5
+```
