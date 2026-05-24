@@ -16,6 +16,10 @@ from __future__ import annotations
 from axolotl.integrations.protrain.cost.bandwidth import effective_bw
 from axolotl.integrations.protrain.cost.memory import (
     ALPHA_FRAGMENTATION,
+    ALPHA_FRAGMENTATION_4BIT,
+    ALPHA_FRAGMENTATION_4BIT_MODE_A,
+    ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT,
+    alpha_fragmentation_for_cfg,
     estimate_cpu_footprint,
     estimate_peak,
 )
@@ -23,6 +27,10 @@ from axolotl.integrations.protrain.cost.runtime import estimate_runtime
 
 __all__ = [
     "ALPHA_FRAGMENTATION",
+    "ALPHA_FRAGMENTATION_4BIT",
+    "ALPHA_FRAGMENTATION_4BIT_MODE_A",
+    "ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT",
+    "alpha_fragmentation_for_cfg",
     "effective_bw",
     "estimate_cpu_footprint",
     "estimate_peak",

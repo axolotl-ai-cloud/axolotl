@@ -78,15 +78,71 @@ def _saved_tensor_bytes_per_block(trace: ProfilerTrace) -> dict[BlockId, int]:
 # Eq. 11 fragmentation factor; fp16/bf16/8-bit default. Per-dtype override in alpha_fragmentation_for_dtype.
 ALPHA_FRAGMENTATION: float = 1.10
 
-# bnb-4-bit alpha; empirical ~0.70 with cushion.
+# bnb-4-bit alpha; calibrated against Mode-A peaks where frozen 4-bit weights
+# dominate per-rank residency and the activation slice is small (empirical
+# alpha_measured ~0.70 with cushion).
 ALPHA_FRAGMENTATION_4BIT: float = 0.75
+ALPHA_FRAGMENTATION_4BIT_MODE_A: float = ALPHA_FRAGMENTATION_4BIT
+
+# Mode-C with gradient checkpointing reverses the dominance: activation churn
+# is the dominant moving term, and the 0.75 Mode-A factor structurally
+# under-predicts the raw peak (audit table Decision 1 shows alpha_steady
+# = 1.43 / 1.25 / 1.08 at seq=512/1024/2048 on 30B-Llama Mode-C, i.e. raw
+# predictor low by 8-31% at low seq). 0.95 narrows the gap without
+# changing the wrapper-side calibration safety semantics.
+ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT: float = 0.95
 
 
 def alpha_fragmentation_for_dtype(bytes_per_element: float) -> float:
-    """Return ALPHA_FRAGMENTATION_4BIT for sub-byte dtypes, else ALPHA_FRAGMENTATION."""
+    """Return ALPHA_FRAGMENTATION_4BIT for sub-byte dtypes, else ALPHA_FRAGMENTATION.
+
+    Legacy dtype-only entry point; preserved so call sites that lack a
+    ``CostConfig`` (e.g. ``predict_init_transient_peak_bytes``) keep their
+    Mode-A calibration. Mode-aware call sites should use
+    :func:`alpha_fragmentation_for_cfg`.
+    """
     if bytes_per_element < 1.0:
-        return ALPHA_FRAGMENTATION_4BIT
+        return ALPHA_FRAGMENTATION_4BIT_MODE_A
     return ALPHA_FRAGMENTATION
+
+
+def alpha_fragmentation_for_cfg(
+    bytes_per_element: float, cfg: CostConfig | None
+) -> float:
+    """Pick the fragmentation factor for ``(dtype, mode)``.
+
+    Mode-A and Mode-C-without-CKPT keep the 0.75 factor (activation slice
+    is small, frozen-weight residency dominates). Mode-C-with-CKPT uses
+    0.95 because activation churn fragments differently. Non-4-bit dtypes
+    keep the unconditional ``ALPHA_FRAGMENTATION`` (1.10) regardless of
+    mode.
+    """
+    if bytes_per_element >= 1.0:
+        return ALPHA_FRAGMENTATION
+    is_ckpt = bool(cfg is not None and int(getattr(cfg, "n_checkpoint", 0)) > 0)
+    if is_ckpt:
+        return ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT
+    return ALPHA_FRAGMENTATION_4BIT_MODE_A
+
+
+def _compute_ckpt_chain_bytes(
+    trace: ProfilerTrace, block_map: BlockStrategyMap | None
+) -> int:
+    """Sum activation bytes across CKPT blocks (chain semantics, not max).
+
+    CKPT blocks retain the block-input boundary tensor across the full
+    backward window, so the chain is a sum over CKPT blocks rather than a
+    single-block max. Used by both :func:`estimate_peak` and the wrapper-side
+    ``_reconstruct_f_bm`` so the analytical and calibrated paths agree.
+    """
+    if not block_map or not trace.activation_sizes:
+        return 0
+    total = 0
+    for bid_raw, act_sz in trace.activation_sizes.items():
+        bid = BlockId(int(bid_raw))
+        if block_map.get(bid, BlockMode.NONE) is BlockMode.CKPT:
+            total += int(act_sz)
+    return total
 
 
 def _group_ops_by_block(trace: ProfilerTrace) -> dict[BlockId, list[int]]:
@@ -412,15 +468,14 @@ def estimate_peak(
             offload_bump_op[op_idxs[-1]] = int(block_id)
 
     retained_none_bytes = 0
-    # CKPT blocks retain the block-input boundary tensor across the full backward window; sum once per CKPT block, separate from the per-op recompute bump in ``ckpt_extra``.
-    ckpt_chain_bytes = 0
+    # CKPT chain term factored to ``_compute_ckpt_chain_bytes`` so the wrapper-side
+    # ``_reconstruct_f_bm`` shares the same chain-sum semantics.
+    ckpt_chain_bytes = _compute_ckpt_chain_bytes(trace, block_map)
     for block_id_raw, act_sz in trace.activation_sizes.items():
         bid = BlockId(int(block_id_raw))
         mode = block_map.get(bid, BlockMode.NONE)
         if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
             retained_none_bytes += act_sz
-        elif mode is BlockMode.CKPT:
-            ckpt_chain_bytes += act_sz
         # SWAP: live only during the block's forward compute; assumed
         #       to overlap free GPU memory (§3.3). The CKPT-chain term
         #       does NOT apply because SWAP evicts the block-output
@@ -517,7 +572,7 @@ def estimate_peak(
     measured_cap = hot_iter_peak_cap(trace, block_map, cfg, layout)
     raw_peak = apply_hot_iter_cap(raw_peak, model_state_present, measured_cap, layout)
 
-    alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
+    alpha = alpha_fragmentation_for_cfg(hw.dominant_param_bytes_per_element, cfg)
     scaled = int(alpha * raw_peak)
     LOG.debug(
         "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d n_offload=%d "
@@ -537,7 +592,11 @@ def estimate_peak(
 __all__ = [
     "ALPHA_FRAGMENTATION",
     "ALPHA_FRAGMENTATION_4BIT",
+    "ALPHA_FRAGMENTATION_4BIT_MODE_A",
+    "ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT",
+    "alpha_fragmentation_for_cfg",
     "alpha_fragmentation_for_dtype",
+    "_compute_ckpt_chain_bytes",
     "_saved_tensor_bytes_per_block",
     "block_tree_index_map",
     "cross_attn_handoff_bytes",

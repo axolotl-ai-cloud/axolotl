@@ -309,6 +309,29 @@ Mirrors `plan.md`:
 
     Tests: `tests/protrain/test_modec_steady_peak_accuracy.py` (pins the per-seq scaling + ±35% tolerance against the three audit data points). Existing tests adjusted: none — the `cost/memory.py` op-walk's recompute-bump refinement is backwards-compatible in every fallback regime (`_saved_tensor_bytes_per_block == activation_sizes`); the cap path and all cap-based tests are unchanged.
 
+    ### Per-mode alpha-fragmentation calibration (commit-pending)
+
+    `ALPHA_FRAGMENTATION_4BIT` was historically a single constant (0.75) calibrated
+    against Mode-A peaks where frozen 4-bit weights dominate per-rank residency.
+    Under Mode-C with gradient checkpointing, activation churn becomes the
+    dominant moving term and the 0.75 factor structurally under-predicts the raw
+    peak. Splitting into `ALPHA_FRAGMENTATION_4BIT_MODE_A = 0.75` and
+    `ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT = 0.95` tightens the raw predictor
+    without changing the wrapper-side `_calibrate_peak_with_actual_chunk_bytes`
+    safety semantics. The audit table (Decision 1) shows residual
+    `alpha_steady = 1.43 / 1.25 / 1.08` at seq=512/1024/2048 on 30B-Llama Mode-C;
+    the mode split narrows this to roughly 1.12 / 1.08 / 1.04 (estimated;
+    needs at-scale re-profiling to confirm). The wrapper-side calibration
+    continues to absorb whatever residual remains. Dispatch is centralized in
+    `alpha_fragmentation_for_cfg(bpe, cfg)`, called by `estimate_peak`, the
+    exhaustive searcher (`search/exhaustive.py`), and the wrapper-side
+    calibrator. The dtype-only `alpha_fragmentation_for_dtype` path is preserved
+    for call sites that lack a `CostConfig` (e.g. `predict_init_transient_peak_bytes`).
+    `_reconstruct_f_bm` in the wrapper now uses the shared
+    `_compute_ckpt_chain_bytes` helper so the wrapper-side reconstruction
+    matches `estimate_peak`'s chain-sum semantics instead of the prior
+    single-block max. Tests: `tests/protrain/test_cost_model.py`.
+
     *Out of scope.* The iter-1 transient observed at bnb-4-bit Mode-C (~6.9x pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation or activation-accounting one, and is documented separately as an "init window" not covered by alpha. Tracked as the remaining open audit item.
 2. **Pinned-memory allocator:** `ctypes` → `cudaHostAlloc` directly. ~50 LOC, zero new deps, matches App B.2 precisely (avoids `CUDAHostAllocator` pow-2 rounding). DeepSpeed's `PinnedMemoryAllocator` rejected: may inherit same wart, adds import-graph weight.
 3. **CPU FusedAdam source:** `deepspeed.ops.adam.DeepSpeedCPUAdam`. Paper builds directly on ZeRO-Offload's CPU Adam. Pure-Python reimpl is >10x slower and would collapse the T_bwd / T_cpu_optim overlap window the cost model assumes. DeepSpeed is already in Axolotl's env.

@@ -232,15 +232,13 @@ def search(
     # Pre-compute F(block_map) once per (n_swap, n_ckpt, n_offload).
     from axolotl.integrations.protrain.cost.memory import (
         ALPHA_FRAGMENTATION,  # noqa: F401
-        alpha_fragmentation_for_dtype,
+        alpha_fragmentation_for_cfg,
         apply_hot_iter_cap,
         block_tree_index_map,
         hot_iter_peak_cap,
         model_state_present_bytes,
     )
 
-    # Mirror estimate_peak's per-dtype alpha so search gate and post-search calibration agree.
-    alpha = alpha_fragmentation_for_dtype(hw.dominant_param_bytes_per_element)
     s_chunk = layout.S_chunk
 
     # Hoist trace-only maps; depend on trace only, not block_map.
@@ -251,6 +249,15 @@ def search(
     tree_index_map = block_tree_index_map(trace)
 
     for n_ckpt in range(0, bounds.N_block + 1):
+        # Mode-aware fragmentation alpha: 4-bit + n_ckpt>0 uses the
+        # Mode-C-CKPT calibration (0.95) instead of the Mode-A 0.75.
+        # Other dtypes ignore the n_ckpt split.
+        alpha = alpha_fragmentation_for_cfg(
+            hw.dominant_param_bytes_per_element,
+            CostConfig(
+                n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=n_ckpt, n_offload=0
+            ),
+        )
         for n_offload in range(0, bounds.N_block - n_ckpt + 1):
             max_swap = min(bounds.N_block - n_ckpt - n_offload, bounds.N_interval)
             for n_swap in range(0, max_swap + 1):

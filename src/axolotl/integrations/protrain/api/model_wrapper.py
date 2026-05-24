@@ -305,7 +305,9 @@ def _calibrate_peak_with_actual_chunk_bytes(
     """Recompute ``predicted_peak_bytes`` using actual chunk bytes + CKPT correction."""
     from axolotl.integrations.protrain.cost.memory import (
         ALPHA_FRAGMENTATION,
+        _compute_ckpt_chain_bytes,
         _saved_tensor_bytes_per_block,
+        alpha_fragmentation_for_cfg,
     )
     from axolotl.integrations.protrain.types import BlockMode
 
@@ -319,7 +321,10 @@ def _calibrate_peak_with_actual_chunk_bytes(
     else:
         persistent_factor = 1.0
     buffer_factor = 2.0  # fp16 params (gathered) + fp16 grads (accumulated)
-    alpha = ALPHA_FRAGMENTATION
+    if hw is not None:
+        alpha = alpha_fragmentation_for_cfg(hw.dominant_param_bytes_per_element, cfg)
+    else:
+        alpha = ALPHA_FRAGMENTATION
 
     # Shared between production and cfg-delta floor boot-cfg paths.
     if trace is not None:
@@ -342,7 +347,13 @@ def _calibrate_peak_with_actual_chunk_bytes(
         max_op_delta_global = 0
 
     def _reconstruct_f_bm(bmap) -> tuple[int, int]:
-        """Trace-derived F_bm reconstruction; returns (f_bm, n_ckpt)."""
+        """Trace-derived F_bm reconstruction; returns (f_bm, n_ckpt).
+
+        CKPT activation contribution uses chain semantics (sum across CKPT
+        blocks) to mirror ``estimate_peak``'s ``ckpt_chain_bytes`` term. The
+        prior ``max`` of a single block structurally under-bounded F_bm
+        whenever multiple blocks were checkpointed.
+        """
         if bmap is None or not act_sizes_full:
             return 0, 0
         live_none_bytes = 0
@@ -352,10 +363,11 @@ def _calibrate_peak_with_actual_chunk_bytes(
                     saved_bytes_proxy.get(bid_, act_sizes_full.get(bid_, 0)) or 0
                 )
         n_ckpt_ = sum(1 for m in bmap.values() if m is BlockMode.CKPT)
-        max_ckpt_act_ = 0
-        if n_ckpt_ > 0 and act_sizes_full:
-            max_ckpt_act_ = max(int(v) for v in act_sizes_full.values())
-        return live_none_bytes + max_ckpt_act_ + max_op_delta_global, n_ckpt_
+        if trace is not None:
+            ckpt_chain = _compute_ckpt_chain_bytes(trace, bmap)
+        else:
+            ckpt_chain = 0
+        return live_none_bytes + ckpt_chain + max_op_delta_global, n_ckpt_
 
     def _structural_calibrated(
         n_persist_arg: int,
