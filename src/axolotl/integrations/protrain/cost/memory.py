@@ -125,23 +125,98 @@ def alpha_fragmentation_for_cfg(
     return ALPHA_FRAGMENTATION_4BIT_MODE_A
 
 
-def _compute_ckpt_chain_bytes(
-    trace: ProfilerTrace, block_map: BlockStrategyMap | None
+# Default multiplier for the per-block CKPT internal-residual proxy. Mutable so
+# the plugin can apply the YAML knob (``protrain_ckpt_internal_residual_factor``)
+# without threading it through every cost-model call site. 1.0 = include the full
+# FFN-intermediate + attention-score + QKV proxy; 0.0 = disable the residual
+# (reproduces the pre-fix block-output-only chain).
+DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR: float = 1.0
+
+
+def set_default_ckpt_internal_residual_factor(factor: float) -> None:
+    """Set the process-global default residual factor read by helpers when no explicit value is passed."""
+    global DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR
+    DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR = float(max(0.0, factor))
+
+
+def _block_internal_saved_bytes(
+    trace: ProfilerTrace,
+    block_id: BlockId,
+    bytes_per_element: float = 2.0,
 ) -> int:
-    """Sum activation bytes across CKPT blocks (chain semantics, not max).
+    """Estimate block-internal saved-for-backward bytes for one transformer block.
+
+    The existing ``trace.activation_sizes[bid]`` proxies the BLOCK OUTPUT bytes;
+    this helper estimates the INTERNAL saved tensors the block-output proxy
+    misses. For Llama-class blocks:
+
+    - Q/K/V projections: ``3 * bs * seq * hidden``
+    - Attention scores: ``bs * heads * seq * seq`` (quadratic in seq)
+    - FFN intermediate: ``bs * seq * intermediate_size``
+
+    Returns 0 when the trace lacks the architecture fields (legacy traces);
+    the run-time fields are populated by ``run_trace`` /
+    ``synth_trace_from_overrides``.
+    """
+    bs = int(getattr(trace, "bs", 0) or 0)
+    seq = int(getattr(trace, "seq", 0) or 0)
+    hidden = int(getattr(trace, "hidden_size", 0) or 0)
+    heads = int(getattr(trace, "num_attention_heads", 0) or 0)
+    intermediate = int(getattr(trace, "intermediate_size", 0) or 0)
+    # block_id is per-block-uniform under the Llama-class assumption; carried
+    # in the signature so future heterogeneous-arch hooks can specialize.
+    _ = block_id
+    if bs <= 0 or seq <= 0 or hidden <= 0:
+        return 0
+    qkv_bytes = 3 * bs * seq * hidden * bytes_per_element
+    attn_bytes = bs * max(heads, 1) * seq * seq * bytes_per_element if heads > 0 else 0
+    ffn_bytes = bs * seq * intermediate * bytes_per_element if intermediate > 0 else 0
+    return int(qkv_bytes + attn_bytes + ffn_bytes)
+
+
+def _compute_ckpt_chain_bytes(
+    trace: ProfilerTrace,
+    block_map: BlockStrategyMap | None,
+    internal_residual_factor: float | None = None,
+    bytes_per_element: float = 2.0,
+) -> int:
+    """Sum activation bytes across CKPT blocks plus one block's internal residual.
 
     CKPT blocks retain the block-input boundary tensor across the full
     backward window, so the chain is a sum over CKPT blocks rather than a
     single-block max. Used by both :func:`estimate_peak` and the wrapper-side
     ``_reconstruct_f_bm`` so the analytical and calibrated paths agree.
+
+    Under non-reentrant CKPT, only one block's INTERNAL saved tensors
+    (Q/K/V projections, attention scores, FFN intermediate) are live at a
+    time — the current recompute window. This helper adds ONE block's
+    worth of internal residual on top of the chain (a per-block max, not
+    N_block worth) to avoid over-correcting at high seq where the
+    attention-score term is O(seq^2). The block-output proxy on its own
+    misses these tensors; the residual closes the gap at low seq where the
+    chain term is small. ``internal_residual_factor`` (defaults to
+    ``DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR`` = 1.0) scales the
+    contribution; 0.0 disables it (pre-fix behavior). See DESIGN.md
+    Decision 1.
     """
     if not block_map or not trace.activation_sizes:
         return 0
+    if internal_residual_factor is None:
+        internal_residual_factor = DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR
     total = 0
+    max_residual = 0
     for bid_raw, act_sz in trace.activation_sizes.items():
         bid = BlockId(int(bid_raw))
         if block_map.get(bid, BlockMode.NONE) is BlockMode.CKPT:
             total += int(act_sz)
+            if internal_residual_factor > 0.0:
+                residual = _block_internal_saved_bytes(
+                    trace, bid, bytes_per_element=bytes_per_element
+                )
+                if residual > max_residual:
+                    max_residual = residual
+    if internal_residual_factor > 0.0 and max_residual > 0:
+        total += int(internal_residual_factor * max_residual)
     return total
 
 
@@ -594,8 +669,10 @@ __all__ = [
     "ALPHA_FRAGMENTATION_4BIT",
     "ALPHA_FRAGMENTATION_4BIT_MODE_A",
     "ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT",
+    "DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR",
     "alpha_fragmentation_for_cfg",
     "alpha_fragmentation_for_dtype",
+    "_block_internal_saved_bytes",
     "_compute_ckpt_chain_bytes",
     "_saved_tensor_bytes_per_block",
     "block_tree_index_map",
@@ -606,4 +683,5 @@ __all__ = [
     "hot_iter_peak_cap",
     "model_state_present_bytes",
     "op_cross_attn_surcharge",
+    "set_default_ckpt_internal_residual_factor",
 ]

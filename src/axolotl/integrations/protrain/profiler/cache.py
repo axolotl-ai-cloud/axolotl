@@ -23,7 +23,7 @@ LOG = get_logger(__name__)
 _CACHE_SUBDIR = Path("protrain") / "profiler"
 
 # Bump on any schema change to ProfilerTrace; old payloads are then ignored.
-TRACE_VERSION = 22
+TRACE_VERSION = 23
 
 
 @dataclass(frozen=True)
@@ -173,6 +173,9 @@ def _trace_to_dict(trace: ProfilerTrace) -> dict[str, Any]:
         "block_tree_index": {
             str(int(k)): int(v) for k, v in trace.block_tree_index.items()
         },
+        "hidden_size": int(getattr(trace, "hidden_size", 0)),
+        "num_attention_heads": int(getattr(trace, "num_attention_heads", 0)),
+        "intermediate_size": int(getattr(trace, "intermediate_size", 0)),
     }
     return payload
 
@@ -215,6 +218,9 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
         extra["phase2_per_comp_pred_iter_s"] = float(
             data.get("phase2_per_comp_pred_iter_s", 0.0)
         )
+    for _arch_fname in ("hidden_size", "num_attention_heads", "intermediate_size"):
+        if _arch_fname in _trace_field_names:
+            extra[_arch_fname] = int(data.get(_arch_fname, 0))
     return ProfilerTrace(
         op_order=tuple(_op_record_from_dict(d) for d in data["op_order"]),
         intra_op_delta={

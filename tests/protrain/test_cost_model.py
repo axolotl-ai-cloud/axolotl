@@ -18,9 +18,12 @@ from axolotl.integrations.protrain.cost.memory import (
     ALPHA_FRAGMENTATION_4BIT,
     ALPHA_FRAGMENTATION_4BIT_MODE_A,
     ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT,
+    DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR,
+    _block_internal_saved_bytes,
     _compute_ckpt_chain_bytes,
     alpha_fragmentation_for_cfg,
     estimate_peak,
+    set_default_ckpt_internal_residual_factor,
 )
 from axolotl.integrations.protrain.types import (
     BlockId,
@@ -83,6 +86,12 @@ def _build_synthetic_trace(
     n_blocks: int,
     activation_per_block: int,
     model_state_bytes: int = 0,
+    *,
+    bs: int = 1,
+    seq: int = 16,
+    hidden_size: int = 0,
+    num_attention_heads: int = 0,
+    intermediate_size: int = 0,
 ) -> ProfilerTrace:
     """A trace with N blocks, each with ``activation_per_block`` bytes."""
     activation_sizes = {BlockId(i): activation_per_block for i in range(n_blocks)}
@@ -97,10 +106,13 @@ def _build_synthetic_trace(
         nccl_gather_s={},
         nccl_reduce_s={},
         arch_hash="test",
-        bs=1,
-        seq=16,
+        bs=bs,
+        seq=seq,
         sku="test",
         world=1,
+        hidden_size=hidden_size,
+        num_attention_heads=num_attention_heads,
+        intermediate_size=intermediate_size,
     )
 
 
@@ -281,4 +293,199 @@ def test_estimate_peak_mode_c_ckpt_tighter_than_mode_a_alpha():
     assert peak_mode_c_ckpt / max(1, legacy_mode_c_ckpt_peak) == pytest.approx(
         ALPHA_FRAGMENTATION_4BIT_MODE_C_CKPT / ALPHA_FRAGMENTATION_4BIT_MODE_A,
         rel=0.01,
+    )
+
+
+# Llama-30B reference (huggyllama/llama-30b) used by the section 7.6 audit row.
+_LLAMA_30B_HIDDEN = 6656
+_LLAMA_30B_INTERMEDIATE = 17920
+_LLAMA_30B_HEADS = 52
+_LLAMA_30B_N_BLOCK = 60
+
+
+def test_block_internal_saved_bytes_quadratic_in_seq():
+    """Attn-score term scales O(seq^2); ffn/qkv terms scale O(seq)."""
+    bs = 1
+    hidden = 4096
+    heads = 32
+    intermediate = 11008
+
+    def _residual(seq: int) -> int:
+        trace = _build_synthetic_trace(
+            n_blocks=1,
+            activation_per_block=1,
+            bs=bs,
+            seq=seq,
+            hidden_size=hidden,
+            num_attention_heads=heads,
+            intermediate_size=intermediate,
+        )
+        return _block_internal_saved_bytes(trace, BlockId(0), bytes_per_element=2.0)
+
+    r_512 = _residual(512)
+    r_1024 = _residual(1024)
+    r_2048 = _residual(2048)
+    ratio_1024_over_512 = r_1024 / max(1, r_512)
+    ratio_2048_over_1024 = r_2048 / max(1, r_1024)
+    assert 2.0 < ratio_1024_over_512 < 4.0
+    assert 2.0 < ratio_2048_over_1024 < 4.0
+    assert ratio_2048_over_1024 > ratio_1024_over_512
+
+
+def test_block_internal_saved_bytes_zero_when_arch_fields_missing():
+    """Legacy traces (arch fields = 0) get a 0 residual so the chain helper degrades."""
+    trace = _build_synthetic_trace(n_blocks=1, activation_per_block=1, bs=1, seq=512)
+    assert _block_internal_saved_bytes(trace, BlockId(0)) == 0
+
+
+def test_ckpt_chain_includes_internal_residual_when_enabled():
+    """factor=1.0 raises chain bytes strictly above the legacy block-output-only sum."""
+    n_blocks = 4
+    activation_per_block = 1_000_000
+    trace = _build_synthetic_trace(
+        n_blocks=n_blocks,
+        activation_per_block=activation_per_block,
+        bs=1,
+        seq=512,
+        hidden_size=4096,
+        num_attention_heads=32,
+        intermediate_size=11008,
+    )
+    block_map: BlockStrategyMap = {
+        BlockId(i): BlockMode.CKPT for i in range(n_blocks)
+    }
+    legacy = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=0.0)
+    enabled = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=1.0)
+    assert legacy == n_blocks * activation_per_block
+    assert enabled > legacy
+
+
+def test_disable_via_factor_zero():
+    """``internal_residual_factor=0.0`` reproduces the pre-fix block-output-only chain bytes."""
+    n_blocks = 6
+    activation_per_block = 2_500_000
+    trace = _build_synthetic_trace(
+        n_blocks=n_blocks,
+        activation_per_block=activation_per_block,
+        bs=1,
+        seq=1024,
+        hidden_size=_LLAMA_30B_HIDDEN,
+        num_attention_heads=_LLAMA_30B_HEADS,
+        intermediate_size=_LLAMA_30B_INTERMEDIATE,
+    )
+    block_map: BlockStrategyMap = {
+        BlockId(i): BlockMode.CKPT for i in range(n_blocks)
+    }
+    disabled = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=0.0)
+    assert disabled == n_blocks * activation_per_block
+
+
+def test_default_factor_constant_is_one():
+    """Shipped default residual factor is 1.0 (full estimate)."""
+    assert DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR == pytest.approx(1.0)
+
+
+def test_set_default_residual_factor_clamps_negatives():
+    """The setter floors at 0.0; negative inputs become 0.0."""
+    from axolotl.integrations.protrain.cost import memory as _mem
+
+    original = _mem.DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR
+    try:
+        set_default_ckpt_internal_residual_factor(-1.0)
+        assert _mem.DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR == pytest.approx(0.0)
+        set_default_ckpt_internal_residual_factor(0.6)
+        assert _mem.DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR == pytest.approx(0.6)
+    finally:
+        set_default_ckpt_internal_residual_factor(original)
+
+
+def test_estimate_peak_seq_512_30b_llama_alpha_steady_after_residual():
+    """Section 7.6 audit-row anchor: residual + alpha-split narrows alpha_steady at seq=512.
+
+    Measured steady peak at seq=512 on the audit row (30B Llama, 4-bit, Mode-C,
+    n_persist=0/n_buffer=12/n_checkpoint=60) is 2.91 GiB. Adding the per-block
+    internal residual (FFN-intermediate + attention scores + QKV projections,
+    sized as one CKPT block's recompute window) must push the prediction
+    monotonically toward the measured value vs. the pre-residual baseline.
+    """
+    GiB = 1 << 30
+    seq = 512
+    bs = 1
+    measured_steady_gib = 2.91
+
+    s_chunk = 67108864
+    n_chunk = 302
+    layout = ChunkLayout(
+        S_chunk=s_chunk,
+        N_chunk=n_chunk,
+        chunks=tuple((f"p.{cid}",) for cid in range(n_chunk)),  # type: ignore[arg-type]
+        param_to_chunk={},
+        block_to_chunks={BlockId(b): () for b in range(_LLAMA_30B_N_BLOCK)},
+    )
+
+    per_block_act_bytes = bs * seq * _LLAMA_30B_INTERMEDIATE * 2
+    activation_sizes = {
+        BlockId(b): per_block_act_bytes for b in range(_LLAMA_30B_N_BLOCK)
+    }
+    trace = ProfilerTrace(
+        op_order=(),
+        intra_op_delta={},
+        inter_op_delta={},
+        activation_sizes=activation_sizes,
+        model_state_bytes=16 * GiB,
+        pcie_h2d_bps=13e9,
+        pcie_d2h_bps=13e9,
+        nccl_gather_s={},
+        nccl_reduce_s={},
+        arch_hash="huggyllama/llama-30b-qlora-modec",
+        bs=bs,
+        seq=seq,
+        sku="audit",
+        world=1,
+        hidden_size=_LLAMA_30B_HIDDEN,
+        num_attention_heads=_LLAMA_30B_HEADS,
+        intermediate_size=_LLAMA_30B_INTERMEDIATE,
+    )
+
+    cfg = CostConfig(
+        n_persist=0, n_buffer=12, n_swap=0, n_checkpoint=_LLAMA_30B_N_BLOCK
+    )
+    block_map: BlockStrategyMap = {
+        BlockId(b): BlockMode.CKPT for b in range(_LLAMA_30B_N_BLOCK)
+    }
+
+    hw_4bit = HardwareProfile(
+        gpu_sku="audit",
+        gpu_memory_bytes=24 * GiB,
+        gpu_count=1,
+        pcie_h2d_bps=13e9,
+        pcie_d2h_bps=13e9,
+        has_nvlink=False,
+        dominant_param_bytes_per_element=0.5,
+    )
+
+    from axolotl.integrations.protrain.cost import memory as _mem
+
+    original_factor = _mem.DEFAULT_CKPT_INTERNAL_RESIDUAL_FACTOR
+    try:
+        set_default_ckpt_internal_residual_factor(0.0)
+        pred_baseline = estimate_peak(cfg, trace, layout, block_map, hw_4bit) / GiB
+        alpha_baseline = measured_steady_gib / max(pred_baseline, 1e-9)
+
+        set_default_ckpt_internal_residual_factor(1.0)
+        pred_with_residual = (
+            estimate_peak(cfg, trace, layout, block_map, hw_4bit) / GiB
+        )
+        alpha_with_residual = measured_steady_gib / max(pred_with_residual, 1e-9)
+    finally:
+        set_default_ckpt_internal_residual_factor(original_factor)
+
+    assert pred_with_residual > pred_baseline, (
+        f"residual must raise prediction at seq=512 "
+        f"(baseline={pred_baseline:.3f} GiB, "
+        f"with_residual={pred_with_residual:.3f} GiB)"
+    )
+    assert abs(alpha_with_residual - 1.0) < abs(alpha_baseline - 1.0), (
+        f"alpha_steady must narrow toward 1.0 at seq=512: "
+        f"baseline={alpha_baseline:.3f} -> with_residual={alpha_with_residual:.3f}"
     )

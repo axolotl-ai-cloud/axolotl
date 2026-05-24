@@ -852,6 +852,10 @@ def run_trace(
         )
         gather_table, reduce_table = ({}, {})
 
+    arch_hidden_size = _infer_hidden_size(model)
+    arch_intermediate_size = _infer_intermediate_size(model, arch_hidden_size)
+    arch_num_attention_heads = _infer_num_attention_heads(model, arch_hidden_size)
+
     return ProfilerTrace(
         op_order=tuple(op_records),
         intra_op_delta=intra_deltas,
@@ -880,6 +884,9 @@ def run_trace(
         compute_rate_tflops=compute_rate_tflops,
         trainable_param_fraction=trainable_param_fraction,
         block_tree_index=block_tree_index,
+        hidden_size=arch_hidden_size,
+        num_attention_heads=arch_num_attention_heads,
+        intermediate_size=arch_intermediate_size,
     )
 
 
@@ -929,6 +936,18 @@ def _infer_intermediate_size(model: "nn.Module", hidden_size: int) -> int:
     return 4 * int(hidden_size)
 
 
+def _infer_num_attention_heads(model: "nn.Module", hidden_size: int) -> int:
+    """Best-effort attention-head count for the cost-model attention-score residual proxy."""
+    cfg = getattr(model, "config", None)
+    if cfg is not None:
+        for attr in ("num_attention_heads", "n_head", "n_heads", "num_heads"):
+            v = getattr(cfg, attr, None)
+            if isinstance(v, int) and v > 0:
+                return v
+    # Llama-class head_dim ≈ 128 fallback.
+    return max(1, int(hidden_size) // 128)
+
+
 def synth_trace_from_overrides(
     model: "nn.Module",
     *,
@@ -975,6 +994,7 @@ def synth_trace_from_overrides(
 
     hidden_size = _infer_hidden_size(model)
     intermediate_size = _infer_intermediate_size(model, hidden_size)
+    num_attention_heads = _infer_num_attention_heads(model, hidden_size)
     # Size off FFN intermediate: dominates block-output for autograd's saved tensors.
     per_block_act_bytes = int(batch_size) * int(seq_len) * int(intermediate_size) * 2
     activation_sizes: dict[BlockId, int] = {
@@ -1022,6 +1042,9 @@ def synth_trace_from_overrides(
         cpu_adam_bytes_per_sec=0.0,
         gpu_adam_bytes_per_sec=0.0,
         block_tree_index=block_tree_index,
+        hidden_size=int(hidden_size),
+        num_attention_heads=int(num_attention_heads),
+        intermediate_size=int(intermediate_size),
     )
 
 

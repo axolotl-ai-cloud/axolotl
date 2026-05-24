@@ -494,6 +494,18 @@ class ProTrainPlugin(BasePlugin):
         assert_supported_peft_transformers_surface()
         warn_on_unvalidated_versions()
 
+        # Propagate the YAML knob into the cost-model module default before any
+        # searcher / wrapper call site consumes _compute_ckpt_chain_bytes.
+        from axolotl.integrations.protrain.cost.memory import (
+            set_default_ckpt_internal_residual_factor,
+        )
+
+        residual_factor = getattr(
+            cfg, "protrain_ckpt_internal_residual_factor", None
+        )
+        if residual_factor is not None:
+            set_default_ckpt_internal_residual_factor(float(residual_factor))
+
     def post_model_load(self, cfg, model: "nn.Module") -> None:
         """Wrap the post-adapter model with the ProTrain runtime."""
         if not _is_plugin_active(cfg):

@@ -333,6 +333,28 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_ckpt_internal_residual_factor: float | None = Field(
+        default=1.0,
+        ge=0.0,
+        json_schema_extra={
+            "description": (
+                "Multiplier for the per-block CKPT internal saved-tensor "
+                "proxy (FFN-intermediate + attention scores + QKV "
+                "projections) added by "
+                "``cost/memory.py::_compute_ckpt_chain_bytes``. Default 1.0 "
+                "includes the full analytical estimate (one CKPT block's "
+                "worth, the recompute-window max); 0.0 disables the "
+                "residual to reproduce the pre-fix behavior. Values in "
+                "(0.0, 1.0) scale the estimate for conservative tuning. "
+                "The block-output proxy under-estimates per-block saved "
+                "tensors at low seq because it misses the FFN intermediate "
+                "(~2.67x hidden for Llama), the attention-score matrix "
+                "(quadratic in seq), and Q/K/V projections. See DESIGN.md "
+                "Decision 1."
+            )
+        },
+    )
+
     protrain_allow_online_reshard: bool | None = Field(
         default=False,
         json_schema_extra={

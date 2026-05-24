@@ -164,6 +164,13 @@ class ProfilerTrace:
     # block_id → tree.forward_order; empty falls back to module_path prefix parse.
     block_tree_index: dict[BlockId, int] = field(default_factory=dict)
 
+    # Architecture metadata for the per-block CKPT internal-residual proxy
+    # (cost/memory._block_internal_saved_bytes). 0 = unknown (legacy traces);
+    # the residual term degrades to the pre-fix block-output-only chain.
+    hidden_size: int = 0
+    num_attention_heads: int = 0
+    intermediate_size: int = 0
+
 
 # ---------------------------------------------------------------------------
 # Chunk layout (§3.1.1, App B.1)
