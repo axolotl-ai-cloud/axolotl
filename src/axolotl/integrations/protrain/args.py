@@ -557,6 +557,65 @@ class ProTrainArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _reject_ddp_with_zero3_shard(cls, data):
+        """Reject ``protrain_zero3_shard: true`` under multi-rank DDP wrap path.
+
+        ProTrain's sharded path issues its own reduce_scatter per non-persistent
+        chunk; layering accelerate's default DDP on top of that double-syncs
+        gradients (DDP all-reduces every grad bucket too). The post-trainer
+        check in plugin.py.post_trainer_create catches this only AFTER DDP
+        already constructed its reducer and allocated buckets — so config-time
+        rejection is the only path that surfaces the conflict cleanly.
+
+        Detection: WORLD_SIZE > 1 AND no fsdp / deepspeed configured AND
+        ``protrain_auto_mode`` is explicitly False AND ``protrain_zero3_shard``
+        is True. Auto-mode runs let the searcher pick the mode, and
+        fsdp/deepspeed paths short-circuit DDP wrapping in accelerate.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not data.get("protrain_auto_memory"):
+            return data
+        plugins = data.get("plugins") or []
+        if not _has_protrain_plugin(plugins):
+            return data
+        if not bool(data.get("protrain_zero3_shard")):
+            return data
+        # Auto-mode lets the searcher reconcile the mode against capacity — skip.
+        if data.get("protrain_auto_mode", True):
+            return data
+        # FSDP / DeepSpeed paths bypass accelerate's DDP wrap.
+        if data.get("fsdp") or data.get("fsdp_config") or data.get("deepspeed"):
+            return data
+        # WORLD_SIZE is the only config-time indicator under torchrun / accelerate launch.
+        import os
+
+        raw = os.environ.get("WORLD_SIZE")
+        if raw is None:
+            return data
+        try:
+            world_size = int(raw)
+        except (TypeError, ValueError):
+            return data
+        if world_size <= 1:
+            return data
+        raise ValueError(
+            "ProTrain: `protrain_zero3_shard: true` combined with "
+            f"`protrain_auto_mode: false` under multi-rank launch "
+            f"(WORLD_SIZE={world_size}) without `fsdp:` / `deepspeed:` will "
+            "trigger accelerate's default DDP wrap. DDP's bucketed all-reduce "
+            "then double-synchronizes gradients on top of ProTrain's "
+            "reduce_scatter for non-persistent sharded chunks, corrupting "
+            "the effective update; DDP also allocates reducer buckets sized "
+            "by `param.numel()` for every non-ignored param, defeating the "
+            "shape-preserving placeholder savings. Either (a) set "
+            "`protrain_zero3_shard: false` (Mode B replicated CPU offload), "
+            "or (b) set `protrain_auto_mode: true` and let the searcher pick "
+            "between replicated and sharded based on per-rank CPU RAM."
+        )
+
+    @model_validator(mode="before")
+    @classmethod
     def _reject_multiple_force_modes(cls, data):
         """Reject more than one ``protrain_force_*`` mode flag set at once.
 
