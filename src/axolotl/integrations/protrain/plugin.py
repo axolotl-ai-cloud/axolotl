@@ -482,6 +482,18 @@ class ProTrainPlugin(BasePlugin):
         save_optim_state = bool(getattr(cfg, "protrain_save_optimizer_state", False))
         return {"save_only_model": not save_optim_state}
 
+    def pre_model_load(self, cfg) -> None:
+        """Fail fast if peft / transformers API surface has drifted."""
+        if not _is_plugin_active(cfg):
+            return
+        from axolotl.integrations.protrain.check import (
+            assert_supported_peft_transformers_surface,
+            warn_on_unvalidated_versions,
+        )
+
+        assert_supported_peft_transformers_surface()
+        warn_on_unvalidated_versions()
+
     def post_model_load(self, cfg, model: "nn.Module") -> None:
         """Wrap the post-adapter model with the ProTrain runtime."""
         if not _is_plugin_active(cfg):
