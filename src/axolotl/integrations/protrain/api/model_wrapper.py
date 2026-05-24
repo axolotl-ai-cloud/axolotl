@@ -1510,7 +1510,7 @@ def protrain_model_wrapper(
             LOG.debug(
                 "measure_compute_rate live failed (%s); skipping SKU calibration", _e
             )
-    # PCIe: overwrite hardcoded Gen3 default with measured H2D/D2H.
+    # PCIe: overwrite the conservative 13 GB/s default with measured H2D/D2H.
     if hardware_profile.pcie_h2d_bps <= 13e9 + 1e6 and trace.pcie_h2d_bps > 13e9 + 1e6:
         _hw_updates["pcie_h2d_bps"] = trace.pcie_h2d_bps
     if hardware_profile.pcie_d2h_bps <= 13e9 + 1e6 and trace.pcie_d2h_bps > 13e9 + 1e6:
@@ -1696,19 +1696,19 @@ def protrain_model_wrapper(
             LOG.warning(
                 "ProTrain auto-mode: user set zero3_shard=True but the "
                 "workload fits in Mode A (force_all_persistent). "
-                "Auto-mode picked Mode A for better throughput — on "
-                "PCIe Gen3 RTX 3090, DDP+Mode_A gives ~3.6x scaling vs "
-                "ZeRO-3's ~0.7x. Set ``protrain_auto_mode: false`` to "
-                "force-honour zero3_shard=True."
+                "Auto-mode picked Mode A for better throughput — on a "
+                "non-NVLink 4x RTX 3090 rig, DDP+Mode_A gives ~3.6x "
+                "scaling vs ZeRO-3's ~0.7x. Set ``protrain_auto_mode: "
+                "false`` to force-honour zero3_shard=True."
             )
 
         if auto_force_persistent:
             if _ws_early > 1:
                 LOG.info(
                     "ProTrain auto-mode: picking Mode A "
-                    "(force_all_persistent=True). On PCIe Gen3 RTX 3090, "
-                    "DDP+Mode_A gives ~3.6x scaling vs ZeRO-3's ~0.7x — see "
-                    "DESIGN.md §Multi-GPU for benchmark data."
+                    "(force_all_persistent=True). On a non-NVLink 4x RTX "
+                    "3090 rig, DDP+Mode_A gives ~3.6x scaling vs ZeRO-3's "
+                    "~0.7x — see DESIGN.md §Multi-GPU for benchmark data."
                 )
             else:
                 LOG.info(

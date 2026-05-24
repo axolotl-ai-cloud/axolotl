@@ -212,8 +212,16 @@ def search(
     capacity_bytes: int,
     hw: HardwareProfile,
     cpu_capacity_bytes: int | None = None,
+    *,
+    forbid_activation_offload: bool = False,
 ) -> SearchResult:
-    """Return the minimum-runtime SearchResult fitting under capacity_bytes."""
+    """Return the minimum-runtime SearchResult fitting under capacity_bytes.
+
+    ``forbid_activation_offload``: skip any candidate with ``n_offload > 0``.
+    Wired from ``cfg.lora_mlp_kernel`` — the fused MLP backward kernel returns
+    a real gradient on offloaded activations whose ChunkManager placeholder is
+    zero-shape, crashing at the first backward with a shape-mismatch error.
+    """
     bounds = derive_bounds(trace, layout)
 
     _ = hw.zero3_shard  # noqa: F841
@@ -224,6 +232,7 @@ def search(
     n_cpu_rejected = 0  # cleared GPU gate but failed CPU gate
     # cleared GPU+CPU gates but estimate_runtime returned non-finite
     n_runtime_rejected = 0
+    n_kernel_filtered = 0  # n_offload>0 skipped under forbid_activation_offload
     best_iter_s: float = float("inf")
     best_cfg: CostConfig | None = None
     best_block_map: BlockStrategyMap | None = None
@@ -259,6 +268,11 @@ def search(
             ),
         )
         for n_offload in range(0, bounds.N_block - n_ckpt + 1):
+            if forbid_activation_offload and n_offload > 0:
+                # Drop the n_offload>0 subtree wholesale; the fused MLP kernel
+                # is incompatible with chunk-storage placeholders.
+                n_kernel_filtered += 1
+                continue
             max_swap = min(bounds.N_block - n_ckpt - n_offload, bounds.N_interval)
             for n_swap in range(0, max_swap + 1):
                 block_map = assign_modes(
@@ -445,6 +459,21 @@ def search(
                 f"footprint limit. Evaluated {n_total} configs total. "
                 "Scale up: more nodes, more system RAM, or a smaller model."
             )
+        # Kernel-feasibility failure: every n_offload=0 candidate is over budget.
+        if forbid_activation_offload and n_kernel_filtered > 0:
+            raise RuntimeError(
+                "no feasible ProTrain config: ``lora_mlp_kernel: true`` forbids "
+                "activation-offload (n_offload>0) because the fused MLP "
+                "backward kernel returns a real gradient on offloaded "
+                "activations whose chunk placeholder is zero-shape "
+                "(LoRA_MLPBackward shape-mismatch crash; see v61 finding). "
+                f"The searcher dropped {n_kernel_filtered} n_offload>0 "
+                "subtrees but none of the remaining n_offload=0 candidates fit "
+                f"under capacity_bytes={capacity_bytes}. Either (a) set "
+                "``lora_mlp_kernel: false`` (slower per-step but compatible "
+                "with activation-offload), or (b) free up GPU memory "
+                "(smaller batch, more cards, smaller model)."
+            )
         raise RuntimeError(
             "no feasible ProTrain config under capacity_bytes="
             f"{capacity_bytes} (evaluated {n_total} configs)"
@@ -473,6 +502,13 @@ def search(
             best_cfg,
             best_peak // (1 << 20),
             best_iter_s,
+        )
+    if forbid_activation_offload and n_kernel_filtered > 0:
+        LOG.info(
+            "ProTrain search: lora_mlp_kernel guard skipped %d n_offload>0 "
+            "subtrees; picked n_offload=%d.",
+            n_kernel_filtered,
+            best_cfg.n_offload,
         )
     return SearchResult(
         cfg=best_cfg,

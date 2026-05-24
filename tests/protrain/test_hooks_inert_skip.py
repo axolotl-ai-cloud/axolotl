@@ -95,33 +95,48 @@ class _SchedulerStub:
         self.calls.append(("ensure_chunks_resident", tuple(int(c) for c in chunk_ids)))
 
 
+class _LayoutStub:
+    """Frozen-dataclass-bypassing ChunkLayout stand-in (predicate reads N_chunk + param_to_chunk only)."""
+
+    def __init__(
+        self, n_chunk: int, param_to_chunk: dict, block_to_chunks: dict
+    ) -> None:
+        self.N_chunk = n_chunk
+        self.param_to_chunk = param_to_chunk
+        self.block_to_chunks = block_to_chunks
+
+
 class _ChunkManagerStub:
     """Minimal ChunkManager stand-in surfacing layout + _persistent_ids + _params_by_id."""
 
     def __init__(self, model: nn.Module, n_persist: int, n_chunk: int) -> None:
         from typing import cast as _cast
 
-        from axolotl.integrations.protrain.chunk.layout import build_layout
         from axolotl.integrations.protrain.types import (
             BlockId as _BlockId,
             ParamId as _ParamId,
         )
 
-        block_spans: dict = {}
-        for name, _ in model.named_parameters():
-            if name.startswith("layers."):
-                idx = int(name.split(".")[1])
-                block_spans.setdefault(_cast(_BlockId, idx), []).append(
-                    _cast(_ParamId, name)
-                )
-        exec_order = [_cast(_ParamId, n) for n, _ in model.named_parameters()]
-        self.layout = build_layout(model, exec_order, 4096, block_spans)
+        # Round-robin params into n_chunk synthetic chunks so the predicate
+        # sees a multi-chunk layout but install_hooks' LoRA container lookup
+        # can still resolve every parameter to a chunk id.
+        param_names = [_cast(_ParamId, name) for name, _ in model.named_parameters()]
+        param_to_chunk = {
+            name: _cast(ChunkId, i % max(1, n_chunk))
+            for i, name in enumerate(param_names)
+        }
+        block_to_chunks: dict = {}
+        for name in param_names:
+            if not name.startswith("layers."):
+                continue
+            bid = _cast(_BlockId, int(name.split(".")[1]))
+            block_to_chunks.setdefault(bid, set()).add(param_to_chunk[name])
+        block_to_chunks = {b: tuple(sorted(cs)) for b, cs in block_to_chunks.items()}
+
+        self.layout = _LayoutStub(n_chunk, param_to_chunk, block_to_chunks)
         self._params_by_id = {
             _cast(_ParamId, name): p for name, p in model.named_parameters()
         }
-        # Tests pin layout.N_chunk and n_persist explicitly so the predicate
-        # gates are observable independent of the layout packing heuristic.
-        self.layout.N_chunk = n_chunk  # type: ignore[misc]
         self._persistent_ids = {_cast(ChunkId, i) for i in range(n_persist)}
 
 
@@ -242,6 +257,7 @@ def test_scheduler_is_inert_short_circuits_per_step_methods():
     layout = ChunkLayout(
         S_chunk=1024,
         N_chunk=1,
+        chunks=((),),
         param_to_chunk={},
         block_to_chunks={BlockId(0): (ChunkId(0),)},
     )

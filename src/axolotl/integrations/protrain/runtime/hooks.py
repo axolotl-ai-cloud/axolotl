@@ -207,10 +207,11 @@ def install_hooks(
             f"extra in discovery: {extra}"
         )
 
-    # Test stubs may omit _persistent_ids; default to None so inert check fails closed.
+    # Test stubs may omit _persistent_ids / layout.N_chunk; default both to
+    # values that fail the inert predicate so the skip path stays off.
     persistent_ids = getattr(chunk_manager, "_persistent_ids", None)
     n_persist = len(persistent_ids) if persistent_ids is not None else -1
-    N_chunk = chunk_manager.layout.N_chunk
+    N_chunk = getattr(chunk_manager.layout, "N_chunk", -2)
     if _is_runtime_inert(blocks, block_map, n_persist, N_chunk):
         LOG.info(
             "ProTrain runtime is inert (n_persist == N_chunk, no offloaded blocks, "
