@@ -129,14 +129,24 @@ def _make_wrapped(*, with_nccl: bool = False) -> WrappedModel:
     return wrapped
 
 
-def _patch_dist(*, initialized: bool, world_size: int = 2):
-    """Patch ``torch.distributed`` to look like a live process group."""
+def _patch_dist(*, initialized: bool, world_size: int = 2, rank: int = 0):
+    """Patch ``torch.distributed`` to look like a live process group.
+
+    ``broadcast_object_list`` is stubbed to a no-op so the rank-0 status/table
+    broadcast added by the cross-rank consistency fix can complete on a single-
+    process test harness without a real NCCL process group.
+    """
     import torch.distributed as dist
+
+    def _noop_broadcast(object_list, src=0):  # noqa: ARG001 — match dist API
+        return None
 
     return [
         patch.object(dist, "is_available", return_value=True),
         patch.object(dist, "is_initialized", return_value=initialized),
         patch.object(dist, "get_world_size", return_value=world_size),
+        patch.object(dist, "get_rank", return_value=rank),
+        patch.object(dist, "broadcast_object_list", side_effect=_noop_broadcast),
     ]
 
 

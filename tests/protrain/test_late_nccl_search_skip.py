@@ -116,14 +116,23 @@ def _make_wrapped(*, with_override_flag: bool | None = False) -> WrappedModel:
     return wrapped
 
 
-def _patch_dist(*, initialized: bool, world_size: int = 4):
-    """Patch ``torch.distributed`` to look like a live multi-rank PG."""
+def _patch_dist(*, initialized: bool, world_size: int = 4, rank: int = 0):
+    """Patch ``torch.distributed`` to look like a live multi-rank PG.
+
+    ``broadcast_object_list`` is stubbed to a no-op so the cross-rank
+    consistency broadcasts complete on a single-process test harness.
+    """
     import torch.distributed as dist
+
+    def _noop_broadcast(object_list, src=0):  # noqa: ARG001 — match dist API
+        return None
 
     return [
         patch.object(dist, "is_available", return_value=True),
         patch.object(dist, "is_initialized", return_value=initialized),
         patch.object(dist, "get_world_size", return_value=world_size),
+        patch.object(dist, "get_rank", return_value=rank),
+        patch.object(dist, "broadcast_object_list", side_effect=_noop_broadcast),
     ]
 
 
