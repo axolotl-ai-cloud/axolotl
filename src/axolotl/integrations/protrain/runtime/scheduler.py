@@ -39,6 +39,12 @@ def _step_timing_emit_every() -> int:
     return max(1, n)
 
 
+def _first_iter_trace_disabled() -> bool:
+    """PROTRAIN_DEBUG_FIRST_ITER_TRACE=0 disables the auto first-iter trace (default: enabled)."""
+    raw = os.environ.get("PROTRAIN_DEBUG_FIRST_ITER_TRACE", "").strip().lower()
+    return raw in ("0", "false", "no", "off")
+
+
 class Scheduler:
     """Drives prefetch / release / reduce-offload at block granularity."""
 
@@ -138,6 +144,25 @@ class Scheduler:
                 "will be logged at INFO so it survives DEBUG suppression.",
                 self._step_timing_emit_every,
             )
+
+        # First-iter trace: logs per-block fwd/bwd entry+exit with wall-clock
+        # elapsed since iter start. Auto-disables after drain() fires once.
+        # PR #15 (n_offload>0 first-iter hang diagnostic): bs=2 Mode B with
+        # n_offload=32 hit a >254s hang on the first iteration during v71
+        # hardware verification, but GPU was 100% utilized so the loss was
+        # somewhere between block hooks, not in CPU code. This trace logs at
+        # INFO so the gap between two adjacent log lines pinpoints which
+        # block / which hook held the hang.
+        self._first_iter_trace_enabled: bool = not _first_iter_trace_disabled()
+        self._first_iter_t0_ns: int = 0
+        if self._first_iter_trace_enabled:
+            LOG.info(
+                "ProTrain Scheduler: first-iter trace enabled (set "
+                "PROTRAIN_DEBUG_FIRST_ITER_TRACE=0 to disable). Per-block "
+                "fwd/bwd entry timestamps will be logged at INFO during the "
+                "first training iteration; the trace self-disables after the "
+                "first drain() so hot-path overhead is bounded to iter 1."
+            )
         self._init_streams()
 
     @property
@@ -202,6 +227,28 @@ class Scheduler:
         )
         self._step_timing_sum_ns.clear()
         self._step_timing_calls.clear()
+
+    def _first_iter_log(self, event: str, block_id: "BlockId | None" = None) -> None:
+        """Log ``event`` at INFO with wall-clock elapsed since iter start. Hot-path-safe (one branch + format)."""
+        if not self._first_iter_trace_enabled:
+            return
+        now = time.perf_counter_ns()
+        if self._first_iter_t0_ns == 0:
+            self._first_iter_t0_ns = now
+        elapsed_ms = (now - self._first_iter_t0_ns) / 1e6
+        if block_id is None:
+            LOG.info(
+                "ProTrain first-iter trace: t+%.1fms %s",
+                elapsed_ms,
+                event,
+            )
+        else:
+            LOG.info(
+                "ProTrain first-iter trace: t+%.1fms block=%d %s",
+                elapsed_ms,
+                int(block_id),
+                event,
+            )
 
     def _chunks_for(self, block_id: BlockId) -> tuple[ChunkId, ...]:
         """Return the chunks owned by ``block_id`` under the current layout."""
@@ -298,6 +345,8 @@ class Scheduler:
     def pre_block_forward(self, block_id: BlockId) -> None:
         """Prefetch the next block's chunks; ensure current block's are resident."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("pre_block_forward enter", block_id)
         try:
             if self._is_inert:
                 return
@@ -319,6 +368,8 @@ class Scheduler:
                 nxt,
             )
         finally:
+            if self._first_iter_trace_enabled:
+                self._first_iter_log("pre_block_forward exit", block_id)
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "pre_block_forward", time.perf_counter_ns() - _t0
@@ -327,6 +378,8 @@ class Scheduler:
     def post_block_forward(self, block_id: BlockId) -> None:
         """Release this block's non-persistent chunks except those used by the next block."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("post_block_forward enter", block_id)
         try:
             if self._is_inert:
                 return
@@ -338,6 +391,8 @@ class Scheduler:
                 # offload() short-circuits for persistent chunks.
                 self.chunk_manager.offload(cid)
         finally:
+            if self._first_iter_trace_enabled:
+                self._first_iter_log("post_block_forward exit", block_id)
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "post_block_forward", time.perf_counter_ns() - _t0
@@ -348,9 +403,13 @@ class Scheduler:
     def pre_block_backward(self, block_id: BlockId) -> None:
         """Ensure block's chunks are resident before backward; cover chunk-state path only (SWAP handles activations)."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("pre_block_backward enter", block_id)
         try:
             self._pre_block_backward_impl(block_id)
         finally:
+            if self._first_iter_trace_enabled:
+                self._first_iter_log("pre_block_backward exit", block_id)
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "pre_block_backward", time.perf_counter_ns() - _t0
@@ -416,6 +475,8 @@ class Scheduler:
     def post_block_backward(self, block_id: BlockId) -> None:
         """Finalize block's backward: release buffers + maybe kick CPU Adam."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("post_block_backward enter", block_id)
         try:
             if self._is_inert:
                 return
@@ -425,6 +486,8 @@ class Scheduler:
             for cid in self._owned_chunks_for_finalize_cached.get(block_id, ()):
                 self.chunk_manager.reduce_grads_and_offload(cid)
         finally:
+            if self._first_iter_trace_enabled:
+                self._first_iter_log("post_block_backward exit", block_id)
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "post_block_backward", time.perf_counter_ns() - _t0
@@ -434,6 +497,9 @@ class Scheduler:
 
     def drain(self) -> None:
         """Block until every in-flight CPU Adam step has finished; flush deferred offloads."""
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("drain enter (stream sync + cpu_optim drain)")
+
         # Drain in-flight prefetch/swap traffic for stable peak-memory stats.
         if self._has_cuda:
             if self._prefetch_stream is not None:
@@ -441,10 +507,21 @@ class Scheduler:
             if self._swap_stream is not None:
                 self._swap_stream.synchronize()
 
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("drain post stream-sync; pre drain_deferred_offloads")
+
         # Defensive end-of-iter drain (only refcount==0 entries fire).
         self.chunk_manager.drain_deferred_offloads()
 
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("drain post drain_deferred_offloads; pre wait_cpu_optim")
+
         self.chunk_manager.wait_cpu_optim()
+
+        if self._first_iter_trace_enabled:
+            self._first_iter_log("drain exit (iter 1 complete; trace auto-disabled)")
+            # Self-disable so iter 2+ pays no first-iter-trace overhead.
+            self._first_iter_trace_enabled = False
 
         # Step boundary; emit aggregate every Nth call when timing is enabled.
         if self._step_timing_enabled:

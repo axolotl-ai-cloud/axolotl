@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 from axolotl.integrations.protrain.types import (
@@ -10,6 +12,19 @@ from axolotl.integrations.protrain.types import (
     ParamId,
 )
 from axolotl.utils.logging import get_logger
+
+
+def _slow_gather_threshold_s() -> float:
+    """PROTRAIN_DEBUG_SLOW_GATHER_S (default 5.0) — gathers above this WARN-log per-chunk wall time."""
+    raw = os.environ.get("PROTRAIN_DEBUG_SLOW_GATHER_S", "5.0")
+    try:
+        v = float(raw)
+    except ValueError:
+        return 5.0
+    return max(0.0, v)
+
+
+_SLOW_GATHER_THRESHOLD_S: float = _slow_gather_threshold_s()
 
 if TYPE_CHECKING:
     import torch
@@ -1100,7 +1115,36 @@ class ChunkManager:
     # ---- gather / offload ---------------------------------------------
 
     def gather(self, chunk_id: ChunkId) -> None:
-        """Make ``chunk_id``'s params GPU-resident."""
+        """Make ``chunk_id``'s params GPU-resident; WARN-logs slow gathers (>PROTRAIN_DEBUG_SLOW_GATHER_S)."""
+        if _SLOW_GATHER_THRESHOLD_S <= 0.0:
+            return self._gather_impl(chunk_id)
+
+        t0 = time.perf_counter()
+        try:
+            self._gather_impl(chunk_id)
+        finally:
+            elapsed = time.perf_counter() - t0
+            if elapsed >= _SLOW_GATHER_THRESHOLD_S:
+                # WARN so the slow-chunk + elapsed time survive default log filters;
+                # narrows the n_offload>0 first-iter hang to a single chunk.
+                LOG.warning(
+                    "ChunkManager.gather: chunk_id=%d took %.3fs "
+                    "(threshold=%.1fs). Sharded=%s active=%s pool_resident=%s. "
+                    "If this fires on iter 1 it pinpoints the first-iter hang.",
+                    int(chunk_id),
+                    elapsed,
+                    _SLOW_GATHER_THRESHOLD_S,
+                    chunk_id in self._chunk_shards,
+                    chunk_id in self._active_chunks,
+                    (
+                        self.buffer_pool.lookup_resident(chunk_id) is not None
+                        if self.buffer_pool is not None
+                        else False
+                    ),
+                )
+
+    def _gather_impl(self, chunk_id: ChunkId) -> None:
+        """Untimed gather body; split out so the public wrapper can attach watchdog timing."""
         if chunk_id in self._persistent_ids:
             return
 

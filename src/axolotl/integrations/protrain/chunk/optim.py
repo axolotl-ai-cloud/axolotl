@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import os
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Iterable
 
 from axolotl.integrations.protrain.types import ChunkId
 from axolotl.utils.logging import get_logger
+
+
+def _slow_adam_step_threshold_s() -> float:
+    """PROTRAIN_DEBUG_SLOW_ADAM_STEP_S (default 5.0) — adam steps above this WARN-log per-chunk."""
+    raw = os.environ.get("PROTRAIN_DEBUG_SLOW_ADAM_STEP_S", "5.0")
+    try:
+        v = float(raw)
+    except ValueError:
+        return 5.0
+    return max(0.0, v)
+
+
+_SLOW_ADAM_STEP_THRESHOLD_S: float = _slow_adam_step_threshold_s()
 
 if TYPE_CHECKING:
     from torch import nn
@@ -137,11 +152,28 @@ class CpuFusedAdamAdapter:
             # the Adam worker) until the event has been recorded on the
             # GPU — the main Python thread is free to continue launching
             # subsequent backward kernels, which is the overlap we want.
+            t0 = time.perf_counter() if _SLOW_ADAM_STEP_THRESHOLD_S > 0.0 else 0.0
             if d2h_event is not None:
                 d2h_event.synchronize()
+            t_sync = time.perf_counter() if _SLOW_ADAM_STEP_THRESHOLD_S > 0.0 else 0.0
             optim.step()
             if post_step is not None:
                 post_step()
+            if _SLOW_ADAM_STEP_THRESHOLD_S > 0.0:
+                total = time.perf_counter() - t0
+                if total >= _SLOW_ADAM_STEP_THRESHOLD_S:
+                    LOG.warning(
+                        "CpuFusedAdamAdapter.step_async: chunk_id=%d total=%.3fs "
+                        "(d2h_event_wait=%.3fs, optim.step=%.3fs, "
+                        "threshold=%.1fs). First-call DS-CPU-Adam state alloc "
+                        "+ kernel init may dominate; persistent slowness "
+                        "indicates the executor is the bottleneck.",
+                        int(chunk_id),
+                        total,
+                        t_sync - t0,
+                        total - (t_sync - t0),
+                        _SLOW_ADAM_STEP_THRESHOLD_S,
+                    )
 
         fut = self._executor.submit(_run)
         self._pending[chunk_id] = fut
