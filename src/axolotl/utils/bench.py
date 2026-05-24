@@ -4,6 +4,7 @@ import functools
 import logging
 
 import torch
+import torch.distributed as dist
 from transformers.utils.import_utils import is_torch_npu_available
 
 from axolotl.utils.distributed import get_device_type
@@ -105,6 +106,45 @@ def get_gpu_memory_usage(device: int | torch.device = 0):
         return 0.0, 0.0, 0.0
 
     return usage, cache, misc
+
+
+def _gather_per_rank_peak_bytes(
+    local_peak_bytes: int | None = None,
+) -> tuple[int, list[int]]:
+    """Return ``(cluster-wide max, per-rank list)`` of ``max_memory_allocated``.
+
+    Under multi-GPU the displayed peak should reflect the worst-case rank
+    (which is what matters for fitting in the GPU budget under round-robin
+    partition or within-shard huge-param fallback). Without a collective,
+    ``memory/max_active`` only reflects rank 0 -- invisible if the peak
+    rank is elsewhere.
+
+    Single-rank: returns ``(local, [local])``. CPU-only / no CUDA: returns
+    ``(0, [0])``. Backend-aware: builds the gather tensor on CUDA under
+    NCCL, CPU under gloo (mirrors the ``_dist_backend_tensor`` pattern in
+    ``integrations/protrain/api/checkpoint.py``).
+    """
+    if local_peak_bytes is None:
+        if torch.cuda.is_available():
+            local_peak_bytes = int(torch.cuda.max_memory_allocated())
+        else:
+            local_peak_bytes = 0
+    local_peak_bytes = int(local_peak_bytes)
+
+    if not (dist.is_available() and dist.is_initialized()):
+        return local_peak_bytes, [local_peak_bytes]
+
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
+    if dist.get_backend() == "nccl" and torch.cuda.is_available():
+        device = torch.device("cuda", torch.cuda.current_device())
+    else:
+        device = torch.device("cpu")
+    peaks = torch.zeros(world_size, dtype=torch.long, device=device)
+    peaks[rank] = local_peak_bytes
+    dist.all_reduce(peaks, op=dist.ReduceOp.MAX)
+    per_rank = peaks.cpu().tolist()
+    return int(max(per_rank)), [int(v) for v in per_rank]
 
 
 def log_gpu_memory_usage(

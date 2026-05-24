@@ -45,7 +45,7 @@ from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_tagging,
 )
 from axolotl.utils import get_not_null
-from axolotl.utils.bench import get_gpu_memory_usage
+from axolotl.utils.bench import _gather_per_rank_peak_bytes, get_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import is_distributed, is_main_process
 from axolotl.utils.logging import get_logger
@@ -729,15 +729,35 @@ class AxolotlTrainer(
             except OverflowError:
                 logs["eval_ppl"] = float("inf")
 
-        if is_main_process():
-            # Add memory usage
-            try:
-                active, allocated, reserved = get_gpu_memory_usage()
-                logs["memory/max_active (GiB)"] = round(active, 2)
-                logs["memory/max_allocated (GiB)"] = round(allocated, 2)
-                logs["memory/device_reserved (GiB)"] = round(reserved, 2)
-            except (ValueError, TypeError, FileNotFoundError):
-                pass
+        # Capture local memory stats on every rank so the cluster-wide
+        # peak collective sees a value from each participant. Rank-0-only
+        # gathering would hang under NCCL.
+        local_active_gib = 0.0
+        local_allocated_gib = 0.0
+        local_reserved_gib = 0.0
+        memory_read_ok = False
+        try:
+            local_active_gib, local_allocated_gib, local_reserved_gib = (
+                get_gpu_memory_usage()
+            )
+            memory_read_ok = True
+        except (ValueError, TypeError, FileNotFoundError):
+            memory_read_ok = False
+
+        local_active_bytes = int(local_active_gib * (1024**3)) if memory_read_ok else 0
+        cluster_active_bytes, per_rank_active_bytes = _gather_per_rank_peak_bytes(
+            local_active_bytes
+        )
+
+        if is_main_process() and memory_read_ok:
+            cluster_active_gib = cluster_active_bytes / (1024.0**3)
+            logs["memory/max_active (GiB)"] = round(cluster_active_gib, 2)
+            logs["memory/max_allocated (GiB)"] = round(local_allocated_gib, 2)
+            logs["memory/device_reserved (GiB)"] = round(local_reserved_gib, 2)
+            if len(per_rank_active_bytes) > 1:
+                logs["memory/per_rank_active (GiB)"] = [
+                    round(b / (1024.0**3), 2) for b in per_rank_active_bytes
+                ]
 
         if (
             self.args.include_tkps
