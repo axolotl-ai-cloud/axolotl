@@ -231,15 +231,62 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         world_size,
     )
     try:
+        rank = int(dist.get_rank())
+    except (RuntimeError, ValueError):
+        rank = 0
+
+    local_ok = True
+    gather_table = None
+    reduce_table = None
+    try:
         gather_table, reduce_table = measure_nccl(world_size)
     except (RuntimeError, ImportError) as exc:
         LOG.warning(
-            "ProTrain: NCCL re-measurement failed (%s); leaving trace "
-            "with empty tables — Mode C predictions will under-count "
-            "comm cost.",
+            "ProTrain: NCCL re-measurement failed on rank %d (%s); will "
+            "coordinate bail with other ranks to avoid divergent plans.",
+            rank,
+            exc,
+        )
+        local_ok = False
+
+    # Coordinate per-rank measurement success: if ANY rank failed, ALL ranks
+    # bail. Otherwise rank-0 tables are broadcast so every rank feeds search()
+    # identical inputs (tie-breaks in the cost model are bandwidth-sensitive,
+    # so unsynchronized tables can produce divergent best_cfg).
+    status_box = [1 if local_ok else 0]
+    try:
+        dist.broadcast_object_list(status_box, src=0)
+    except (RuntimeError, ValueError) as exc:
+        LOG.warning(
+            "ProTrain: NCCL re-measurement status broadcast failed (%s); "
+            "leaving trace with empty tables to avoid plan divergence.",
             exc,
         )
         return (False, False)
+    rank0_ok = bool(status_box[0])
+    if not rank0_ok or not local_ok:
+        LOG.warning(
+            "ProTrain: NCCL re-measurement bail — rank0_ok=%s, local_ok=%s; "
+            "leaving trace with empty tables consistently across ranks.",
+            rank0_ok,
+            local_ok,
+        )
+        return (False, False)
+
+    # Broadcast rank-0's measured tables so every rank's search() sees
+    # identical inputs. Wrap the two tables in a list so a single
+    # broadcast_object_list call shares them.
+    table_box = [gather_table, reduce_table] if rank == 0 else [None, None]
+    try:
+        dist.broadcast_object_list(table_box, src=0)
+    except (RuntimeError, ValueError) as exc:
+        LOG.warning(
+            "ProTrain: NCCL table broadcast failed (%s); leaving trace "
+            "with empty tables to avoid plan divergence.",
+            exc,
+        )
+        return (False, False)
+    gather_table, reduce_table = table_box[0], table_box[1]
 
     new_trace = dataclasses.replace(
         trace,
@@ -274,6 +321,34 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     new_result = search(
         new_trace, layout, capacity, hw, cpu_capacity_bytes=cpu_capacity
     )
+
+    # Even with broadcast inputs, defensively assert that every rank
+    # converged on the same (cfg, block_map). A divergence here would mean
+    # cost-model tie-break non-determinism that we MUST surface, not paper
+    # over: training under different plans corrupts gradient sync.
+    rank0_plan_box = (
+        [new_result.cfg, new_result.block_map] if rank == 0 else [None, None]
+    )
+    try:
+        dist.broadcast_object_list(rank0_plan_box, src=0)
+    except (RuntimeError, ValueError) as exc:
+        LOG.warning(
+            "ProTrain: post-search plan broadcast failed (%s); cannot "
+            "verify cross-rank plan consistency, bailing.",
+            exc,
+        )
+        return (False, False)
+    if rank != 0:
+        rank0_cfg, rank0_block_map = rank0_plan_box[0], rank0_plan_box[1]
+        if rank0_cfg != new_result.cfg or rank0_block_map != new_result.block_map:
+            raise RuntimeError(
+                "ProTrain invariant violated: post-NCCL search converged "
+                f"to different plans across ranks. rank={rank} got "
+                f"cfg={new_result.cfg}, block_map={new_result.block_map}; "
+                f"rank0 got cfg={rank0_cfg}, block_map={rank0_block_map}. "
+                "This indicates non-determinism in the cost model's "
+                "tie-break logic — file a bug."
+            )
 
     cfg_changed = (
         new_result.cfg != wrapped.search_result.cfg
