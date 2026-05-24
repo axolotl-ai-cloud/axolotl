@@ -45,6 +45,12 @@ def _first_iter_trace_disabled() -> bool:
     return raw in ("0", "false", "no", "off")
 
 
+def _pre_block_forward_trace_enabled() -> bool:
+    """PROTRAIN_DEBUG_PRE_BLOCK_FORWARD_TRACE={1,true,yes,on} enables sub-step timing inside pre_block_forward."""
+    raw = os.environ.get("PROTRAIN_DEBUG_PRE_BLOCK_FORWARD_TRACE", "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 class Scheduler:
     """Drives prefetch / release / reduce-offload at block granularity."""
 
@@ -170,6 +176,25 @@ class Scheduler:
                 "first training iteration; the trace self-disables after the "
                 "first drain() so hot-path overhead is bounded to iter 1."
             )
+
+        # Sub-step trace inside pre_block_forward. v74 showed block=9 enter
+        # without exit and all four prior watchdogs silent — the hang lives
+        # between the existing pre_block_forward enter/exit markers. Enabling
+        # this flag emits perf_counter timings for every internal sub-step
+        # (ensure_block_resident, next-block metadata, async prefetch dispatch)
+        # plus matching sub-step traces inside ensure_block_resident and
+        # ensure_chunks_resident. Zero overhead when off.
+        self._pre_block_forward_trace_enabled: bool = (
+            _pre_block_forward_trace_enabled()
+        )
+        if self._pre_block_forward_trace_enabled:
+            LOG.info(
+                "ProTrain Scheduler: PROTRAIN_DEBUG_PRE_BLOCK_FORWARD_TRACE "
+                "enabled. Per-sub-step perf_counter timings inside "
+                "pre_block_forward (and the gather helpers it calls) will "
+                "be logged at INFO. Intended for one-shot bottleneck "
+                "localization; keep off in normal runs."
+            )
         self._init_streams()
 
     @property
@@ -293,30 +318,78 @@ class Scheduler:
 
     def _gather_on_prefetch_stream(self, chunk_ids: Iterable[ChunkId]) -> None:
         """Async-gather chunk_ids on the prefetch stream; waits on swap_stream to sequence SWAP D2H."""
+        _trace = self._pre_block_forward_trace_enabled
+        _t_enter = time.perf_counter() if _trace else 0.0
         if self._prefetch_stream is None or not self._has_cuda:
             # Synchronous fallback.
+            _t = time.perf_counter() if _trace else 0.0
+            n = 0
             for cid in chunk_ids:
+                _ts = time.perf_counter() if _trace else 0.0
                 self.chunk_manager.gather(cid)
+                if _trace:
+                    LOG.info(
+                        "_gather_on_prefetch_stream(sync) chunk gather took %.6fs cid=%s",
+                        time.perf_counter() - _ts,
+                        cid,
+                    )
+                n += 1
+            if _trace:
+                LOG.info(
+                    "_gather_on_prefetch_stream sync-fallback total %.6fs n_chunks=%d",
+                    time.perf_counter() - _t,
+                    n,
+                )
             return
 
         import torch
 
         # Order H2D writes after in-flight SWAP D2H reads (correctness for SWAP × non-persistent).
         if self._swap_stream is not None:
+            _t = time.perf_counter() if _trace else 0.0
             self._prefetch_stream.wait_stream(self._swap_stream)
+            if _trace:
+                LOG.info(
+                    "_gather_on_prefetch_stream wait_stream(swap) took %.6fs",
+                    time.perf_counter() - _t,
+                )
 
+        _t_dispatch = time.perf_counter() if _trace else 0.0
+        n = 0
         with torch.cuda.stream(self._prefetch_stream):
             for cid in chunk_ids:
+                _ts = time.perf_counter() if _trace else 0.0
                 self.chunk_manager.gather(cid)
+                if _trace:
+                    LOG.info(
+                        "_gather_on_prefetch_stream per-chunk gather took %.6fs cid=%s",
+                        time.perf_counter() - _ts,
+                        cid,
+                    )
+                n += 1
+        if _trace:
+            LOG.info(
+                "_gather_on_prefetch_stream dispatch-loop %.6fs total %.6fs n_chunks=%d",
+                time.perf_counter() - _t_dispatch,
+                time.perf_counter() - _t_enter,
+                n,
+            )
 
     def _sync_prefetch_with_compute(self) -> None:
         """Make the default compute stream wait on the prefetch stream."""
+        _trace = self._pre_block_forward_trace_enabled
+        _t_enter = time.perf_counter() if _trace else 0.0
         if self._prefetch_stream is None or not self._has_cuda:
             return
         import torch
 
         compute = torch.cuda.current_stream()
         compute.wait_stream(self._prefetch_stream)
+        if _trace:
+            LOG.info(
+                "_sync_prefetch_with_compute wait_stream took %.6fs",
+                time.perf_counter() - _t_enter,
+            )
 
     def _gather_on_offload_stream(self, chunk_ids: Iterable[ChunkId]) -> None:
         """Async-regather offloaded chunk_ids on the OFFLOAD stream during backward.
@@ -360,6 +433,8 @@ class Scheduler:
     def ensure_block_resident(self, block_id: BlockId) -> None:
         """Sync gather block's chunks; used by checkpoint recompute path that bypasses pre-hooks."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        _trace = self._pre_block_forward_trace_enabled
+        _t_enter = time.perf_counter() if _trace else 0.0
         try:
             if self._is_inert:
                 return
@@ -371,12 +446,49 @@ class Scheduler:
             # serializing with it on the compute stream.
             mode = self.block_map.get(block_id, BlockMode.NONE)
             if mode is BlockMode.OFFLOAD and self._offload_stream is not None:
+                _t = time.perf_counter() if _trace else 0.0
                 self._gather_on_offload_stream(chunk_ids)
+                if _trace:
+                    LOG.info(
+                        "ensure_block_resident block=%d OFFLOAD gather_on_offload_stream took %.6fs (n_chunks=%d)",
+                        int(block_id),
+                        time.perf_counter() - _t,
+                        len(chunk_ids),
+                    )
+                _t = time.perf_counter() if _trace else 0.0
                 self._sync_offload_with_compute()
+                if _trace:
+                    LOG.info(
+                        "ensure_block_resident block=%d OFFLOAD sync_offload_with_compute took %.6fs",
+                        int(block_id),
+                        time.perf_counter() - _t,
+                    )
             else:
+                _t = time.perf_counter() if _trace else 0.0
                 self._gather_on_prefetch_stream(chunk_ids)
+                if _trace:
+                    LOG.info(
+                        "ensure_block_resident block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d mode=%s)",
+                        int(block_id),
+                        time.perf_counter() - _t,
+                        len(chunk_ids),
+                        mode.name if hasattr(mode, "name") else str(mode),
+                    )
+                _t = time.perf_counter() if _trace else 0.0
                 self._sync_prefetch_with_compute()
+                if _trace:
+                    LOG.info(
+                        "ensure_block_resident block=%d sync_prefetch_with_compute took %.6fs",
+                        int(block_id),
+                        time.perf_counter() - _t,
+                    )
         finally:
+            if _trace:
+                LOG.info(
+                    "ensure_block_resident block=%d total %.6fs",
+                    int(block_id),
+                    time.perf_counter() - _t_enter,
+                )
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "ensure_block_resident", time.perf_counter_ns() - _t0
@@ -442,22 +554,67 @@ class Scheduler:
     def pre_block_forward(self, block_id: BlockId) -> None:
         """Prefetch the next block's chunks; ensure current block's are resident."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        _trace = self._pre_block_forward_trace_enabled
+        _t_enter = time.perf_counter() if _trace else 0.0
         if self._first_iter_trace_enabled:
             self._first_iter_log("pre_block_forward enter", block_id)
         try:
             if self._is_inert:
+                if _trace:
+                    LOG.info(
+                        "pre_block_forward block=%d inert short-circuit %.6fs",
+                        int(block_id),
+                        time.perf_counter() - _t_enter,
+                    )
                 return
-            # gather() is idempotent on persistent / already-resident chunks.
-            self.ensure_block_resident(block_id)
 
-            # Async prefetch next block; DO NOT sync — copy overlaps current compute.
+            # Sub-step 1: ensure current block's chunks are resident (chunk-pool
+            # acquire + zero3 sharded all_gather + H2D copy).
+            _t = time.perf_counter() if _trace else 0.0
+            self.ensure_block_resident(block_id)
+            if _trace:
+                LOG.info(
+                    "pre_block_forward block=%d ensure_block_resident took %.6fs",
+                    int(block_id),
+                    time.perf_counter() - _t,
+                )
+
+            # Sub-step 2: O(1) next-block metadata lookup (cached dict).
+            _t = time.perf_counter() if _trace else 0.0
             nxt = self._next_block_of(block_id)
             if nxt is None:
+                if _trace:
+                    LOG.info(
+                        "pre_block_forward block=%d next_block_of=None lookup %.6fs total %.6fs",
+                        int(block_id),
+                        time.perf_counter() - _t,
+                        time.perf_counter() - _t_enter,
+                    )
                 return
             next_chunks = self._chunks_for(nxt)
+            if _trace:
+                LOG.info(
+                    "pre_block_forward block=%d next_block_metadata took %.6fs (nxt=%d n_chunks=%d)",
+                    int(block_id),
+                    time.perf_counter() - _t,
+                    int(nxt),
+                    len(next_chunks),
+                )
             if not next_chunks:
                 return
+
+            # Sub-step 3: async fan-out gather of next block's chunks on the
+            # prefetch stream (queues H2D copies + NCCL all_gather; should NOT
+            # synchronize the compute stream).
+            _t = time.perf_counter() if _trace else 0.0
             self._gather_on_prefetch_stream(next_chunks)
+            if _trace:
+                LOG.info(
+                    "pre_block_forward block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d)",
+                    int(block_id),
+                    time.perf_counter() - _t,
+                    len(next_chunks),
+                )
             LOG.debug(
                 "Scheduler.pre_block_forward: block=%d prefetched %d chunks for next block %d",
                 block_id,
@@ -465,6 +622,12 @@ class Scheduler:
                 nxt,
             )
         finally:
+            if _trace:
+                LOG.info(
+                    "pre_block_forward block=%d total %.6fs",
+                    int(block_id),
+                    time.perf_counter() - _t_enter,
+                )
             if self._first_iter_trace_enabled:
                 self._first_iter_log("pre_block_forward exit", block_id)
             if self._step_timing_enabled:
