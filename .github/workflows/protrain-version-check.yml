@@ -1,0 +1,111 @@
+name: protrain version validation
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'src/axolotl/integrations/protrain/**'
+      - 'requirements*.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  check-protrain-deps:
+    name: Validate transformers / peft upper bounds
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate transformers/peft upper bounds against ProTrain validated set
+        run: |
+          python -m pip install --quiet packaging
+          python <<'EOF'
+          import re
+          import sys
+          from pathlib import Path
+
+          from packaging.version import Version
+
+          # Keep in sync with src/axolotl/integrations/protrain/check.py.
+          VALIDATED = {"transformers": "4.55", "peft": "0.20"}
+
+          content = Path("pyproject.toml").read_text()
+
+          # Match dependency lines of the form:
+          #   "pkg==X.Y.Z",
+          #   "pkg>=X.Y.Z,<A.B.C",
+          #   "pkg<A.B.C",
+          # Captures the most restrictive upper-bound expressed in the spec.
+          line_re = {
+              pkg: re.compile(rf'"\s*{pkg}\s*([^"\n]+?)"') for pkg in VALIDATED
+          }
+          ge_re = re.compile(r">=\s*([0-9][0-9.]*)")
+          gt_re = re.compile(r">\s*([0-9][0-9.]*)")
+          lt_re = re.compile(r"<\s*([0-9][0-9.]*)")
+          le_re = re.compile(r"<=\s*([0-9][0-9.]*)")
+          eq_re = re.compile(r"==\s*([0-9][0-9.]*)")
+
+          failed = False
+          for pkg, validated_max in VALIDATED.items():
+              match = line_re[pkg].search(content)
+              if not match:
+                  print(f"INFO: {pkg} pin not found in pyproject.toml; skipping check.")
+                  continue
+              spec = match.group(1)
+              print(f"{pkg}: pin spec = {spec!r}")
+
+              # Exact pins ("==") set both lower and upper to the same value.
+              # Otherwise prefer the explicit "<" / "<=" upper, then the lower bound.
+              effective_upper = None
+              eq_match = eq_re.search(spec)
+              lt_match = lt_re.search(spec)
+              le_match = le_re.search(spec)
+              ge_match = ge_re.search(spec)
+              gt_match = gt_re.search(spec)
+              if eq_match is not None:
+                  effective_upper = eq_match.group(1)
+              elif lt_match is not None:
+                  effective_upper = lt_match.group(1)
+              elif le_match is not None:
+                  effective_upper = le_match.group(1)
+              elif ge_match is not None:
+                  effective_upper = ge_match.group(1)
+              elif gt_match is not None:
+                  effective_upper = gt_match.group(1)
+
+              if effective_upper is None:
+                  print(
+                      f"INFO: {pkg} pin spec has no parseable version; skipping check."
+                  )
+                  continue
+
+              validated_v = Version(validated_max)
+              effective_v = Version(effective_upper)
+              if effective_v >= validated_v:
+                  print(
+                      f"::warning file=pyproject.toml::{pkg} effective upper "
+                      f"{effective_upper} >= validated max {validated_max}. "
+                      f"Re-run protrain validation suite (PEFT-LoRA-container hooks + "
+                      f"Trainer._load_from_checkpoint resume) and bump "
+                      f"VALIDATED_{pkg.upper()}_MAX in "
+                      f"src/axolotl/integrations/protrain/check.py once verified."
+                  )
+                  failed = True
+              else:
+                  print(
+                      f"OK: {pkg} effective upper {effective_upper} < validated "
+                      f"max {validated_max}"
+                  )
+
+          if failed:
+              print(
+                  "ERROR: one or more dependency pins exceed the ProTrain "
+                  "validated bounds. See warnings above."
+              )
+              sys.exit(1)
+          print("protrain version pins within validated bounds")
+          EOF
