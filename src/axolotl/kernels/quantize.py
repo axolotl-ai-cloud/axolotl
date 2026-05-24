@@ -155,13 +155,25 @@ def dequantize(
 
     if torch.compiler.is_compiling():
         return torch.ops.axolotl.nf4_dequantize.default(
-            W, absmax, code2, absmax2, offset,
-            quant_state.blocksize, state2.blocksize,
-            list(quant_state.shape), quant_state.dtype,
+            W,
+            absmax,
+            code2,
+            absmax2,
+            offset,
+            quant_state.blocksize,
+            state2.blocksize,
+            list(quant_state.shape),
+            quant_state.dtype,
         )
 
     return _ctypes_nf4_dequant(
-        W, absmax, code2, absmax2, offset,
-        quant_state.blocksize, state2.blocksize,
-        quant_state.shape, quant_state.dtype,
+        W,
+        absmax,
+        code2,
+        absmax2,
+        offset,
+        quant_state.blocksize,
+        state2.blocksize,
+        quant_state.shape,
+        quant_state.dtype,
     )
