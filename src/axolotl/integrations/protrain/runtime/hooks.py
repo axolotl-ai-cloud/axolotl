@@ -16,6 +16,7 @@ from axolotl.integrations.protrain.profiler.on_demand import (
 )
 from axolotl.integrations.protrain.types import (
     BlockId,
+    BlockMode,
     BlockStrategyMap,
     ChunkId,
 )
@@ -169,6 +170,20 @@ def _make_lora_container_post_backward_hook(
     return _hook
 
 
+def _is_runtime_inert(
+    blocks: list[nn.Module],
+    block_map: BlockStrategyMap,
+    n_persist: int,
+    N_chunk: int,
+) -> bool:
+    """All chunks persistent + no OFFLOAD blocks + every block mode in {NONE, CKPT} → hooks no-op."""
+    if n_persist != N_chunk:
+        return False
+    if any(isinstance(b, OffloadedBlock) for b in blocks):
+        return False
+    return all(mode in (BlockMode.NONE, BlockMode.CKPT) for mode in block_map.values())
+
+
 def install_hooks(
     model: nn.Module,
     chunk_manager: "ChunkManager",
@@ -191,6 +206,19 @@ def install_hooks(
             f"missing from discovery: {missing}; "
             f"extra in discovery: {extra}"
         )
+
+    # Test stubs may omit _persistent_ids; default to None so inert check fails closed.
+    persistent_ids = getattr(chunk_manager, "_persistent_ids", None)
+    n_persist = len(persistent_ids) if persistent_ids is not None else -1
+    N_chunk = chunk_manager.layout.N_chunk
+    if _is_runtime_inert(blocks, block_map, n_persist, N_chunk):
+        LOG.info(
+            "ProTrain runtime is inert (n_persist == N_chunk, no offloaded blocks, "
+            "all blocks NONE/CKPT). Skipping hook installation — gather/offload would "
+            "early-return anyway. Expected ~20-40%% step-time reduction at bs=1."
+        )
+        scheduler._is_inert = True  # noqa: SLF001
+        return []
 
     handles: list["RemovableHandle"] = []
     for idx, block in enumerate(blocks):

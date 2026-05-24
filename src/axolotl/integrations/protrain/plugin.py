@@ -323,6 +323,66 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     return (True, cfg_changed)
 
 
+def _maybe_bypass_ddp_for_mode_c(trainer, wrapped) -> bool:
+    """Force ``DistributedType.NO`` when Mode C is active on a multi-rank launch.
+
+    Accelerate's default multi-GPU path wraps the model in DDP at ``prepare()``.
+    DDP's bucketed all-reduce double-syncs gradients on top of ProTrain's
+    per-chunk ``reduce_scatter`` (sharded chunks) and ``all_reduce`` (persistent
+    chunks), corrupting the effective update. ProTrain's per-chunk collectives
+    are issued directly from ``ChunkManager.reduce_grads_and_offload`` and
+    parameter-level ``register_post_accumulate_grad_hook`` callbacks — both
+    independent of DDP — so bypassing the DDP wrap leaves the cross-rank grad
+    sync intact via ProTrain's own path. Mirrors the pattern used by
+    ``DistributedParallelMixin.create_accelerator_and_postprocess`` for the
+    Context Parallel + non-FSDP case (see
+    ``core/trainers/mixins/distributed_parallel.py``).
+
+    Returns True iff the override fired.
+    """
+    chunk_manager = getattr(wrapped, "chunk_manager", None)
+    if chunk_manager is None or not bool(getattr(chunk_manager, "zero3_shard", False)):
+        return False
+
+    try:
+        import torch.distributed as dist
+    except ImportError:
+        return False
+    if not (dist.is_available() and dist.is_initialized()):
+        return False
+    if int(dist.get_world_size()) <= 1:
+        return False
+
+    accelerator = getattr(trainer, "accelerator", None)
+    if accelerator is None:
+        return False
+
+    try:
+        from accelerate import PartialState
+        from accelerate.utils import DistributedType
+    except ImportError:
+        return False
+
+    prior = getattr(accelerator.state, "distributed_type", None)
+    if prior == DistributedType.NO:
+        return False
+
+    accelerator.state.distributed_type = DistributedType.NO
+    accelerator.state._shared_state["distributed_type"] = DistributedType.NO
+    PartialState().distributed_type = DistributedType.NO
+
+    LOG.warning(
+        "ProTrain Mode C bypass: forcing accelerator.state.distributed_type "
+        "from %s -> DistributedType.NO so Accelerate.prepare() skips the "
+        "DDP wrap. ProTrain owns cross-rank grad sync via per-chunk "
+        "reduce_scatter (sharded) / all_reduce (persistent); DDP would "
+        "double-sync. Cross-rank loss aggregation in trainer logs may show "
+        "per-rank values instead of mean — this is expected.",
+        prior,
+    )
+    return True
+
+
 def _install_resume_hook(trainer, cfg, wrapped) -> None:
     """Wrap ``trainer._load_from_checkpoint`` so cross-mode resume gathers offloaded chunks before reload."""
     if getattr(trainer, "_protrain_resume_hook_installed", False):
@@ -676,6 +736,15 @@ class ProTrainPlugin(BasePlugin):
                 "(force_all_persistent=False, zero3_shard=False)."
             )
 
+        # Fused LoRA MLP backward kernel + offloaded-activation chunk placeholders
+        # crash with LoRA_MLPBackward shape-mismatch (v61); pin n_offload=0.
+        forbid_activation_offload = bool(getattr(cfg, "lora_mlp_kernel", False))
+        if forbid_activation_offload:
+            LOG.info(
+                "ProTrain: cfg.lora_mlp_kernel=True; searcher will refuse "
+                "n_offload>0 candidates."
+            )
+
         wrapped = protrain_model_wrapper(
             model,
             model_config=getattr(model, "config", None),
@@ -694,6 +763,7 @@ class ProTrainPlugin(BasePlugin):
             zero3_shard=zero3_shard,
             auto_mode=bool(auto_mode),
             target_device=target_device,
+            forbid_activation_offload=forbid_activation_offload,
         )
 
         cfg._protrain_wrapped = wrapped  # type: ignore[attr-defined]
@@ -801,6 +871,10 @@ class ProTrainPlugin(BasePlugin):
                 "optimizer."
             )
             return
+
+        # Unlock Mode C on multi-rank non-NVLink rigs: must run before the
+        # _inner_training_loop call to accelerator.prepare(self.model) wraps DDP.
+        ddp_bypassed = _maybe_bypass_ddp_for_mode_c(trainer, wrapped)
 
         from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
@@ -915,13 +989,14 @@ class ProTrainPlugin(BasePlugin):
                 _diag_exc,
             )
         if is_ddp:
-            # DDP + zero3_shard double-synchronizes grads; hard-raise so user reconfigures.
+            # Fallback safety net: bypass should have prevented this.
             chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
             if getattr(chunk_manager, "zero3_shard", False):
                 raise RuntimeError(
                     "ProTrain: DDP wrapping detected with active "
-                    "zero3_shard=True. Non-persistent sharded chunks call "
-                    "reduce_scatter via "
+                    "zero3_shard=True even though the Mode C bypass attempted "
+                    f"to set distributed_type=NO (ddp_bypassed={ddp_bypassed}). "
+                    "Non-persistent sharded chunks call reduce_scatter via "
                     "ChunkManager._reduce_scatter_and_offload_shard while "
                     "DDP also issues bucketed all-reduce on every parameter "
                     "— gradients double-synchronize and the effective "
@@ -945,13 +1020,15 @@ class ProTrainPlugin(BasePlugin):
             and torch.distributed.is_initialized()
             and torch.distributed.get_world_size() > 1
         ):
-            LOG.warning(
-                "ProTrain: multi-rank init (world_size=%d) detected but "
-                "trainer.model is not wrapped in DistributedDataParallel; "
-                "ProTrain's internal per-chunk grad all-reduce path remains "
-                "active. This is the correct path for non-DDP multi-rank "
-                "runs, but surface it here because it is unusual.",
+            # Mode C bypass intentionally puts us here; demote to info to avoid noise.
+            log_fn = LOG.info if ddp_bypassed else LOG.warning
+            log_fn(
+                "ProTrain: multi-rank init (world_size=%d) detected with "
+                "trainer.model NOT wrapped in DistributedDataParallel "
+                "(ddp_bypassed=%s); ProTrain's internal per-chunk grad "
+                "reduce_scatter / all_reduce path is the cross-rank sync.",
                 torch.distributed.get_world_size(),
+                ddp_bypassed,
             )
 
         # Re-measure NCCL now that dist is up; no-op if tables already populated.

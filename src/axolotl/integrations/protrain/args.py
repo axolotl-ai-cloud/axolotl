@@ -215,9 +215,9 @@ class ProTrainArgs(BaseModel):
                 "behaviour (auto-enable at world_size>1 unless DDP is on top), "
                 "True forces sharding on (subject to world_size>1), False "
                 "disables sharding. M7 benchmark (DESIGN.md §Multi-GPU) shows "
-                "sharded throughput lands around 0.70x single-rank on PCIe "
-                "Gen3 4x RTX 3090 — only pick this when CPU RAM is truly the "
-                "binding constraint."
+                "sharded throughput lands around 0.70x single-rank on a "
+                "non-NVLink 4x RTX 3090 rig — only pick this when CPU RAM "
+                "is truly the binding constraint."
             )
         },
     )
@@ -558,19 +558,19 @@ class ProTrainArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_ddp_with_zero3_shard(cls, data):
-        """Reject ``protrain_zero3_shard: true`` under multi-rank DDP wrap path.
+        """Info-log Mode C on multi-rank when the runtime bypass will engage.
 
-        ProTrain's sharded path issues its own reduce_scatter per non-persistent
-        chunk; layering accelerate's default DDP on top of that double-syncs
-        gradients (DDP all-reduces every grad bucket too). The post-trainer
-        check in plugin.py.post_trainer_create catches this only AFTER DDP
-        already constructed its reducer and allocated buckets — so config-time
-        rejection is the only path that surfaces the conflict cleanly.
-
-        Detection: WORLD_SIZE > 1 AND no fsdp / deepspeed configured AND
-        ``protrain_auto_mode`` is explicitly False AND ``protrain_zero3_shard``
-        is True. Auto-mode runs let the searcher pick the mode, and
-        fsdp/deepspeed paths short-circuit DDP wrapping in accelerate.
+        Prior behaviour: hard-reject ``protrain_zero3_shard: true`` under
+        multi-rank without ``fsdp:`` / ``deepspeed:`` to prevent DDP's bucketed
+        all-reduce from double-syncing gradients on top of ProTrain's
+        ``reduce_scatter`` for sharded chunks. Updated behaviour: the plugin's
+        ``_maybe_bypass_ddp_for_mode_c`` runs in ``post_trainer_create`` and
+        flips ``accelerator.state.distributed_type`` to ``NO`` BEFORE
+        ``accelerator.prepare()`` wraps the model, so DDP is no longer
+        installed and cross-rank grad sync is owned by ProTrain's per-chunk
+        collectives. This validator only surfaces the override as an info-log
+        at config time; the prior hard-raise survives as a fallback safety
+        net inside ``post_trainer_create`` if DDP somehow remains wrapped.
         """
         if not isinstance(data, dict):
             return data
@@ -599,20 +599,19 @@ class ProTrainArgs(BaseModel):
             return data
         if world_size <= 1:
             return data
-        raise ValueError(
-            "ProTrain: `protrain_zero3_shard: true` combined with "
-            f"`protrain_auto_mode: false` under multi-rank launch "
-            f"(WORLD_SIZE={world_size}) without `fsdp:` / `deepspeed:` will "
-            "trigger accelerate's default DDP wrap. DDP's bucketed all-reduce "
-            "then double-synchronizes gradients on top of ProTrain's "
-            "reduce_scatter for non-persistent sharded chunks, corrupting "
-            "the effective update; DDP also allocates reducer buckets sized "
-            "by `param.numel()` for every non-ignored param, defeating the "
-            "shape-preserving placeholder savings. Either (a) set "
-            "`protrain_zero3_shard: false` (Mode B replicated CPU offload), "
-            "or (b) set `protrain_auto_mode: true` and let the searcher pick "
-            "between replicated and sharded based on per-rank CPU RAM."
+        LOG.info(
+            "ProTrain: `protrain_zero3_shard: true` with "
+            "`protrain_auto_mode: false` under multi-rank launch "
+            "(WORLD_SIZE=%d) without `fsdp:` / `deepspeed:`. The Mode C "
+            "runtime bypass (plugin._maybe_bypass_ddp_for_mode_c) will set "
+            "accelerator.state.distributed_type=NO so Accelerate.prepare() "
+            "skips the DDP wrap; ProTrain's per-chunk reduce_scatter / "
+            "all_reduce owns the cross-rank grad sync. If DDP somehow "
+            "remains wrapped at post_trainer_create the fallback hard-raise "
+            "fires (see plugin.py).",
+            world_size,
         )
+        return data
 
     @model_validator(mode="before")
     @classmethod
