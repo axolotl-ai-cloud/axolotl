@@ -237,6 +237,10 @@ def search(
     best_cfg: CostConfig | None = None
     best_block_map: BlockStrategyMap | None = None
     best_peak: int = 0
+    # Track closest-to-feasible config for actionable error messages.
+    closest_cfg: CostConfig | None = None
+    closest_peak: int = 0
+    closest_deficit: int = 0
 
     # Pre-compute F(block_map) once per (n_swap, n_ckpt, n_offload).
     from axolotl.integrations.protrain.cost.memory import (
@@ -386,6 +390,11 @@ def search(
                         )
                         predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
                         if predicted_peak > capacity_bytes:
+                            deficit = predicted_peak - capacity_bytes
+                            if closest_cfg is None or deficit < closest_deficit:
+                                closest_cfg = cfg
+                                closest_peak = predicted_peak
+                                closest_deficit = deficit
                             continue
                         n_gpu_feasible += 1
                         # Optional CPU-RAM gate (per-rank pinned bytes).
@@ -474,9 +483,33 @@ def search(
                 "with activation-offload), or (b) free up GPU memory "
                 "(smaller batch, more cards, smaller model)."
             )
+        if closest_cfg is not None:
+            closest_str = (
+                f"  Closest-to-feasible: {closest_cfg} predicted_peak="
+                f"{closest_peak / 1e9:.2f} GB "
+                f"(deficit {closest_deficit / 1e9:.2f} GB over the "
+                f"{capacity_bytes / 1e9:.2f} GB budget)."
+            )
+        else:
+            closest_str = (
+                "  (no infeasible candidates evaluated; capacity budget "
+                "may be too tight for any layout at all)"
+            )
         raise RuntimeError(
             "no feasible ProTrain config under capacity_bytes="
-            f"{capacity_bytes} (evaluated {n_total} configs)"
+            f"{capacity_bytes} ({capacity_bytes / 1e9:.2f} GB); "
+            f"evaluated {n_total} configs.\n"
+            f"{closest_str}\n"
+            "Try one of:\n"
+            "  - reduce micro_batch_size (largest activation-memory lever)\n"
+            "  - reduce sequence_len (linear in activation memory)\n"
+            "  - set lora_mlp_kernel: false to unlock activation-offload\n"
+            "    (n_offload>0) candidates the kernel-aware searcher rules out\n"
+            "  - enable activation offload by leaving the lora_mlp_kernel\n"
+            "    guard off so the searcher can pick n_offload>0\n"
+            "  - increase per-rank GPU memory: add cards, switch to a larger\n"
+            "    SKU, or shard the model across more ranks (raises N_chunk\n"
+            "    headroom and lowers per-rank model_state)"
         )
 
     if cpu_capacity_bytes is not None:
