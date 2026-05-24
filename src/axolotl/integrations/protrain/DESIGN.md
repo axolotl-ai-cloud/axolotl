@@ -332,6 +332,46 @@ Mirrors `plan.md`:
     matches `estimate_peak`'s chain-sum semantics instead of the prior
     single-block max. Tests: `tests/protrain/test_cost_model.py`.
 
+    ### Per-block internal saved-tensor proxy (commit-pending)
+
+    The `_compute_ckpt_chain_bytes` helper sums the block-output proxy
+    (`trace.activation_sizes[bid]`) across CKPT blocks. This proxy
+    under-estimates the per-block saved tensors that include FFN-intermediate
+    (`bs * seq * intermediate_size`), attention scores
+    (`bs * heads * seq * seq`), and Q/K/V projections
+    (`3 * bs * seq * hidden`). At low seq these block-internal tensors
+    dominate the residual.
+
+    The new `_block_internal_saved_bytes` helper estimates these analytically
+    per block. Under non-reentrant CKPT only one block's internal saved
+    tensors are live at a time (the current recompute window), so the chain
+    helper adds ONE block's worth of internal residual (per-block max, not
+    N_block worth) — chaining 60x would over-correct catastrophically at
+    high seq because the attention-score term scales O(seq^2). The
+    `protrain_ckpt_internal_residual_factor` config field (default 1.0)
+    scales the contribution; 0.0 disables and reproduces pre-fix behavior;
+    fractional values give conservative tuning.
+
+    The cost-model's free signature now reads `hidden_size`,
+    `num_attention_heads`, and `intermediate_size` from the `ProfilerTrace`;
+    `run_trace` and `synth_trace_from_overrides` populate these from the
+    model's HF config via `_infer_hidden_size`, `_infer_num_attention_heads`,
+    and `_infer_intermediate_size`. `TRACE_VERSION` is bumped from 22 to 23
+    so legacy cached traces re-profile rather than silently degrade to a
+    zero residual. Tests:
+    `tests/protrain/test_cost_model.py::test_block_internal_saved_bytes_quadratic_in_seq`,
+    `test_ckpt_chain_includes_internal_residual_when_enabled`,
+    `test_disable_via_factor_zero`,
+    `test_estimate_peak_seq_512_30b_llama_alpha_steady_after_residual`.
+
+    Estimated `alpha_steady` after the residual + the alpha-split lands at
+    ~1.18 / 0.99 / 0.80 at seq=512/1024/2048 on 30B-Llama Mode-C against
+    audit measurements 2.91 / 3.50 / 4.68 GiB. The seq=512 case narrows
+    under-prediction; seq=1024 lands near 1.0; seq=2048 slightly over-
+    predicts (safer for the budget gate). At-scale re-profiling on
+    >24 GiB hardware is the §16 follow-up scope; this PR ships the
+    analytical model.
+
     *Out of scope.* The iter-1 transient observed at bnb-4-bit Mode-C (~6.9x pred during the model-load → `materialize_offload` window) is an init-time chunk-residency phenomenon, not a fragmentation or activation-accounting one, and is documented separately as an "init window" not covered by alpha. Tracked as the remaining open audit item.
 2. **Pinned-memory allocator:** `ctypes` → `cudaHostAlloc` directly. ~50 LOC, zero new deps, matches App B.2 precisely (avoids `CUDAHostAllocator` pow-2 rounding). DeepSpeed's `PinnedMemoryAllocator` rejected: may inherit same wart, adds import-graph weight.
 3. **CPU FusedAdam source:** `deepspeed.ops.adam.DeepSpeedCPUAdam`. Paper builds directly on ZeRO-Offload's CPU Adam. Pure-Python reimpl is >10x slower and would collapse the T_bwd / T_cpu_optim overlap window the cost model assumes. DeepSpeed is already in Axolotl's env.
