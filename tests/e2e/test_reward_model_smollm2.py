@@ -4,8 +4,6 @@ E2E tests for reward model lora llama
 
 import unittest
 
-import pytest
-
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
@@ -19,7 +17,6 @@ class TestRewardModelLoraSmolLM2(unittest.TestCase):
     Test case for Llama reward models using LoRA
     """
 
-    @pytest.mark.skip(reason="FIXME, mostly underused functionality")
     @with_temp_dir
     def test_rm_lora(self, temp_dir):
         cfg = DictDefault(
