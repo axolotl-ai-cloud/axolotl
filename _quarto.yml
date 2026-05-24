@@ -312,6 +312,7 @@ website:
             - docs/qat.qmd
             - docs/quantize.qmd
             - docs/optimizations.qmd
+            - docs/protrain/apex-fused-adam-install.qmd
 
         - section: "Core Concepts"
           contents:

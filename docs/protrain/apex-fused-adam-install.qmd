@@ -1,4 +1,7 @@
-# Apex FusedAdam install guide
+---
+title: "Apex FusedAdam Install"
+description: "Installing NVIDIA Apex for the adamw_apex_fused optimizer in CUDA-aligned environments"
+---
 
 This page documents how to install NVIDIA Apex so that the `adamw_apex_fused`
 optimizer can be used from an axolotl config. The optimizer name is already
