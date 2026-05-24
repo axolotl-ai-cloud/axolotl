@@ -26,6 +26,25 @@ def _slow_gather_threshold_s() -> float:
 
 _SLOW_GATHER_THRESHOLD_S: float = _slow_gather_threshold_s()
 
+
+def _slow_offload_regather_threshold_s() -> float:
+    """PROTRAIN_DEBUG_SLOW_OFFLOAD_REGATHER_S (default 5.0) — per-chunk OFFLOAD re-gather WARN threshold.
+
+    Separate from SLOW_GATHER so the OFFLOAD backward H2D + all_gather path can be
+    localized independently of the forward initial gather. v71/v72-redux confirmed
+    the bs=2 + n_offload>0 hang is invisible to SLOW_GATHER/SLOW_ADAM; this watchdog
+    times each backward re-gather to pinpoint stream-contention on non-NVLink topology.
+    """
+    raw = os.environ.get("PROTRAIN_DEBUG_SLOW_OFFLOAD_REGATHER_S", "5.0")
+    try:
+        v = float(raw)
+    except ValueError:
+        return 5.0
+    return max(0.0, v)
+
+
+_SLOW_OFFLOAD_REGATHER_S: float = _slow_offload_regather_threshold_s()
+
 if TYPE_CHECKING:
     import torch
     from torch import nn
@@ -843,11 +862,27 @@ class ChunkManager:
                     return torch.empty(shape, dtype=dtype, device=self.device)
             return torch.empty(shape, dtype=dtype, device=self.device)
 
+        _watchdog_on = _SLOW_OFFLOAD_REGATHER_S > 0.0
+
+        def _maybe_warn_slow_restore(cid: ChunkId, elapsed_s: float) -> None:
+            if _watchdog_on and elapsed_s >= _SLOW_OFFLOAD_REGATHER_S:
+                LOG.warning(
+                    "ProTrain SLOW_OFFLOAD_REGATHER: chunk_id=%d phase=%s "
+                    "elapsed=%.3fs (threshold=%.2fs; H2D/D2H + NCCL all_gather). "
+                    "Sharded=%s.",
+                    int(cid),
+                    "resume_restore",
+                    elapsed_s,
+                    _SLOW_OFFLOAD_REGATHER_S,
+                    cid in self._chunk_shards,
+                )
+
         # Non-persistent replicated chunks: per-slot copy from pinned CPU.
         for cid, slots in self._cpu_slots.items():
             if cid in self._chunk_shards:
                 # Defer to the sharded reassembly pass below.
                 continue
+            t0 = time.perf_counter() if _watchdog_on else 0.0
             for slot in slots:
                 param = self._params_by_id.get(slot.param_id)
                 if param is None or slot.cpu_data is None:
@@ -856,12 +891,15 @@ class ChunkManager:
                 gpu_tensor.copy_(slot.cpu_data)
                 param.data = gpu_tensor
                 moved += slot.numel * slot.element_size
+            if _watchdog_on:
+                _maybe_warn_slow_restore(cid, time.perf_counter() - t0)
 
         # Sharded chunks: per-region all_gather, then per-slot rebind.
         if self.zero3_shard and self._chunk_shards:
             import torch.distributed as dist
 
             for cid, shard_state in self._chunk_shards.items():
+                t0 = time.perf_counter() if _watchdog_on else 0.0
                 chunk_buf = _alloc_empty(shard_state.chunk_bytes, torch.uint8)
 
                 for region in shard_state.regions:
@@ -893,9 +931,12 @@ class ChunkManager:
                     gpu_tensor.copy_(typed)
                     param.data = gpu_tensor
                     moved += nbytes
+                if _watchdog_on:
+                    _maybe_warn_slow_restore(cid, time.perf_counter() - t0)
 
         # Persistent chunks: extract from resident pool buffer into standalone GPU storage.
         for cid, buf in self._persistent_buffers.items():
+            t0 = time.perf_counter() if _watchdog_on else 0.0
             # Recompute the same aligned offsets materialize_offload used.
             param_ids = self.layout.chunks[int(cid)]
             offset = 0
@@ -915,6 +956,8 @@ class ChunkManager:
                 param.data = gpu_tensor
                 moved += nbytes
                 offset += nbytes
+            if _watchdog_on:
+                _maybe_warn_slow_restore(cid, time.perf_counter() - t0)
 
         self.uninstall()
 
@@ -1114,9 +1157,21 @@ class ChunkManager:
 
     # ---- gather / offload ---------------------------------------------
 
-    def gather(self, chunk_id: ChunkId) -> None:
-        """Make ``chunk_id``'s params GPU-resident; WARN-logs slow gathers (>PROTRAIN_DEBUG_SLOW_GATHER_S)."""
-        if _SLOW_GATHER_THRESHOLD_S <= 0.0:
+    def gather(
+        self, chunk_id: ChunkId, phase: str = "forward_regather"
+    ) -> None:
+        """Make ``chunk_id``'s params GPU-resident; WARN-logs slow gathers.
+
+        ``phase`` tags the call site for the OFFLOAD-regather watchdog:
+        ``"forward_regather"`` (default — initial forward gather of an offloaded
+        chunk), ``"backward_regather"`` (re-gather during backward via
+        :meth:`gather_for_backward` or the saved-tensor unpack fallback), or
+        ``"resume_restore"`` (one-shot teardown from :meth:`restore_to_gpu`).
+        """
+        slow_g = _SLOW_GATHER_THRESHOLD_S > 0.0
+        slow_or = _SLOW_OFFLOAD_REGATHER_S > 0.0
+
+        if not slow_g and not slow_or:
             return self._gather_impl(chunk_id)
 
         t0 = time.perf_counter()
@@ -1124,7 +1179,7 @@ class ChunkManager:
             self._gather_impl(chunk_id)
         finally:
             elapsed = time.perf_counter() - t0
-            if elapsed >= _SLOW_GATHER_THRESHOLD_S:
+            if slow_g and elapsed >= _SLOW_GATHER_THRESHOLD_S:
                 # WARN so the slow-chunk + elapsed time survive default log filters;
                 # narrows the n_offload>0 first-iter hang to a single chunk.
                 LOG.warning(
@@ -1134,6 +1189,25 @@ class ChunkManager:
                     int(chunk_id),
                     elapsed,
                     _SLOW_GATHER_THRESHOLD_S,
+                    chunk_id in self._chunk_shards,
+                    chunk_id in self._active_chunks,
+                    (
+                        self.buffer_pool.lookup_resident(chunk_id) is not None
+                        if self.buffer_pool is not None
+                        else False
+                    ),
+                )
+            if slow_or and elapsed >= _SLOW_OFFLOAD_REGATHER_S:
+                # Per-chunk OFFLOAD re-gather wall time (H2D copy + NCCL all_gather).
+                # Distinct WARN line so log scrapers can grep SLOW_OFFLOAD_REGATHER.
+                LOG.warning(
+                    "ProTrain SLOW_OFFLOAD_REGATHER: chunk_id=%d phase=%s "
+                    "elapsed=%.3fs (threshold=%.2fs; H2D/D2H + NCCL all_gather). "
+                    "Sharded=%s active=%s pool_resident=%s.",
+                    int(chunk_id),
+                    phase,
+                    elapsed,
+                    _SLOW_OFFLOAD_REGATHER_S,
                     chunk_id in self._chunk_shards,
                     chunk_id in self._active_chunks,
                     (
@@ -1671,7 +1745,7 @@ class ChunkManager:
 
     def gather_for_backward(self, chunk_id: ChunkId) -> "BackwardHandle":
         """Re-gather a chunk for the backward pass and pin it via refcount."""
-        self.gather(chunk_id)
+        self.gather(chunk_id, phase="backward_regather")
         self._backward_refcount[chunk_id] = self._backward_refcount.get(chunk_id, 0) + 1
         return BackwardHandle(chunk_id, self)
 

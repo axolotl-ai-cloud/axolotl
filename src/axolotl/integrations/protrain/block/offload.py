@@ -224,7 +224,7 @@ class OffloadedBlock(nn.Module):
             buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
             if buf is None:
                 # Defensive: an evict-then-deferred-offload race; re-gather sync.
-                mgr.gather(handle.chunk_id)
+                mgr.gather(handle.chunk_id, phase="backward_regather")
                 buf = mgr.buffer_pool.lookup_resident(handle.chunk_id)
                 if buf is None:
                     raise RuntimeError(
