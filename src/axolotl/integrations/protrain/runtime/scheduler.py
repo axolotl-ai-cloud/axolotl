@@ -54,11 +54,38 @@ class Scheduler:
                     chunk_last_bwd_owner[cid] = bid
         self._chunk_last_bwd_owner: dict[ChunkId, BlockId] = chunk_last_bwd_owner
 
+        # bs=1 hot-path: precompute per-block walk metadata so per-step hooks
+        # only do dict lookups, not list comprehensions / set constructions.
+        # Indexed by BlockId in self._block_order.
+        # next_chunks_set[bid] = frozenset of chunks owned by the *next* block
+        # (used by post_block_forward to skip releasing chunks the next block
+        # still needs). next_block_of_cached[bid] = next block id or None.
+        # prev_block_of_cached[bid] = previous block id or None (for backward).
+        self._next_block_of_cached: dict[BlockId, "BlockId | None"] = {}
+        self._prev_block_of_cached: dict[BlockId, "BlockId | None"] = {}
+        self._next_chunks_set_cached: dict[BlockId, frozenset[ChunkId]] = {}
+        for idx, bid in enumerate(self._block_order):
+            nxt = (
+                self._block_order[idx + 1] if idx + 1 < len(self._block_order) else None
+            )
+            prv = self._block_order[idx - 1] if idx >= 1 else None
+            self._next_block_of_cached[bid] = nxt
+            self._prev_block_of_cached[bid] = prv
+            nxt_chunks = (
+                self.layout.block_to_chunks.get(nxt, ()) if nxt is not None else ()
+            )
+            self._next_chunks_set_cached[bid] = frozenset(nxt_chunks)
+
         self._prefetch_stream: "torch.cuda.Stream | None" = None
         self._swap_stream: "torch.cuda.Stream | None" = None
         # Lazy ActivationSwapPool attach by wrapper when n_swap > 0.
         self.swap_pool: object | None = None
         self._closed: bool = False
+        # bs=1 hot-path cache: ``cuda.is_available()`` costs ~2.7us per call
+        # and is invariant for the scheduler's lifetime. Caching as a bool
+        # lets per-step LoRA-container hooks dispatch on an attribute lookup
+        # instead of a CUDA syscall (§16 PR #4).
+        self._has_cuda: bool = False
         self._init_streams()
 
     @property
@@ -73,7 +100,8 @@ class Scheduler:
         except ImportError:  # pragma: no cover — torch is required at runtime
             return
 
-        if not torch.cuda.is_available():
+        self._has_cuda = bool(torch.cuda.is_available())
+        if not self._has_cuda:
             LOG.debug(
                 "Scheduler: CUDA unavailable; prefetch/swap streams are None "
                 "(scheduler degrades to synchronous transfers)."
@@ -95,33 +123,21 @@ class Scheduler:
 
     def _next_block_of(self, block_id: BlockId) -> BlockId | None:
         """Return the block id scheduled *after* ``block_id`` in forward order."""
-        idx = self._block_index_map.get(block_id)
-        if idx is None:
-            return None
-        nxt = idx + 1
-        if nxt >= len(self._block_order):
-            return None
-        return self._block_order[nxt]
+        return self._next_block_of_cached.get(block_id)
 
     def _prev_block_of(self, block_id: BlockId) -> BlockId | None:
         """Return the next-in-backward block (idx-1 in forward order)."""
-        idx = self._block_index_map.get(block_id)
-        if idx is None or idx <= 0:
-            return None
-        return self._block_order[idx - 1]
+        return self._prev_block_of_cached.get(block_id)
 
     def _gather_on_prefetch_stream(self, chunk_ids: Iterable[ChunkId]) -> None:
         """Async-gather chunk_ids on the prefetch stream; waits on swap_stream to sequence SWAP D2H."""
-        try:
-            import torch
-        except ImportError:  # pragma: no cover
-            return
-
-        if self._prefetch_stream is None or not torch.cuda.is_available():
+        if self._prefetch_stream is None or not self._has_cuda:
             # Synchronous fallback.
             for cid in chunk_ids:
                 self.chunk_manager.gather(cid)
             return
+
+        import torch
 
         # Order H2D writes after in-flight SWAP D2H reads (correctness for SWAP × non-persistent).
         if self._swap_stream is not None:
@@ -133,12 +149,10 @@ class Scheduler:
 
     def _sync_prefetch_with_compute(self) -> None:
         """Make the default compute stream wait on the prefetch stream."""
-        try:
-            import torch
-        except ImportError:  # pragma: no cover
+        if self._prefetch_stream is None or not self._has_cuda:
             return
-        if self._prefetch_stream is None or not torch.cuda.is_available():
-            return
+        import torch
+
         compute = torch.cuda.current_stream()
         compute.wait_stream(self._prefetch_stream)
 
@@ -152,15 +166,20 @@ class Scheduler:
 
     def ensure_chunks_resident(self, chunk_ids: Iterable[ChunkId]) -> None:
         """Sync gather chunks on compute stream so autograd sees real param.size() on cold paths."""
-        cids = tuple(chunk_ids)
+        # Per-step LoRA-container fan-out (~28 containers × 4 hooks at Llama
+        # class) drives this method hot — keep the CPU lane an attribute-
+        # lookup-only no-op past the empty-tuple guard. The cuda.is_available
+        # check is read off the cached scheduler flag, not the syscall.
+        if isinstance(chunk_ids, tuple):
+            cids = chunk_ids
+        else:
+            cids = tuple(chunk_ids)
         if not cids:
             return
-        # Wait on swap+prefetch so pool buffers and in-flight gathers complete pre-rebind.
-        try:
+        if self._has_cuda:
             import torch as _torch
-        except ImportError:  # pragma: no cover — defensive, CPU-only lanes
-            _torch = None  # type: ignore[assignment]
-        if _torch is not None and _torch.cuda.is_available():
+
+            # Wait on swap+prefetch so pool buffers and in-flight gathers complete pre-rebind.
             compute = _torch.cuda.current_stream()
             if self._swap_stream is not None:
                 compute.wait_stream(self._swap_stream)
@@ -194,11 +213,8 @@ class Scheduler:
 
     def post_block_forward(self, block_id: BlockId) -> None:
         """Release this block's non-persistent chunks except those used by the next block."""
-        nxt = self._next_block_of(block_id)
-        next_chunks: set[ChunkId] = (
-            set(self._chunks_for(nxt)) if nxt is not None else set()
-        )
-
+        # frozenset from the init-time cache; avoids the per-step set() build.
+        next_chunks = self._next_chunks_set_cached.get(block_id, frozenset())
         for cid in self._chunks_for(block_id):
             if cid in next_chunks:
                 continue
@@ -274,16 +290,8 @@ class Scheduler:
 
     def drain(self) -> None:
         """Block until every in-flight CPU Adam step has finished; flush deferred offloads."""
-        try:
-            import torch
-        except ImportError:  # pragma: no cover
-            # CPU-only path: still flush deferred offloads.
-            self.chunk_manager.drain_deferred_offloads()
-            self.chunk_manager.wait_cpu_optim()
-            return
-
         # Drain in-flight prefetch/swap traffic for stable peak-memory stats.
-        if torch.cuda.is_available():
+        if self._has_cuda:
             if self._prefetch_stream is not None:
                 self._prefetch_stream.synchronize()
             if self._swap_stream is not None:
@@ -301,11 +309,7 @@ class Scheduler:
         if self._closed:
             return
         self._closed = True
-        try:
-            import torch
-        except ImportError:  # pragma: no cover
-            torch = None  # type: ignore[assignment]
-        if torch is not None and torch.cuda.is_available():
+        if self._has_cuda:
             for stream in (self._prefetch_stream, self._swap_stream):
                 if stream is None:
                     continue
