@@ -51,6 +51,36 @@ def _pre_block_forward_trace_enabled() -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _block_forward_trace_enabled() -> bool:
+    """PROTRAIN_DEBUG_BLOCK_FORWARD_TRACE={1,true,yes,on} enables timing the actual block.forward() compute.
+
+    Captures wall time between ``pre_block_forward`` exit and
+    ``post_block_forward`` entry — i.e. the PyTorch layer compute itself.
+    Emits a SLOW_LAYER_FORWARD WARN when the per-block compute exceeds 5.0s
+    (likely deadlock point during Mode C ``zero3_shard`` bs=2 hang). Zero
+    overhead when off.
+    """
+    raw = os.environ.get("PROTRAIN_DEBUG_BLOCK_FORWARD_TRACE", "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# SLOW_LAYER_FORWARD WARN threshold (seconds). Kept distinct from the in-flight
+# SLOW_SHARDED_GATHER watchdog so log scrapers can grep either independently.
+_SLOW_LAYER_FORWARD_S: float = 5.0
+
+
+def _resolve_rank() -> int:
+    """Return ``dist.get_rank()`` when initialized; 0 otherwise (CPU / single-process / pre-init)."""
+    try:
+        import torch.distributed as _dist
+
+        if _dist.is_available() and _dist.is_initialized():
+            return int(_dist.get_rank())
+    except Exception:  # noqa: BLE001 — best-effort; instrumentation must never raise
+        pass
+    return 0
+
+
 class Scheduler:
     """Drives prefetch / release / reduce-offload at block granularity."""
 
@@ -195,6 +225,29 @@ class Scheduler:
                 "be logged at INFO. Intended for one-shot bottleneck "
                 "localization; keep off in normal runs."
             )
+
+        # Rank captured once at scheduler init for per-rank log prefixing.
+        # When dist is not initialized (CPU / single-process / pre-init) this
+        # resolves to 0; per-rank divergence still becomes greppable via the
+        # [rank=N] prefix because all multi-rank runs set this at construction.
+        self._rank: int = _resolve_rank()
+
+        # Inside-forward timing (v76 deadlock localization). Captures the wall
+        # time between pre_block_forward exit and post_block_forward entry —
+        # which is the actual PyTorch layer compute. SLOW_LAYER_FORWARD WARN
+        # fires above _SLOW_LAYER_FORWARD_S so the offending block id is
+        # immediately greppable on the rank that hangs.
+        self._block_forward_trace_enabled: bool = _block_forward_trace_enabled()
+        self._t_layer_enter: dict[BlockId, float] = {}
+        if self._block_forward_trace_enabled:
+            LOG.info(
+                "[rank=%d] ProTrain Scheduler: PROTRAIN_DEBUG_BLOCK_FORWARD_TRACE "
+                "enabled. Per-block layer.forward() compute time (pre_block_forward "
+                "exit -> post_block_forward enter delta) will be logged at INFO; "
+                "SLOW_LAYER_FORWARD WARN fires above %.1fs. Zero overhead when off.",
+                self._rank,
+                _SLOW_LAYER_FORWARD_S,
+            )
         self._init_streams()
 
     @property
@@ -292,13 +345,15 @@ class Scheduler:
         elapsed_ms = (now - self._first_iter_t0_ns) / 1e6
         if block_id is None:
             LOG.info(
-                "ProTrain first-iter trace: t+%.1fms %s",
+                "[rank=%d] ProTrain first-iter trace: t+%.1fms %s",
+                self._rank,
                 elapsed_ms,
                 event,
             )
         else:
             LOG.info(
-                "ProTrain first-iter trace: t+%.1fms block=%d %s",
+                "[rank=%d] ProTrain first-iter trace: t+%.1fms block=%d %s",
+                self._rank,
                 elapsed_ms,
                 int(block_id),
                 event,
@@ -329,14 +384,16 @@ class Scheduler:
                 self.chunk_manager.gather(cid)
                 if _trace:
                     LOG.info(
-                        "_gather_on_prefetch_stream(sync) chunk gather took %.6fs cid=%s",
+                        "[rank=%d] _gather_on_prefetch_stream(sync) chunk gather took %.6fs cid=%s",
+                        self._rank,
                         time.perf_counter() - _ts,
                         cid,
                     )
                 n += 1
             if _trace:
                 LOG.info(
-                    "_gather_on_prefetch_stream sync-fallback total %.6fs n_chunks=%d",
+                    "[rank=%d] _gather_on_prefetch_stream sync-fallback total %.6fs n_chunks=%d",
+                    self._rank,
                     time.perf_counter() - _t,
                     n,
                 )
@@ -350,7 +407,8 @@ class Scheduler:
             self._prefetch_stream.wait_stream(self._swap_stream)
             if _trace:
                 LOG.info(
-                    "_gather_on_prefetch_stream wait_stream(swap) took %.6fs",
+                    "[rank=%d] _gather_on_prefetch_stream wait_stream(swap) took %.6fs",
+                    self._rank,
                     time.perf_counter() - _t,
                 )
 
@@ -362,14 +420,16 @@ class Scheduler:
                 self.chunk_manager.gather(cid)
                 if _trace:
                     LOG.info(
-                        "_gather_on_prefetch_stream per-chunk gather took %.6fs cid=%s",
+                        "[rank=%d] _gather_on_prefetch_stream per-chunk gather took %.6fs cid=%s",
+                        self._rank,
                         time.perf_counter() - _ts,
                         cid,
                     )
                 n += 1
         if _trace:
             LOG.info(
-                "_gather_on_prefetch_stream dispatch-loop %.6fs total %.6fs n_chunks=%d",
+                "[rank=%d] _gather_on_prefetch_stream dispatch-loop %.6fs total %.6fs n_chunks=%d",
+                self._rank,
                 time.perf_counter() - _t_dispatch,
                 time.perf_counter() - _t_enter,
                 n,
@@ -387,7 +447,8 @@ class Scheduler:
         compute.wait_stream(self._prefetch_stream)
         if _trace:
             LOG.info(
-                "_sync_prefetch_with_compute wait_stream took %.6fs",
+                "[rank=%d] _sync_prefetch_with_compute wait_stream took %.6fs",
+                self._rank,
                 time.perf_counter() - _t_enter,
             )
 
@@ -450,7 +511,8 @@ class Scheduler:
                 self._gather_on_offload_stream(chunk_ids)
                 if _trace:
                     LOG.info(
-                        "ensure_block_resident block=%d OFFLOAD gather_on_offload_stream took %.6fs (n_chunks=%d)",
+                        "[rank=%d] ensure_block_resident block=%d OFFLOAD gather_on_offload_stream took %.6fs (n_chunks=%d)",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t,
                         len(chunk_ids),
@@ -459,7 +521,8 @@ class Scheduler:
                 self._sync_offload_with_compute()
                 if _trace:
                     LOG.info(
-                        "ensure_block_resident block=%d OFFLOAD sync_offload_with_compute took %.6fs",
+                        "[rank=%d] ensure_block_resident block=%d OFFLOAD sync_offload_with_compute took %.6fs",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t,
                     )
@@ -468,7 +531,8 @@ class Scheduler:
                 self._gather_on_prefetch_stream(chunk_ids)
                 if _trace:
                     LOG.info(
-                        "ensure_block_resident block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d mode=%s)",
+                        "[rank=%d] ensure_block_resident block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d mode=%s)",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t,
                         len(chunk_ids),
@@ -478,14 +542,16 @@ class Scheduler:
                 self._sync_prefetch_with_compute()
                 if _trace:
                     LOG.info(
-                        "ensure_block_resident block=%d sync_prefetch_with_compute took %.6fs",
+                        "[rank=%d] ensure_block_resident block=%d sync_prefetch_with_compute took %.6fs",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t,
                     )
         finally:
             if _trace:
                 LOG.info(
-                    "ensure_block_resident block=%d total %.6fs",
+                    "[rank=%d] ensure_block_resident block=%d total %.6fs",
+                    self._rank,
                     int(block_id),
                     time.perf_counter() - _t_enter,
                 )
@@ -562,7 +628,8 @@ class Scheduler:
             if self._is_inert:
                 if _trace:
                     LOG.info(
-                        "pre_block_forward block=%d inert short-circuit %.6fs",
+                        "[rank=%d] pre_block_forward block=%d inert short-circuit %.6fs",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t_enter,
                     )
@@ -574,7 +641,8 @@ class Scheduler:
             self.ensure_block_resident(block_id)
             if _trace:
                 LOG.info(
-                    "pre_block_forward block=%d ensure_block_resident took %.6fs",
+                    "[rank=%d] pre_block_forward block=%d ensure_block_resident took %.6fs",
+                    self._rank,
                     int(block_id),
                     time.perf_counter() - _t,
                 )
@@ -585,7 +653,8 @@ class Scheduler:
             if nxt is None:
                 if _trace:
                     LOG.info(
-                        "pre_block_forward block=%d next_block_of=None lookup %.6fs total %.6fs",
+                        "[rank=%d] pre_block_forward block=%d next_block_of=None lookup %.6fs total %.6fs",
+                        self._rank,
                         int(block_id),
                         time.perf_counter() - _t,
                         time.perf_counter() - _t_enter,
@@ -594,7 +663,8 @@ class Scheduler:
             next_chunks = self._chunks_for(nxt)
             if _trace:
                 LOG.info(
-                    "pre_block_forward block=%d next_block_metadata took %.6fs (nxt=%d n_chunks=%d)",
+                    "[rank=%d] pre_block_forward block=%d next_block_metadata took %.6fs (nxt=%d n_chunks=%d)",
+                    self._rank,
                     int(block_id),
                     time.perf_counter() - _t,
                     int(nxt),
@@ -610,7 +680,8 @@ class Scheduler:
             self._gather_on_prefetch_stream(next_chunks)
             if _trace:
                 LOG.info(
-                    "pre_block_forward block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d)",
+                    "[rank=%d] pre_block_forward block=%d gather_on_prefetch_stream took %.6fs (n_chunks=%d)",
+                    self._rank,
                     int(block_id),
                     time.perf_counter() - _t,
                     len(next_chunks),
@@ -624,12 +695,24 @@ class Scheduler:
         finally:
             if _trace:
                 LOG.info(
-                    "pre_block_forward block=%d total %.6fs",
+                    "[rank=%d] pre_block_forward block=%d total %.6fs",
+                    self._rank,
                     int(block_id),
                     time.perf_counter() - _t_enter,
                 )
             if self._first_iter_trace_enabled:
                 self._first_iter_log("pre_block_forward exit", block_id)
+            # Layer-forward inside-timing: stash timestamp at the very last
+            # point before control returns to the forward-pre hook, which then
+            # invokes block.forward(). Paired with the matching read in
+            # post_block_forward enter.
+            if self._block_forward_trace_enabled:
+                self._t_layer_enter[block_id] = time.perf_counter()
+                LOG.info(
+                    "[rank=%d] block=%d pre_block_forward exit -> layer.forward()",
+                    self._rank,
+                    int(block_id),
+                )
             if self._step_timing_enabled:
                 self._record_step_timing(
                     "pre_block_forward", time.perf_counter_ns() - _t0
@@ -638,6 +721,29 @@ class Scheduler:
     def post_block_forward(self, block_id: BlockId) -> None:
         """Release this block's non-persistent chunks except those used by the next block."""
         _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        # Layer-forward inside-timing: compute delta between matching
+        # pre_block_forward exit timestamp and this enter. Logged BEFORE the
+        # first-iter trace enter line so the layer compute time appears
+        # immediately adjacent to the block id it belongs to.
+        if self._block_forward_trace_enabled:
+            _t_pre_exit = self._t_layer_enter.pop(block_id, None)
+            if _t_pre_exit is not None:
+                _t_layer = time.perf_counter() - _t_pre_exit
+                LOG.info(
+                    "[rank=%d] block=%d layer.forward() took %.3fs",
+                    self._rank,
+                    int(block_id),
+                    _t_layer,
+                )
+                if _t_layer > _SLOW_LAYER_FORWARD_S:
+                    LOG.warning(
+                        "[rank=%d] SLOW_LAYER_FORWARD block=%d %.3fs "
+                        "(threshold=%.1fs) — likely Mode C deadlock point",
+                        self._rank,
+                        int(block_id),
+                        _t_layer,
+                        _SLOW_LAYER_FORWARD_S,
+                    )
         if self._first_iter_trace_enabled:
             self._first_iter_log("post_block_forward enter", block_id)
         try:
