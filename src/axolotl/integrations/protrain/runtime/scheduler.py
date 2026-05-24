@@ -383,7 +383,16 @@ class Scheduler:
                 )
 
     def ensure_chunks_resident(self, chunk_ids: Iterable[ChunkId]) -> None:
-        """Sync gather chunks on compute stream so autograd sees real param.size() on cold paths."""
+        """Gather chunks for LoRA-container hooks; routes sharded all_gather on prefetch stream so it overlaps compute.
+
+        ``param.data`` rebinding inside :meth:`ChunkManager.gather` is a
+        CPU-side tensor metadata swap that completes synchronously, so
+        autograd sees real ``param.size()`` immediately. The H2D copy +
+        NCCL ``all_gather_into_tensor`` are stream-dependent; routing them
+        on ``_prefetch_stream`` (instead of the compute stream) avoids the
+        Mode C ``zero3_shard`` hang where block N's compute would otherwise
+        serialize with block N-1's per-container sharded gather.
+        """
         # Per-step LoRA-container fan-out (~28 containers × 4 hooks at Llama
         # class) drives this method hot — keep the CPU lane an attribute-
         # lookup-only no-op past the empty-tuple guard. The cuda.is_available
@@ -398,19 +407,28 @@ class Scheduler:
                 cids = tuple(chunk_ids)
             if not cids:
                 return
-            if self._has_cuda:
+            if self._has_cuda and self._prefetch_stream is not None:
                 import torch as _torch
 
-                # Wait on swap+prefetch+offload so pool buffers and in-flight
-                # gathers complete pre-rebind.
-                compute = _torch.cuda.current_stream()
+                # Order prefetch after in-flight swap/offload so pool buffers
+                # and any concurrent re-gather complete before we issue ours.
                 if self._swap_stream is not None:
-                    compute.wait_stream(self._swap_stream)
-                if self._prefetch_stream is not None:
-                    compute.wait_stream(self._prefetch_stream)
+                    self._prefetch_stream.wait_stream(self._swap_stream)
                 if self._offload_stream is not None:
-                    compute.wait_stream(self._offload_stream)
-            # gather on compute stream so sharded all_gather completes before autograd records source-shape.
+                    self._prefetch_stream.wait_stream(self._offload_stream)
+                # Issue H2D + NCCL all_gather on the prefetch stream so the
+                # sharded reconstruction overlaps with current compute on the
+                # default stream.
+                with _torch.cuda.stream(self._prefetch_stream):
+                    for cid in cids:
+                        self.chunk_manager.gather(cid)
+                # Compute must observe the gather's writes before reading the
+                # chunk; mirror _sync_prefetch_with_compute inline so the
+                # caller's compute stream blocks on prefetch.
+                compute = _torch.cuda.current_stream()
+                compute.wait_stream(self._prefetch_stream)
+                return
+            # CPU / no-prefetch-stream fallback: synchronous gather (correctness).
             for cid in cids:
                 self.chunk_manager.gather(cid)
         finally:

@@ -45,6 +45,26 @@ def _slow_offload_regather_threshold_s() -> float:
 
 _SLOW_OFFLOAD_REGATHER_S: float = _slow_offload_regather_threshold_s()
 
+
+def _slow_sharded_gather_threshold_s() -> float:
+    """PROTRAIN_DEBUG_SLOW_SHARDED_GATHER_S (default 5.0) — per-call sharded all_gather WARN threshold.
+
+    Times each ``_gather_sharded`` invocation (forward or backward) so that
+    Mode C ``zero3_shard=True`` stalls in the NCCL ``all_gather_into_tensor``
+    path are observable independently of SLOW_GATHER / SLOW_OFFLOAD_REGATHER.
+    The forward-gather path for sharded chunks is the v73 Mode C bs=2 hang
+    site (block=10 forward); this watchdog will pinpoint a repeat if it occurs.
+    """
+    raw = os.environ.get("PROTRAIN_DEBUG_SLOW_SHARDED_GATHER_S", "5.0")
+    try:
+        v = float(raw)
+    except ValueError:
+        return 5.0
+    return max(0.0, v)
+
+
+_SLOW_SHARDED_GATHER_S: float = _slow_sharded_gather_threshold_s()
+
 if TYPE_CHECKING:
     import torch
     from torch import nn
@@ -1181,11 +1201,11 @@ class ChunkManager:
         slow_or = _SLOW_OFFLOAD_REGATHER_S > 0.0
 
         if not slow_g and not slow_or:
-            return self._gather_impl(chunk_id, stream=stream)
+            return self._gather_impl(chunk_id, stream=stream, phase=phase)
 
         t0 = time.perf_counter()
         try:
-            self._gather_impl(chunk_id, stream=stream)
+            self._gather_impl(chunk_id, stream=stream, phase=phase)
         finally:
             elapsed = time.perf_counter() - t0
             if slow_g and elapsed >= _SLOW_GATHER_THRESHOLD_S:
@@ -1230,12 +1250,16 @@ class ChunkManager:
         self,
         chunk_id: ChunkId,
         stream: "torch.cuda.Stream | None" = None,
+        phase: str = "forward_regather",
     ) -> None:
         """Untimed gather body; split out so the public wrapper can attach watchdog timing.
 
         ``stream`` (optional) is honored only when provided AND CUDA is available;
         the H2D copy + sharded all_gather are wrapped in ``torch.cuda.stream(stream)``
         so they execute on the caller's stream rather than the default compute stream.
+
+        ``phase`` is threaded to :meth:`_gather_sharded` so the
+        ``SLOW_SHARDED_GATHER`` watchdog can tag forward vs backward gathers.
         """
         if chunk_id in self._persistent_ids:
             return
@@ -1250,11 +1274,13 @@ class ChunkManager:
                 _torch = None
             if _torch is not None and _torch.cuda.is_available():
                 with _torch.cuda.stream(stream):
-                    self._gather_impl_body(chunk_id)
+                    self._gather_impl_body(chunk_id, phase=phase)
                 return
-        self._gather_impl_body(chunk_id)
+        self._gather_impl_body(chunk_id, phase=phase)
 
-    def _gather_impl_body(self, chunk_id: ChunkId) -> None:
+    def _gather_impl_body(
+        self, chunk_id: ChunkId, phase: str = "forward_regather"
+    ) -> None:
         """Original untimed gather body, kept stream-context-agnostic for both call paths."""
         if self.buffer_pool is None:
             raise RuntimeError(
@@ -1296,7 +1322,7 @@ class ChunkManager:
         buf = self.buffer_pool.acquire(chunk_id, chunk_bytes=chunk_bytes)
         self._active_chunks.add(chunk_id)
         if shard_state is not None:
-            self._gather_sharded(chunk_id, buf, shard_state)
+            self._gather_sharded(chunk_id, buf, shard_state, phase=phase)
             self._rebind_params_to_buffer(chunk_id, buf, needs_copy=False)
             return
 
@@ -1308,14 +1334,25 @@ class ChunkManager:
         chunk_id: ChunkId,
         buf: "torch.Tensor",
         shard_state: "_ChunkShardState",
+        phase: str = "forward_regather",
     ) -> None:
-        """ZeRO-3 all_gather path: one collective per dtype region."""
+        """ZeRO-3 all_gather path: one collective per dtype region.
+
+        ``phase`` tags the call site for the SLOW_SHARDED_GATHER watchdog
+        ("forward_regather" / "backward_regather" / "resume_restore"). The
+        watchdog times the per-region all_gather hot loop so Mode C
+        ``zero3_shard`` stalls on the NCCL collective surface independently
+        of OFFLOAD H2D re-gather and the broader gather() wrapper timing.
+        """
         import torch
         import torch.distributed as dist
 
         from axolotl.integrations.protrain.runtime.streams import (
             SingleStreamAllocator,
         )
+
+        slow_sg = _SLOW_SHARDED_GATHER_S > 0.0
+        t0_sg = time.perf_counter() if slow_sg else 0.0
 
         # Route scratch allocations through default-stream heap; tie lifetime via record_stream.
         cur_stream: "torch.cuda.Stream | None" = None
@@ -1364,6 +1401,22 @@ class ChunkManager:
             buf.narrow(0, region.chunk_offset, region.region_bytes).copy_(
                 gather_scratch.narrow(0, 0, region.region_bytes)
             )
+
+        if slow_sg:
+            elapsed_sg = time.perf_counter() - t0_sg
+            if elapsed_sg >= _SLOW_SHARDED_GATHER_S:
+                # Distinct WARN line so log scrapers can grep SLOW_SHARDED_GATHER.
+                LOG.warning(
+                    "ProTrain SLOW_SHARDED_GATHER: chunk_id=%d phase=%s "
+                    "elapsed=%.3fs (threshold=%.2fs; NCCL all_gather_into_tensor "
+                    "across %d region(s) for zero3_shard). Mode C bs=2 forward "
+                    "hang site; expect this to be silent post-fix.",
+                    int(chunk_id),
+                    phase,
+                    elapsed_sg,
+                    _SLOW_SHARDED_GATHER_S,
+                    len(shard_state.regions),
+                )
 
     def _rebind_params_to_buffer(
         self,
