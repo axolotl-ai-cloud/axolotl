@@ -356,6 +356,8 @@ def search(
     cpu_capacity_bytes: int | None = None,
     *,
     forbid_activation_offload: bool = False,
+    prefer_no_offload_on_non_nvlink: bool = True,
+    non_nvlink_multi_rank: bool | None = None,
 ) -> SearchResult:
     """Return the minimum-runtime SearchResult fitting under capacity_bytes.
 
@@ -363,10 +365,30 @@ def search(
     Wired from ``cfg.lora_mlp_kernel`` — the fused MLP backward kernel returns
     a real gradient on offloaded activations whose ChunkManager placeholder is
     zero-shape, crashing at the first backward with a shape-mismatch error.
+
+    ``prefer_no_offload_on_non_nvlink``: defensive tie-break that prefers
+    ``n_offload=0`` configs when the rig is detected as non-NVLink multi-rank.
+    v71/v72-redux verified bs=2 with ``n_offload > 0`` hangs in autograd
+    backward on consumer multi-GPU rigs; v62-style (``n_persist=128,
+    n_offload=0``) runs cleanly. Configs within a 5% noise band of the best
+    predicted runtime are re-ranked by (n_offload ASC, n_swap ASC,
+    -n_persist ASC) before the existing (n_ckpt, -n_persist, n_buffer)
+    tie-break runs. ``non_nvlink_multi_rank``: explicit override; when None
+    the heuristic auto-detects via ``hw.gpu_count > 1 and not hw.has_nvlink``.
     """
     bounds = derive_bounds(trace, layout)
 
     _ = hw.zero3_shard  # noqa: F841
+
+    # Detect non-NVLink multi-rank: gpu_count>1 AND no NVLink topology. The
+    # hardware.py default leaves has_nvlink=False; on real NVLink rigs the
+    # caller is expected to pass non_nvlink_multi_rank=False to disable.
+    if non_nvlink_multi_rank is None:
+        non_nvlink_multi_rank = bool(hw.gpu_count > 1 and not hw.has_nvlink)
+    apply_no_offload_heuristic = bool(
+        prefer_no_offload_on_non_nvlink and non_nvlink_multi_rank
+    )
+    _NON_NVLINK_TIE_RATIO = 0.05  # 5% noise band for the n_offload tie-break
 
     n_total = 0
     n_feasible = 0
@@ -615,7 +637,37 @@ def search(
                             best_peak = predicted_peak
                         else:
                             improvement = best_iter_s - predicted_iter_s
-                            if improvement >= best_iter_s * _NEAR_TIE_RATIO:
+                            # PR #17c: on non-NVLink multi-rank rigs, prefer n_offload=0
+                            # within a 5% noise band of the current best (covers both
+                            # slightly-faster and slightly-slower candidates). v71/v72-
+                            # redux: bs=2 + n_offload>0 hangs in autograd backward on
+                            # consumer multi-GPU; v62-style n_persist=128 / n_offload=0
+                            # runs cleanly. Bounded by _NON_NVLINK_TIE_RATIO; outside
+                            # the band the original 1%-noise comparator wins.
+                            non_nvlink_swap = False
+                            if (
+                                apply_no_offload_heuristic
+                                and cfg.n_offload != best_cfg.n_offload
+                                and abs(improvement) <= best_iter_s * _NON_NVLINK_TIE_RATIO
+                            ):
+                                cur_nv_key = (
+                                    cfg.n_offload,
+                                    cfg.n_swap,
+                                    -cfg.n_persist,
+                                )
+                                best_nv_key = (
+                                    best_cfg.n_offload,
+                                    best_cfg.n_swap,
+                                    -best_cfg.n_persist,
+                                )
+                                if cur_nv_key < best_nv_key:
+                                    non_nvlink_swap = True
+                            if non_nvlink_swap:
+                                best_iter_s = predicted_iter_s
+                                best_cfg = cfg
+                                best_block_map = block_map
+                                best_peak = predicted_peak
+                            elif improvement >= best_iter_s * _NEAR_TIE_RATIO:
                                 best_iter_s = predicted_iter_s
                                 best_cfg = cfg
                                 best_block_map = block_map

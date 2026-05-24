@@ -376,6 +376,30 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_prefer_no_offload_on_non_nvlink: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": (
+                "Defensive searcher tie-break on non-NVLink multi-rank rigs. "
+                "When True (default) and the runtime detects "
+                "``world_size > 1`` AND no NVLink topology, the exhaustive "
+                "searcher re-ranks configs within a 5% predicted-runtime "
+                "noise band by (n_offload ASC, n_swap ASC, -n_persist ASC) "
+                "before applying the standard (n_ckpt, -n_persist, "
+                "n_buffer) tie-break. v71/v72-redux verification showed "
+                "``bs=2`` with ``n_offload > 0`` hangs deep in autograd "
+                "backward on consumer non-NVLink multi-GPU rigs; v62-style "
+                "configs (``n_persist=128, n_offload=0``) run cleanly. Set "
+                "False to restore the pure-runtime tie-break (e.g. when "
+                "PR #17b lands and the underlying re-gather stream "
+                "contention is fixed). Has no effect on single-rank runs "
+                "or NVLink-equipped multi-rank rigs. Explicit knob "
+                "overrides (``protrain_n_offload_override`` etc.) bypass "
+                "the searcher entirely and are unaffected."
+            )
+        },
+    )
+
     protrain_allow_online_reshard: bool | None = Field(
         default=False,
         json_schema_extra={

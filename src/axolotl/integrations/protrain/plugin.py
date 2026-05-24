@@ -905,6 +905,17 @@ class ProTrainPlugin(BasePlugin):
                 "n_offload>0 candidates."
             )
 
+        # PR #17c: defensive searcher tie-break on non-NVLink multi-rank rigs.
+        # Default True; set False once PR #17b lands the chunk re-gather fix.
+        prefer_no_offload_on_non_nvlink_raw = getattr(
+            cfg, "protrain_prefer_no_offload_on_non_nvlink", True
+        )
+        prefer_no_offload_on_non_nvlink = (
+            True
+            if prefer_no_offload_on_non_nvlink_raw is None
+            else bool(prefer_no_offload_on_non_nvlink_raw)
+        )
+
         wrapped = protrain_model_wrapper(
             model,
             model_config=getattr(model, "config", None),
@@ -924,6 +935,7 @@ class ProTrainPlugin(BasePlugin):
             auto_mode=bool(auto_mode),
             target_device=target_device,
             forbid_activation_offload=forbid_activation_offload,
+            prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
         )
 
         cfg._protrain_wrapped = wrapped  # type: ignore[attr-defined]

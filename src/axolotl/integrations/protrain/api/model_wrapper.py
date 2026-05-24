@@ -1287,6 +1287,7 @@ def protrain_model_wrapper(
     auto_mode: bool = False,
     target_device: "torch.device | str | int | None" = None,
     forbid_activation_offload: bool = False,
+    prefer_no_offload_on_non_nvlink: bool = True,
 ) -> WrappedModel:
     """Compose the ProTrain runtime around a standard ``nn.Module``.
 
@@ -1294,6 +1295,10 @@ def protrain_model_wrapper(
     CostConfig with ``n_offload > 0``. Set from ``cfg.lora_mlp_kernel`` —
     the fused MLP backward kernel is incompatible with chunk-storage
     placeholders.
+
+    ``prefer_no_offload_on_non_nvlink``: defensive searcher tie-break;
+    auto-prefers ``n_offload=0`` configs within a 5% noise band when the
+    hardware profile reports multi-rank without NVLink. See PR #17c.
     """
     import torch
 
@@ -1670,6 +1675,7 @@ def protrain_model_wrapper(
             hardware_profile,
             cpu_capacity_bytes=cpu_capacity_bytes,
             forbid_activation_offload=forbid_activation_offload,
+            prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
         )
         _sys2.stderr.write(
             f"[protrain] search done: cfg={result.cfg} "
@@ -1976,6 +1982,7 @@ def protrain_model_wrapper(
                 search_hw_profile,
                 cpu_capacity_bytes=cpu_capacity_bytes,
                 forbid_activation_offload=forbid_activation_offload,
+                prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
             )
 
             # Re-pick runtime mode for the post-measurement cfg.
