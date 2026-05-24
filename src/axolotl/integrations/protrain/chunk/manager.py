@@ -65,6 +65,26 @@ def _slow_sharded_gather_threshold_s() -> float:
 
 _SLOW_SHARDED_GATHER_S: float = _slow_sharded_gather_threshold_s()
 
+
+def _gather_internals_trace_enabled() -> bool:
+    """PROTRAIN_DEBUG_GATHER_INTERNALS={1,true,yes,on} enables 4-phase sub-op timing inside gather().
+
+    Times each sub-op within ``_gather_impl_body`` / ``_gather_sharded`` /
+    ``_rebind_params_to_buffer``: ``bind_metadata`` (CPU-side rebind, pre-collective),
+    ``h2d_copy`` (per-region shard H2D copy), ``all_gather_issue`` (CPU-side issue
+    point of ``dist.all_gather_into_tensor``, NOT completion), ``split_rebind``
+    (post-collective param.data rebind). Mode C bs=2 forward hangs between
+    prefetch_stream.wait_stream return and gather() return on ranks 0+3; this
+    split distinguishes CPU bookkeeping vs allocator vs NCCL issue. Zero overhead
+    when off. Per-line ``[rank=N] chunk_id=K phase=<...> sub_op=<...> took X.Xs``.
+    """
+    raw = os.environ.get("PROTRAIN_DEBUG_GATHER_INTERNALS", "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+_GATHER_INTERNALS_TRACE: bool = _gather_internals_trace_enabled()
+
+
 if TYPE_CHECKING:
     import torch
     from torch import nn
@@ -1298,6 +1318,8 @@ class ChunkManager:
 
         shard_state = self._chunk_shards.get(chunk_id)
 
+        trace_internals = _GATHER_INTERNALS_TRACE
+
         # Active fast path: tag-lookup-only re-gather (lease-idempotent).
         if chunk_id in self._active_chunks:
             resident_buf = self.buffer_pool.lookup_resident(chunk_id)
@@ -1307,27 +1329,101 @@ class ChunkManager:
                     f"chunk {chunk_id} marked active but pool has no resident "
                     "tag — _active_chunks invariant violated"
                 )
+            if trace_internals:
+                t0_sr = time.perf_counter()
             self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=split_rebind_active_fastpath "
+                    "took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    time.perf_counter() - t0_sr,
+                )
             return
 
+        if trace_internals:
+            t0_bytes = time.perf_counter()
         chunk_bytes = self._compute_chunk_bytes(chunk_id)
+        if trace_internals:
+            LOG.warning(
+                "[rank=%d] chunk_id=%d phase=%s sub_op=compute_chunk_bytes took %.3fs",
+                self.rank,
+                int(chunk_id),
+                phase,
+                time.perf_counter() - t0_bytes,
+            )
 
+        if trace_internals:
+            t0_lookup = time.perf_counter()
         resident_buf = self.buffer_pool.acquire_if_resident(chunk_id)
+        if trace_internals:
+            LOG.warning(
+                "[rank=%d] chunk_id=%d phase=%s sub_op=acquire_if_resident took %.3fs",
+                self.rank,
+                int(chunk_id),
+                phase,
+                time.perf_counter() - t0_lookup,
+            )
         if resident_buf is not None:
             self._active_chunks.add(chunk_id)
+            if trace_internals:
+                t0_sr = time.perf_counter()
             self._rebind_params_to_buffer(chunk_id, resident_buf, needs_copy=False)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=split_rebind_resident_hit "
+                    "took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    time.perf_counter() - t0_sr,
+                )
             return
 
         # Cache miss: acquire fresh slot. Oversize chunks route through _large_buffers.
+        if trace_internals:
+            t0_acq = time.perf_counter()
         buf = self.buffer_pool.acquire(chunk_id, chunk_bytes=chunk_bytes)
+        if trace_internals:
+            LOG.warning(
+                "[rank=%d] chunk_id=%d phase=%s sub_op=buffer_pool_acquire took %.3fs",
+                self.rank,
+                int(chunk_id),
+                phase,
+                time.perf_counter() - t0_acq,
+            )
         self._active_chunks.add(chunk_id)
         if shard_state is not None:
             self._gather_sharded(chunk_id, buf, shard_state, phase=phase)
+            if trace_internals:
+                t0_sr = time.perf_counter()
             self._rebind_params_to_buffer(chunk_id, buf, needs_copy=False)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=split_rebind_post_sharded "
+                    "took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    time.perf_counter() - t0_sr,
+                )
             return
 
         # Replicated path: per-slot H2D copies directly into the buffer.
+        if trace_internals:
+            t0_sr = time.perf_counter()
         self._rebind_params_to_buffer(chunk_id, buf, needs_copy=True)
+        if trace_internals:
+            LOG.warning(
+                "[rank=%d] chunk_id=%d phase=%s sub_op=split_rebind_replicated_h2d "
+                "took %.3fs",
+                self.rank,
+                int(chunk_id),
+                phase,
+                time.perf_counter() - t0_sr,
+            )
 
     def _gather_sharded(
         self,
@@ -1354,6 +1450,8 @@ class ChunkManager:
         slow_sg = _SLOW_SHARDED_GATHER_S > 0.0
         t0_sg = time.perf_counter() if slow_sg else 0.0
 
+        trace_internals = _GATHER_INTERNALS_TRACE
+
         # Route scratch allocations through default-stream heap; tie lifetime via record_stream.
         cur_stream: "torch.cuda.Stream | None" = None
         on_cuda = buf.device.type == "cuda" and torch.cuda.is_available()
@@ -1366,8 +1464,10 @@ class ChunkManager:
             and (cur_stream != torch.cuda.default_stream(device=buf.device))
         )
 
-        for region in shard_state.regions:
+        for region_idx, region in enumerate(shard_state.regions):
             # Staging: this rank's shard on GPU.
+            if trace_internals:
+                t0_alloc_shard = time.perf_counter()
             if wrap_alloc:
                 with SingleStreamAllocator():
                     my_shard_gpu = torch.empty(
@@ -1379,9 +1479,32 @@ class ChunkManager:
                 my_shard_gpu = torch.empty(
                     region.shard_bytes, dtype=torch.uint8, device=buf.device
                 )
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=alloc_shard_gpu "
+                    "region=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    region_idx,
+                    time.perf_counter() - t0_alloc_shard,
+                )
+                t0_h2d = time.perf_counter()
             my_shard_gpu.copy_(region.cpu_shard_bytes, non_blocking=True)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=h2d_copy "
+                    "region=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    region_idx,
+                    time.perf_counter() - t0_h2d,
+                )
 
             # Gather output scratch: region_bytes_padded (may be > region_bytes).
+            if trace_internals:
+                t0_alloc_gs = time.perf_counter()
             if wrap_alloc:
                 with SingleStreamAllocator():
                     gather_scratch = torch.empty(
@@ -1396,11 +1519,44 @@ class ChunkManager:
                     dtype=torch.uint8,
                     device=buf.device,
                 )
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=alloc_gather_scratch "
+                    "region=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    region_idx,
+                    time.perf_counter() - t0_alloc_gs,
+                )
+                t0_ag = time.perf_counter()
             dist.all_gather_into_tensor(gather_scratch, my_shard_gpu)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=all_gather_issue "
+                    "region=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    region_idx,
+                    time.perf_counter() - t0_ag,
+                )
 
+            if trace_internals:
+                t0_narrow = time.perf_counter()
             buf.narrow(0, region.chunk_offset, region.region_bytes).copy_(
                 gather_scratch.narrow(0, 0, region.region_bytes)
             )
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=%s sub_op=narrow_copy_to_buf "
+                    "region=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    phase,
+                    region_idx,
+                    time.perf_counter() - t0_narrow,
+                )
 
         if slow_sg:
             elapsed_sg = time.perf_counter() - t0_sg
@@ -1429,13 +1585,28 @@ class ChunkManager:
         if not slots:
             return
 
+        trace_internals = _GATHER_INTERNALS_TRACE
+
         if needs_copy:
+            if trace_internals:
+                t0_inner_h2d = time.perf_counter()
             for slot in slots:
                 nbytes = slot.numel * slot.element_size
                 dst_bytes = buf.narrow(0, slot.byte_offset, nbytes)
                 dst_typed = dst_bytes.view(slot.dtype).view(slot.shape)
                 dst_typed.copy_(slot.cpu_data, non_blocking=True)
+            if trace_internals:
+                LOG.warning(
+                    "[rank=%d] chunk_id=%d phase=rebind sub_op=replicated_slot_h2d "
+                    "slots=%d took %.3fs",
+                    self.rank,
+                    int(chunk_id),
+                    len(slots),
+                    time.perf_counter() - t0_inner_h2d,
+                )
 
+        if trace_internals:
+            t0_bind = time.perf_counter()
         # Rebind .data unconditionally — previous offload() nulled it.
         for slot in slots:
             param = self._params_by_id.get(slot.param_id)
@@ -1445,6 +1616,15 @@ class ChunkManager:
             byte_view = buf.narrow(0, slot.byte_offset, nbytes)
             typed = byte_view.view(slot.dtype).view(slot.shape)
             param.data = typed
+        if trace_internals:
+            LOG.warning(
+                "[rank=%d] chunk_id=%d phase=rebind sub_op=bind_param_data_to_chunk_view "
+                "slots=%d took %.3fs",
+                self.rank,
+                int(chunk_id),
+                len(slots),
+                time.perf_counter() - t0_bind,
+            )
 
         # Register storage ptr → chunk_id for OffloadedBlock._pack.
         try:
