@@ -24,6 +24,12 @@ LOG = get_logger(__name__)
 # Sentinel for v48 exact-token grep; bump when the partition scheme changes shape.
 _PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION = 1
 
+# Sentinel for v51 exact-token grep; bump when within-param shard scheme changes shape.
+_PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION = 1
+
+# Default huge-param threshold: 512 MiB. Override via cfg.protrain_persistent_huge_param_threshold_bytes.
+_DEFAULT_HUGE_PARAM_THRESHOLD_BYTES = 512 * 1024 * 1024
+
 
 class _ProTrainOptimizer(torch.optim.Optimizer):
     """Optimizer facade over the ProTrain GPU/CPU adapter pair."""
@@ -39,6 +45,8 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         persistent_params_full: list["nn.Parameter"] | None = None,
         persistent_owner_rank: list[int] | None = None,
         persistent_world_size: int = 1,
+        persistent_huge_originals: list["nn.Parameter"] | None = None,
+        persistent_huge_shards: list["nn.Parameter"] | None = None,
     ) -> None:
         """Wire the GPU/CPU adapter pair into a Trainer-compatible Optimizer facade."""
         # Pass full param list so schedulers iterate over the real set.
@@ -57,6 +65,15 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         )
         self._persistent_owner_rank: list[int] = list(persistent_owner_rank or [])
         self._persistent_world_size: int = int(persistent_world_size)
+        # Within-param shard fallback metadata for huge persistent params (v51).
+        # _persistent_huge_originals[i] is the full-shape source param; the
+        # corresponding _persistent_huge_shards[i] is this rank's narrow view.
+        self._persistent_huge_originals: list["nn.Parameter"] = list(
+            persistent_huge_originals or []
+        )
+        self._persistent_huge_shards: list["nn.Parameter"] = list(
+            persistent_huge_shards or []
+        )
 
     # ---- step / zero_grad ----------------------------------------------
 
@@ -78,6 +95,12 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                 for cid in list(non_persist):
                     cm.reduce_grads_and_offload(cid)
 
+        # Within-shard fallback: route grad of each huge original onto the
+        # rank-local shard view BEFORE the inner step. The shard is a
+        # narrow into orig.data, so narrowing orig.grad the same way gives
+        # the shard the matching slice of the gradient.
+        self._route_huge_grads_to_shards()
+
         if self._gpu_optim is not None:
             self._gpu_optim.step()
         # Broadcast each owner's persistent-param update to peers before next forward.
@@ -85,6 +108,33 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # Drain all CPU Adam futures enqueued by grad hooks + orphan sweep.
         self._chunk_manager.wait_cpu_optim_all()
         return loss
+
+    def _route_huge_grads_to_shards(self) -> None:
+        """Narrow each huge original param's grad onto this rank's shard view.
+
+        ``GpuFusedAdamAdapter`` (and the test fake) steps each shard
+        nn.Parameter directly; the shard's ``data`` is a narrow into
+        ``orig.data`` along dim-0, and autograd populates ``orig.grad``
+        (the shard is not in the autograd graph). Narrowing ``orig.grad``
+        the matching way hands each shard the correct slice of the
+        gradient just before .step() runs.
+        """
+        if not self._persistent_huge_originals:
+            return
+        rank = int(getattr(self._chunk_manager, "rank", 0) or 0)
+        world = int(self._persistent_world_size)
+        if world <= 0:
+            return
+        for orig, shard in zip(
+            self._persistent_huge_originals,
+            self._persistent_huge_shards,
+            strict=True,
+        ):
+            if orig.grad is None:
+                shard.grad = None
+                continue
+            shard_size = orig.shape[0] // world
+            shard.grad = orig.grad.narrow(0, rank * shard_size, shard_size)
 
     def _sync_persistent_params_after_step(self) -> None:
         """All-reduce(SUM)-with-zeros to broadcast each owner's post-step update.
@@ -94,10 +144,16 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         non-owned param.data and then summing across ranks yields the
         owner's post-step value everywhere. param.data is the only
         write; ``state[param]`` is untouched (Adam keys by tensor id).
+
+        Huge-param within-shard fallback (v51): each rank already updated
+        its own dim-0 slice of ``orig.data`` (the shard is a narrow view
+        into the original storage). An ``all_gather_into_tensor`` over
+        the per-rank shards reconstructs the full ``orig.data`` on every
+        rank.
         """
         if self._persistent_world_size <= 1:
             return
-        if not self._persistent_params_full:
+        if not self._persistent_params_full and not self._persistent_huge_originals:
             return
         import torch.distributed as dist
         from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
@@ -106,28 +162,55 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             return
 
         rank = int(dist.get_rank())
-        # Zero non-owned param.data BEFORE the collective so the SUM lands the owner's value.
-        for i, param in enumerate(self._persistent_params_full):
-            if self._persistent_owner_rank[i] != rank:
-                param.data.zero_()
 
-        # Bucket by (dtype, device) so a single collective covers each homogeneous group.
-        buckets: dict[tuple[Any, Any], list["nn.Parameter"]] = {}
-        for param in self._persistent_params_full:
-            key = (param.data.dtype, param.data.device)
-            buckets.setdefault(key, []).append(param)
+        # Small-param round-robin sync.
+        if self._persistent_params_full:
+            # Zero non-owned param.data BEFORE the collective so the SUM lands the owner's value.
+            for i, param in enumerate(self._persistent_params_full):
+                if self._persistent_owner_rank[i] != rank:
+                    param.data.zero_()
 
-        for params in buckets.values():
-            if len(params) == 1:
-                dist.all_reduce(params[0].data, op=dist.ReduceOp.SUM)
-                continue
-            tensors = [p.data for p in params]
-            flat = _flatten_dense_tensors(tensors)
-            dist.all_reduce(flat, op=dist.ReduceOp.SUM)
-            for orig, synced in zip(
-                tensors, _unflatten_dense_tensors(flat, tensors), strict=True
+            # Bucket by (dtype, device) so a single collective covers each homogeneous group.
+            buckets: dict[tuple[Any, Any], list["nn.Parameter"]] = {}
+            for param in self._persistent_params_full:
+                key = (param.data.dtype, param.data.device)
+                buckets.setdefault(key, []).append(param)
+
+            for params in buckets.values():
+                if len(params) == 1:
+                    dist.all_reduce(params[0].data, op=dist.ReduceOp.SUM)
+                    continue
+                tensors = [p.data for p in params]
+                flat = _flatten_dense_tensors(tensors)
+                dist.all_reduce(flat, op=dist.ReduceOp.SUM)
+                for orig, synced in zip(
+                    tensors, _unflatten_dense_tensors(flat, tensors), strict=True
+                ):
+                    orig.copy_(synced)
+
+        # Huge-param within-shard sync: each rank's shard is a narrow into
+        # orig.data, so the gather lands directly in-place across all ranks.
+        if self._persistent_huge_originals:
+            for orig, shard in zip(
+                self._persistent_huge_originals,
+                self._persistent_huge_shards,
+                strict=True,
             ):
-                orig.copy_(synced)
+                # Source tensor must be contiguous; shard_view.contiguous()
+                # is a no-op for the narrow we created (dim-0 slice of a
+                # contiguous parent), but gloo's collective requires it.
+                src = shard.data.contiguous()
+                dst = orig.data
+                if not dst.is_contiguous():
+                    raise RuntimeError(
+                        "protrain: huge persistent param data is not "
+                        "contiguous; within-shard all_gather requires "
+                        "a contiguous destination storage."
+                    )
+                dist.all_gather_into_tensor(dst, src)
+                # If we had to materialize a contiguous copy, the shard's
+                # data view now points at the correct slice of dst again
+                # (still a narrow into orig.data); no rewrite needed.
 
     # ---- LR-scheduler hyperparam forwarding -----------------------------
 
@@ -422,6 +505,7 @@ def protrain_optimizer_wrapper(
     eps: float = 1e-8,
     weight_decay: float = 0.0,
     optimizer_name: str | None = None,
+    huge_param_threshold_bytes: int = _DEFAULT_HUGE_PARAM_THRESHOLD_BYTES,
 ) -> torch.optim.Optimizer:
     """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams."""
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
@@ -461,16 +545,61 @@ def protrain_optimizer_wrapper(
     # Round-robin partition the persistent set across ranks so each rank only owns 1/W of state.
     persistent_world_size = int(getattr(chunk_manager, "world_size", 1) or 1)
     persistent_rank = int(getattr(chunk_manager, "rank", 0) or 0)
-    persistent_params_full: list["nn.Parameter"] = list(persistent_params)
+    persistent_params_full_all: list["nn.Parameter"] = list(persistent_params)
+
+    # Within-param shard fallback for huge persistent params (v51).
+    # Round-robin pins each whole nn.Parameter to one rank; for a single huge
+    # param (e.g., Llama-3-70B lm_head ~2.6 GB optim state) that defeats the
+    # memory-balance goal. Slice such params dim-0 into world_size shards.
+    persistent_huge_originals: list["nn.Parameter"] = []
+    persistent_huge_shards: list["nn.Parameter"] = []
+    if persistent_world_size > 1:
+        # fp32 master state estimate per param: 4 bytes/elem * Adam carries m+v (2x).
+        # We compare against raw element-bytes (numel * 4) to keep the cfg
+        # threshold name "...bytes" intuitive.
+        small_params: list["nn.Parameter"] = []
+        huge_params: list["nn.Parameter"] = []
+        for p in persistent_params_full_all:
+            if int(p.numel()) * 4 > int(huge_param_threshold_bytes):
+                if int(p.shape[0]) % persistent_world_size != 0:
+                    raise RuntimeError(
+                        "protrain: persistent param of shape "
+                        f"{tuple(p.shape)} exceeds huge-param threshold "
+                        f"({huge_param_threshold_bytes} bytes) but dim-0 "
+                        f"size {int(p.shape[0])} is not divisible by "
+                        f"world_size={persistent_world_size}. Pad-and-mask "
+                        "fallback is not implemented; either reduce "
+                        "protrain_persistent_huge_param_threshold_bytes to "
+                        "keep this param on the round-robin path, or use a "
+                        f"world_size that divides {int(p.shape[0])}."
+                    )
+                huge_params.append(p)
+            else:
+                small_params.append(p)
+        from torch import nn as _nn  # local import keeps top-only-TYPE_CHECKING clean
+
+        for p in huge_params:
+            shard_size = int(p.shape[0]) // persistent_world_size
+            shard_view = p.data.narrow(0, persistent_rank * shard_size, shard_size)
+            shard_param = _nn.Parameter(shard_view, requires_grad=p.requires_grad)
+            persistent_huge_originals.append(p)
+            persistent_huge_shards.append(shard_param)
+
+        persistent_params_full = small_params
+        owned_persistent_params: list["nn.Parameter"] = small_params[
+            persistent_rank::persistent_world_size
+        ]
+        # Inner optim owns small-owned shards PLUS the rank's huge-param shard views.
+        owned_persistent_params = list(owned_persistent_params) + list(
+            persistent_huge_shards
+        )
+    else:
+        persistent_params_full = persistent_params_full_all
+        owned_persistent_params = persistent_params_full_all
+
     persistent_owner_rank: list[int] = [
         i % persistent_world_size for i in range(len(persistent_params_full))
     ]
-    if persistent_world_size > 1:
-        owned_persistent_params: list["nn.Parameter"] = persistent_params_full[
-            persistent_rank::persistent_world_size
-        ]
-    else:
-        owned_persistent_params = persistent_params_full
 
     gpu_optim: GpuFusedAdamAdapter | GpuAdamW8bitAdapter | None = None
     cpu_optim: CpuFusedAdamAdapter | None = None
@@ -655,6 +784,8 @@ def protrain_optimizer_wrapper(
         persistent_params_full=persistent_params_full,
         persistent_owner_rank=persistent_owner_rank,
         persistent_world_size=persistent_world_size,
+        persistent_huge_originals=persistent_huge_originals,
+        persistent_huge_shards=persistent_huge_shards,
     )
 
 

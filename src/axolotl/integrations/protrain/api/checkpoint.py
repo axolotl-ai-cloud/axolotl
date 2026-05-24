@@ -33,7 +33,7 @@ CHUNK_FILE_RE = re.compile(r"^chunk_(\d+)\.pt$")
 CHUNK_SHARD_FILE_RE = re.compile(r"^chunk_(\d+)_rank_(\d+)\.pt$")
 # v3 persistent partition: gpu_optim_rank_<R>.pt (one per rank).
 GPU_OPTIM_RANK_FILE_RE = re.compile(r"^gpu_optim_rank_(\d+)\.pt$")
-SCHEMA_FORMAT_VERSION = 3
+SCHEMA_FORMAT_VERSION = 4
 SAVE_MODE_REPLICATED = "replicated"
 SAVE_MODE_SHARDED = "sharded"
 DEFAULT_SAVE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB; mirrors args.py default
@@ -278,9 +278,15 @@ def _estimate_optim_state_bytes(optim: Any) -> int:
             local_shard += delta
 
     # v3 round-robin partition: GPU adapter holds only 1/W of persistent state on each rank.
+    # v4 within-shard fallback: when only the huge-param path is active (small set
+    # empty + huge set non-empty), partition is still active — each rank holds
+    # its 1/W shard of the huge-param Adam state.
     persistent_world_size = int(getattr(optim, "_persistent_world_size", 1) or 1)
     persistent_params_full = getattr(optim, "_persistent_params_full", None) or []
-    partition_active = persistent_world_size > 1 and len(persistent_params_full) > 0
+    persistent_huge_originals = getattr(optim, "_persistent_huge_originals", None) or []
+    partition_active = persistent_world_size > 1 and (
+        len(persistent_params_full) > 0 or len(persistent_huge_originals) > 0
+    )
 
     gpu_optim = getattr(optim, "_gpu_optim", None)
     if gpu_optim is not None:
@@ -376,6 +382,32 @@ def _validate_regions_match(
                         "saved per-rank shard tensors will not fit the "
                         "rebuilt shard_param; refusing to load."
                     )
+
+
+def _huge_param_shards_metadata(optim: Any, world_size: int) -> list[dict[str, Any]]:
+    """Return per-original metadata for the within-param shard fallback.
+
+    Empty list iff the optimizer has no huge-param within-shard partition
+    active (which is the common case). One entry per huge original
+    persistent param; the ``shard_shape`` is the rank-local view shape,
+    which is identical across ranks because dim-0 divides world_size by
+    construction.
+    """
+    originals = getattr(optim, "_persistent_huge_originals", None) or []
+    shards = getattr(optim, "_persistent_huge_shards", None) or []
+    if not originals:
+        return []
+    out: list[dict[str, Any]] = []
+    for orig, shard in zip(originals, shards, strict=True):
+        out.append(
+            {
+                "param_shape": list(int(d) for d in orig.shape),
+                "shard_shape": list(int(d) for d in shard.shape),
+                "shard_dtype": str(shard.dtype),
+                "world_size": int(world_size),
+            }
+        )
+    return out
 
 
 def _hyperparam_snapshot(optim: Any) -> list[dict[str, Any]]:
@@ -578,6 +610,9 @@ def _save_protrain_optim_dir(
                 if persistent_partition_active:
                     metadata["protrain_persistent_partition_version"] = 1
                     metadata["protrain_persistent_owner_world_size"] = int(world_size)
+                huge_meta = _huge_param_shards_metadata(optim, world_size)
+                if huge_meta:
+                    metadata["protrain_persistent_huge_param_shards"] = huge_meta
                 with open(os.path.join(target, METADATA_FILENAME), "w") as f:
                     json.dump(metadata, f, indent=2, sort_keys=True)
 
@@ -686,6 +721,9 @@ def _save_protrain_optim_dir(
             if persistent_partition_active:
                 metadata["protrain_persistent_partition_version"] = 1
                 metadata["protrain_persistent_owner_world_size"] = int(world_size)
+            huge_meta = _huge_param_shards_metadata(optim, world_size)
+            if huge_meta:
+                metadata["protrain_persistent_huge_param_shards"] = huge_meta
             with open(os.path.join(target, METADATA_FILENAME), "w") as f:
                 json.dump(metadata, f, indent=2, sort_keys=True)
 
@@ -931,15 +969,15 @@ def _load_protrain_optim_dir(
                 "ProTrain optimizer load: v2 metadata missing required "
                 "field 'saving_rank'. Refusing to load."
             )
-    elif fmt == SCHEMA_FORMAT_VERSION:
+    elif fmt in (3, SCHEMA_FORMAT_VERSION):
         if "protrain_save_mode" not in metadata:
             raise RuntimeError(
-                "ProTrain optimizer load: v3 metadata missing required "
+                f"ProTrain optimizer load: v{fmt} metadata missing required "
                 "field 'protrain_save_mode'. Refusing to load."
             )
         if "saving_rank" not in metadata:
             raise RuntimeError(
-                "ProTrain optimizer load: v3 metadata missing required "
+                f"ProTrain optimizer load: v{fmt} metadata missing required "
                 "field 'saving_rank'. Refusing to load."
             )
     else:
@@ -964,6 +1002,22 @@ def _load_protrain_optim_dir(
                 "round-robin partitioned and offline reshard does not "
                 "support repartitioning. Resume with the original "
                 f"world_size of {int(saved_world_for_partition)}."
+            )
+
+    # v4 within-param shard fallback: when huge-param shards are recorded,
+    # world_size must match identity — offline reshard does not yet support
+    # repartitioning the within-shard dim-0 slices.
+    saved_huge_shards = metadata.get("protrain_persistent_huge_param_shards")
+    if saved_huge_shards:
+        # Use the first shard's recorded world_size; all entries share the value by construction.
+        saved_world_for_huge = int(saved_huge_shards[0].get("world_size", 0))
+        current_world_for_huge = _current_world_size()
+        if saved_world_for_huge != current_world_for_huge:
+            raise RuntimeError(
+                "protrain: cross-world-size resume not supported when "
+                "huge-param within-shard partition is active. Resume with "
+                f"the original world_size of {saved_world_for_huge}, or "
+                "run an offline reshard."
             )
 
     chunk_manager = optim._chunk_manager

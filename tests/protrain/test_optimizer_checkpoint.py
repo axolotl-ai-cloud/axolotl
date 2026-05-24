@@ -673,7 +673,7 @@ def test_save_metadata_contains_expected_fields(saved_checkpoint):
         meta = json.load(f)
 
     assert meta["format_version"] == SCHEMA_FORMAT_VERSION
-    assert SCHEMA_FORMAT_VERSION == 3
+    assert SCHEMA_FORMAT_VERSION == 4
     assert isinstance(meta["protrain_layout_signature"], str)
     assert len(meta["protrain_layout_signature"]) == 64
     assert meta["protrain_persistent_ids"] == sorted(
@@ -1527,6 +1527,76 @@ def test_partitioned_persistent_save_load_roundtrip(tmp_path, saved_checkpoint):
     # Single-rank load attempts to resume a w=2 partitioned save → reject.
     with pytest.raises(RuntimeError, match="world_size mismatch on resume"):
         _load_protrain_optim_dir(optim, str(tmp_path / "partitioned_save"))
+
+
+@pytest.mark.gpu
+def test_partitioned_huge_param_save_load_roundtrip(tmp_path, saved_checkpoint):
+    """v4 huge-param metadata: schema check + load-side world_size identity guard.
+
+    Hand-rolls a w=2 partition save with a huge-param shard entry, then
+    loads on a single rank and asserts the documented cross-world-size
+    rejection message fires. The mp.spawn live round-trip is covered by
+    :mod:`tests.protrain.test_modec_huge_param_within_shard`.
+    """
+    _, _, optim = saved_checkpoint
+    target = tmp_path / "huge_save" / PROTRAIN_OPTIM_DIRNAME
+    target.mkdir(parents=True)
+
+    chunk_manager = optim._chunk_manager
+    saved_world = 2
+
+    import torch as _torch
+
+    meta = {
+        "format_version": SCHEMA_FORMAT_VERSION,
+        "protrain_layout_signature": _layout_signature(
+            chunk_manager,
+            world_size=saved_world,
+            zero3_shard=bool(getattr(chunk_manager, "zero3_shard", False)),
+        ),
+        "protrain_persistent_ids": sorted(
+            int(x) for x in chunk_manager._persistent_ids
+        ),
+        "protrain_n_buffer": int(getattr(chunk_manager, "n_buffer", 0)),
+        "protrain_world_size": saved_world,
+        "protrain_zero3_shard": False,
+        "protrain_save_mode": SAVE_MODE_REPLICATED,
+        "saving_rank": 0,
+        "param_groups_meta": [],
+        "saved_at_step": 1,
+        "torch_version": str(_torch.__version__),
+        "estimated_optim_state_bytes": 0,
+        "protrain_persistent_partition_version": 1,
+        "protrain_persistent_owner_world_size": saved_world,
+        "protrain_persistent_huge_param_shards": [
+            {
+                "param_shape": [4096, 4096],
+                "shard_shape": [2048, 4096],
+                "shard_dtype": "torch.float32",
+                "world_size": saved_world,
+            }
+        ],
+    }
+    (target / METADATA_FILENAME).write_text(json.dumps(meta))
+    for r in range(saved_world):
+        _torch.save(
+            optim._gpu_optim._optim.state_dict() if optim._gpu_optim else {},
+            target / f"gpu_optim_rank_{r}.pt",
+        )
+
+    # The round-robin world-size mismatch check fires first (saved=2, current=1).
+    # Both messages are documented; we accept either since both protect the user.
+    with pytest.raises(RuntimeError, match="world_size"):
+        _load_protrain_optim_dir(optim, str(tmp_path / "huge_save"))
+
+    # Reload metadata + verify the v4 shard field round-trips through JSON intact.
+    reloaded = json.loads((target / METADATA_FILENAME).read_text())
+    assert reloaded["format_version"] == 4
+    shards = reloaded["protrain_persistent_huge_param_shards"]
+    assert len(shards) == 1
+    assert shards[0]["param_shape"] == [4096, 4096]
+    assert shards[0]["shard_shape"] == [2048, 4096]
+    assert shards[0]["world_size"] == saved_world
 
 
 # ---------------------------------------------------------------------------

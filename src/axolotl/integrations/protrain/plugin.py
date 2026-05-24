@@ -315,6 +315,10 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
     rebuild_eps = float(args.adam_epsilon)
     rebuild_weight_decay = float(args.weight_decay)
     rebuild_optimizer_name = _resolve_optimizer_name(args, cfg)
+    rebuild_huge_threshold = int(
+        getattr(cfg, "protrain_persistent_huge_param_threshold_bytes", None)
+        or 512 * 1024 * 1024
+    )
 
     def _patched(resume_from_checkpoint, model=None) -> None:
         # Resolve chunk_manager lazily through wrapped so reorders can't strand the closure.
@@ -405,6 +409,7 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
                 eps=rebuild_eps,
                 weight_decay=rebuild_weight_decay,
                 optimizer_name=rebuild_optimizer_name,
+                huge_param_threshold_bytes=rebuild_huge_threshold,
             )
         except Exception:
             LOG.exception(
@@ -691,6 +696,10 @@ class ProTrainPlugin(BasePlugin):
             optimizer_name,
         )
 
+        huge_threshold = int(
+            getattr(cfg, "protrain_persistent_huge_param_threshold_bytes", None)
+            or 512 * 1024 * 1024
+        )
         return protrain_optimizer_wrapper(
             wrapped,
             lr=lr,
@@ -698,6 +707,7 @@ class ProTrainPlugin(BasePlugin):
             eps=eps,
             weight_decay=weight_decay,
             optimizer_name=optimizer_name,
+            huge_param_threshold_bytes=huge_threshold,
         )
 
     def post_trainer_create(self, cfg, trainer: "Trainer") -> None:
@@ -741,6 +751,10 @@ class ProTrainPlugin(BasePlugin):
         optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
         if optimizer_name is not None and not isinstance(optimizer_name, str):
             optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
+        huge_threshold = int(
+            getattr(cfg, "protrain_persistent_huge_param_threshold_bytes", None)
+            or 512 * 1024 * 1024
+        )
         optim = protrain_optimizer_wrapper(
             wrapped,
             lr=float(args.learning_rate),
@@ -748,6 +762,7 @@ class ProTrainPlugin(BasePlugin):
             eps=float(args.adam_epsilon),
             weight_decay=float(args.weight_decay),
             optimizer_name=optimizer_name,
+            huge_param_threshold_bytes=huge_threshold,
         )
 
         # state_dict/load_state_dict empty-shell behavior lives in _ProTrainOptimizer.

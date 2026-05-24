@@ -338,6 +338,14 @@ Mirrors `plan.md`:
 4. **S_chunk grid:** `{32, 64, 128, 256} MB`. 7B Llama blocks are ~200 MB fp16 → chunks want to be block-scale. 16 MB is too fine-grained; per-chunk sync overhead dominates. M2 agent extends the grid if optimum lands at an endpoint.
 5. **SWAP path:** paper-real D2H/H2D wrapper on `_swap_stream`, backed by `ActivationSwapPool` (pinned host slots sized `n_swap x prefetch_depth x max_act_bytes`). Searcher's CPU-feasibility gate refuses `n_swap > 0` candidates whose pool would not fit `cpu_capacity_bytes`. On RTX 3090 / 3090 Ti (12 GB/s PCIe ceiling, no NVLink) the searcher rarely selects `n_swap > 0` — paper §3.1.2 — so the path is tested-but-unused infrastructure on this hardware class. Validated end-to-end via the wrapper-injection path with `n_swap_override`.
 
+#### Within-param shard fallback for huge persistent params (ARCH #8, schema v4)
+
+Round-robin partition (`_PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION = 1`) pins each whole persistent `nn.Parameter` to one rank. For a single huge param — Llama-3-8B's tied `embed_tokens` / `lm_head` is ~512 MiB fp32, ~2.6 GB for Llama-3-70B — that defeats the memory-balance goal: one rank carries an extra ~1 GiB (Adam m + v) the others don't.
+
+Mitigation: when a persistent param's `numel * 4 > cfg.protrain_persistent_huge_param_threshold_bytes` (default 512 MiB), slice its dim-0 into `world_size` shards and have each rank own one shard via an `nn.Parameter` view into the original's storage. Sentinel: `_PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION = 1`. Sync uses `dist.all_gather_into_tensor(orig.data, shard.data)` after step — the shard is a contiguous narrow into `orig.data`, so the gather lands in-place across all ranks.
+
+Constraint: dim-0 of every huge param must be divisible by world_size. Pad-and-mask is not implemented; the wrapper raises with a pointer to lower the threshold or change world_size. Schema bumped 3 → 4: metadata adds `protrain_persistent_huge_param_shards` (param/shard shapes + dtype + world_size); cross-world-size resume is rejected (offline reshard does not yet repartition the within-shard slices).
+
 ### Memory Allocation Strategy (App B.2 — WIRED)
 
 **Status: both App B.2 components are wired across the chunk manager, buffer pool, and SWAP unpack path.**

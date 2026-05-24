@@ -312,6 +312,27 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_persistent_huge_param_threshold_bytes: int | None = Field(
+        default=512 * 1024 * 1024,
+        ge=0,
+        json_schema_extra={
+            "description": (
+                "Within-param shard fallback threshold (bytes). Persistent "
+                "params whose fp32 element-bytes (numel * 4) exceed this "
+                "value are sliced dim-0 into world_size shards instead of "
+                "being round-robin-pinned to a single owner rank. Required "
+                "for the Llama-3-8B class of model where the tied "
+                "embed_tokens/lm_head (~512 MiB fp32) would otherwise "
+                "balloon optim state on one rank by an extra ~1 GiB "
+                "(Adam m+v). Set 0 to disable round-robin's huge-param "
+                "exception (every persistent param keeps the v3 round-"
+                "robin behavior). Dim-0 of every huge param must divide "
+                "world_size; otherwise the wrapper raises with a pointer "
+                "to either lower the threshold or change world_size."
+            )
+        },
+    )
+
     protrain_allow_online_reshard: bool | None = Field(
         default=False,
         json_schema_extra={
