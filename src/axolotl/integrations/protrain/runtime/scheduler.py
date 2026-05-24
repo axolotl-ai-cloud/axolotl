@@ -82,6 +82,9 @@ class Scheduler:
         self._next_block_of_cached: dict[BlockId, "BlockId | None"] = {}
         self._prev_block_of_cached: dict[BlockId, "BlockId | None"] = {}
         self._next_chunks_set_cached: dict[BlockId, frozenset[ChunkId]] = {}
+        # Pre-filtered tuple of chunks this block finalizes in post_block_backward;
+        # avoids the per-step _chunk_last_bwd_owner dict lookup + identity compare.
+        self._owned_chunks_for_finalize_cached: dict[BlockId, tuple[ChunkId, ...]] = {}
         for idx, bid in enumerate(self._block_order):
             nxt = (
                 self._block_order[idx + 1] if idx + 1 < len(self._block_order) else None
@@ -93,6 +96,12 @@ class Scheduler:
                 self.layout.block_to_chunks.get(nxt, ()) if nxt is not None else ()
             )
             self._next_chunks_set_cached[bid] = frozenset(nxt_chunks)
+            owned = tuple(
+                cid
+                for cid in self.layout.block_to_chunks.get(bid, ())
+                if self._chunk_last_bwd_owner.get(cid, bid) == bid
+            )
+            self._owned_chunks_for_finalize_cached[bid] = owned
 
         self._prefetch_stream: "torch.cuda.Stream | None" = None
         self._swap_stream: "torch.cuda.Stream | None" = None
@@ -410,10 +419,10 @@ class Scheduler:
         try:
             if self._is_inert:
                 return
-            for cid in self._chunks_for(block_id):
-                # Shared chunks: only earliest-forward owner finalizes.
-                if self._chunk_last_bwd_owner.get(cid, block_id) != block_id:
-                    continue
+            # Pre-filtered at __init__ to skip the per-chunk owner lookup; the
+            # shared-chunk filter (only earliest-forward owner finalizes) is
+            # baked into the cached tuple.
+            for cid in self._owned_chunks_for_finalize_cached.get(block_id, ()):
                 self.chunk_manager.reduce_grads_and_offload(cid)
         finally:
             if self._step_timing_enabled:
