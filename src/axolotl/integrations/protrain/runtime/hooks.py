@@ -177,11 +177,30 @@ def _is_runtime_inert(
     N_chunk: int,
 ) -> bool:
     """All chunks persistent + no OFFLOAD blocks + every block mode in {NONE, CKPT} → hooks no-op."""
-    if n_persist != N_chunk:
-        return False
-    if any(isinstance(b, OffloadedBlock) for b in blocks):
-        return False
-    return all(mode in (BlockMode.NONE, BlockMode.CKPT) for mode in block_map.values())
+    persistent_match = n_persist == N_chunk
+    no_offloaded_blocks = not any(isinstance(b, OffloadedBlock) for b in blocks)
+    mode_counts: dict[BlockMode, int] = {}
+    for mode in block_map.values():
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+    all_none_or_ckpt = all(
+        mode in (BlockMode.NONE, BlockMode.CKPT) for mode in block_map.values()
+    )
+    overall = persistent_match and no_offloaded_blocks and all_none_or_ckpt
+    # INFO log once per install_hooks call so post-Fix-A diagnostics can confirm
+    # whether the skip path actually fired and, if not, which condition vetoed.
+    LOG.info(
+        "ProTrain _is_runtime_inert check: n_persist=%d N_chunk=%d "
+        "persistent_match=%s no_offloaded_blocks=%s all_none_or_ckpt=%s "
+        "mode_counts=%s -> result=%s",
+        n_persist,
+        N_chunk,
+        persistent_match,
+        no_offloaded_blocks,
+        all_none_or_ckpt,
+        {m.name: c for m, c in mode_counts.items()},
+        overall,
+    )
+    return overall
 
 
 def install_hooks(

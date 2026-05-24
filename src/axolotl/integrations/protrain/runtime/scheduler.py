@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import TYPE_CHECKING, Iterable
 
 from axolotl.integrations.protrain.types import (
@@ -19,6 +21,22 @@ if TYPE_CHECKING:
     from axolotl.integrations.protrain.chunk import ChunkManager
 
 LOG = get_logger(__name__)
+
+
+def _step_timing_enabled() -> bool:
+    """PROTRAIN_DEBUG_STEP_TIMING={1,true,yes,on} enables per-block-method timing aggregation."""
+    raw = os.environ.get("PROTRAIN_DEBUG_STEP_TIMING", "")
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _step_timing_emit_every() -> int:
+    """PROTRAIN_DEBUG_STEP_TIMING_EVERY (default 50) controls aggregate emit cadence."""
+    raw = os.environ.get("PROTRAIN_DEBUG_STEP_TIMING_EVERY", "50")
+    try:
+        n = int(raw)
+    except ValueError:
+        return 50
+    return max(1, n)
 
 
 class Scheduler:
@@ -91,6 +109,26 @@ class Scheduler:
         # circuit so stragglers (e.g. recompute callbacks) skip stream-wait
         # syscalls that would no-op anyway.
         self._is_inert: bool = False
+
+        # Per-step timing diagnostics. Opt-in via PROTRAIN_DEBUG_STEP_TIMING=1
+        # to avoid the perf_counter overhead on hot configs.
+        self._step_timing_enabled: bool = _step_timing_enabled()
+        self._step_timing_emit_every: int = _step_timing_emit_every()
+        # Sum and call-count per method name across pre_block_forward,
+        # post_block_forward, pre_block_backward, post_block_backward,
+        # ensure_block_resident, ensure_chunks_resident. Reset on each emit.
+        self._step_timing_sum_ns: dict[str, int] = {}
+        self._step_timing_calls: dict[str, int] = {}
+        # Step boundaries are inferred from drain() calls; each drain emits
+        # the running aggregate if the cadence threshold is met.
+        self._step_timing_step_idx: int = 0
+        if self._step_timing_enabled:
+            LOG.info(
+                "ProTrain Scheduler: PROTRAIN_DEBUG_STEP_TIMING enabled "
+                "(emit every %d step(s)). Per-method aggregate wall-time "
+                "will be logged at INFO so it survives DEBUG suppression.",
+                self._step_timing_emit_every,
+            )
         self._init_streams()
 
     @property
@@ -121,6 +159,40 @@ class Scheduler:
         self._swap_stream = torch.cuda.Stream()
 
     # ---- helpers -------------------------------------------------------
+
+    def _record_step_timing(self, name: str, elapsed_ns: int) -> None:
+        """Aggregate one wall-time sample for ``name`` into the running totals."""
+        self._step_timing_sum_ns[name] = (
+            self._step_timing_sum_ns.get(name, 0) + elapsed_ns
+        )
+        self._step_timing_calls[name] = self._step_timing_calls.get(name, 0) + 1
+
+    def _emit_step_timing(self) -> None:
+        """Log + reset the aggregate, called from drain() once per step boundary."""
+        if not self._step_timing_sum_ns:
+            return
+        total_ns = sum(self._step_timing_sum_ns.values())
+        # INFO so the diagnostic survives default log levels; cost gated by env var.
+        LOG.info(
+            "ProTrain Scheduler step-timing aggregate (steps_seen=%d, "
+            "emit_every=%d, total_ms=%.3f): %s",
+            self._step_timing_step_idx,
+            self._step_timing_emit_every,
+            total_ns / 1e6,
+            {
+                name: {
+                    "calls": self._step_timing_calls.get(name, 0),
+                    "sum_ms": self._step_timing_sum_ns.get(name, 0) / 1e6,
+                    "avg_us": (
+                        (self._step_timing_sum_ns.get(name, 0) / 1e3)
+                        / max(1, self._step_timing_calls.get(name, 0))
+                    ),
+                }
+                for name in sorted(self._step_timing_sum_ns)
+            },
+        )
+        self._step_timing_sum_ns.clear()
+        self._step_timing_calls.clear()
 
     def _chunks_for(self, block_id: BlockId) -> tuple[ChunkId, ...]:
         """Return the chunks owned by ``block_id`` under the current layout."""
@@ -163,13 +235,20 @@ class Scheduler:
 
     def ensure_block_resident(self, block_id: BlockId) -> None:
         """Sync gather block's chunks; used by checkpoint recompute path that bypasses pre-hooks."""
-        if self._is_inert:
-            return
-        chunk_ids = self._chunks_for(block_id)
-        if not chunk_ids:
-            return
-        self._gather_on_prefetch_stream(chunk_ids)
-        self._sync_prefetch_with_compute()
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            if self._is_inert:
+                return
+            chunk_ids = self._chunks_for(block_id)
+            if not chunk_ids:
+                return
+            self._gather_on_prefetch_stream(chunk_ids)
+            self._sync_prefetch_with_compute()
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "ensure_block_resident", time.perf_counter_ns() - _t0
+                )
 
     def ensure_chunks_resident(self, chunk_ids: Iterable[ChunkId]) -> None:
         """Sync gather chunks on compute stream so autograd sees real param.size() on cold paths."""
@@ -177,67 +256,99 @@ class Scheduler:
         # class) drives this method hot — keep the CPU lane an attribute-
         # lookup-only no-op past the empty-tuple guard. The cuda.is_available
         # check is read off the cached scheduler flag, not the syscall.
-        if self._is_inert:
-            return
-        if isinstance(chunk_ids, tuple):
-            cids = chunk_ids
-        else:
-            cids = tuple(chunk_ids)
-        if not cids:
-            return
-        if self._has_cuda:
-            import torch as _torch
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            if self._is_inert:
+                return
+            if isinstance(chunk_ids, tuple):
+                cids = chunk_ids
+            else:
+                cids = tuple(chunk_ids)
+            if not cids:
+                return
+            if self._has_cuda:
+                import torch as _torch
 
-            # Wait on swap+prefetch so pool buffers and in-flight gathers complete pre-rebind.
-            compute = _torch.cuda.current_stream()
-            if self._swap_stream is not None:
-                compute.wait_stream(self._swap_stream)
-            if self._prefetch_stream is not None:
-                compute.wait_stream(self._prefetch_stream)
-        # gather on compute stream so sharded all_gather completes before autograd records source-shape.
-        for cid in cids:
-            self.chunk_manager.gather(cid)
+                # Wait on swap+prefetch so pool buffers and in-flight gathers complete pre-rebind.
+                compute = _torch.cuda.current_stream()
+                if self._swap_stream is not None:
+                    compute.wait_stream(self._swap_stream)
+                if self._prefetch_stream is not None:
+                    compute.wait_stream(self._prefetch_stream)
+            # gather on compute stream so sharded all_gather completes before autograd records source-shape.
+            for cid in cids:
+                self.chunk_manager.gather(cid)
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "ensure_chunks_resident", time.perf_counter_ns() - _t0
+                )
 
     # ---- forward -------------------------------------------------------
 
     def pre_block_forward(self, block_id: BlockId) -> None:
         """Prefetch the next block's chunks; ensure current block's are resident."""
-        if self._is_inert:
-            return
-        # gather() is idempotent on persistent / already-resident chunks.
-        self.ensure_block_resident(block_id)
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            if self._is_inert:
+                return
+            # gather() is idempotent on persistent / already-resident chunks.
+            self.ensure_block_resident(block_id)
 
-        # Async prefetch next block; DO NOT sync — copy overlaps current compute.
-        nxt = self._next_block_of(block_id)
-        if nxt is None:
-            return
-        next_chunks = self._chunks_for(nxt)
-        if not next_chunks:
-            return
-        self._gather_on_prefetch_stream(next_chunks)
-        LOG.debug(
-            "Scheduler.pre_block_forward: block=%d prefetched %d chunks for next block %d",
-            block_id,
-            len(next_chunks),
-            nxt,
-        )
+            # Async prefetch next block; DO NOT sync — copy overlaps current compute.
+            nxt = self._next_block_of(block_id)
+            if nxt is None:
+                return
+            next_chunks = self._chunks_for(nxt)
+            if not next_chunks:
+                return
+            self._gather_on_prefetch_stream(next_chunks)
+            LOG.debug(
+                "Scheduler.pre_block_forward: block=%d prefetched %d chunks for next block %d",
+                block_id,
+                len(next_chunks),
+                nxt,
+            )
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "pre_block_forward", time.perf_counter_ns() - _t0
+                )
 
     def post_block_forward(self, block_id: BlockId) -> None:
         """Release this block's non-persistent chunks except those used by the next block."""
-        if self._is_inert:
-            return
-        # frozenset from the init-time cache; avoids the per-step set() build.
-        next_chunks = self._next_chunks_set_cached.get(block_id, frozenset())
-        for cid in self._chunks_for(block_id):
-            if cid in next_chunks:
-                continue
-            # offload() short-circuits for persistent chunks.
-            self.chunk_manager.offload(cid)
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            if self._is_inert:
+                return
+            # frozenset from the init-time cache; avoids the per-step set() build.
+            next_chunks = self._next_chunks_set_cached.get(block_id, frozenset())
+            for cid in self._chunks_for(block_id):
+                if cid in next_chunks:
+                    continue
+                # offload() short-circuits for persistent chunks.
+                self.chunk_manager.offload(cid)
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "post_block_forward", time.perf_counter_ns() - _t0
+                )
 
     # ---- backward ------------------------------------------------------
 
     def pre_block_backward(self, block_id: BlockId) -> None:
         """Ensure block's chunks are resident before backward; cover chunk-state path only (SWAP handles activations)."""
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            self._pre_block_backward_impl(block_id)
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "pre_block_backward", time.perf_counter_ns() - _t0
+                )
+
+    def _pre_block_backward_impl(self, block_id: BlockId) -> None:
+        """Untimed pre_block_backward body; split out to keep the timed wrapper readable."""
         if self._is_inert:
             return
         mode = self.block_map.get(block_id, BlockMode.NONE)
@@ -295,13 +406,20 @@ class Scheduler:
 
     def post_block_backward(self, block_id: BlockId) -> None:
         """Finalize block's backward: release buffers + maybe kick CPU Adam."""
-        if self._is_inert:
-            return
-        for cid in self._chunks_for(block_id):
-            # Shared chunks: only earliest-forward owner finalizes.
-            if self._chunk_last_bwd_owner.get(cid, block_id) != block_id:
-                continue
-            self.chunk_manager.reduce_grads_and_offload(cid)
+        _t0 = time.perf_counter_ns() if self._step_timing_enabled else 0
+        try:
+            if self._is_inert:
+                return
+            for cid in self._chunks_for(block_id):
+                # Shared chunks: only earliest-forward owner finalizes.
+                if self._chunk_last_bwd_owner.get(cid, block_id) != block_id:
+                    continue
+                self.chunk_manager.reduce_grads_and_offload(cid)
+        finally:
+            if self._step_timing_enabled:
+                self._record_step_timing(
+                    "post_block_backward", time.perf_counter_ns() - _t0
+                )
 
     # ---- end-of-iteration cleanup -------------------------------------
 
@@ -318,6 +436,12 @@ class Scheduler:
         self.chunk_manager.drain_deferred_offloads()
 
         self.chunk_manager.wait_cpu_optim()
+
+        # Step boundary; emit aggregate every Nth call when timing is enabled.
+        if self._step_timing_enabled:
+            self._step_timing_step_idx += 1
+            if self._step_timing_step_idx % self._step_timing_emit_every == 0:
+                self._emit_step_timing()
 
     # ---- teardown -----------------------------------------------------
 
