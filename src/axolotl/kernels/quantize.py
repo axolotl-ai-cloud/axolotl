@@ -1,10 +1,4 @@
-"""Dequantization utilities for `bitsandbytes` and FP8 integration.
-
-The NF4 fast path is registered as a `torch.library.custom_op` so Dynamo treats
-it as opaque during tracing — `torch.compile` of QLoRA models no longer crashes
-on the underlying ctypes calls. Eager execution bypasses the op dispatch and
-runs the ctypes path directly (zero overhead vs the prior implementation).
-"""
+"""Dequantization utilities for `bitsandbytes` and FP8 integration."""
 
 import ctypes
 from typing import List
@@ -17,8 +11,7 @@ cdequantize_blockwise_fp32 = bnb.functional.lib.cdequantize_blockwise_fp32
 cdequantize_blockwise_fp16_nf4 = bnb.functional.lib.cdequantize_blockwise_fp16_nf4
 cdequantize_blockwise_bf16_nf4 = bnb.functional.lib.cdequantize_blockwise_bf16_nf4
 
-# Cached once: matches main's eager perf. Per-call current_stream() costs +5-21%
-# on the dequant. axolotl training has not historically used multiple streams here.
+# Cached: per-call current_stream() measurably slows this hot path.
 CUDA_STREAM: torch.cuda.Stream | None = None
 
 
@@ -138,12 +131,7 @@ def dequantize(
     W: torch.Tensor,
     quant_state: QuantState | torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """NF4 / FP8 dequantization.
-
-    Under `torch.compile`, the NF4 path dispatches through
-    `torch.ops.axolotl.nf4_dequantize` (opaque to Dynamo). In eager, it calls
-    the ctypes fast path directly — same code as before, no op-dispatch cost.
-    """
+    """NF4 / FP8 dequantization; under `torch.compile` NF4 dispatches via `torch.ops.axolotl.nf4_dequantize`."""
     if quant_state is None:
         return W
 

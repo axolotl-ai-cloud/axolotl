@@ -51,7 +51,7 @@ def test_dequantize_non_nested():
 
 
 def test_dequantize_torch_compile_nested():
-    """Regression: NF4 double-quant under torch.compile (the QLoRA hot path)."""
+    """NF4 double-quant under torch.compile (the QLoRA hot path)."""
     shape = (128, 64)
     packed, quant_state = _nf4_pair(shape, double_quant=True)
 
