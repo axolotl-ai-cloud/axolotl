@@ -93,6 +93,25 @@ class TestLoRAConfigValidation:
             )
             validate_config(invalid_config)
 
+    def test_lora_4bit_rejected(self):
+        """adapter: lora + load_in_4bit must be rejected (silent no-op in loader)"""
+        with pytest.raises(
+            ValueError,
+            match=r"adapter: lora with load_in_4bit is not supported.*adapter: qlora",
+        ):
+            invalid_config = DictDefault(
+                {
+                    "adapter": "lora",
+                    "load_in_4bit": True,
+                    "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
+                    "micro_batch_size": 1,
+                    "gradient_accumulation_steps": 1,
+                    "learning_rate": 1e-5,
+                    "base_model": "dummy_model",
+                }
+            )
+            validate_config(invalid_config)
+
     @pytest.mark.parametrize(
         "kernel_field", ["lora_mlp_kernel", "lora_qkv_kernel", "lora_o_kernel"]
     )
