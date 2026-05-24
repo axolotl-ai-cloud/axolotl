@@ -168,6 +168,91 @@ def _early_init_dist_for_nccl(cfg) -> int:
     return live_world
 
 
+def _eager_nccl_warmup(chunk_manager, device) -> None:
+    """Fire one no-op of each NCCL collective the per-chunk path uses.
+
+    Why: on consumer non-NVLink topology, lazy ``ncclCommInitRank`` for the
+    per-chunk reduce_scatter / all_reduce / OFFLOAD re-gather ring serializes
+    on the per-rank CUDA stream during the FIRST training iteration —
+    measured at 254-345 s under v71-redux watchdog. Issuing the same
+    collective shapes here amortizes the init cost into a deterministic,
+    watchdog-measurable init phase BEFORE the first iter's autograd-internal
+    dispatch.
+
+    Catches and logs all exceptions: a broken warmup must not block training.
+    """
+    import time
+
+    try:
+        import torch
+        import torch.distributed as dist
+    except ImportError:
+        return
+
+    if not dist.is_available() or not dist.is_initialized():
+        return
+    try:
+        world_size = int(dist.get_world_size())
+    except (RuntimeError, ValueError):
+        return
+    if world_size <= 1:
+        return
+
+    zero3_shard = bool(getattr(chunk_manager, "zero3_shard", False))
+    n_chunk = int(getattr(getattr(chunk_manager, "layout", None), "N_chunk", 0) or 0)
+
+    LOG.info(
+        "ProTrain: eager NCCL warm-up starting (world_size=%d, "
+        "zero3_shard=%s, n_chunk=%d, device=%s)",
+        world_size,
+        zero3_shard,
+        n_chunk,
+        device,
+    )
+    t0 = time.perf_counter()
+
+    try:
+        # bf16 matches the per-chunk all_reduce / reduce_scatter dtype used by
+        # _coalesced_all_reduce_persistent_grads + _reduce_scatter_and_offload_shard.
+        # NCCL's communicator init is one-shot per ProcessGroup; the dtype/shape
+        # used to provoke it does not need to match every later op.
+        warm = torch.zeros(1, device=device, dtype=torch.bfloat16)
+        dist.all_reduce(warm, op=dist.ReduceOp.SUM)
+
+        rs_in = torch.zeros(world_size, device=device, dtype=torch.bfloat16)
+        rs_out = torch.zeros(1, device=device, dtype=torch.bfloat16)
+        dist.reduce_scatter_tensor(rs_out, rs_in, op=dist.ReduceOp.SUM)
+
+        if zero3_shard:
+            # _gather_sharded uses uint8 buffers; warm the all_gather entry.
+            ag_in = torch.zeros(1, device=device, dtype=torch.uint8)
+            ag_out = torch.zeros(world_size, device=device, dtype=torch.uint8)
+            dist.all_gather_into_tensor(ag_out, ag_in)
+
+        dist.barrier()
+        if device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(device=device)
+
+        elapsed = time.perf_counter() - t0
+        LOG.info(
+            "ProTrain: eager NCCL warm-up complete in %.2fs "
+            "(world_size=%d, zero3_shard=%s)",
+            elapsed,
+            world_size,
+            zero3_shard,
+        )
+    except Exception as exc:  # noqa: BLE001
+        elapsed = time.perf_counter() - t0
+        LOG.warning(
+            "ProTrain: eager NCCL warm-up failed after %.2fs (%s: %s); "
+            "first training iter will pay the lazy ncclCommInitRank cost "
+            "as before. Set protrain_eager_nccl_warmup: false to silence.",
+            elapsed,
+            type(exc).__name__,
+            exc,
+        )
+
+
 def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     """Late-bind real NCCL timings into the cached trace, then re-run search()."""
     import dataclasses
@@ -1108,6 +1193,27 @@ class ProTrainPlugin(BasePlugin):
 
         # Re-measure NCCL now that dist is up; no-op if tables already populated.
         _remeasure_nccl_and_research(wrapped)
+
+        # Eager per-chunk NCCL warmup: pay ncclCommInitRank cost here, not
+        # during the first training iter's autograd-internal dispatch.
+        if bool(getattr(cfg, "protrain_eager_nccl_warmup", True)):
+            chunk_manager_for_warmup = getattr(wrapped, "chunk_manager", None)
+            if chunk_manager_for_warmup is not None:
+                accelerator = getattr(trainer, "accelerator", None)
+                warmup_device = None
+                if accelerator is not None:
+                    warmup_device = getattr(accelerator, "device", None)
+                if warmup_device is None:
+                    warmup_device = getattr(chunk_manager_for_warmup, "device", None)
+                if warmup_device is not None:
+                    _eager_nccl_warmup(chunk_manager_for_warmup, warmup_device)
+                else:
+                    LOG.warning(
+                        "ProTrain: skipping eager NCCL warm-up — could not "
+                        "resolve a target device from trainer.accelerator or "
+                        "chunk_manager. First iter will pay lazy "
+                        "ncclCommInitRank cost as before."
+                    )
 
         trainer._protrain_post_trainer_create_done = True  # type: ignore[attr-defined]
 

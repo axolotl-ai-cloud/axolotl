@@ -355,6 +355,27 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_eager_nccl_warmup: bool | None = Field(
+        default=True,
+        json_schema_extra={
+            "description": (
+                "Multi-rank only: fire one no-op of each NCCL collective "
+                "(all_reduce, reduce_scatter_tensor, and all_gather_"
+                "into_tensor when zero3_shard) at post_trainer_create so "
+                "ncclCommInitRank pays its setup cost during a "
+                "deterministic init phase BEFORE the first training "
+                "iteration. Default True. On consumer non-NVLink rigs "
+                "lazy communicator init during the first iter's "
+                "autograd-internal collective dispatch can stall ~254-345s "
+                "and trip the trainer watchdog; warming up here moves "
+                "that cost out of the hot path. World_size==1 runs are "
+                "no-ops. Warmup failures are caught and logged so a "
+                "broken warmup never blocks training (the slow first iter "
+                "remains as fallback). Disable if it causes issues."
+            )
+        },
+    )
+
     protrain_allow_online_reshard: bool | None = Field(
         default=False,
         json_schema_extra={
