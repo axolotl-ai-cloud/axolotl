@@ -33,6 +33,8 @@ class CheckpointedBlock(nn.Module):
         """Run the wrapped block under torch.utils.checkpoint."""
         block = self.block
         # _run fires twice per top-level forward when activations drop: initial + recompute.
+        # An outer HF gradient_checkpointing wrap inverts that order and breaks this count
+        # semantically (not just inefficiently); ProTrain's validator hard-rejects the combo.
         fwd_call_count = 0
 
         def _run(*inner_args: Any, **inner_kwargs: Any) -> Any:
