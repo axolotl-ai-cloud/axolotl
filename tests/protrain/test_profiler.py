@@ -1226,3 +1226,110 @@ def test_measure_chunked_steady_round_trip_with_peft_model(gpu_device):
                 f"snapshot's empty placeholder; the filter should "
                 f"have skipped it"
             )
+
+
+def test_phase2_snapshot_filters_shape_preserving_placeholders():
+    """Phase-2 must drop stride-0 expand views from the model state_dict snapshot.
+
+    Regression for the v71 hardware verification finding: when
+    ``ChunkManager`` was constructed with
+    ``shape_preserving_placeholders=True``, offloaded params have
+    ``param.data = scratch.expand(real_shape)`` — a stride-0 alias of a
+    1-element scratch buffer. ``numel() > 0`` (so the empty-placeholder
+    filter does not catch them) but the underlying storage is only one
+    element. ``Module.load_state_dict`` on such an entry calls
+    ``Tensor.copy_`` which raises::
+
+        RuntimeError: unsupported operation: more than one element of the
+        written-to tensor refers to a single memory location. Please
+        clone() the tensor before performing the operation.
+
+    Production hit this during Phase-2 chunked measurement at bs=2 Mode B
+    (~302s wasted before the auto-searcher fell back). The fix is to
+    extend the snapshot's placeholder filter to also drop tensors whose
+    storage is smaller than ``numel * element_size`` — the
+    ``chunk_state`` path already round-trips the real bytes.
+    """
+    import torch
+
+    from axolotl.integrations.protrain.profiler.phase2 import (
+        _is_shape_preserving_placeholder,
+    )
+
+    # Direct detection: stride-0 expand of a 1-element scratch.
+    scratch = torch.empty(1, dtype=torch.float32)
+    big_placeholder = scratch.expand((4096, 4096))
+    assert big_placeholder.numel() == 4096 * 4096
+    assert _is_shape_preserving_placeholder(big_placeholder) is True
+
+    # 0-D expand-view edge case: ``scratch.view(())`` is a 1-element view,
+    # not a multi-element alias — copy_ on it is safe, so it must NOT be
+    # flagged.
+    zero_d_view = scratch.view(())
+    assert _is_shape_preserving_placeholder(zero_d_view) is False
+
+    # Real-shape contiguous tensors must NOT be flagged.
+    real = torch.zeros(4096, 4096, dtype=torch.float32)
+    assert _is_shape_preserving_placeholder(real) is False
+
+    # Empty placeholder (the legacy filter target) is independently caught
+    # by ``numel() > 0``; the new helper neither catches nor needs to
+    # catch it.
+    empty = torch.empty(0, dtype=torch.float32)
+    assert _is_shape_preserving_placeholder(empty) is False
+
+    # Snapshot filter must reject the expand-view entry. Reproduces the
+    # exact predicate used in ``measure_chunked_steady`` before
+    # ``model.load_state_dict``.
+    state = {
+        "live.weight": real,
+        "offloaded.weight": big_placeholder,
+        "empty.weight": empty,
+    }
+    filtered = {
+        k: v
+        for k, v in state.items()
+        if not torch.is_tensor(v)
+        or (v.numel() > 0 and not _is_shape_preserving_placeholder(v))
+    }
+    assert "live.weight" in filtered
+    assert "offloaded.weight" not in filtered
+    assert "empty.weight" not in filtered
+
+    # End-to-end: ``Module.load_state_dict`` succeeds on the filtered
+    # snapshot but would fail on the unfiltered one. ``strict=False``
+    # tolerates the missing offloaded key.
+    module = torch.nn.Linear(8, 16, bias=False)
+    pre_weight = module.weight.detach().clone()
+
+    # Simulate the offload swap: rebind the live param to a stride-0
+    # placeholder, then attempt to round-trip via load_state_dict.
+    placeholder = torch.empty(1, dtype=module.weight.dtype).expand(
+        module.weight.shape
+    )
+    module.weight.data = placeholder
+    snapshot_unfiltered = {"weight": pre_weight}
+    # Unfiltered path mirrors the v71 failure: copy_ into the placeholder
+    # raises the shared-storage error wrapped in a ``load_state_dict``
+    # report.
+    raised = False
+    try:
+        module.load_state_dict(snapshot_unfiltered, strict=False)
+    except RuntimeError as exc:
+        msg = str(exc)
+        assert (
+            "single memory location" in msg
+            or "more than one element" in msg
+            or "Please clone" in msg
+        ), msg
+        raised = True
+    assert raised, (
+        "expected load_state_dict to flag the stride-0 placeholder "
+        "without the filter; pytest baseline drift?"
+    )
+
+    # The fix's behaviour: when the snapshot is filtered (empty dict here
+    # because the only entry was the placeholder), load_state_dict
+    # silently no-ops on strict=False — the chunk_state restore would
+    # subsequently rebind the real bytes in production.
+    module.load_state_dict({}, strict=False)

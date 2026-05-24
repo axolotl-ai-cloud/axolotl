@@ -118,6 +118,26 @@ def select_bootstrap_config(
     return initial_result.cfg, initial_result.block_map
 
 
+def _is_shape_preserving_placeholder(t: "torch.Tensor") -> bool:
+    """True if ``t`` is a stride-0 expand view (e.g. ``ChunkManager._shape_preserving_placeholder``).
+
+    Such a tensor reports ``numel() > 0`` but its underlying storage holds
+    far fewer elements (one scratch byte broadcast across the logical
+    shape). ``Tensor.copy_`` / ``Module.load_state_dict`` reject the view
+    because writes to multiple indices land on a single memory location.
+    """
+    import torch
+
+    if not torch.is_tensor(t) or t.numel() <= 1:
+        return False
+    try:
+        storage_nbytes = t.untyped_storage().nbytes()
+    except (AttributeError, RuntimeError):
+        return False
+    logical_nbytes = t.numel() * t.element_size()
+    return storage_nbytes < logical_nbytes
+
+
 def _clone_state_dict(state, target_device=None):
     """Recursively clone every tensor in a (possibly nested) state_dict."""
     import torch
@@ -254,19 +274,22 @@ def measure_chunked_steady(
             # ``strict=False`` on the restore so the skipped keys
             # don't trip ``load_state_dict``'s missing-keys check.
             #
-            # ``v.numel() > 0`` is the placeholder filter:
-            # ``_empty_placeholder`` returns ``torch.empty(0)`` exactly,
-            # so a non-trivial parameter cannot collide with the
-            # filter. Buffers whose source-of-truth is ``param.data``
-            # already-empty (rare but valid — e.g. a deliberate empty
-            # tensor in a checkpoint) are also skipped, but that's
-            # benign: if the live tensor is empty before AND after
-            # the timed loop, there is nothing to restore.
+            # ``v.numel() > 0`` filters ``_empty_placeholder`` (numel==0).
+            # ``_is_shape_preserving_placeholder`` filters
+            # ``_shape_preserving_placeholder`` (stride-0 expand of a
+            # 1-element scratch): the view's storage is far smaller than
+            # ``numel * element_size``, and ``load_state_dict`` cannot
+            # ``copy_`` into it without tripping
+            # ``RuntimeError: unsupported operation: more than one element
+            # of the written-to tensor refers to a single memory location``.
+            # Both placeholder kinds round-trip via ``chunk_state`` below;
+            # nothing of value is lost by dropping them from the snapshot.
             full_state = model.state_dict()
             filtered_state = {
                 k: v
                 for k, v in full_state.items()
-                if not torch.is_tensor(v) or v.numel() > 0
+                if not torch.is_tensor(v)
+                or (v.numel() > 0 and not _is_shape_preserving_placeholder(v))
             }
             # Track offloaded-placeholder keys to distinguish expected vs real missing in restore.
             expected_missing_keys = frozenset(full_state.keys() - filtered_state.keys())
