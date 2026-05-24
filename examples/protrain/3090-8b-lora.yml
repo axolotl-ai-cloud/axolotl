@@ -13,8 +13,8 @@
 # CPU-offload) based on the model's fit and per-rank CPU RAM. For 7B/8B
 # LoRA on a single 24 GB 3090 the selector picks Mode A — the frozen
 # base fits in fp16 alongside LoRA optimizer state + activations, and
-# DDP scales at ~3.6x on PCIe Gen3 4x 3090 while ZeRO-3 sharding on
-# the same rig lands at ~0.7x (see DESIGN.md §Multi-GPU).
+# DDP scales at ~3.6x on a non-NVLink 4x 3090 rig while ZeRO-3 sharding
+# on the same rig lands at ~0.7x (see DESIGN.md §Multi-GPU).
 #
 # Set ``protrain_auto_mode: false`` below only if you need explicit
 # control (reproducing a specific benchmark configuration, or a

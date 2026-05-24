@@ -527,7 +527,7 @@ Three term updates:
    The new term is `T_offload_gather` (above); the searcher trades
    recompute time against gather time. Recompute scales with model
    compute per block; gather scales with chunk_bytes / pcie_bw. On
-   PCIe Gen3 the trade tilts toward OFFLOAD when blocks are big
+   PCIe (any generation) the trade tilts toward OFFLOAD when blocks are big
    (compute-heavy) but chunks are small (gather-cheap). On NVLink
    it tilts even further toward OFFLOAD; on slow PCIe with tiny
    blocks, CKPT may still win.
@@ -911,7 +911,7 @@ gates. For each, the post-ship outcome is recorded inline:
    comparison surface was sufficient.
 
 4. **Searcher-driven CKPT remains optimal in practice.** *Outcome:*
-   M4 calibration on the 3090 / PCIe Gen3 rig found OFFLOAD
+   M4 calibration on the non-NVLink 3090 rig found OFFLOAD
    competitive (Mode-C ≥1.2× throughput vs DS Stage-3 at 1.5B+, per
    `MEMORY.md::protrain_branch_state`); the throughput motivation
    was upheld and M5 proceeded.

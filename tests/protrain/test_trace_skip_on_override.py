@@ -104,7 +104,7 @@ def test_synth_trace_from_overrides_shape() -> None:
     assert trace.model_state_bytes > 0
     assert trace.model_state_bytes < 100 * (1 << 20)  # < 100 MB sanity
 
-    # PCIe defaults when measure_pcie_bps=False: 13 GB/s Gen3 prior.
+    # PCIe defaults when measure_pcie_bps=False: 13 GB/s conservative prior.
     assert trace.pcie_h2d_bps == pytest.approx(13e9)
     assert trace.pcie_d2h_bps == pytest.approx(13e9)
 

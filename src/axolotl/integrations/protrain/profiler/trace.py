@@ -1007,7 +1007,7 @@ def synth_trace_from_overrides(
         optim_state_bytes_per_param=optim_state_bytes_per_param,
     )
 
-    # Conservative PCIe Gen3 fallback prior.
+    # Conservative PCIe inter-rank bandwidth fallback prior.
     pcie_h2d_bps = 13e9
     pcie_d2h_bps = 13e9
     if measure_pcie_bps and dev.type == "cuda" and torch.cuda.is_available():
@@ -1019,7 +1019,7 @@ def synth_trace_from_overrides(
         except Exception as exc:  # pragma: no cover - defensive
             LOG.warning(
                 "synth_trace_from_overrides: measure_pcie failed (%s); "
-                "falling back to 13 GB/s Gen3 prior",
+                "falling back to 13 GB/s PCIe prior",
                 exc,
             )
 
