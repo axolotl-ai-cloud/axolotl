@@ -90,6 +90,7 @@ def _nf4_dequantize_op(
     shape: List[int],
     dtype: torch.dtype,
 ) -> torch.Tensor:
+    """Opaque-to-Dynamo wrapper around the direct-ctypes NF4 dequant body."""
     return _ctypes_nf4_dequant(
         W, absmax, code2, absmax2, offset, blocksize, blocksize2, shape, dtype
     )
@@ -97,6 +98,7 @@ def _nf4_dequantize_op(
 
 @_nf4_dequantize_op.register_fake
 def _(W, absmax, code2, absmax2, offset, blocksize, blocksize2, shape, dtype):
+    """FakeTensor shape/dtype inference for the registered op (trace-time only)."""
     out = torch.empty(tuple(shape), dtype=dtype, device=W.device)
     if W.shape[0] == 1:
         return out.t()
