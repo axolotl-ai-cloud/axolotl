@@ -45,6 +45,7 @@ from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
     get_linear_embedding_layers,
     get_module_class_from_name,
+    is_protrain_active,
     load_model_config,
 )
 from axolotl.models.mamba import fix_mamba_attn_for_loss
@@ -312,7 +313,12 @@ class ModelLoader:
         if not self.is_fsdp_enabled:
             # We don't run this during FSDP because this will leave mixed and bfloat16
             # dtypes in the model which FSDP doesn't like
-            if self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast:
+            skip_upcast = self.cfg.load_in_4bit and self.cfg.embeddings_skip_upcast
+            if self.cfg.load_in_4bit and is_protrain_active(self.cfg):
+                # ProTrain upcasts embeddings lazily during forward; the load-time
+                # fp32 cast would OOM 27B + 4-bit on a 24 GiB card.
+                skip_upcast = True
+            if skip_upcast:
                 embedding_modules = []
             self._convert_embedding_modules_dtype(
                 embedding_modules,

@@ -14,6 +14,7 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_flash_attention_utils import is_flash_attn_available
 
 from axolotl.integrations.base import PluginManager
+from axolotl.loaders.utils import is_protrain_active
 from axolotl.monkeypatch.multipack import (
     SUPPORTED_MULTIPACK_MODEL_TYPES,
     patch_for_multipack,
@@ -308,7 +309,9 @@ class PatchManager:
 
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
-        if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
+        if self.cfg.adapter and (
+            self.cfg.embeddings_skip_upcast or is_protrain_active(self.cfg)
+        ):
             from axolotl.monkeypatch.peft.utils import patch_peft_prep_code
 
             patch_peft_prep_code()

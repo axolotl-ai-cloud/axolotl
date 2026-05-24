@@ -225,7 +225,12 @@ class AxolotlInputConfig(
     embeddings_skip_upcast: bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Don't upcast the embeddings to float32 when using PEFT. Useful for low-VRAM GPUs"
+            "description": (
+                "Don't upcast the embeddings to float32 when using PEFT. Useful "
+                "for low-VRAM GPUs. Auto-enabled when ProTrain is in `plugins` "
+                "(ProTrain upcasts embed/lm_head lazily during forward), so this "
+                "knob is no longer required for 27B + 4-bit on a single 3090."
+            )
         },
     )
     reinit_weights: bool | None = Field(
