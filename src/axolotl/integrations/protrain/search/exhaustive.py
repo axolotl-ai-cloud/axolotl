@@ -393,10 +393,13 @@ def search(
                             cfg, layout, trace
                         )
                         raw_peak = model_state_present + f_bm
-                        # Layered cap (apply_hot_iter_cap) preserves model_state through the cap.
-                        _cap = hot_iter_peak_cap(trace, block_map, cfg, layout=layout)
+                        # Reuse outer-loop _hot_cap: hot_iter_peak_cap depends only on
+                        # (trace, block_map, layout) in the steady_fwd_block_peak path,
+                        # and on (n_ckpt, n_swap, n_offload) — all inner-loop-invariant —
+                        # in the aggregate fallback. Calling per-candidate burned ~18s
+                        # for 173k iterations at bs=2 (v69 profile).
                         raw_peak = apply_hot_iter_cap(
-                            raw_peak, model_state_present, _cap, layout
+                            raw_peak, model_state_present, _hot_cap, layout
                         )
                         predicted_peak = int(alpha * raw_peak) if raw_peak > 0 else 0
                         if predicted_peak > capacity_bytes:
