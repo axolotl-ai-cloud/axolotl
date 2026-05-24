@@ -46,21 +46,21 @@ def _patch_versions(
 def test_warn_on_unvalidated_transformers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patched future transformers version triggers the matching UserWarning."""
     # Pin peft below its validated max so only the transformers branch fires.
-    _patch_versions(monkeypatch, "4.56.0", "0.19.0")
-    with pytest.warns(UserWarning, match="transformers 4.56.0 exceeds validated"):
+    _patch_versions(monkeypatch, "5.7.0", "0.19.0")
+    with pytest.warns(UserWarning, match="transformers 5.7.0 exceeds validated"):
         warn_on_unvalidated_versions()
 
 
 def test_warn_on_unvalidated_peft(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patched future peft version triggers the matching UserWarning."""
-    _patch_versions(monkeypatch, "4.54.0", "0.20.0")
-    with pytest.warns(UserWarning, match="peft 0.20.0 exceeds validated"):
+    _patch_versions(monkeypatch, "5.5.4", "0.21.0")
+    with pytest.warns(UserWarning, match="peft 0.21.0 exceeds validated"):
         warn_on_unvalidated_versions()
 
 
 def test_no_warn_at_validated_version(monkeypatch: pytest.MonkeyPatch) -> None:
     """Known-good (below max) versions emit no warnings."""
-    _patch_versions(monkeypatch, "4.54.0", "0.19.1")
+    _patch_versions(monkeypatch, "5.5.4", "0.19.1")
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         warn_on_unvalidated_versions()
@@ -68,5 +68,5 @@ def test_no_warn_at_validated_version(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_validated_constants_present() -> None:
     """The CI gate reads these constants from check.py; surface them as a sanity check."""
-    assert VALIDATED_TRANSFORMERS_MAX == "4.55"
-    assert VALIDATED_PEFT_MAX == "0.20"
+    assert VALIDATED_TRANSFORMERS_MAX == "5.6"
+    assert VALIDATED_PEFT_MAX == "0.21"

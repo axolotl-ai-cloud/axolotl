@@ -14,8 +14,8 @@ import warnings
 
 from packaging.version import Version
 
-VALIDATED_TRANSFORMERS_MAX = "4.55"
-VALIDATED_PEFT_MAX = "0.20"
+VALIDATED_TRANSFORMERS_MAX = "5.6"
+VALIDATED_PEFT_MAX = "0.21"
 
 
 def assert_supported_peft_transformers_surface() -> None:
@@ -61,7 +61,7 @@ def warn_on_unvalidated_versions() -> None:
     """Emit a warning when transformers/peft versions exceed validated bounds.
 
     The integration's PEFT-LoRA-container handling + checkpoint resume
-    machinery were validated against transformers<4.55 and peft<0.20.
+    machinery were validated against transformers<5.6 and peft<0.21.
     Newer versions may work but have not been verified by the maintainers.
     """
     import peft
