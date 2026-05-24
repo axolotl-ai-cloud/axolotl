@@ -1284,8 +1284,15 @@ def protrain_model_wrapper(
     zero3_shard: bool | None = None,
     auto_mode: bool = False,
     target_device: "torch.device | str | int | None" = None,
+    forbid_activation_offload: bool = False,
 ) -> WrappedModel:
-    """Compose the ProTrain runtime around a standard ``nn.Module``."""
+    """Compose the ProTrain runtime around a standard ``nn.Module``.
+
+    ``forbid_activation_offload``: when True, the searcher refuses any
+    CostConfig with ``n_offload > 0``. Set from ``cfg.lora_mlp_kernel`` —
+    the fused MLP backward kernel is incompatible with chunk-storage
+    placeholders.
+    """
     import torch
 
     # Device precedence: target_device > model._protrain_target_device > model param device > cuda:0/cpu.
@@ -1660,6 +1667,7 @@ def protrain_model_wrapper(
             int(capacity_bytes),
             hardware_profile,
             cpu_capacity_bytes=cpu_capacity_bytes,
+            forbid_activation_offload=forbid_activation_offload,
         )
         _sys2.stderr.write(
             f"[protrain] search done: cfg={result.cfg} "
@@ -1965,6 +1973,7 @@ def protrain_model_wrapper(
                 capacity_bytes,
                 search_hw_profile,
                 cpu_capacity_bytes=cpu_capacity_bytes,
+                forbid_activation_offload=forbid_activation_offload,
             )
 
             # Re-pick runtime mode for the post-measurement cfg.
