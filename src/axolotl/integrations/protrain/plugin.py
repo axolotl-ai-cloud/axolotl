@@ -37,6 +37,39 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+# One-shot session flag so the inert-plugin WARN fires at most once per process.
+_INERT_AUTO_MEMORY_WARN_FIRED: bool = False
+
+
+def _maybe_warn_inert_plugin(cfg) -> None:
+    """One-time WARN when ProTrain plugin is listed but ``protrain_auto_memory`` is off.
+
+    Plugin runtime hooks (materialize_offload, optimizer wrap, chunk scheduler)
+    only fire when both the plugin is registered AND ``protrain_auto_memory: true``;
+    listing the plugin alone is a silent no-op and was the root cause of v15-v52's
+    inert "measurements" (proposal §6.pp). Fire once per session via a module flag.
+    """
+    global _INERT_AUTO_MEMORY_WARN_FIRED
+    if _INERT_AUTO_MEMORY_WARN_FIRED:
+        return
+    plugins = getattr(cfg, "plugins", None) or []
+    if not _has_protrain_plugin(plugins):
+        return
+    if getattr(cfg, "protrain_auto_memory", False):
+        return
+    LOG.warning(
+        "ProTrainPlugin is registered in `plugins:` but `protrain_auto_memory: "
+        "true` is NOT set in the YAML. The plugin's runtime hooks "
+        "(materialize_offload, optimizer wrap, chunk scheduler) will NOT run. "
+        "Training will proceed as vanilla axolotl + accelerate — the args "
+        "schema is honored but no memory management happens.\n"
+        "\n"
+        "To activate ProTrain, add `protrain_auto_memory: true` to your YAML. "
+        "See proposal §3.4 and §16 PR #9."
+    )
+    _INERT_AUTO_MEMORY_WARN_FIRED = True
+
+
 def _early_init_dist_for_nccl(cfg) -> int:
     """Init torch.distributed early so the profiler captures real NCCL times."""
     import os
@@ -484,6 +517,8 @@ class ProTrainPlugin(BasePlugin):
 
     def pre_model_load(self, cfg) -> None:
         """Fail fast if peft / transformers API surface has drifted."""
+        # Loud-when-inert: fire BEFORE the active gate so plugin-listed-but-disabled runs surface.
+        _maybe_warn_inert_plugin(cfg)
         if not _is_plugin_active(cfg):
             return
         from axolotl.integrations.protrain.check import (

@@ -616,6 +616,76 @@ class ProTrainArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _guard_lora_mlp_kernel_with_mode_bc(cls, data):
+        """Reject / warn ``lora_mlp_kernel: true`` under ProTrain Mode B / Mode C.
+
+        v61 finding: the fused LoRA MLP backward kernel expects contiguous
+        GPU-resident weight views. ProTrain's chunked offload (Mode B replicated
+        CPU offload, Mode C ZeRO-3 sharded offload) gathers chunks per-block
+        during backward and presents shape views the kernel doesn't anticipate,
+        crashing with ``LoRA_MLPBackward`` gradient-shape mismatch. Mode A
+        all-persistent is safe because chunks stay GPU-resident.
+
+        Hard-reject: deterministic Mode B/C-forced configs
+        (``protrain_force_replicated_cpu_offload: true`` or
+        ``protrain_zero3_shard: true``) — the crash is guaranteed.
+
+        Warn: ``protrain_auto_mode: true`` without an explicit Mode-A force —
+        the searcher MIGHT pick Mode B if Mode A doesn't fit.
+        """
+        if not isinstance(data, dict):
+            return data
+        if not data.get("protrain_auto_memory"):
+            return data
+        plugins = data.get("plugins") or []
+        if not _has_protrain_plugin(plugins):
+            return data
+        if not bool(data.get("lora_mlp_kernel")):
+            return data
+
+        forces_mode_bc = bool(data.get("protrain_force_replicated_cpu_offload")) or bool(
+            data.get("protrain_zero3_shard")
+        )
+        if forces_mode_bc:
+            raise ValueError(
+                "ProTrain Mode B / Mode C (replicated CPU offload or sharded) "
+                "is incompatible with `lora_mlp_kernel: true`. The fused MLP "
+                "backward kernel expects contiguous GPU-resident weight views; "
+                "ProTrain's chunked offload gathers chunks per-block during "
+                "backward, presenting shapes the kernel doesn't anticipate "
+                "(crashes with `LoRA_MLPBackward` gradient-shape mismatch — "
+                "see v61 finding in proposal §6.qq).\n"
+                "\n"
+                "Either:\n"
+                "  (a) set `lora_mlp_kernel: false` (slower per-step but "
+                "compatible with all ProTrain modes)\n"
+                "  (b) drop the explicit Mode B/C force; set "
+                "`protrain_auto_mode: true` and ensure your model + 4-rank "
+                "pool fits in Mode A all-persistent (covers most LoRA "
+                "workflows on 24 GiB cards)."
+            )
+
+        # Auto-mode case: searcher may pick Mode B; warn only when no explicit Mode-A safety force.
+        if data.get("protrain_auto_mode", True) and not bool(
+            data.get("protrain_force_all_persistent")
+        ):
+            import warnings
+
+            warnings.warn(
+                "ProTrain detected `lora_mlp_kernel: true` with "
+                "`protrain_auto_mode: true`. If the searcher picks Mode B "
+                "(replicated CPU offload — common for models that don't fit "
+                "Mode A all-persistent), training will crash at the first "
+                "backward pass with a `LoRA_MLPBackward` gradient-shape "
+                "mismatch. Consider `lora_mlp_kernel: false` as a safer "
+                "default, or pre-validate the searcher's mode pick on your "
+                "model size.",
+                stacklevel=2,
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def _reject_multiple_force_modes(cls, data):
         """Reject more than one ``protrain_force_*`` mode flag set at once.
 
