@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 
 from axolotl.integrations.protrain.types import (
@@ -649,18 +650,19 @@ def estimate_peak(
 
     alpha = alpha_fragmentation_for_cfg(hw.dominant_param_bytes_per_element, cfg)
     scaled = int(alpha * raw_peak)
-    LOG.debug(
-        "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d n_offload=%d "
-        "raw=%dB alpha=%.2f -> %dB",
-        cfg.n_persist,
-        cfg.n_buffer,
-        cfg.n_swap,
-        cfg.n_checkpoint,
-        cfg.n_offload,
-        raw_peak,
-        alpha,
-        scaled,
-    )
+    if LOG.isEnabledFor(logging.DEBUG):
+        LOG.debug(
+            "estimate_peak: n_persist=%d n_buffer=%d n_swap=%d n_ckpt=%d n_offload=%d "
+            "raw=%dB alpha=%.2f -> %dB",
+            cfg.n_persist,
+            cfg.n_buffer,
+            cfg.n_swap,
+            cfg.n_checkpoint,
+            cfg.n_offload,
+            raw_peak,
+            alpha,
+            scaled,
+        )
     return scaled
 
 

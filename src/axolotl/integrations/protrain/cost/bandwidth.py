@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import weakref
 
 from axolotl.integrations.protrain.types import (
@@ -32,14 +33,15 @@ def effective_bw(cfg: CostConfig, hw: HardwareProfile) -> tuple[float, float]:
     denom = 1.0 + contention
     eff_h2d = hw.pcie_h2d_bps / denom
     eff_d2h = hw.pcie_d2h_bps / denom
-    LOG.debug(
-        "effective_bw (legacy): n_swap=%d gpu_count=%d derate=%.3f h2d=%.2e d2h=%.2e",
-        cfg.n_swap,
-        gpu_count,
-        denom,
-        eff_h2d,
-        eff_d2h,
-    )
+    if LOG.isEnabledFor(logging.DEBUG):
+        LOG.debug(
+            "effective_bw (legacy): n_swap=%d gpu_count=%d derate=%.3f h2d=%.2e d2h=%.2e",
+            cfg.n_swap,
+            gpu_count,
+            denom,
+            eff_h2d,
+            eff_d2h,
+        )
     return eff_h2d, eff_d2h
 
 

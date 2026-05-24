@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Iterable, Iterator
 
 from axolotl.integrations.protrain.block.layout_rules import assign_modes
+from axolotl.integrations.protrain.cost.bandwidth import effective_bw_for_chunk
 from axolotl.integrations.protrain.cost.memory import (  # noqa: F401 - re-exported for test back-compat
     estimate_cpu_footprint,
     estimate_peak,
@@ -28,6 +30,24 @@ from axolotl.integrations.protrain.types import (
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _BlockMapSkeleton:
+    """n_persist-invariant slice of ``_block_map_peak_contribution``.
+
+    ``base_max`` is the max of (per-fwd-op base contribution) excluding OFFLOAD
+    bumps; ``offload_candidates`` holds the (op_base_value, chunks_tuple) pairs
+    for each OFFLOAD block's last-fwd-op. ``_apply_persistent_adjustments`` then
+    only needs to scan offload_candidates and max ``base_max`` against
+    ``op_base_value + s_chunk`` for any candidate that isn't fully persistent.
+    """
+
+    base_max: int
+    offload_candidates: tuple[tuple[int, tuple[int, ...]], ...]
+    s_chunk: int
+    has_forward: bool
+    degenerate_total: int
 
 
 def min_n_buffer_for(layout: ChunkLayout, n_persist: int) -> int:
@@ -206,6 +226,128 @@ def _block_map_peak_contribution(
     return best
 
 
+def _build_block_map_skeleton(
+    block_map: BlockStrategyMap,
+    trace: ProfilerTrace,
+    layout: ChunkLayout,
+    *,
+    forward_ops_by_block: dict[BlockId, list[int]],
+    tree_index_map: dict[BlockId, int],
+) -> _BlockMapSkeleton:
+    """Compute the n_persist-invariant op-walk skeleton for ``_block_map_peak_contribution``.
+
+    ``base_max`` is the max of per-fwd-op base contributions (live_none +
+    ckpt_extra + cross_attn + intra + inter). Each OFFLOAD block contributes
+    ``(per_op_base_at_last_fwd_op, chunks_tuple)`` so the per-n_persist pass
+    only re-evaluates the bumps. Bit-equivalence with
+    ``_block_map_peak_contribution`` follows from OFFLOAD bumps being a
+    constant ``s_chunk`` per block at a specific op_idx.
+    """
+    from axolotl.integrations.protrain.cost.memory import (
+        cross_attn_persist_bytes,
+        op_cross_attn_surcharge,
+    )
+
+    ckpt_bump_op: dict[int, int] = {}
+    offload_block_ops: list[tuple[int, tuple[int, ...]]] = []
+    for block_id, op_idxs in forward_ops_by_block.items():
+        if not op_idxs:
+            continue
+        mode = block_map.get(block_id, BlockMode.NONE)
+        if mode is BlockMode.CKPT:
+            ckpt_bump_op[op_idxs[0]] = int(block_id)
+        elif mode is BlockMode.OFFLOAD:
+            chunks = tuple(int(cid) for cid in layout.block_to_chunks.get(block_id, ()))
+            offload_block_ops.append((op_idxs[-1], chunks))
+
+    block_first_op = {bid: ops[0] for bid, ops in forward_ops_by_block.items() if ops}
+    blocks_in_fwd_order = sorted(block_first_op.items(), key=lambda kv: kv[1])
+    cumulative_none: list[tuple[int, int]] = []
+    running = 0
+    for bid, first_idx in blocks_in_fwd_order:
+        mode = block_map.get(bid, BlockMode.NONE)
+        if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
+            running += trace.activation_sizes.get(bid, 0)
+        cumulative_none.append((first_idx, running))
+
+    def _none_live_at(op_idx: int) -> int:
+        live = 0
+        for first_idx, cum in cumulative_none:
+            if first_idx <= op_idx:
+                live = cum
+            else:
+                break
+        return live
+
+    cross_attn_bytes = cross_attn_persist_bytes(trace, block_map, tree_index_map)
+
+    per_op_base_by_idx: dict[int, int] = {}
+    base_max = 0
+    have_any_forward = False
+    for i, op in enumerate(trace.op_order):
+        if not op.is_forward:
+            continue
+        have_any_forward = True
+        intra = trace.intra_op_delta.get(op.op_id, 0)
+        inter = trace.inter_op_delta.get(op.op_id, 0)
+        live_none = _none_live_at(i)
+        ckpt_extra = 0
+        if i in ckpt_bump_op:
+            ckpt_extra = trace.activation_sizes.get(BlockId(ckpt_bump_op[i]), 0)
+        op_cross_attn = op_cross_attn_surcharge(op, cross_attn_bytes, tree_index_map)
+        v = live_none + ckpt_extra + op_cross_attn + intra + inter
+        per_op_base_by_idx[i] = v
+        if v > base_max:
+            base_max = v
+
+    offload_candidates: list[tuple[int, tuple[int, ...]]] = [
+        (per_op_base_by_idx[op_idx], chunks) for op_idx, chunks in offload_block_ops
+    ]
+
+    degenerate_total = 0
+    if not have_any_forward:
+        for bid_raw, act_sz in trace.activation_sizes.items():
+            bid = BlockId(int(bid_raw))
+            mode = block_map.get(bid, BlockMode.NONE)
+            if mode is BlockMode.NONE or mode is BlockMode.OFFLOAD:
+                degenerate_total += act_sz
+
+    return _BlockMapSkeleton(
+        base_max=base_max,
+        offload_candidates=tuple(offload_candidates),
+        s_chunk=layout.S_chunk,
+        has_forward=have_any_forward,
+        degenerate_total=degenerate_total,
+    )
+
+
+def _apply_persistent_adjustments(
+    skeleton: _BlockMapSkeleton,
+    persistent_chunks: frozenset[ChunkId] | set[ChunkId] | None,
+) -> int:
+    """Apply OFFLOAD bumps for non-all-persistent blocks and return the peak.
+
+    For each OFFLOAD block whose chunks aren't all persistent, its contribution
+    is ``per_op_base_at_last_fwd_op + s_chunk``. The final peak is the max of
+    ``base_max`` and those active candidates. When ``persistent_chunks`` is
+    ``None`` (legacy callers / n_offload=0 hoist path), every candidate fires.
+    """
+    if not skeleton.has_forward:
+        return skeleton.degenerate_total
+
+    best = skeleton.base_max
+    s_chunk = skeleton.s_chunk
+    for op_base_val, chunks in skeleton.offload_candidates:
+        if persistent_chunks is not None and chunks and all(
+            ChunkId(int(cid)) in persistent_chunks for cid in chunks
+        ):
+            continue
+        candidate = op_base_val + s_chunk
+        if candidate > best:
+            best = candidate
+    return best
+
+
 def search(
     trace: ProfilerTrace,
     layout: ChunkLayout,
@@ -309,31 +451,64 @@ def search(
                 else:
                     _cap_dominates = False
 
-                # F_bm depends on n_persist via OFFLOAD bump suppression; hoist when n_offload==0.
+                # Build the n_persist-invariant skeleton once per (n_swap, n_ckpt, n_offload).
+                # n_offload==0 → no OFFLOAD candidates → skeleton.base_max is the full peak.
+                # n_offload>0 → apply per-n_persist OFFLOAD bumps via the skeleton.
+                _bm_skeleton = _build_block_map_skeleton(
+                    block_map,
+                    trace,
+                    layout,
+                    forward_ops_by_block=forward_ops_by_block,
+                    tree_index_map=tree_index_map,
+                )
                 f_bm_invariant: int | None
                 if n_offload == 0:
-                    f_bm_invariant = _block_map_peak_contribution(
-                        block_map,
-                        trace,
-                        layout,
-                        forward_ops_by_block=forward_ops_by_block,
-                        tree_index_map=tree_index_map,
+                    f_bm_invariant = _apply_persistent_adjustments(
+                        _bm_skeleton, persistent_chunks=None
                     )
                 else:
                     f_bm_invariant = None
+
+                # Hoist effective_bw_for_chunk: depends on (chunk_id, cfg.n_swap,
+                # layout, block_map, hw) — all loop-invariant within the inner
+                # n_persist/n_buffer loop. Build once, pass through estimate_runtime.
+                _bw_probe_cfg = CostConfig(
+                    n_persist=0,
+                    n_buffer=0,
+                    n_swap=n_swap,
+                    n_checkpoint=n_ckpt,
+                    n_offload=n_offload,
+                )
+                _chunk_bw_table: dict[
+                    int, tuple[tuple[float, float], tuple[float, float]]
+                ] = {}
+                for _cid in range(bounds.N_chunk):
+                    _bw_fwd = effective_bw_for_chunk(
+                        ChunkId(_cid),
+                        _bw_probe_cfg,
+                        hw,
+                        layout,
+                        block_map,
+                        direction="fwd",
+                    )
+                    _bw_bwd = effective_bw_for_chunk(
+                        ChunkId(_cid),
+                        _bw_probe_cfg,
+                        hw,
+                        layout,
+                        block_map,
+                        direction="bwd",
+                    )
+                    _chunk_bw_table[_cid] = (_bw_fwd, _bw_bwd)
 
                 # Partition: |prefix U mandatory_persistent| + n_buffer <= N_chunk.
                 for n_persist in range(0, bounds.N_chunk + 1):
                     if f_bm_invariant is not None:
                         f_bm = f_bm_invariant
                     else:
-                        f_bm = _block_map_peak_contribution(
-                            block_map,
-                            trace,
-                            layout,
-                            forward_ops_by_block=forward_ops_by_block,
-                            tree_index_map=tree_index_map,
-                            n_persist=n_persist,
+                        f_bm = _apply_persistent_adjustments(
+                            _bm_skeleton,
+                            persistent_chunks=layout.effective_persistent_ids(n_persist),
                         )
                     if _cap_dominates:
                         max_sum = bounds.N_chunk
@@ -420,7 +595,12 @@ def search(
                                 continue
                         n_feasible += 1
                         predicted_iter_s = estimate_runtime(
-                            cfg, trace, layout, block_map, hw
+                            cfg,
+                            trace,
+                            layout,
+                            block_map,
+                            hw,
+                            chunk_bw_table=_chunk_bw_table,
                         )
                         # Non-finite runtime: track separately to disambiguate failure mode.
                         if not math.isfinite(predicted_iter_s):

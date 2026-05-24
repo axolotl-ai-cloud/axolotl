@@ -192,8 +192,22 @@ class ChunkLayout:
     def effective_persistent_ids(self, n_persist: int) -> frozenset[ChunkId]:
         """Return ``{0..n_persist-1} | mandatory_persistent`` as a frozenset."""
         n = max(0, min(int(n_persist), int(self.N_chunk)))
+        # Lazy per-instance memo; layout is conceptually immutable, only the
+        # block_to_chunks dict breaks the @dataclass(frozen=True) hash. The
+        # cache is keyed on clamped n only so it's safe across callers.
+        cache: dict[int, frozenset[ChunkId]] | None = self.__dict__.get(
+            "_effective_persistent_cache"
+        )
+        if cache is None:
+            cache = {}
+            object.__setattr__(self, "_effective_persistent_cache", cache)
+        hit = cache.get(n)
+        if hit is not None:
+            return hit
         prefix = {ChunkId(i) for i in range(n)}
-        return frozenset(prefix | set(self.mandatory_persistent))
+        result = frozenset(prefix | set(self.mandatory_persistent))
+        cache[n] = result
+        return result
 
 
 # ---------------------------------------------------------------------------

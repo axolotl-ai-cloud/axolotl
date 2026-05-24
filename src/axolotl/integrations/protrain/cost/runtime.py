@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from axolotl.integrations.protrain.cost.bandwidth import (
     effective_bw,
     effective_bw_for_chunk,
@@ -254,10 +256,22 @@ def estimate_runtime(
     layout: ChunkLayout,
     block_map: BlockStrategyMap,
     hw: HardwareProfile,
+    *,
+    chunk_bw_table: (
+        dict[int, tuple[tuple[float, float], tuple[float, float]]] | None
+    ) = None,
 ) -> float:
-    """Estimate wall-clock iteration time in seconds."""
+    """Estimate wall-clock iteration time in seconds.
+
+    ``chunk_bw_table`` (optional): precomputed per-chunk effective bandwidths
+    ``{chunk_id: ((fwd_h2d, fwd_d2h), (bwd_h2d, bwd_d2h))}``. Equivalent to
+    calling ``effective_bw_for_chunk`` per chunk, hoisted out of the searcher
+    inner loop where ``(n_swap, block_map, layout, hw)`` are loop-invariant.
+    """
     t_fwd, t_bwd, t_gpu_optim, t_cpu_optim, fwd_used_phase2, bwd_used_phase2 = (
-        _estimate_runtime_components(cfg, trace, layout, block_map, hw)
+        _estimate_runtime_components(
+            cfg, trace, layout, block_map, hw, chunk_bw_table=chunk_bw_table
+        )
     )
     if t_fwd == float("inf") or t_bwd == float("inf"):
         return float("inf")
@@ -427,26 +441,27 @@ def _compose_t_iter_with_alpha_calibration(
             a_residual = 1.0
         t_iter_pre_residual = t_iter
         t_iter = a_residual * t_iter
-        LOG.debug(
-            "estimate_runtime: phase-2 per-component α applied "
-            "(shape_matches=%s, αfwd=%.3f αbwd=%.3f αopt=%.3f, "
-            "α_residual=%.3f, fwd_override=%s bwd_override=%s, "
-            "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
-            "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
-            shape_matches,
-            a_fwd,
-            a_bwd,
-            a_opt,
-            a_residual,
-            fwd_used_phase2_override,
-            bwd_used_phase2_override,
-            t_fwd_cal,
-            t_bwd_cal,
-            t_gpu_cal,
-            t_cpu_cal,
-            t_iter_pre_residual,
-            t_iter,
-        )
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.debug(
+                "estimate_runtime: phase-2 per-component α applied "
+                "(shape_matches=%s, αfwd=%.3f αbwd=%.3f αopt=%.3f, "
+                "α_residual=%.3f, fwd_override=%s bwd_override=%s, "
+                "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
+                "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
+                shape_matches,
+                a_fwd,
+                a_bwd,
+                a_opt,
+                a_residual,
+                fwd_used_phase2_override,
+                bwd_used_phase2_override,
+                t_fwd_cal,
+                t_bwd_cal,
+                t_gpu_cal,
+                t_cpu_cal,
+                t_iter_pre_residual,
+                t_iter,
+            )
         return t_iter
     # Single-α legacy fallback for in-memory traces without per-component fields.
     t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
@@ -463,13 +478,14 @@ def _compose_t_iter_with_alpha_calibration(
         )
         t_iter_pre = t_iter
         t_iter = t_iter * alpha
-        LOG.debug(
-            "estimate_runtime: phase-2 single-α (legacy fallback) applied "
-            "(α=%.3f, %.4fs -> %.4fs)",
-            alpha,
-            t_iter_pre,
-            t_iter,
-        )
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.debug(
+                "estimate_runtime: phase-2 single-α (legacy fallback) applied "
+                "(α=%.3f, %.4fs -> %.4fs)",
+                alpha,
+                t_iter_pre,
+                t_iter,
+            )
     return t_iter
 
 
@@ -479,8 +495,16 @@ def _estimate_runtime_components(
     layout: ChunkLayout,
     block_map: BlockStrategyMap,
     hw: HardwareProfile,
+    *,
+    chunk_bw_table: (
+        dict[int, tuple[tuple[float, float], tuple[float, float]]] | None
+    ) = None,
 ) -> tuple[float, float, float, float, bool, bool]:
-    """Compute the four runtime components (no calibration applied)."""
+    """Compute the four runtime components (no calibration applied).
+
+    ``chunk_bw_table`` short-circuits the per-chunk ``effective_bw_for_chunk``
+    calls when the caller has already hoisted them out of an outer loop.
+    """
     full_h2d = hw.pcie_h2d_bps
 
     # Worst-case derate for the SWAP block's own activation transfer.
@@ -498,13 +522,27 @@ def _estimate_runtime_components(
     # Cache per-chunk effective bandwidth once per direction; searcher pays O(N_chunk).
     chunk_bw_fwd: list[tuple[float, float] | None] = [None] * layout.N_chunk
     chunk_bw_bwd: list[tuple[float, float] | None] = [None] * layout.N_chunk
-    for cid in nonpersist_chunk_ids:
-        chunk_bw_fwd[cid] = effective_bw_for_chunk(
-            ChunkId(cid), cfg, hw, layout, block_map, direction="fwd"
-        )
-        chunk_bw_bwd[cid] = effective_bw_for_chunk(
-            ChunkId(cid), cfg, hw, layout, block_map, direction="bwd"
-        )
+    if chunk_bw_table is not None:
+        for cid in nonpersist_chunk_ids:
+            entry = chunk_bw_table.get(cid)
+            if entry is None:
+                chunk_bw_fwd[cid] = effective_bw_for_chunk(
+                    ChunkId(cid), cfg, hw, layout, block_map, direction="fwd"
+                )
+                chunk_bw_bwd[cid] = effective_bw_for_chunk(
+                    ChunkId(cid), cfg, hw, layout, block_map, direction="bwd"
+                )
+            else:
+                chunk_bw_fwd[cid] = entry[0]
+                chunk_bw_bwd[cid] = entry[1]
+    else:
+        for cid in nonpersist_chunk_ids:
+            chunk_bw_fwd[cid] = effective_bw_for_chunk(
+                ChunkId(cid), cfg, hw, layout, block_map, direction="fwd"
+            )
+            chunk_bw_bwd[cid] = effective_bw_for_chunk(
+                ChunkId(cid), cfg, hw, layout, block_map, direction="bwd"
+            )
 
     # NCCL gather + reduce both charged per Eq. 6; reduce is uniform across cached/uncached.
     # Fail-closed on world-mismatched ZeRO-3 traces — silently zeroing under-prices candidates.
@@ -578,14 +616,15 @@ def _estimate_runtime_components(
         t_fwd_compute_total *= sku_scale
         t_fwd_compute_base *= sku_scale
         per_block_compute = {bid: v * sku_scale for bid, v in per_block_compute.items()}
-        LOG.debug(
-            "estimate_runtime: applied per-SKU compute scale %.3f (trace=%s "
-            "live_TFLOPS=%.1f trace_TFLOPS=%.1f)",
-            sku_scale,
-            trace.sku,
-            hw.gpu_compute_tflops,
-            trace.compute_rate_tflops,
-        )
+        if LOG.isEnabledFor(logging.DEBUG):
+            LOG.debug(
+                "estimate_runtime: applied per-SKU compute scale %.3f (trace=%s "
+                "live_TFLOPS=%.1f trace_TFLOPS=%.1f)",
+                sku_scale,
+                trace.sku,
+                hw.gpu_compute_tflops,
+                trace.compute_rate_tflops,
+            )
     t_fwd_swap_transfer = 0.0
     for bid_raw, act_sz in trace.activation_sizes.items():
         bid = BlockId(int(bid_raw))
@@ -899,15 +938,16 @@ def _estimate_runtime_components(
 
     # n_persist corrections live inline in the fwd/bwd override branches above.
     # T_iter = T_fwd + T_bwd + T_gpu_optim + max(0, T_cpu_optim - T_bwd) — serialised model.
-    LOG.debug(
-        "estimate_runtime_components: cfg=%s t_fwd=%.4fs t_bwd=%.4fs "
-        "t_gpu_opt=%.4fs t_cpu_opt=%.4fs",
-        cfg,
-        t_fwd,
-        t_bwd,
-        t_gpu_optim,
-        t_cpu_optim,
-    )
+    if LOG.isEnabledFor(logging.DEBUG):
+        LOG.debug(
+            "estimate_runtime_components: cfg=%s t_fwd=%.4fs t_bwd=%.4fs "
+            "t_gpu_opt=%.4fs t_cpu_opt=%.4fs",
+            cfg,
+            t_fwd,
+            t_bwd,
+            t_gpu_optim,
+            t_cpu_optim,
+        )
     _ = n_block
     return (
         t_fwd,
