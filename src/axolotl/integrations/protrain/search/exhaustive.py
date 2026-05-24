@@ -364,11 +364,21 @@ def search(
                     if not block_map_runtime_admissible(layout, block_map, n_persist):
                         continue
 
-                    # 2-point shortcut (min, max) for GPU-only; full range when CPU gate active.
-                    if cpu_capacity_bytes is None:
-                        n_buffer_candidates: Iterable[int] = (min_buffer, max_buffer)
+                    # 2-point shortcut (min, max): runtime is monotone-decreasing in
+                    # n_buffer (more cache hits = lower comm time) and CPU footprint
+                    # is invariant in n_buffer (chunk_term + swap_term depend on
+                    # n_persist / n_swap only — see ``estimate_cpu_footprint``). So
+                    # interior values of n_buffer are dominated by max_buffer on
+                    # runtime and identical to it on the CPU gate; min_buffer is kept
+                    # for the noise-band tie-break (lower n_buffer preferred). The
+                    # CPU-gate branch previously enumerated the full range, blowing
+                    # search time up ~50x at N_chunk=130 (v67 measurement: 9.5min
+                    # init for Mode B s1).
+                    n_buffer_candidates: Iterable[int]
+                    if min_buffer == max_buffer:
+                        n_buffer_candidates = (min_buffer,)
                     else:
-                        n_buffer_candidates = range(min_buffer, max_buffer + 1)
+                        n_buffer_candidates = (min_buffer, max_buffer)
                     for n_buffer in n_buffer_candidates:
                         n_total += 1
                         cfg = CostConfig(

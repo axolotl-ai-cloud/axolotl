@@ -2542,6 +2542,45 @@ def test_search_cpu_capacity_none_matches_pre_filter_behaviour(
     assert pre_filter.predicted_iter_s == explicit_none.predicted_iter_s
 
 
+def test_search_cpu_gate_uses_n_buffer_2point_shortcut(
+    toy_trace, toy_layout, toy_hw
+):
+    """The CPU-aware path must enumerate the same n_buffer 2-point shortcut as
+    the GPU-only path.
+
+    Rationale: ``estimate_cpu_footprint`` is invariant in ``cfg.n_buffer``
+    (chunk_term depends on ``n_persist`` only; swap_term depends on
+    ``n_swap`` only). Runtime is monotone-decreasing in ``n_buffer``.
+    Together that means the CPU-gate branch can safely use the same
+    (min_buffer, max_buffer) 2-point shortcut as the GPU-only branch
+    — interior values are dominated by ``max_buffer`` on runtime and
+    redundant on the CPU gate.
+
+    The v67 sweep on Llama-3-8B + 4× 3090 saw the original full-range
+    CPU-gate path take 9.5 minutes of init wall-clock at N_chunk=130
+    (~1.6M configs evaluated). Picking a loose-enough CPU budget here
+    so every GPU-feasible cfg also clears the CPU gate must produce
+    the same SearchResult as ``cpu_capacity_bytes=None``.
+    """
+    capacity = 12 * GB
+    # Loose CPU budget: every GPU-feasible cfg passes the CPU gate.
+    loose_cpu = 64 * GB
+    no_cpu_gate = search(
+        toy_trace, toy_layout, capacity, toy_hw, cpu_capacity_bytes=None
+    )
+    loose_cpu_gate = search(
+        toy_trace, toy_layout, capacity, toy_hw, cpu_capacity_bytes=loose_cpu
+    )
+    assert no_cpu_gate.cfg == loose_cpu_gate.cfg, (
+        f"loose CPU gate must not change the pick (n_buffer monotone-in-runtime "
+        f"+ invariant on CPU gate); no_gate={no_cpu_gate.cfg} "
+        f"loose_gate={loose_cpu_gate.cfg}"
+    )
+    assert no_cpu_gate.block_map == loose_cpu_gate.block_map
+    assert no_cpu_gate.predicted_peak_bytes == loose_cpu_gate.predicted_peak_bytes
+    assert no_cpu_gate.predicted_iter_s == loose_cpu_gate.predicted_iter_s
+
+
 def test_search_raises_cpu_pressure_specific_message_when_no_cfg_fits_both(
     toy_trace, toy_layout, toy_hw
 ):
