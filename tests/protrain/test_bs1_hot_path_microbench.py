@@ -319,6 +319,14 @@ def test_bs1_per_step_overhead_within_budget():
     )
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI", "").lower() in ("true", "1", "yes"),
+    reason=(
+        "Wall-clock microbench: same shared-runner variance caveat as "
+        "test_bs1_per_step_overhead_within_budget — the 2× bs=1→bs=4 "
+        "regression-guard is meaningful only on consistent hardware."
+    ),
+)
 def test_bs4_no_regression_relative_to_bs1():
     """At bs=4 the per-step Python overhead must NOT scale linearly with bs.
 
