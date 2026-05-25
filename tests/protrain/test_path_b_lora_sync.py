@@ -126,6 +126,40 @@ def test_discover_lora_params_excludes_non_lora_trainables():
     assert len(names) == 8  # Same count as the all-LoRA-trainable case.
 
 
+def test_bypass_gate_stays_off_with_extra_trainables():
+    """Bypass gate (``n_trainable == len(lora_names)``) must evaluate False
+    when non-LoRA trainable params exist (simulating PEFT ``modules_to_save``
+    or ``lora_bias != 'none'``), so DDP stays active to sync the extras
+    via its bucketed allreduce. Path B keeps the LoRA factors in the
+    ignore list; the extras must NOT be in the ignore list.
+    """
+    from axolotl.integrations.protrain.plugin import (
+        _discover_lora_params,
+        _register_lora_ddp_ignore,
+    )
+
+    model = _build_peft_shaped_model()
+    extra = model.base_model.model.layers[0].self_attn_q_proj.base_layer.weight
+    extra.requires_grad_(True)
+
+    lora_names, _ = _discover_lora_params(model)
+    n_trainable = sum(1 for p in model.parameters() if p.requires_grad)
+
+    assert n_trainable == len(lora_names) + 1, (
+        f"setup: expected n_trainable={len(lora_names) + 1}, got {n_trainable}"
+    )
+    bypass_would_fire = n_trainable == len(lora_names)
+    assert not bypass_would_fire
+
+    _register_lora_ddp_ignore(model, lora_names)
+    live = set(model._ddp_params_and_buffers_to_ignore)
+    assert set(lora_names).issubset(live)
+    extra_name = next(n for n, p in model.named_parameters() if p is extra)
+    assert extra_name not in live, (
+        f"non-LoRA trainable {extra_name} was incorrectly added to the ignore list"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 2. _ddp_params_and_buffers_to_ignore registration
 # ---------------------------------------------------------------------------
