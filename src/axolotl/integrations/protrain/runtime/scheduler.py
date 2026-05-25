@@ -214,9 +214,7 @@ class Scheduler:
         # (ensure_block_resident, next-block metadata, async prefetch dispatch)
         # plus matching sub-step traces inside ensure_block_resident and
         # ensure_chunks_resident. Zero overhead when off.
-        self._pre_block_forward_trace_enabled: bool = (
-            _pre_block_forward_trace_enabled()
-        )
+        self._pre_block_forward_trace_enabled: bool = _pre_block_forward_trace_enabled()
         if self._pre_block_forward_trace_enabled:
             LOG.info(
                 "ProTrain Scheduler: PROTRAIN_DEBUG_PRE_BLOCK_FORWARD_TRACE "
@@ -899,7 +897,9 @@ class Scheduler:
         self.chunk_manager.drain_deferred_offloads()
 
         if self._first_iter_trace_enabled:
-            self._first_iter_log("drain post drain_deferred_offloads; pre wait_cpu_optim")
+            self._first_iter_log(
+                "drain post drain_deferred_offloads; pre wait_cpu_optim"
+            )
 
         self.chunk_manager.wait_cpu_optim()
 

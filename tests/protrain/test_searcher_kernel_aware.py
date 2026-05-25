@@ -29,7 +29,6 @@ from axolotl.integrations.protrain.types import (
     ProfilerTrace,
 )
 
-
 MB = 1 << 20
 GB = 1 << 30
 
@@ -101,7 +100,7 @@ def _make_layout(
 ) -> ChunkLayout:
     chunks = tuple((ParamId(f"param.{i}"),) for i in range(n_chunk))
     param_to_chunk = {ParamId(f"param.{i}"): ChunkId(i) for i in range(n_chunk)}
-    block_to_chunks = {
+    block_to_chunks: dict[BlockId, tuple[ChunkId, ...]] = {
         BlockId(b): (ChunkId(b % n_chunk),) for b in range(n_block)
     }
     return ChunkLayout(

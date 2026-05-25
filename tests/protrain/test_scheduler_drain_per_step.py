@@ -154,13 +154,13 @@ def _make_scheduler_with_stub_streams(*, has_cuda: bool, with_offload: bool) -> 
         def wait_cpu_optim(self) -> None:
             wait_cpu_optim_calls["n"] += 1
 
-    sched.chunk_manager = _StubChunkManager()
+    sched.chunk_manager = _StubChunkManager()  # type: ignore[assignment]
     return sched, drain_deferred_calls, wait_cpu_optim_calls
 
 
 def test_drain_synchronizes_all_three_side_streams() -> None:
-    sched, drain_deferred_calls, wait_cpu_optim_calls = _make_scheduler_with_stub_streams(
-        has_cuda=True, with_offload=True
+    sched, drain_deferred_calls, wait_cpu_optim_calls = (
+        _make_scheduler_with_stub_streams(has_cuda=True, with_offload=True)
     )
 
     sched.drain()
@@ -185,8 +185,8 @@ def test_drain_without_offload_stream_skips_third_sync() -> None:
 
 def test_drain_on_cpu_only_path_is_safe() -> None:
     """No-CUDA host: drain() must skip stream syncs but still drain deferreds + cpu_optim."""
-    sched, drain_deferred_calls, wait_cpu_optim_calls = _make_scheduler_with_stub_streams(
-        has_cuda=False, with_offload=False
+    sched, drain_deferred_calls, wait_cpu_optim_calls = (
+        _make_scheduler_with_stub_streams(has_cuda=False, with_offload=False)
     )
 
     sched.drain()

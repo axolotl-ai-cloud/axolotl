@@ -2542,9 +2542,7 @@ def test_search_cpu_capacity_none_matches_pre_filter_behaviour(
     assert pre_filter.predicted_iter_s == explicit_none.predicted_iter_s
 
 
-def test_search_cpu_gate_uses_n_buffer_2point_shortcut(
-    toy_trace, toy_layout, toy_hw
-):
+def test_search_cpu_gate_uses_n_buffer_2point_shortcut(toy_trace, toy_layout, toy_hw):
     """The CPU-aware path must enumerate the same n_buffer 2-point shortcut as
     the GPU-only path.
 

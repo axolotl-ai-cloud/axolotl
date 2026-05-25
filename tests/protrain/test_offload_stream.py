@@ -26,7 +26,7 @@ to assertion of ``None``.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 import pytest
@@ -39,6 +39,9 @@ from axolotl.integrations.protrain.types import (
     ChunkLayout,
     ParamId,
 )
+
+if TYPE_CHECKING:
+    from axolotl.integrations.protrain.runtime.scheduler import Scheduler
 
 
 class _RecordingChunkManager:
@@ -86,7 +89,7 @@ def _two_block_layout(
 def _make_scheduler(
     layout: ChunkLayout,
     block_map: BlockStrategyMap,
-) -> "object":
+) -> "Scheduler":
     from axolotl.integrations.protrain.runtime.scheduler import Scheduler
 
     chunk_manager = _RecordingChunkManager()
@@ -199,9 +202,7 @@ def test_gather_stream_kwarg_wraps_torch_cuda_stream_context() -> None:
     real_stream = torch.cuda.Stream()
     cid = cast(ChunkId, 7)
 
-    with patch.object(
-        manager_mod.ChunkManager, "_gather_impl_body", _capture_body
-    ):
+    with patch.object(manager_mod.ChunkManager, "_gather_impl_body", _capture_body):
         with patch.object(manager_mod, "_SLOW_GATHER_THRESHOLD_S", 0.0):
             with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", 0.0):
                 mgr = manager_mod.ChunkManager.__new__(manager_mod.ChunkManager)
@@ -209,7 +210,9 @@ def test_gather_stream_kwarg_wraps_torch_cuda_stream_context() -> None:
                 mgr._cpu_slots = {cid: []}
                 mgr.gather(cid, stream=real_stream)
 
-    assert streams_entered, "expected _gather_impl_body to fire under the stream context"
+    assert streams_entered, (
+        "expected _gather_impl_body to fire under the stream context"
+    )
     assert streams_entered[0] == real_stream, (
         f"gather(stream=X) must run body on X; got {streams_entered[0]!r} "
         f"(expected {real_stream!r})"
@@ -245,7 +248,7 @@ def test_pre_block_backward_syncs_compute_with_offload_stream() -> None:
         def lookup_resident(self, _cid):
             return None
 
-    sched.chunk_manager.buffer_pool = _StubPool()  # type: ignore[attr-defined]
+    sched.chunk_manager.buffer_pool = _StubPool()  # type: ignore[attr-defined,assignment]
 
     sched.pre_block_backward(cast(BlockId, 1))
     assert "offload" in sync_calls, (

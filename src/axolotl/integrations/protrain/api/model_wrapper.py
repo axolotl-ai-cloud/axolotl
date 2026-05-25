@@ -1244,7 +1244,7 @@ def _construct_runtime(
         effective_d2h_bps=eff_d2h,
     )
     # Back-ref so _ProTrainOptimizer.step() can call scheduler.drain() at the step boundary.
-    chunk_manager._scheduler_ref = scheduler
+    chunk_manager._scheduler_ref = scheduler  # type: ignore[attr-defined]
 
     # Encoder-decoder models have two ModuleLists; _find_block_parent_map returns one per block.
     block_parent_map = _find_block_parent_map(model, blocks)
@@ -1509,6 +1509,7 @@ def protrain_model_wrapper(
     _bcast_sku = _local_sku
     try:
         import torch.distributed as _pr20_dist_sku
+
         if _pr20_dist_sku.is_initialized() and _pr20_dist_sku.get_world_size() > 1:
             _sku_holder = [_local_sku]
             _pr20_dist_sku.broadcast_object_list(_sku_holder, src=0)

@@ -338,8 +338,10 @@ def _apply_persistent_adjustments(
     best = skeleton.base_max
     s_chunk = skeleton.s_chunk
     for op_base_val, chunks in skeleton.offload_candidates:
-        if persistent_chunks is not None and chunks and all(
-            ChunkId(int(cid)) in persistent_chunks for cid in chunks
+        if (
+            persistent_chunks is not None
+            and chunks
+            and all(ChunkId(int(cid)) in persistent_chunks for cid in chunks)
         ):
             continue
         candidate = op_base_val + s_chunk
@@ -530,7 +532,9 @@ def search(
                     else:
                         f_bm = _apply_persistent_adjustments(
                             _bm_skeleton,
-                            persistent_chunks=layout.effective_persistent_ids(n_persist),
+                            persistent_chunks=layout.effective_persistent_ids(
+                                n_persist
+                            ),
                         )
                     if _cap_dominates:
                         max_sum = bounds.N_chunk
@@ -648,7 +652,8 @@ def search(
                             if (
                                 apply_no_offload_heuristic
                                 and cfg.n_offload != best_cfg.n_offload
-                                and abs(improvement) <= best_iter_s * _NON_NVLINK_TIE_RATIO
+                                and abs(improvement)
+                                <= best_iter_s * _NON_NVLINK_TIE_RATIO
                             ):
                                 cur_nv_key = (
                                     cfg.n_offload,

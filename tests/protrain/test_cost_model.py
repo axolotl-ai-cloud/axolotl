@@ -351,9 +351,7 @@ def test_ckpt_chain_includes_internal_residual_when_enabled():
         num_attention_heads=32,
         intermediate_size=11008,
     )
-    block_map: BlockStrategyMap = {
-        BlockId(i): BlockMode.CKPT for i in range(n_blocks)
-    }
+    block_map: BlockStrategyMap = {BlockId(i): BlockMode.CKPT for i in range(n_blocks)}
     legacy = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=0.0)
     enabled = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=1.0)
     assert legacy == n_blocks * activation_per_block
@@ -373,9 +371,7 @@ def test_disable_via_factor_zero():
         num_attention_heads=_LLAMA_30B_HEADS,
         intermediate_size=_LLAMA_30B_INTERMEDIATE,
     )
-    block_map: BlockStrategyMap = {
-        BlockId(i): BlockMode.CKPT for i in range(n_blocks)
-    }
+    block_map: BlockStrategyMap = {BlockId(i): BlockMode.CKPT for i in range(n_blocks)}
     disabled = _compute_ckpt_chain_bytes(trace, block_map, internal_residual_factor=0.0)
     assert disabled == n_blocks * activation_per_block
 
@@ -473,9 +469,7 @@ def test_estimate_peak_seq_512_30b_llama_alpha_steady_after_residual():
         alpha_baseline = measured_steady_gib / max(pred_baseline, 1e-9)
 
         set_default_ckpt_internal_residual_factor(1.0)
-        pred_with_residual = (
-            estimate_peak(cfg, trace, layout, block_map, hw_4bit) / GiB
-        )
+        pred_with_residual = estimate_peak(cfg, trace, layout, block_map, hw_4bit) / GiB
         alpha_with_residual = measured_steady_gib / max(pred_with_residual, 1e-9)
     finally:
         set_default_ckpt_internal_residual_factor(original_factor)

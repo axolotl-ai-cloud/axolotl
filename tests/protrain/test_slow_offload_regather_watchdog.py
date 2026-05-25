@@ -183,7 +183,9 @@ def test_gather_for_backward_passes_backward_regather_phase(caplog):
 
     with patch.object(manager_mod, "_SLOW_OFFLOAD_REGATHER_S", threshold_s):
         with patch.object(manager_mod, "_SLOW_GATHER_THRESHOLD_S", 0.0):
-            with patch.object(manager_mod.ChunkManager, "_gather_impl", _slow_gather_impl):
+            with patch.object(
+                manager_mod.ChunkManager, "_gather_impl", _slow_gather_impl
+            ):
                 with patch.object(manager_mod.ChunkManager, "gather", _spy_gather):
                     mgr = manager_mod.ChunkManager.__new__(manager_mod.ChunkManager)
                     mgr._chunk_shards = {}

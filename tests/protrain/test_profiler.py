@@ -1304,9 +1304,7 @@ def test_phase2_snapshot_filters_shape_preserving_placeholders():
 
     # Simulate the offload swap: rebind the live param to a stride-0
     # placeholder, then attempt to round-trip via load_state_dict.
-    placeholder = torch.empty(1, dtype=module.weight.dtype).expand(
-        module.weight.shape
-    )
+    placeholder = torch.empty(1, dtype=module.weight.dtype).expand(module.weight.shape)
     module.weight.data = placeholder
     snapshot_unfiltered = {"weight": pre_weight}
     # Unfiltered path mirrors the v71 failure: copy_ into the placeholder

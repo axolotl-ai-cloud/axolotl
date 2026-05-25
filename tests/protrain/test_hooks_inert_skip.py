@@ -17,7 +17,6 @@ from axolotl.integrations.protrain.types import (
     ChunkId,
 )
 
-
 # ---------------------------------------------------------------------------
 # Synthetic fixtures (CPU-only; no CUDA, no real ChunkManager wiring).
 # ---------------------------------------------------------------------------

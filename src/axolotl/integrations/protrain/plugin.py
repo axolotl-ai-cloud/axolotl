@@ -301,9 +301,7 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         boot_result = getattr(wrapped, "search_result", None)
         if boot_result is not None:
             rank0_plan_box = (
-                [boot_result.cfg, boot_result.block_map]
-                if rank == 0
-                else [None, None]
+                [boot_result.cfg, boot_result.block_map] if rank == 0 else [None, None]
             )
             bcast_ok = False
             try:

@@ -214,7 +214,9 @@ class OffloadedBlock(nn.Module):
         offload_stream = getattr(self._scheduler, "_offload_stream", None)
 
         # Bump backward refcount; BackwardHandle.__del__ decrements via the view's lifetime.
-        backward_handle = mgr.gather_for_backward(handle.chunk_id, stream=offload_stream)
+        backward_handle = mgr.gather_for_backward(
+            handle.chunk_id, stream=offload_stream
+        )
 
         # Any failure path before the final view binding must release backward_handle.
         released = False

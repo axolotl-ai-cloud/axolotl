@@ -20,7 +20,6 @@ import pytest
 
 from axolotl.integrations.protrain.types import HardwareProfile
 
-
 _DEFAULT_MEM = 24 * (1 << 30)
 
 
@@ -74,9 +73,7 @@ def test_broadcast_overrides_nonzero_rank_when_value_differs(caplog):
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(67.5)
-    patches = _patch_dist(
-        initialized=True, world_size=4, rank=1, rank0_tflops=33.4
-    )
+    patches = _patch_dist(initialized=True, world_size=4, rank=1, rank0_tflops=33.4)
     for p in patches:
         p.start()
     try:
@@ -100,9 +97,7 @@ def test_broadcast_noop_on_single_rank(caplog):
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(40.0)
-    patches = _patch_dist(
-        initialized=True, world_size=1, rank=0, rank0_tflops=40.0
-    )
+    patches = _patch_dist(initialized=True, world_size=1, rank=0, rank0_tflops=40.0)
     for p in patches:
         p.start()
     try:
@@ -114,9 +109,7 @@ def test_broadcast_noop_on_single_rank(caplog):
 
     assert hw_out is hw_in
     assert hw_out.gpu_compute_tflops == pytest.approx(40.0)
-    assert not any(
-        "gpu_compute_tflops" in rec.getMessage() for rec in caplog.records
-    )
+    assert not any("gpu_compute_tflops" in rec.getMessage() for rec in caplog.records)
 
 
 def test_broadcast_noop_when_dist_not_initialized():
@@ -125,9 +118,7 @@ def test_broadcast_noop_when_dist_not_initialized():
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(33.4)
-    patches = _patch_dist(
-        initialized=False, world_size=4, rank=0, rank0_tflops=99.9
-    )
+    patches = _patch_dist(initialized=False, world_size=4, rank=0, rank0_tflops=99.9)
     for p in patches:
         p.start()
     try:
@@ -146,9 +137,7 @@ def test_broadcast_silent_when_all_ranks_agree(caplog):
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(33.4)
-    patches = _patch_dist(
-        initialized=True, world_size=4, rank=2, rank0_tflops=33.4
-    )
+    patches = _patch_dist(initialized=True, world_size=4, rank=2, rank0_tflops=33.4)
     for p in patches:
         p.start()
     try:
@@ -171,9 +160,7 @@ def test_broadcast_silent_on_rank_zero(caplog):
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(67.5)
-    patches = _patch_dist(
-        initialized=True, world_size=4, rank=0, rank0_tflops=67.5
-    )
+    patches = _patch_dist(initialized=True, world_size=4, rank=0, rank0_tflops=67.5)
     for p in patches:
         p.start()
     try:
@@ -196,9 +183,7 @@ def test_broadcast_skips_replace_on_zero_value():
     from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(40.0)
-    patches = _patch_dist(
-        initialized=True, world_size=4, rank=3, rank0_tflops=0.0
-    )
+    patches = _patch_dist(initialized=True, world_size=4, rank=3, rank0_tflops=0.0)
     for p in patches:
         p.start()
     try:
@@ -325,9 +310,9 @@ def test_broadcast_capacity_overrides_when_cpu_capacity_differs(caplog):
 def test_broadcast_capacity_noop_on_single_rank():
     """world_size=1: capacity broadcast is a no-op, values unchanged."""
     pytest.importorskip("torch")
-    from axolotl.integrations.protrain.api import model_wrapper as mw
-
     import torch.distributed as dist
+
+    from axolotl.integrations.protrain.api import model_wrapper as mw
 
     patches = [
         patch.object(dist, "is_available", return_value=True),
@@ -350,9 +335,9 @@ def test_broadcast_capacity_noop_on_single_rank():
 def test_broadcast_capacity_handles_none_cpu_capacity():
     """When cpu_capacity_bytes is None (psutil missing), broadcast preserves None."""
     pytest.importorskip("torch")
-    from axolotl.integrations.protrain.api import model_wrapper as mw
-
     import torch.distributed as dist
+
+    from axolotl.integrations.protrain.api import model_wrapper as mw
 
     def _fake_broadcast(object_list, src=0):  # noqa: ARG001
         # Rank 0 also has None -> -1 sentinel.
@@ -369,9 +354,7 @@ def test_broadcast_capacity_handles_none_cpu_capacity():
     for p in patches:
         p.start()
     try:
-        cap_out, cpu_cap_out = mw._broadcast_searcher_capacity(
-            10 * (1 << 30), None
-        )
+        cap_out, cpu_cap_out = mw._broadcast_searcher_capacity(10 * (1 << 30), None)
     finally:
         for p in patches:
             p.stop()
@@ -387,6 +370,7 @@ def test_cache_key_sku_broadcast_makes_keys_identical():
     pytest.importorskip("torch")
 
     import torch.distributed as dist
+
     from axolotl.integrations.protrain.profiler.cache import ProfilerCacheKey
 
     local_sku = "NVIDIA GeForce RTX 3090"
@@ -432,8 +416,9 @@ def test_cache_key_sku_broadcast_makes_keys_identical():
 def test_broadcast_silent_on_memory_match():
     """When gpu_memory_bytes already matches across ranks, the memory WARN does not fire."""
     pytest.importorskip("torch")
-    from axolotl.integrations.protrain.api import model_wrapper as mw
     import logging
+
+    from axolotl.integrations.protrain.api import model_wrapper as mw
 
     hw_in = _hw(33.4)
     patches = _patch_dist(

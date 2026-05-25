@@ -14,8 +14,6 @@ comparator's pick swings with the heuristic.
 
 from __future__ import annotations
 
-import pytest
-
 from axolotl.integrations.protrain import search as search_pkg
 from axolotl.integrations.protrain.search import exhaustive
 from axolotl.integrations.protrain.search.exhaustive import search
@@ -23,14 +21,12 @@ from axolotl.integrations.protrain.types import (
     BlockId,
     ChunkId,
     ChunkLayout,
-    CostConfig,
     HardwareProfile,
     OpId,
     OpRecord,
     ParamId,
     ProfilerTrace,
 )
-
 
 MB = 1 << 20
 GB = 1 << 30
@@ -104,7 +100,7 @@ def _make_layout(
 ) -> ChunkLayout:
     chunks = tuple((ParamId(f"param.{i}"),) for i in range(n_chunk))
     param_to_chunk = {ParamId(f"param.{i}"): ChunkId(i) for i in range(n_chunk)}
-    block_to_chunks = {
+    block_to_chunks: dict[BlockId, tuple[ChunkId, ...]] = {
         BlockId(b): (ChunkId(b % n_chunk),) for b in range(n_block)
     }
     return ChunkLayout(
