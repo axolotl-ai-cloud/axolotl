@@ -30,10 +30,34 @@ sufficient for the unit-scale slow tests implemented in
 from __future__ import annotations
 
 import gc
+import logging
 import os
 from typing import Iterator
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _axolotl_logger_propagates() -> Iterator[None]:
+    """Force the ``axolotl`` logger to propagate so pytest's ``caplog`` sees records.
+
+    Background: ``axolotl.logging_config.configure_logging()`` (invoked at
+    ``axolotl.cli`` import time) sets ``propagate=False`` on the ``axolotl``
+    logger so production CLI output isn't duplicated through the root
+    handler. Pytest's ``caplog`` attaches at the root, so once
+    configure_logging has run in any test (or via an import side effect in
+    a sibling test on the same xdist worker), every subsequent test that
+    asserts on ``caplog.records`` for ``axolotl.*`` loggers silently sees
+    an empty list and fails. Restoring ``propagate=True`` per-test keeps
+    caplog deterministic without changing production behavior.
+    """
+    ax_logger = logging.getLogger("axolotl")
+    prev = ax_logger.propagate
+    ax_logger.propagate = True
+    try:
+        yield
+    finally:
+        ax_logger.propagate = prev
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
