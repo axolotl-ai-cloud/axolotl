@@ -22,6 +22,18 @@ def _reference_unit_offset(x, weight, cos, sin, eps):
     return normed * cos_b + _rotate_half(normed) * sin_b
 
 
+def _reference_unit_offset_partial(x, weight, cos, sin, eps):
+    """Reference for ``unit_offset=True`` with ``cos.shape[-1] < D`` (Qwen3.5 partial rotary)."""
+    n_rot = cos.shape[-1]
+    x_fp32 = x.float()
+    rstd = torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + eps)
+    normed = (x_fp32 * rstd * (1.0 + weight.float())).to(x.dtype)
+    rot_part, pass_part = normed[..., :n_rot], normed[..., n_rot:]
+    cos_b, sin_b = cos.unsqueeze(2), sin.unsqueeze(2)
+    rotated = rot_part * cos_b + _rotate_half(rot_part) * sin_b
+    return torch.cat([rotated, pass_part], dim=-1)
+
+
 class TestForward:
     def test_matches_reference(self):
         from axolotl.kernels.gemma4_fused_rope import fused_rms_norm_rope
@@ -103,6 +115,79 @@ class TestCompile:
         weight = torch.randn(D, device="cuda", dtype=torch.bfloat16) * 0.1
         cos = torch.randn(B, S, D, device="cuda", dtype=torch.bfloat16)
         sin = torch.randn(B, S, D, device="cuda", dtype=torch.bfloat16)
+
+        eager = fused_rms_norm_rope(x, weight, cos, sin, eps=eps, unit_offset=True)
+        compiled_fn = torch.compile(fused_rms_norm_rope, fullgraph=True)
+        compiled = compiled_fn(x, weight, cos, sin, eps=eps, unit_offset=True)
+
+        torch.testing.assert_close(compiled, eager, rtol=0, atol=0)
+
+
+class TestPartialRotary:
+    """``unit_offset=True`` combined with ``n_rot < D`` (Qwen3.5/Qwen3.6 partial rotary)."""
+
+    def test_forward_matches_reference(self):
+        from axolotl.kernels.gemma4_fused_rope import fused_rms_norm_rope
+
+        B, S, H, D, n_rot = 2, 32, 4, 128, 64
+        eps = 1e-6
+        x = torch.randn(B, S, H, D, device="cuda", dtype=torch.bfloat16)
+        weight = torch.randn(D, device="cuda", dtype=torch.bfloat16) * 0.1
+        cos = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
+        sin = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
+
+        y_ref = _reference_unit_offset_partial(x.clone(), weight, cos, sin, eps)
+        y_fused = fused_rms_norm_rope(
+            x.clone(), weight, cos, sin, eps=eps, unit_offset=True
+        )
+
+        cos_sim = torch.nn.functional.cosine_similarity(
+            y_ref.flatten().float(), y_fused.flatten().float(), dim=0
+        )
+        assert cos_sim > 0.999, f"forward cosine_sim={cos_sim:.6f}"
+        torch.testing.assert_close(y_fused, y_ref, rtol=5e-2, atol=5e-2)
+
+    def test_backward_x_and_w_grad_match_eager(self):
+        from axolotl.kernels.gemma4_fused_rope import fused_rms_norm_rope
+
+        B, S, H, D, n_rot = 2, 16, 4, 128, 64
+        eps = 1e-6
+        cos = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
+        sin = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
+        weight_init = torch.randn(D, device="cuda", dtype=torch.bfloat16) * 0.1
+
+        x_ref = torch.randn(
+            B, S, H, D, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w_ref = weight_init.clone().requires_grad_(True)
+        y_ref = _reference_unit_offset_partial(x_ref, w_ref, cos, sin, eps)
+        y_ref.sum().backward()
+
+        x_fused = x_ref.data.clone().requires_grad_(True)
+        w_fused = weight_init.clone().requires_grad_(True)
+        y_fused = fused_rms_norm_rope(
+            x_fused, w_fused, cos, sin, eps=eps, unit_offset=True
+        )
+        y_fused.sum().backward()
+
+        cos_sim_x = torch.nn.functional.cosine_similarity(
+            x_fused.grad.flatten().float(), x_ref.grad.flatten().float(), dim=0
+        )
+        cos_sim_w = torch.nn.functional.cosine_similarity(
+            w_fused.grad.flatten().float(), w_ref.grad.flatten().float(), dim=0
+        )
+        assert cos_sim_x > 0.999, f"x grad cosine_sim={cos_sim_x:.6f}"
+        assert cos_sim_w > 0.995, f"w grad cosine_sim={cos_sim_w:.6f}"
+
+    def test_compile_fullgraph(self):
+        from axolotl.kernels.gemma4_fused_rope import fused_rms_norm_rope
+
+        B, S, H, D, n_rot = 1, 8, 2, 64, 32
+        eps = 1e-6
+        x = torch.randn(B, S, H, D, device="cuda", dtype=torch.bfloat16)
+        weight = torch.randn(D, device="cuda", dtype=torch.bfloat16) * 0.1
+        cos = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
+        sin = torch.randn(B, S, n_rot, device="cuda", dtype=torch.bfloat16)
 
         eager = fused_rms_norm_rope(x, weight, cos, sin, eps=eps, unit_offset=True)
         compiled_fn = torch.compile(fused_rms_norm_rope, fullgraph=True)

@@ -10,8 +10,7 @@ logger = get_logger(__name__)
 
 
 def _resolve_norm_module(norm):
-    """Unwrap PEFT ``ModulesToSaveWrapper`` so the fused kernel reads the
-    trainable adapter weight (``active_adapter`` is a ``list[str]``)."""
+    """Unwrap PEFT ``ModulesToSaveWrapper`` so the kernel reads the active adapter's weight."""
     modules_to_save = getattr(norm, "modules_to_save", None)
     if not modules_to_save:
         return norm
