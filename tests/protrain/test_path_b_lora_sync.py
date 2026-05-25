@@ -813,3 +813,133 @@ def test_path_b_modeb_disjoint_param_sets():
             "Path B all_reduce tensor not traceable to LoRA bucket "
             f"(numel={t.numel()}, expected bucket_total={bucket_total})"
         )
+
+
+# ---------------------------------------------------------------------------
+# 9. DoRA discovery: lora_magnitude_vector must be picked up
+# ---------------------------------------------------------------------------
+
+
+def _build_real_peft_model(target_modules, *, use_dora: bool = False):
+    """Build a real PEFT-wrapped tiny model so we exercise actual PEFT naming.
+
+    Returns the wrapped model; skips the test if PEFT or torch are missing.
+    """
+    peft = pytest.importorskip("peft")
+    import torch  # noqa: F401  (PEFT import-time check)
+    from torch import nn
+
+    from peft import LoraConfig, get_peft_model
+
+    class _TinyForLora(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = nn.Linear(16, 16, bias=False)
+            self.embed_tokens = nn.Embedding(32, 16)
+            self.lm_head = nn.Linear(16, 32, bias=False)
+
+        def forward(self, x):  # pragma: no cover - never called
+            return x
+
+    cfg = LoraConfig(
+        r=4,
+        lora_alpha=8,
+        target_modules=list(target_modules),
+        use_dora=use_dora,
+    )
+    model = get_peft_model(_TinyForLora(), cfg)
+    # Sanity: ensure PEFT version actually injected the requested modules.
+    assert any(p.requires_grad for _, p in model.named_parameters()), (
+        f"PEFT {peft.__version__} produced no trainable params for "
+        f"target_modules={target_modules}"
+    )
+    return model
+
+
+def test_dora_discovery_or_clean_exclusion(caplog):
+    """DoRA modules either discovered (preferred) or excluded with warning.
+
+    DoRA adds a `lora_magnitude_vector` learnable per target. Path B's
+    discovery markers include `.lora_magnitude_vector.` so the expected
+    outcome is (a) DoRA params are found alongside lora_A/lora_B. If a
+    future PEFT release renames the magnitude vector and discovery silently
+    misses it, this test fails — caller is then on notice to either extend
+    the marker set or log an explicit warning.
+    """
+    import logging
+
+    from axolotl.integrations.protrain.plugin import _discover_lora_params
+
+    model = _build_real_peft_model(["q_proj"], use_dora=True)
+    # Collect the actual trainable names for ground-truth comparison.
+    trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+    magnitude_names = {n for n in trainable if "lora_magnitude_vector" in n}
+    lora_AB_names = {
+        n for n in trainable if ".lora_A." in n or ".lora_B." in n
+    }
+    assert magnitude_names, "PEFT did not produce any lora_magnitude_vector params"
+    assert lora_AB_names, "PEFT did not produce any lora_A/lora_B params"
+
+    with caplog.at_level(logging.WARNING):
+        names, params = _discover_lora_params(model)
+
+    found = set(names)
+    # Preferred outcome: DoRA magnitude vector is discovered.
+    dora_discovered = magnitude_names.issubset(found)
+    # Alternate acceptable outcome: explicit warning that DoRA is excluded.
+    dora_warning_emitted = any(
+        "dora" in rec.message.lower() and "exclud" in rec.message.lower()
+        for rec in caplog.records
+    )
+
+    assert dora_discovered or dora_warning_emitted, (
+        "DoRA magnitude vector silently missed by Path B discovery. "
+        f"trainable_magnitude_names={sorted(magnitude_names)} "
+        f"discovered={sorted(found)}. Either extend "
+        "_LORA_FACTOR_NAME_MARKERS to recognize the new naming, or emit a "
+        "WARN log so users know they're falling back to DDP-bucketed sync."
+    )
+    # Standard lora_A/lora_B must always be found.
+    assert lora_AB_names.issubset(found), (
+        f"Standard LoRA factors missed alongside DoRA: missing="
+        f"{sorted(lora_AB_names - found)}"
+    )
+    # Returned params list must align with names list.
+    assert len(params) == len(names)
+
+
+# ---------------------------------------------------------------------------
+# 10. Extended LoRA targets: embed_tokens and lm_head
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("target", ["q_proj", "embed_tokens", "lm_head"])
+def test_path_b_discovers_extended_lora_targets(target):
+    """Discovery picks up LoRA factors on q_proj, embed_tokens, and lm_head.
+
+    Production users frequently expand LoRA beyond attention/MLP to the
+    token embedding + LM head. PEFT names these as ``lora_embedding_A/B``
+    (for ``nn.Embedding`` targets) and the standard ``lora_A/B`` for
+    ``lm_head`` (which is ``nn.Linear``). Both must be discovered.
+    """
+    from axolotl.integrations.protrain.plugin import _discover_lora_params
+
+    model = _build_real_peft_model([target])
+    trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+    # Restrict to params under the requested target submodule.
+    target_trainables = {n for n in trainable if f".{target}." in f".{n}."}
+    assert target_trainables, (
+        f"PEFT produced no trainable params under '{target}'"
+    )
+
+    names, params = _discover_lora_params(model)
+    found = set(names)
+
+    missing = target_trainables - found
+    assert not missing, (
+        f"Path B discovery missed LoRA factors under target='{target}': "
+        f"{sorted(missing)}. Extend _LORA_FACTOR_NAME_MARKERS to cover them."
+    )
+    # Every returned param really is a parameter object with requires_grad.
+    for name, p in zip(names, params, strict=True):
+        assert p.requires_grad, f"non-trainable param leaked into discovery: {name}"
