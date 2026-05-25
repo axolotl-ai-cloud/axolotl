@@ -12,7 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from axolotl.integrations.protrain.sentinels import _CROSS_WORLD_NCCL_CPU_BRIDGE
+from axolotl.integrations.protrain.sentinels import (  # noqa: F401
+    _CROSS_WORLD_NCCL_CPU_BRIDGE,
+)
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:

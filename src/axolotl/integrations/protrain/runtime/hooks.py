@@ -14,7 +14,9 @@ from axolotl.integrations.protrain.block.offload import OffloadedBlock
 from axolotl.integrations.protrain.profiler.on_demand import (
     _find_peft_lora_containers,
 )
-from axolotl.integrations.protrain.sentinels import _PROTRAIN_TORCH_COMPILE_COMPAT
+from axolotl.integrations.protrain.sentinels import (  # noqa: F401
+    _PROTRAIN_TORCH_COMPILE_COMPAT,
+)
 from axolotl.integrations.protrain.types import (
     BlockId,
     BlockMode,

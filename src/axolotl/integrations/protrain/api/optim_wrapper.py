@@ -11,7 +11,7 @@ from axolotl.integrations.protrain.chunk import (
     GpuAdamW8bitAdapter,
     GpuFusedAdamAdapter,
 )
-from axolotl.integrations.protrain.sentinels import (
+from axolotl.integrations.protrain.sentinels import (  # noqa: F401
     _PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION,
     _PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION,
 )
