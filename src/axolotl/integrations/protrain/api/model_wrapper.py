@@ -712,6 +712,68 @@ def _broadcast_searcher_critical_hw(
 _broadcast_gpu_compute_tflops = _broadcast_searcher_critical_hw
 
 
+def _broadcast_searcher_capacity(
+    capacity_bytes: int, cpu_capacity_bytes: int | None
+) -> tuple[int, int | None]:
+    """Broadcast rank-0's ``capacity_bytes`` and ``cpu_capacity_bytes`` to all ranks.
+
+    These two values seed the searcher's GPU and CPU feasibility gates respectively.
+    ``capacity_bytes`` derives from ``hardware_profile.gpu_memory_bytes`` (already
+    broadcast by ``_broadcast_searcher_critical_hw``), so it should be consistent —
+    but defending in depth here is cheap.
+
+    ``cpu_capacity_bytes`` is the dangerous case: ``_default_cpu_capacity_for_search``
+    calls ``psutil.virtual_memory().available``, which fluctuates per microsecond from
+    other processes' memory churn. A 50 MiB difference between ranks can move the CPU
+    gate enough to admit n_offload>0 candidates on some ranks while rejecting them on
+    others — divergent plans -> NCCL deadlock at the first collective.
+    """
+    try:
+        import torch.distributed as _dist
+    except ImportError:
+        return capacity_bytes, cpu_capacity_bytes
+    try:
+        if not _dist.is_initialized() or _dist.get_world_size() <= 1:
+            return capacity_bytes, cpu_capacity_bytes
+    except (RuntimeError, ValueError):
+        return capacity_bytes, cpu_capacity_bytes
+
+    try:
+        _local_cap = int(capacity_bytes)
+        _local_cpu_cap = -1 if cpu_capacity_bytes is None else int(cpu_capacity_bytes)
+        _holder = [_local_cap, _local_cpu_cap]
+        _dist.broadcast_object_list(_holder, src=0)
+        _bcast_cap = int(_holder[0])
+        _bcast_cpu_cap = int(_holder[1])
+        _rank = int(_dist.get_rank())
+        if _rank != 0 and _bcast_cap != _local_cap:
+            LOG.warning(
+                "ProTrain rank=%d: overriding local capacity_bytes=%d with rank-0's "
+                "%d for searcher GPU-gate determinism.",
+                _rank,
+                _local_cap,
+                _bcast_cap,
+            )
+        if _rank != 0 and _bcast_cpu_cap != _local_cpu_cap:
+            LOG.warning(
+                "ProTrain rank=%d: overriding local cpu_capacity_bytes=%d with "
+                "rank-0's %d for searcher CPU-gate determinism (psutil.virtual_memory "
+                "fluctuation between ranks).",
+                _rank,
+                _local_cpu_cap,
+                _bcast_cpu_cap,
+            )
+        _out_cpu_cap = None if _bcast_cpu_cap < 0 else _bcast_cpu_cap
+        return _bcast_cap, _out_cpu_cap
+    except Exception as exc:  # noqa: BLE001 - defensive
+        LOG.warning(
+            "ProTrain: searcher capacity broadcast failed (%s); falling back to "
+            "per-rank values. Plan divergence is possible on mixed-SKU rigs.",
+            exc,
+        )
+        return capacity_bytes, cpu_capacity_bytes
+
+
 def _select_mode(
     search_result: SearchResult,
     layout,
@@ -1548,16 +1610,12 @@ def protrain_model_wrapper(
     )
     _sys2.stderr.flush()
 
-    if capacity_bytes is None:
-        capacity_bytes = max(
-            0, int(hardware_profile.gpu_memory_bytes) - _DEFAULT_HEADROOM_BYTES
-        )
-
-    # Search-time CPU feasibility budget; None means filter disabled.
-    if cpu_capacity_bytes is None:
-        cpu_capacity_bytes = _default_cpu_capacity_for_search(
-            hardware_profile.gpu_count
-        )
+    # Defer capacity_bytes derivation: hardware_profile is broadcast-synchronized below
+    # (PR #20) and we want capacity_bytes computed from the broadcast value, not the
+    # per-rank local gpu_memory_bytes (which can differ by ~12 MiB between 3090 and
+    # 3090 Ti and flip near-capacity searcher decisions).
+    _capacity_bytes_caller = capacity_bytes
+    _cpu_capacity_bytes_caller = cpu_capacity_bytes
 
     # Early world-size probe for mode selector + zero3_shard plumbing.
     _ws_early = 1
@@ -1630,6 +1688,29 @@ def protrain_model_wrapper(
         hardware_profile = _replace(hardware_profile, **_hw_updates)
 
     hardware_profile = _broadcast_searcher_critical_hw(hardware_profile)
+
+    # Now derive capacity_bytes / cpu_capacity_bytes from the broadcast-synchronized
+    # hardware_profile so every rank computes the identical searcher capacity-cutoff.
+    if _capacity_bytes_caller is None:
+        capacity_bytes = max(
+            0, int(hardware_profile.gpu_memory_bytes) - _DEFAULT_HEADROOM_BYTES
+        )
+    else:
+        capacity_bytes = _capacity_bytes_caller
+    if _cpu_capacity_bytes_caller is None:
+        cpu_capacity_bytes = _default_cpu_capacity_for_search(
+            hardware_profile.gpu_count
+        )
+    else:
+        cpu_capacity_bytes = _cpu_capacity_bytes_caller
+
+    # PR #20: also broadcast capacity_bytes + cpu_capacity_bytes themselves. capacity_bytes
+    # is derived from gpu_memory_bytes (already broadcast above) so should already be consistent,
+    # but cpu_capacity_bytes calls psutil.virtual_memory().available which fluctuates per-rank
+    # in microseconds and is a major divergence source for the searcher's CPU feasibility gate.
+    capacity_bytes, cpu_capacity_bytes = _broadcast_searcher_capacity(
+        capacity_bytes, cpu_capacity_bytes
+    )
 
     # Phase-2 re-search must keep the permissive search-time profile to avoid filtering Mode-C-only cfgs.
     search_hw_profile = hardware_profile

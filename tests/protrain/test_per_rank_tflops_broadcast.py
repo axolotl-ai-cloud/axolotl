@@ -280,6 +280,106 @@ def test_broadcast_overrides_gpu_memory_bytes_on_size_delta(caplog):
     )
 
 
+def test_broadcast_capacity_overrides_when_cpu_capacity_differs(caplog):
+    """psutil-derived cpu_capacity_bytes can differ by 50+ MiB between ranks;
+    the searcher capacity-broadcast forces every rank to use rank-0's value."""
+    pytest.importorskip("torch")
+    from axolotl.integrations.protrain.api import model_wrapper as mw
+
+    rank0_cap = 20 * (1 << 30)
+    rank0_cpu_cap = 90 * (1 << 30)  # ~90 GiB available per rank
+    local_cpu_cap = 89 * (1 << 30)  # rank-N saw 1 GiB less
+
+    import torch.distributed as dist
+
+    def _fake_broadcast(object_list, src=0):  # noqa: ARG001
+        object_list[0] = rank0_cap
+        object_list[1] = rank0_cpu_cap
+
+    patches = [
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=True),
+        patch.object(dist, "get_world_size", return_value=4),
+        patch.object(dist, "get_rank", return_value=2),
+        patch.object(dist, "broadcast_object_list", side_effect=_fake_broadcast),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        with caplog.at_level("WARNING"):
+            cap_out, cpu_cap_out = mw._broadcast_searcher_capacity(
+                rank0_cap, local_cpu_cap
+            )
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert cap_out == rank0_cap
+    assert cpu_cap_out == rank0_cpu_cap
+    assert any(
+        "overriding local cpu_capacity_bytes" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+def test_broadcast_capacity_noop_on_single_rank():
+    """world_size=1: capacity broadcast is a no-op, values unchanged."""
+    pytest.importorskip("torch")
+    from axolotl.integrations.protrain.api import model_wrapper as mw
+
+    import torch.distributed as dist
+
+    patches = [
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=True),
+        patch.object(dist, "get_world_size", return_value=1),
+        patch.object(dist, "get_rank", return_value=0),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        cap_out, cpu_cap_out = mw._broadcast_searcher_capacity(123, 456)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert cap_out == 123
+    assert cpu_cap_out == 456
+
+
+def test_broadcast_capacity_handles_none_cpu_capacity():
+    """When cpu_capacity_bytes is None (psutil missing), broadcast preserves None."""
+    pytest.importorskip("torch")
+    from axolotl.integrations.protrain.api import model_wrapper as mw
+
+    import torch.distributed as dist
+
+    def _fake_broadcast(object_list, src=0):  # noqa: ARG001
+        # Rank 0 also has None -> -1 sentinel.
+        object_list[0] = 10 * (1 << 30)
+        object_list[1] = -1
+
+    patches = [
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=True),
+        patch.object(dist, "get_world_size", return_value=4),
+        patch.object(dist, "get_rank", return_value=1),
+        patch.object(dist, "broadcast_object_list", side_effect=_fake_broadcast),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        cap_out, cpu_cap_out = mw._broadcast_searcher_capacity(
+            10 * (1 << 30), None
+        )
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert cap_out == 10 * (1 << 30)
+    assert cpu_cap_out is None
+
+
 def test_broadcast_silent_on_memory_match():
     """When gpu_memory_bytes already matches across ranks, the memory WARN does not fire."""
     pytest.importorskip("torch")
