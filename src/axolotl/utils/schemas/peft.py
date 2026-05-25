@@ -199,13 +199,6 @@ class LoraConfig(BaseModel):
 
                 if not self.load_in_4bit:
                     raise ValueError("Require cfg.load_in_4bit to be True for qlora")
-        elif self.adapter == "lora" and self.load_in_4bit:
-            raise ValueError(
-                "adapter: lora with load_in_4bit is not supported - the "
-                "quantization config is silently ignored and the model loads "
-                "in bf16. To use 4-bit quantization with LoRA adapters, set "
-                "adapter: qlora instead."
-            )
         return self
 
     @field_validator("loraplus_lr_embedding")
