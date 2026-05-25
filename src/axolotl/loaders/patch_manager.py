@@ -104,6 +104,9 @@ class PatchManager:
         self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
+        # Must precede fused-RoPE patches: re-parses ``Attention.forward``
+        # via ``inspect.getsource``; the QKV regex misses on a patched body.
+        self._apply_self_attention_lora_patch()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -113,7 +116,6 @@ class PatchManager:
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
-        self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
@@ -350,8 +352,37 @@ class PatchManager:
 
         patch_flash_attn_4(self.model_config)
 
+    _FUSED_ATTN_KERNEL_SUPPORTED = (
+        "qwen3",
+        "qwen3_moe",
+        "qwen3_5",
+        "qwen3_5_text",
+        "qwen3_5_moe",
+        "qwen3_5_moe_text",
+        "gemma4",
+        "gemma4_text",
+    )
+
+    @staticmethod
+    def _warn_if_fused_attn_unsupported(cfg):
+        """Warn when ``fused_attn_kernel`` targets an unsupported
+        ``model_config_type`` (derived post-schema by ``normalize_config()``)."""
+        if not getattr(cfg, "fused_attn_kernel", False):
+            return
+        mct = getattr(cfg, "model_config_type", None)
+        if mct and mct not in PatchManager._FUSED_ATTN_KERNEL_SUPPORTED:
+            LOG.warning(
+                "`fused_attn_kernel: true` is set but model_config_type=%r is not "
+                "in the supported set %s. The flag is a silent no-op for this "
+                "model. Remove the flag or use one of the supported model families.",
+                mct,
+                sorted(PatchManager._FUSED_ATTN_KERNEL_SUPPORTED),
+            )
+
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
+        self._warn_if_fused_attn_unsupported(self.cfg)
+
         if (
             self.cfg.model_config_type == "llama4"
             and self.cfg.llama4_linearized_experts
@@ -460,6 +491,40 @@ class PatchManager:
                 patch_gemma4_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3":
+                from axolotl.monkeypatch.models.qwen3.fused_attn import (
+                    patch_qwen3_fused_attn,
+                )
+
+                patch_qwen3_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3_moe":
+                from axolotl.monkeypatch.models.qwen3_moe.fused_attn import (
+                    patch_qwen3_moe_fused_attn,
+                )
+
+                patch_qwen3_moe_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5",
+                "qwen3_5_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5.fused_attn import (
+                    patch_qwen3_5_fused_attn,
+                )
+
+                patch_qwen3_5_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5_moe",
+                "qwen3_5_moe_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5_moe.fused_attn import (
+                    patch_qwen3_5_moe_fused_attn,
+                )
+
+                patch_qwen3_5_moe_fused_attn()
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():
