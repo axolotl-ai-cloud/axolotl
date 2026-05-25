@@ -1,14 +1,15 @@
-"""Tests for the PR #20 per-rank gpu_compute_tflops broadcast.
+"""Tests for the PR #20 per-rank searcher-critical HW broadcast.
 
-The broadcast (``_broadcast_gpu_compute_tflops`` in
+The broadcast (``_broadcast_searcher_critical_hw`` in
 ``axolotl.integrations.protrain.api.model_wrapper``) forces every rank to use rank-0's
-``gpu_compute_tflops`` before the cost-model searcher runs. Without it, per-rank
-``measure_compute_rate`` outliers on mixed-SKU rigs (3090 + 3090 Ti, plus thermal/clock
-variance) flow through ``cost.runtime._sku_compute_scale``, hit the 1%-noise-band
-tie-breaker in ``search.exhaustive``, and ranks pick different CostConfigs. Different
-picks -> different block_maps -> different chunks sharded -> NCCL all_gather
-collectives fire on different chunk_ids per rank -> deadlock at the first multi-rank
-collective.
+``gpu_compute_tflops`` and ``gpu_memory_bytes`` before the cost-model searcher runs.
+Without it, per-rank ``measure_compute_rate`` outliers AND per-rank GPU-memory-size
+deltas (3090 = 24576 MiB vs 3090 Ti = 24564 MiB) on mixed-SKU rigs flow through
+``cost.runtime._sku_compute_scale`` (compute path) and the searcher's capacity cutoff
+(memory path), hit the 1%-noise-band tie-breaker in ``search.exhaustive``, and ranks
+pick different CostConfigs. Different picks -> different block_maps -> different chunks
+sharded -> NCCL all_gather collectives fire on different chunk_ids per rank -> deadlock
+at the first multi-rank collective.
 """
 
 from __future__ import annotations
@@ -20,10 +21,13 @@ import pytest
 from axolotl.integrations.protrain.types import HardwareProfile
 
 
-def _hw(tflops: float) -> HardwareProfile:
+_DEFAULT_MEM = 24 * (1 << 30)
+
+
+def _hw(tflops: float, memory_bytes: int = _DEFAULT_MEM) -> HardwareProfile:
     return HardwareProfile(
         gpu_sku="MockGPU",
-        gpu_memory_bytes=24 * (1 << 30),
+        gpu_memory_bytes=memory_bytes,
         gpu_count=1,
         pcie_h2d_bps=10e9,
         pcie_d2h_bps=10e9,
@@ -33,13 +37,22 @@ def _hw(tflops: float) -> HardwareProfile:
 
 
 def _patch_dist(
-    *, initialized: bool, world_size: int, rank: int, rank0_value: float
+    *,
+    initialized: bool,
+    world_size: int,
+    rank: int,
+    rank0_tflops: float,
+    rank0_memory: int = _DEFAULT_MEM,
 ):
     """Patch torch.distributed for in-process tests of the broadcast helper."""
     import torch.distributed as dist
 
     def _fake_broadcast(object_list, src=0):  # noqa: ARG001 — mimic dist API
-        object_list[0] = rank0_value
+        # The helper packs [tflops, memory_bytes].
+        if len(object_list) >= 1:
+            object_list[0] = rank0_tflops
+        if len(object_list) >= 2:
+            object_list[1] = rank0_memory
 
     return [
         patch.object(dist, "is_available", return_value=True),
@@ -62,13 +75,13 @@ def test_broadcast_overrides_nonzero_rank_when_value_differs(caplog):
 
     hw_in = _hw(67.5)
     patches = _patch_dist(
-        initialized=True, world_size=4, rank=1, rank0_value=33.4
+        initialized=True, world_size=4, rank=1, rank0_tflops=33.4
     )
     for p in patches:
         p.start()
     try:
         with caplog.at_level("WARNING"):
-            hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -88,13 +101,13 @@ def test_broadcast_noop_on_single_rank(caplog):
 
     hw_in = _hw(40.0)
     patches = _patch_dist(
-        initialized=True, world_size=1, rank=0, rank0_value=40.0
+        initialized=True, world_size=1, rank=0, rank0_tflops=40.0
     )
     for p in patches:
         p.start()
     try:
         with caplog.at_level("WARNING"):
-            hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -113,12 +126,12 @@ def test_broadcast_noop_when_dist_not_initialized():
 
     hw_in = _hw(33.4)
     patches = _patch_dist(
-        initialized=False, world_size=4, rank=0, rank0_value=99.9
+        initialized=False, world_size=4, rank=0, rank0_tflops=99.9
     )
     for p in patches:
         p.start()
     try:
-        hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+        hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -134,13 +147,13 @@ def test_broadcast_silent_when_all_ranks_agree(caplog):
 
     hw_in = _hw(33.4)
     patches = _patch_dist(
-        initialized=True, world_size=4, rank=2, rank0_value=33.4
+        initialized=True, world_size=4, rank=2, rank0_tflops=33.4
     )
     for p in patches:
         p.start()
     try:
         with caplog.at_level("WARNING"):
-            hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -159,13 +172,13 @@ def test_broadcast_silent_on_rank_zero(caplog):
 
     hw_in = _hw(67.5)
     patches = _patch_dist(
-        initialized=True, world_size=4, rank=0, rank0_value=67.5
+        initialized=True, world_size=4, rank=0, rank0_tflops=67.5
     )
     for p in patches:
         p.start()
     try:
         with caplog.at_level("WARNING"):
-            hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -184,12 +197,12 @@ def test_broadcast_skips_replace_on_zero_value():
 
     hw_in = _hw(40.0)
     patches = _patch_dist(
-        initialized=True, world_size=4, rank=3, rank0_value=0.0
+        initialized=True, world_size=4, rank=3, rank0_tflops=0.0
     )
     for p in patches:
         p.start()
     try:
-        hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+        hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
@@ -221,13 +234,84 @@ def test_broadcast_swallows_broadcast_failure(caplog):
         p.start()
     try:
         with caplog.at_level("WARNING"):
-            hw_out = mw._broadcast_gpu_compute_tflops(hw_in)
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
     finally:
         for p in patches:
             p.stop()
 
     assert hw_out.gpu_compute_tflops == pytest.approx(40.0)
     assert any(
-        "gpu_compute_tflops broadcast failed" in rec.getMessage()
+        "searcher-critical HW broadcast failed" in rec.getMessage()
         for rec in caplog.records
     )
+
+
+def test_broadcast_overrides_gpu_memory_bytes_on_size_delta(caplog):
+    """3090 (24576 MiB) + 3090 Ti (24564 MiB) rig: non-zero ranks adopt rank-0's
+    gpu_memory_bytes so the searcher capacity-cutoff is identical across ranks."""
+    pytest.importorskip("torch")
+    from axolotl.integrations.protrain.api import model_wrapper as mw
+
+    _3090_MEM = 24576 * (1 << 20)
+    _3090TI_MEM = 24564 * (1 << 20)
+
+    # Rank 1 is a 3090 (24576 MiB); rank 0 is a 3090 Ti (24564 MiB).
+    hw_in = _hw(40.0, memory_bytes=_3090_MEM)
+    patches = _patch_dist(
+        initialized=True,
+        world_size=4,
+        rank=1,
+        rank0_tflops=40.0,
+        rank0_memory=_3090TI_MEM,
+    )
+    for p in patches:
+        p.start()
+    try:
+        with caplog.at_level("WARNING"):
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert hw_out.gpu_memory_bytes == _3090TI_MEM
+    assert any(
+        "overriding local gpu_memory_bytes" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+def test_broadcast_silent_on_memory_match():
+    """When gpu_memory_bytes already matches across ranks, the memory WARN does not fire."""
+    pytest.importorskip("torch")
+    from axolotl.integrations.protrain.api import model_wrapper as mw
+    import logging
+
+    hw_in = _hw(33.4)
+    patches = _patch_dist(
+        initialized=True,
+        world_size=4,
+        rank=2,
+        rank0_tflops=33.4,
+        rank0_memory=_DEFAULT_MEM,
+    )
+
+    captured: list[str] = []
+    handler = logging.Handler()
+    handler.emit = lambda record: captured.append(record.getMessage())
+    logger = logging.getLogger("axolotl.integrations.protrain.api.model_wrapper")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+
+    try:
+        for p in patches:
+            p.start()
+        try:
+            hw_out = mw._broadcast_searcher_critical_hw(hw_in)
+        finally:
+            for p in patches:
+                p.stop()
+    finally:
+        logger.removeHandler(handler)
+
+    assert hw_out.gpu_memory_bytes == _DEFAULT_MEM
+    assert not any("overriding local gpu_memory_bytes" in m for m in captured)

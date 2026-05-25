@@ -624,24 +624,34 @@ def _default_cpu_capacity_for_search(gpu_count: int) -> int | None:
     return max(0, int(per_rank))
 
 
-def _broadcast_gpu_compute_tflops(
+def _broadcast_searcher_critical_hw(
     hardware_profile: HardwareProfile,
 ) -> HardwareProfile:
-    """Broadcast rank-0's ``gpu_compute_tflops`` so every rank uses identical inputs to
-    ``cost.runtime._sku_compute_scale``.
+    """Broadcast rank-0's searcher-critical HardwareProfile fields so every rank uses
+    identical inputs to the cost-model searcher.
 
-    Background: ``profiler.hw_bench.measure_compute_rate`` runs a matmul locally per
-    rank. On mixed-SKU rigs (e.g. 3090 ~33 TFLOPS + 3090 Ti ~40 TFLOPS) plus
-    thermal/clock variance, per-rank values diverge significantly (the v76 trace
-    captured "trace 33.4 / live 67.1 TFLOPS" — a 2x outlier on rank 0). When divergent
-    values flow into ``_sku_compute_scale``, the searcher's 1%-noise-band tie-breaker
-    in ``search/exhaustive.py`` flips on near-tie cfgs and ranks pick different
-    CostConfigs. Different picks -> different block_maps -> ``dist.all_gather_into_tensor``
-    fires on different chunk_ids per rank -> NCCL deadlocks at the first multi-rank
-    collective.
+    Background: searcher determinism requires every rank to feed the same numeric inputs
+    into ``cost.runtime`` and ``search.exhaustive``. Per-rank divergence in the
+    1%-noise-band tie-breaker (``search/exhaustive.py:631-691``) → different CostConfigs
+    → different block_maps → ``dist.all_gather_into_tensor`` fires on different
+    chunk_ids per rank → NCCL deadlocks at the first multi-rank collective.
+
+    Two divergence sources observed on mixed-SKU 3090 + 3090 Ti rigs (v76 / v81a logs):
+
+    1. ``gpu_compute_tflops`` (root cause): ``profiler.hw_bench.measure_compute_rate``
+       runs a matmul locally per rank. 3090 ~= 33 TFLOPS, 3090 Ti ~= 40 TFLOPS,
+       thermal/clock outliers up to 67 TFLOPS (v76 log: "trace 33.4 / live 67.5 TFLOPS").
+       Flows through ``cost.runtime._sku_compute_scale`` and changes per-op compute
+       latency by 5%+ on rank 0 vs others.
+    2. ``gpu_memory_bytes`` (also divergent on this rig): ``torch.cuda.get_device_properties``
+       returns 24576 MiB on 3090 and 24564 MiB on 3090 Ti — a 12 MiB delta. The
+       searcher's ``capacity_bytes`` derives from this field at ``model_wrapper.py:1521``
+       and seeds the GPU-feasibility cutoff, so a 12 MiB difference flips
+       near-capacity candidates between ranks.
 
     This helper is a no-op on single-rank or pre-init contexts. On multi-rank it
-    broadcasts rank-0's value and rewrites the local field via dataclasses.replace.
+    broadcasts rank-0's values and rewrites the local fields via
+    ``dataclasses.replace``.
     """
     from dataclasses import replace as _replace
 
@@ -657,10 +667,13 @@ def _broadcast_gpu_compute_tflops(
 
     try:
         _local_tflops = float(hardware_profile.gpu_compute_tflops)
-        _holder = [_local_tflops]
+        _local_mem = int(hardware_profile.gpu_memory_bytes)
+        _holder = [_local_tflops, _local_mem]
         _dist.broadcast_object_list(_holder, src=0)
         _bcast_tflops = float(_holder[0])
+        _bcast_mem = int(_holder[1])
         _rank = int(_dist.get_rank())
+        _updates: dict = {}
         if _rank != 0 and abs(_bcast_tflops - _local_tflops) > 0.01:
             LOG.warning(
                 "ProTrain rank=%d: overriding local gpu_compute_tflops=%.2f with "
@@ -671,15 +684,32 @@ def _broadcast_gpu_compute_tflops(
                 _bcast_tflops,
             )
         if _bcast_tflops > 0.0:
-            return _replace(hardware_profile, gpu_compute_tflops=_bcast_tflops)
+            _updates["gpu_compute_tflops"] = _bcast_tflops
+        if _rank != 0 and _bcast_mem != _local_mem:
+            LOG.warning(
+                "ProTrain rank=%d: overriding local gpu_memory_bytes=%d with "
+                "rank-0's %d for searcher capacity-cutoff determinism (mixed-SKU "
+                "memory-size delta).",
+                _rank,
+                _local_mem,
+                _bcast_mem,
+            )
+        if _bcast_mem > 0:
+            _updates["gpu_memory_bytes"] = _bcast_mem
+        if _updates:
+            return _replace(hardware_profile, **_updates)
         return hardware_profile
     except Exception as exc:  # noqa: BLE001 - defensive
         LOG.warning(
-            "ProTrain: gpu_compute_tflops broadcast failed (%s); falling back to "
+            "ProTrain: searcher-critical HW broadcast failed (%s); falling back to "
             "per-rank values. Plan divergence is possible on mixed-SKU rigs.",
             exc,
         )
         return hardware_profile
+
+
+# Backward-compat alias for tests written against the original tflops-only helper.
+_broadcast_gpu_compute_tflops = _broadcast_searcher_critical_hw
 
 
 def _select_mode(
@@ -1599,7 +1629,7 @@ def protrain_model_wrapper(
     if _hw_updates:
         hardware_profile = _replace(hardware_profile, **_hw_updates)
 
-    hardware_profile = _broadcast_gpu_compute_tflops(hardware_profile)
+    hardware_profile = _broadcast_searcher_critical_hw(hardware_profile)
 
     # Phase-2 re-search must keep the permissive search-time profile to avoid filtering Mode-C-only cfgs.
     search_hw_profile = hardware_profile
