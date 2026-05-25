@@ -17,6 +17,13 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def load(*_args, **_kwargs):
+    raise ValueError(
+        "multimodal_pretrain is only supported via pretraining_dataset "
+        "with streaming: true — see docs/multimodal.qmd"
+    )
+
+
 def _get_incompatible_processor_classes() -> tuple[type, ...]:
     import importlib
 
