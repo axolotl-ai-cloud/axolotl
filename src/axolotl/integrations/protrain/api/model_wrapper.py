@@ -1498,11 +1498,44 @@ def protrain_model_wrapper(
         )
         cfg_obj.use_cache = False
 
+    # PR #20: broadcast rank-0's SKU so every rank's cache_key fingerprint is identical
+    # and they all load the same cached ProfilerTrace. Without this, mixed-SKU rigs (3090
+    # + 3090 Ti) load different cached traces per rank — each trace has different
+    # compute_rate_tflops, NCCL tables, PCIe bandwidth, etc. — so the cost model is fed
+    # genuinely different inputs even though the local hardware_profile is broadcast-
+    # synchronized. Different inputs -> different searcher picks -> NCCL deadlock at
+    # the first per-chunk collective.
+    _local_sku = _sku(device)
+    _bcast_sku = _local_sku
+    try:
+        import torch.distributed as _pr20_dist_sku
+        if _pr20_dist_sku.is_initialized() and _pr20_dist_sku.get_world_size() > 1:
+            _sku_holder = [_local_sku]
+            _pr20_dist_sku.broadcast_object_list(_sku_holder, src=0)
+            _bcast_sku = str(_sku_holder[0])
+            if _pr20_dist_sku.get_rank() != 0 and _bcast_sku != _local_sku:
+                LOG.warning(
+                    "ProTrain rank=%d: overriding local cache_key.sku=%r with rank-0's "
+                    "%r so every rank loads the same cached ProfilerTrace (mixed-SKU "
+                    "rigs load different traces by default, which feeds divergent "
+                    "compute_rate_tflops / NCCL tables / PCIe bandwidth to the cost "
+                    "model and causes searcher plan divergence).",
+                    _pr20_dist_sku.get_rank(),
+                    _local_sku,
+                    _bcast_sku,
+                )
+    except Exception as _pr20_sku_e:  # noqa: BLE001 - defensive
+        LOG.warning(
+            "ProTrain: cache_key.sku broadcast failed (%s); ranks may load different "
+            "cached traces (mixed-SKU rig). Plan divergence is possible.",
+            _pr20_sku_e,
+        )
+
     cache_key = ProfilerCacheKey(
         arch_hash=_arch_hash(model),
         bs=batch_size,
         seq=seq_len,
-        sku=_sku(device),
+        sku=_bcast_sku,
         world=hardware_profile.gpu_count,
     )
     # Override-skip: the un-offloaded trace OOMs on big-model offload configs before chunk offload engages.

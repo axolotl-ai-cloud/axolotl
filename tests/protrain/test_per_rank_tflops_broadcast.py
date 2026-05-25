@@ -380,6 +380,55 @@ def test_broadcast_capacity_handles_none_cpu_capacity():
     assert cpu_cap_out is None
 
 
+def test_cache_key_sku_broadcast_makes_keys_identical():
+    """Mixed-SKU rigs must build identical ProfilerCacheKey.sku so every rank loads the
+    same cached ProfilerTrace. The broadcast happens inline at the cache_key construction
+    site; this test exercises the underlying logic via a small in-process reproducer."""
+    pytest.importorskip("torch")
+
+    import torch.distributed as dist
+    from axolotl.integrations.protrain.profiler.cache import ProfilerCacheKey
+
+    local_sku = "NVIDIA GeForce RTX 3090"
+    rank0_sku = "NVIDIA GeForce RTX 3090 Ti"
+
+    def _fake_broadcast(object_list, src=0):  # noqa: ARG001
+        object_list[0] = rank0_sku
+
+    patches = [
+        patch.object(dist, "is_available", return_value=True),
+        patch.object(dist, "is_initialized", return_value=True),
+        patch.object(dist, "get_world_size", return_value=4),
+        patch.object(dist, "get_rank", return_value=2),
+        patch.object(dist, "broadcast_object_list", side_effect=_fake_broadcast),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        # Replicate the broadcast block: rank-2 starts with local SKU, receives rank-0's.
+        sku_holder = [local_sku]
+        dist.broadcast_object_list(sku_holder, src=0)
+        bcast_sku = str(sku_holder[0])
+        rank0_key = ProfilerCacheKey(
+            arch_hash="deadbeef",
+            bs=2,
+            seq=256,
+            sku=rank0_sku,
+            world=4,
+        )
+        rankn_key = ProfilerCacheKey(
+            arch_hash="deadbeef",
+            bs=2,
+            seq=256,
+            sku=bcast_sku,
+            world=4,
+        )
+        assert rank0_key.fingerprint() == rankn_key.fingerprint()
+    finally:
+        for p in patches:
+            p.stop()
+
+
 def test_broadcast_silent_on_memory_match():
     """When gpu_memory_bytes already matches across ranks, the memory WARN does not fire."""
     pytest.importorskip("torch")
