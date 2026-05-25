@@ -600,9 +600,7 @@ def _convergence_parity_worker(rank: int, world_size: int, tmpdir: str) -> None:
                         f"(rtol=1e-5, atol=1e-7)."
                     )
 
-            with open(
-                os.path.join(tmpdir, f"conv_parity_rank{rank}.done"), "w"
-            ) as f:
+            with open(os.path.join(tmpdir, f"conv_parity_rank{rank}.done"), "w") as f:
                 f.write(
                     f"n_steps={n_steps} final_loss_a={final_loss_a:.6e} "
                     f"final_loss_b={final_loss_b:.6e}\n"
@@ -741,17 +739,13 @@ def test_path_b_modeb_disjoint_param_sets():
             # LoRA-shaped factor.
             block = nn.Module()
             attn = nn.Module()
-            attn.lora_A = nn.ModuleDict(
-                {"default": nn.Linear(8, 4, bias=False)}
-            )
-            attn.lora_B = nn.ModuleDict(
-                {"default": nn.Linear(4, 8, bias=False)}
-            )
+            attn.lora_A = nn.ModuleDict({"default": nn.Linear(8, 4, bias=False)})
+            attn.lora_B = nn.ModuleDict({"default": nn.Linear(4, 8, bias=False)})
             block.self_attn_q_proj = attn
             self.base_model.model.layers = nn.ModuleList([block])
 
     model = _HybridLora()
-    for name, p in model.named_parameters():
+    for _name, p in model.named_parameters():
         p.requires_grad_(True)  # All trainable including lm_head ("chunk param").
 
     lora_names, lora_params = _discover_lora_params(model)
@@ -782,9 +776,7 @@ def test_path_b_modeb_disjoint_param_sets():
     with patch("torch.distributed.is_available", return_value=True):
         with patch("torch.distributed.is_initialized", return_value=True):
             with patch("torch.distributed.get_world_size", return_value=2):
-                with patch(
-                    "torch.distributed.all_reduce", side_effect=_spy_all_reduce
-                ):
+                with patch("torch.distributed.all_reduce", side_effect=_spy_all_reduce):
                     optim._sync_lora_grads_path_b()
 
     # 1) Path B never reduced the chunk param's grad.
@@ -827,9 +819,8 @@ def _build_real_peft_model(target_modules, *, use_dora: bool = False):
     """
     peft = pytest.importorskip("peft")
     import torch  # noqa: F401  (PEFT import-time check)
-    from torch import nn
-
     from peft import LoraConfig, get_peft_model
+    from torch import nn
 
     class _TinyForLora(nn.Module):
         def __init__(self):
@@ -874,9 +865,7 @@ def test_dora_discovery_or_clean_exclusion(caplog):
     # Collect the actual trainable names for ground-truth comparison.
     trainable = {n for n, p in model.named_parameters() if p.requires_grad}
     magnitude_names = {n for n in trainable if "lora_magnitude_vector" in n}
-    lora_AB_names = {
-        n for n in trainable if ".lora_A." in n or ".lora_B." in n
-    }
+    lora_AB_names = {n for n in trainable if ".lora_A." in n or ".lora_B." in n}
     assert magnitude_names, "PEFT did not produce any lora_magnitude_vector params"
     assert lora_AB_names, "PEFT did not produce any lora_A/lora_B params"
 
@@ -928,9 +917,7 @@ def test_path_b_discovers_extended_lora_targets(target):
     trainable = {n for n, p in model.named_parameters() if p.requires_grad}
     # Restrict to params under the requested target submodule.
     target_trainables = {n for n in trainable if f".{target}." in f".{n}."}
-    assert target_trainables, (
-        f"PEFT produced no trainable params under '{target}'"
-    )
+    assert target_trainables, f"PEFT produced no trainable params under '{target}'"
 
     names, params = _discover_lora_params(model)
     found = set(names)
