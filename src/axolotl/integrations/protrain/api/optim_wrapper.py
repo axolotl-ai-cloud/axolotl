@@ -107,6 +107,10 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         self._sync_persistent_params_after_step()
         # Drain all CPU Adam futures enqueued by grad hooks + orphan sweep.
         self._chunk_manager.wait_cpu_optim_all()
+        # Per-step boundary: sync prefetch/swap/offload streams + flush deferred offloads.
+        scheduler = getattr(self._chunk_manager, "_scheduler_ref", None)
+        if scheduler is not None:
+            scheduler.drain()
         return loss
 
     def _route_huge_grads_to_shards(self) -> None:

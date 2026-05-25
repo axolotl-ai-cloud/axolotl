@@ -1093,6 +1093,8 @@ def _construct_runtime(
         effective_h2d_bps=eff_h2d,
         effective_d2h_bps=eff_d2h,
     )
+    # Back-ref so _ProTrainOptimizer.step() can call scheduler.drain() at the step boundary.
+    chunk_manager._scheduler_ref = scheduler
 
     # Encoder-decoder models have two ModuleLists; _find_block_parent_map returns one per block.
     block_parent_map = _find_block_parent_map(model, blocks)
