@@ -1285,6 +1285,97 @@ class TestTorchCompileValidation(BaseValidation):
 
         assert updated_cfg.torch_compile is False
 
+    def test_torch_compile_options_default_is_none(self, minimal_cfg):
+        updated_cfg = validate_config(
+            minimal_cfg, capabilities={"bf16": True}, env_capabilities={}
+        )
+        assert updated_cfg.torch_compile_options is None
+
+    def test_torch_compile_options_accepts_inductor_dict(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {
+                        "coordinate_descent_tuning": True,
+                        "shape_padding": True,
+                        "epilogue_fusion": True,
+                    },
+                }
+            )
+            | minimal_cfg
+        )
+        updated_cfg = validate_config(
+            cfg, capabilities={"bf16": True}, env_capabilities={}
+        )
+        assert updated_cfg.torch_compile_options == {
+            "coordinate_descent_tuning": True,
+            "shape_padding": True,
+            "epilogue_fusion": True,
+        }
+
+    def test_torch_compile_options_rejects_disallowed_key(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {
+                        "coordinate_descent_tuning": True,
+                        "not_a_real_inductor_flag": True,
+                    },
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "not_a_real_inductor_flag" in str(exc_info.value)
+        assert "Allowed" in str(exc_info.value)
+
+    def test_torch_compile_options_requires_torch_compile_enabled(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "torch_compile_options" in str(exc_info.value)
+        assert "torch_compile" in str(exc_info.value)
+
+    def test_torch_compile_options_rejects_when_torch_compile_false(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": False,
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "torch_compile_options" in str(exc_info.value)
+
+    def test_torch_compile_options_with_auto_compile_passes(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": "auto",
+                    "torch_compile_options": {"coordinate_descent_tuning": True},
+                }
+            )
+            | minimal_cfg
+        )
+        env_capabilities = {"torch_version": "2.11.0"}
+        updated_cfg = validate_config(
+            cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities
+        )
+        assert updated_cfg.torch_compile_options == {"coordinate_descent_tuning": True}
+
 
 class TestSampleOptimConfigValidation(BaseValidation):
     """

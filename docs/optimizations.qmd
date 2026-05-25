@@ -82,7 +82,9 @@ fused_attn_kernel: true
 ```
 
 - **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
-- **Hardware note:** on sm_120 (Blackwell) combining with `torch_compile: true` is a net win; on sm_86 (Ampere consumer) `torch_compile: true` currently regresses the surrounding Inductor-generated kernels — keep compile off there.
+- **Baseline perf:** stacking `torch_compile: true` measured ~−16% steady-state on Qwen3-8B + LoRA r=16 + torch 2.11 + sm_86 (RTX 3090 Ti), and is a net win on sm_120 (Blackwell).
+- **Compile cold-start:** adds 5–15 min on the first step.
+- **Tuning:** `torch_compile_options: {coordinate_descent_tuning: true}` adds a further ~0.5% steady-state by enabling Inductor's per-kernel block-size search, but adds another 10–30 s per unique kernel signature on first compile — the ROI only matters for long-running jobs.
 
 ### Expert Kernels
 

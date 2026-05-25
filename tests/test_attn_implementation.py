@@ -2,9 +2,6 @@
 capability flags, backend registration, and downstream validators.
 """
 
-import logging
-from contextlib import contextmanager
-
 import pytest
 
 from axolotl.utils.config import validate_config
@@ -17,24 +14,7 @@ from axolotl.utils.schemas.enums import (
     CANONICAL_ATTN_IMPLS,
 )
 
-
-@contextmanager
-def _capture_axolotl_warnings(caplog):
-    """Capture WARNINGs from `axolotl.*` loggers via caplog.
-
-    `axolotl.cli` calls `configure_logging()` at import time, which sets
-    `propagate=False` on the `axolotl` logger so records do not reach the root
-    logger that pytest's `caplog` hooks. This helper temporarily re-enables
-    propagation for the duration of the block.
-    """
-    ax_logger = logging.getLogger("axolotl")
-    old_propagate = ax_logger.propagate
-    ax_logger.propagate = True
-    try:
-        with caplog.at_level(logging.WARNING, logger="axolotl"):
-            yield
-    finally:
-        ax_logger.propagate = old_propagate
+from tests.conftest import capture_axolotl_warnings as _capture_axolotl_warnings
 
 
 def _xformers_available():

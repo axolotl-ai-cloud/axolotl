@@ -1,0 +1,54 @@
+base_model: Qwen/Qwen3-8B
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0.05
+output_dir: ./outputs/qwen3-8b-lora-fused-compile
+
+sequence_len: 4096
+sample_packing: true
+eval_sample_packing: true
+
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.0
+lora_target_linear: true
+
+fused_attn_kernel: true
+
+torch_compile: true
+torch_compile_mode: max-autotune
+torch_compile_options:
+  # Only this one was measured to help (~+0.5% steady-state on 8B + LoRA + sm_86 + torch 2.11; bench used r=16, this example uses r=32).
+  coordinate_descent_tuning: true
+  # Other allowlisted keys (uncomment to experiment):
+  # max_autotune_gemm: true              # measured +13% regression on sm_86 (shared-mem-limit prunes good tiles); fine on Hopper/Blackwell
+  # triton.cudagraphs: true              # large win for static shapes; INCOMPATIBLE with sample_packing above (creates dynamic seq lengths)
+  # assume_aligned_inputs: true          # measured wash on this rig
+  # fx_graph_cache: true                 # default True; flip off for cross-run cache-pollution debug
+  # comprehensive_padding: true          # default True; flip off for debug (measured small win when off on these LoRA shapes)
+  # decompose_mem_bound_mm: true         # experimental; measured wash on these LoRA shapes
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+flash_attention: true
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0

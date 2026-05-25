@@ -156,6 +156,22 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
 # Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
 ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
 
+# Narrow allowlist; arbitrary inductor flags can change compiler behavior non-obviously.
+INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(
+    {
+        "coordinate_descent_tuning",
+        "coordinate_descent_check_all_directions",
+        "shape_padding",
+        "epilogue_fusion",
+        "max_autotune_gemm",
+        "fx_graph_cache",
+        "assume_aligned_inputs",
+        "comprehensive_padding",
+        "decompose_mem_bound_mm",
+        "triton.cudagraphs",
+    }
+)
+
 
 class RingAttnFunc(str, Enum):
     """Enum class for supported `ring-flash-attn` implementations"""
