@@ -14,8 +14,31 @@
 
 import torch
 import torch.nn.functional as F
-import triton
-import triton.language as tl
+
+try:
+    import triton
+    import triton.language as tl
+
+    TRITON_AVAILABLE = True
+except ImportError:
+    TRITON_AVAILABLE = False
+
+    class _TritonStub:
+        @staticmethod
+        def jit(fn):
+            return fn
+
+        @staticmethod
+        def next_power_of_2(value: int) -> int:
+            if value <= 1:
+                return 1
+            return 1 << (value - 1).bit_length()
+
+    class _TLStub:
+        constexpr = object
+
+    triton = _TritonStub()
+    tl = _TLStub()
 
 
 @triton.jit
@@ -113,7 +136,7 @@ def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Te
     for s in original_shape:
         N *= s
 
-    if not logits.is_cuda:
+    if not TRITON_AVAILABLE or not logits.is_cuda:
         # CPU fallback: stable entropy via log_softmax
         logp = F.log_softmax(logits.float(), dim=-1)
         ent = -(logp.exp() * logp).sum(dim=-1)
@@ -397,7 +420,7 @@ def selective_log_softmax(logits, index) -> torch.Tensor:
     if squeeze:
         index = index.unsqueeze(-1)
 
-    if not logits.is_cuda or logits.dtype == torch.float64:
+    if not TRITON_AVAILABLE or not logits.is_cuda or logits.dtype == torch.float64:
         # Triton kernel computes in float32; fall back for float64 and CPU
         return selective_log_softmax_original(
             logits, index.squeeze(-1) if squeeze else index
