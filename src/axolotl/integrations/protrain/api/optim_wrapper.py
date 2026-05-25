@@ -11,6 +11,10 @@ from axolotl.integrations.protrain.chunk import (
     GpuAdamW8bitAdapter,
     GpuFusedAdamAdapter,
 )
+from axolotl.integrations.protrain.sentinels import (
+    _PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION,
+    _PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION,
+)
 from axolotl.integrations.protrain.types import ChunkId, WrappedModel
 from axolotl.utils.logging import get_logger
 
@@ -21,11 +25,10 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
-# Sentinel for v48 exact-token grep; bump when the partition scheme changes shape.
-_PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION = 1
-
-# Sentinel for v51 exact-token grep; bump when within-param shard scheme changes shape.
-_PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION = 1
+# Sentinels (definitions in sentinels.py) re-exported here so external bench
+# scripts that grep this file by sentinel name still find a match:
+# _PROTRAIN_PERSISTENT_ROUND_ROBIN_PARTITION_VERSION,
+# _PROTRAIN_PERSISTENT_HUGE_PARAM_WITHIN_SHARD_VERSION.
 
 # Default huge-param threshold: 512 MiB. Override via cfg.protrain_persistent_huge_param_threshold_bytes.
 _DEFAULT_HUGE_PARAM_THRESHOLD_BYTES = 512 * 1024 * 1024

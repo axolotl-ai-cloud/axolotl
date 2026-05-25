@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
+from axolotl.integrations.protrain.sentinels import _CROSS_WORLD_NCCL_CPU_BRIDGE
 from axolotl.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -38,8 +39,8 @@ SAVE_MODE_REPLICATED = "replicated"
 SAVE_MODE_SHARDED = "sharded"
 DEFAULT_SAVE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB; mirrors args.py default
 
-# Sentinel grepped by external bench gating; see CHECKPOINT_DESIGN_PHASE2.md §13.
-_CROSS_WORLD_NCCL_CPU_BRIDGE = "v1"
+# Sentinel _CROSS_WORLD_NCCL_CPU_BRIDGE (definition in sentinels.py) re-exported
+# here so external bench gating that greps this file still finds a match.
 
 # torch.dtype -> str(dtype) round-trip. JSON cannot serialize dtype
 # objects directly, and pickling them defeats the "human-readable

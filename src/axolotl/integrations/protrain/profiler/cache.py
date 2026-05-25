@@ -10,6 +10,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+from axolotl.integrations.protrain.sentinels import TRACE_VERSION
 from axolotl.integrations.protrain.types import (
     BlockId,
     OpId,
@@ -22,8 +23,8 @@ LOG = get_logger(__name__)
 
 _CACHE_SUBDIR = Path("protrain") / "profiler"
 
-# Bump on any schema change to ProfilerTrace; old payloads are then ignored.
-TRACE_VERSION = 23
+# TRACE_VERSION (definition in sentinels.py) re-exported here so historical
+# call sites and external grep checks against this file still resolve.
 
 
 @dataclass(frozen=True)

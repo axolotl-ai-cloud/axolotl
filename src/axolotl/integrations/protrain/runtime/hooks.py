@@ -14,6 +14,7 @@ from axolotl.integrations.protrain.block.offload import OffloadedBlock
 from axolotl.integrations.protrain.profiler.on_demand import (
     _find_peft_lora_containers,
 )
+from axolotl.integrations.protrain.sentinels import _PROTRAIN_TORCH_COMPILE_COMPAT
 from axolotl.integrations.protrain.types import (
     BlockId,
     BlockMode,
@@ -30,8 +31,8 @@ except Exception:  # noqa: BLE001 — older torches lack torch.compiler.disable
         return fn if fn is not None else (lambda f: f)
 
 
-# Sentinel for external grep-based detection that the torch.compile compat layer is present.
-_PROTRAIN_TORCH_COMPILE_COMPAT = 1
+# Sentinel _PROTRAIN_TORCH_COMPILE_COMPAT (definition in sentinels.py) re-exported
+# here so external grep-based detection still finds a match.
 
 if TYPE_CHECKING:
     from torch.utils.hooks import RemovableHandle
