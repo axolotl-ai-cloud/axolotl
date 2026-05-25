@@ -288,8 +288,56 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
         )
         return (False, False)
 
-    # Idempotency: tables already populated → no-op.
+    # Idempotency: tables already populated → skip re-measurement. We still defensively
+    # verify that the bootstrap search_result.cfg/block_map are identical across ranks,
+    # so PR #20-class mixed-SKU TFLOPS divergence (per-rank measure_compute_rate
+    # outliers flipping the 1%-noise-band tie-breaker in search/exhaustive.py) surfaces
+    # here instead of deadlocking the first NCCL collective in the chunk manager.
     if trace.nccl_gather_s and trace.nccl_reduce_s and trace.world == world_size:
+        try:
+            rank = int(dist.get_rank())
+        except (RuntimeError, ValueError):
+            rank = 0
+        boot_result = getattr(wrapped, "search_result", None)
+        if boot_result is not None:
+            rank0_plan_box = (
+                [boot_result.cfg, boot_result.block_map]
+                if rank == 0
+                else [None, None]
+            )
+            bcast_ok = False
+            try:
+                dist.broadcast_object_list(rank0_plan_box, src=0)
+                bcast_ok = True
+            except (RuntimeError, ValueError) as exc:
+                LOG.warning(
+                    "ProTrain: warm-cache plan consistency broadcast failed "
+                    "(%s); cannot verify cross-rank plan agreement.",
+                    exc,
+                )
+            if bcast_ok and rank != 0:
+                rank0_cfg, rank0_block_map = (
+                    rank0_plan_box[0],
+                    rank0_plan_box[1],
+                )
+                if (
+                    rank0_cfg != boot_result.cfg
+                    or rank0_block_map != boot_result.block_map
+                ):
+                    raise RuntimeError(
+                        "ProTrain invariant violated: bootstrap search "
+                        "converged to different plans across ranks. "
+                        f"rank={rank} got cfg={boot_result.cfg}, "
+                        f"block_map_len={len(boot_result.block_map)}; "
+                        f"rank0 got cfg={rank0_cfg}, "
+                        f"block_map_len={len(rank0_block_map)}. "
+                        "On mixed-SKU rigs this is usually per-rank "
+                        "measure_compute_rate outliers flipping the cost "
+                        "model's 1%-noise-band tie-breaker. PR #20 "
+                        "broadcasts gpu_compute_tflops to prevent this — "
+                        "if you see this error, the broadcast did not "
+                        "execute (rank-0 outlier? skipped path?)."
+                    )
         return (False, False)
 
     # With overrides pinning the plan, late NCCL re-search would raise on a cost-optimal cfg that differs from the bootstrap.
