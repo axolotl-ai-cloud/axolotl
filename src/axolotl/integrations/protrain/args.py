@@ -429,6 +429,28 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_own_lora_grad_sync: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "Path B grad-sync mechanism (PR #24). When True, ProTrain "
+                "discovers trainable LoRA adapter params after PEFT injection, "
+                "marks their fully-qualified names in "
+                "``model._ddp_params_and_buffers_to_ignore`` so DDP skips them "
+                "during its bucketed allreduce, and issues one flattened "
+                "``dist.all_reduce(op=AVG)`` per dtype in "
+                "``_ProTrainOptimizer.step()`` before the optimizer step. "
+                "Replaces DDP's per-bucket per-param allreduce (~N small "
+                "collectives) with 1-2 large coalesced allreduces (one per "
+                "dtype). Default False — opt-in. Bit-equivalent to DDP "
+                "sync within FP rounding (verified in "
+                "``tests/protrain/test_path_b_lora_sync.py``). Skipped when "
+                "Mode C bypass fired (chunk_manager owns sync there) or "
+                "when world_size == 1."
+            )
+        },
+    )
+
     # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------

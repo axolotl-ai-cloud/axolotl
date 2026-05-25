@@ -529,6 +529,60 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     return (True, cfg_changed)
 
 
+_LORA_FACTOR_NAME_MARKERS: tuple[str, ...] = (
+    ".lora_A.",
+    ".lora_B.",
+    ".lora_embedding_A.",
+    ".lora_embedding_B.",
+    ".lora_magnitude_vector.",
+)
+
+
+def _discover_lora_params(model) -> tuple[list[str], list]:
+    """Return (fully-qualified names, params) for all trainable PEFT-LoRA factors.
+
+    PEFT injects LoRA factor modules with attribute names ``lora_A``,
+    ``lora_B``, ``lora_embedding_A``, ``lora_embedding_B``, and
+    ``lora_magnitude_vector`` (DoRA). Each contains an ``nn.ModuleDict``
+    keyed by adapter name, so the fully-qualified parameter name typically
+    reads ``base_model.model....lora_A.default.weight``.
+
+    The match is on a sentinel substring (``.lora_A.`` etc.) of
+    ``f".{name}."`` to handle both leading-dot and trailing-dot cases.
+    Only ``requires_grad=True`` params are returned.
+    """
+    names: list[str] = []
+    params: list = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        probe = f".{name}."
+        for marker in _LORA_FACTOR_NAME_MARKERS:
+            if marker in probe:
+                names.append(name)
+                params.append(p)
+                break
+    return names, params
+
+
+def _register_lora_ddp_ignore(model, lora_names: list[str]) -> None:
+    """Union LoRA names into ``model._ddp_params_and_buffers_to_ignore``.
+
+    Mirrors the snapshot pattern already used in
+    ``ChunkManager.materialize_offload``: pre-protrain values are stashed
+    under ``_protrain_ddp_original_ignore`` so teardown can restore them.
+    A pre-existing snapshot (set by chunk_manager) is preserved as-is — the
+    chunk-managed names + LoRA names union into the live attribute.
+    """
+    existing = getattr(model, "_ddp_params_and_buffers_to_ignore", None)
+    if not hasattr(model, "_protrain_ddp_original_ignore"):
+        model._protrain_ddp_original_ignore = (  # type: ignore[attr-defined]
+            None if existing is None else list(existing)
+        )
+    merged = set(existing or []) | set(lora_names)
+    model._ddp_params_and_buffers_to_ignore = list(merged)  # type: ignore[attr-defined]
+
+
 def _maybe_bypass_ddp_for_mode_c(trainer, wrapped) -> bool:
     """Force ``DistributedType.NO`` when Mode C is active on a multi-rank launch.
 
@@ -584,6 +638,60 @@ def _maybe_bypass_ddp_for_mode_c(trainer, wrapped) -> bool:
         "reduce_scatter (sharded) / all_reduce (persistent); DDP would "
         "double-sync. Cross-rank loss aggregation in trainer logs may show "
         "per-rank values instead of mean — this is expected.",
+        prior,
+    )
+    return True
+
+
+def _maybe_bypass_ddp_for_path_b(trainer) -> bool:
+    """Force ``DistributedType.NO`` when Path B owns sync for all trainable params.
+
+    When ``protrain_own_lora_grad_sync`` is True and every trainable param
+    is a LoRA factor whose name now lives in
+    ``_ddp_params_and_buffers_to_ignore``, DDP's own ``__init__`` would
+    raise ``RuntimeError: DistributedDataParallel is not needed when a
+    module doesn't have any parameter that requires a gradient``. Mirrors
+    the Mode C bypass — sets accelerator.state.distributed_type to NO so
+    Accelerate.prepare() skips the DDP wrap entirely. ProTrain's
+    ``_sync_lora_grads_path_b`` is the cross-rank sync.
+
+    Returns True iff the override fired.
+    """
+    try:
+        import torch.distributed as dist
+    except ImportError:
+        return False
+    if not (dist.is_available() and dist.is_initialized()):
+        return False
+    if int(dist.get_world_size()) <= 1:
+        return False
+
+    accelerator = getattr(trainer, "accelerator", None)
+    if accelerator is None:
+        return False
+
+    try:
+        from accelerate import PartialState
+        from accelerate.utils import DistributedType
+    except ImportError:
+        return False
+
+    prior = getattr(accelerator.state, "distributed_type", None)
+    if prior == DistributedType.NO:
+        return False
+
+    accelerator.state.distributed_type = DistributedType.NO
+    accelerator.state._shared_state["distributed_type"] = DistributedType.NO
+    PartialState().distributed_type = DistributedType.NO
+
+    LOG.warning(
+        "ProTrain Path B bypass: all trainable params are LoRA factors "
+        "marked in _ddp_params_and_buffers_to_ignore, so DDP would refuse "
+        "to wrap. Forcing accelerator.state.distributed_type from %s -> "
+        "DistributedType.NO; ProTrain owns LoRA grad-sync via flattened "
+        "all_reduce in _ProTrainOptimizer.step(). Cross-rank loss "
+        "aggregation in trainer logs may show per-rank values instead of "
+        "mean — this is expected.",
         prior,
     )
     return True
@@ -700,6 +808,23 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
         # Rebuild optimizer adapters against the fresh shard_param views.
         from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
+        # Path B: re-discover LoRA params on the freshly-loaded model so the
+        # rebuilt optimizer's _lora_owned_params references match the
+        # post-restore param storage (restore_to_gpu rebinds .data).
+        rebuild_lora_params: list | None = None
+        if bool(getattr(cfg, "protrain_own_lora_grad_sync", False)):
+            try:
+                import torch.distributed as _dist
+
+                if (
+                    _dist.is_available()
+                    and _dist.is_initialized()
+                    and int(_dist.get_world_size()) > 1
+                ):
+                    _, rebuild_lora_params = _discover_lora_params(trainer.model)
+            except (ImportError, RuntimeError, ValueError):
+                rebuild_lora_params = None
+
         try:
             new_optim = protrain_optimizer_wrapper(
                 wrapped,
@@ -709,6 +834,7 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
                 weight_decay=rebuild_weight_decay,
                 optimizer_name=rebuild_optimizer_name,
                 huge_param_threshold_bytes=rebuild_huge_threshold,
+                lora_owned_params=rebuild_lora_params,
             )
         except Exception:
             LOG.exception(
@@ -1094,6 +1220,77 @@ class ProTrainPlugin(BasePlugin):
         # _inner_training_loop call to accelerator.prepare(self.model) wraps DDP.
         ddp_bypassed = _maybe_bypass_ddp_for_mode_c(trainer, wrapped)
 
+        # Path B (PR #24): ProTrain-owned LoRA grad sync. Discovery + DDP-ignore
+        # registration must fire BEFORE Accelerate.prepare wraps DDP (which reads
+        # _ddp_params_and_buffers_to_ignore at construction time). Restricted to
+        # the DDP-active path: under Mode C bypass, chunk_manager already owns
+        # the per-chunk sync and engaging Path B would risk double-syncing the
+        # persistent-chunk LoRA grads.
+        path_b_active = False
+        lora_owned_params: list = []
+        if bool(getattr(cfg, "protrain_own_lora_grad_sync", False)):
+            if ddp_bypassed:
+                LOG.info(
+                    "ProTrain: protrain_own_lora_grad_sync=True but Mode C "
+                    "bypass fired (DDP is bypassed); Path B is a no-op here. "
+                    "Chunk_manager's per-chunk reduce_scatter / all_reduce "
+                    "already owns cross-rank sync for sharded chunks."
+                )
+            else:
+                lora_names, lora_owned_params = _discover_lora_params(trainer.model)
+                # Multi-rank guard at the registration site keeps single-rank
+                # runs from accumulating dead state on the attribute.
+                try:
+                    import torch.distributed as _dist
+
+                    _is_multi_rank = (
+                        _dist.is_available()
+                        and _dist.is_initialized()
+                        and int(_dist.get_world_size()) > 1
+                    )
+                except (ImportError, RuntimeError, ValueError):
+                    _is_multi_rank = False
+                if lora_names and _is_multi_rank:
+                    _register_lora_ddp_ignore(trainer.model, lora_names)
+                    path_b_active = True
+                    # If ALL trainable params are LoRA factors (typical for
+                    # LoRA/QLoRA fine-tunes), DDP would be left with no
+                    # gradient-bearing params after the ignore filter and
+                    # would raise "DistributedDataParallel is not needed
+                    # when a module doesn't have any parameter that
+                    # requires a gradient." Detect this and force
+                    # DistributedType.NO so Accelerate.prepare() skips the
+                    # DDP wrap entirely — Path B owns sync at the optimizer.
+                    n_trainable = sum(
+                        1 for p in trainer.model.parameters() if p.requires_grad
+                    )
+                    if n_trainable == len(lora_names):
+                        _maybe_bypass_ddp_for_path_b(trainer)
+                        # Track the bypass for downstream DDP-composition checks.
+                        ddp_bypassed = True
+                    LOG.info(
+                        "ProTrain Path B: registered %d trainable LoRA "
+                        "param names in model._ddp_params_and_buffers_to_ignore "
+                        "(n_trainable=%d); ProTrain will own grad-sync via "
+                        "flattened all_reduce in _ProTrainOptimizer.step().",
+                        len(lora_names),
+                        n_trainable,
+                    )
+                elif lora_names and not _is_multi_rank:
+                    LOG.info(
+                        "ProTrain Path B: %d LoRA params found but world_size "
+                        "<= 1; flag is a no-op (single-rank).",
+                        len(lora_names),
+                    )
+                    # Pass refs through anyway so the optimizer short-circuits
+                    # on world<=1 rather than carrying stale state.
+                else:
+                    LOG.info(
+                        "ProTrain Path B: protrain_own_lora_grad_sync=True "
+                        "but no trainable LoRA factor params found; flag is "
+                        "a no-op."
+                    )
+
         from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
 
         args = trainer.args
@@ -1112,6 +1309,7 @@ class ProTrainPlugin(BasePlugin):
             weight_decay=float(args.weight_decay),
             optimizer_name=optimizer_name,
             huge_param_threshold_bytes=huge_threshold,
+            lora_owned_params=lora_owned_params if path_b_active else None,
         )
 
         # state_dict/load_state_dict empty-shell behavior lives in _ProTrainOptimizer.

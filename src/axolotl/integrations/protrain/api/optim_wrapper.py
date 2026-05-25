@@ -50,6 +50,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         persistent_world_size: int = 1,
         persistent_huge_originals: list["nn.Parameter"] | None = None,
         persistent_huge_shards: list["nn.Parameter"] | None = None,
+        lora_owned_params: list["nn.Parameter"] | None = None,
     ) -> None:
         """Wire the GPU/CPU adapter pair into a Trainer-compatible Optimizer facade."""
         # Pass full param list so schedulers iterate over the real set.
@@ -77,6 +78,10 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         self._persistent_huge_shards: list["nn.Parameter"] = list(
             persistent_huge_shards or []
         )
+        # Path B: trainable LoRA adapter params whose grad-sync ProTrain owns
+        # (DDP is told to ignore them via _ddp_params_and_buffers_to_ignore).
+        # Empty list => Path B disabled / not configured (no-op).
+        self._lora_owned_params: list["nn.Parameter"] = list(lora_owned_params or [])
 
     # ---- step / zero_grad ----------------------------------------------
 
@@ -98,6 +103,11 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                 for cid in list(non_persist):
                     cm.reduce_grads_and_offload(cid)
 
+        # Path B: flattened all-reduce of LoRA adapter grads BEFORE inner step.
+        # DDP is told to ignore these param names (see plugin.post_trainer_create),
+        # so without this sync the per-rank LoRA grads would diverge.
+        self._sync_lora_grads_path_b()
+
         # Within-shard fallback: route grad of each huge original onto the
         # rank-local shard view BEFORE the inner step. The shard is a
         # narrow into orig.data, so narrowing orig.grad the same way gives
@@ -115,6 +125,47 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         if scheduler is not None:
             scheduler.drain()
         return loss
+
+    def _sync_lora_grads_path_b(self) -> None:
+        """Flattened all_reduce(AVG) of trainable LoRA adapter grads, grouped by dtype.
+
+        Path B (PR #24): replaces DDP's per-bucket per-param allreduce with
+        1-2 large coalesced allreduces. DDP is told to ignore the LoRA names
+        via ``model._ddp_params_and_buffers_to_ignore`` (registration happens
+        in ``plugin.post_trainer_create``). World_size <= 1 short-circuits
+        before any collective fires.
+        """
+        if not self._lora_owned_params:
+            return
+        import torch.distributed as dist
+        from torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors
+
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+        try:
+            world = int(dist.get_world_size())
+        except (RuntimeError, ValueError):
+            return
+        if world <= 1:
+            return
+
+        # Group grads by dtype; one coalesced collective per dtype.
+        buckets: dict[Any, list[torch.Tensor]] = {}
+        for p in self._lora_owned_params:
+            if p.grad is None:
+                continue
+            buckets.setdefault(p.grad.dtype, []).append(p.grad)
+
+        for grads in buckets.values():
+            if len(grads) == 1:
+                dist.all_reduce(grads[0], op=dist.ReduceOp.AVG)
+                continue
+            flat = _flatten_dense_tensors(grads)
+            dist.all_reduce(flat, op=dist.ReduceOp.AVG)
+            for orig, synced in zip(
+                grads, _unflatten_dense_tensors(flat, grads), strict=True
+            ):
+                orig.copy_(synced)
 
     def _route_huge_grads_to_shards(self) -> None:
         """Narrow each huge original param's grad onto this rank's shard view.
@@ -513,6 +564,7 @@ def protrain_optimizer_wrapper(
     weight_decay: float = 0.0,
     optimizer_name: str | None = None,
     huge_param_threshold_bytes: int = _DEFAULT_HUGE_PARAM_THRESHOLD_BYTES,
+    lora_owned_params: list["nn.Parameter"] | None = None,
 ) -> torch.optim.Optimizer:
     """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams."""
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
@@ -793,6 +845,7 @@ def protrain_optimizer_wrapper(
         persistent_world_size=persistent_world_size,
         persistent_huge_originals=persistent_huge_originals,
         persistent_huge_shards=persistent_huge_shards,
+        lora_owned_params=lora_owned_params,
     )
 
 
