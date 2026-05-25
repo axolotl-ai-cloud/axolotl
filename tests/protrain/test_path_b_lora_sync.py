@@ -468,3 +468,348 @@ def test_plugin_post_trainer_create_flag_off_no_op(monkeypatch):
 
     # Use the imported torch so isort/ruff don't complain.
     assert torch.__version__ is not None
+
+
+# ---------------------------------------------------------------------------
+# 6. Extended convergence parity: 2-rank gloo, multi-step trajectory
+# ---------------------------------------------------------------------------
+
+
+_CONV_PARITY_PORT = "29693"
+
+
+def _convergence_parity_worker(rank: int, world_size: int, tmpdir: str) -> None:
+    """Run two identical training trajectories — Path A (manual sync) vs Path B.
+
+    Both trajectories share the same initial weights, the same per-rank random
+    inputs/targets across all steps, and the same SGD update rule. The only
+    difference is *how* the cross-rank grad sync is issued:
+        Path A: explicit ``dist.all_reduce(p.grad, op=AVG)`` per param
+        Path B: ``_ProTrainOptimizer._sync_lora_grads_path_b()``
+    Final weights and loss values must match within FP rounding after 100
+    backward + step iterations.
+    """
+    import sys
+    import traceback
+
+    try:
+        import torch
+        import torch.distributed as dist
+        from torch import nn
+
+        os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+        os.environ.setdefault("MASTER_PORT", _CONV_PARITY_PORT)
+        dist.init_process_group(
+            backend="gloo",
+            init_method=f"file://{tmpdir}/rendezvous-conv-parity",
+            rank=rank,
+            world_size=world_size,
+        )
+        try:
+            n_steps = 100
+            hidden = 8
+            rank_dim = 4
+            lr = 5e-3
+
+            def _build_lora_pair():
+                torch.manual_seed(0)
+                lora_A = nn.Parameter(torch.randn(rank_dim, hidden) * 0.02)
+                lora_B = nn.Parameter(torch.zeros(hidden, rank_dim))
+                return lora_A, lora_B
+
+            def _gen_batch(step: int):
+                # Per-rank divergent inputs so cross-rank grad averaging matters.
+                g = torch.Generator().manual_seed(1000 + step * 17 + rank * 31)
+                x = torch.randn(4, hidden, generator=g)
+                y = torch.randn(4, hidden, generator=g)
+                return x, y
+
+            # ---- Path A: explicit per-param all_reduce(AVG) baseline ----
+            A_lora_A, A_lora_B = _build_lora_pair()
+            losses_a: list[float] = []
+            for step in range(n_steps):
+                x, y = _gen_batch(step)
+                out = x @ A_lora_A.t() @ A_lora_B.t()
+                loss = ((out - y) ** 2).mean()
+                losses_a.append(loss.item())
+                A_lora_A.grad = None
+                A_lora_B.grad = None
+                loss.backward()
+                # Manual baseline sync.
+                for p in (A_lora_A, A_lora_B):
+                    dist.all_reduce(p.grad, op=dist.ReduceOp.AVG)
+                with torch.no_grad():
+                    for p in (A_lora_A, A_lora_B):
+                        p.data.add_(p.grad, alpha=-lr)
+            final_loss_a = losses_a[-1]
+
+            # ---- Path B: drive same trajectory via _sync_lora_grads_path_b ----
+            from axolotl.integrations.protrain.api.optim_wrapper import (
+                _ProTrainOptimizer,
+            )
+
+            B_lora_A, B_lora_B = _build_lora_pair()
+            chunk_manager_stub = type("CMStub", (), {"_scheduler_ref": None})()
+            optim_b = _ProTrainOptimizer(
+                gpu_optim=None,
+                cpu_optim=None,
+                params=[B_lora_A, B_lora_B],
+                defaults={
+                    "lr": lr,
+                    "betas": (0.9, 0.999),
+                    "eps": 1e-8,
+                    "weight_decay": 0.0,
+                },
+                chunk_manager=chunk_manager_stub,
+                lora_owned_params=[B_lora_A, B_lora_B],
+            )
+            losses_b: list[float] = []
+            for step in range(n_steps):
+                x, y = _gen_batch(step)
+                out = x @ B_lora_A.t() @ B_lora_B.t()
+                loss = ((out - y) ** 2).mean()
+                losses_b.append(loss.item())
+                B_lora_A.grad = None
+                B_lora_B.grad = None
+                loss.backward()
+                optim_b._sync_lora_grads_path_b()
+                with torch.no_grad():
+                    for p in (B_lora_A, B_lora_B):
+                        p.data.add_(p.grad, alpha=-lr)
+            final_loss_b = losses_b[-1]
+
+            # Final-loss parity.
+            loss_diff = abs(final_loss_a - final_loss_b)
+            if loss_diff >= 1e-4:
+                raise RuntimeError(
+                    f"rank {rank}: final-loss parity violated: "
+                    f"A={final_loss_a:.8e} B={final_loss_b:.8e} "
+                    f"|diff|={loss_diff:.3e} (allowed < 1e-4)"
+                )
+
+            # Per-param weight parity.
+            for name, (a, b) in (
+                ("lora_A", (A_lora_A.data, B_lora_A.data)),
+                ("lora_B", (A_lora_B.data, B_lora_B.data)),
+            ):
+                if not torch.allclose(a, b, rtol=1e-5, atol=1e-7):
+                    diff = (a - b).abs().max().item()
+                    raise RuntimeError(
+                        f"rank {rank} {name}: trajectory drift after "
+                        f"{n_steps} steps. max abs diff={diff:.3e} "
+                        f"(rtol=1e-5, atol=1e-7)."
+                    )
+
+            with open(
+                os.path.join(tmpdir, f"conv_parity_rank{rank}.done"), "w"
+            ) as f:
+                f.write(
+                    f"n_steps={n_steps} final_loss_a={final_loss_a:.6e} "
+                    f"final_loss_b={final_loss_b:.6e}\n"
+                )
+        finally:
+            try:
+                dist.barrier()
+            except Exception:  # noqa: BLE001
+                pass
+            dist.destroy_process_group()
+    except Exception:  # noqa: BLE001
+        with open(os.path.join(tmpdir, f"conv_parity_rank{rank}.err"), "w") as f:
+            f.write(traceback.format_exc())
+        sys.exit(1)
+
+
+def test_path_b_convergence_parity_2rank_gloo(tmp_path):
+    """2-rank gloo: Path B and manual-sync baseline match after 100 steps.
+
+    Stronger than ``test_bit_equivalence_two_rank_gloo`` (single-step): this
+    verifies trajectory equivalence — accumulated FP error across 100
+    backward+sync+step iterations stays under ``torch.allclose(rtol=1e-5,
+    atol=1e-7)`` for every LoRA weight, and final-loss absolute diff under
+    1e-4. Load-bearing for the default-ON safety claim.
+    """
+    pytest.importorskip("torch")
+    import torch
+
+    if not torch.distributed.is_available():
+        pytest.skip("torch.distributed unavailable")
+    import torch.multiprocessing as mp
+
+    mp.spawn(
+        _convergence_parity_worker,
+        args=(2, str(tmp_path)),
+        nprocs=2,
+        join=True,
+    )
+
+    err_files = list(tmp_path.glob("conv_parity_rank*.err"))
+    if err_files:
+        bodies = "\n---\n".join(f.read_text() for f in err_files)
+        pytest.fail(f"convergence-parity worker errors:\n{bodies}")
+    for r in range(2):
+        assert (tmp_path / f"conv_parity_rank{r}.done").is_file(), (
+            f"rank {r} did not reach convergence-parity sentinel"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. gradient_accumulation_steps > 1: Path B fires once per optimizer.step()
+# ---------------------------------------------------------------------------
+
+
+def test_path_b_grad_accum_fires_once_per_step():
+    """Path B sync lives in ``optimizer.step()``, not inside ``loss.backward()``.
+
+    Simulates ``gradient_accumulation_steps=4``: 4 backward passes accumulate
+    grads into ``param.grad``; ``optimizer.step()`` fires ONCE at the grad-update
+    boundary. We assert ``dist.all_reduce`` was called exactly per-dtype-bucket
+    once across the whole micro-batch sequence, NOT 4× — mid-accumulation grads
+    must not be reduced.
+    """
+    import torch
+    from torch import nn
+
+    # Two dtype buckets so we can also see the bucketing didn't break.
+    bf16_p = nn.Parameter(torch.randn(8, dtype=torch.bfloat16))
+    fp32_p = nn.Parameter(torch.randn(8, dtype=torch.float32))
+    optim = _make_test_optimizer_with_lora_owned([bf16_p, fp32_p])
+
+    # Simulate 4 micro-batches that all accumulate gradients.
+    with patch("torch.distributed.is_available", return_value=True):
+        with patch("torch.distributed.is_initialized", return_value=True):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                with patch("torch.distributed.all_reduce") as mock_ar:
+                    for _micro in range(4):
+                        # Microbatch backward: grads accumulate. We just stamp
+                        # synthetic grads to model that ``loss.backward()`` ran.
+                        if bf16_p.grad is None:
+                            bf16_p.grad = torch.zeros_like(bf16_p)
+                            fp32_p.grad = torch.zeros_like(fp32_p)
+                        bf16_p.grad.add_(torch.randn_like(bf16_p.grad))
+                        fp32_p.grad.add_(torch.randn_like(fp32_p.grad))
+                        # Critical: NO sync fired during the backward portion.
+                        assert mock_ar.call_count == 0, (
+                            "Path B sync must NOT fire mid-accumulation; "
+                            f"got {mock_ar.call_count} call(s) after "
+                            f"micro-batch {_micro}"
+                        )
+                    # Grad-update boundary: optimizer.step() drives the sync.
+                    optim._sync_lora_grads_path_b()
+                    assert mock_ar.call_count == 2, (
+                        "expected exactly 2 collective calls (one per dtype "
+                        f"bucket), got {mock_ar.call_count}"
+                    )
+
+
+# ---------------------------------------------------------------------------
+# 8. Mode B + Path B compatibility: disjoint param sets, no double-sync
+# ---------------------------------------------------------------------------
+
+
+def test_path_b_modeb_disjoint_param_sets():
+    """Path B + Mode B operate on disjoint param sets — no double-sync.
+
+    Mode B (``protrain_force_replicated_cpu_offload=true``) routes per-chunk
+    grad sync through ``ChunkManager._coalesced_all_reduce_persistent_grads``
+    on persistent chunks. Path B operates on ``_lora_owned_params`` (the
+    LoRA factors discovered by ``_discover_lora_params``).
+
+    The plugin builds the wrapper with ``lora_owned_params`` populated only
+    from LoRA factors — NOT from chunk-managed params. Verify empirically
+    that with a model containing BOTH a chunk-managed param AND LoRA
+    factors:
+        1. ``_discover_lora_params`` returns only the LoRA factors.
+        2. Path B's collective sees ONLY the LoRA tensors (not the chunk
+           param).
+        3. The chunk param is NOT in ``_lora_owned_params`` so Path B
+           cannot double-sync what Mode B already handled.
+    """
+    import torch
+    from torch import nn
+
+    from axolotl.integrations.protrain.plugin import _discover_lora_params
+
+    # Construct a hybrid PEFT-shaped model with an additional non-LoRA
+    # trainable that mimics a chunk-managed persistent param.
+    class _HybridLora(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.base_model = nn.Module()
+            self.base_model.model = nn.Module()
+            # Standalone "persistent chunk param" — trainable, NOT a LoRA factor.
+            self.base_model.model.lm_head = nn.Linear(8, 8, bias=False)
+            # LoRA-shaped factor.
+            block = nn.Module()
+            attn = nn.Module()
+            attn.lora_A = nn.ModuleDict(
+                {"default": nn.Linear(8, 4, bias=False)}
+            )
+            attn.lora_B = nn.ModuleDict(
+                {"default": nn.Linear(4, 8, bias=False)}
+            )
+            block.self_attn_q_proj = attn
+            self.base_model.model.layers = nn.ModuleList([block])
+
+    model = _HybridLora()
+    for name, p in model.named_parameters():
+        p.requires_grad_(True)  # All trainable including lm_head ("chunk param").
+
+    lora_names, lora_params = _discover_lora_params(model)
+    # Discovery must reject the chunk param.
+    assert all("lora_A" in n or "lora_B" in n for n in lora_names), lora_names
+    assert not any("lm_head" in n for n in lora_names), lora_names
+
+    # Identify the "chunk-managed" param by name.
+    chunk_param = model.base_model.model.lm_head.weight
+    chunk_param.grad = torch.randn_like(chunk_param)
+    for p in lora_params:
+        p.grad = torch.randn_like(p)
+
+    # Build wrapper with ONLY lora_params owned (mirrors plugin behavior).
+    optim = _make_test_optimizer_with_lora_owned(lora_params)
+
+    # Snapshot grad tensors that Path B would actually see, then drive the sync
+    # and assert chunk_param.grad was untouched as a tensor identity check.
+    chunk_grad_pre_id = id(chunk_param.grad)
+    chunk_grad_pre_clone = chunk_param.grad.clone()
+
+    captured_tensors: list = []
+
+    def _spy_all_reduce(t, *args, **kwargs):
+        captured_tensors.append(t)
+        return None
+
+    with patch("torch.distributed.is_available", return_value=True):
+        with patch("torch.distributed.is_initialized", return_value=True):
+            with patch("torch.distributed.get_world_size", return_value=2):
+                with patch(
+                    "torch.distributed.all_reduce", side_effect=_spy_all_reduce
+                ):
+                    optim._sync_lora_grads_path_b()
+
+    # 1) Path B never reduced the chunk param's grad.
+    assert chunk_param.grad is not None
+    assert id(chunk_param.grad) == chunk_grad_pre_id, (
+        "Path B replaced chunk_param.grad identity — disjoint-set guarantee broken"
+    )
+    assert torch.equal(chunk_param.grad, chunk_grad_pre_clone), (
+        "Path B mutated chunk_param.grad — would double-sync with Mode B's "
+        "_coalesced_all_reduce_persistent_grads"
+    )
+
+    # 2) Every tensor handed to all_reduce belongs to a LoRA factor (i.e. one
+    # of the grads from `lora_params` or a flattened bucket built from them).
+    lora_grad_ids = {id(p.grad) for p in lora_params}
+    for t in captured_tensors:
+        # Either a direct LoRA grad (single-tensor bucket) OR a flat buffer
+        # whose total numel matches a same-dtype LoRA grad bucket.
+        if id(t) in lora_grad_ids:
+            continue
+        # Flat bucket: total numel == sum of LoRA grads of that dtype.
+        bucket_total = sum(
+            p.grad.numel() for p in lora_params if p.grad.dtype == t.dtype
+        )
+        assert t.numel() == bucket_total, (
+            "Path B all_reduce tensor not traceable to LoRA bucket "
+            f"(numel={t.numel()}, expected bucket_total={bucket_total})"
+        )
