@@ -14,7 +14,7 @@ import warnings
 
 from packaging.version import Version
 
-VALIDATED_TRANSFORMERS_MAX = "5.6"
+VALIDATED_TRANSFORMERS_MAX = "5.9"
 VALIDATED_PEFT_MAX = "0.21"
 
 

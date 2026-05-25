@@ -31,7 +31,7 @@ jobs:
           from packaging.version import Version
 
           # Keep in sync with src/axolotl/integrations/protrain/check.py.
-          VALIDATED = {"transformers": "4.55", "peft": "0.20"}
+          VALIDATED = {"transformers": "5.9", "peft": "0.21"}
 
           content = Path("pyproject.toml").read_text()
 
