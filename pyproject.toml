@@ -17,7 +17,7 @@ dependencies = [
     "huggingface_hub>=1.1.7",
     "peft>=0.19.1,<0.20.0",
     "tokenizers>=0.22.1",
-    "transformers==5.5.4",
+    "transformers==5.8.1",
     "accelerate==1.13.0",
     "datasets>=4.8.4,<4.9.0",
     "trl==1.1.0",
@@ -121,6 +121,7 @@ optimizers = [
     "torch-optimi==0.2.1",
     "came_pytorch==0.1.3",
     "scao",
+    "q-galore-torch==1.0",
 ]
 ray = [
     "ray[train]>=2.52.1",
