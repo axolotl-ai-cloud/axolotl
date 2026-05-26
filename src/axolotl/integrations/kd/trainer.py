@@ -104,6 +104,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
         hidden_states = hidden_states[-1]
 
         lm_head = _resolve_lm_head(model)
+        hidden_states = hidden_states.to(lm_head.weight.dtype)
 
         loss = self._kd_loss_fn(
             lm_head.weight,
