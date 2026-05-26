@@ -83,6 +83,31 @@ Optional interpreter override for spawned training jobs:
 $env:AXOLOTL_MCP_PYTHON = "./axo-env/Scripts/python.exe"
 ```
 
+## Phase 3 status
+
+Implemented now:
+- debug assistant MCP server tools:
+	- `sample_strategy_failures`
+	- `diagnose_task_prefix`
+	- `compare_adapters`
+
+Debug server notes:
+- Default failure files target the strategy-only validation flow outputs.
+- Adapter comparison can use environment overrides:
+	- `AXOLOTL_MCP_SINGLE_ADAPTER_DIR`
+	- `AXOLOTL_MCP_MULTITASK_ADAPTER_DIR`
+- A reproducible fixture file is available at `mcp_servers/debug_assistant/test_scenarios.jsonl`.
+
+## Run the debug assistant server
+
+From repo root:
+
+```powershell
+$env:AXOLOTL_MCP_SINGLE_ADAPTER_DIR = "outputs/bethpage-lora/checkpoint-quick"
+$env:AXOLOTL_MCP_MULTITASK_ADAPTER_DIR = "outputs/bethpage-lora/checkpoint-multitask"
+./axo-env/Scripts/python.exe -m mcp_servers.debug_assistant.server
+```
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.

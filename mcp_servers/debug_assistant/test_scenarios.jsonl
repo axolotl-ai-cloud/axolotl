@@ -1,0 +1,3 @@
+{"task": "strategy_selection", "prompt": "TASK: strategy_selection\nHole 11, Bethpage Black: Par 4, 435 yards. Golfer drives 290 yards. Best strategy?\nRespond with: Strategy: <number> yards", "expected": "Strategy: 290 yards"}
+{"task": "strategy_selection", "prompt": "TASK: strategy_selection\nHole 13: Drive 350 yards, strategies available: 290, 330. Rule: choose highest <= drive distance.\nRespond with: Strategy: <number> yards", "expected": "Strategy: 330 yards"}
+{"task": "description_synthesis", "prompt": "TASK: description_synthesis\nCreate a strategic hole summary for Hole 18 at Bethpage Black (Par 4, 411 yards) with bunker risk and elevation change details.", "expected": "narrative paragraph"}
