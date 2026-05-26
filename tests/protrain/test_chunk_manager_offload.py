@@ -623,10 +623,10 @@ def test_param_data_empty_between_iters() -> None:
     loss = y.sum()
     loss.backward()
 
-    # The per-param hooks fired step_async on the CPU optim. Block
-    # until every future has resolved — the post_step callback runs
-    # inside that wait, so after this line param.data MUST be the
-    # empty GPU placeholder.
+    # The per-param hooks mark chunks ready; the optimizer boundary
+    # launches CPU Adam once, then wait_all observes the post_step
+    # placeholder repoint.
+    mgr.step_ready_cpu_chunks()
     mgr.wait_cpu_optim_all()
 
     for cid_int in sorted(mgr._non_persistent_ids):

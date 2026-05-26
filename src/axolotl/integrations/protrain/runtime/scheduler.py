@@ -865,7 +865,15 @@ class Scheduler:
             # shared-chunk filter (only earliest-forward owner finalizes) is
             # baked into the cached tuple.
             for cid in self._owned_chunks_for_finalize_cached.get(block_id, ()):
-                self.chunk_manager.reduce_grads_and_offload(cid)
+                finalize = getattr(
+                    self.chunk_manager,
+                    "reduce_grads_and_offload_from_backward",
+                    None,
+                )
+                if finalize is not None:
+                    finalize(cid)
+                else:
+                    self.chunk_manager.reduce_grads_and_offload(cid)
         finally:
             if self._first_iter_trace_enabled:
                 self._first_iter_log("post_block_backward exit", block_id)

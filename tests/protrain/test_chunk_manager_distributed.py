@@ -540,7 +540,7 @@ def _worker_zero3_sharded_roundtrip(rank: int, world_size: int, tmpdir: str) -> 
         if cpu_optim is None:
             return
 
-        mgr.reduce_grads_and_offload(ChunkId(0))
+        mgr.reduce_grads_and_offload(ChunkId(0), force=True)
         # The shard grad assertion below reads ``shard_param.grad`` —
         # Adam consumes that grad inside the worker thread but does not
         # zero it (only ``zero_grad`` clears it). Wait for the in-flight
@@ -780,7 +780,7 @@ def _worker_zero3_sharded_roundtrip_mixed_dtype(
         if cpu_optim is None:
             return
 
-        mgr.reduce_grads_and_offload(ChunkId(0))
+        mgr.reduce_grads_and_offload(ChunkId(0), force=True)
         mgr.wait_cpu_optim_all()
 
         expected_mean = sum(range(world_size)) / float(world_size)

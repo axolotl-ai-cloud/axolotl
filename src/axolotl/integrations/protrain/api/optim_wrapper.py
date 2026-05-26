@@ -95,18 +95,19 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # Forward LR-scheduler mutations to inner optim param_groups (separate dicts).
         self._forward_hyperparams_to_inner_optims()
 
-        # Sharded path: sweep orphan non-persistent chunks (lm_head/embed) that no block-backward hook reached.
         cm = self._chunk_manager
+        # Sharded path: sweep orphan non-persistent chunks (lm_head/embed) that no block-backward hook reached.
         if getattr(cm, "zero3_shard", False):
             non_persist = getattr(cm, "_non_persistent_ids", None)
             if non_persist:
                 for cid in list(non_persist):
-                    cm.reduce_grads_and_offload(cid)
+                    cm.reduce_grads_and_offload(cid, force=True)
 
         # Path B: flattened all-reduce of LoRA adapter grads BEFORE inner step.
         # DDP is told to ignore these param names (see plugin.post_trainer_create),
         # so without this sync the per-rank LoRA grads would diverge.
         self._sync_lora_grads_path_b()
+        self._sync_all_persistent_grads()
 
         # Within-shard fallback: route grad of each huge original onto the
         # rank-local shard view BEFORE the inner step. The shard is a
@@ -114,6 +115,9 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # the shard the matching slice of the gradient.
         self._route_huge_grads_to_shards()
 
+        step_ready = getattr(self._chunk_manager, "step_ready_cpu_chunks", None)
+        if step_ready is not None:
+            step_ready()
         if self._gpu_optim is not None:
             self._gpu_optim.step()
         # Broadcast each owner's persistent-param update to peers before next forward.
@@ -124,6 +128,11 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         scheduler = getattr(self._chunk_manager, "_scheduler_ref", None)
         if scheduler is not None:
             scheduler.drain()
+        reset_step_tracking = getattr(
+            self._chunk_manager, "reset_optimizer_step_tracking", None
+        )
+        if reset_step_tracking is not None:
+            reset_step_tracking()
         return loss
 
     def _sync_lora_grads_path_b(self) -> None:
@@ -166,6 +175,19 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                 grads, _unflatten_dense_tensors(flat, grads), strict=True
             ):
                 orig.copy_(synced)
+
+    def _sync_all_persistent_grads(self) -> None:
+        """Synchronize every persistent chunk's grads before rank-local stepping."""
+        cm = self._chunk_manager
+        sync = getattr(cm, "sync_persistent_grads_for_step", None)
+        if sync is not None:
+            sync()
+            return
+        persistent = getattr(cm, "_persistent_ids", None)
+        if not persistent:
+            return
+        for cid in list(persistent):
+            cm.reduce_grads_and_offload(cid)
 
     def _route_huge_grads_to_shards(self) -> None:
         """Narrow each huge original param's grad onto this rank's shard view.
@@ -301,6 +323,11 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             self._gpu_optim.zero_grad(set_to_none=set_to_none)
         if self._cpu_optim is not None:
             self._cpu_optim.zero_grad(set_to_none=set_to_none)
+        reset_step_tracking = getattr(
+            self._chunk_manager, "reset_optimizer_step_tracking", None
+        )
+        if reset_step_tracking is not None:
+            reset_step_tracking()
         # Also zero any param grads that weren't routed through either
         # adapter (e.g. buffers that slipped through the chunk layout) so
         # the next iteration starts clean.

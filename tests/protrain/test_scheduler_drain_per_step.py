@@ -32,11 +32,20 @@ class _FakeChunkManager:
     def __init__(self, scheduler: _FakeScheduler | None = None) -> None:
         self.zero3_shard = False
         self._non_persistent_ids: list[Any] = []
+        self._persistent_ids: list[Any] = []
         self.rank = 0
         self.world_size = 1
+        self.reduce_grads_and_offload_calls: list[tuple[Any, bool]] = []
+        self.step_ready_cpu_chunks_calls = 0
         self.wait_cpu_optim_all_calls = 0
         if scheduler is not None:
             self._scheduler_ref = scheduler
+
+    def reduce_grads_and_offload(self, chunk_id: Any, *, force: bool = False) -> None:
+        self.reduce_grads_and_offload_calls.append((chunk_id, force))
+
+    def step_ready_cpu_chunks(self) -> None:
+        self.step_ready_cpu_chunks_calls += 1
 
     def wait_cpu_optim_all(self) -> None:
         self.wait_cpu_optim_all_calls += 1
@@ -86,6 +95,63 @@ def test_step_without_scheduler_ref_is_noop() -> None:
 
     optim.step()
     assert mgr.wait_cpu_optim_all_calls == 1
+
+
+def test_step_sweeps_mode_c_nonpersistent_chunks_with_force() -> None:
+    mgr = _FakeChunkManager()
+    mgr.zero3_shard = True
+    mgr._non_persistent_ids = [7, 9]
+    optim = _build_optimizer(mgr)
+
+    optim.step()
+
+    assert mgr.reduce_grads_and_offload_calls == [(7, True), (9, True)]
+    assert mgr.step_ready_cpu_chunks_calls == 1
+
+
+def test_step_syncs_persistent_grads_before_gpu_step() -> None:
+    call_order: list[str] = []
+    param = torch.nn.Parameter(torch.zeros(1))
+
+    class _OrderedGpu:
+        def step(self) -> None:
+            call_order.append("gpu_step")
+
+        def zero_grad(self, set_to_none: bool = True) -> None:  # noqa: ARG002
+            return None
+
+    class _OrderedManager(_FakeChunkManager):
+        def __init__(self) -> None:
+            super().__init__()
+            self._persistent_ids = [3, 5]
+
+        def reduce_grads_and_offload(
+            self, chunk_id: Any, *, force: bool = False
+        ) -> None:
+            call_order.append(f"reduce:{chunk_id}:force={force}")
+            super().reduce_grads_and_offload(chunk_id, force=force)
+
+        def step_ready_cpu_chunks(self) -> None:
+            call_order.append("step_ready_cpu")
+            super().step_ready_cpu_chunks()
+
+    mgr = _OrderedManager()
+    optim = _ProTrainOptimizer(
+        gpu_optim=_OrderedGpu(),
+        cpu_optim=None,
+        params=[param],
+        defaults={"lr": 1e-3, "betas": (0.9, 0.999), "eps": 1e-8, "weight_decay": 0.0},
+        chunk_manager=mgr,
+    )
+
+    optim.step()
+
+    assert call_order[:4] == [
+        "reduce:3:force=False",
+        "reduce:5:force=False",
+        "step_ready_cpu",
+        "gpu_step",
+    ]
 
 
 def test_step_drain_runs_after_wait_cpu_optim_all() -> None:

@@ -228,9 +228,11 @@ def _worker_math_equivalence(rank: int, world_size: int, tmpdir: str) -> None:
             model, mgr, world_size=world_size, rank=rank
         )
 
-        # Plant identical grads on every rank (since DDP would all-reduce).
+        # Plant rank-local grads; _ProTrainOptimizer.step must AVG-reduce
+        # persistent grads before each rank steps its owned partition.
+        local_grad = float(rank + 1)
         for _name, p in model.named_parameters():
-            p.grad = torch.full_like(p.data, 0.1)
+            p.grad = torch.full_like(p.data, local_grad)
 
         optim.step()
 
@@ -243,8 +245,11 @@ def _worker_math_equivalence(rank: int, world_size: int, tmpdir: str) -> None:
         ref_model = _tiny_cpu_model(n_params=8)
         for n, p in ref_model.named_parameters():
             p.data.copy_(init_state[n])
+        expected_mean_grad = sum(float(r + 1) for r in range(world_size)) / float(
+            world_size
+        )
         for _name, p in ref_model.named_parameters():
-            p.grad = torch.full_like(p.data, 0.1)
+            p.grad = torch.full_like(p.data, expected_mean_grad)
         ref_optim = torch.optim.AdamW(
             list(ref_model.parameters()),
             lr=1e-3,

@@ -317,6 +317,10 @@ class ChunkManager:
 
         self._grad_remaining: dict[ChunkId, int] = {}
         self._grad_initial: dict[ChunkId, int] = {}
+        self._cpu_step_ready_chunks: set[ChunkId] = set()
+        self._cpu_step_events: dict[ChunkId, Any] = {}
+        self._cpu_step_post_steps: dict[ChunkId, Any] = {}
+        self._persistent_grads_synced: set[ChunkId] = set()
 
         self._grad_hook_handles: list[object] = []
 
@@ -1106,7 +1110,7 @@ class ChunkManager:
             # Sharded fast-path: chunk-level reduce_scatter handles the grad; just decrement.
             shard_state_local = cm._chunk_shards.get(captured_cid)
             if shard_state_local is not None:
-                remaining = cm._grad_remaining.get(captured_cid, 0) - 1
+                remaining = max(cm._grad_remaining.get(captured_cid, 0) - 1, 0)
                 cm._grad_remaining[captured_cid] = remaining
                 return
 
@@ -1121,12 +1125,22 @@ class ChunkManager:
                 and not cm.skip_internal_grad_reduce
             ):
                 _dist.all_reduce(param.grad, op=_dist.ReduceOp.AVG)
-            captured_slot.cpu_grad.copy_(param.grad, non_blocking=True)  # type: ignore[union-attr]
-            # Record D2H event so the CPU-Adam worker can wait before reading the pinned shard.
+            accumulating = captured_cid in cm._cpu_step_ready_chunks
             d2h_event = None
-            if param.grad.is_cuda:
-                d2h_event = _torch.cuda.Event(blocking=True)
-                d2h_event.record()
+            if accumulating:
+                prev_event = cm._cpu_step_events.pop(captured_cid, None)
+                if prev_event is not None:
+                    prev_event.synchronize()
+                grad_to_add = param.grad
+                if grad_to_add.device != captured_slot.cpu_grad.device:  # type: ignore[union-attr]
+                    grad_to_add = grad_to_add.to(captured_slot.cpu_grad.device)  # type: ignore[union-attr]
+                captured_slot.cpu_grad.add_(grad_to_add)  # type: ignore[union-attr]
+            else:
+                captured_slot.cpu_grad.copy_(param.grad, non_blocking=True)  # type: ignore[union-attr]
+                # Record D2H event so the CPU-Adam worker can wait before reading the pinned shard.
+                if param.grad.is_cuda:
+                    d2h_event = _torch.cuda.Event(blocking=True)
+                    d2h_event.record()
             param.grad = None
 
             remaining = cm._grad_remaining.get(captured_cid, 0) - 1
@@ -1143,9 +1157,7 @@ class ChunkManager:
                         "configure n_persist == N_chunk so no chunks are "
                         "offloaded."
                     )
-                # Repoint .data/.grad to CPU shards for the step; post_step restores GPU placeholder.
-                cm._ensure_cpu_grads_attached(captured_cid)
-                cm.cpu_optim.step_async(
+                cm._mark_cpu_step_ready(
                     captured_cid,
                     d2h_event=d2h_event,
                     post_step=cm._make_post_cpu_step_repoint(captured_cid),
@@ -1154,6 +1166,19 @@ class ChunkManager:
                 cm._grad_remaining[captured_cid] = cm._grad_initial.get(captured_cid, 0)
 
         return _hook
+
+    def _mark_cpu_step_ready(
+        self,
+        chunk_id: ChunkId,
+        *,
+        d2h_event: Any = None,
+        post_step: Any = None,
+    ) -> None:
+        self._cpu_step_ready_chunks.add(chunk_id)
+        if d2h_event is not None:
+            self._cpu_step_events[chunk_id] = d2h_event
+        if post_step is not None:
+            self._cpu_step_post_steps[chunk_id] = post_step
 
     def _make_post_cpu_step_repoint(self, chunk_id: ChunkId):
         """Build the after-step callback that repoints ``.data`` back to GPU."""
@@ -1680,7 +1705,9 @@ class ChunkManager:
         # Symmetric with gather()'s _active_chunks.add; deferred path keeps the lease.
         self._active_chunks.discard(chunk_id)
 
-    def reduce_grads_and_offload(self, chunk_id: ChunkId) -> None:
+    def reduce_grads_and_offload(
+        self, chunk_id: ChunkId, *, force: bool = False
+    ) -> None:
         """Reduce-scatter grads and D2H-copy the chunk's grad shard back to CPU."""
         import torch
 
@@ -1697,12 +1724,47 @@ class ChunkManager:
 
         shard_state = self._chunk_shards.get(chunk_id)
         if shard_state is not None:
-            self._reduce_scatter_and_offload_shard(chunk_id, shard_state)
-            self.offload(chunk_id)
+            finalized = self._reduce_scatter_and_offload_shard(
+                chunk_id, shard_state, force=force
+            )
+            if finalized:
+                self.offload(chunk_id)
             return
 
         # Non-persistent replicated: per-param hooks already drained grads; release the buffer.
         self.offload(chunk_id)
+
+    def reduce_grads_and_offload_from_backward(self, chunk_id: ChunkId) -> None:
+        """Finalize a backward block without launching sharded CPU optimizer work."""
+        if chunk_id in self._persistent_ids:
+            return
+
+        if chunk_id in self._chunk_shards:
+            self.offload(chunk_id)
+            return
+
+        self.reduce_grads_and_offload(chunk_id)
+
+    def sync_persistent_grads_for_step(self) -> None:
+        """Synchronize persistent grads not reached by block-owned finalization."""
+        import torch
+
+        if (
+            not self._persistent_ids
+            or self.skip_internal_grad_reduce
+            or not torch.distributed.is_available()
+            or not torch.distributed.is_initialized()
+            or torch.distributed.get_world_size() <= 1
+        ):
+            return
+
+        for cid in sorted(self._persistent_ids):
+            if cid in self._persistent_grads_synced:
+                continue
+            self._coalesced_all_reduce_persistent_grads(cid)
+
+    def reset_optimizer_step_tracking(self) -> None:
+        self._persistent_grads_synced.clear()
 
     def _coalesced_all_reduce_persistent_grads(self, chunk_id: ChunkId) -> None:
         """Bucket persistent-chunk grads by dtype and issue one all_reduce per bucket."""
@@ -1724,6 +1786,7 @@ class ChunkManager:
                 (param.grad, param.grad)  # (input_view, target_for_writeback)
             )
 
+        did_sync = False
         for _dtype, pairs in grads_by_dtype.items():
             if not pairs:
                 continue
@@ -1731,19 +1794,23 @@ class ChunkManager:
             if len(grads) == 1:
                 # Skip flatten/unflatten for a single grad.
                 dist.all_reduce(grads[0], op=dist.ReduceOp.AVG)
+                did_sync = True
                 continue
 
             # Flatten → reduce → copy back into original storage (unflatten aliases the flat buffer).
             flat = _flatten_dense_tensors(grads)
             dist.all_reduce(flat, op=dist.ReduceOp.AVG)
+            did_sync = True
             for orig, view in zip(
                 grads, _unflatten_dense_tensors(flat, grads), strict=True
             ):
                 orig.copy_(view)
+        if did_sync:
+            self._persistent_grads_synced.add(chunk_id)
 
     def _reduce_scatter_and_offload_shard(
-        self, chunk_id: ChunkId, shard_state: "_ChunkShardState"
-    ) -> None:
+        self, chunk_id: ChunkId, shard_state: "_ChunkShardState", *, force: bool = False
+    ) -> bool:
         """Sharded path: reduce_scatter chunk grads, D2H shard, kick CPU Adam."""
         import torch
         import torch.distributed as dist
@@ -1754,7 +1821,10 @@ class ChunkManager:
 
         slots = self._cpu_slots.get(chunk_id, [])
         if not slots:
-            return
+            return False
+
+        if self._grad_remaining.get(chunk_id, 0) > 0 and not force:
+            return False
 
         device = self.device
         any_grad = False
@@ -1765,7 +1835,7 @@ class ChunkManager:
                 any_grad = True
                 break
         if not any_grad:
-            return
+            return False
 
         # current_stream is a syscall; compute once outside the loop.
         on_cuda = device.type == "cuda" and torch.cuda.is_available()
@@ -1777,6 +1847,11 @@ class ChunkManager:
 
         d2h_event = None
         any_trainable_region = False
+        accumulating = chunk_id in self._cpu_step_ready_chunks
+        if accumulating:
+            prev_event = self._cpu_step_events.pop(chunk_id, None)
+            if prev_event is not None:
+                prev_event.synchronize()
         for region in shard_state.regions:
             # Frozen regions have no grad shard; reducing here would let weight-decay mutate frozen bytes.
             if not region.is_trainable:
@@ -1848,15 +1923,22 @@ class ChunkManager:
                 ).view(shard_numel_r)
 
             if my_shard_grad_gpu.is_cuda:
-                region.shard_param.grad.copy_(  # type: ignore[union-attr]
-                    my_shard_grad_gpu, non_blocking=True
-                )
+                if accumulating:
+                    grad_to_add = my_shard_grad_gpu.to(region.shard_param.grad.device)  # type: ignore[union-attr]
+                    region.shard_param.grad.add_(grad_to_add)  # type: ignore[union-attr]
+                else:
+                    region.shard_param.grad.copy_(  # type: ignore[union-attr]
+                        my_shard_grad_gpu, non_blocking=True
+                    )
                 ev = torch.cuda.Event(blocking=True)
                 ev.record()
                 # Last region's event suffices: all D2Hs share the same stream.
                 d2h_event = ev
             else:
-                region.shard_param.grad.copy_(my_shard_grad_gpu)  # type: ignore[union-attr]
+                if accumulating:
+                    region.shard_param.grad.add_(my_shard_grad_gpu)  # type: ignore[union-attr]
+                else:
+                    region.shard_param.grad.copy_(my_shard_grad_gpu)  # type: ignore[union-attr]
 
         # Raise before resetting counter so missing cpu_optim re-fires next backward.
         if any_trainable_region and self.cpu_optim is None:
@@ -1872,9 +1954,9 @@ class ChunkManager:
 
         self._grad_remaining[chunk_id] = self._grad_initial.get(chunk_id, 0)
 
-        # One step_async covers every region's shard_param for this chunk.
         if self.cpu_optim is not None:
-            self.cpu_optim.step_async(chunk_id, d2h_event=d2h_event, post_step=None)
+            self._mark_cpu_step_ready(chunk_id, d2h_event=d2h_event, post_step=None)
+        return True
 
     # ---- optimizer driver ---------------------------------------------
 
@@ -1892,6 +1974,28 @@ class ChunkManager:
     def wait_cpu_optim_all(self) -> None:
         """Alias of :meth:`wait_cpu_optim` for the public optim wrapper."""
         self.wait_cpu_optim()
+
+    def step_ready_cpu_chunks(self) -> None:
+        """Launch CPU Adam once for each chunk finalized since the last optimizer step."""
+        if not self._cpu_step_ready_chunks:
+            return
+        if self.cpu_optim is None:
+            raise RuntimeError(
+                "ChunkManager: missing CPU optimizer for finalized offloaded "
+                "chunk grads; cannot apply the optimizer step."
+            )
+        ready = sorted(self._cpu_step_ready_chunks)
+        self._cpu_step_ready_chunks.clear()
+        for chunk_id in ready:
+            if chunk_id not in self._chunk_shards:
+                self._ensure_cpu_grads_attached(chunk_id)
+            d2h_event = self._cpu_step_events.pop(chunk_id, None)
+            post_step = self._cpu_step_post_steps.pop(chunk_id, None)
+            self.cpu_optim.step_async(
+                chunk_id,
+                d2h_event=d2h_event,
+                post_step=post_step,
+            )
 
     # ---- cleanup -------------------------------------------------------
 
@@ -1962,6 +2066,10 @@ class ChunkManager:
         self._deferred_offloads.clear()
         self._grad_remaining.clear()
         self._grad_initial.clear()
+        self._cpu_step_ready_chunks.clear()
+        self._cpu_step_events.clear()
+        self._cpu_step_post_steps.clear()
+        self._persistent_grads_synced.clear()
         self._chunk_bytes_by_id.clear()
         self._empty_by_dtype.clear()
         self._shape_scratch_by_dtype.clear()
