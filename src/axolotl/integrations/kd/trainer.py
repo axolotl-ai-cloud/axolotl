@@ -94,6 +94,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
 
         inputs["output_hidden_states"] = True
         inputs["return_dict"] = True
+        inputs["logits_to_keep"] = 1
         outputs = model(**inputs)
         hidden_states = getattr(outputs, "hidden_states", None)
         if hidden_states is None:
