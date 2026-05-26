@@ -175,6 +175,15 @@ The demo returns a single JSON payload with:
 - single vs multitask adapter comparison
 - checkpoint listing summary
 
+## Phase 7 status
+
+Implemented now:
+- GitHub Actions workflow at `.github/workflows/mcp-tests.yml`
+
+CI coverage includes:
+- syntax compilation for all MCP servers and the integration demo
+- smoke imports for MCP server modules
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.

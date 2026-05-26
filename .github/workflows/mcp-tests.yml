@@ -1,0 +1,63 @@
+name: MCP Validation
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "mcp_servers/**"
+      - "requirements-dev.txt"
+      - "ENVIRONMENT_SETUP.md"
+      - ".github/workflows/mcp-tests.yml"
+  pull_request:
+    paths:
+      - "mcp_servers/**"
+      - "requirements-dev.txt"
+      - "ENVIRONMENT_SETUP.md"
+      - ".github/workflows/mcp-tests.yml"
+
+jobs:
+  validate-mcp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MCP dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install mcp pydantic
+
+      - name: Syntax compile MCP modules
+        run: |
+          python -m py_compile \
+            mcp_servers/hello_world/server.py \
+            mcp_servers/inference_server/server.py \
+            mcp_servers/training_control/server.py \
+            mcp_servers/debug_assistant/server.py \
+            mcp_servers/dataset_validator/server.py \
+            mcp_servers/checkpoint_browser/server.py \
+            mcp_servers/demo/integration_demo.py
+
+      - name: Smoke import tool modules
+        run: |
+          python - <<'PY'
+          import importlib
+          modules = [
+              "mcp_servers.hello_world.server",
+              "mcp_servers.inference_server.server",
+              "mcp_servers.training_control.server",
+              "mcp_servers.debug_assistant.server",
+              "mcp_servers.dataset_validator.server",
+              "mcp_servers.checkpoint_browser.server",
+          ]
+          for m in modules:
+              importlib.import_module(m)
+          print("MCP module import smoke checks passed")
+          PY
