@@ -1080,11 +1080,11 @@ def _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped) -> None:
     if not non_persistent_ids:
         return
 
-    model = getattr(trainer, "model", None)
-    if model is None:
-        return
-    params = list(model.parameters())
-    if not params or not all(p.requires_grad for p in params):
+    # Full-FT iff no LoRA adapter configured. The requires_grad check is
+    # unreliable after ProTrain wraps the model (chunk scratch / placeholder
+    # params can have requires_grad=False even in full-FT runs).
+    adapter = getattr(cfg, "adapter", None)
+    if adapter is not None and str(adapter).strip() != "":
         return
 
     args = getattr(trainer, "args", None)
