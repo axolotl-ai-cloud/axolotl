@@ -698,6 +698,34 @@ def search(
     if best_cfg is None or best_block_map is None:
         # Disambiguate runtime-rejection vs capacity-rejection failure modes.
         if n_feasible > 0 and n_runtime_rejected == n_feasible:
+            # Detect the cpu_adam=0 sentinel — same condition cost/runtime.py
+            # uses to mark non-persistent configs as infeasible.
+            if hw.cpu_adam_bytes_per_sec <= 0.0:
+                raise RuntimeError(
+                    "no ProTrain config has a finite runtime estimate; "
+                    f"every capacity-feasible config (out of {n_feasible}) "
+                    "was rejected by estimate_runtime.\n"
+                    "Root cause: cpu_adam_bytes_per_sec=0 — CPU Adam "
+                    "unavailable for non-persistent chunks.\n"
+                    "\n"
+                    "To fix on a system where DeepSpeed CPU Adam should be "
+                    "available:\n"
+                    "  1. Install DeepSpeed:   pip install deepspeed\n"
+                    "  2. Allow CUDA mismatch: export DS_SKIP_CUDA_CHECK=1\n"
+                    "  3. Set CUDA_HOME:       export CUDA_HOME=/usr/local/cuda-X.Y\n"
+                    "                          (toolkit version that exists on disk)\n"
+                    "  4. Invalidate stale trace cache: rm -rf ~/.cache/protrain/profiler/\n"
+                    "  5. Retry the run.\n"
+                    "\n"
+                    "If your model fits in GPU memory without offload, you "
+                    "can also use Mode A: set "
+                    "protrain_force_all_persistent: true (and "
+                    "protrain_auto_mode: false) to skip the search "
+                    "entirely. Note: Mode A force_all_persistent is not "
+                    "supported for full-FT under multi-rank DDP (see "
+                    "proposal §16.B1).\n"
+                    f"Evaluated {n_total} configs total."
+                )
             raise RuntimeError(
                 "no ProTrain config has a finite runtime estimate; every "
                 f"capacity-feasible config (out of {n_feasible}) was "

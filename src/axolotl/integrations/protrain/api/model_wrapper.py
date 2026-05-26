@@ -1419,6 +1419,25 @@ def _construct_runtime(
     return chunk_manager, scheduler, list(handles), result
 
 
+def _phase2_quickstart_should_skip(
+    measured_iter_s: float,
+    predicted_iter_s: float,
+    quickstart: bool,
+    envelope: float,
+) -> bool:
+    """Phase-2 re-pick skip predicate (Item 3, opt-in via ``quickstart``).
+
+    Returns True iff ``quickstart`` is True and the measured Phase-1 iter
+    time is within ``envelope`` (fractional) of the cost-model prediction.
+    """
+    if not quickstart:
+        return False
+    if predicted_iter_s <= 0.0 or measured_iter_s <= 0.0:
+        return False
+    rel_err = abs(measured_iter_s - predicted_iter_s) / predicted_iter_s
+    return rel_err < float(envelope)
+
+
 def protrain_model_wrapper(
     model: nn.Module,
     model_config: object,  # noqa: ARG001 — accepted for API symmetry with the plan
@@ -1440,6 +1459,8 @@ def protrain_model_wrapper(
     target_device: "torch.device | str | int | None" = None,
     forbid_activation_offload: bool = False,
     prefer_no_offload_on_non_nvlink: bool = True,
+    phase2_quickstart: bool = False,
+    phase2_quickstart_envelope: float = 0.30,
 ) -> WrappedModel:
     """Compose the ProTrain runtime around a standard ``nn.Module``.
 
@@ -1451,6 +1472,11 @@ def protrain_model_wrapper(
     ``prefer_no_offload_on_non_nvlink``: defensive searcher tie-break;
     auto-prefers ``n_offload=0`` configs within a 5% noise band when the
     hardware profile reports multi-rank without NVLink. See PR #17c.
+
+    ``phase2_quickstart``: opt-in. When True, the Phase-2 re-pick
+    teardown+rebuild is skipped if the measured Phase-1 iter time is
+    within ``phase2_quickstart_envelope`` of the cost-model prediction.
+    Default False preserves the standard re-pick path.
     """
     import torch
 
@@ -2180,140 +2206,167 @@ def protrain_model_wrapper(
                 )
             trace = new_trace
 
-            # Re-run search with phase-2 fields populated; reuse CPU budget (phase-2 only refines runtime).
-            # Use search_hw_profile (permissive) so the CPU gate doesn't drop Mode-C-only candidates.
-            new_result = search(
-                trace,
-                layout,
-                capacity_bytes,
-                search_hw_profile,
-                cpu_capacity_bytes=cpu_capacity_bytes,
-                forbid_activation_offload=forbid_activation_offload,
-                prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
+            # Phase-2 quickstart: opt-in skip of the re-pick teardown+rebuild
+            # when measurement is already within envelope of the prediction.
+            predicted_iter_s_boot = float(boot_result.predicted_iter_s)
+            quickstart_skip = _phase2_quickstart_should_skip(
+                measured_iter_s=phase2_iter_s_val,
+                predicted_iter_s=predicted_iter_s_boot,
+                quickstart=phase2_quickstart,
+                envelope=phase2_quickstart_envelope,
             )
-
-            # Re-pick runtime mode for the post-measurement cfg.
-            mode_changed = False
-            if auto_mode:
-                cpu_ram_re = _cpu_ram_per_rank_bytes(_ws_early)
-                new_force_persistent, new_zero3 = _select_mode(
-                    search_result=new_result,
-                    layout=layout,
-                    hw=search_hw_profile,
-                    world_size=_ws_early,
-                    cpu_ram_per_rank_bytes=cpu_ram_re,
-                    auto_mode=True,
-                    user_force_all_persistent=_user_force_all_persistent,
-                    user_zero3_shard=_user_zero3_shard,
-                )
-                # Mode flip MUST trigger rebuild even when cfg/block_map match — runtime built under old mode.
-                mode_changed = (
-                    new_force_persistent != force_all_persistent
-                    or new_zero3 != zero3_shard
-                )
-                if mode_changed:
-                    LOG.info(
-                        "Phase-2: post-measurement _select_mode changed "
-                        "the runtime mode (force_all_persistent %s -> %s, "
-                        "zero3_shard %s -> %s); rebuilding the runtime.",
-                        force_all_persistent,
-                        new_force_persistent,
-                        zero3_shard,
-                        new_zero3,
-                    )
-                force_all_persistent = new_force_persistent
-                zero3_shard = new_zero3
-                if zero3_shard != hardware_profile.zero3_shard:
-                    hardware_profile = _replace(
-                        hardware_profile, zero3_shard=bool(zero3_shard)
-                    )
-            # Compare against raw boot_cfg for symmetry / robustness against future calibration knobs.
-            cfg_changed = (
-                new_result.cfg != boot_cfg
-                or new_result.block_map != boot_block_map
-                or mode_changed
-            )
-            if not cfg_changed:
-                calibrated_peak = _calibrate_peak_with_actual_chunk_bytes(
-                    original_peak=new_result.predicted_peak_bytes,
-                    layout=layout,
-                    chunk_manager=chunk_manager,
-                    cfg=new_result.cfg,
-                    trace=trace,
-                    block_map=new_result.block_map,
-                    hw=hardware_profile,
-                )
-                # Reuse bootstrap-time init transient — post-offload _chunk_bytes sees placeholders.
-                init_transient_peak = boot_result.predicted_init_transient_peak_bytes
-                if (
-                    calibrated_peak != new_result.predicted_peak_bytes
-                    or init_transient_peak
-                    != new_result.predicted_init_transient_peak_bytes
-                ):
-                    new_result = SearchResult(
-                        cfg=CostConfig(
-                            n_persist=new_result.cfg.n_persist,
-                            n_buffer=new_result.cfg.n_buffer,
-                            n_swap=new_result.cfg.n_swap,
-                            n_checkpoint=new_result.cfg.n_checkpoint,
-                            n_offload=new_result.cfg.n_offload,
-                        ),
-                        block_map=new_result.block_map,
-                        predicted_peak_bytes=calibrated_peak,
-                        predicted_iter_s=new_result.predicted_iter_s,
-                        predicted_init_transient_peak_bytes=init_transient_peak,
-                    )
+            if quickstart_skip:
                 LOG.info(
-                    "Phase-2: post-measurement search picked the same cfg "
-                    "(predicted_iter_s %.4f -> %.4f); keeping bootstrap "
-                    "runtime in place.",
-                    boot_result.predicted_iter_s,
-                    new_result.predicted_iter_s,
+                    "Phase-2 re-pick skipped (quickstart=true): Phase-1 "
+                    "iter %.3fs within %.0f%% of predicted %.3fs; "
+                    "continuing with Phase-1 config (set "
+                    "protrain_phase2_quickstart: false to force standard "
+                    "re-pick).",
+                    phase2_iter_s_val,
+                    float(phase2_quickstart_envelope) * 100.0,
+                    predicted_iter_s_boot,
                 )
-                result = new_result
+                result = boot_result
                 wrapped = boot_wrapped
                 wrapped.search_result = result
-            else:
-                LOG.info(
-                    "Phase-2: post-measurement search picked a different "
-                    "cfg (%s -> %s); tearing down bootstrap runtime and "
-                    "rebuilding under the new pick.",
-                    boot_result.cfg,
-                    new_result.cfg,
+
+            if not quickstart_skip:
+                # Re-run search with phase-2 fields populated; reuse CPU budget (phase-2 only refines runtime).
+                # Use search_hw_profile (permissive) so the CPU gate doesn't drop Mode-C-only candidates.
+                new_result = search(
+                    trace,
+                    layout,
+                    capacity_bytes,
+                    search_hw_profile,
+                    cpu_capacity_bytes=cpu_capacity_bytes,
+                    forbid_activation_offload=forbid_activation_offload,
+                    prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
                 )
-                # Unwrap blocks so rebuild's _build_block_spans sees param names matching layout.chunks.
-                for h in handles:
-                    try:
-                        h.remove()  # type: ignore[attr-defined]
-                    except Exception as exc:  # noqa: BLE001 — best-effort
-                        LOG.debug(
-                            "phase-2 teardown: hook handle remove failed: %s",
-                            exc,
+
+                # Re-pick runtime mode for the post-measurement cfg.
+                mode_changed = False
+                if auto_mode:
+                    cpu_ram_re = _cpu_ram_per_rank_bytes(_ws_early)
+                    new_force_persistent, new_zero3 = _select_mode(
+                        search_result=new_result,
+                        layout=layout,
+                        hw=search_hw_profile,
+                        world_size=_ws_early,
+                        cpu_ram_per_rank_bytes=cpu_ram_re,
+                        auto_mode=True,
+                        user_force_all_persistent=_user_force_all_persistent,
+                        user_zero3_shard=_user_zero3_shard,
+                    )
+                    # Mode flip MUST trigger rebuild even when cfg/block_map match — runtime built under old mode.
+                    mode_changed = (
+                        new_force_persistent != force_all_persistent
+                        or new_zero3 != zero3_shard
+                    )
+                    if mode_changed:
+                        LOG.info(
+                            "Phase-2: post-measurement _select_mode changed "
+                            "the runtime mode (force_all_persistent %s -> %s, "
+                            "zero3_shard %s -> %s); rebuilding the runtime.",
+                            force_all_persistent,
+                            new_force_persistent,
+                            zero3_shard,
+                            new_zero3,
                         )
-                block_parent_map_unwrap = _find_block_parent_map(model, blocks)
-                for idx, block in enumerate(blocks):
-                    unwrapped = unwrap_block(block)
-                    if unwrapped is not block:
-                        parent = block_parent_map_unwrap.get(id(block))
-                        if parent is not None:
-                            for slot, child in enumerate(parent):
-                                if child is block:
-                                    parent[slot] = unwrapped
-                                    break
-                        blocks[idx] = unwrapped
-                chunk_manager.restore_to_gpu()
-                del boot_wrapped, boot_optim, chunk_manager, scheduler, handles
-                chunk_manager, scheduler, handles, result = _construct_runtime(
-                    model=model,
-                    blocks=blocks,
-                    layout=layout,
-                    result=new_result,
-                    hardware_profile=hardware_profile,
-                    capacity_bytes=capacity_bytes,
-                    trace=trace,
-                    zero3_shard=zero3_shard,
-                    device=device,
+                    force_all_persistent = new_force_persistent
+                    zero3_shard = new_zero3
+                    if zero3_shard != hardware_profile.zero3_shard:
+                        hardware_profile = _replace(
+                            hardware_profile, zero3_shard=bool(zero3_shard)
+                        )
+                # Compare against raw boot_cfg for symmetry / robustness against future calibration knobs.
+                cfg_changed = (
+                    new_result.cfg != boot_cfg
+                    or new_result.block_map != boot_block_map
+                    or mode_changed
                 )
+                if not cfg_changed:
+                    calibrated_peak = _calibrate_peak_with_actual_chunk_bytes(
+                        original_peak=new_result.predicted_peak_bytes,
+                        layout=layout,
+                        chunk_manager=chunk_manager,
+                        cfg=new_result.cfg,
+                        trace=trace,
+                        block_map=new_result.block_map,
+                        hw=hardware_profile,
+                    )
+                    # Reuse bootstrap-time init transient — post-offload _chunk_bytes sees placeholders.
+                    init_transient_peak = (
+                        boot_result.predicted_init_transient_peak_bytes
+                    )
+                    if (
+                        calibrated_peak != new_result.predicted_peak_bytes
+                        or init_transient_peak
+                        != new_result.predicted_init_transient_peak_bytes
+                    ):
+                        new_result = SearchResult(
+                            cfg=CostConfig(
+                                n_persist=new_result.cfg.n_persist,
+                                n_buffer=new_result.cfg.n_buffer,
+                                n_swap=new_result.cfg.n_swap,
+                                n_checkpoint=new_result.cfg.n_checkpoint,
+                                n_offload=new_result.cfg.n_offload,
+                            ),
+                            block_map=new_result.block_map,
+                            predicted_peak_bytes=calibrated_peak,
+                            predicted_iter_s=new_result.predicted_iter_s,
+                            predicted_init_transient_peak_bytes=init_transient_peak,
+                        )
+                    LOG.info(
+                        "Phase-2: post-measurement search picked the same cfg "
+                        "(predicted_iter_s %.4f -> %.4f); keeping bootstrap "
+                        "runtime in place.",
+                        boot_result.predicted_iter_s,
+                        new_result.predicted_iter_s,
+                    )
+                    result = new_result
+                    wrapped = boot_wrapped
+                    wrapped.search_result = result
+                else:
+                    LOG.info(
+                        "Phase-2: post-measurement search picked a different "
+                        "cfg (%s -> %s); tearing down bootstrap runtime and "
+                        "rebuilding under the new pick.",
+                        boot_result.cfg,
+                        new_result.cfg,
+                    )
+                    # Unwrap blocks so rebuild's _build_block_spans sees param names matching layout.chunks.
+                    for h in handles:
+                        try:
+                            h.remove()  # type: ignore[attr-defined]
+                        except Exception as exc:  # noqa: BLE001 — best-effort
+                            LOG.debug(
+                                "phase-2 teardown: hook handle remove failed: %s",
+                                exc,
+                            )
+                    block_parent_map_unwrap = _find_block_parent_map(model, blocks)
+                    for idx, block in enumerate(blocks):
+                        unwrapped = unwrap_block(block)
+                        if unwrapped is not block:
+                            parent = block_parent_map_unwrap.get(id(block))
+                            if parent is not None:
+                                for slot, child in enumerate(parent):
+                                    if child is block:
+                                        parent[slot] = unwrapped
+                                        break
+                            blocks[idx] = unwrapped
+                    chunk_manager.restore_to_gpu()
+                    del boot_wrapped, boot_optim, chunk_manager, scheduler, handles
+                    chunk_manager, scheduler, handles, result = _construct_runtime(
+                        model=model,
+                        blocks=blocks,
+                        layout=layout,
+                        result=new_result,
+                        hardware_profile=hardware_profile,
+                        capacity_bytes=capacity_bytes,
+                        trace=trace,
+                        zero3_shard=zero3_shard,
+                        device=device,
+                    )
     else:
         chunk_manager, scheduler, handles, result = _construct_runtime(
             model=model,

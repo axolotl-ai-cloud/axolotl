@@ -429,6 +429,37 @@ class ProTrainArgs(BaseModel):
         },
     )
 
+    protrain_phase2_quickstart: bool | None = Field(
+        default=False,
+        json_schema_extra={
+            "description": (
+                "When True, skip the Phase-2 re-pick teardown+rebuild if "
+                "Phase-1 measured iter time is within "
+                "`protrain_phase2_quickstart_envelope` (default 30%) of the "
+                "cost-model prediction. Trades a small amount of cost-model "
+                "fidelity for ~7 min of wallclock on large models. Disabled "
+                "by default: the standard Phase-1 -> Phase-2 re-pick path is "
+                "preserved for users who want the model fully re-calibrated "
+                "from Phase-1 measurements. Recommended ON for >9B-class "
+                "runs on NVLink hardware where the teardown wallclock "
+                "dominates the gain from re-picking."
+            )
+        },
+    )
+
+    protrain_phase2_quickstart_envelope: float | None = Field(
+        default=0.30,
+        json_schema_extra={
+            "description": (
+                "Noise envelope for `protrain_phase2_quickstart`: when "
+                "abs(phase1_iter_s - predicted_iter_s) / predicted_iter_s "
+                "< envelope, Phase-1 pick is kept and the Phase-2 re-pick "
+                "is skipped. Default 0.30 (30%). Has no effect unless "
+                "`protrain_phase2_quickstart: true`."
+            )
+        },
+    )
+
     protrain_own_lora_grad_sync: bool | None = Field(
         default=None,
         json_schema_extra={
