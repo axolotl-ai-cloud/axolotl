@@ -96,12 +96,15 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         self._forward_hyperparams_to_inner_optims()
 
         cm = self._chunk_manager
+        self._launch_ready_cpu_chunks()
+
         # Sharded path: sweep orphan non-persistent chunks (lm_head/embed) that no block-backward hook reached.
         if getattr(cm, "zero3_shard", False):
             non_persist = getattr(cm, "_non_persistent_ids", None)
             if non_persist:
                 for cid in list(non_persist):
                     cm.reduce_grads_and_offload(cid, force=True)
+                    self._launch_ready_cpu_chunks()
 
         # Path B: flattened all-reduce of LoRA adapter grads BEFORE inner step.
         # DDP is told to ignore these param names (see plugin.post_trainer_create),
@@ -115,9 +118,6 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # the shard the matching slice of the gradient.
         self._route_huge_grads_to_shards()
 
-        step_ready = getattr(self._chunk_manager, "step_ready_cpu_chunks", None)
-        if step_ready is not None:
-            step_ready()
         if self._gpu_optim is not None:
             self._gpu_optim.step()
         # Broadcast each owner's persistent-param update to peers before next forward.
@@ -134,6 +134,15 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         if reset_step_tracking is not None:
             reset_step_tracking()
         return loss
+
+    def _launch_ready_cpu_chunks(self) -> None:
+        step_ready = getattr(self._chunk_manager, "step_ready_cpu_chunks", None)
+        if step_ready is None:
+            return
+        ready = getattr(self._chunk_manager, "_cpu_step_ready_chunks", None)
+        if ready is not None and not ready:
+            return
+        step_ready()
 
     def _sync_lora_grads_path_b(self) -> None:
         """Flattened all_reduce(AVG) of trainable LoRA adapter grads, grouped by dtype.

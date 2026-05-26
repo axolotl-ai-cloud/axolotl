@@ -1826,12 +1826,11 @@ def test_phase2_override_translates_n_persist_via_pcie_roundtrip():
     # ---- Invariant 1: at n_persist=0 the correction must be zero. ----
     cfg_zero = CostConfig(n_persist=0, n_buffer=0, n_swap=0, n_checkpoint=0)
     t_zero = estimate_runtime(cfg_zero, trace, layout, bm, hw)
-    # No optimizer / no recompute (per_block_recompute_s=0), so t_iter
-    # = t_fwd + t_bwd = chunked_fwd + chunked_bwd. The buffer-cache
-    # delta at (0, 0) vs bootstrap (0, 0) is also zero, so no other
-    # corrections apply.
+    # Near-zero optimizer / no recompute (per_block_recompute_s=0), so t_iter
+    # is effectively t_fwd + t_bwd. The buffer-cache delta at (0, 0) vs
+    # bootstrap (0, 0) is also zero, so no other corrections apply.
     expected_zero = chunked_fwd + chunked_bwd
-    assert t_zero == pytest.approx(expected_zero, abs=1e-9), (
+    assert t_zero == pytest.approx(expected_zero, abs=1e-8), (
         f"n_persist=0 (== bootstrap pin) must yield t_iter == bootstrap walls "
         f"(no n_persist correction); got t_iter={t_zero:.6f}, "
         f"expected {expected_zero:.6f}"
@@ -3559,7 +3558,7 @@ def test_alpha_residual_compensates_for_unmodeled_overhead():
     # so the per-component composition's boot prediction equals the
     # analytical lumped iter (no per-component-bias correction).
     boot_per_comp_pred = (
-        boot_t_fwd + boot_t_bwd + boot_t_gpu + max(0.0, boot_t_cpu - boot_t_bwd)
+        boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
     )
     # Stage measured phase-2 iter at 2.0 × per-component prediction
     # — the missing whole-iter overhead the residual α must absorb.
@@ -3654,7 +3653,7 @@ def test_alpha_residual_no_op_when_per_component_explains_boot():
     boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
 
     boot_per_comp_pred = (
-        boot_t_fwd + boot_t_bwd + boot_t_gpu + max(0.0, boot_t_cpu - boot_t_bwd)
+        boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
     )
     # Measured iter == per-component prediction → residual α = 1.0.
     measured_iter = boot_per_comp_pred

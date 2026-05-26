@@ -39,4 +39,4 @@ _PROTRAIN_TORCH_COMPILE_COMPAT = 1
 # Profiler trace schema version. Bumped on any schema change to
 # ProfilerTrace; old payloads are then ignored. Originally lived in
 # profiler/cache.py.
-TRACE_VERSION = 23
+TRACE_VERSION = 24

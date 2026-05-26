@@ -35,6 +35,7 @@ class _FakeChunkManager:
         self._persistent_ids: list[Any] = []
         self.rank = 0
         self.world_size = 1
+        self._cpu_step_ready_chunks: set[Any] = set()
         self.reduce_grads_and_offload_calls: list[tuple[Any, bool]] = []
         self.step_ready_cpu_chunks_calls = 0
         self.wait_cpu_optim_all_calls = 0
@@ -43,9 +44,12 @@ class _FakeChunkManager:
 
     def reduce_grads_and_offload(self, chunk_id: Any, *, force: bool = False) -> None:
         self.reduce_grads_and_offload_calls.append((chunk_id, force))
+        if force:
+            self._cpu_step_ready_chunks.add(chunk_id)
 
     def step_ready_cpu_chunks(self) -> None:
         self.step_ready_cpu_chunks_calls += 1
+        self._cpu_step_ready_chunks.clear()
 
     def wait_cpu_optim_all(self) -> None:
         self.wait_cpu_optim_all_calls += 1
@@ -106,7 +110,7 @@ def test_step_sweeps_mode_c_nonpersistent_chunks_with_force() -> None:
     optim.step()
 
     assert mgr.reduce_grads_and_offload_calls == [(7, True), (9, True)]
-    assert mgr.step_ready_cpu_chunks_calls == 1
+    assert mgr.step_ready_cpu_chunks_calls == 2
 
 
 def test_step_syncs_persistent_grads_before_gpu_step() -> None:
@@ -146,10 +150,9 @@ def test_step_syncs_persistent_grads_before_gpu_step() -> None:
 
     optim.step()
 
-    assert call_order[:4] == [
+    assert call_order[:3] == [
         "reduce:3:force=False",
         "reduce:5:force=False",
-        "step_ready_cpu",
         "gpu_step",
     ]
 

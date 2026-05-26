@@ -429,7 +429,8 @@ def _compose_t_iter_with_alpha_calibration(
         t_bwd_cal = a_bwd_eff * t_bwd
         t_gpu_cal = a_opt * t_gpu_optim
         t_cpu_cal = a_opt * t_cpu_optim
-        t_iter = t_fwd_cal + t_bwd_cal + t_gpu_cal + max(0.0, t_cpu_cal - t_bwd_cal)
+        t_step_cal = max(t_gpu_cal, t_cpu_cal)
+        t_iter = t_fwd_cal + t_bwd_cal + t_step_cal
 
         # Residual α absorbs whole-iter overhead the per-component baselines don't model.
         anchor = float(getattr(trace, "phase2_per_comp_pred_iter_s", 0.0))
@@ -447,6 +448,7 @@ def _compose_t_iter_with_alpha_calibration(
                 "(shape_matches=%s, αfwd=%.3f αbwd=%.3f αopt=%.3f, "
                 "α_residual=%.3f, fwd_override=%s bwd_override=%s, "
                 "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
+                "t_step=%.4fs "
                 "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
                 shape_matches,
                 a_fwd,
@@ -459,12 +461,13 @@ def _compose_t_iter_with_alpha_calibration(
                 t_bwd_cal,
                 t_gpu_cal,
                 t_cpu_cal,
+                t_step_cal,
                 t_iter_pre_residual,
                 t_iter,
             )
         return t_iter
     # Single-α legacy fallback for in-memory traces without per-component fields.
-    t_iter = t_fwd + t_bwd + t_gpu_optim + max(0.0, t_cpu_optim - t_bwd)
+    t_iter = t_fwd + t_bwd + max(t_gpu_optim, t_cpu_optim)
     used_analytical_path = (not fwd_used_phase2_override) or (
         not bwd_used_phase2_override
     )
@@ -937,7 +940,8 @@ def _estimate_runtime_components(
         t_cpu_optim = n_nonpersist * (ms_per_chunk / cpu_shard_divisor) / cpu_adam_bps
 
     # n_persist corrections live inline in the fwd/bwd override branches above.
-    # T_iter = T_fwd + T_bwd + T_gpu_optim + max(0, T_cpu_optim - T_bwd) — serialised model.
+    # CPU/GPU optimizers are step-boundary work now; they may overlap each other,
+    # but not the already-finished backward pass.
     if LOG.isEnabledFor(logging.DEBUG):
         LOG.debug(
             "estimate_runtime_components: cfg=%s t_fwd=%.4fs t_bwd=%.4fs "
