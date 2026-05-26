@@ -275,6 +275,24 @@ def _trace_from_dict(data: dict[str, Any]) -> ProfilerTrace:
     )
 
 
+def _deepspeed_cpu_adam_importable() -> bool:
+    """One-shot import probe for DeepSpeedCPUAdam (no compile/construct)."""
+    try:
+        from deepspeed.ops.adam import (  # noqa: F401  (probe only)
+            DeepSpeedCPUAdam,  # type: ignore[import-not-found]
+        )
+    except Exception:  # noqa: BLE001 - import OR side-effect failure both mean unavailable
+        return False
+    return True
+
+
+# At-most-once-per-process per cache file: an import-succeeds /
+# construct-fails environment (e.g. installed CUDA mismatches torch's) writes
+# back 0.0 every re-trace; without this guard the load path would invalidate
+# the freshly-written cache on its next read, spinning the trace forever.
+_CPU_ADAM_INVALIDATED_PATHS: set[Path] = set()
+
+
 def load_cached_trace(
     key: ProfilerCacheKey,
     cache_dir: str | os.PathLike[str] | None = None,
@@ -303,6 +321,34 @@ def load_cached_trace(
             data.get("trace_version"),
             TRACE_VERSION,
         )
+        return None
+    # Cached cpu_adam_bytes_per_sec=0 means an earlier run couldn't import
+    # DeepSpeedCPUAdam (missing install / compile failure). If DS is importable
+    # now, the cached 0 will silently make the cost model reject every Mode C
+    # config; force a re-trace instead. Skip if we've already invalidated this
+    # path in the current process — handles the import-OK / construct-fails
+    # environment that would otherwise spin the trace every load.
+    cached_cpu_adam_bps = float(data.get("cpu_adam_bytes_per_sec", 0.0) or 0.0)
+    if (
+        cached_cpu_adam_bps == 0.0
+        and path not in _CPU_ADAM_INVALIDATED_PATHS
+        and _deepspeed_cpu_adam_importable()
+    ):
+        LOG.warning(
+            "ProTrain profiler cache invalidation: cached "
+            "cpu_adam_bytes_per_sec=0 but DeepSpeedCPUAdam now imports "
+            "successfully; re-running trace to populate accurate measurement."
+        )
+        _CPU_ADAM_INVALIDATED_PATHS.add(path)
+        try:
+            path.unlink()
+        except OSError as exc:
+            LOG.warning(
+                "profiler cache invalidation: failed to delete %s (%s); "
+                "treating as miss anyway.",
+                path,
+                exc,
+            )
         return None
     # Defense-in-depth identity check against stale-scheme files / hash collisions.
     payload_identity = (
@@ -344,6 +390,14 @@ def save_cached_trace(
     root = _cache_root(cache_dir)
     root.mkdir(parents=True, exist_ok=True)
     path = _path_for(key, cache_dir)
+    # Cross-talk with load-side stale-zero invalidation: a non-zero save resets
+    # the gate so any future regression to 0 can be invalidated again; a save
+    # of 0.0 means we already tried and failed in this process — pin the gate
+    # so the next load doesn't re-invalidate the freshly-written cache.
+    if float(getattr(trace, "cpu_adam_bytes_per_sec", 0.0) or 0.0) > 0.0:
+        _CPU_ADAM_INVALIDATED_PATHS.discard(path)
+    else:
+        _CPU_ADAM_INVALIDATED_PATHS.add(path)
     data = _trace_to_dict(trace)
     # Per-rank unique temp so concurrent writes don't clobber; os.replace is atomic.
     fd, tmp_name = tempfile.mkstemp(

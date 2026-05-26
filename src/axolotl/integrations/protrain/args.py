@@ -508,11 +508,12 @@ class ProTrainArgs(BaseModel):
             )
         if data.get("gradient_checkpointing"):
             raise ValueError(
-                "ProTrain is incompatible with gradient_checkpointing=true "
-                "(ProTrain installs its own activation checkpointing per the M3 "
-                "block manager; HuggingFace's gradient_checkpointing on top "
-                "would double-checkpoint the forward pass). Set "
-                "gradient_checkpointing=false or remove the ProTrain plugin."
+                "gradient_checkpointing: true is incompatible with the "
+                "ProTrain plugin. ProTrain owns activation checkpointing via "
+                "the M3 block manager's n_checkpoint axis (see proposal §3.6 "
+                "and DESIGN.md). Remove gradient_checkpointing from your "
+                "config — it's managed automatically by the searcher / mode "
+                "selector."
             )
         tp_size = data.get("tensor_parallel_size")
         if tp_size is not None:

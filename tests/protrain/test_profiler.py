@@ -114,8 +114,13 @@ def test_reconstruct_peak_within_10pct_tiny_gpt2(gpu_device):
     )
 
 
-def _minimal_trace() -> ProfilerTrace:
-    """Build a tiny valid ProfilerTrace for cache round-trip testing."""
+def _minimal_trace(cpu_adam_bytes_per_sec: float = 1.0e9) -> ProfilerTrace:
+    """Build a tiny valid ProfilerTrace for cache round-trip testing.
+
+    ``cpu_adam_bytes_per_sec`` defaults to a non-zero placeholder so the
+    cache-load path's "stale 0.0" invalidation doesn't trip on round-trip
+    tests; pass 0.0 explicitly to exercise that invalidation.
+    """
     op = OpRecord(
         op_id=OpId(0),
         module_path="root.layer0",
@@ -139,6 +144,7 @@ def _minimal_trace() -> ProfilerTrace:
         seq=128,
         sku="NVIDIA GeForce RTX 3090",
         world=1,
+        cpu_adam_bytes_per_sec=cpu_adam_bytes_per_sec,
     )
 
 
@@ -227,6 +233,8 @@ def test_cache_roundtrip_preserves_bwd_peak_fields(tmp_path, monkeypatch):
         # Backward-side measurements — NEW in v19
         steady_bwd_peak_bytes=12 * (1 << 20),
         steady_bwd_block_peak_bytes={BlockId(0): 10 * (1 << 20)},
+        # Non-zero so the stale-zero invalidation doesn't trip on round-trip.
+        cpu_adam_bytes_per_sec=1.0e9,
     )
     save_cached_trace(key, trace)
     loaded = load_cached_trace(key)
@@ -235,6 +243,108 @@ def test_cache_roundtrip_preserves_bwd_peak_fields(tmp_path, monkeypatch):
     assert loaded.steady_bwd_block_peak_bytes == trace.steady_bwd_block_peak_bytes
     # Full equality also covers backward compat with the rest of the schema.
     assert loaded == trace
+
+
+def test_cache_invalidates_stale_zero_cpu_adam_when_deepspeed_now_imports(
+    tmp_path, monkeypatch
+):
+    """Cached cpu_adam_bytes_per_sec=0 + DS now importable => cache miss + file deleted.
+
+    Regression for the silent-failure path: if the first run was missing
+    DeepSpeed, the cached trace pins cpu_adam_bytes_per_sec=0.0, and every
+    subsequent Mode C config gets rejected as infeasible by the cost model.
+    The load path must detect this and force a re-trace.
+    """
+    from axolotl.integrations.protrain.profiler import cache as cache_mod
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    # Explicit 0.0 mirrors a trace captured when DeepSpeedCPUAdam was missing.
+    trace = _minimal_trace(cpu_adam_bytes_per_sec=0.0)
+    assert trace.cpu_adam_bytes_per_sec == 0.0
+    # Identity must match the trace fields — cache.py rejects mismatches early.
+    key = ProfilerCacheKey(
+        arch_hash=trace.arch_hash,
+        bs=trace.bs,
+        seq=trace.seq,
+        sku=trace.sku,
+        world=trace.world,
+    )
+    path = save_cached_trace(key, trace)
+    assert path.exists()
+
+    # Simulate a fresh process: the 0.0 file was written in a prior session,
+    # so the once-per-process gate is empty when this process starts loading.
+    monkeypatch.setattr(cache_mod, "_CPU_ADAM_INVALIDATED_PATHS", set())
+    # Force the probe to report DeepSpeedCPUAdam as importable; in the bug
+    # scenario the user has just installed deepspeed and the cache is stale.
+    monkeypatch.setattr(cache_mod, "_deepspeed_cpu_adam_importable", lambda: True)
+
+    loaded = load_cached_trace(key)
+    assert loaded is None, "stale cpu_adam_bytes_per_sec=0 must be treated as miss"
+    assert not path.exists(), "invalidated cache file must be deleted on miss"
+
+
+def test_cache_keeps_stale_zero_cpu_adam_when_deepspeed_still_missing(
+    tmp_path, monkeypatch
+):
+    """If DS is still unavailable, the 0.0 cache stays — re-tracing would just write 0 again."""
+    from axolotl.integrations.protrain.profiler import cache as cache_mod
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    trace = _minimal_trace(cpu_adam_bytes_per_sec=0.0)
+    key = ProfilerCacheKey(
+        arch_hash=trace.arch_hash,
+        bs=trace.bs,
+        seq=trace.seq,
+        sku=trace.sku,
+        world=trace.world,
+    )
+    path = save_cached_trace(key, trace)
+
+    monkeypatch.setattr(cache_mod, "_CPU_ADAM_INVALIDATED_PATHS", set())
+    monkeypatch.setattr(cache_mod, "_deepspeed_cpu_adam_importable", lambda: False)
+
+    loaded = load_cached_trace(key)
+    assert loaded is not None, "cache hit expected when DS is still unavailable"
+    assert path.exists()
+
+
+def test_cache_invalidation_is_once_per_process(tmp_path, monkeypatch):
+    """Import-OK / construct-fails envs would loop forever without a guard.
+
+    The wrapper writes 0.0 again on every re-trace when DeepSpeedCPUAdam
+    imports but its constructor fails (CUDA mismatch). Without a
+    once-per-process gate, the next ``load_cached_trace`` would invalidate
+    the freshly-saved cache and force yet another trace — infinite loop.
+    """
+    from axolotl.integrations.protrain.profiler import cache as cache_mod
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    trace = _minimal_trace(cpu_adam_bytes_per_sec=0.0)
+    key = ProfilerCacheKey(
+        arch_hash=trace.arch_hash,
+        bs=trace.bs,
+        seq=trace.seq,
+        sku=trace.sku,
+        world=trace.world,
+    )
+    save_cached_trace(key, trace)
+    # Simulate the gate being empty as if the 0.0 cache was written in a prior
+    # process and the current process has not yet attempted invalidation.
+    monkeypatch.setattr(cache_mod, "_CPU_ADAM_INVALIDATED_PATHS", set())
+    monkeypatch.setattr(cache_mod, "_deepspeed_cpu_adam_importable", lambda: True)
+
+    # First load: invalidates and re-traces.
+    assert load_cached_trace(key) is None
+
+    # Simulate the wrapper re-saving 0.0 (constructor still fails on this host).
+    save_cached_trace(key, trace)
+
+    # Second load must NOT invalidate again — it would spin forever in production.
+    loaded = load_cached_trace(key)
+    assert loaded is not None, (
+        "stale-zero cache must not be invalidated twice in the same process"
+    )
 
 
 @pytest.mark.gpu

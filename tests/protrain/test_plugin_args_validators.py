@@ -86,8 +86,9 @@ def test_mutex_rejects_gradient_checkpointing() -> None:
         ProTrainArgs.model_validate(cfg)
     msg = str(exc.value)
     assert "gradient_checkpointing" in msg
-    # Must be actionable: tell the user how to resolve it.
-    assert "false" in msg or "False" in msg
+    # Must point users at the axis ProTrain manages instead.
+    assert "ProTrain owns activation checkpointing" in msg
+    assert "n_checkpoint" in msg
 
 
 def test_mutex_allows_gradient_checkpointing_false() -> None:

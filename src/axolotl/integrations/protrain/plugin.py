@@ -952,6 +952,45 @@ def _is_plugin_active(cfg) -> bool:
     return _has_protrain_plugin(plugins)
 
 
+def _guard_force_all_persistent_full_ft_ddp(cfg, trainer) -> None:
+    """Reject Mode A force_all_persistent + full-FT under multi-rank DDP.
+
+    Mode A's chunk-wrapper hooks register per-param autograd hooks that
+    conflict with DDP's reducer when every parameter is trainable, surfacing
+    later as "parameters which did not receive grad" deep in the backward
+    pass. Fail loudly at setup instead of silently producing garbage gradients.
+    """
+    if not bool(getattr(cfg, "protrain_force_all_persistent", False)):
+        return
+
+    try:
+        world_size = int(_resolve_world_size_from_env())
+    except (TypeError, ValueError):
+        world_size = 1
+    if world_size <= 1:
+        return
+
+    model = getattr(trainer, "model", None)
+    if model is None:
+        return
+
+    params = list(model.parameters())
+    if not params:
+        return
+    if not all(p.requires_grad for p in params):
+        return
+
+    raise RuntimeError(
+        "ProTrain Mode A `protrain_force_all_persistent: true` is not supported "
+        "for full finetune (all params trainable) under multi-rank DDP. The "
+        "chunk-wrapper hooks conflict with DDP's autograd reducer and surface "
+        'as "parameters which did not receive grad" errors. Use '
+        "`protrain_zero3_shard: true` (Mode C) for full-FT, or run single-GPU. "
+        "LoRA / QLoRA workloads are not affected — only full-FT triggers the "
+        "conflict."
+    )
+
+
 def _build_hardware_profile(cfg):
     """Construct a HardwareProfile with cfg-driven zero3_shard auto-detect."""
     from axolotl.integrations.protrain.api.hardware import _resolve_world_size
@@ -1166,6 +1205,19 @@ class ProTrainPlugin(BasePlugin):
             else bool(prefer_no_offload_on_non_nvlink_raw)
         )
 
+        phase2_quickstart_raw = getattr(cfg, "protrain_phase2_quickstart", False)
+        phase2_quickstart = (
+            False if phase2_quickstart_raw is None else bool(phase2_quickstart_raw)
+        )
+        phase2_quickstart_envelope_raw = getattr(
+            cfg, "protrain_phase2_quickstart_envelope", 0.30
+        )
+        phase2_quickstart_envelope = (
+            0.30
+            if phase2_quickstart_envelope_raw is None
+            else float(phase2_quickstart_envelope_raw)
+        )
+
         wrapped = protrain_model_wrapper(
             model,
             model_config=getattr(model, "config", None),
@@ -1186,6 +1238,8 @@ class ProTrainPlugin(BasePlugin):
             target_device=target_device,
             forbid_activation_offload=forbid_activation_offload,
             prefer_no_offload_on_non_nvlink=prefer_no_offload_on_non_nvlink,
+            phase2_quickstart=phase2_quickstart,
+            phase2_quickstart_envelope=phase2_quickstart_envelope,
         )
 
         cfg._protrain_wrapped = wrapped  # type: ignore[attr-defined]
@@ -1293,6 +1347,8 @@ class ProTrainPlugin(BasePlugin):
                 "optimizer."
             )
             return
+
+        _guard_force_all_persistent_full_ft_ddp(cfg, trainer)
 
         # Unlock Mode C on multi-rank non-NVLink rigs: must run before the
         # _inner_training_loop call to accelerator.prepare(self.model) wraps DDP.
