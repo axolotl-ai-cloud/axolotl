@@ -548,7 +548,7 @@ def cleanup_monkeypatches():
     Trainer.training_step = original_trainer_training_step
 
     # Reset other known monkeypatches
-    modules_to_reset: list[tuple[str, list[str]]] = [
+    modules_to_reset: list[tuple[str] | tuple[str, list[str]]] = [
         ("transformers.models.llama",),
         (
             "transformers.models.llama.modeling_llama",
@@ -679,7 +679,6 @@ def test_load_fixtures(
     download_llama3_8b_model_fixture,
     download_llama3_8b_instruct_model_fixture,
     download_phi_35_mini_model_fixture,
-    download_phi_3_medium_model_fixture,
     download_phi_4_reasoning_model_fixture,
     download_mistral_7b_model_fixture,
     download_gemma_2b_model_fixture,
