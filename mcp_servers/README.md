@@ -130,6 +130,29 @@ From repo root:
 ./axo-env/Scripts/python.exe -m mcp_servers.dataset_validator.server
 ```
 
+## Phase 5 status
+
+Implemented now:
+- checkpoint browser MCP server tools:
+	- `list_model_checkpoints`
+	- `checkpoint_metadata`
+	- `compare_model_checkpoints`
+	- `export_checkpoint_artifacts`
+
+Checkpoint browser notes:
+- Discovers checkpoint folders under `outputs/bethpage-lora` by default.
+- Metadata includes LoRA config fields when `adapter_config.json` is present.
+- Exports are written under `outputs/bethpage-lora/exports`.
+- ONNX export currently copies existing `.onnx` artifacts; it does not convert checkpoints automatically.
+
+## Run the checkpoint browser server
+
+From repo root:
+
+```powershell
+./axo-env/Scripts/python.exe -m mcp_servers.checkpoint_browser.server
+```
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.
