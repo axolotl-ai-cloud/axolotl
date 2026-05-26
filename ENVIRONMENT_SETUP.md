@@ -244,3 +244,49 @@ python fix_case_consistency.py
 ---
 
 *This environment preserves all working scripts, datasets, and configurations needed to continue multi-task learning research with GPU acceleration.*
+
+## MCP Learning Workflow (New)
+
+Use this project to learn Model Context Protocol (MCP) in staged steps while keeping your golf strategy workflow practical.
+
+### 1. Install MCP development dependencies
+
+```powershell
+./axo-env/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
+
+### 2. Run servers by learning stage
+
+```powershell
+# Phase 0: hello world
+./axo-env/Scripts/python.exe -m mcp_servers.hello_world.server
+
+# Phase 1: inference tools
+./axo-env/Scripts/python.exe -m mcp_servers.inference_server.server
+
+# Phase 2: training control tools
+./axo-env/Scripts/python.exe -m mcp_servers.training_control.server
+
+# Phase 3: debug assistant tools
+./axo-env/Scripts/python.exe -m mcp_servers.debug_assistant.server
+
+# Phase 4: dataset validator tools
+./axo-env/Scripts/python.exe -m mcp_servers.dataset_validator.server
+
+# Phase 5: checkpoint browser tools
+./axo-env/Scripts/python.exe -m mcp_servers.checkpoint_browser.server
+```
+
+### 3. Run integrated Phase 6 demo
+
+```powershell
+./axo-env/Scripts/python.exe -m mcp_servers.demo.integration_demo
+```
+
+### 4. Suggested practice loop
+
+1. Validate dataset quality before training.
+2. Start or resume training through training control tools.
+3. Run strategy inference examples with the inference server.
+4. Diagnose failures with debug assistant comparisons.
+5. Compare checkpoints and export best artifacts.

@@ -153,6 +153,28 @@ From repo root:
 ./axo-env/Scripts/python.exe -m mcp_servers.checkpoint_browser.server
 ```
 
+## Phase 6 status
+
+Implemented now:
+- integration demo script at `mcp_servers/demo/integration_demo.py`
+- end-to-end workflow checks for dataset, inference, diagnostics, and checkpoints
+
+## Run end-to-end demo
+
+From repo root:
+
+```powershell
+./axo-env/Scripts/python.exe -m mcp_servers.demo.integration_demo
+```
+
+The demo returns a single JSON payload with:
+- dataset validation summary
+- dataset stats
+- strategy + description inference examples
+- task prefix diagnostic output
+- single vs multitask adapter comparison
+- checkpoint listing summary
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.
