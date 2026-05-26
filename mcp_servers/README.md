@@ -15,6 +15,20 @@ Planned next:
 - dataset_validator (Phase 4)
 - checkpoint_browser (Phase 5)
 
+## Phase 1 status
+
+Implemented now:
+- inference MCP server tools:
+	- `strategy_for_hole`
+	- `description_for_strategy`
+	- `analyze_scenarios`
+
+Model configuration for inference server:
+- `AXOLOTL_MCP_MODEL_NAME` (default: `gpt2`)
+- `AXOLOTL_MCP_ADAPTER_DIR` (optional path to LoRA adapter checkpoint)
+
+If the model or adapter is unavailable, tools return deterministic fallback responses with a warning field.
+
 ## Run the hello server
 
 From repo root, with the project virtual environment active:
@@ -26,6 +40,20 @@ From repo root, with the project virtual environment active:
 Expected behavior:
 - Server starts using StdIO transport.
 - MCP host can discover tool `ping`.
+
+## Run the inference server
+
+From repo root:
+
+```powershell
+$env:AXOLOTL_MCP_MODEL_NAME = "gpt2"
+$env:AXOLOTL_MCP_ADAPTER_DIR = "outputs/bethpage-lora/checkpoint-quick"
+./axo-env/Scripts/python.exe -m mcp_servers.inference_server.server
+```
+
+Expected behavior:
+- MCP host can discover tools `strategy_for_hole`, `description_for_strategy`, and `analyze_scenarios`.
+- First request may be slower due to model load; subsequent requests use cached model state.
 
 ## Manual learning checklist for Phase 0
 
