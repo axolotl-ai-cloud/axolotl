@@ -480,6 +480,58 @@ class TestMXQuantizeSaveLoad:
         loaded_keys = set(loaded.state_dict().keys())
         assert original_keys == loaded_keys
 
+    @require_torch_2_8_0
+    def test_mxfp4_cross_process_load(self, tmp_path):
+        """A saved MX checkpoint loads in a fresh interpreter that never quantized.
+
+        The other tests call ``quantize_model`` in-process, which installs the
+        transformers init guard as a side effect, masking the real reload path.
+        Here we save, then load in a subprocess that only installs the guard the
+        way ``ModelLoader._apply_pre_model_load_setup`` does — no ``quantize_model``.
+        """
+        import subprocess
+        import sys
+        import textwrap
+
+        model = self._make_tiny_model()
+        save_dir = str(tmp_path / "mxfp4_xproc_model")
+        quantize_model(model, TorchAOQuantDType.mxfp4, 32)
+        save_quantized_model(model, save_dir)
+
+        script = textwrap.dedent(
+            f"""
+            import torch
+            from torch import nn
+            from transformers import AutoModelForCausalLM
+            # mirrors ModelLoader._apply_pre_model_load_setup (no quantize_model here)
+            from axolotl.utils.quantization import (
+                patch_transformers_skip_quantized_init,
+            )
+
+            patch_transformers_skip_quantized_init()
+            model = AutoModelForCausalLM.from_pretrained(
+                {save_dir!r}, dtype=torch.bfloat16
+            )
+            from torchao.prototype.mx_formats.mx_tensor import MXTensor
+            assert any(
+                isinstance(m.weight, MXTensor)
+                for m in model.modules()
+                if isinstance(m, nn.Linear)
+            ), "expected MXTensor weights after reload"
+            print("CROSS_PROCESS_LOAD_OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert "CROSS_PROCESS_LOAD_OK" in result.stdout, (
+            f"cross-process MX load failed:\nstdout={result.stdout}\n"
+            f"stderr={result.stderr[-2000:]}"
+        )
+
 
 class TestQuantizationCallback:
     """
