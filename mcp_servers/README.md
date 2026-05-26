@@ -108,6 +108,28 @@ $env:AXOLOTL_MCP_MULTITASK_ADAPTER_DIR = "outputs/bethpage-lora/checkpoint-multi
 ./axo-env/Scripts/python.exe -m mcp_servers.debug_assistant.server
 ```
 
+## Phase 4 status
+
+Implemented now:
+- dataset validator MCP server tools:
+	- `validate_dataset_file`
+	- `dataset_stats`
+	- `filter_dataset_by_task`
+	- `repair_dataset`
+
+Dataset validator notes:
+- Validation checks JSON parseability, required fields, task labels, and strategy completion parseability.
+- Repair tool writes output to a new file with suffix `.all.fixed.jsonl`, `.case.fixed.jsonl`, or `.format.fixed.jsonl`.
+- Filter tool mirrors your existing task split workflow and returns filtered record count.
+
+## Run the dataset validator server
+
+From repo root:
+
+```powershell
+./axo-env/Scripts/python.exe -m mcp_servers.dataset_validator.server
+```
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.
