@@ -1163,7 +1163,16 @@ def _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped) -> None:
         return
 
     non_persistent_ids = getattr(chunk_manager, "_non_persistent_ids", None)
-    if not non_persistent_ids:
+    has_non_persistent_chunks = bool(non_persistent_ids)
+    if not has_non_persistent_chunks:
+        search_result = getattr(wrapped, "search_result", None)
+        picked = getattr(search_result, "cfg", None) if search_result else None
+        n_persist = getattr(picked, "n_persist", None) if picked is not None else None
+        layout = getattr(chunk_manager, "layout", None)
+        n_chunk = getattr(layout, "N_chunk", None) if layout is not None else None
+        if n_persist is not None and n_chunk is not None:
+            has_non_persistent_chunks = int(n_persist) < int(n_chunk)
+    if not has_non_persistent_chunks:
         return
 
     # Full-FT iff no LoRA adapter configured. The requires_grad check is
@@ -1495,6 +1504,7 @@ class ProTrainPlugin(BasePlugin):
         optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
         if optimizer_name is not None and not isinstance(optimizer_name, str):
             optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
+        max_grad_norm = getattr(args, "max_grad_norm", None)
 
         LOG.info(
             "ProTrain.create_optimizer: lr=%.3e betas=%s eps=%.1e wd=%.3e optimizer=%s",
@@ -1517,6 +1527,7 @@ class ProTrainPlugin(BasePlugin):
             weight_decay=weight_decay,
             optimizer_name=optimizer_name,
             huge_param_threshold_bytes=huge_threshold,
+            max_grad_norm=float(max_grad_norm) if max_grad_norm is not None else None,
         )
 
     def post_trainer_create(self, cfg, trainer: "Trainer") -> None:
@@ -1644,6 +1655,7 @@ class ProTrainPlugin(BasePlugin):
         optimizer_name = getattr(args, "optim", None) or getattr(cfg, "optimizer", None)
         if optimizer_name is not None and not isinstance(optimizer_name, str):
             optimizer_name = getattr(optimizer_name, "value", str(optimizer_name))
+        max_grad_norm = getattr(args, "max_grad_norm", None)
         huge_threshold = int(
             getattr(cfg, "protrain_persistent_huge_param_threshold_bytes", None)
             or 512 * 1024 * 1024
@@ -1657,6 +1669,7 @@ class ProTrainPlugin(BasePlugin):
             optimizer_name=optimizer_name,
             huge_param_threshold_bytes=huge_threshold,
             lora_owned_params=lora_owned_params if path_b_active else None,
+            max_grad_norm=float(max_grad_norm) if max_grad_norm is not None else None,
         )
 
         # state_dict/load_state_dict empty-shell behavior lives in _ProTrainOptimizer.

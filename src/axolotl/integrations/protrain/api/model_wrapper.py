@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace as _replace
 from typing import TYPE_CHECKING, Any, cast
 
 from torch import nn
@@ -653,7 +654,6 @@ def _broadcast_searcher_critical_hw(
     broadcasts rank-0's values and rewrites the local fields via
     ``dataclasses.replace``.
     """
-    from dataclasses import replace as _replace
 
     try:
         import torch.distributed as _dist
@@ -802,8 +802,6 @@ def _select_mode(
     # Mode A: searcher says everything fits on GPU.
     if int(search_result.cfg.n_persist) >= int(layout.N_chunk):
         return (True, False)
-
-    from dataclasses import replace as _replace
 
     from axolotl.integrations.protrain.cost.memory import (
         estimate_cpu_footprint,
@@ -1757,7 +1755,6 @@ def protrain_model_wrapper(
         _zero3_for_hw = (_ws_early > 1) and (not force_all_persistent)
     else:
         _zero3_for_hw = bool(zero3_shard) and (_ws_early > 1)
-    from dataclasses import replace as _replace
 
     _hw_updates: dict = {}
     if _zero3_for_hw != hardware_profile.zero3_shard:
@@ -2032,8 +2029,6 @@ def protrain_model_wrapper(
         zero3_shard = auto_zero3
         # Re-stamp runtime profile; search_hw_profile (snapshot) stays permissive for phase-2.
         if zero3_shard != hardware_profile.zero3_shard:
-            from dataclasses import replace as _replace
-
             hardware_profile = _replace(hardware_profile, zero3_shard=bool(zero3_shard))
 
     # Phase-2: build under conservative bootstrap, measure, splice trace, re-search.
@@ -2154,6 +2149,11 @@ def protrain_model_wrapper(
                     boot_cfg, trace, layout, boot_block_map, hardware_profile
                 )
             )
+            boot_result = _replace(
+                boot_result,
+                predicted_iter_s=phase2_analytical_iter_s_val,
+            )
+            boot_wrapped.search_result = boot_result
             # Per-component decomposition at boot cfg for per-component alpha calibration.
             (
                 t_fwd_boot,
@@ -2209,8 +2209,6 @@ def protrain_model_wrapper(
             else:
                 phase2_per_comp_pred_iter_s_val = 0.0
 
-            from dataclasses import replace as _replace
-
             new_trace = _replace(
                 trace,
                 steady_fwd_chunked_wall_s=fwd_s,
@@ -2244,7 +2242,7 @@ def protrain_model_wrapper(
 
             # Phase-2 quickstart: opt-in skip of the re-pick teardown+rebuild
             # when measurement is already within envelope of the prediction.
-            predicted_iter_s_boot = float(boot_result.predicted_iter_s)
+            predicted_iter_s_boot = float(phase2_analytical_iter_s_val)
             quickstart_skip = _phase2_quickstart_should_skip(
                 measured_iter_s=phase2_iter_s_val,
                 predicted_iter_s=predicted_iter_s_boot,
@@ -2265,6 +2263,19 @@ def protrain_model_wrapper(
                 result = boot_result
                 wrapped = boot_wrapped
                 wrapped.search_result = result
+            elif phase2_quickstart:
+                rel_err = abs(phase2_iter_s_val - predicted_iter_s_boot) / max(
+                    predicted_iter_s_boot, 1e-12
+                )
+                LOG.info(
+                    "Phase-2 quickstart did not skip re-pick: Phase-1 iter "
+                    "%.3fs differs from boot-cfg predicted %.3fs by %.1f%% "
+                    "(envelope %.1f%%).",
+                    phase2_iter_s_val,
+                    predicted_iter_s_boot,
+                    rel_err * 100.0,
+                    float(phase2_quickstart_envelope) * 100.0,
+                )
 
             if not quickstart_skip:
                 # Re-run search with phase-2 fields populated; reuse CPU budget (phase-2 only refines runtime).

@@ -31,11 +31,34 @@ def _make_wrapped(non_persistent_ids):
     return SimpleNamespace(chunk_manager=chunk_manager)
 
 
+def _make_wrapped_with_effective_offload(non_persistent_ids, n_persist, n_chunk):
+    chunk_manager = SimpleNamespace(
+        _non_persistent_ids=non_persistent_ids,
+        layout=SimpleNamespace(N_chunk=n_chunk),
+    )
+    search_result = SimpleNamespace(cfg=SimpleNamespace(n_persist=n_persist))
+    return SimpleNamespace(chunk_manager=chunk_manager, search_result=search_result)
+
+
 @pytest.mark.parametrize("adapter", [None, ""])
 def test_full_ft_with_offload_forces_pickle_save(adapter):
     """Full-FT (no adapter / empty-string adapter) + non-persistent chunks → flipped to False."""
     cfg, trainer = _make_cfg_and_trainer(adapter=adapter)
     wrapped = _make_wrapped(non_persistent_ids={1, 2, 3})
+
+    _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped)
+
+    assert trainer.args.save_safetensors is False
+
+
+def test_full_ft_with_effective_offload_forces_pickle_after_rebuild():
+    """Rebuilt managers may expose effective offload via the picked cfg before ids are repopulated."""
+    cfg, trainer = _make_cfg_and_trainer(adapter=None)
+    wrapped = _make_wrapped_with_effective_offload(
+        non_persistent_ids=set(),
+        n_persist=2,
+        n_chunk=5,
+    )
 
     _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped)
 

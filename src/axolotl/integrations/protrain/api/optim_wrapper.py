@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
@@ -51,6 +52,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         persistent_huge_originals: list["nn.Parameter"] | None = None,
         persistent_huge_shards: list["nn.Parameter"] | None = None,
         lora_owned_params: list["nn.Parameter"] | None = None,
+        max_grad_norm: float | None = None,
     ) -> None:
         """Wire the GPU/CPU adapter pair into a Trainer-compatible Optimizer facade."""
         # Pass full param list so schedulers iterate over the real set.
@@ -82,6 +84,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # (DDP is told to ignore them via _ddp_params_and_buffers_to_ignore).
         # Empty list => Path B disabled / not configured (no-op).
         self._lora_owned_params: list["nn.Parameter"] = list(lora_owned_params or [])
+        self._max_grad_norm = max_grad_norm
 
     # ---- step / zero_grad ----------------------------------------------
 
@@ -96,7 +99,6 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         self._forward_hyperparams_to_inner_optims()
 
         cm = self._chunk_manager
-        self._launch_ready_cpu_chunks()
 
         # Sharded path: sweep orphan non-persistent chunks (lm_head/embed) that no block-backward hook reached.
         if getattr(cm, "zero3_shard", False):
@@ -104,7 +106,6 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             if non_persist:
                 for cid in list(non_persist):
                     cm.reduce_grads_and_offload(cid, force=True)
-                    self._launch_ready_cpu_chunks()
 
         # Path B: flattened all-reduce of LoRA adapter grads BEFORE inner step.
         # DDP is told to ignore these param names (see plugin.post_trainer_create),
@@ -117,6 +118,9 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         # narrow into orig.data, so narrowing orig.grad the same way gives
         # the shard the matching slice of the gradient.
         self._route_huge_grads_to_shards()
+
+        self._clip_optimizer_target_grads()
+        self._launch_ready_cpu_chunks()
 
         if self._gpu_optim is not None:
             self._gpu_optim.step()
@@ -143,6 +147,96 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
         if ready is not None and not ready:
             return
         step_ready()
+
+    def _iter_gpu_optimizer_grads(self):
+        adapter = self._gpu_optim
+        if adapter is None:
+            return
+        underlying = getattr(adapter, "underlying", None)
+        if underlying is None:
+            return
+        for group in getattr(underlying, "param_groups", []):
+            for param in group.get("params", []):
+                grad = getattr(param, "grad", None)
+                if grad is not None:
+                    yield grad
+
+    def _iter_ready_offloaded_grads(self):
+        cm = self._chunk_manager
+        ready = getattr(cm, "_cpu_step_ready_chunks", None)
+        if not ready:
+            return
+        events = getattr(cm, "_cpu_step_events", {}) or {}
+        cpu_slots = getattr(cm, "_cpu_slots", {}) or {}
+        chunk_shards = getattr(cm, "_chunk_shards", {}) or {}
+        seen: set[int] = set()
+        for chunk_id in list(ready):
+            event = events.get(chunk_id)
+            synchronize = getattr(event, "synchronize", None)
+            if synchronize is not None:
+                synchronize()
+            shard_state = chunk_shards.get(chunk_id)
+            regions = getattr(shard_state, "regions", None)
+            if regions:
+                for region in regions:
+                    shard_param = getattr(region, "shard_param", None)
+                    grad = getattr(shard_param, "grad", None)
+                    if grad is None:
+                        continue
+                    grad_id = id(grad)
+                    if grad_id in seen:
+                        continue
+                    seen.add(grad_id)
+                    yield grad
+                continue
+            for slot in cpu_slots.get(chunk_id, []):
+                grad = getattr(slot, "cpu_grad", None)
+                if grad is None:
+                    continue
+                grad_id = id(grad)
+                if grad_id in seen:
+                    continue
+                seen.add(grad_id)
+                yield grad
+
+    def _iter_optimizer_target_grads(self):
+        seen: set[int] = set()
+        for grad in self._iter_gpu_optimizer_grads() or ():
+            grad_id = id(grad)
+            if grad_id in seen:
+                continue
+            seen.add(grad_id)
+            yield grad
+        for grad in self._iter_ready_offloaded_grads() or ():
+            grad_id = id(grad)
+            if grad_id in seen:
+                continue
+            seen.add(grad_id)
+            yield grad
+
+    def _clip_optimizer_target_grads(self) -> None:
+        max_norm = self._max_grad_norm
+        if max_norm is None or float(max_norm) <= 0.0:
+            return
+        grads = list(self._iter_optimizer_target_grads())
+        if not grads:
+            return
+        total_sq = 0.0
+        for grad in grads:
+            norm = torch.linalg.vector_norm(grad.detach(), ord=2, dtype=torch.float32)
+            total_sq += float(norm.item()) ** 2
+        total_norm = total_sq**0.5
+        if not math.isfinite(total_norm):
+            raise RuntimeError(
+                "ProTrain: non-finite gradient norm detected at optimizer "
+                "target boundary before CPU/GPU optimizer step. Refusing to "
+                "step and corrupt weights."
+            )
+        clip_coef = float(max_norm) / (total_norm + 1e-6)
+        if clip_coef >= 1.0:
+            return
+        for grad in grads:
+            grad.mul_(clip_coef)
 
     def _sync_lora_grads_path_b(self) -> None:
         """Flattened all_reduce(AVG) of trainable LoRA adapter grads, grouped by dtype.
@@ -601,6 +695,7 @@ def protrain_optimizer_wrapper(
     optimizer_name: str | None = None,
     huge_param_threshold_bytes: int = _DEFAULT_HUGE_PARAM_THRESHOLD_BYTES,
     lora_owned_params: list["nn.Parameter"] | None = None,
+    max_grad_norm: float | None = None,
 ) -> torch.optim.Optimizer:
     """Rebuild the GPU/CPU FusedAdam adapters at user-specified hyperparams."""
     chunk_manager = cast("ChunkManager", wrapped.chunk_manager)
@@ -889,6 +984,7 @@ def protrain_optimizer_wrapper(
         persistent_huge_originals=persistent_huge_originals,
         persistent_huge_shards=persistent_huge_shards,
         lora_owned_params=lora_owned_params,
+        max_grad_norm=max_grad_norm,
     )
 
 

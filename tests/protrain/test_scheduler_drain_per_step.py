@@ -110,7 +110,7 @@ def test_step_sweeps_mode_c_nonpersistent_chunks_with_force() -> None:
     optim.step()
 
     assert mgr.reduce_grads_and_offload_calls == [(7, True), (9, True)]
-    assert mgr.step_ready_cpu_chunks_calls == 2
+    assert mgr.step_ready_cpu_chunks_calls == 1
 
 
 def test_step_syncs_persistent_grads_before_gpu_step() -> None:

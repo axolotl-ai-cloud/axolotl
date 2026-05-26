@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 import torch
 
+from axolotl.integrations.protrain.api.optim_wrapper import _ProTrainOptimizer
 from axolotl.integrations.protrain.chunk.manager import ChunkManager, _CpuParamSlot
 from axolotl.integrations.protrain.runtime.scheduler import Scheduler
 from axolotl.integrations.protrain.types import (
@@ -42,6 +45,10 @@ def _bare_manager() -> ChunkManager:
 
 def _cpu_optim(mgr: ChunkManager) -> _FakeCpuOptim:
     return cast(_FakeCpuOptim, mgr.cpu_optim)
+
+
+def _optim_defaults() -> dict[str, Any]:
+    return {"lr": 1e-3, "betas": (0.9, 0.999), "eps": 1e-8, "weight_decay": 0.0}
 
 
 def _slot(name: str = "w") -> _CpuParamSlot:
@@ -154,6 +161,184 @@ def test_force_sweep_offloads_sharded_chunk_without_grads() -> None:
     assert offload_calls == [cid]
     assert cid not in mgr._cpu_step_ready_chunks
     assert _cpu_optim(mgr).step_calls == []
+
+
+def test_optimizer_clips_replicated_offloaded_grads_before_cpu_step() -> None:
+    cid = ChunkId(0)
+    slot = _slot()
+    assert slot.cpu_grad is not None
+    slot.cpu_grad.copy_(torch.tensor([3.0, 4.0]))
+    grad_seen_by_step: list[torch.Tensor] = []
+
+    class _Event:
+        def __init__(self) -> None:
+            self.synchronized = False
+
+        def synchronize(self) -> None:
+            self.synchronized = True
+
+    event = _Event()
+
+    class _Manager:
+        def __init__(self) -> None:
+            self._cpu_step_ready_chunks = {cid}
+            self._cpu_step_events = {cid: event}
+            self._cpu_slots = {cid: [slot]}
+            self._chunk_shards: dict[ChunkId, object] = {}
+
+        def step_ready_cpu_chunks(self) -> None:
+            assert slot.cpu_grad is not None
+            grad_seen_by_step.append(slot.cpu_grad.clone())
+            self._cpu_step_ready_chunks.clear()
+
+        def wait_cpu_optim_all(self) -> None:
+            return None
+
+        def reset_optimizer_step_tracking(self) -> None:
+            return None
+
+    optim = _ProTrainOptimizer(
+        gpu_optim=None,
+        cpu_optim=None,
+        params=[torch.nn.Parameter(torch.zeros(1))],
+        defaults=_optim_defaults(),
+        chunk_manager=_Manager(),
+        max_grad_norm=1.0,
+    )
+
+    optim.step()
+
+    assert event.synchronized is True
+    assert len(grad_seen_by_step) == 1
+    assert torch.allclose(grad_seen_by_step[0], torch.tensor([0.6, 0.8]))
+
+
+def test_optimizer_clips_sharded_offloaded_grads_before_cpu_step() -> None:
+    cid = ChunkId(0)
+    shard_param = torch.nn.Parameter(torch.zeros(2))
+    shard_param.grad = torch.tensor([6.0, 8.0])
+    grad_seen_by_step: list[torch.Tensor] = []
+
+    class _Manager:
+        def __init__(self) -> None:
+            self._cpu_step_ready_chunks = {cid}
+            self._cpu_step_events: dict[ChunkId, object] = {}
+            self._cpu_slots: dict[ChunkId, list[_CpuParamSlot]] = {}
+            self._chunk_shards = {
+                cid: SimpleNamespace(regions=[SimpleNamespace(shard_param=shard_param)])
+            }
+
+        def step_ready_cpu_chunks(self) -> None:
+            assert shard_param.grad is not None
+            grad_seen_by_step.append(shard_param.grad.clone())
+            self._cpu_step_ready_chunks.clear()
+
+        def wait_cpu_optim_all(self) -> None:
+            return None
+
+        def reset_optimizer_step_tracking(self) -> None:
+            return None
+
+    optim = _ProTrainOptimizer(
+        gpu_optim=None,
+        cpu_optim=None,
+        params=[torch.nn.Parameter(torch.zeros(1))],
+        defaults=_optim_defaults(),
+        chunk_manager=_Manager(),
+        max_grad_norm=1.0,
+    )
+
+    optim.step()
+
+    assert len(grad_seen_by_step) == 1
+    assert torch.allclose(grad_seen_by_step[0], torch.tensor([0.6, 0.8]))
+
+
+def test_optimizer_clips_gpu_and_hidden_cpu_targets_together() -> None:
+    cid = ChunkId(0)
+    slot = _slot()
+    assert slot.cpu_grad is not None
+    slot.cpu_grad.copy_(torch.tensor([3.0, 4.0]))
+    gpu_param = torch.nn.Parameter(torch.zeros(2))
+    gpu_param.grad = torch.tensor([12.0, 16.0])
+    grad_seen_by_cpu_step: list[torch.Tensor] = []
+
+    class _Gpu:
+        underlying = SimpleNamespace(param_groups=[{"params": [gpu_param]}])
+
+        def step(self) -> None:
+            return None
+
+    class _Manager:
+        def __init__(self) -> None:
+            self._cpu_step_ready_chunks = {cid}
+            self._cpu_step_events: dict[ChunkId, object] = {}
+            self._cpu_slots = {cid: [slot]}
+            self._chunk_shards: dict[ChunkId, object] = {}
+
+        def step_ready_cpu_chunks(self) -> None:
+            assert slot.cpu_grad is not None
+            grad_seen_by_cpu_step.append(slot.cpu_grad.clone())
+            self._cpu_step_ready_chunks.clear()
+
+        def wait_cpu_optim_all(self) -> None:
+            return None
+
+        def reset_optimizer_step_tracking(self) -> None:
+            return None
+
+    optim = _ProTrainOptimizer(
+        gpu_optim=cast(Any, _Gpu()),
+        cpu_optim=None,
+        params=[gpu_param],
+        defaults=_optim_defaults(),
+        chunk_manager=_Manager(),
+        max_grad_norm=1.0,
+    )
+
+    optim.step()
+
+    assert len(grad_seen_by_cpu_step) == 1
+    assert gpu_param.grad is not None
+    combined_norm = torch.linalg.vector_norm(
+        torch.cat([grad_seen_by_cpu_step[0], gpu_param.grad])
+    )
+    assert combined_norm.item() == pytest.approx(1.0, rel=1e-6)
+
+
+def test_optimizer_rejects_nonfinite_hidden_cpu_grad_before_step() -> None:
+    cid = ChunkId(0)
+    slot = _slot()
+    assert slot.cpu_grad is not None
+    slot.cpu_grad.copy_(torch.tensor([float("nan"), 1.0]))
+    step_called = False
+
+    class _Manager:
+        def __init__(self) -> None:
+            self._cpu_step_ready_chunks = {cid}
+            self._cpu_step_events: dict[ChunkId, object] = {}
+            self._cpu_slots = {cid: [slot]}
+            self._chunk_shards: dict[ChunkId, object] = {}
+
+        def step_ready_cpu_chunks(self) -> None:
+            nonlocal step_called
+            step_called = True
+
+        def wait_cpu_optim_all(self) -> None:
+            return None
+
+    optim = _ProTrainOptimizer(
+        gpu_optim=None,
+        cpu_optim=None,
+        params=[torch.nn.Parameter(torch.zeros(1))],
+        defaults=_optim_defaults(),
+        chunk_manager=_Manager(),
+        max_grad_norm=1.0,
+    )
+
+    with pytest.raises(RuntimeError, match="non-finite gradient norm"):
+        optim.step()
+    assert step_called is False
 
 
 def test_scheduler_uses_backward_finalize_hook_when_available() -> None:
