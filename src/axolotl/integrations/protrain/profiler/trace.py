@@ -451,8 +451,11 @@ def run_trace(
                 # On warmup OOM, clear cache for a clean steady-state baseline.
                 try:
                     torch.cuda.empty_cache()
-                except Exception:  # noqa: BLE001 — best-effort cleanup
-                    pass
+                except Exception as cleanup_exc:  # noqa: BLE001 - best-effort cleanup
+                    LOG.debug(
+                        "profiler warmup empty_cache failed (%s); continuing cold",
+                        cleanup_exc,
+                    )
                 break
 
     # Steady-state wall captured pre-hook for hook-dispatch calibration scale.

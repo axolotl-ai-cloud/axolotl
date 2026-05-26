@@ -1132,12 +1132,9 @@ def _construct_runtime(
                 len(ignore),
                 sorted(unmatched)[:5],
             )
-        existing = getattr(model, "_ddp_params_and_buffers_to_ignore", None)
-        if existing is None:
-            model._ddp_params_and_buffers_to_ignore = list(ignore)  # type: ignore[attr-defined]
-        else:
-            merged = set(existing) | ignore
-            model._ddp_params_and_buffers_to_ignore = list(merged)  # type: ignore[attr-defined]
+        registered_ignore, _original_ignore_len = (
+            chunk_manager.register_ddp_ignore_names(ignore)
+        )
         LOG.info(
             "ProTrain: registered %d chunk-managed param "
             "names in model._ddp_params_and_buffers_to_ignore (live "
@@ -1145,7 +1142,7 @@ def _construct_runtime(
             "skips the shape-preserving expand placeholders (write "
             "would trip the shared-storage hazard on the expanded "
             "view).",
-            len(ignore),
+            registered_ignore,
             len(ignore - unmatched),
             len(ignore),
         )
@@ -1175,21 +1172,40 @@ def _construct_runtime(
                 delattr(model, "_protrain_ddp_skip_init_sync")
             except AttributeError:
                 pass
-        if hasattr(model, "_protrain_ddp_original_ignore"):
+        if hasattr(model, "_protrain_ddp_original_ignore") or hasattr(
+            model, "_protrain_ddp_ignore_owners"
+        ):
             try:
-                _original = model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
-                if _original is None:
-                    if hasattr(model, "_ddp_params_and_buffers_to_ignore"):
-                        try:
-                            delattr(model, "_ddp_params_and_buffers_to_ignore")
-                        except AttributeError:
-                            pass
+                _owners = getattr(model, "_protrain_ddp_ignore_owners", None)
+                if isinstance(_owners, dict) and _owners:
+                    from axolotl.integrations.protrain.chunk.manager import (
+                        restore_all_protrain_ddp_ignore_names,
+                    )
+
+                    restore_all_protrain_ddp_ignore_names(model)
+                elif hasattr(model, "_protrain_ddp_original_ignore"):
+                    _original = model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
+                    if _original is None:
+                        if hasattr(model, "_ddp_params_and_buffers_to_ignore"):
+                            try:
+                                delattr(model, "_ddp_params_and_buffers_to_ignore")
+                            except AttributeError:
+                                pass
+                    else:
+                        model._ddp_params_and_buffers_to_ignore = list(_original)  # type: ignore[attr-defined]
+                    try:
+                        delattr(model, "_protrain_ddp_original_ignore")
+                    except AttributeError:
+                        pass
+                    try:
+                        delattr(model, "_protrain_ddp_ignore_owners")
+                    except AttributeError:
+                        pass
                 else:
-                    model._ddp_params_and_buffers_to_ignore = list(_original)  # type: ignore[attr-defined]
-                try:
-                    delattr(model, "_protrain_ddp_original_ignore")
-                except AttributeError:
-                    pass
+                    try:
+                        delattr(model, "_protrain_ddp_ignore_owners")
+                    except AttributeError:
+                        pass
                 LOG.info(
                     "ProTrain: rebuild path detected — stripped stale "
                     "DDP skip state from model so the rebuilt "
@@ -1371,20 +1387,16 @@ def _construct_runtime(
                 for live_name, live_param in model.named_parameters()
                 if id(live_param) in chunk_managed_param_ids
             }
-            _original = getattr(model, "_protrain_ddp_original_ignore", None)
-            if _original is None:
-                model._ddp_params_and_buffers_to_ignore = list(post_wrap_ignore)  # type: ignore[attr-defined]
-            else:
-                model._ddp_params_and_buffers_to_ignore = list(  # type: ignore[attr-defined]
-                    set(_original) | post_wrap_ignore
-                )
+            registered_ignore, _original_ignore_len = (
+                chunk_manager.register_ddp_ignore_names(post_wrap_ignore)
+            )
             LOG.info(
                 "ProTrain: re-registered "
                 "%d chunk-managed param names in "
                 "model._ddp_params_and_buffers_to_ignore using "
                 "post-block-wrap named_parameters() (DDP's backward "
                 "allreduce filter sees the .block.-infixed names).",
-                len(post_wrap_ignore),
+                registered_ignore,
             )
             # Diagnostic: post-block-wrap ignore-list state for v53 OOM investigation.
             try:
@@ -1436,6 +1448,45 @@ def _phase2_quickstart_should_skip(
         return False
     rel_err = abs(measured_iter_s - predicted_iter_s) / predicted_iter_s
     return rel_err < float(envelope)
+
+
+def _teardown_phase2_bootstrap_runtime(
+    *,
+    model: nn.Module,
+    blocks: list[nn.Module],
+    handles: list[object],
+    chunk_manager: ChunkManager,
+    boot_wrapped: WrappedModel,
+    context: str,
+) -> None:
+    """Unwrap a phase-2 bootstrap runtime and always close wrapper resources."""
+    for handle in handles:
+        try:
+            handle.remove()  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            LOG.debug("%s: hook handle remove failed: %s", context, exc)
+    try:
+        boot_wrapped._hook_handles = []  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - defensive
+        pass
+
+    block_parent_map_unwrap = _find_block_parent_map(model, blocks)
+    for idx, block in enumerate(blocks):
+        unwrapped = unwrap_block(block)
+        if unwrapped is block:
+            continue
+        parent = block_parent_map_unwrap.get(id(block))
+        if parent is not None:
+            for slot, child in enumerate(parent):
+                if child is block:
+                    parent[slot] = unwrapped
+                    break
+        blocks[idx] = unwrapped
+
+    try:
+        chunk_manager.restore_to_gpu()
+    finally:
+        boot_wrapped.close()
 
 
 def protrain_model_wrapper(
@@ -2065,26 +2116,14 @@ def protrain_model_wrapper(
 
         if measurement_failed:
             # Tear down bootstrap and rebuild under original cfg; unwrap blocks to restore param names.
-            for h in handles:
-                try:
-                    h.remove()  # type: ignore[attr-defined]
-                except Exception as exc:  # noqa: BLE001 — best-effort
-                    LOG.debug(
-                        "phase-2 fallback teardown: hook handle remove failed: %s",
-                        exc,
-                    )
-            block_parent_map_unwrap = _find_block_parent_map(model, blocks)
-            for idx, block in enumerate(blocks):
-                unwrapped = unwrap_block(block)
-                if unwrapped is not block:
-                    parent = block_parent_map_unwrap.get(id(block))
-                    if parent is not None:
-                        for slot, child in enumerate(parent):
-                            if child is block:
-                                parent[slot] = unwrapped
-                                break
-                    blocks[idx] = unwrapped
-            chunk_manager.restore_to_gpu()
+            _teardown_phase2_bootstrap_runtime(
+                model=model,
+                blocks=blocks,
+                handles=handles,
+                chunk_manager=chunk_manager,
+                boot_wrapped=boot_wrapped,
+                context="phase-2 fallback teardown",
+            )
             del boot_wrapped, boot_optim, chunk_manager, scheduler, handles
             chunk_manager, scheduler, handles, result = _construct_runtime(
                 model=model,
@@ -2334,26 +2373,14 @@ def protrain_model_wrapper(
                         new_result.cfg,
                     )
                     # Unwrap blocks so rebuild's _build_block_spans sees param names matching layout.chunks.
-                    for h in handles:
-                        try:
-                            h.remove()  # type: ignore[attr-defined]
-                        except Exception as exc:  # noqa: BLE001 — best-effort
-                            LOG.debug(
-                                "phase-2 teardown: hook handle remove failed: %s",
-                                exc,
-                            )
-                    block_parent_map_unwrap = _find_block_parent_map(model, blocks)
-                    for idx, block in enumerate(blocks):
-                        unwrapped = unwrap_block(block)
-                        if unwrapped is not block:
-                            parent = block_parent_map_unwrap.get(id(block))
-                            if parent is not None:
-                                for slot, child in enumerate(parent):
-                                    if child is block:
-                                        parent[slot] = unwrapped
-                                        break
-                            blocks[idx] = unwrapped
-                    chunk_manager.restore_to_gpu()
+                    _teardown_phase2_bootstrap_runtime(
+                        model=model,
+                        blocks=blocks,
+                        handles=handles,
+                        chunk_manager=chunk_manager,
+                        boot_wrapped=boot_wrapped,
+                        context="phase-2 teardown",
+                    )
                     del boot_wrapped, boot_optim, chunk_manager, scheduler, handles
                     chunk_manager, scheduler, handles, result = _construct_runtime(
                         model=model,

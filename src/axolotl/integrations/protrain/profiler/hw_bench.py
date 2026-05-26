@@ -459,11 +459,12 @@ def measure_nccl(
 
         if rank == 0:
             LOG.debug(
-                "measure_nccl payload=%dMiB gather=%.3fms reduce=%.3fms "
-                "(world=%d, %d iters)",
-                payload_bytes >> 20,
-                gather_table[payload_bytes] * 1000,
-                reduce_table[payload_bytes] * 1000,
+                "measure_nccl payload_bytes=%d requested_payload_bytes=%d "
+                "gather=%.3fms reduce=%.3fms (world=%d, %d iters)",
+                actual_payload_bytes,
+                payload_bytes,
+                gather_table[actual_payload_bytes] * 1000,
+                reduce_table[actual_payload_bytes] * 1000,
                 world_size,
                 n_iters,
             )

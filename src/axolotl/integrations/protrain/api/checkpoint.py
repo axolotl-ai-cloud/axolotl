@@ -263,8 +263,6 @@ def _layout_signature(chunk_manager: Any, world_size: int, zero3_shard: bool) ->
 
 def _estimate_optim_state_bytes(optim: Any) -> int:
     """Estimated bytes for the optimizer's persisted Adam state (cluster-wide under Mode-C)."""
-    import torch
-
     replicated = 0
     local_shard = 0
 
@@ -575,10 +573,12 @@ def _save_protrain_optim_dir(
 
     target = os.path.join(output_dir, PROTRAIN_OPTIM_DIRNAME)
 
-    # v3 round-robin partition: active iff multi-rank AND persistent set non-empty on this build.
+    # v3 round-robin partition: active iff any multi-rank persistent state is sharded.
+    persistent_params_full = getattr(optim, "_persistent_params_full", None) or []
+    persistent_huge_originals = getattr(optim, "_persistent_huge_originals", None) or []
     persistent_partition_active = bool(
         int(getattr(optim, "_persistent_world_size", 1) or 1) > 1
-        and len(getattr(optim, "_persistent_params_full", None) or []) > 0
+        and (len(persistent_params_full) > 0 or len(persistent_huge_originals) > 0)
     )
 
     if zero3_shard:

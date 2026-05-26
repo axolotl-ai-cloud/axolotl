@@ -311,7 +311,7 @@ Mirrors `plan.md`:
 
     Tests: `tests/protrain/test_modec_steady_peak_accuracy.py` (pins the per-seq scaling + ±35% tolerance against the three audit data points). Existing tests adjusted: none — the `cost/memory.py` op-walk's recompute-bump refinement is backwards-compatible in every fallback regime (`_saved_tensor_bytes_per_block == activation_sizes`); the cap path and all cap-based tests are unchanged.
 
-    ### Per-mode alpha-fragmentation calibration (commit-pending)
+### Per-mode alpha-fragmentation calibration (commit-pending)
 
     `ALPHA_FRAGMENTATION_4BIT` was historically a single constant (0.75) calibrated
     against Mode-A peaks where frozen 4-bit weights dominate per-rank residency.
@@ -334,7 +334,7 @@ Mirrors `plan.md`:
     matches `estimate_peak`'s chain-sum semantics instead of the prior
     single-block max. Tests: `tests/protrain/test_cost_model.py`.
 
-    ### Per-block internal saved-tensor proxy (commit-pending)
+### Per-block internal saved-tensor proxy (commit-pending)
 
     The `_compute_ckpt_chain_bytes` helper sums the block-output proxy
     (`trace.activation_sizes[bid]`) across CKPT blocks. This proxy

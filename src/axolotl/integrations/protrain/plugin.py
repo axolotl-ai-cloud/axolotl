@@ -385,23 +385,35 @@ def _remeasure_nccl_and_research(wrapped) -> tuple[bool, bool]:
     # bail. Otherwise rank-0 tables are broadcast so every rank feeds search()
     # identical inputs (tie-breaks in the cost model are bandwidth-sensitive,
     # so unsynchronized tables can produce divergent best_cfg).
-    status_box = [1 if local_ok else 0]
     try:
-        dist.broadcast_object_list(status_box, src=0)
+        import torch
+
+        backend = str(dist.get_backend()).lower()
+        if backend == "nccl" and torch.cuda.is_available():
+            import os
+
+            local_rank = int(os.environ.get("LOCAL_RANK", torch.cuda.current_device()))
+            if local_rank >= torch.cuda.device_count():
+                local_rank = torch.cuda.current_device()
+            status_device = torch.device("cuda", local_rank)
+        else:
+            status_device = torch.device("cpu")
+        status = torch.tensor(1 if local_ok else 0, device=status_device)
+        dist.all_reduce(status, op=dist.ReduceOp.SUM)
     except (RuntimeError, ValueError) as exc:
         LOG.warning(
-            "ProTrain: NCCL re-measurement status broadcast failed (%s); "
+            "ProTrain: NCCL re-measurement status all-reduce failed (%s); "
             "leaving trace with empty tables to avoid plan divergence.",
             exc,
         )
         return (False, False)
-    rank0_ok = bool(status_box[0])
-    if not rank0_ok or not local_ok:
+    all_ranks_ok = int(status.item()) == world_size
+    if not all_ranks_ok:
         LOG.warning(
-            "ProTrain: NCCL re-measurement bail — rank0_ok=%s, local_ok=%s; "
+            "ProTrain: NCCL re-measurement bail - %d/%d ranks succeeded; "
             "leaving trace with empty tables consistently across ranks.",
-            rank0_ok,
-            local_ok,
+            int(status.item()),
+            world_size,
         )
         return (False, False)
 
@@ -547,9 +559,9 @@ def _resolve_visible_physical_indices() -> list[int] | None:
     torch sees 2 devices (cuda:0, cuda:1) but those map to physical GPUs 2 and
     4 in nvidia-smi's topology matrix.
 
-    Returns ``None`` if mapping can't be determined (e.g., CUDA_VISIBLE_DEVICES
-    uses UUIDs instead of integers, or the env var is unset and we have to
-    assume identity mapping).
+    Returns ``None`` only when ``CUDA_VISIBLE_DEVICES`` is unset/blank and the
+    caller may assume identity mapping. Returns ``[]`` when the mask exists but
+    can't be mapped to physical indices, such as UUID/MIG/non-numeric masks.
     """
     import os
     import re
@@ -559,10 +571,10 @@ def _resolve_visible_physical_indices() -> list[int] | None:
         return None  # identity mapping — caller can use range(n_visible)
     tokens = [t.strip() for t in raw.split(",") if t.strip()]
     if not tokens or any(not re.fullmatch(r"-?\d+", t) for t in tokens):
-        return None  # UUIDs or malformed — fall back conservatively
+        return []  # UUIDs or malformed - bail out conservatively
     indices = [int(t) for t in tokens]
     if any(i < 0 for i in indices):
-        return None
+        return []
     return indices
 
 
@@ -604,10 +616,22 @@ def _detect_nvlink_topology() -> bool:
         return False
 
     try:
+        import os
+        import shutil
         import subprocess
 
+        nvidia_smi = shutil.which("nvidia-smi")
+        if nvidia_smi is None:
+            LOG.warning(
+                "ProTrain NVLink detection: `nvidia-smi` was not found; "
+                "defaulting to non-NVLink topology (Path B stays enabled). "
+                "If you are on NVLink hardware, set "
+                "`protrain_own_lora_grad_sync: false` explicitly.",
+            )
+            return False
+        nvidia_smi = os.path.abspath(nvidia_smi)
         proc = subprocess.run(
-            ["nvidia-smi", "topo", "-m"],
+            [nvidia_smi, "topo", "-m"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -722,19 +746,14 @@ def _discover_lora_params(model) -> tuple[list[str], list]:
 def _register_lora_ddp_ignore(model, lora_names: list[str]) -> None:
     """Union LoRA names into ``model._ddp_params_and_buffers_to_ignore``.
 
-    Mirrors the snapshot pattern already used in
-    ``ChunkManager.materialize_offload``: pre-protrain values are stashed
-    under ``_protrain_ddp_original_ignore`` so teardown can restore them.
-    A pre-existing snapshot (set by chunk_manager) is preserved as-is — the
-    chunk-managed names + LoRA names union into the live attribute.
+    Shares the owner-tracked snapshot used by ``ChunkManager`` so teardown
+    removes only ProTrain-owned entries and preserves caller-owned ignore names.
     """
-    existing = getattr(model, "_ddp_params_and_buffers_to_ignore", None)
-    if not hasattr(model, "_protrain_ddp_original_ignore"):
-        model._protrain_ddp_original_ignore = (  # type: ignore[attr-defined]
-            None if existing is None else list(existing)
-        )
-    merged = set(existing or []) | set(lora_names)
-    model._ddp_params_and_buffers_to_ignore = list(merged)  # type: ignore[attr-defined]
+    from axolotl.integrations.protrain.chunk.manager import (
+        register_protrain_ddp_ignore_names,
+    )
+
+    register_protrain_ddp_ignore_names(model, "lora", set(lora_names))
 
 
 def _maybe_bypass_ddp_for_mode_c(trainer, wrapped) -> bool:
@@ -941,66 +960,88 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
             )
             raise
 
-        # HF's _load_from_checkpoint signature varies; forward model only when provided.
-        if model is None:
-            original_load(resume_from_checkpoint)
-        else:
-            original_load(resume_from_checkpoint, model)
-
-        # Re-materialize offload from freshly-loaded weights.
-        try:
-            chunk_manager.materialize_offload()
-        except Exception:
-            LOG.exception(
-                "ProTrain resume hook: chunk_manager.materialize_offload "
-                "failed after the resume load; runtime is now in an "
-                "inconsistent state (params on standalone GPU storage "
-                "but no offload pinned pool). Re-raising."
-            )
-            raise
-
-        # Rebuild optimizer adapters against the fresh shard_param views.
-        from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
-
-        # Path B: re-discover LoRA params on the freshly-loaded model so the
-        # rebuilt optimizer's _lora_owned_params references match the
-        # post-restore param storage (restore_to_gpu rebinds .data).
-        rebuild_lora_params: list | None = None
-        _path_b_active, _ = _resolve_path_b_default(cfg)
-        if _path_b_active:
+        def _rematerialize_and_rebuild_optimizer(context: str) -> None:
             try:
-                import torch.distributed as _dist
+                chunk_manager.materialize_offload()
+            except Exception:
+                LOG.exception(
+                    "ProTrain resume hook: chunk_manager.materialize_offload "
+                    "failed %s; runtime is now in an inconsistent state "
+                    "(params on standalone GPU storage but no offload pinned "
+                    "pool).",
+                    context,
+                )
+                raise
 
-                if (
-                    _dist.is_available()
-                    and _dist.is_initialized()
-                    and int(_dist.get_world_size()) > 1
-                ):
-                    _, rebuild_lora_params = _discover_lora_params(trainer.model)
-            except (ImportError, RuntimeError, ValueError):
-                rebuild_lora_params = None
+            from axolotl.integrations.protrain.api import protrain_optimizer_wrapper
+
+            # Path B: re-discover LoRA params on the freshly-loaded model so the
+            # rebuilt optimizer's _lora_owned_params references match the
+            # post-restore param storage (restore_to_gpu rebinds .data).
+            rebuild_lora_params: list | None = None
+            _path_b_active, _ = _resolve_path_b_default(cfg)
+            if _path_b_active:
+                try:
+                    import torch.distributed as _dist
+
+                    if (
+                        _dist.is_available()
+                        and _dist.is_initialized()
+                        and int(_dist.get_world_size()) > 1
+                    ):
+                        lora_names, rebuild_lora_params = _discover_lora_params(
+                            trainer.model
+                        )
+                        if lora_names:
+                            _register_lora_ddp_ignore(trainer.model, lora_names)
+                except (ImportError, RuntimeError, ValueError):
+                    rebuild_lora_params = None
+
+            try:
+                new_optim = protrain_optimizer_wrapper(
+                    wrapped,
+                    lr=rebuild_lr,
+                    betas=rebuild_betas,
+                    eps=rebuild_eps,
+                    weight_decay=rebuild_weight_decay,
+                    optimizer_name=rebuild_optimizer_name,
+                    huge_param_threshold_bytes=rebuild_huge_threshold,
+                    lora_owned_params=rebuild_lora_params,
+                )
+            except Exception:
+                LOG.exception(
+                    "ProTrain resume hook: protrain_optimizer_wrapper rebuild "
+                    "failed %s; runtime can't continue without an optimizer.",
+                    context,
+                )
+                raise
+
+            # Safe swap: Accelerate.prepare runs downstream of the load call site.
+            trainer.optimizer = new_optim
 
         try:
-            new_optim = protrain_optimizer_wrapper(
-                wrapped,
-                lr=rebuild_lr,
-                betas=rebuild_betas,
-                eps=rebuild_eps,
-                weight_decay=rebuild_weight_decay,
-                optimizer_name=rebuild_optimizer_name,
-                huge_param_threshold_bytes=rebuild_huge_threshold,
-                lora_owned_params=rebuild_lora_params,
-            )
+            # HF's _load_from_checkpoint signature varies; forward model only when provided.
+            if model is None:
+                original_load(resume_from_checkpoint)
+            else:
+                original_load(resume_from_checkpoint, model)
         except Exception:
             LOG.exception(
-                "ProTrain resume hook: protrain_optimizer_wrapper rebuild "
-                "failed after materialize_offload; runtime can't continue "
-                "without an optimizer. Re-raising."
+                "ProTrain resume hook: original _load_from_checkpoint failed; "
+                "rolling the ProTrain runtime back to offloaded state before "
+                "re-raising."
             )
+            try:
+                _rematerialize_and_rebuild_optimizer("during failed-load rollback")
+            except Exception:
+                LOG.exception(
+                    "ProTrain resume hook: rollback after failed "
+                    "_load_from_checkpoint also failed; preserving the original "
+                    "load exception for the caller."
+                )
             raise
 
-        # Safe swap: Accelerate.prepare runs downstream of the load call site.
-        trainer.optimizer = new_optim
+        _rematerialize_and_rebuild_optimizer("after the resume load")
         LOG.info(
             "ProTrain resume hook: optimizer adapter rebuilt and "
             "installed on trainer.optimizer; cross-mode resume complete."

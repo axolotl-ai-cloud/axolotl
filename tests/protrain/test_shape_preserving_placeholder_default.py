@@ -323,7 +323,7 @@ def test_custom_autograd_forward_backward_under_mode_b() -> None:
         # placeholder itself has one-element storage expanded into the
         # full shape (stride trickery) so it can't drive a real matmul,
         # but ctx.save_for_backward captures the shape we care about.
-        out_features, in_features = target_shape
+        _, in_features = target_shape
         x = torch.randn(
             (2, in_features),
             dtype=target_param.dtype,

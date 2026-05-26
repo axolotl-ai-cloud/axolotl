@@ -129,16 +129,31 @@ def _make_wrapped(*, with_nccl: bool = False) -> WrappedModel:
     return wrapped
 
 
-def _patch_dist(*, initialized: bool, world_size: int = 2, rank: int = 0):
+def _patch_dist(
+    *,
+    initialized: bool,
+    world_size: int = 2,
+    rank: int = 0,
+    all_reduce_sum: int | None = None,
+):
     """Patch ``torch.distributed`` to look like a live process group.
 
     ``broadcast_object_list`` is stubbed to a no-op so the rank-0 status/table
-    broadcast added by the cross-rank consistency fix can complete on a single-
-    process test harness without a real NCCL process group.
+    broadcast can complete on a single-process test harness without a real
+    process group. ``all_reduce`` mutates the status tensor like a SUM
+    consensus so the helper's all-ranks bailout path is covered without
+    torchrun.
     """
     import torch.distributed as dist
 
     def _noop_broadcast(object_list, src=0):  # noqa: ARG001 — match dist API
+        return None
+
+    def _sum_all_reduce(tensor, op=None):  # noqa: ANN001, ARG001
+        reduced = all_reduce_sum
+        if reduced is None:
+            reduced = world_size if int(tensor.item()) else 0
+        tensor.fill_(reduced)
         return None
 
     return [
@@ -146,6 +161,8 @@ def _patch_dist(*, initialized: bool, world_size: int = 2, rank: int = 0):
         patch.object(dist, "is_initialized", return_value=initialized),
         patch.object(dist, "get_world_size", return_value=world_size),
         patch.object(dist, "get_rank", return_value=rank),
+        patch.object(dist, "get_backend", return_value="gloo"),
+        patch.object(dist, "all_reduce", side_effect=_sum_all_reduce),
         patch.object(dist, "broadcast_object_list", side_effect=_noop_broadcast),
     ]
 
@@ -392,6 +409,50 @@ def test_remeasure_swallows_measure_failure_and_leaves_state_intact(monkeypatch)
         for p in patches:
             p.stop()
 
+    assert (updated, changed) == (False, False)
+    assert wrapped._trace is orig_trace  # type: ignore[attr-defined]
+    assert wrapped.search_result is orig_result
+
+
+def test_remeasure_bails_when_consensus_reports_partial_failure():
+    """A failed rank anywhere in the world leaves every rank on the bootstrap plan."""
+    pytest.importorskip("torch")
+
+    from axolotl.integrations.protrain import plugin as plugin_mod
+
+    wrapped = _make_wrapped()
+    orig_trace = wrapped._trace  # type: ignore[attr-defined]
+    orig_result = wrapped.search_result
+
+    measure_calls: list[int] = []
+
+    def fake_measure(world_size: int):
+        measure_calls.append(world_size)
+        return {1 << 20: 0.002}, {1 << 20: 0.001}
+
+    patches = _patch_dist(
+        initialized=True,
+        world_size=4,
+        all_reduce_sum=3,
+    ) + [
+        patch(
+            "axolotl.integrations.protrain.profiler.measure_nccl",
+            side_effect=fake_measure,
+        ),
+        patch(
+            "axolotl.integrations.protrain.search.search",
+            side_effect=AssertionError("search should not run after partial failure"),
+        ),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        updated, changed = plugin_mod._remeasure_nccl_and_research(wrapped)
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert measure_calls == [4]
     assert (updated, changed) == (False, False)
     assert wrapped._trace is orig_trace  # type: ignore[attr-defined]
     assert wrapped.search_result is orig_result

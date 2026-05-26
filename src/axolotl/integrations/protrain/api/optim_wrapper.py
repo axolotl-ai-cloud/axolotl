@@ -640,7 +640,14 @@ def protrain_optimizer_wrapper(
     # Round-robin partition the persistent set across ranks so each rank only owns 1/W of state.
     persistent_world_size = int(getattr(chunk_manager, "world_size", 1) or 1)
     persistent_rank = int(getattr(chunk_manager, "rank", 0) or 0)
-    persistent_params_full_all: list["nn.Parameter"] = list(persistent_params)
+    persistent_params_full_all: list["nn.Parameter"] = []
+    seen_persistent_ids: set[int] = set()
+    for param in persistent_params:
+        param_id = id(param)
+        if param_id in seen_persistent_ids:
+            continue
+        seen_persistent_ids.add(param_id)
+        persistent_params_full_all.append(param)
 
     # Within-param shard fallback for huge persistent params (v51).
     # Round-robin pins each whole nn.Parameter to one rank; for a single huge

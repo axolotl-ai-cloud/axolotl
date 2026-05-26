@@ -131,6 +131,26 @@ def test_backward_finalize_for_sharded_chunk_only_releases_storage() -> None:
     assert mgr.cpu_optim.step_calls == []
 
 
+def test_force_sweep_offloads_sharded_chunk_without_grads() -> None:
+    cid = ChunkId(0)
+    slot = _slot()
+    param = torch.nn.Parameter(torch.ones(2))
+    offload_calls: list[ChunkId] = []
+
+    mgr = _bare_manager()
+    mgr._persistent_ids = set()
+    mgr._chunk_shards = {cid: object()}
+    mgr._cpu_slots = {cid: [slot]}
+    mgr._params_by_id = {slot.param_id: param}
+    mgr.offload = offload_calls.append  # type: ignore[method-assign]
+
+    mgr.reduce_grads_and_offload(cid, force=True)
+
+    assert offload_calls == [cid]
+    assert cid not in mgr._cpu_step_ready_chunks
+    assert mgr.cpu_optim.step_calls == []
+
+
 def test_scheduler_uses_backward_finalize_hook_when_available() -> None:
     class _Manager:
         buffer_pool = None

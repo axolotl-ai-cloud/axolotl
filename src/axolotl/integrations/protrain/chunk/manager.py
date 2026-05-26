@@ -98,6 +98,139 @@ if TYPE_CHECKING:
 
 LOG = get_logger(__name__)
 
+_DDP_IGNORE_ATTR = "_ddp_params_and_buffers_to_ignore"
+_DDP_ORIGINAL_IGNORE_ATTR = "_protrain_ddp_original_ignore"
+_DDP_IGNORE_OWNERS_ATTR = "_protrain_ddp_ignore_owners"
+_DDP_IGNORE_OWNER_CHUNK = "chunk"
+
+
+def _as_ignore_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    try:
+        return [str(v) for v in value]
+    except TypeError:
+        return [str(value)]
+
+
+def _ddp_ignore_owners(model: Any) -> dict[str, set[str]]:
+    owners = getattr(model, _DDP_IGNORE_OWNERS_ATTR, None)
+    if not isinstance(owners, dict):
+        owners = {}
+    normalized: dict[str, set[str]] = {}
+    for owner, names in owners.items():
+        normalized[str(owner)] = set(_as_ignore_list(names))
+    return normalized
+
+
+def register_protrain_ddp_ignore_names(
+    model: Any,
+    owner: str,
+    names: set[str],
+) -> tuple[int, int | None]:
+    """Add one ProTrain owner's DDP-ignore names without owning caller names."""
+    names = {str(name) for name in names if str(name)}
+    if not names:
+        return (0, None)
+
+    existing_raw = getattr(model, _DDP_IGNORE_ATTR, None)
+    existing = _as_ignore_list(existing_raw)
+    if not hasattr(model, _DDP_ORIGINAL_IGNORE_ATTR):
+        setattr(
+            model,
+            _DDP_ORIGINAL_IGNORE_ATTR,
+            None if existing_raw is None else list(existing),
+        )
+
+    original = getattr(model, _DDP_ORIGINAL_IGNORE_ATTR)
+    original_set = set(_as_ignore_list(original))
+    owners = _ddp_ignore_owners(model)
+    previous = set(owners.get(owner, set()))
+    owners[owner] = set(names)
+
+    stale_owned = previous - names - original_set
+    live: list[str] = []
+    seen: set[str] = set()
+    for name in existing:
+        if name in stale_owned:
+            continue
+        if name in seen:
+            continue
+        live.append(name)
+        seen.add(name)
+
+    for name in sorted(names):
+        if name in seen:
+            continue
+        live.append(name)
+        seen.add(name)
+
+    setattr(model, _DDP_IGNORE_ATTR, live)
+    setattr(model, _DDP_IGNORE_OWNERS_ATTR, owners)
+    original_len = None if original is None else len(original_set)
+    return (len(names), original_len)
+
+
+def restore_protrain_ddp_ignore_names(model: Any, owner: str) -> tuple[int, int]:
+    """Remove one ProTrain owner's DDP-ignore names while preserving caller edits."""
+    owners = _ddp_ignore_owners(model)
+    owned = set(owners.pop(owner, set()))
+    if not owned:
+        return (0, len(_as_ignore_list(getattr(model, _DDP_IGNORE_ATTR, None))))
+
+    original = getattr(model, _DDP_ORIGINAL_IGNORE_ATTR, None)
+    original_set = set(_as_ignore_list(original))
+    other_owned: set[str] = set()
+    for names in owners.values():
+        other_owned.update(names)
+
+    remove = owned - original_set - other_owned
+    existing = _as_ignore_list(getattr(model, _DDP_IGNORE_ATTR, None))
+    live: list[str] = []
+    seen: set[str] = set()
+    for name in existing:
+        if name in remove:
+            continue
+        if name in seen:
+            continue
+        live.append(name)
+        seen.add(name)
+
+    if live:
+        setattr(model, _DDP_IGNORE_ATTR, live)
+    elif hasattr(model, _DDP_IGNORE_ATTR):
+        try:
+            delattr(model, _DDP_IGNORE_ATTR)
+        except AttributeError:
+            pass
+
+    if owners:
+        setattr(model, _DDP_IGNORE_OWNERS_ATTR, owners)
+    else:
+        if hasattr(model, _DDP_IGNORE_OWNERS_ATTR):
+            try:
+                delattr(model, _DDP_IGNORE_OWNERS_ATTR)
+            except AttributeError:
+                pass
+        if hasattr(model, _DDP_ORIGINAL_IGNORE_ATTR):
+            try:
+                delattr(model, _DDP_ORIGINAL_IGNORE_ATTR)
+            except AttributeError:
+                pass
+
+    return (len(remove), len(live))
+
+
+def restore_all_protrain_ddp_ignore_names(model: Any) -> tuple[int, int]:
+    """Remove every ProTrain-owned DDP-ignore name from ``model``."""
+    owners = _ddp_ignore_owners(model)
+    total_removed = 0
+    remaining = len(_as_ignore_list(getattr(model, _DDP_IGNORE_ATTR, None)))
+    for owner in list(owners):
+        removed, remaining = restore_protrain_ddp_ignore_names(model, owner)
+        total_removed += removed
+    return (total_removed, remaining)
+
 
 class _CpuParamSlot:
     """Per-parameter bookkeeping for a non-persistent chunk."""
@@ -805,31 +938,17 @@ class ChunkManager:
             freed / 1e9,
         )
 
-        # Rebuild ignore set from snapshot + current names so re-materialize doesn't accumulate stale entries.
         if self._shape_preserving_placeholders and self.model is not None:
             try:
                 protrain_set = self.chunk_managed_param_names()
-                if not hasattr(self.model, "_protrain_ddp_original_ignore"):
-                    _pre_existing = getattr(
-                        self.model, "_ddp_params_and_buffers_to_ignore", None
-                    )
-                    # Distinguish unset (None) from empty list for exact teardown restore.
-                    self.model._protrain_ddp_original_ignore = (  # type: ignore[attr-defined]
-                        None if _pre_existing is None else list(_pre_existing)
-                    )
-                _original = self.model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
-                if _original is None:
-                    self.model._ddp_params_and_buffers_to_ignore = list(protrain_set)  # type: ignore[attr-defined]
-                else:
-                    self.model._ddp_params_and_buffers_to_ignore = list(  # type: ignore[attr-defined]
-                        set(_original) | protrain_set
-                    )
+                registered, original_len = self.register_ddp_ignore_names(protrain_set)
                 LOG.info(
                     "ChunkManager.materialize_offload: rebuilt "
-                    "model._ddp_params_and_buffers_to_ignore from snapshot "
+                    "model._ddp_params_and_buffers_to_ignore from live "
+                    "caller state "
                     "+ %d chunk-managed names (pre-protrain original: %s)",
-                    len(protrain_set),
-                    "<unset>" if _original is None else f"{len(_original)} names",
+                    registered,
+                    "<unset>" if original_len is None else f"{original_len} names",
                 )
             except Exception as _exc:  # noqa: BLE001 — defensive
                 LOG.warning(
@@ -863,12 +982,23 @@ class ChunkManager:
                 )
             setattr(self, attr, None)
 
+    def register_ddp_ignore_names(self, names: set[str]) -> tuple[int, int | None]:
+        """Register this manager's current DDP-ignore names on ``self.model``."""
+        if self.model is None:
+            return (0, None)
+        return register_protrain_ddp_ignore_names(
+            self.model,
+            _DDP_IGNORE_OWNER_CHUNK,
+            names,
+        )
+
     def restore_to_gpu(self) -> int:
         """Inverse of :meth:`materialize_offload` — move every param back to GPU."""
         # Drain in-flight async CPU Adam so we snapshot a consistent post-step state.
         self.wait_cpu_optim()
 
         if not self._cpu_slots and not self._persistent_buffers:
+            self._restore_protrain_ddp_ignore_snapshot()
             LOG.debug(
                 "ChunkManager.restore_to_gpu: nothing offloaded "
                 "(no _cpu_slots, no _persistent_buffers), no-op"
@@ -1017,6 +1147,7 @@ class ChunkManager:
 
         # Callers MUST drop external shard_param/cpu_data/cpu_grad views before this call.
         self._close_cpu_pools()
+        self._restore_protrain_ddp_ignore_snapshot()
 
         LOG.info(
             "ChunkManager.restore_to_gpu: moved %.3f GB back to standalone "
@@ -1091,10 +1222,27 @@ class ChunkManager:
 
     def chunk_managed_param_names(self) -> set[str]:
         """Return param names backed by released (non-persistent) chunks so DDP can be told to ignore them."""
-        names: set[str] = set()
+        fallback_param_ids: list[ParamId] = []
+        param_obj_ids: set[int] = set()
         for cid in self._non_persistent_ids:
             for slot in self._cpu_slots.get(cid, []):
-                names.add(str(slot.param_id))
+                fallback_param_ids.append(slot.param_id)
+                param = self._params_by_id.get(slot.param_id)
+                if param is not None:
+                    param_obj_ids.add(id(param))
+        names: set[str] = set()
+        resolved_param_ids: set[int] = set()
+        for live_name, live_param in self.model.named_parameters():
+            live_id = id(live_param)
+            if live_id in param_obj_ids:
+                names.add(live_name)
+                resolved_param_ids.add(live_id)
+        for param_id in fallback_param_ids:
+            param = self._params_by_id.get(param_id)
+            if param is not None and id(param) in resolved_param_ids:
+                continue
+            if str(param_id):
+                names.add(str(param_id))
         return names
 
     def _make_grad_offload_hook(self, chunk_id: ChunkId, slot: _CpuParamSlot):
@@ -1835,7 +1983,7 @@ class ChunkManager:
                 any_grad = True
                 break
         if not any_grad:
-            return False
+            return bool(force)
 
         # current_stream is a syscall; compute once outside the loop.
         on_cuda = device.type == "cuda" and torch.cuda.is_available()
@@ -2009,30 +2157,24 @@ class ChunkManager:
         self._grad_hook_handles.clear()
 
     def _restore_protrain_ddp_ignore_snapshot(self) -> None:
-        """Restore ``_ddp_params_and_buffers_to_ignore`` to its pre-protrain snapshot."""
+        """Remove this manager's DDP-ignore entries from the live model list."""
         model = self.model
         if model is None:
             return
-        if not hasattr(model, "_protrain_ddp_original_ignore"):
+        if not hasattr(model, _DDP_ORIGINAL_IGNORE_ATTR) and not hasattr(
+            model, _DDP_IGNORE_OWNERS_ATTR
+        ):
             return
         try:
-            _original = model._protrain_ddp_original_ignore  # type: ignore[attr-defined]
-            if _original is None:
-                if hasattr(model, "_ddp_params_and_buffers_to_ignore"):
-                    try:
-                        delattr(model, "_ddp_params_and_buffers_to_ignore")
-                    except AttributeError:
-                        pass
-            else:
-                model._ddp_params_and_buffers_to_ignore = list(_original)  # type: ignore[attr-defined]
-            try:
-                delattr(model, "_protrain_ddp_original_ignore")
-            except AttributeError:
-                pass
+            removed, remaining = restore_protrain_ddp_ignore_names(
+                model,
+                _DDP_IGNORE_OWNER_CHUNK,
+            )
             LOG.info(
-                "ChunkManager: restored model._ddp_params_and_buffers_to_ignore "
-                "to pre-protrain snapshot (%s)",
-                "absent" if _original is None else f"{len(_original)} names",
+                "ChunkManager: removed %d chunk-managed DDP-ignore name(s); "
+                "%d live name(s) remain on model._ddp_params_and_buffers_to_ignore",
+                removed,
+                remaining,
             )
         except Exception as exc:  # noqa: BLE001 — best-effort
             LOG.debug(
@@ -2089,9 +2231,15 @@ class ChunkManager:
         self.cpu_optim = None
         self.gpu_optim = None
 
-        # Restore pre-protrain DDP-ignore snapshot so future non-protrain DDP wraps aren't constrained.
         try:
-            self._restore_protrain_ddp_ignore_snapshot()
+            removed, remaining = restore_all_protrain_ddp_ignore_names(self.model)
+            if removed:
+                LOG.info(
+                    "ChunkManager.close: removed %d total ProTrain DDP-ignore "
+                    "name(s); %d caller-owned name(s) remain",
+                    removed,
+                    remaining,
+                )
         except Exception as exc:  # noqa: BLE001 — best-effort
             LOG.debug(
                 "ChunkManager.close: snapshot restore failed: %s",

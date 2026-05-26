@@ -9,6 +9,8 @@ detection).
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 # Sample outputs captured from real ``nvidia-smi topo -m`` runs.
@@ -77,9 +79,24 @@ def _patched_subprocess_run(stdout: str, returncode: int = 0):
             self.returncode = returncode
 
     def _run(cmd, *args, **kwargs):  # noqa: ARG001
+        assert cmd[:3] == ["/usr/bin/nvidia-smi", "topo", "-m"]
+        assert os.path.isabs(cmd[0])
         return _Proc()
 
     return _run
+
+
+@pytest.fixture(autouse=True)
+def _mock_nvidia_smi_binary(monkeypatch):
+    """Pretend `nvidia-smi` resolves to an absolute binary path."""
+    import shutil
+
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None,
+    )
+    yield
 
 
 @pytest.fixture
@@ -162,6 +179,52 @@ def test_nvidia_smi_failure_returns_false(_mock_2_visible_gpus, monkeypatch):
     assert detect() is False
 
 
+def test_missing_nvidia_smi_returns_false(_mock_2_visible_gpus, monkeypatch):
+    """No resolved `nvidia-smi` binary means safe default False without spawning."""
+    import shutil
+    import subprocess
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: pytest.fail("subprocess.run should not be called"),
+    )
+
+    detect = _import_detect_with_fresh_cache()
+    assert detect() is False
+
+
+def test_nvidia_smi_spawn_uses_absolute_which_path(
+    _mock_2_visible_gpus, monkeypatch
+):
+    """The subprocess argv starts with the absolute path returned by shutil.which."""
+    import shutil
+    import subprocess
+
+    resolved = "/opt/nvidia/bin/nvidia-smi"
+    calls: list[list[str]] = []
+
+    class _Proc:
+        stdout = _PLAIN_2GPU_NV12
+        returncode = 0
+
+    def _run(cmd, *args, **kwargs):  # noqa: ARG001
+        calls.append(cmd)
+        return _Proc()
+
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: resolved if name == "nvidia-smi" else None,
+    )
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    detect = _import_detect_with_fresh_cache()
+    assert detect() is True
+    assert calls == [[resolved, "topo", "-m"]]
+
+
 def test_single_gpu_returns_false(monkeypatch):
     """1 visible GPU → False (no pairs to check; default-True semantics preserved)."""
     import torch
@@ -203,6 +266,36 @@ def test_cuda_visible_devices_masks_to_pcie_pair(monkeypatch):
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,2")
     monkeypatch.setattr(subprocess, "run", _patched_subprocess_run(_PLAIN_4GPU_MIXED))
+
+    detect = _import_detect_with_fresh_cache()
+    assert detect() is False
+
+
+def test_cuda_visible_devices_uuid_mask_returns_false(monkeypatch):
+    """UUID masks cannot be mapped to nvidia-smi rows, so do not assume GPU0/GPU1."""
+    import subprocess
+
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-abc,GPU-def")
+    monkeypatch.setattr(subprocess, "run", _patched_subprocess_run(_PLAIN_2GPU_NV12))
+
+    detect = _import_detect_with_fresh_cache()
+    assert detect() is False
+
+
+def test_cuda_visible_devices_mixed_numeric_and_uuid_returns_false(monkeypatch):
+    """Partially numeric masks are ambiguous and must not fall back to identity."""
+    import subprocess
+
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,GPU-def")
+    monkeypatch.setattr(subprocess, "run", _patched_subprocess_run(_PLAIN_2GPU_NV12))
 
     detect = _import_detect_with_fresh_cache()
     assert detect() is False

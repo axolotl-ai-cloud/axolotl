@@ -673,7 +673,6 @@ def test_save_metadata_contains_expected_fields(saved_checkpoint):
         meta = json.load(f)
 
     assert meta["format_version"] == SCHEMA_FORMAT_VERSION
-    assert SCHEMA_FORMAT_VERSION == 4
     assert isinstance(meta["protrain_layout_signature"], str)
     assert len(meta["protrain_layout_signature"]) == 64
     assert meta["protrain_persistent_ids"] == sorted(
@@ -1591,7 +1590,7 @@ def test_partitioned_huge_param_save_load_roundtrip(tmp_path, saved_checkpoint):
 
     # Reload metadata + verify the v4 shard field round-trips through JSON intact.
     reloaded = json.loads((target / METADATA_FILENAME).read_text())
-    assert reloaded["format_version"] == 4
+    assert reloaded["format_version"] == SCHEMA_FORMAT_VERSION
     shards = reloaded["protrain_persistent_huge_param_shards"]
     assert len(shards) == 1
     assert shards[0]["param_shape"] == [4096, 4096]

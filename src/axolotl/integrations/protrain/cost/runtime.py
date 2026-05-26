@@ -289,14 +289,14 @@ def estimate_runtime(
     )
 
 
-# Per-component α clamp bounds; [0.5, 2.0] window catches noise outside [0.3, 3.0].
+# Per-component alpha clamp bounds; [0.5, 2.0] window catches noise outside [0.3, 3.0].
 _PHASE2_ALPHA_CLAMP_MIN: float = 0.5
 _PHASE2_ALPHA_CLAMP_MAX: float = 2.0
 _PHASE2_ALPHA_NOISE_FLOOR: float = 0.3
 _PHASE2_ALPHA_NOISE_CEILING: float = 3.0
 _WARNED_PHASE2_ALPHA_NOISY: bool = False
 
-# Residual-α clamp bounds; analytical under-counts overhead so inflate side wider.
+# Residual-alpha clamp bounds; analytical under-counts overhead so inflate side wider.
 _PHASE2_RESIDUAL_CLAMP_MIN: float = 0.8
 _PHASE2_RESIDUAL_CLAMP_MAX: float = 2.0
 _PHASE2_RESIDUAL_NOISE_FLOOR: float = 0.5
@@ -305,12 +305,12 @@ _WARNED_PHASE2_RESIDUAL_NOISY: bool = False
 
 
 def _clamp_alpha(alpha: float, name: str) -> float:
-    """Clamp a per-component α to [0.5, 2.0]; warn once if outside [0.3, 3.0]."""
+    """Clamp a per-component alpha to [0.5, 2.0]; warn once if outside [0.3, 3.0]."""
     if alpha < _PHASE2_ALPHA_NOISE_FLOOR or alpha > _PHASE2_ALPHA_NOISE_CEILING:
         global _WARNED_PHASE2_ALPHA_NOISY
         if not _WARNED_PHASE2_ALPHA_NOISY:
             LOG.warning(
-                "estimate_runtime: phase-2 per-component α %s = %.3f is "
+                "estimate_runtime: phase-2 per-component %s = %.3f is "
                 "outside the noise envelope [%.2f, %.2f] — measurement noise "
                 "may be dominating signal. Clamping to [%.2f, %.2f]; "
                 "investigate phase-2 measurement variance if predictions "
@@ -333,7 +333,7 @@ _STRUCTURE_MATCH_NCKPT_TOL: int = 1
 def _structure_match(
     cfg: "CostConfig", trace: "ProfilerTrace", n_ckpt_prod: int
 ) -> bool:
-    """Whether prod cfg matches boot's shape closely enough for α deflation to transfer."""
+    """Whether prod cfg matches boot's shape closely enough for alpha deflation to transfer."""
     boot_n_persist = int(getattr(trace, "phase2_n_persist", -1))
     boot_n_checkpoint = int(getattr(trace, "phase2_n_checkpoint", -1))
     if boot_n_persist < 0 or boot_n_checkpoint < 0:
@@ -347,12 +347,12 @@ def _structure_match(
 
 
 def _clamp_alpha_inflate_only(alpha: float, name: str) -> float:
-    """Clamp raw α to [1.0, 2.0] — inflate-only — when shape gate fires."""
+    """Clamp raw alpha to [1.0, 2.0] - inflate-only - when shape gate fires."""
     if alpha < _PHASE2_ALPHA_NOISE_FLOOR or alpha > _PHASE2_ALPHA_NOISE_CEILING:
         global _WARNED_PHASE2_ALPHA_NOISY
         if not _WARNED_PHASE2_ALPHA_NOISY:
             LOG.warning(
-                "estimate_runtime: phase-2 per-component α %s = %.3f is "
+                "estimate_runtime: phase-2 per-component %s = %.3f is "
                 "outside the noise envelope [%.2f, %.2f] — measurement noise "
                 "may be dominating signal. Clamping to [1.00, %.2f] "
                 "(shape-gate active); investigate phase-2 measurement "
@@ -368,12 +368,12 @@ def _clamp_alpha_inflate_only(alpha: float, name: str) -> float:
 
 
 def _clamp_residual_alpha(alpha: float) -> float:
-    """Clamp the residual whole-iter α to [0.8, 2.0]; warn once if outside [0.5, 5.0]."""
+    """Clamp the residual whole-iter alpha to [0.8, 2.0]; warn once if outside [0.5, 5.0]."""
     if alpha < _PHASE2_RESIDUAL_NOISE_FLOOR or alpha > _PHASE2_RESIDUAL_NOISE_CEILING:
         global _WARNED_PHASE2_RESIDUAL_NOISY
         if not _WARNED_PHASE2_RESIDUAL_NOISY:
             LOG.warning(
-                "estimate_runtime: phase-2 residual α = %.3f is outside the "
+                "estimate_runtime: phase-2 alpha_residual = %.3f is outside the "
                 "noise envelope [%.2f, %.2f] — either phase-2 iter measurement "
                 "is noisy or a per-component term is missing. Clamping to "
                 "[%.2f, %.2f]; investigate phase-2 measurement quality if "
@@ -399,7 +399,7 @@ def _compose_t_iter_with_alpha_calibration(
     fwd_used_phase2_override: bool,
     bwd_used_phase2_override: bool,
 ) -> float:
-    """Compose t_iter from per-component times, applying phase-2 α calibration."""
+    """Compose t_iter from per-component times, applying phase-2 alpha calibration."""
     has_per_component = (
         getattr(trace, "phase2_analytical_fwd_s", 0.0) > 0.0
         and getattr(trace, "phase2_analytical_bwd_s", 0.0) > 0.0
@@ -415,14 +415,14 @@ def _compose_t_iter_with_alpha_calibration(
         # Inflate-only when prod shape differs from boot; boot biases don't transfer.
         shape_matches = _structure_match(cfg, trace, int(cfg.n_checkpoint))
         if shape_matches:
-            a_fwd = _clamp_alpha(a_fwd_raw, "αfwd")
-            a_bwd = _clamp_alpha(a_bwd_raw, "αbwd")
-            a_opt = _clamp_alpha(a_opt_raw, "αopt")
+            a_fwd = _clamp_alpha(a_fwd_raw, "alpha_fwd")
+            a_bwd = _clamp_alpha(a_bwd_raw, "alpha_bwd")
+            a_opt = _clamp_alpha(a_opt_raw, "alpha_opt")
         else:
-            a_fwd = _clamp_alpha_inflate_only(a_fwd_raw, "αfwd")
-            a_bwd = _clamp_alpha_inflate_only(a_bwd_raw, "αbwd")
-            a_opt = _clamp_alpha_inflate_only(a_opt_raw, "αopt")
-        # Skip α on the override path — measurement-anchored already.
+            a_fwd = _clamp_alpha_inflate_only(a_fwd_raw, "alpha_fwd")
+            a_bwd = _clamp_alpha_inflate_only(a_bwd_raw, "alpha_bwd")
+            a_opt = _clamp_alpha_inflate_only(a_opt_raw, "alpha_opt")
+        # Skip alpha on the override path - measurement-anchored already.
         a_fwd_eff = 1.0 if fwd_used_phase2_override else a_fwd
         a_bwd_eff = 1.0 if bwd_used_phase2_override else a_bwd
         t_fwd_cal = a_fwd_eff * t_fwd
@@ -432,11 +432,11 @@ def _compose_t_iter_with_alpha_calibration(
         t_step_cal = max(t_gpu_cal, t_cpu_cal)
         t_iter = t_fwd_cal + t_bwd_cal + t_step_cal
 
-        # Residual α absorbs whole-iter overhead the per-component baselines don't model.
+        # Residual alpha absorbs whole-iter overhead the per-component baselines don't model.
         anchor = float(getattr(trace, "phase2_per_comp_pred_iter_s", 0.0))
         measured = float(getattr(trace, "phase2_iter_s", 0.0))
         if anchor > 0.0 and measured > 0.0 and shape_matches:
-            # Shape-match gate's symmetric companion: residual α suppressed on shape change.
+            # Shape-match gate's symmetric companion: residual alpha suppressed on shape change.
             a_residual = _clamp_residual_alpha(measured / max(anchor, 1e-9))
         else:
             a_residual = 1.0
@@ -444,9 +444,9 @@ def _compose_t_iter_with_alpha_calibration(
         t_iter = a_residual * t_iter
         if LOG.isEnabledFor(logging.DEBUG):
             LOG.debug(
-                "estimate_runtime: phase-2 per-component α applied "
-                "(shape_matches=%s, αfwd=%.3f αbwd=%.3f αopt=%.3f, "
-                "α_residual=%.3f, fwd_override=%s bwd_override=%s, "
+                "estimate_runtime: phase-2 per-component alpha applied "
+                "(shape_matches=%s, alpha_fwd=%.3f alpha_bwd=%.3f alpha_opt=%.3f, "
+                "alpha_residual=%.3f, fwd_override=%s bwd_override=%s, "
                 "t_fwd=%.4fs t_bwd=%.4fs t_gpu=%.4fs t_cpu=%.4fs "
                 "t_step=%.4fs "
                 "-> t_iter_pre_residual=%.4fs -> t_iter=%.4fs)",
@@ -466,7 +466,7 @@ def _compose_t_iter_with_alpha_calibration(
                 t_iter,
             )
         return t_iter
-    # Single-α legacy fallback for in-memory traces without per-component fields.
+    # Single-alpha legacy fallback for in-memory traces without per-component fields.
     t_iter = t_fwd + t_bwd + max(t_gpu_optim, t_cpu_optim)
     used_analytical_path = (not fwd_used_phase2_override) or (
         not bwd_used_phase2_override
@@ -477,14 +477,15 @@ def _compose_t_iter_with_alpha_calibration(
         and getattr(trace, "phase2_analytical_iter_s", 0.0) > 0.0
     ):
         alpha = _clamp_alpha(
-            trace.phase2_iter_s / trace.phase2_analytical_iter_s, "α(legacy-single)"
+            trace.phase2_iter_s / trace.phase2_analytical_iter_s,
+            "alpha_legacy_single",
         )
         t_iter_pre = t_iter
         t_iter = t_iter * alpha
         if LOG.isEnabledFor(logging.DEBUG):
             LOG.debug(
-                "estimate_runtime: phase-2 single-α (legacy fallback) applied "
-                "(α=%.3f, %.4fs -> %.4fs)",
+                "estimate_runtime: phase-2 alpha_legacy_single applied "
+                "(alpha_legacy_single=%.3f, %.4fs -> %.4fs)",
                 alpha,
                 t_iter_pre,
                 t_iter,

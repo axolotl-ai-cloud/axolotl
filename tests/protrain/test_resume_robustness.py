@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -128,6 +129,126 @@ def _make_batch(cfg):
         torch.randint(0, cfg.vocab_size, (1, 32), device="cuda", dtype=torch.long),
         torch.randint(0, cfg.vocab_size, (1, 32), device="cuda", dtype=torch.long),
     )
+
+
+def test_restore_to_gpu_removes_only_chunk_owned_ddp_ignore_names() -> None:
+    """restore_to_gpu clears chunk-owned DDP ignores while preserving caller entries."""
+    pytest.importorskip("torch")
+    import torch
+    from torch import nn
+
+    from axolotl.integrations.protrain.chunk.buffer_pool import BufferPool
+    from axolotl.integrations.protrain.chunk.manager import ChunkManager
+    from axolotl.integrations.protrain.chunk.pinned_alloc import PinnedHostMemory
+    from axolotl.integrations.protrain.types import ChunkId, ChunkLayout, ParamId
+
+    model = nn.Linear(2, 2, bias=False)
+    pid = ParamId("weight")
+    layout = ChunkLayout(
+        S_chunk=64,
+        N_chunk=1,
+        chunks=((pid,),),
+        param_to_chunk={pid: ChunkId(0)},
+        block_to_chunks={},
+    )
+    host = PinnedHostMemory(n_buffer=1, S_chunk=layout.S_chunk)
+    pool = BufferPool(
+        n_buffer=1,
+        S_chunk=layout.S_chunk,
+        pinned_host=host,
+        device=torch.device("cpu"),
+    )
+    model._ddp_params_and_buffers_to_ignore = ["caller"]  # type: ignore[attr-defined]
+    mgr = ChunkManager(
+        model=model,
+        layout=layout,
+        n_persist=0,
+        buffer_pool=pool,
+        device=torch.device("cpu"),
+        shape_preserving_placeholders=True,
+    )
+
+    try:
+        mgr.materialize_offload()
+        assert "weight" in set(model._ddp_params_and_buffers_to_ignore)  # type: ignore[attr-defined]
+        model._ddp_params_and_buffers_to_ignore.append("external_after")  # type: ignore[attr-defined]
+
+        mgr.restore_to_gpu()
+
+        live = set(getattr(model, "_ddp_params_and_buffers_to_ignore", []))
+        assert live == {"caller", "external_after"}
+        assert not hasattr(model, "_protrain_ddp_original_ignore")
+        assert not hasattr(model, "_protrain_ddp_ignore_owners")
+    finally:
+        mgr.close()
+        host.close()
+
+
+def test_resume_hook_rolls_back_offload_when_original_load_fails(monkeypatch) -> None:
+    """A failing original load leaves the ProTrain runtime re-materialized."""
+    import axolotl.integrations.protrain.api as protrain_api
+    from axolotl.integrations.protrain.plugin import _install_resume_hook
+
+    calls: list[str] = []
+
+    class _CpuOptim:
+        def shutdown(self) -> None:
+            calls.append("cpu_shutdown")
+
+    class _ChunkManager:
+        _cpu_slots = {0: [object()]}
+        _chunk_shards = {}
+
+        def __init__(self) -> None:
+            self.cpu_optim = _CpuOptim()
+            self.gpu_optim = object()
+
+        def restore_to_gpu(self) -> None:
+            calls.append("restore")
+
+        def materialize_offload(self) -> None:
+            calls.append("materialize")
+
+    class _Trainer:
+        def __init__(self) -> None:
+            self.args = SimpleNamespace(
+                learning_rate=1e-3,
+                adam_beta1=0.9,
+                adam_beta2=0.95,
+                adam_epsilon=1e-8,
+                weight_decay=0.01,
+                optim="adamw_torch",
+            )
+            self.model = SimpleNamespace()
+            self.optimizer = "old"
+
+        def _load_from_checkpoint(self, resume_from_checkpoint, model=None) -> None:
+            calls.append("load")
+            raise RuntimeError("load boom")
+
+    def _fake_optimizer_wrapper(*args, **kwargs):
+        calls.append("optim_rebuild")
+        return "rebuilt"
+
+    monkeypatch.setattr(
+        protrain_api,
+        "protrain_optimizer_wrapper",
+        _fake_optimizer_wrapper,
+    )
+    trainer = _Trainer()
+    wrapped = SimpleNamespace(chunk_manager=_ChunkManager())
+    cfg = SimpleNamespace(
+        protrain_own_lora_grad_sync=False,
+        protrain_persistent_huge_param_threshold_bytes=None,
+    )
+
+    _install_resume_hook(trainer, cfg, wrapped)
+
+    with pytest.raises(RuntimeError, match="load boom"):
+        trainer._load_from_checkpoint("checkpoint")
+
+    assert calls == ["cpu_shutdown", "restore", "load", "materialize", "optim_rebuild"]
+    assert trainer.optimizer == "rebuilt"
 
 
 @pytest.mark.gpu

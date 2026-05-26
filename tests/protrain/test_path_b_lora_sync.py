@@ -492,7 +492,7 @@ def test_plugin_post_trainer_create_flag_off_no_op(monkeypatch):
     assert not hasattr(model, "_ddp_params_and_buffers_to_ignore")
 
     # The discovery helper still works (it's stateless).
-    names, params = _discover_lora_params(model)
+    names, _ = _discover_lora_params(model)
     assert len(names) == 8
 
     # But without _register_lora_ddp_ignore being called, the model's

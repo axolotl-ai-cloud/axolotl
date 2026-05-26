@@ -17,6 +17,7 @@ import pytest
 
 from axolotl.integrations.protrain.api.model_wrapper import (
     _phase2_quickstart_should_skip,
+    _teardown_phase2_bootstrap_runtime,
 )
 from axolotl.integrations.protrain.args import ProTrainArgs
 from axolotl.integrations.protrain.search import search
@@ -132,6 +133,41 @@ def test_quickstart_refuses_to_skip_on_nonpositive_predictions():
         )
         is False
     )
+
+
+def test_phase2_teardown_closes_bootstrap_when_restore_raises():
+    """The rebuild teardown closes wrapper resources even when restore fails."""
+    pytest.importorskip("torch")
+    from torch import nn
+
+    calls: list[str] = []
+
+    class _Handle:
+        def remove(self) -> None:
+            calls.append("remove")
+
+    class _ChunkManager:
+        def restore_to_gpu(self) -> None:
+            calls.append("restore")
+            raise RuntimeError("restore boom")
+
+    class _BootWrapped:
+        _hook_handles = [_Handle()]
+
+        def close(self) -> None:
+            calls.append("close")
+
+    with pytest.raises(RuntimeError, match="restore boom"):
+        _teardown_phase2_bootstrap_runtime(
+            model=nn.Sequential(),
+            blocks=[],
+            handles=[_Handle()],
+            chunk_manager=_ChunkManager(),
+            boot_wrapped=_BootWrapped(),
+            context="test phase-2 teardown",
+        )
+
+    assert calls == ["remove", "restore", "close"]
 
 
 # ---------------------------------------------------------------------------

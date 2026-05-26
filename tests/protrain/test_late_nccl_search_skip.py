@@ -121,10 +121,15 @@ def _patch_dist(*, initialized: bool, world_size: int = 4, rank: int = 0):
 
     ``broadcast_object_list`` is stubbed to a no-op so the cross-rank
     consistency broadcasts complete on a single-process test harness.
+    ``all_reduce`` mutates the status tensor like a successful SUM consensus.
     """
     import torch.distributed as dist
 
     def _noop_broadcast(object_list, src=0):  # noqa: ARG001 — match dist API
+        return None
+
+    def _sum_all_reduce(tensor, op=None):  # noqa: ANN001, ARG001
+        tensor.fill_(world_size if int(tensor.item()) else 0)
         return None
 
     return [
@@ -132,6 +137,8 @@ def _patch_dist(*, initialized: bool, world_size: int = 4, rank: int = 0):
         patch.object(dist, "is_initialized", return_value=initialized),
         patch.object(dist, "get_world_size", return_value=world_size),
         patch.object(dist, "get_rank", return_value=rank),
+        patch.object(dist, "get_backend", return_value="gloo"),
+        patch.object(dist, "all_reduce", side_effect=_sum_all_reduce),
         patch.object(dist, "broadcast_object_list", side_effect=_noop_broadcast),
     ]
 

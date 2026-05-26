@@ -61,7 +61,7 @@ def warn_on_unvalidated_versions() -> None:
     """Emit a warning when transformers/peft versions exceed validated bounds.
 
     The integration's PEFT-LoRA-container handling + checkpoint resume
-    machinery were validated against transformers<5.6 and peft<0.21.
+    machinery were validated against transformers<5.9 and peft<0.21.
     Newer versions may work but have not been verified by the maintainers.
     """
     import peft
