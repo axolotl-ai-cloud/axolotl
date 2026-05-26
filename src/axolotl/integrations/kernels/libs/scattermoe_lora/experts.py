@@ -129,6 +129,22 @@ def scattermoe_experts_forward(
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
     """ScatterMoE experts forward with fused-LoRA support."""
+    # Assumes the standard expert layout: gate_up concatenated as [E, 2I, H],
+    # gated SwiGLU, no expert bias. gpt_oss-style experts (interleaved gate/up,
+    # transposed [E, H, 2I], expert bias) would be silently miscomputed by the
+    # fixed transpose/chunk below, so reject rather than corrupt training.
+    if (
+        getattr(self, "is_transposed", False)
+        or not getattr(self, "is_concatenated", True)
+        or getattr(self, "has_bias", False)
+        or not getattr(self, "has_gate", True)
+    ):
+        raise NotImplementedError(
+            "scattermoe supports only concatenated, non-transposed, gated, biasless "
+            "experts (qwen/mixtral/deepseek/glm/...). This model's experts use an "
+            "unsupported layout; use use_sonicmoe or a built-in experts_implementation."
+        )
+
     K = top_k_index.shape[1]
 
     routing_weights = top_k_weights.to(hidden_states.dtype)
