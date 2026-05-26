@@ -22,6 +22,11 @@ if compare_version("triton", operator.ge, "3.0.0") and not is_npu_available():
 else:
     from triton.language.math import rsqrt
 
+# Backward over-subscription factor: number of program blocks per SM. The
+# weight-gradient reduction needs one private partial per block, so this also
+# sizes the dW scratch buffer. ~8 saturates occupancy on tested GPUs.
+_BWD_BLOCKS_PER_SM = 8
+
 
 @triton.jit
 def _rms_norm_rope_forward_kernel(
@@ -137,6 +142,16 @@ def _rms_norm_rope_forward_kernel(
     )
 
 
+_BWD_AUTOTUNE_CONFIGS = [
+    triton.Config({}, num_warps=w, num_stages=s)
+    for w in (2, 4, 8, 16)
+    for s in (1, 2, 3)
+]
+
+
+# num_warps/num_stages optima for the latency-bound row loop vary by GPU; key on
+# n_cols (head_dim) so head_dim=128 and 256 each get their own tuned config.
+@triton.autotune(configs=_BWD_AUTOTUNE_CONFIGS, key=["n_cols"])
 @triton.jit
 def _rms_norm_rope_backward_kernel(
     dY_ptr,
@@ -316,12 +331,18 @@ def _fused_rms_norm_rope_bwd(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Returns ``(dX, dW)``."""
     n_rows, n_cols = dY.shape
-    BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+    BLOCK_SIZE, _ = calculate_settings(n_cols)
+    # One block per SM serializes a long row-loop at 1 block/SM occupancy; the
+    # forward runs a block per row. Over-subscribe the SMs so the latency-bound
+    # row loop has enough resident blocks to hide global-load latency. Each
+    # block still writes a private dW partial that's summed below (no atomics).
     sm_count = torch.cuda.get_device_properties(X.device).multi_processor_count
-    rows_per_program = math.ceil(n_rows / sm_count)
+    target_programs = min(_BWD_BLOCKS_PER_SM * sm_count, n_rows)
+    rows_per_program = max(1, math.ceil(n_rows / target_programs))
+    n_programs = math.ceil(n_rows / rows_per_program)
     dX = torch.empty_like(X)
-    _dW = torch.empty((sm_count, n_cols), dtype=torch.float32, device=X.device)
-    wrap_triton(_rms_norm_rope_backward_kernel)[(sm_count,)](
+    _dW = torch.empty((n_programs, n_cols), dtype=torch.float32, device=X.device)
+    wrap_triton(_rms_norm_rope_backward_kernel)[(n_programs,)](
         dY,
         dY.stride(0),
         dX,
@@ -346,7 +367,6 @@ def _fused_rms_norm_rope_bwd(
         HAS_WEIGHT=True,
         UNIT_OFFSET=unit_offset,
         BLOCK_SIZE=BLOCK_SIZE,
-        num_warps=num_warps,
     )
     dW = _dW.sum(dim=0).to(W.dtype)
     return dX, dW

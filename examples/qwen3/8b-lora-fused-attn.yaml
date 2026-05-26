@@ -22,7 +22,8 @@ lora_dropout: 0.0
 lora_target_linear: true
 
 # Opt-in fused RMSNorm + RoPE Triton kernel for Qwen3 attention.
-# Bit-identical to eager; ~+7-12% per-step on tested hardware.
+# fp32-internal, single round: matches an fp32 reference within bf16 rounding
+# (more accurate than the eager bf16 path). Speeds up the q/k norm+rope path.
 fused_attn_kernel: true
 
 gradient_accumulation_steps: 4
