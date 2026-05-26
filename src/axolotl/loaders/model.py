@@ -56,6 +56,11 @@ from axolotl.utils.distributed import (
     get_device_count,
     get_device_type,
 )
+from axolotl.utils.fp32_norms import (
+    _matches_norm_class,
+    get_fp32_norm_patterns,
+    tag_model_fp32_norms,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
@@ -190,6 +195,9 @@ class ModelLoader:
         self._apply_post_lora_load_setup(skip_move_to_device)
         self.patch_manager.apply_post_model_load_patches(self.model)
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
+
+        if self.cfg.fp32_norms:
+            tag_model_fp32_norms(self.model, self.cfg)
 
         return self.model, lora_config
 
@@ -965,8 +973,11 @@ class ModelLoader:
         dest = {"dtype": dist_dtype}
         if self.cfg.lora_on_cpu:
             dest["device"] = "cpu"
+        fp32_norm_patterns = get_fp32_norm_patterns(self.cfg)
         for name, module in self.model.named_modules():
-            if "norm" in name:
+            if fp32_norm_patterns and _matches_norm_class(module, fp32_norm_patterns):
+                module.to(torch.float32)
+            elif "norm" in name:
                 module.to(dist_dtype)
             if before_kbit_train_or_finetune:
                 if name.endswith(".gate"):
