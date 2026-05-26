@@ -631,8 +631,22 @@ def _detect_nvlink_topology() -> bool:
         )
         return False
 
-    gpu_lines = [ln for ln in proc.stdout.splitlines() if ln.lstrip().startswith("GPU")]
-    gpu_lines = [ln for ln in gpu_lines if "\t" in ln or "  " in ln]
+    # nvidia-smi topo -m emits a header row whose first cell is also a GPU
+    # label (e.g. `\tGPU0\tGPU1\tNIC0\t...`), so a naive `startswith("GPU")`
+    # filter would mis-classify the header as a data row. Distinguish by the
+    # second cell: data rows have "X" (diagonal) or a topology code (NV*, PHB,
+    # PXB, NODE, SYS); the header's second cell is another GPU label.
+    gpu_lines = []
+    for ln in proc.stdout.splitlines():
+        stripped = ln.lstrip()
+        if not stripped.startswith("GPU"):
+            continue
+        if "\t" not in ln and "  " not in ln:
+            continue
+        cells = stripped.split()
+        if len(cells) < 2 or cells[1].startswith("GPU"):
+            continue
+        gpu_lines.append(ln)
     if not gpu_lines:
         return False
 
@@ -1015,15 +1029,27 @@ def _is_plugin_active(cfg) -> bool:
     return _has_protrain_plugin(plugins)
 
 
-def _guard_force_all_persistent_full_ft_ddp(cfg, trainer) -> None:
-    """Reject Mode A force_all_persistent + full-FT under multi-rank DDP.
+def _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped) -> None:
+    """Reject Mode A (all-persistent) + full-FT under multi-rank DDP.
 
     Mode A's chunk-wrapper hooks register per-param autograd hooks that
     conflict with DDP's reducer when every parameter is trainable, surfacing
     later as "parameters which did not receive grad" deep in the backward
     pass. Fail loudly at setup instead of silently producing garbage gradients.
+
+    Uses the EFFECTIVE runtime state (post-searcher `n_persist >= N_chunk`)
+    rather than the raw `cfg.protrain_force_all_persistent` flag. Auto-mode
+    can land on Mode A independently of the force flag, and the conflict is
+    determined by the actual chunk layout, not the user's input.
+
+    Full-FT detection is config-level (`cfg.adapter is None/empty`); after
+    ProTrain wraps the model, `param.requires_grad` is unreliable because
+    chunk-managed scratch / placeholder params may carry `requires_grad=False`.
     """
-    if not bool(getattr(cfg, "protrain_force_all_persistent", False)):
+    # Full-FT iff no LoRA adapter — config-level signal that survives
+    # ProTrain's model wrapping.
+    adapter = getattr(cfg, "adapter", None)
+    if adapter is not None and str(adapter).strip().lower() != "":
         return
 
     try:
@@ -1033,25 +1059,41 @@ def _guard_force_all_persistent_full_ft_ddp(cfg, trainer) -> None:
     if world_size <= 1:
         return
 
-    model = getattr(trainer, "model", None)
-    if model is None:
+    # Effective runtime state: Mode A is "all chunks persistent on GPU".
+    # Look at the picked config's n_persist vs the chunk layout's N_chunk.
+    if wrapped is None:
+        return
+    search_result = getattr(wrapped, "search_result", None)
+    chunk_manager = getattr(wrapped, "chunk_manager", None)
+    if search_result is None or chunk_manager is None:
         return
 
-    params = list(model.parameters())
-    if not params:
+    picked = getattr(search_result, "cfg", None)
+    n_persist = getattr(picked, "n_persist", None) if picked is not None else None
+    layout = getattr(chunk_manager, "layout", None)
+    n_chunk = getattr(layout, "N_chunk", None) if layout is not None else None
+    if n_persist is None or n_chunk is None:
         return
-    if not all(p.requires_grad for p in params):
+
+    # Mode A: every chunk is persistent → DDP wraps the whole model.
+    # Mode C: n_persist < N_chunk → ProTrain bypasses DDP via Mode C bypass.
+    if int(n_persist) < int(n_chunk):
         return
 
     raise RuntimeError(
-        "ProTrain Mode A `protrain_force_all_persistent: true` is not supported "
-        "for full finetune (all params trainable) under multi-rank DDP. The "
-        "chunk-wrapper hooks conflict with DDP's autograd reducer and surface "
-        'as "parameters which did not receive grad" errors. Use '
-        "`protrain_zero3_shard: true` (Mode C) for full-FT, or run single-GPU. "
-        "LoRA / QLoRA workloads are not affected — only full-FT triggers the "
-        "conflict."
+        "ProTrain Mode A (all chunks persistent on GPU, n_persist=%d == "
+        "N_chunk=%d) is not supported for full finetune (no LoRA adapter "
+        "configured) under multi-rank DDP. The chunk-wrapper hooks conflict "
+        "with DDP's autograd reducer and surface as \"parameters which did "
+        'not receive grad" errors. Use `protrain_zero3_shard: true` (Mode C) '
+        "for full-FT, or run single-GPU. LoRA / QLoRA workloads are not "
+        "affected — only full-FT triggers the conflict."
+        % (int(n_persist), int(n_chunk))
     )
+
+
+# Back-compat alias for the old name (some callers may import by name).
+_guard_force_all_persistent_full_ft_ddp = _guard_full_ft_mode_a_ddp
 
 
 def _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped) -> None:
@@ -1066,11 +1108,14 @@ def _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped) -> None:
     adapter weights are serialized; full-FT saves include the chunk-managed
     base weights and trip the check.
 
-    Fix: when ProTrain is active, full-FT (all params trainable), and any
+    When ProTrain is active, full-FT (`cfg.adapter` is None/empty), and any
     non-persistent chunks exist (offload regime), force ``save_safetensors``
-    to ``False`` so HF saves to pickle ``.bin`` instead. Explicit
-    ``save_safetensors`` set by the user is honored; the auto-flip only fires
-    when the user hasn't set it.
+    to ``False`` so HF saves to pickle ``.bin`` instead. The override is
+    UNCONDITIONAL for this combination — even an explicit
+    ``save_safetensors: true`` from the user is flipped, because safetensors
+    would fail at save time regardless. A WARNING explains the override and
+    points users at the LoRA-scope save or no-offload alternatives if
+    .safetensors output is required.
     """
     chunk_manager = getattr(wrapped, "chunk_manager", None)
     if chunk_manager is None:
@@ -1468,7 +1513,7 @@ class ProTrainPlugin(BasePlugin):
             )
             return
 
-        _guard_force_all_persistent_full_ft_ddp(cfg, trainer)
+        _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)
         _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped)
 
         # Unlock Mode C on multi-rank non-NVLink rigs: must run before the

@@ -1,4 +1,4 @@
-"""Mode A ``force_all_persistent`` + full-FT + multi-rank DDP setup guard.
+"""Mode A (all-persistent) + full-FT + multi-rank DDP setup guard.
 
 Mode A's chunk-wrapper hooks register per-param autograd hooks. With every
 parameter trainable (full finetune) and DDP active (world_size > 1), those
@@ -6,6 +6,13 @@ hooks collide with DDP's reducer and surface much later as "parameters which
 did not receive grad" deep in the backward pass. The plugin's
 ``post_trainer_create`` raises a clear ``RuntimeError`` at setup time so
 users don't have to chase the cryptic DDP failure.
+
+Detection uses the EFFECTIVE runtime state (post-searcher
+``n_persist >= N_chunk``) rather than the raw cfg flag, so the guard fires
+regardless of whether Mode A was selected via ``protrain_force_all_persistent``
+or via auto-mode landing on an all-persistent config. Full-FT is detected
+via ``cfg.adapter is None/empty`` (config-level, survives ProTrain's model
+wrapping).
 """
 
 from __future__ import annotations
@@ -15,39 +22,26 @@ from types import SimpleNamespace
 import pytest
 
 from axolotl.integrations.protrain.plugin import (
-    _guard_force_all_persistent_full_ft_ddp,
+    _guard_force_all_persistent_full_ft_ddp,  # back-compat alias
+    _guard_full_ft_mode_a_ddp,
 )
 
 
-class _FullFTModel:
-    """Minimal model stub with all trainable params (mimics a full-FT model)."""
-
-    def __init__(self, n_params: int = 3, all_trainable: bool = True) -> None:
-        import torch
-
-        self._params = [
-            torch.nn.Parameter(torch.zeros(2), requires_grad=all_trainable)
-            for _ in range(n_params)
-        ]
-
-    def parameters(self):
-        return iter(self._params)
+def _make_wrapped(n_persist: int, n_chunk: int) -> SimpleNamespace:
+    """Synthesize the minimum surface the guard inspects on `wrapped`."""
+    return SimpleNamespace(
+        search_result=SimpleNamespace(cfg=SimpleNamespace(n_persist=n_persist)),
+        chunk_manager=SimpleNamespace(layout=SimpleNamespace(N_chunk=n_chunk)),
+    )
 
 
-class _PartialFTModel:
-    """Model with mixed trainable/frozen params (mimics LoRA: most frozen)."""
+def _make_trainer():
+    import torch
 
-    def __init__(self) -> None:
-        import torch
-
-        self._params = [
-            torch.nn.Parameter(torch.zeros(2), requires_grad=True),
-            torch.nn.Parameter(torch.zeros(2), requires_grad=False),
-            torch.nn.Parameter(torch.zeros(2), requires_grad=False),
-        ]
-
-    def parameters(self):
-        return iter(self._params)
+    return SimpleNamespace(
+        model=torch.nn.Linear(4, 4),
+        args=SimpleNamespace(),
+    )
 
 
 @pytest.fixture
@@ -63,53 +57,120 @@ def _world_size_env(monkeypatch):
     return _set
 
 
-def test_guard_raises_on_force_all_persistent_full_ft_multi_rank(_world_size_env):
-    """All knobs aligned with the bad combination → RuntimeError with actionable text."""
+def test_back_compat_alias_resolves():
+    """Old name still importable; refers to the same function."""
+    assert _guard_force_all_persistent_full_ft_ddp is _guard_full_ft_mode_a_ddp
+
+
+def test_full_ft_mode_a_multi_rank_raises(_world_size_env):
+    """Full-FT (no adapter) + Mode A (n_persist == N_chunk) + multi-rank → raise."""
     _world_size_env(4)
-    cfg = SimpleNamespace(protrain_force_all_persistent=True)
-    trainer = SimpleNamespace(model=_FullFTModel(all_trainable=True))
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=315, n_chunk=315)
 
     with pytest.raises(RuntimeError) as exc:
-        _guard_force_all_persistent_full_ft_ddp(cfg, trainer)
+        _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)
 
     msg = str(exc.value)
-    assert "force_all_persistent" in msg
+    assert "Mode A" in msg
     assert "full finetune" in msg
-    assert "multi-rank DDP" in msg
     # Must point users at the supported alternative for full-FT.
     assert "protrain_zero3_shard" in msg
 
 
-def test_guard_noop_when_force_all_persistent_off(_world_size_env):
-    """Default (force_all_persistent=False) short-circuits before any other check."""
+def test_full_ft_mode_c_multi_rank_no_raise(_world_size_env):
+    """Full-FT + Mode C (n_persist < N_chunk) → no raise (the supported path)."""
     _world_size_env(4)
-    cfg = SimpleNamespace(protrain_force_all_persistent=False)
-    trainer = SimpleNamespace(model=_FullFTModel(all_trainable=True))
-    _guard_force_all_persistent_full_ft_ddp(cfg, trainer)  # no raise
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=103, n_chunk=315)
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)  # no raise
 
 
-def test_guard_noop_on_single_gpu(_world_size_env):
-    """World size <= 1 is fine — there's no DDP reducer to collide with."""
+@pytest.mark.parametrize("adapter", ["lora", "qlora", "LoRA"])
+def test_lora_mode_a_no_raise(_world_size_env, adapter):
+    """LoRA / qLoRA workloads are not affected even at Mode A."""
+    _world_size_env(4)
+    cfg = SimpleNamespace(adapter=adapter)
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=315, n_chunk=315)
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)  # no raise
+
+
+def test_single_gpu_no_raise(_world_size_env):
+    """World size 1: Mode A is fine because there's no DDP wrap."""
     _world_size_env(1)
-    cfg = SimpleNamespace(protrain_force_all_persistent=True)
-    trainer = SimpleNamespace(model=_FullFTModel(all_trainable=True))
-    _guard_force_all_persistent_full_ft_ddp(cfg, trainer)  # no raise
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=315, n_chunk=315)
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)  # no raise
 
 
-def test_guard_noop_when_some_params_frozen(_world_size_env):
-    """LoRA / QLoRA (most params frozen) is the supported Mode A workload."""
+def test_empty_adapter_string_treated_as_full_ft(_world_size_env):
+    """`adapter: ""` from YAML is treated as full-FT, same as None."""
     _world_size_env(4)
-    cfg = SimpleNamespace(protrain_force_all_persistent=True)
-    trainer = SimpleNamespace(model=_PartialFTModel())
-    _guard_force_all_persistent_full_ft_ddp(cfg, trainer)  # no raise
+    cfg = SimpleNamespace(adapter="")
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=315, n_chunk=315)
+
+    with pytest.raises(RuntimeError, match="Mode A"):
+        _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)
 
 
-def test_guard_noop_when_model_missing(_world_size_env):
-    """No model on trainer (uncommon, but possible mid-construction) → no raise."""
+def test_missing_wrapped_is_defensive(_world_size_env):
+    """No wrapped object: silent no-op (post_model_load may have been skipped)."""
     _world_size_env(4)
-    cfg = SimpleNamespace(protrain_force_all_persistent=True)
-    trainer = SimpleNamespace(model=None)
-    _guard_force_all_persistent_full_ft_ddp(cfg, trainer)  # no raise
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, None)  # no raise
+
+
+def test_missing_search_result_is_defensive(_world_size_env):
+    """Wrapped without search_result attr: silent no-op."""
+    _world_size_env(4)
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+    wrapped = SimpleNamespace(
+        chunk_manager=SimpleNamespace(layout=SimpleNamespace(N_chunk=10))
+    )
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)  # no raise
+
+
+def test_missing_chunk_manager_is_defensive(_world_size_env):
+    """Wrapped without chunk_manager attr: silent no-op."""
+    _world_size_env(4)
+    cfg = SimpleNamespace(adapter=None)
+    trainer = _make_trainer()
+    wrapped = SimpleNamespace(
+        search_result=SimpleNamespace(cfg=SimpleNamespace(n_persist=10))
+    )
+
+    _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)  # no raise
+
+
+def test_mode_a_via_auto_mode_still_caught(_world_size_env):
+    """Even if cfg.protrain_force_all_persistent is False (auto-mode landed
+    on Mode A), the guard still fires because it reads runtime state from
+    the picked CostConfig, not the user-input flag. This is the Codex review
+    finding #1 fix.
+    """
+    _world_size_env(4)
+    cfg = SimpleNamespace(
+        adapter=None,
+        protrain_force_all_persistent=False,  # the old guard would have skipped here
+        protrain_auto_mode=True,
+    )
+    trainer = _make_trainer()
+    wrapped = _make_wrapped(n_persist=315, n_chunk=315)
+
+    with pytest.raises(RuntimeError, match="Mode A"):
+        _guard_full_ft_mode_a_ddp(cfg, trainer, wrapped)
 
 
 if __name__ == "__main__":  # pragma: no cover

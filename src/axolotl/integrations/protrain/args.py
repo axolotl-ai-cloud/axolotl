@@ -48,9 +48,14 @@ _SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
 
 
 # bnb 8-bit Adam variants. Their block-wise uint8 quantization of moments is
-# sensitive to unbounded gradient norms — observed NaN-loss collapse during
-# Mode C 9B full-FT on NVLink (RunPod 2× A100-SXM4, May 2026) with no
-# `max_grad_norm` set. ProTrain auto-fills a conservative default below.
+# sensitive to unbounded gradient norms; the conservative
+# `max_grad_norm: 1.0` autofill below is a general defensive default for any
+# large-model training with these optimizers under ProTrain. NOTE: this
+# autofill does NOT prevent the Mode C 9B full-FT NaN-collapse observed on
+# 2× A100-SXM4 (May 2026) — that failure mode reproduces with `adamw_torch`
+# (fp32 moments) too, so the root cause lives elsewhere (likely in the
+# split-optimizer / chunk-grad-sync path) and is tracked as a Phase-3
+# follow-up. The autofill is still useful as a general guard.
 _BNB_8BIT_OPTIMIZERS: frozenset[str] = frozenset(
     {
         "adamw_8bit",
@@ -686,11 +691,15 @@ class ProTrainArgs(BaseModel):
             LOG.warning(
                 "ProTrain: auto-defaulting max_grad_norm=1.0 for bnb 8-bit "
                 "optimizer `%s`. The 8-bit moment quantization is sensitive "
-                "to unbounded gradients; without clipping, Mode C full-FT "
-                "has been observed to NaN-collapse. This changes training "
+                "to unbounded gradients; clipping is a general defensive "
+                "default for these optimizers. This changes training "
                 "dynamics from the HF default (no clipping). Set "
                 "`max_grad_norm` explicitly in your config (any float or 0) "
-                "to silence this warning and override the default.",
+                "to silence this warning and override the default. NOTE: "
+                "this autofill alone does not prevent the Mode C 9B "
+                "full-FT NaN-collapse observed on Qwen3.5-9B (which also "
+                "occurs with `adamw_torch`); see proposal §16.B1 for the "
+                "tracked stability follow-up.",
                 optimizer_str,
             )
         return data
