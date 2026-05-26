@@ -430,12 +430,12 @@ class ProTrainArgs(BaseModel):
     )
 
     protrain_own_lora_grad_sync: bool | None = Field(
-        default=True,
+        default=None,
         json_schema_extra={
             "description": (
-                "Path B grad-sync mechanism (PR #24). When True (default), "
-                "ProTrain discovers trainable LoRA adapter params after PEFT "
-                "injection, marks their fully-qualified names in "
+                "Path B grad-sync mechanism. ProTrain discovers trainable LoRA "
+                "adapter params after PEFT injection, marks their "
+                "fully-qualified names in "
                 "``model._ddp_params_and_buffers_to_ignore`` so DDP skips them "
                 "during its bucketed allreduce, and issues one flattened "
                 "``dist.all_reduce(op=AVG)`` per dtype in "
@@ -445,11 +445,15 @@ class ProTrainArgs(BaseModel):
                 "dtype). Bit-equivalent to DDP sync within FP rounding "
                 "(verified by 2-rank gloo trajectory parity + 4-rank NCCL "
                 "convergence parity in "
-                "``tests/protrain/test_path_b_lora_sync.py`` and the NCCL "
-                "harness under ``/tmp/protrain-overnight/scripts``). Set "
-                "False to fall back to DDP-bucketed allreduce. Skipped when "
-                "Mode C bypass fired (chunk_manager owns sync there) or "
-                "when world_size == 1."
+                "``tests/protrain/test_path_b_lora_sync.py``). "
+                "Default ``None`` resolves topology-aware: enabled on "
+                "non-NVLink topologies (where it nets +15% sps/rank on "
+                "3090 PCIe 4-rank, §6.pb) and disabled on NVLink topologies "
+                "(where NCCL allreduce over NV-class fabric is faster than "
+                "coalesced sync; measured -55% sps/rank on 2× A100-SXM4 "
+                "NVLink). Explicit True/False overrides the auto-decision. "
+                "Skipped when Mode C bypass fired (chunk_manager owns sync "
+                "there) or when world_size == 1."
             )
         },
     )

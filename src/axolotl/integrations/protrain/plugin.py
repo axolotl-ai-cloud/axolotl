@@ -538,6 +538,83 @@ _LORA_FACTOR_NAME_MARKERS: tuple[str, ...] = (
 )
 
 
+def _detect_nvlink_topology() -> bool:
+    """Return True when every visible GPU pair has at least one active NVLink.
+
+    Path B's coalesced grad sync is a clear win on PCIe-class consumer rigs
+    (-68% NCCL collective count → +15% sps/rank on 3090 PCIe 4-rank), but on
+    NV-class fabric (300+ GB/s) the native bucketed allreduce is fast enough
+    that Path B's serialization on the broadcasting rank becomes net overhead
+    (measured -55% sps/rank on 2× A100-SXM4-80GB NVLink). When the user
+    leaves ``protrain_own_lora_grad_sync`` at its ``None`` default, this
+    detector picks the topology-appropriate behavior.
+
+    Detection is conservative: single-GPU returns False (default-True
+    semantics carry through unchanged); any nvidia-smi failure returns False
+    (preserves the pre-topology-aware default of enabling Path B); a single
+    pair without an active NVLink returns False (any heterogeneous topology
+    is treated as PCIe-class for safety).
+    """
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        n_visible = torch.cuda.device_count()
+        if n_visible < 2:
+            return False
+    except (ImportError, RuntimeError):
+        return False
+
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            ["nvidia-smi", "topo", "-m"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode != 0:
+            return False
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+    gpu_lines = [ln for ln in proc.stdout.splitlines() if ln.lstrip().startswith("GPU")]
+    gpu_lines = [ln for ln in gpu_lines if "\t" in ln or "  " in ln]
+    if len(gpu_lines) < n_visible:
+        return False
+
+    for ln in gpu_lines[:n_visible]:
+        cells = ln.split()
+        if len(cells) < 1 + n_visible:
+            return False
+        pair_cells = cells[1 : 1 + n_visible]
+        for cell in pair_cells:
+            if cell == "X":
+                continue
+            if not cell.startswith("NV"):
+                return False
+    return True
+
+
+def _resolve_path_b_default(cfg) -> tuple[bool, str]:
+    """Return ``(enabled, reason)`` for ``protrain_own_lora_grad_sync``.
+
+    Honors explicit True/False set by the user. Resolves ``None`` against the
+    detected GPU topology: NVLink → False, otherwise → True.
+    """
+    explicit = getattr(cfg, "protrain_own_lora_grad_sync", None)
+    if explicit is True:
+        return True, "explicit cfg.protrain_own_lora_grad_sync=True"
+    if explicit is False:
+        return False, "explicit cfg.protrain_own_lora_grad_sync=False"
+    is_nvlink = _detect_nvlink_topology()
+    if is_nvlink:
+        return False, "auto (NVLink topology detected; native NCCL is faster)"
+    return True, "auto (non-NVLink topology; coalesced sync amortizes launch tax)"
+
+
 def _discover_lora_params(model) -> tuple[list[str], list]:
     """Return (fully-qualified names, params) for all trainable PEFT-LoRA factors.
 
@@ -812,7 +889,8 @@ def _install_resume_hook(trainer, cfg, wrapped) -> None:
         # rebuilt optimizer's _lora_owned_params references match the
         # post-restore param storage (restore_to_gpu rebinds .data).
         rebuild_lora_params: list | None = None
-        if bool(getattr(cfg, "protrain_own_lora_grad_sync", False)):
+        _path_b_active, _ = _resolve_path_b_default(cfg)
+        if _path_b_active:
             try:
                 import torch.distributed as _dist
 
@@ -1220,7 +1298,7 @@ class ProTrainPlugin(BasePlugin):
         # _inner_training_loop call to accelerator.prepare(self.model) wraps DDP.
         ddp_bypassed = _maybe_bypass_ddp_for_mode_c(trainer, wrapped)
 
-        # Path B (PR #24): ProTrain-owned LoRA grad sync. Discovery + DDP-ignore
+        # Path B: ProTrain-owned LoRA grad sync. Discovery + DDP-ignore
         # registration must fire BEFORE Accelerate.prepare wraps DDP (which reads
         # _ddp_params_and_buffers_to_ignore at construction time). Restricted to
         # the DDP-active path: under Mode C bypass, chunk_manager already owns
@@ -1228,7 +1306,13 @@ class ProTrainPlugin(BasePlugin):
         # persistent-chunk LoRA grads.
         path_b_active = False
         lora_owned_params: list = []
-        if bool(getattr(cfg, "protrain_own_lora_grad_sync", False)):
+        path_b_enabled, path_b_reason = _resolve_path_b_default(cfg)
+        LOG.info(
+            "ProTrain: protrain_own_lora_grad_sync resolved to %s (%s)",
+            path_b_enabled,
+            path_b_reason,
+        )
+        if path_b_enabled:
             if ddp_bypassed:
                 LOG.info(
                     "ProTrain: protrain_own_lora_grad_sync=True but Mode C "
