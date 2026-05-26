@@ -371,7 +371,7 @@ modes after the searcher returns a config:
 |---|---|---|---|---|---|
 | **A** | All-persistent, outer DDP | `n_persist == N_chunk` fits | full model | ~0 | best (DDP allreduce) |
 | **B** | Replicated CPU-offload | offload needed AND `cpu_ram_per_rank ≥ (N_chunk − n_persist) · S_chunk` | reduced | full non-persistent set, replicated | ~1.9× slower than A on non-NVLink PCIe |
-| **C** | ZeRO-3 sharded CPU-offload | offload needed AND replication doesn't fit | reduced | non-persistent set / world_size | ~1.04× slower than A for 4-bit + LoRA on 4× 3090 PCIe (§6.e: 24.68 vs 23.67 sps); full-FT scope is ~3.6× per the M7 internal benchmark |
+| **C** | ZeRO-3 sharded CPU-offload | offload needed AND replication doesn't fit | reduced | non-persistent set / world_size | **PCIe**: ~1.04× slower than A for 4-bit + LoRA on 4× 3090 (§6.e: 24.68 vs 23.67 sps); full-FT scope is ~3.6× per the M7 internal benchmark. **NVLink** (2× A100-SXM4): **~1.43× FASTER than A** on the same shape (Mode C 252 vs Mode A 177 tok/s/rank, §6.nv) — sharded all-gather amortizes well over NV-class fabric. |
 
 The selector prefers A → B → C; C is chosen only when CPU RAM is the
 binding constraint. Mode C gracefully degrades to single-rank execution
@@ -1177,17 +1177,23 @@ over `_flatten_dense_tensors`-coalesced buffers in
 via `_ddp_params_and_buffers_to_ignore`. The mechanism collapses N
 small per-bucket allreduces into 1-2 coalesced calls per dtype —
 measured **-68% NCCL collective count** on Llama-3-8B 4-bit qlora
-bs=1 4-rank (56-65 small allreduces/step → 20 coalesced). Gated by
-`protrain_own_lora_grad_sync` (default `true`; opt-out available for
-workloads where DDP's bucketed allreduce already overlaps with
-compute). LoRA factor discovery (`_discover_lora_params`) covers
+bs=1 4-rank. LoRA factor discovery (`_discover_lora_params`) covers
 `lora_A`, `lora_B`, `lora_embedding_A/B`, and `lora_magnitude_vector`
 (DoRA).
 
-**Throughput.** Path B's payoff scales with the count of LoRA factor
-tensors and inversely with backward duration. At Qwen3.5-9B 4-bit qlora,
-LoRA r=16 on all-linear targets (q/k/v/o/gate/up/down — yielding 256
-factor tensors on this hybrid-attention architecture),
+**Default is topology-aware.** `protrain_own_lora_grad_sync` defaults
+to `None` and resolves at runtime via `_detect_nvlink_topology()`
+(parses `nvidia-smi topo -m`): enabled on non-NVLink topologies where
+the coalescing amortizes the per-bucket launch tax, disabled on
+NVLink-class fabric where native NCCL bucketed allreduce over NV-class
+fabric is faster than coalesced sync. Explicit `true`/`false`
+overrides the auto-decision. Resolution is logged at INFO:
+`protrain_own_lora_grad_sync resolved to <bool> (<reason>)`.
+
+**Throughput on PCIe.** Path B's payoff scales with the count of LoRA
+factor tensors and inversely with backward duration. At Qwen3.5-9B
+4-bit qlora, LoRA r=16 on all-linear targets (q/k/v/o/gate/up/down —
+yielding 256 factor tensors on this hybrid-attention architecture),
 `micro_batch_size: 1` with `gradient_accumulation_steps: 4`, seq=256,
 Mode A on 4× 3090 PCIe (GPUs 2/4/5/7), **steady-state sps/rank is
 +15.1% with Path B ON** (mean 0.419 vs 0.364 sps/rank across 4
@@ -1204,6 +1210,16 @@ reduction does not surface as wall-clock gain. The high-gain regime is
 many-small-tensor LoRA on consumer multi-rank PCIe with small
 microbatch + grad-accum; the low-gain regime is single-bucket-equivalent
 LoRA where backward is long enough to hide the allreduces.
+
+**Throughput on NVLink (default-off justification).** Same Qwen3.5-9B
+4-bit qlora high-gain profile on 2× A100-SXM4-80GB (NV12 fabric, 12
+lanes × 25 GB/s) inverts the PCIe headline: Path B ON measures
+**-55% sps/rank** (~43 tok/s) vs OFF (~96 tok/s), order-artifact
+< 1%. Native NCCL bucketed allreduce over NV-class fabric is faster
+than the coalesced sync's serialization on the broadcasting rank.
+The topology-aware default (above) lands OFF on NVLink so users on
+NV-class hardware get the faster native path by default; explicit
+`true` is still honored.
 
 **Numerical equivalence.** Per-step loss on the broadcasting rank
 is bit-identical between Path B OFF and ON across 100 steps of
@@ -1236,6 +1252,73 @@ extended-target discovery (LoRA on `embed_tokens` / `lm_head`),
 bypass-gate stays off when non-LoRA trainable params coexist.
 Fused LoRA kernels (`lora_mlp_kernel` etc.) are auto-enabled by
 axolotl for DDP + qlora and compose cleanly with Path B.
+
+### 6.nv NVLink validation — 2× A100-SXM4-80GB
+
+NVLink topology confirmed `NV12` between the two GPUs (12 lanes × 25
+GB/s, ~300 GB/s aggregate) via `nvidia-smi topo -m`. Same Qwen3.5-9B
+4-bit qlora model used in §6.pb and §6.e, environment matched for
+apples-to-apples comparison against the PCIe matrix.
+
+**Path B**: same all-linear LoRA r=16, bs=1 + grad_accum=4, seq=256,
+Mode A, 100 steps, counter-balanced 4-run protocol.
+
+| Run | Setting | sps/rank (tok/s) |
+|---|---|---|
+| OFF (A) | `protrain_own_lora_grad_sync: false` | 96.66 |
+| ON  (B) | `protrain_own_lora_grad_sync: true`  | 44.34 |
+| ON  (C) | `protrain_own_lora_grad_sync: true`  | 42.37 |
+| OFF (D) | `protrain_own_lora_grad_sync: false` | 95.74 |
+
+Mean OFF 96.20 vs mean ON 43.36 → **Path B ON is -55% on NVLink**
+(2.22× slower). Order-artifact <1% (per-position deltas within 0.3pp).
+PCIe-3090 headline (+15.1% ON, §6.pb) inverts on NV-class fabric.
+Drives the topology-aware default landed in §6.pb.
+
+**Mode A vs Mode C**: same shape, bs=1 ga=1, seq=256, 50 steps.
+
+| Mode | sps/rank (tok/s) | peak GiB/rank | loss @ step 50 |
+|---|---|---|---|
+| **A** (`force_all_persistent: true`) | 177 | 11.26 | 0.9623 |
+| **C** (`zero3_shard: true`) | **252** | 11.26 | 0.9586 |
+
+**Mode C is 1.43× faster than Mode A on NVLink** — opposite direction
+from PCIe (where A beats C by ~4% in LoRA scope, §6.e). Sharded
+all-gather is cheap when the interconnect is NV-class; Mode A's
+all-persistent layout doesn't recover any throughput when memory
+isn't the binding constraint.
+
+**Vanilla DDP qlora baseline (no ProTrain)**: same shape (bs=1 ga=4,
+seq=256, 50 steps) with the `plugins:` block omitted.
+
+| Path | sps/rank (tok/s) | peak GiB/rank | loss @ step 50 |
+|---|---|---|---|
+| Vanilla DDP qlora (no ProTrain) | **125.8** | 9.96 | 0.7694 |
+| ProTrain Mode A + Path B auto-off | 88 | 11.3 | (matches OFF) |
+| ProTrain Mode C | 252 (ga=1; ~88 ga=4 extrapolated) | 11.26 | 0.9586 |
+
+Vanilla DDP wins when memory isn't the binding constraint — ProTrain
+Mode A adds ~30% overhead from the chunk-management framework on this
+hardware class. The framework's value on NVLink is in the Mode C
+sharded path (which beats Mode A by 1.43×) and the offload paths
+(needed when the working set exceeds GPU VRAM).
+
+**Operating note for NVLink users.** Reach for ProTrain when working
+set exceeds GPU memory (large model, long sequences, full-FT at the
+weight-size ceiling). For LoRA / qLoRA workloads that fit in GPU
+memory, vanilla DDP qlora is the faster path. The topology-aware
+`protrain_own_lora_grad_sync` default ensures users don't pay the
+Path B regression by accident.
+
+**Software prerequisites for Mode C / Mode B on NVLink RunPod-class
+images:** DeepSpeed's CPU Adam kernel JIT-compiles at first use,
+which requires `CUDA_HOME` to point at a usable toolkit (e.g.
+`/usr/local/cuda-12.4`) and `DS_SKIP_CUDA_CHECK=1` to allow toolkit/torch
+minor-version mismatch. Also set
+`LD_LIBRARY_PATH=$(python -c 'import nvidia; print(...)')/cu13/lib` if
+bitsandbytes can't find `libnvJitLink.so.13`. Without these env vars
+the cost-model sees `cpu_adam_bytes_per_sec=0` and rejects all 79560
+Mode C configs as infeasible.
 
 ### 6.zz Final hardware verification matrix — Mode A/B/C across shapes (4× 3090, Llama-3-8B + 4-bit qlora)
 
@@ -1794,7 +1877,7 @@ prerequisites for the validated feature set above.
 
 | # | Follow-up | Scope |
 |---|---|---|
-| B1 | **Llama-3-8B+ full-FT validation on >24 GiB / NVLinked nodes** | 8B-class full-finetune remains hardware-bound on 24 GiB consumer cards. Validate larger full-FT Mode C shapes on hardware where the baseline weights, activations, and Adam state can fit. |
+| B1 | **8B+ full-FT mechanically validated on NVLink hardware via Mode C + 8-bit Adam** | Qwen3.5-9B full-FT (no LoRA) on 2× A100-SXM4-80GB with `protrain_zero3_shard: true` + `optimizer: adamw_bnb_8bit` + bf16 reaches iter-1 successfully (cold start ~18 min for DeepSpeed CpuAdam JIT + ProTrain Phase-1 trace + Phase-2 measurement + materialize_offload; subsequent steps run at the searcher-predicted ~2 s/step). Search picks `CostConfig(n_persist=103, n_buffer=18, n_swap=13, n_checkpoint=19, n_offload=0)` on 80 GB cards with 280 chunks offloaded to pinned CPU (~7 GB params + 7 GB grads per rank). Mode A `force_all_persistent` is **incompatible with 9B+ full-FT under DDP**: chunk-wrapper hooks conflict with DDP autograd, surfacing as ~100+ "parameters which did not receive grad" — Mode C is the supported full-FT path on NVLink. Software prerequisites listed in §6.nv. Step-level loss trajectory pending a longer-running validation pass. |
 | B2 | **bs=1 throughput is launch-overhead-bound; use `gradient_accumulation_steps >= 4`** | At bs=1 on Llama-3-8B 4-bit qlora Mode A, per-step wallclock is dominated by ~9,000 `cudaLaunchKernel` calls per step on consumer 3090s. NCCL grad sync is overlap-shadowed by backward compute at this shape (Path B's coalesced sync produces a noise-level sps change at minimal-target bs=1 qlora despite a -68% NCCL collective-count reduction — Path B's measurable gain surfaces in the many-LoRA-tensor regime, see §6.pb). Recommended config: `gradient_accumulation_steps: 4` recovers per-sample throughput by amortizing the fixed launch tax — measured per-rank bs=1 = 0.229 sps → bs=4 (via grad-accum) = 0.738 sps (3.22×/sample). Future work: CUDA Graphs capture is the canonical fix for launch-tax-dominated regimes; not yet implemented in this branch. |
 | B3 | **3-rank Mode C bs=2 searcher infeasibility on homogeneous 3× 3090** | 2-rank and 4-rank Mode C paths pass. The homogeneous 3-rank case currently returns no finite runtime estimate for all capacity-feasible candidates. |
 
