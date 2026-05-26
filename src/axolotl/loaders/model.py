@@ -245,10 +245,52 @@ class ModelLoader:
         self._configure_experts_implementation()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
+        self._reinitialize_classification_head()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
+
+    def _reinitialize_classification_head(self):
+        """Re-init an uninitialized reward / PRM classification head.
+
+        The ``score``/``classifier`` head is missing from a base-LM checkpoint, so
+        transformers allocates it with ``torch.empty`` and is then supposed to
+        initialize it. But transformers 5.8's ``_init_weights`` does
+        ``init.normal_(module.weight.float(), ...)`` — the ``.float()`` copy makes
+        this a no-op on a ``bfloat16`` head, leaving uninitialized memory: harmless
+        zeros on some allocators, NaN/inf garbage on others (→ NaN grads, 0 loss).
+        Detect that state and initialize the head ourselves.
+        """
+        if not (self.cfg.reward_model or self.cfg.process_reward_model):
+            return
+
+        head = getattr(self.model, "score", None) or getattr(
+            self.model, "classifier", None
+        )
+        if not isinstance(head, torch.nn.Linear):
+            return
+
+        weight = head.weight
+        # A freshly-initialized head is all-zero (benign) or garbage (huge/non-finite);
+        # a head loaded from a real reward checkpoint is finite and reasonably scaled.
+        looks_uninitialized = (
+            not torch.isfinite(weight).all()
+            or weight.abs().max() > 100
+            or bool((weight == 0).all())
+        )
+        if not looks_uninitialized:
+            return
+
+        std = getattr(self.model.config, "initializer_range", 0.02) or 0.02
+        with torch.no_grad():
+            weight.normal_(mean=0.0, std=std)
+            if head.bias is not None:
+                head.bias.zero_()
+        LOG.info(
+            f"Re-initialized {type(self.model).__name__} classification head "
+            f"(std={std})."
+        )
 
     def _configure_experts_implementation(self):
         if self.cfg.experts_implementation is not None:
