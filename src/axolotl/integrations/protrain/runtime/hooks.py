@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+import math
+import os
+from typing import TYPE_CHECKING, Any, cast
 
+import torch
 from torch import nn
 
 from axolotl.integrations.protrain.block.layout_rules import (
@@ -45,6 +48,62 @@ if TYPE_CHECKING:
 LOG = get_logger(__name__)
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _first_nonfinite_tensor(
+    obj: Any, path: str = "output"
+) -> tuple[str, torch.Tensor] | None:
+    if torch.is_tensor(obj):
+        if obj.is_floating_point() or obj.is_complex():
+            if not bool(torch.isfinite(obj).all().item()):
+                return (path, obj)
+        return None
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            found = _first_nonfinite_tensor(value, f"{path}.{key}")
+            if found is not None:
+                return found
+        return None
+    if isinstance(obj, (list, tuple)):
+        for idx, value in enumerate(obj):
+            found = _first_nonfinite_tensor(value, f"{path}[{idx}]")
+            if found is not None:
+                return found
+        return None
+    if hasattr(obj, "to_tuple"):
+        try:
+            return _first_nonfinite_tensor(obj.to_tuple(), path)
+        except Exception:  # noqa: BLE001 - diagnostic path must not mask forward
+            return None
+    return None
+
+
+def _raise_on_forward_nonfinite(
+    module: nn.Module, block_id: BlockId, output: Any
+) -> None:
+    found = _first_nonfinite_tensor(output)
+    if found is None:
+        return
+    path, tensor = found
+    detached = tensor.detach()
+    finite = torch.isfinite(detached)
+    bad_count = int((~finite).sum().item())
+    abs_tensor = detached.abs()
+    safe_abs = torch.nan_to_num(abs_tensor, nan=-math.inf, posinf=math.inf)
+    absmax = float(safe_abs.max().item()) if safe_abs.numel() else 0.0
+    finite_abs = abs_tensor[finite]
+    finite_absmax = float(finite_abs.max().item()) if finite_abs.numel() else 0.0
+    raise RuntimeError(
+        "ProTrain: non-finite forward output detected "
+        f"(block={int(block_id)}, module={type(module).__name__}, path={path}, "
+        f"shape={tuple(detached.shape)}, dtype={detached.dtype}, "
+        f"device={detached.device}, nonfinite={bad_count}/{detached.numel()}, "
+        f"absmax={absmax}, finite_absmax={finite_absmax:.6g})."
+    )
+
+
 class _RecomputePreHookHandle:
     """Small removable handle for CheckpointedBlock recompute callbacks."""
 
@@ -74,6 +133,8 @@ def _make_forward_post_hook(scheduler: "Scheduler", block_id: BlockId):
 
     @_compile_disable(recursive=True)
     def _hook(module: nn.Module, inputs, output):  # noqa: ARG001
+        if _env_flag("PROTRAIN_DEBUG_FORWARD_NONFINITE"):
+            _raise_on_forward_nonfinite(module, block_id, output)
         scheduler.post_block_forward(block_id)
         return None
 

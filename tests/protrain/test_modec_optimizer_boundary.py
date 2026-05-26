@@ -336,9 +336,13 @@ def test_optimizer_rejects_nonfinite_hidden_cpu_grad_before_step() -> None:
         max_grad_norm=1.0,
     )
 
-    with pytest.raises(RuntimeError, match="non-finite gradient norm"):
+    with pytest.raises(RuntimeError, match="non-finite gradient norm") as exc_info:
         optim.step()
     assert step_called is False
+    msg = str(exc_info.value)
+    assert "source=cpu_replicated" in msg
+    assert "param=w" in msg
+    assert "pools: cpu_replicated=1/1 bad" in msg
 
 
 def test_scheduler_uses_backward_finalize_hook_when_available() -> None:

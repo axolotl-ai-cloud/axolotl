@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
@@ -33,6 +34,13 @@ LOG = get_logger(__name__)
 
 # Default huge-param threshold: 512 MiB. Override via cfg.protrain_persistent_huge_param_threshold_bytes.
 _DEFAULT_HUGE_PARAM_THRESHOLD_BYTES = 512 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class _GradTarget:
+    source: str
+    name: str
+    grad: torch.Tensor
 
 
 class _ProTrainOptimizer(torch.optim.Optimizer):
@@ -148,20 +156,64 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             return
         step_ready()
 
-    def _iter_gpu_optimizer_grads(self):
+    def _param_names_by_obj_id(self) -> dict[int, str]:
+        cm = self._chunk_manager
+        params_by_id = getattr(cm, "_params_by_id", {}) or {}
+        names: dict[int, str] = {}
+        for param_id, param in params_by_id.items():
+            names.setdefault(id(param), str(param_id))
+        for orig, shard in zip(
+            self._persistent_huge_originals,
+            self._persistent_huge_shards,
+            strict=True,
+        ):
+            orig_name = names.get(id(orig), f"<huge_param_{id(orig)}>")
+            names[id(shard)] = f"{orig_name}[rank_shard]"
+        return names
+
+    def _iter_gpu_optimizer_targets(self):
         adapter = self._gpu_optim
         if adapter is None:
             return
         underlying = getattr(adapter, "underlying", None)
         if underlying is None:
             return
+        param_names = self._param_names_by_obj_id()
         for group in getattr(underlying, "param_groups", []):
             for param in group.get("params", []):
                 grad = getattr(param, "grad", None)
                 if grad is not None:
-                    yield grad
+                    yield _GradTarget(
+                        source="gpu_optimizer",
+                        name=param_names.get(id(param), f"<gpu_param_{id(param)}>"),
+                        grad=grad,
+                    )
 
-    def _iter_ready_offloaded_grads(self):
+    def _region_param_label(self, chunk_id: ChunkId, region: Any) -> str:
+        cm = self._chunk_manager
+        slots = (getattr(cm, "_cpu_slots", {}) or {}).get(chunk_id, [])
+        r_start = int(getattr(region, "chunk_offset", -1))
+        r_bytes = int(getattr(region, "region_bytes", 0))
+        if r_start < 0 or r_bytes <= 0:
+            return "<unknown_region>"
+        r_end = r_start + r_bytes
+        names: list[str] = []
+        for slot in slots:
+            s_start = int(getattr(slot, "byte_offset", -1))
+            s_numel = int(getattr(slot, "numel", 0))
+            s_element_size = int(getattr(slot, "element_size", 0))
+            s_end = s_start + s_numel * s_element_size
+            if s_start < 0 or s_end <= s_start:
+                continue
+            if s_start < r_end and s_end > r_start:
+                names.append(str(getattr(slot, "param_id", "<unknown_param>")))
+        if not names:
+            return "<region_without_slot_overlap>"
+        if len(names) <= 4:
+            return ",".join(names)
+        return ",".join(names[:4]) + f",...(+{len(names) - 4})"
+
+    def _iter_ready_offloaded_targets(self):
         cm = self._chunk_manager
         ready = getattr(cm, "_cpu_step_ready_chunks", None)
         if not ready:
@@ -178,7 +230,7 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
             shard_state = chunk_shards.get(chunk_id)
             regions = getattr(shard_state, "regions", None)
             if regions:
-                for region in regions:
+                for region_idx, region in enumerate(regions):
                     shard_param = getattr(region, "shard_param", None)
                     grad = getattr(shard_param, "grad", None)
                     if grad is None:
@@ -187,7 +239,15 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                     if grad_id in seen:
                         continue
                     seen.add(grad_id)
-                    yield grad
+                    yield _GradTarget(
+                        source="cpu_shard",
+                        name=(
+                            f"chunk={int(chunk_id)} region={region_idx} "
+                            f"dtype={getattr(region, 'dtype', '<unknown_dtype>')} "
+                            f"params={self._region_param_label(chunk_id, region)}"
+                        ),
+                        grad=grad,
+                    )
                 continue
             for slot in cpu_slots.get(chunk_id, []):
                 grad = getattr(slot, "cpu_grad", None)
@@ -197,46 +257,104 @@ class _ProTrainOptimizer(torch.optim.Optimizer):
                 if grad_id in seen:
                     continue
                 seen.add(grad_id)
-                yield grad
+                yield _GradTarget(
+                    source="cpu_replicated",
+                    name=f"chunk={int(chunk_id)} param={getattr(slot, 'param_id', '<unknown_param>')}",
+                    grad=grad,
+                )
 
-    def _iter_optimizer_target_grads(self):
+    def _iter_optimizer_targets(self):
         seen: set[int] = set()
-        for grad in self._iter_gpu_optimizer_grads() or ():
-            grad_id = id(grad)
+        for target in self._iter_gpu_optimizer_targets() or ():
+            grad_id = id(target.grad)
             if grad_id in seen:
                 continue
             seen.add(grad_id)
-            yield grad
-        for grad in self._iter_ready_offloaded_grads() or ():
-            grad_id = id(grad)
+            yield target
+        for target in self._iter_ready_offloaded_targets() or ():
+            grad_id = id(target.grad)
             if grad_id in seen:
                 continue
             seen.add(grad_id)
-            yield grad
+            yield target
+
+    def _format_grad_target_diagnostic(
+        self, targets: list[_GradTarget], total_norm: float
+    ) -> str:
+        per_source_total: dict[str, int] = {}
+        per_source_bad: dict[str, int] = {}
+        bad_lines: list[str] = []
+        for target in targets:
+            grad = target.grad.detach()
+            per_source_total[target.source] = per_source_total.get(target.source, 0) + 1
+            finite = torch.isfinite(grad)
+            bad_count = int((~finite).sum().item())
+            if bad_count <= 0:
+                continue
+            per_source_bad[target.source] = per_source_bad.get(target.source, 0) + 1
+            abs_grad = grad.abs()
+            safe_abs = torch.nan_to_num(abs_grad, nan=-math.inf, posinf=math.inf)
+            absmax = float(safe_abs.max().item()) if safe_abs.numel() else 0.0
+            finite_abs = abs_grad[finite]
+            finite_absmax = (
+                float(finite_abs.max().item()) if finite_abs.numel() else 0.0
+            )
+            bad_lines.append(
+                "source=%s name=%s shape=%s dtype=%s device=%s "
+                "nonfinite=%d/%d absmax=%s finite_absmax=%.6g"
+                % (
+                    target.source,
+                    target.name,
+                    tuple(grad.shape),
+                    grad.dtype,
+                    grad.device,
+                    bad_count,
+                    grad.numel(),
+                    absmax,
+                    finite_absmax,
+                )
+            )
+        source_summary = ", ".join(
+            "%s=%d/%d bad"
+            % (source, per_source_bad.get(source, 0), per_source_total[source])
+            for source in sorted(per_source_total)
+        )
+        first_bad = bad_lines[0] if bad_lines else "<no per-target nonfinite found>"
+        extra_bad = "\n".join(bad_lines[1:8])
+        return (
+            "ProTrain non-finite optimizer-target gradient diagnostic: "
+            f"total_norm={total_norm}; pools: {source_summary}; "
+            f"first_bad: {first_bad}"
+            + (f"\nAdditional bad targets:\n{extra_bad}" if extra_bad else "")
+        )
 
     def _clip_optimizer_target_grads(self) -> None:
         max_norm = self._max_grad_norm
         if max_norm is None or float(max_norm) <= 0.0:
             return
-        grads = list(self._iter_optimizer_target_grads())
-        if not grads:
+        targets = list(self._iter_optimizer_targets())
+        if not targets:
             return
         total_sq = 0.0
-        for grad in grads:
-            norm = torch.linalg.vector_norm(grad.detach(), ord=2, dtype=torch.float32)
+        for target in targets:
+            norm = torch.linalg.vector_norm(
+                target.grad.detach(), ord=2, dtype=torch.float32
+            )
             total_sq += float(norm.item()) ** 2
         total_norm = total_sq**0.5
         if not math.isfinite(total_norm):
+            diagnostic = self._format_grad_target_diagnostic(targets, total_norm)
+            LOG.error(diagnostic)
             raise RuntimeError(
                 "ProTrain: non-finite gradient norm detected at optimizer "
                 "target boundary before CPU/GPU optimizer step. Refusing to "
-                "step and corrupt weights."
+                "step and corrupt weights.\n" + diagnostic
             )
         clip_coef = float(max_norm) / (total_norm + 1e-6)
         if clip_coef >= 1.0:
             return
-        for grad in grads:
-            grad.mul_(clip_coef)
+        for target in targets:
+            target.grad.mul_(clip_coef)
 
     def _sync_lora_grads_path_b(self) -> None:
         """Flattened all_reduce(AVG) of trainable LoRA adapter grads, grouped by dtype.
