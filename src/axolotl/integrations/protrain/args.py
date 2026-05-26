@@ -47,6 +47,19 @@ _SUPPORTED_OPTIMIZERS: frozenset[str] = frozenset(
 )
 
 
+# bnb 8-bit Adam variants. Their block-wise uint8 quantization of moments is
+# sensitive to unbounded gradient norms — observed NaN-loss collapse during
+# Mode C 9B full-FT on NVLink (RunPod 2× A100-SXM4, May 2026) with no
+# `max_grad_norm` set. ProTrain auto-fills a conservative default below.
+_BNB_8BIT_OPTIMIZERS: frozenset[str] = frozenset(
+    {
+        "adamw_8bit",
+        "adamw_bnb_8bit",
+        "paged_adamw_8bit",
+    }
+)
+
+
 def _has_protrain_plugin(plugins) -> bool:
     """Return True iff the iterable contains an explicit ProTrain plugin id."""
     if not isinstance(plugins, (list, tuple, set, frozenset)):
@@ -658,6 +671,27 @@ class ProTrainArgs(BaseModel):
                 f"supported adapter list. Supported optimizers: "
                 f"{supported}. Set `optimizer: adamw_torch` (or another "
                 f"supported value above) or remove the ProTrain plugin."
+            )
+        # Auto-fill max_grad_norm for bnb 8-bit Adam variants. The block-wise
+        # uint8 quantization of moments is sensitive to gradient overflow;
+        # without clipping, an outlier grad can saturate the absmax in a
+        # quantization block → NaN moments → loss collapse. Observed on
+        # Mode C 9B full-FT NVLink bench. Only fills when the user hasn't set
+        # it explicitly (None or absent in the dict); any explicit value
+        # (including 0 or float("inf")) is honored as-is.
+        if normalized in _BNB_8BIT_OPTIMIZERS and (
+            "max_grad_norm" not in data or data.get("max_grad_norm") is None
+        ):
+            data["max_grad_norm"] = 1.0
+            LOG.warning(
+                "ProTrain: auto-defaulting max_grad_norm=1.0 for bnb 8-bit "
+                "optimizer `%s`. The 8-bit moment quantization is sensitive "
+                "to unbounded gradients; without clipping, Mode C full-FT "
+                "has been observed to NaN-collapse. This changes training "
+                "dynamics from the HF default (no clipping). Set "
+                "`max_grad_norm` explicitly in your config (any float or 0) "
+                "to silence this warning and override the default.",
+                optimizer_str,
             )
         return data
 

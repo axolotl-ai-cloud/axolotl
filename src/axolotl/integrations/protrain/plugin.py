@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import functools
 from typing import TYPE_CHECKING, cast
 
 from axolotl.integrations.base import BasePlugin
@@ -538,6 +539,34 @@ _LORA_FACTOR_NAME_MARKERS: tuple[str, ...] = (
 )
 
 
+def _resolve_visible_physical_indices() -> list[int] | None:
+    """Map torch's visible CUDA devices to their physical (nvidia-smi) indices.
+
+    Returns the physical GPU indices the current process can use, in the order
+    torch reports them. With ``CUDA_VISIBLE_DEVICES=2,4`` and a 4-GPU host,
+    torch sees 2 devices (cuda:0, cuda:1) but those map to physical GPUs 2 and
+    4 in nvidia-smi's topology matrix.
+
+    Returns ``None`` if mapping can't be determined (e.g., CUDA_VISIBLE_DEVICES
+    uses UUIDs instead of integers, or the env var is unset and we have to
+    assume identity mapping).
+    """
+    import os
+    import re
+
+    raw = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if raw is None or raw.strip() == "":
+        return None  # identity mapping — caller can use range(n_visible)
+    tokens = [t.strip() for t in raw.split(",") if t.strip()]
+    if not tokens or any(not re.fullmatch(r"-?\d+", t) for t in tokens):
+        return None  # UUIDs or malformed — fall back conservatively
+    indices = [int(t) for t in tokens]
+    if any(i < 0 for i in indices):
+        return None
+    return indices
+
+
+@functools.lru_cache(maxsize=1)
 def _detect_nvlink_topology() -> bool:
     """Return True when every visible GPU pair has at least one active NVLink.
 
@@ -554,6 +583,14 @@ def _detect_nvlink_topology() -> bool:
     (preserves the pre-topology-aware default of enabling Path B); a single
     pair without an active NVLink returns False (any heterogeneous topology
     is treated as PCIe-class for safety).
+
+    The detection respects ``CUDA_VISIBLE_DEVICES`` masking: only the
+    physical-device-pair cells corresponding to the visible torch GPUs are
+    inspected, so a host with both NVLinked and PCIe pairs is correctly
+    classified by the subset actually in use.
+
+    Result is cached for the process lifetime via ``lru_cache``; topology
+    doesn't change at runtime and ``nvidia-smi`` invocations are expensive.
     """
     try:
         import torch
@@ -576,21 +613,47 @@ def _detect_nvlink_topology() -> bool:
             timeout=5,
         )
         if proc.returncode != 0:
+            LOG.warning(
+                "ProTrain NVLink detection: `nvidia-smi topo -m` exited "
+                "with rc=%d; defaulting to non-NVLink topology (Path B "
+                "stays enabled). If you are on NVLink hardware, set "
+                "`protrain_own_lora_grad_sync: false` explicitly.",
+                proc.returncode,
+            )
             return False
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        LOG.warning(
+            "ProTrain NVLink detection: `nvidia-smi topo -m` failed (%s); "
+            "defaulting to non-NVLink topology (Path B stays enabled). If "
+            "you are on NVLink hardware, set "
+            "`protrain_own_lora_grad_sync: false` explicitly.",
+            exc,
+        )
         return False
 
     gpu_lines = [ln for ln in proc.stdout.splitlines() if ln.lstrip().startswith("GPU")]
     gpu_lines = [ln for ln in gpu_lines if "\t" in ln or "  " in ln]
-    if len(gpu_lines) < n_visible:
+    if not gpu_lines:
         return False
 
-    for ln in gpu_lines[:n_visible]:
-        cells = ln.split()
-        if len(cells) < 1 + n_visible:
+    # Map torch's visible devices to physical indices in the topo matrix.
+    # CUDA_VISIBLE_DEVICES=2,4 → torch sees cuda:0/cuda:1 → physical 2/4.
+    # When env is unset, identity mapping (0..n_visible-1) is used.
+    physical_indices = _resolve_visible_physical_indices()
+    if physical_indices is None:
+        physical_indices = list(range(n_visible))
+    if len(physical_indices) != n_visible:
+        # UUID mode or unparseable — bail out conservatively.
+        return False
+    if max(physical_indices) >= len(gpu_lines):
+        return False
+
+    for phys_i in physical_indices:
+        cells = gpu_lines[phys_i].split()
+        if len(cells) < 1 + max(physical_indices) + 1:
             return False
-        pair_cells = cells[1 : 1 + n_visible]
-        for cell in pair_cells:
+        for phys_j in physical_indices:
+            cell = cells[1 + phys_j]
             if cell == "X":
                 continue
             if not cell.startswith("NV"):
@@ -991,6 +1054,63 @@ def _guard_force_all_persistent_full_ft_ddp(cfg, trainer) -> None:
     )
 
 
+def _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped) -> None:
+    """Force ``save_safetensors=False`` for ProTrain full-FT + offload paths.
+
+    ProTrain's released non-persistent chunks share one expand-placeholder
+    scratch tensor per dtype (`chunk/manager.py::_shape_preserving_placeholder`)
+    to preserve shape semantics during autograd capture. At save time,
+    safetensors detects that hundreds of params share storage with the same
+    scratch and raises ``RuntimeError: The weights trying to be saved
+    contained shared tensors``. LoRA-scope saves dodge this because only
+    adapter weights are serialized; full-FT saves include the chunk-managed
+    base weights and trip the check.
+
+    Fix: when ProTrain is active, full-FT (all params trainable), and any
+    non-persistent chunks exist (offload regime), force ``save_safetensors``
+    to ``False`` so HF saves to pickle ``.bin`` instead. Explicit
+    ``save_safetensors`` set by the user is honored; the auto-flip only fires
+    when the user hasn't set it.
+    """
+    chunk_manager = getattr(wrapped, "chunk_manager", None)
+    if chunk_manager is None:
+        return
+
+    non_persistent_ids = getattr(chunk_manager, "_non_persistent_ids", None)
+    if not non_persistent_ids:
+        return
+
+    model = getattr(trainer, "model", None)
+    if model is None:
+        return
+    params = list(model.parameters())
+    if not params or not all(p.requires_grad for p in params):
+        return
+
+    args = getattr(trainer, "args", None)
+    if args is None:
+        return
+    if not hasattr(args, "save_safetensors"):
+        return
+    if args.save_safetensors is False:
+        return
+
+    args.save_safetensors = False
+    LOG.warning(
+        "ProTrain: forcing trainer.args.save_safetensors=False for full-FT + "
+        "offload. ProTrain's shape-preserving expand-placeholder shares "
+        "scratch storage across released chunks (chunk/manager.py); "
+        "safetensors detects this as 'shared tensors' and refuses to save. "
+        "Falling back to pickle .bin format. This override is unavoidable "
+        "for this combination — even an explicit `save_safetensors: true` "
+        "in your config will produce a save-time error. If you need "
+        ".safetensors output (e.g., HF Hub upload, vLLM compatibility), "
+        "use a LoRA-scope save (only adapter weights serialized) or run "
+        "without offload (single-GPU / Mode A all-persistent with enough "
+        "GPU memory)."
+    )
+
+
 def _build_hardware_profile(cfg):
     """Construct a HardwareProfile with cfg-driven zero3_shard auto-detect."""
     from axolotl.integrations.protrain.api.hardware import _resolve_world_size
@@ -1349,6 +1469,7 @@ class ProTrainPlugin(BasePlugin):
             return
 
         _guard_force_all_persistent_full_ft_ddp(cfg, trainer)
+        _force_pickle_save_for_fullft_offload(cfg, trainer, wrapped)
 
         # Unlock Mode C on multi-rank non-NVLink rigs: must run before the
         # _inner_training_loop call to accelerator.prepare(self.model) wraps DDP.
