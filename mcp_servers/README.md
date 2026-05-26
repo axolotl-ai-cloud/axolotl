@@ -55,6 +55,34 @@ Expected behavior:
 - MCP host can discover tools `strategy_for_hole`, `description_for_strategy`, and `analyze_scenarios`.
 - First request may be slower due to model load; subsequent requests use cached model state.
 
+## Phase 2 status
+
+Implemented now:
+- training control MCP server tools:
+	- `start_training_job`
+	- `training_status`
+	- `stop_training_job`
+	- `resume_training_job`
+
+Training server notes:
+- Valid modes are `debug`, `debug_training`, `1_hour`, `8_hour`.
+- Jobs run as subprocesses and are tracked by generated `job_id` values.
+- Status returns recent log tail so clients can poll progress without attaching to process output.
+
+## Run the training control server
+
+From repo root:
+
+```powershell
+./axo-env/Scripts/python.exe -m mcp_servers.training_control.server
+```
+
+Optional interpreter override for spawned training jobs:
+
+```powershell
+$env:AXOLOTL_MCP_PYTHON = "./axo-env/Scripts/python.exe"
+```
+
 ## Manual learning checklist for Phase 0
 
 1. Read MCP quickstart docs for Python server setup and tool registration.
