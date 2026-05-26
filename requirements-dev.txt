@@ -6,3 +6,5 @@ quartodoc
 jupyter
 blobfile
 tiktoken
+mcp
+pydantic
