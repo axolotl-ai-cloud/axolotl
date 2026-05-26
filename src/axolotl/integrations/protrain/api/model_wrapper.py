@@ -2204,9 +2204,7 @@ def protrain_model_wrapper(
                 t_gpu_anchor = a_opt_boot * float(t_gpu_optim_boot)
                 t_cpu_anchor = a_opt_boot * float(t_cpu_optim_boot)
                 phase2_per_comp_pred_iter_s_val = float(
-                    t_fwd_anchor
-                    + t_bwd_anchor
-                    + max(t_gpu_anchor, t_cpu_anchor)
+                    t_fwd_anchor + t_bwd_anchor + max(t_gpu_anchor, t_cpu_anchor)
                 )
             else:
                 phase2_per_comp_pred_iter_s_val = 0.0

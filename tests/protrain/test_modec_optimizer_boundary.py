@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import torch
 
@@ -35,9 +35,13 @@ def _bare_manager() -> ChunkManager:
     mgr._cpu_step_post_steps = {}
     mgr._persistent_grads_synced = set()
     mgr.skip_internal_grad_reduce = True
-    mgr.cpu_optim = _FakeCpuOptim()
+    mgr.cpu_optim = cast(Any, _FakeCpuOptim())
     mgr.device = torch.device("cpu")
     return mgr
+
+
+def _cpu_optim(mgr: ChunkManager) -> _FakeCpuOptim:
+    return cast(_FakeCpuOptim, mgr.cpu_optim)
 
 
 def _slot(name: str = "w") -> _CpuParamSlot:
@@ -68,14 +72,15 @@ def test_replicated_grad_hook_defers_cpu_step_until_optimizer_boundary() -> None
     hook = mgr._make_grad_offload_hook(cid, slot)
     hook(param)
 
+    assert slot.cpu_grad is not None
     assert slot.cpu_grad.tolist() == [3.0, 3.0]
     assert param.grad is None
     assert cid in mgr._cpu_step_ready_chunks
-    assert mgr.cpu_optim.step_calls == []
+    assert _cpu_optim(mgr).step_calls == []
 
     mgr.step_ready_cpu_chunks()
 
-    assert mgr.cpu_optim.step_calls == [cid]
+    assert _cpu_optim(mgr).step_calls == [cid]
     assert cid not in mgr._cpu_step_ready_chunks
 
 
@@ -85,11 +90,11 @@ def test_sharded_reduce_waits_for_all_param_hooks_before_step_ready() -> None:
     mgr._cpu_slots = {cid: [_slot()]}
     mgr._grad_remaining = {cid: 1}
 
-    finalized = mgr._reduce_scatter_and_offload_shard(cid, object())
+    finalized = mgr._reduce_scatter_and_offload_shard(cid, cast(Any, object()))
 
     assert finalized is False
     assert cid not in mgr._cpu_step_ready_chunks
-    assert mgr.cpu_optim.step_calls == []
+    assert _cpu_optim(mgr).step_calls == []
 
 
 def test_backward_finalizer_defers_persistent_grad_sync_to_optimizer_step() -> None:
@@ -102,7 +107,7 @@ def test_backward_finalizer_defers_persistent_grad_sync_to_optimizer_step() -> N
     def _unexpected_reduce(chunk_id: ChunkId, *, force: bool = False) -> None:  # noqa: ARG001
         calls.append(chunk_id)
 
-    mgr.reduce_grads_and_offload = _unexpected_reduce
+    cast(Any, mgr).reduce_grads_and_offload = _unexpected_reduce
 
     mgr.reduce_grads_and_offload_from_backward(cid)
 
@@ -118,17 +123,17 @@ def test_backward_finalize_for_sharded_chunk_only_releases_storage() -> None:
 
     mgr = _bare_manager()
     mgr._persistent_ids = set()
-    mgr._chunk_shards = {cid: object()}
+    mgr._chunk_shards = cast(Any, {cid: object()})
     mgr._cpu_slots = {cid: [slot]}
     mgr._params_by_id = {slot.param_id: param}
-    mgr.offload = offload_calls.append  # type: ignore[method-assign]
+    cast(Any, mgr).offload = offload_calls.append
 
     mgr.reduce_grads_and_offload_from_backward(cid)
 
     assert offload_calls == [cid]
     assert param.grad is not None
     assert cid not in mgr._cpu_step_ready_chunks
-    assert mgr.cpu_optim.step_calls == []
+    assert _cpu_optim(mgr).step_calls == []
 
 
 def test_force_sweep_offloads_sharded_chunk_without_grads() -> None:
@@ -139,16 +144,16 @@ def test_force_sweep_offloads_sharded_chunk_without_grads() -> None:
 
     mgr = _bare_manager()
     mgr._persistent_ids = set()
-    mgr._chunk_shards = {cid: object()}
+    mgr._chunk_shards = cast(Any, {cid: object()})
     mgr._cpu_slots = {cid: [slot]}
     mgr._params_by_id = {slot.param_id: param}
-    mgr.offload = offload_calls.append  # type: ignore[method-assign]
+    cast(Any, mgr).offload = offload_calls.append
 
     mgr.reduce_grads_and_offload(cid, force=True)
 
     assert offload_calls == [cid]
     assert cid not in mgr._cpu_step_ready_chunks
-    assert mgr.cpu_optim.step_calls == []
+    assert _cpu_optim(mgr).step_calls == []
 
 
 def test_scheduler_uses_backward_finalize_hook_when_available() -> None:

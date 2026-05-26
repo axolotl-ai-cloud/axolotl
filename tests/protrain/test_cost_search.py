@@ -3557,9 +3557,7 @@ def test_alpha_residual_compensates_for_unmodeled_overhead():
     # Per-component α all = 1.0 (measured == analytical per-component)
     # so the per-component composition's boot prediction equals the
     # analytical lumped iter (no per-component-bias correction).
-    boot_per_comp_pred = (
-        boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
-    )
+    boot_per_comp_pred = boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
     # Stage measured phase-2 iter at 2.0 × per-component prediction
     # — the missing whole-iter overhead the residual α must absorb.
     target_residual = 2.0
@@ -3652,9 +3650,7 @@ def test_alpha_residual_no_op_when_per_component_explains_boot():
     )
     boot_step = max(boot_t_gpu + boot_t_cpu, 1e-12)
 
-    boot_per_comp_pred = (
-        boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
-    )
+    boot_per_comp_pred = boot_t_fwd + boot_t_bwd + max(boot_t_gpu, boot_t_cpu)
     # Measured iter == per-component prediction → residual α = 1.0.
     measured_iter = boot_per_comp_pred
 

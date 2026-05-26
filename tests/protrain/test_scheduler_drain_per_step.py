@@ -10,7 +10,7 @@ step actually invokes it via the ChunkManager -> Scheduler back-ref.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import torch
@@ -141,7 +141,7 @@ def test_step_syncs_persistent_grads_before_gpu_step() -> None:
 
     mgr = _OrderedManager()
     optim = _ProTrainOptimizer(
-        gpu_optim=_OrderedGpu(),
+        gpu_optim=cast(Any, _OrderedGpu()),
         cpu_optim=None,
         params=[param],
         defaults={"lr": 1e-3, "betas": (0.9, 0.999), "eps": 1e-8, "weight_decay": 0.0},

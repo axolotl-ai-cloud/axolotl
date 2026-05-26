@@ -197,7 +197,7 @@ def test_resume_hook_rolls_back_offload_when_original_load_fails(monkeypatch) ->
 
     class _ChunkManager:
         _cpu_slots = {0: [object()]}
-        _chunk_shards = {}
+        _chunk_shards: dict[int, object] = {}
 
         def __init__(self) -> None:
             self.cpu_optim = _CpuOptim()

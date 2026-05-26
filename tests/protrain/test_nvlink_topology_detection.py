@@ -195,9 +195,7 @@ def test_missing_nvidia_smi_returns_false(_mock_2_visible_gpus, monkeypatch):
     assert detect() is False
 
 
-def test_nvidia_smi_spawn_uses_absolute_which_path(
-    _mock_2_visible_gpus, monkeypatch
-):
+def test_nvidia_smi_spawn_uses_absolute_which_path(_mock_2_visible_gpus, monkeypatch):
     """The subprocess argv starts with the absolute path returned by shutil.which."""
     import shutil
     import subprocess

@@ -618,7 +618,7 @@ def _detect_nvlink_topology() -> bool:
     try:
         import os
         import shutil
-        import subprocess
+        import subprocess  # nosec B404
 
         nvidia_smi = shutil.which("nvidia-smi")
         if nvidia_smi is None:
@@ -630,7 +630,7 @@ def _detect_nvlink_topology() -> bool:
             )
             return False
         nvidia_smi = os.path.abspath(nvidia_smi)
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603
             [nvidia_smi, "topo", "-m"],
             capture_output=True,
             text=True,
