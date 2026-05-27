@@ -34,24 +34,36 @@ def restore_qwen3_attention():
         _clear_patched_flag(Qwen3Attention)
 
 
+@pytest.fixture
+def patch_manager_caplog(caplog):
+    logger = logging.getLogger("axolotl.loaders.patch_manager")
+    logger.addHandler(caplog.handler)
+    previous_level = logger.level
+    logger.setLevel(logging.DEBUG)
+    try:
+        yield caplog
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(previous_level)
+
+
 class TestFusedAttnKernelUnsupportedWarning:
     """The warning lives in ``PatchManager`` (not the schema validator) so it
     runs after ``normalize_config()`` has derived ``model_config_type``. A
     normal CLI flow with ``fused_attn_kernel: true`` on e.g. a Llama config
     must warn loudly instead of silently no-op'ing."""
 
-    def test_warns_on_unsupported_model_type(self, caplog):
+    def test_warns_on_unsupported_model_type(self, patch_manager_caplog):
         from types import SimpleNamespace
 
         from axolotl.loaders.patch_manager import PatchManager
 
         cfg = SimpleNamespace(fused_attn_kernel=True, model_config_type="llama")
-        with caplog.at_level(logging.WARNING, logger="axolotl"):
-            PatchManager._warn_if_fused_attn_unsupported(cfg)
-        assert any(
-            "fused_attn_kernel" in r.message and "llama" in r.message
-            for r in caplog.records
-        ), f"expected warning about llama; got {[r.message for r in caplog.records]}"
+        PatchManager._warn_if_fused_attn_unsupported(cfg)
+        assert (
+            "fused_attn_kernel" in patch_manager_caplog.text
+            and "llama" in patch_manager_caplog.text
+        ), f"expected warning about llama; got {patch_manager_caplog.text}"
 
     @pytest.mark.parametrize(
         "model_type",
@@ -68,30 +80,28 @@ class TestFusedAttnKernelUnsupportedWarning:
             "gemma4_text",
         ],
     )
-    def test_no_warn_on_supported_model_type(self, caplog, model_type):
+    def test_no_warn_on_supported_model_type(self, patch_manager_caplog, model_type):
         from types import SimpleNamespace
 
         from axolotl.loaders.patch_manager import PatchManager
 
         cfg = SimpleNamespace(fused_attn_kernel=True, model_config_type=model_type)
-        with caplog.at_level(logging.WARNING, logger="axolotl"):
-            PatchManager._warn_if_fused_attn_unsupported(cfg)
+        PatchManager._warn_if_fused_attn_unsupported(cfg)
         assert not any(
             "fused_attn_kernel" in r.message and model_type in r.message
-            for r in caplog.records
+            for r in patch_manager_caplog.records
         ), f"unexpected warning for supported {model_type}"
 
-    def test_no_warn_when_fused_attn_kernel_false(self, caplog):
+    def test_no_warn_when_fused_attn_kernel_false(self, patch_manager_caplog):
         from types import SimpleNamespace
 
         from axolotl.loaders.patch_manager import PatchManager
 
         cfg = SimpleNamespace(fused_attn_kernel=False, model_config_type="llama")
-        with caplog.at_level(logging.WARNING, logger="axolotl"):
-            PatchManager._warn_if_fused_attn_unsupported(cfg)
-        assert not any("fused_attn_kernel" in r.message for r in caplog.records), (
-            "no warning expected when fused_attn_kernel is False"
-        )
+        PatchManager._warn_if_fused_attn_unsupported(cfg)
+        assert not any(
+            "fused_attn_kernel" in r.message for r in patch_manager_caplog.records
+        ), "no warning expected when fused_attn_kernel is False"
 
     def test_warning_is_invoked_by_apply_model_specific_patches(self):
         """Source-line check that ``_apply_model_specific_patches`` actually

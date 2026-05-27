@@ -147,14 +147,18 @@ class TestGemma4FusedAttnLoRACompose:
 
         try:
             patch_gemma4_fused_attn()
-            with caplog.at_level(logging.INFO, logger="axolotl"):
+            logger = logging.getLogger("axolotl.monkeypatch.lora_kernels")
+            logger.addHandler(caplog.handler)
+            previous_level = logger.level
+            logger.setLevel(logging.INFO)
+            try:
                 lora_kernels.patch_self_attn_lora(self._build_cfg())
-            assert any(
-                "fused attention" in r.message and "skipping" in r.message
-                for r in caplog.records
-            ), (
+            finally:
+                logger.removeHandler(caplog.handler)
+                logger.setLevel(previous_level)
+            assert "fused attention" in caplog.text and "skipping" in caplog.text, (
                 "expected lora_kernels to detect the fused path and log a skip; "
-                f"got {[r.message for r in caplog.records]}"
+                f"got {caplog.text}"
             )
             assert not hasattr(Gemma4TextAttention, "_original_forward"), (
                 "lora_kernels installed _original_forward over a fused-patched class"
