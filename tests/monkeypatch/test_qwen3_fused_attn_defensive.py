@@ -58,6 +58,8 @@ class TestFusedAttnKernelUnsupportedWarning:
         [
             "qwen3",
             "qwen3_moe",
+            "qwen3_vl",
+            "qwen3_vl_text",
             "qwen3_5",
             "qwen3_5_text",
             "qwen3_5_moe",

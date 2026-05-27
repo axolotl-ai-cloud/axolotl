@@ -355,6 +355,8 @@ class PatchManager:
     _FUSED_ATTN_KERNEL_SUPPORTED = (
         "qwen3",
         "qwen3_moe",
+        "qwen3_vl",
+        "qwen3_vl_text",
         "qwen3_5",
         "qwen3_5_text",
         "qwen3_5_moe",
@@ -505,6 +507,16 @@ class PatchManager:
                 )
 
                 patch_qwen3_moe_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_vl",
+                "qwen3_vl_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_vl.fused_attn import (
+                    patch_qwen3_vl_fused_attn,
+                )
+
+                patch_qwen3_vl_fused_attn()
 
             if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
                 "qwen3_5",
