@@ -352,6 +352,17 @@ class PatchManager:
 
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
+        if self.cfg.model_config_type == "gemma4" and self.cfg.use_kernels:
+            # transformers' Gemma4VisionAttention registers a bare function via
+            # @use_kernelized_func, which crashes model.kernelize() (triggered by
+            # use_kernels=True) when it tries to register_module() a non-Module.
+            # Strip the dead entry so kernelize() succeeds. The MoE itself is
+            # accelerated via the ExpertsInterface (experts_implementation),
+            # independent of this path.
+            from axolotl.monkeypatch.gemma4_kernelize import patch_gemma4_kernelize
+
+            patch_gemma4_kernelize()
+
         if (
             self.cfg.model_config_type == "llama4"
             and self.cfg.llama4_linearized_experts
