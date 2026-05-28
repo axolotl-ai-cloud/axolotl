@@ -225,7 +225,7 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             _target_mask_chunk,
             _true_labels_chunk,
         ):
-            return cls._compute_loss_kl_topk(
+            soft_loss, ce_loss = cls._compute_loss_kl_topk(
                 student_input_chunk=_student_input_chunk,
                 student_weight=_student_lm_head_weight,
                 target_token_ids_chunk=_target_token_ids_chunk,
@@ -242,6 +242,11 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 beta=beta,
                 normalize_topk=normalize_topk,
             )
+            # has_aux=True: first return is the differentiated scalar, rest is aux.
+            # Combine here so both terms contribute to backward; aux carries the
+            # unweighted soft/ce values for reporting.
+            combined = weight_soft_loss * soft_loss + weight_hard_loss * ce_loss
+            return combined, (soft_loss, ce_loss)
 
         def accumulate_chunk_grads(
             student_input_chunk_ac,
@@ -254,7 +259,9 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
             if student_lm_head_bias is not None:
                 (
                     (chunk_grad_input, chunk_grad_weight, chunk_grad_bias),
-                    (chunk_kd_loss, chunk_ce_loss),
+                    # grad_and_value(has_aux=True) returns (grads, (value, aux));
+                    # value = combined scalar, aux = (soft_loss, ce_loss) from loss_fn_for_grad.
+                    (_, (chunk_kd_loss, chunk_ce_loss)),
                 ) = torch.func.grad_and_value(
                     loss_fn_for_grad, argnums=(0, 1, 2), has_aux=True
                 )(
@@ -271,7 +278,9 @@ class LigerFusedLinearKLTopKLogprobFunction(LigerFusedLinearDistillationBase):
                 argnums_for_grad = (0, 1)  # Differentiate wrt input_chunk, weight
                 (
                     (chunk_grad_input, chunk_grad_weight),  # No grad for bias
-                    (chunk_kd_loss, chunk_ce_loss),
+                    # grad_and_value(has_aux=True) returns (grads, (value, aux));
+                    # value = combined scalar, aux = (soft_loss, ce_loss) from loss_fn_for_grad.
+                    (_, (chunk_kd_loss, chunk_ce_loss)),
                 ) = torch.func.grad_and_value(
                     loss_fn_for_grad, argnums=argnums_for_grad, has_aux=True
                 )(
