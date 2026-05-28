@@ -168,6 +168,7 @@ class PatchManager:
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
+        self._apply_tiled_mlp_post_load(model)
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -384,6 +385,17 @@ class PatchManager:
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
+
+        if self.cfg.model_config_type == "gemma4" and self.cfg.use_kernels:
+            # transformers' Gemma4VisionAttention registers a bare function via
+            # @use_kernelized_func, which crashes model.kernelize() (triggered by
+            # use_kernels=True) when it tries to register_module() a non-Module.
+            # Strip the dead entry so kernelize() succeeds. The MoE itself is
+            # accelerated via the ExpertsInterface (experts_implementation),
+            # independent of this path.
+            from axolotl.monkeypatch.gemma4_kernelize import patch_gemma4_kernelize
+
+            patch_gemma4_kernelize()
 
         if (
             self.cfg.model_config_type == "llama4"
@@ -766,7 +778,26 @@ class PatchManager:
                 model_type,
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                use_scattermoe=bool(self.cfg.use_scattermoe),
             )
+
+    def _apply_tiled_mlp_post_load(self, model):
+        """Re-wrap MoE block instances after kernels have installed their forward.
+
+        Needed only when scattermoe-lora is active — ``model.kernelize()``
+        binds ``HFScatterMoEGatedMLP.forward`` per instance, which shadows
+        the class-level tiled patch. See
+        :func:`axolotl.monkeypatch.tiled_mlp.patch_tiled_mlp_moe_instances`.
+        """
+        if not (self.cfg.tiled_mlp and self.cfg.use_scattermoe):
+            return
+        from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp_moe_instances
+
+        patch_tiled_mlp_moe_instances(
+            model,
+            self.cfg.model_config_type,
+            cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+        )
 
     def _apply_voxtral_patches(self):
         """Apply patches for Voxtral model."""
@@ -841,6 +872,7 @@ class PatchManager:
 
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
+
         if (
             self.model_config.model_type
             in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
@@ -850,15 +882,18 @@ class PatchManager:
             and is_flash_attn_available()
             and not self.inference
         ):
-            # TODO(MengqingCao): split these patches separately
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                is_xformers_swiglu_available,
-                replace_llama_mlp_with_swiglu,
-            )
+            try:
+                # TODO(MengqingCao): split these patches separately
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                )
 
-            if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                LOG.info("Patching with SwiGLU...")
-                replace_llama_mlp_with_swiglu(model)
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("Patching with SwiGLU...")
+                    replace_llama_mlp_with_swiglu(model)
+            except ImportError as e:
+                LOG.warning(f"Flash Attention patches not applied: {e}")
 
     def _apply_lora_kernel_patch(self, model):
         """Apply LoRA kernel patches."""

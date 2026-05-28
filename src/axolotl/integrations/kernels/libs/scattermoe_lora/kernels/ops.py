@@ -108,6 +108,7 @@ def _scatter2scatter(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     pid = tl.program_id(axis=0)
 
@@ -116,6 +117,8 @@ def _scatter2scatter(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -126,7 +129,10 @@ def _scatter2scatter(
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=ACC_TYPE)
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
         E_M_idx = M_idx
@@ -176,6 +182,7 @@ def scatter2scatter(
     x_grouped=False,
     y_grouped=False,
     out=None,
+    int64_indices=False,
 ):
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
     assert sorted_scattered_idxs.size(0) == X.size(0) * k
@@ -198,6 +205,7 @@ def scatter2scatter(
         b,
         x_grouped,
         y_grouped,
+        int64_indices,
     )
     return output
 
@@ -213,6 +221,7 @@ def scatter2scatter_compileable(
     b: Optional[torch.Tensor],
     x_grouped: bool,
     y_grouped: bool,
+    int64_indices: bool = False,
 ) -> None:
     def grid(META):
         grid_num = (
@@ -258,6 +267,7 @@ def scatter2scatter_compileable(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
 
 

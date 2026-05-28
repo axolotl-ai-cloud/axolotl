@@ -104,7 +104,7 @@ class TestAutotuneCollector:
         assert len(result) == 1
         entry = result[0]
         assert entry["kernel"] == "scatter2scatter_lora_fwd"
-        assert entry["key"] == {"M": 2048, "N": 4096, "K": 1024}
+        assert entry["key"] == {"M_BUCKET": 2048, "N": 4096, "K": 1024}
         assert entry["config"]["BLOCK_N"] == 128
         assert entry["config"]["BLOCK_K"] == 64
         assert entry["config"]["num_warps"] == 8
@@ -148,7 +148,7 @@ class TestAutotuneCollector:
 
         assert len(result) == 1
         key = result[0]["key"]
-        assert key["M"] == 512
+        assert key["M_BUCKET"] == 512
         assert key["N"] == 1024
         assert key["K"] == 256
         assert key["_extra"] == ["float16", "float16"]

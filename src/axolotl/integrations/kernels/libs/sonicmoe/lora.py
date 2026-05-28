@@ -61,33 +61,6 @@ def get_lora_params_from_wrapper(module) -> tuple:
     return lora_A, lora_B, scaling
 
 
-def unwrap_gate_lora(gate_module):
-    """Unwrap PEFT ParamWrapper on the router gate.
-
-    When PEFT targets ``gate.weight``, ``self.gate`` becomes::
-
-        ParamWrapper(weight)
-          -> base_layer: Router (the real module)
-
-    Returns:
-        (base_gate, gate_weight, gate_lora_delta_or_None)
-
-        ``base_gate`` is the original router module (with ``.top_k``, etc.).
-        ``gate_weight`` is the base router weight tensor.
-        ``gate_lora_delta_or_None`` is the LoRA delta if active, else None.
-        Kept separate to avoid mixing DTensor + Tensor under FSDP.
-    """
-    if has_lora(gate_module):
-        base_gate = gate_module.base_layer
-        lora_A, lora_B, scaling = get_lora_params_from_wrapper(gate_module)
-        if lora_A is not None:
-            delta = scaling * (lora_B @ lora_A)
-            return base_gate, base_gate.weight, delta
-        return base_gate, base_gate.weight, None
-
-    return gate_module, gate_module.weight, None
-
-
 def unwrap_experts_lora(experts_module):
     """Walk a PEFT ParamWrapper chain on ``self.experts``.
 
@@ -129,18 +102,12 @@ def unwrap_experts_lora(experts_module):
 
 
 class MoELoRAMaterialize(torch.autograd.Function):
-    """Materialize effective weight W_eff = W + scaling * (B @ A) per expert.
+    """Materialize ``W_eff = W + scaling * (B @ A)`` per expert and route grads.
 
-    Inserts into the autograd graph between PEFT's LoRA parameters and
-    SonicMoE's CUTLASS kernels. The CUTLASS backward computes dW_eff,
-    which this function decomposes into dA and dB via the chain rule.
-
-    Weight layouts (PEFT rank-major):
-        base_weight: [E, dim1, dim2]  (frozen expert parameter)
-        lora_A:      [r*E, dim2]      (rows [e*r:(e+1)*r] = A_e)
-        lora_B:      [dim1, r*E]      (cols [:, e*r:(e+1)*r] = B_e)
-
-    Per-expert: delta_e = B_e @ A_e = [dim1, r] @ [r, dim2] = [dim1, dim2]
+    Layout matches PEFT >= 0.19.1 ``ParamWrapper``: ``base [E, dim1, dim2]``,
+    ``lora_A [r*E, dim2]`` (E-outer, r-inner rows), ``lora_B [dim1, r*E]``
+    (r-outer, E-inner cols). Equivalent to
+    ``einsum("o r e, e r i -> e o i", lora_B.reshape(dim1, r, E), lora_A.reshape(E, r, dim2))``.
     """
 
     @staticmethod

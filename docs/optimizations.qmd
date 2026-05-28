@@ -86,11 +86,12 @@ fused_attn_kernel: true
 
 ### Expert Kernels
 
-Optimized kernel implementations for Mixture of Experts (MoE) model training.
+Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 
-- **ScatterMoE**: Triton-based MoE kernels with fused LoRA support.
-- **SonicMoE**: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.
+- **ScatterMoE**: Triton, any CUDA GPU.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper+ only.
 
+- **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
 
 ## Long Context Models
@@ -128,7 +129,7 @@ To train models that don't fit on a single GPU, you'll need to use a distributed
 
 ### N-D Parallelism (Beta)
 
-For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
 
 - **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
 
