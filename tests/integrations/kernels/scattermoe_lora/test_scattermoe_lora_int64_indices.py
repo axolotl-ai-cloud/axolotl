@@ -464,7 +464,7 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
 # L_scattered * y_dim = 2**32 (2× past 2**31); peak VRAM ≈ 8 GiB.
 _SMALL_T = 131072
 _SMALL_TOP_K = 8
-_SMALL_E = 4
+_SMALL_E = 8
 _SMALL_K = 256
 _SMALL_INTERMEDIATE = 2048
 _SMALL_MIN_FREE_GIB = 12.0
