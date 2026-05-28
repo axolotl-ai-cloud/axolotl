@@ -54,6 +54,17 @@ def _next_power_of_2(n: int) -> int:
     return n + 1
 
 
+# Granularity for the autotune cache key on M. The kernel still runs on the
+# real M (loop bounds + masks); only the @triton.autotune key is bucketed so
+# that varying seqlens/routing don't keep invalidating the cache.
+_M_BUCKET_GRANULARITY = 1024
+
+
+def _bucket_m(m: int) -> int:
+    g = _M_BUCKET_GRANULARITY
+    return ((m + g - 1) // g) * g
+
+
 # Triton tl.dot requires minimum tile dimensions of 16 on modern GPUs.
 MIN_TRITON_DOT_SIZE = 16
 
@@ -450,7 +461,7 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_fwd_configs},
 )
 @triton.heuristics(
@@ -489,6 +500,7 @@ def _scatter2scatter_lora(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -795,6 +807,7 @@ def scatter2scatter_lora(
         sorted_expert_idxs,
         FAN_OUT=k,
         M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
         K=K,
         N=N,
         E=E,
@@ -1043,7 +1056,7 @@ def _prune_dX_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_dX_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_dX_configs},
 )
 @triton.heuristics(
@@ -1080,6 +1093,7 @@ def _scatter2scatter_lora_dX(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -1270,6 +1284,7 @@ def scatter2scatter_lora_dX(
         sorted_expert_idxs,
         FAN_OUT=fan_out,
         M=M,
+        M_BUCKET=_bucket_m(M),
         K=K,
         N=N,
         E=E,
@@ -1384,7 +1399,7 @@ def _prune_bwd_lora_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_group_bwd_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
     reset_to_zero=["DLA_ptr", "DLB_ptr"],
 )
@@ -1421,6 +1436,7 @@ def _group_bwd_lora(
     expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,  # True LoRA rank (for weight indexing)
@@ -1632,7 +1648,7 @@ def _prune_split_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_group_bwd_split_configs(),
-    key=["M", "K", "N"],
+    key=["M_BUCKET", "K", "N"],
     prune_configs_by={"early_config_prune": _prune_split_configs},
 )
 @triton.heuristics(
@@ -1665,6 +1681,7 @@ def _group_bwd_lora_split(
     expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,
@@ -1917,6 +1934,7 @@ def group_bwd_lora(
         dA.stride(1),
         expert_offsets,
         M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -1947,6 +1965,7 @@ def group_bwd_lora(
         dB.stride(1),
         expert_offsets,
         M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -1969,7 +1988,7 @@ def group_bwd_lora(
 
 @triton.autotune(
     configs=_group_bwd_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
     reset_to_zero=["DLA_ptr", "DLB_ptr"],
 )
@@ -2011,6 +2030,7 @@ def _group_bwd_lora_fused(
     real_expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,
@@ -2293,6 +2313,7 @@ def group_bwd_lora_fused(
         expert_offsets_ptr=expert_offsets,
         real_expert_offsets_ptr=real_expert_offsets,
         M=sorted_scattered_idxs.size(0),
+        M_BUCKET=_bucket_m(sorted_scattered_idxs.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -2565,7 +2586,7 @@ def _prune_fwd_mx_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_mx_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_fwd_mx_configs},
 )
 @triton.heuristics(
@@ -2613,6 +2634,7 @@ def _scatter2scatter_lora_mx(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -2801,6 +2823,7 @@ def scatter2scatter_lora_mx(
         sorted_expert_idxs,
         FAN_OUT=k,
         M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
         K=K,
         N=N,
         E=E,
@@ -3037,7 +3060,7 @@ def _prune_dX_mx_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_dX_mx_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_dX_mx_configs},
 )
 @triton.heuristics(
@@ -3074,6 +3097,7 @@ def _scatter2scatter_lora_dX_mx(
     expert_idxs_ptr,
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -3255,6 +3279,7 @@ def scatter2scatter_lora_dX_mx(
         sorted_expert_idxs,
         FAN_OUT=fan_out,
         M=M,
+        M_BUCKET=_bucket_m(M),
         K=K,
         N=N,
         E=E,
