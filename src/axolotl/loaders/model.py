@@ -301,8 +301,23 @@ class ModelLoader:
         )
 
     def _configure_experts_implementation(self):
-        if self.cfg.experts_implementation is not None:
-            self.model.set_experts_implementation(self.cfg.experts_implementation)
+        impl = self.cfg.experts_implementation
+        if impl is None:
+            return
+
+        if impl in ("scattermoe", "sonicmoe"):
+            model_classes = {
+                type(m) for m in self.model.modules() if isinstance(m, PreTrainedModel)
+            }
+            if not any(cls._can_set_experts_implementation() for cls in model_classes):
+                LOG.warning(
+                    f"experts_implementation={impl!r} requested, but no submodule of "
+                    f"{type(self.model).__name__} uses transformers' ExpertsInterface "
+                    "(@use_experts_implementation). The kernel will NOT be applied; "
+                    "training falls back to the model's native experts path."
+                )
+
+        self.model.set_experts_implementation(impl)
 
     def _apply_activation_checkpointing(self):
         if self.cfg.activation_offloading is True:

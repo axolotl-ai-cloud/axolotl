@@ -2,21 +2,24 @@
 # Copyright (c) Axolotl AI
 # Licensed under the Apache License, Version 2.0
 
-"""
-End-to-end tests for SonicMoE + LoRA integration.
+"""End-to-end tests for SonicMoE + LoRA.
 
-Verifies that PEFT-wrapped MoE models work correctly with SonicMoE's
-runtime LoRA materialization: gradients flow to adapters, base weights
-stay frozen, and loss converges.
+Flow:
+
+    register_sonicmoe_experts()                # plug into ALL_EXPERTS_FUNCTIONS
+    config._experts_implementation = "sonicmoe"
+    model = AutoModelForCausalLM.from_config(config)
+    model = get_peft_model(model, lora_config)   # PEFT wraps params/modules
+
+``sonicmoe_experts_forward_with_lora`` detects the PEFT wrappers and
+materializes ``W_eff = W + scaling * (B @ A)`` via :class:`MoELoRAMaterialize`,
+so adapters train through the CUTLASS kernels.
 
 Requires:
-    - H100/H200 GPU (SonicMoE CUTLASS kernels target sm_90)
-    - sonicmoe package installed
-    - peft package installed
-    - transformers with Qwen3MoE support
-
-Usage:
-    pytest tests/e2e/integrations/test_sonicmoe_lora.py -v -s
+    - Hopper (sm_90) or Blackwell (sm_100+) GPU
+    - sonic-moe >= 0.1.2 installed from source
+    - peft installed
+    - transformers >= 5.8 with Qwen3MoE Experts class
 """
 
 import importlib.util
@@ -25,22 +28,31 @@ import math
 import pytest
 import torch
 
-_sonicmoe_available = importlib.util.find_spec("sonicmoe") is not None
-_peft_available = importlib.util.find_spec("peft") is not None
-_is_hopper = torch.cuda.is_available() and torch.cuda.get_device_capability() == (9, 0)
+
+def _is_hopper_or_newer() -> bool:
+    if not torch.cuda.is_available():
+        return False
+    major, _ = torch.cuda.get_device_capability()
+    return major >= 9
+
 
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires CUDA GPU"),
     pytest.mark.skipif(
-        not _is_hopper, reason="SonicMoE CUTLASS kernels require Hopper (sm_90)"
+        not _is_hopper_or_newer(),
+        reason="SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+)",
     ),
-    pytest.mark.skipif(not _sonicmoe_available, reason="SonicMoE not installed"),
-    pytest.mark.skipif(not _peft_available, reason="PEFT not installed"),
+    pytest.mark.skipif(
+        importlib.util.find_spec("kernels") is None,
+        reason="HF `kernels` package not installed",
+    ),
+    pytest.mark.skipif(
+        importlib.util.find_spec("peft") is None, reason="PEFT not installed"
+    ),
 ]
 
 
 def _create_tiny_qwen3_config():
-    """Create a minimal Qwen3MoE config for fast testing."""
     from transformers import AutoConfig
 
     config = AutoConfig.for_model("qwen3_moe")
@@ -57,33 +69,23 @@ def _create_tiny_qwen3_config():
     config.max_position_embeddings = 128
     config.norm_topk_prob = True
     config.torch_dtype = torch.bfloat16
+    config._experts_implementation = "sonicmoe"
     return config
 
 
-def _interleave_gate_up_weights(model):
-    """Interleave all gate_up_proj parameters in-place for SonicMoE."""
-    from axolotl.integrations.kernels.libs.sonicmoe.weight_converter import (
-        interleave_gate_up,
+def _build_sonic_model():
+    from transformers import AutoModelForCausalLM
+
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        register_sonicmoe_experts,
     )
 
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if "gate_up_proj" in name:
-                param.copy_(interleave_gate_up(param))
-
-
-def _unpatch_sonicmoe():
-    """Restore original forward on the MoE block class if it was patched."""
-    from axolotl.integrations.kernels.constants import resolve_moe_block_classes
-
-    for moe_cls in resolve_moe_block_classes("qwen3_moe"):
-        if hasattr(moe_cls, "_original_forward"):
-            moe_cls.forward = moe_cls._original_forward
-            del moe_cls._original_forward
+    register_sonicmoe_experts()
+    config = _create_tiny_qwen3_config()
+    return AutoModelForCausalLM.from_config(config).cuda().bfloat16()
 
 
 def _apply_lora(model, target_modules):
-    """Apply PEFT LoRA to the model."""
     from peft import LoraConfig, get_peft_model
 
     lora_config = LoraConfig(
@@ -97,37 +99,23 @@ def _apply_lora(model, target_modules):
 
 
 class TestSonicMoELoRATraining:
-    """Verify SonicMoE + LoRA training works end-to-end."""
-
-    def teardown_method(self):
-        _unpatch_sonicmoe()
+    """SonicMoE + LoRA on expert projections trains end-to-end."""
 
     def test_loss_decreases(self):
-        """Run 30 training steps with LoRA on experts, verify loss decreases."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model = _build_sonic_model()
         model = _apply_lora(model, ["gate_up_proj", "down_proj"])
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
         )
         losses = []
-
         for step in range(30):
             out = model(input_ids, labels=input_ids)
             loss = out.loss
             assert not math.isnan(loss.item()), f"NaN loss at step {step}"
             assert not math.isinf(loss.item()), f"Inf loss at step {step}"
             losses.append(loss.item())
-
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -137,24 +125,15 @@ class TestSonicMoELoRATraining:
         )
 
     def test_base_weights_frozen(self):
-        """Verify base (non-LoRA) weights don't change during training."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model = _build_sonic_model()
         model = _apply_lora(model, ["gate_up_proj", "down_proj"])
 
-        # Snapshot frozen weights
-        frozen_before = {}
-        for name, param in model.named_parameters():
-            if not param.requires_grad:
-                frozen_before[name] = param.data.clone()
+        frozen_before = {
+            name: param.data.clone()
+            for name, param in model.named_parameters()
+            if not param.requires_grad
+        }
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
@@ -165,24 +144,13 @@ class TestSonicMoELoRATraining:
             optimizer.step()
             optimizer.zero_grad()
 
-        for name, param in model.named_parameters():
-            if name in frozen_before:
-                assert torch.equal(param.data, frozen_before[name]), (
-                    f"Frozen weight changed: {name}"
-                )
+        for name, before in frozen_before.items():
+            after = dict(model.named_parameters())[name]
+            assert torch.equal(after.data, before), f"Frozen weight changed: {name}"
 
     def test_lora_adapters_receive_gradients(self):
-        """Verify LoRA A and B matrices get non-zero gradients."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (1, 16), device="cuda")
+        model = _build_sonic_model()
         model = _apply_lora(model, ["gate_up_proj", "down_proj"])
 
         out = model(input_ids, labels=input_ids)
@@ -200,25 +168,15 @@ class TestSonicMoELoRATraining:
         assert lora_grads_found > 0, "No LoRA parameters found with gradients"
 
     def test_lora_adapters_update(self):
-        """Verify LoRA adapter weights change during training."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model = _build_sonic_model()
         model = _apply_lora(model, ["gate_up_proj", "down_proj"])
 
-        # Snapshot LoRA weights
-        lora_before = {}
-        for name, param in model.named_parameters():
-            if "lora_" in name and param.requires_grad:
-                lora_before[name] = param.data.clone()
-
+        lora_before = {
+            name: param.data.clone()
+            for name, param in model.named_parameters()
+            if "lora_" in name and param.requires_grad
+        }
         assert lora_before, "No LoRA parameters found"
 
         optimizer = torch.optim.AdamW(
@@ -239,38 +197,23 @@ class TestSonicMoELoRATraining:
 
 
 class TestSonicMoEGateOnlyLoRA:
-    """Verify LoRA targeting only the gate (router) works with SonicMoE."""
-
-    def teardown_method(self):
-        _unpatch_sonicmoe()
+    """LoRA only on the router (gate) — expert path takes the no-LoRA fast path."""
 
     def test_gate_only_lora_loss_decreases(self):
-        """LoRA only on gate — expert path should have zero materialization overhead."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
-        # Only target the gate (router), not expert projections
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model = _build_sonic_model()
         model = _apply_lora(model, ["gate"])
 
         optimizer = torch.optim.AdamW(
             [p for p in model.parameters() if p.requires_grad], lr=1e-3
         )
         losses = []
-
         for step in range(20):
             out = model(input_ids, labels=input_ids)
             loss = out.loss
             assert not math.isnan(loss.item()), f"NaN loss at step {step}"
             assert not math.isinf(loss.item()), f"Inf loss at step {step}"
             losses.append(loss.item())
-
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -281,34 +224,20 @@ class TestSonicMoEGateOnlyLoRA:
 
 
 class TestSonicMoENoLoRARegression:
-    """Verify SonicMoE without LoRA still works after LoRA code was added."""
-
-    def teardown_method(self):
-        _unpatch_sonicmoe()
+    """Full fine-tuning (no PEFT) still works through the registered forward."""
 
     def test_no_lora_loss_decreases(self):
-        """Full fine-tuning (no PEFT) with SonicMoE — regression test."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model = _build_sonic_model()
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
         losses = []
-
         for step in range(20):
             out = model(input_ids, labels=input_ids)
             loss = out.loss
             assert not math.isnan(loss.item()), f"NaN loss at step {step}"
             assert not math.isinf(loss.item()), f"Inf loss at step {step}"
             losses.append(loss.item())
-
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
