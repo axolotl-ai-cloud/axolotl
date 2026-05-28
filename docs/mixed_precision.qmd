@@ -54,6 +54,26 @@ bf16: true
 bf16: full  # Equivalent to bf16_full_eval in the HF trainer
 ```
 
+### Keeping norms in fp32 (FSDP2) {#sec-fp32-norms}
+
+Some models declare RMSNorm/LayerNorm layers as fp32 for training
+stability — the variance computation in RMSNorm is numerically poor in
+bf16, and the learned gain γ quantizes harshly. With FSDP1 this fights
+the flat-param dtype uniformity constraint; with FSDP2 each norm can have
+its own `MixedPrecisionPolicy`. Enable with:
+
+```{.yaml}
+fsdp_version: 2
+fp32_norms: true
+# fp32_norm_classes:        # optional override
+#   - RMSNorm
+#   - LayerNorm
+```
+
+Defaults match any class whose name ends in `RMSNorm` or `LayerNorm`. Use
+fully qualified names (`module.path.ClassName`) to pin a specific
+implementation.
+
 ## FP8 Mixed Precision {#sec-fp8}
 
 ::: {.callout-note}

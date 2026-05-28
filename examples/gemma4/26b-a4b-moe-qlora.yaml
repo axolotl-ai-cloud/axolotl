@@ -25,6 +25,12 @@ liger_glu_activation: true
 liger_rms_norm_gated: true
 strict: false
 
+# Multi-GPU (DDP) only: LoRA targets the text backbone, so the frozen vision/
+# audio encoders and Gemma4's KV-sharing layers leave some adapter params
+# without gradients. Required to avoid "parameters that were not used in
+# producing loss". No effect on single-GPU runs.
+ddp_find_unused_parameters: true
+
 chat_template: gemma4
 datasets:
   - path: mlabonne/FineTome-100k
