@@ -54,6 +54,17 @@ def _next_power_of_2(n: int) -> int:
     return n + 1
 
 
+# Granularity for the autotune cache key on M. The kernel still runs on the
+# real M (loop bounds + masks); only the @triton.autotune key is bucketed so
+# that varying seqlens/routing don't keep invalidating the cache.
+_M_BUCKET_GRANULARITY = 1024
+
+
+def _bucket_m(m: int) -> int:
+    g = _M_BUCKET_GRANULARITY
+    return ((m + g - 1) // g) * g
+
+
 # Triton tl.dot requires minimum tile dimensions of 16 on modern GPUs.
 MIN_TRITON_DOT_SIZE = 16
 
@@ -450,7 +461,7 @@ def _prune_fwd_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_fwd_configs},
 )
 @triton.heuristics(
@@ -489,6 +500,7 @@ def _scatter2scatter_lora(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -506,6 +518,7 @@ def _scatter2scatter_lora(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused scatter2scatter with LoRA: Y = X @ W + scaling * (X @ A^T) @ B^T + bias
@@ -517,6 +530,8 @@ def _scatter2scatter_lora(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -529,7 +544,10 @@ def _scatter2scatter_lora(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -600,6 +618,7 @@ def _scatter2scatter_lora_split(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Split base+LoRA forward: 3 scatter2scatter calls, no fused LoRA kernel.
 
@@ -629,6 +648,7 @@ def _scatter2scatter_lora_split(
         x_grouped=x_grouped,
         y_grouped=y_grouped,
         out=out,
+        int64_indices=int64_indices,
     )
 
     # 2. XA = X @ A^T  (tiny: output is [M*k, R])
@@ -642,6 +662,7 @@ def _scatter2scatter_lora_split(
         k=k,
         x_grouped=x_grouped,
         y_grouped=True,
+        int64_indices=int64_indices,
     )
 
     # 3. Y_lora = XA @ B^T  (R is tiny, so this is very fast)
@@ -655,6 +676,7 @@ def _scatter2scatter_lora_split(
         k=1,
         x_grouped=True,
         y_grouped=y_grouped,
+        int64_indices=int64_indices,
     )
 
     # 4. Y = Y_base + scaling * Y_lora
@@ -683,6 +705,7 @@ def scatter2scatter_lora(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """
     Scatter2scatter with LoRA: Y[i] = X[i] @ W[e] + scaling * (X[i] @ A[e]^T) @ B[e]^T + b[e]
@@ -729,6 +752,7 @@ def scatter2scatter_lora(
             x_grouped,
             y_grouped,
             out,
+            int64_indices=int64_indices,
         )
 
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
@@ -783,6 +807,7 @@ def scatter2scatter_lora(
         sorted_expert_idxs,
         FAN_OUT=k,
         M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
         K=K,
         N=N,
         E=E,
@@ -793,6 +818,7 @@ def scatter2scatter_lora(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return output
@@ -1030,7 +1056,7 @@ def _prune_dX_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_dX_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_dX_configs},
 )
 @triton.heuristics(
@@ -1067,6 +1093,7 @@ def _scatter2scatter_lora_dX(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -1084,6 +1111,7 @@ def _scatter2scatter_lora_dX(
     dx_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
@@ -1100,6 +1128,8 @@ def _scatter2scatter_lora_dX(
     K_block_id = pid % K_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
     K_mask = K_block < K
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -1112,7 +1142,10 @@ def _scatter2scatter_lora_dX(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -1175,6 +1208,7 @@ def scatter2scatter_lora_dX(
     dy_grouped: bool = True,
     dx_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """
     Fused backward dX = DY @ W^T + scaling * (DY @ B) @ A
@@ -1250,6 +1284,7 @@ def scatter2scatter_lora_dX(
         sorted_expert_idxs,
         FAN_OUT=fan_out,
         M=M,
+        M_BUCKET=_bucket_m(M),
         K=K,
         N=N,
         E=E,
@@ -1261,6 +1296,7 @@ def scatter2scatter_lora_dX(
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
         dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return output
@@ -1363,7 +1399,7 @@ def _prune_bwd_lora_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_group_bwd_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
     reset_to_zero=["DLA_ptr", "DLB_ptr"],
 )
@@ -1400,6 +1436,7 @@ def _group_bwd_lora(
     expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,  # True LoRA rank (for weight indexing)
@@ -1413,6 +1450,7 @@ def _group_bwd_lora(
     allow_tf32: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Compute LoRA gradients for each expert on grouped data.
@@ -1434,15 +1472,24 @@ def _group_bwd_lora(
     N_block_id = pid1
 
     # Get expert's token range from cumulative offsets
-    if E_idx == 0:
-        start_idx = 0
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
         K_mask = K_block < K
         N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -1601,7 +1648,7 @@ def _prune_split_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_group_bwd_split_configs(),
-    key=["M", "K", "N"],
+    key=["M_BUCKET", "K", "N"],
     prune_configs_by={"early_config_prune": _prune_split_configs},
 )
 @triton.heuristics(
@@ -1634,6 +1681,7 @@ def _group_bwd_lora_split(
     expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,
@@ -1648,6 +1696,7 @@ def _group_bwd_lora_split(
     ACC_TYPE: tl.constexpr,
     allow_tf32: tl.constexpr,
     NO_DIM_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Unified split kernel for LoRA gradient computation.
@@ -1671,11 +1720,18 @@ def _group_bwd_lora_split(
     E_idx = tl.program_id(0)
     dim_block_id = tl.program_id(1)
 
-    if E_idx == 0:
-        start_idx = 0
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     # Output dimension tile (K for dA, N for dB)
@@ -1707,6 +1763,8 @@ def _group_bwd_lora_split(
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         INPUT_DTYPE = X_ptr.dtype.element_ty
         BLOCK_INNER: tl.constexpr = 64
         inner_iters = tl.cdiv(INNER_DIM, BLOCK_INNER)
@@ -1826,6 +1884,7 @@ def group_bwd_lora(
     scaling: float,
     sorted_scattered_idxs: Optional[torch.Tensor] = None,
     k: int = 1,
+    int64_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute LoRA gradients for A and B on expert-grouped data.
@@ -1875,6 +1934,7 @@ def group_bwd_lora(
         dA.stride(1),
         expert_offsets,
         M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -1884,6 +1944,7 @@ def group_bwd_lora(
         COMPUTE_DA=True,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
     )
 
     def grid_dB(META):
@@ -1904,6 +1965,7 @@ def group_bwd_lora(
         dB.stride(1),
         expert_offsets,
         M=DY.size(0),
+        M_BUCKET=_bucket_m(DY.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -1913,6 +1975,7 @@ def group_bwd_lora(
         COMPUTE_DA=False,
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
+        INT64_INDICES=int64_indices,
     )
 
     return dA, dB
@@ -1925,7 +1988,7 @@ def group_bwd_lora(
 
 @triton.autotune(
     configs=_group_bwd_lora_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_bwd_lora_configs},
     reset_to_zero=["DLA_ptr", "DLB_ptr"],
 )
@@ -1967,6 +2030,7 @@ def _group_bwd_lora_fused(
     real_expert_offsets_ptr,
     # Dimensions
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     ACTUAL_R: tl.constexpr,
@@ -1982,6 +2046,7 @@ def _group_bwd_lora_fused(
     NO_N_MASK: tl.constexpr,
     # Whether DY is already in grouped (expert-sorted) order
     dy_grouped: tl.constexpr = False,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """
     Fused gather + LoRA gradient computation. Same as _group_bwd_lora but
@@ -2018,18 +2083,30 @@ def _group_bwd_lora_fused(
     # Get expert's token range from cumulative offsets
     # start_idx/end_idx from expert_offsets_ptr: iteration range (possibly padded)
     # real_end_idx from real_expert_offsets_ptr: for M_mask (real token count)
-    if E_idx == 0:
-        start_idx = 0
-        real_start_idx = 0
+    if INT64_INDICES:
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int64)
+            real_start_idx = tl.zeros([], dtype=tl.int64)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int64)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int64)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int64)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int64)
     else:
-        start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
-        real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
-    end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
-    real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
+        if E_idx == 0:
+            start_idx = tl.zeros([], dtype=tl.int32)
+            real_start_idx = tl.zeros([], dtype=tl.int32)
+        else:
+            start_idx = tl.load(expert_offsets_ptr + E_idx - 1).to(tl.int32)
+            real_start_idx = tl.load(real_expert_offsets_ptr + E_idx - 1).to(tl.int32)
+        end_idx = tl.load(expert_offsets_ptr + E_idx).to(tl.int32)
+        real_end_idx = tl.load(real_expert_offsets_ptr + E_idx).to(tl.int32)
     num_tokens = end_idx - start_idx
 
     if num_tokens > 0:
         M_block = tl.arange(0, BLOCK_M)
+        if INT64_INDICES:
+            M_block = M_block.to(tl.int64)
         K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
         K_mask = K_block < K
         N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
@@ -2074,9 +2151,14 @@ def _group_bwd_lora_fused(
             M_mask = M_local < real_num_tokens
 
             # Fused gather: load scatter indices for indirect X access
-            scatter_idx = tl.load(
-                sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
-            ).to(tl.int32)
+            if INT64_INDICES:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int64)
+            else:
+                scatter_idx = tl.load(
+                    sorted_scattered_idxs_ptr + M_idx, mask=M_mask, other=0
+                ).to(tl.int32)
             X_token_idx = scatter_idx // FAN_OUT  # X is [M, K], not expanded by k
 
             # Load X via indirect index: [BLOCK_M, BLOCK_K]
@@ -2154,6 +2236,7 @@ def group_bwd_lora_fused(
     scaling: float,
     real_expert_offsets: Optional[torch.Tensor] = None,
     dy_grouped: bool = False,
+    int64_indices: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Fused gather + LoRA gradient computation. Same result as
@@ -2230,6 +2313,7 @@ def group_bwd_lora_fused(
         expert_offsets_ptr=expert_offsets,
         real_expert_offsets_ptr=real_expert_offsets,
         M=sorted_scattered_idxs.size(0),
+        M_BUCKET=_bucket_m(sorted_scattered_idxs.size(0)),
         K=K,
         N=N,
         ACTUAL_R=R,
@@ -2238,6 +2322,7 @@ def group_bwd_lora_fused(
         ACC_TYPE=tl.float32,
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
+        INT64_INDICES=int64_indices,
     )
 
     return dA, dB
@@ -2501,7 +2586,7 @@ def _prune_fwd_mx_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_mx_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_fwd_mx_configs},
 )
 @triton.heuristics(
@@ -2549,6 +2634,7 @@ def _scatter2scatter_lora_mx(
     # Dimensions
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -2565,6 +2651,7 @@ def _scatter2scatter_lora_mx(
     y_grouped: tl.constexpr,
     NO_K_MASK: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """Fused scatter2scatter forward with MXFP4 base weights + LoRA."""
     pid = tl.program_id(axis=0)
@@ -2573,6 +2660,8 @@ def _scatter2scatter_lora_mx(
     N_block_id = pid % N_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     N_block = N_block_id * BLOCK_N + tl.arange(0, BLOCK_N)
     N_mask = N_block < N
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -2583,7 +2672,10 @@ def _scatter2scatter_lora_mx(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -2658,6 +2750,7 @@ def scatter2scatter_lora_mx(
     x_grouped: bool = False,
     y_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Forward dispatcher for the fused MXFP4 + LoRA kernel.
 
@@ -2730,6 +2823,7 @@ def scatter2scatter_lora_mx(
         sorted_expert_idxs,
         FAN_OUT=k,
         M=X.size(0),
+        M_BUCKET=_bucket_m(X.size(0)),
         K=K,
         N=N,
         E=E,
@@ -2741,6 +2835,7 @@ def scatter2scatter_lora_mx(
         allow_tf32=ALLOW_TF32,
         x_grouped=x_grouped,
         y_grouped=y_grouped,
+        INT64_INDICES=int64_indices,
     )
     return output
 
@@ -2965,7 +3060,7 @@ def _prune_dX_mx_configs(configs, named_args, **kwargs):
 
 @triton.autotune(
     configs=_scatter2scatter_lora_dX_mx_configs(),
-    key=["M", "N", "K"],
+    key=["M_BUCKET", "N", "K"],
     prune_configs_by={"early_config_prune": _prune_dX_mx_configs},
 )
 @triton.heuristics(
@@ -3002,6 +3097,7 @@ def _scatter2scatter_lora_dX_mx(
     expert_idxs_ptr,
     FAN_OUT: tl.constexpr,
     M,
+    M_BUCKET,
     K: tl.constexpr,
     N: tl.constexpr,
     E: tl.constexpr,
@@ -3017,6 +3113,7 @@ def _scatter2scatter_lora_dX_mx(
     dy_grouped: tl.constexpr,
     dx_grouped: tl.constexpr,
     NO_N_MASK: tl.constexpr,
+    INT64_INDICES: tl.constexpr = False,
 ):
     """Fused MXFP4 dX kernel."""
     pid = tl.program_id(axis=0)
@@ -3025,6 +3122,8 @@ def _scatter2scatter_lora_dX_mx(
     K_block_id = pid % K_BLOCK_COUNT
 
     M_block = M_block_id * BLOCK_M + tl.arange(0, BLOCK_M)
+    if INT64_INDICES:
+        M_block = M_block.to(tl.int64)
     K_block = K_block_id * BLOCK_K + tl.arange(0, BLOCK_K)
     K_mask = K_block < K
     M_boundary_mask = M_block < (FAN_OUT * M)
@@ -3035,7 +3134,10 @@ def _scatter2scatter_lora_dX_mx(
 
     E_first_idx = tl.min(E_idxs)
     E_last_idx = tl.minimum(tl.max(E_idxs), E - 1)
-    M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
+    if INT64_INDICES:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int64)
+    else:
+        M_idx = tl.load(grouped_idx_ptr + M_block, mask=M_boundary_mask).to(tl.int32)
 
     for E_idx in range(E_first_idx, E_last_idx + 1):
         E_mask = E_idxs == E_idx
@@ -3103,6 +3205,7 @@ def scatter2scatter_lora_dX_mx(
     dy_grouped: bool = True,
     dx_grouped: bool = False,
     out: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
 ) -> torch.Tensor:
     """Backward-dX dispatcher for the fused MXFP4 kernel.
 
@@ -3176,6 +3279,7 @@ def scatter2scatter_lora_dX_mx(
         sorted_expert_idxs,
         FAN_OUT=fan_out,
         M=M,
+        M_BUCKET=_bucket_m(M),
         K=K,
         N=N,
         E=E,
@@ -3187,5 +3291,6 @@ def scatter2scatter_lora_dX_mx(
         allow_tf32=ALLOW_TF32,
         dy_grouped=dy_grouped,
         dx_grouped=dx_grouped,
+        INT64_INDICES=int64_indices,
     )
     return output

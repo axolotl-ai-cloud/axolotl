@@ -11,6 +11,34 @@ import torch.nn as nn
 
 from . import kernels
 
+# When the maximum addressable element offset across any input/output buffer
+# exceeds INT_MAX, the Triton kernel's int32 pointer-offset arithmetic
+# overflows. ``_needs_int64_indices`` returns True iff any tensor has
+# ``numel() >= INT_MAX``, which is a sufficient condition for the
+# ``M_idx * stride_*m`` product to overflow somewhere in the kernel. When
+# True, callers pass ``INT64_INDICES=True`` to the kernel so the index range
+# is cast to int64 before it enters the multiplication. Strides themselves
+# are already int64 at the Python level (from ``tensor.stride()``); only
+# the *index* type needs the bump.
+#
+# The threshold here matches the kernel's correctness boundary: as soon as
+# any indexed buffer has 2**31 - 1 or more elements, the int32 multiply at
+# the end of the buffer can overflow. The wrapper used to chunk the call to
+# keep ``rows * y_dim`` below 2**31; with INT64_INDICES the kernel itself
+# handles overflow, so the auto-dispatch routes directly to a single
+# kernel launch in either mode.
+_INT_MAX = 2**31 - 1
+
+
+def _needs_int64_indices(*tensors) -> bool:
+    """True iff any input/output tensor's element count exceeds INT_MAX."""
+    for t in tensors:
+        if t is None or not isinstance(t, torch.Tensor):
+            continue
+        if t.numel() >= _INT_MAX:
+            return True
+    return False
+
 
 @torch.library.custom_op("scattermoe::bincount", mutates_args={})
 def compileable_bincount(x: torch.Tensor, minlength: int) -> torch.Tensor:
@@ -54,6 +82,12 @@ class ParallelLinear(torch.autograd.Function):
             expert_weights = expert_weights.to(x.dtype)
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
+        L_scattered = sorted_expert_idxs.size(0)
+        y_dim = expert_weights.size(-1)
+        # Cheap probe: the kernel's overflow risk is the M_block * stride_ym
+        # product, dominated by the output buffer L_scattered * y_dim. We also
+        # check x because the X_ptr arithmetic uses similar indices.
+        needs_int64_fwd = (L_scattered * y_dim) >= _INT_MAX or _needs_int64_indices(x)
         with torch.device(x.device):
             output = kernels.ops.scatter2scatter(
                 X=x,
@@ -64,6 +98,7 @@ class ParallelLinear(torch.autograd.Function):
                 sorted_scattered_idxs=sorted_scattered_idxs,
                 x_grouped=grouped_in,
                 y_grouped=grouped_out,
+                int64_indices=needs_int64_fwd,
             )
             if gates is not None:
                 output_expanded = output.view(
@@ -145,6 +180,11 @@ class ParallelLinear(torch.autograd.Function):
                 has_bias=expert_biases is not None,
             )
 
+            L_scattered = sorted_expert_idxs.size(0)
+            dx_dim = expert_weights.size(1)  # K dim of W = output dim for dX
+            needs_int64_bwd = (
+                L_scattered * dx_dim
+            ) >= _INT_MAX or _needs_int64_indices(grouped_grad_out)
             d_expanded_input = kernels.ops.scatter2scatter(
                 X=grouped_grad_out,
                 x_grouped=True,
@@ -154,6 +194,7 @@ class ParallelLinear(torch.autograd.Function):
                 k=1,
                 y_grouped=grouped_in,
                 out=d_expanded_input,  # Reuse grouped_x buffer
+                int64_indices=needs_int64_bwd,
             )
 
             if k == 1:
