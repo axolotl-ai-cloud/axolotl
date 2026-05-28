@@ -166,6 +166,7 @@ class PatchManager:
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
+        self._apply_tiled_mlp_post_load(model)
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -700,7 +701,26 @@ class PatchManager:
                 model_type,
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                use_scattermoe=bool(self.cfg.use_scattermoe),
             )
+
+    def _apply_tiled_mlp_post_load(self, model):
+        """Re-wrap MoE block instances after kernels have installed their forward.
+
+        Needed only when scattermoe-lora is active — ``model.kernelize()``
+        binds ``HFScatterMoEGatedMLP.forward`` per instance, which shadows
+        the class-level tiled patch. See
+        :func:`axolotl.monkeypatch.tiled_mlp.patch_tiled_mlp_moe_instances`.
+        """
+        if not (self.cfg.tiled_mlp and self.cfg.use_scattermoe):
+            return
+        from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp_moe_instances
+
+        patch_tiled_mlp_moe_instances(
+            model,
+            self.cfg.model_config_type,
+            cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+        )
 
     def _apply_voxtral_patches(self):
         """Apply patches for Voxtral model."""
