@@ -458,3 +458,124 @@ def test_parallel_linear_overflow_takes_int64_kernel_path(monkeypatch):
     )
     assert out.shape == (_T * _TOP_K, 2 * _INTERMEDIATE)
     assert torch.isfinite(out).all().item()
+
+
+# ─── Smaller-shape overflow (runs on L40S / 24 GiB GPUs) ─────────────────────
+# L_scattered * y_dim = 2**32 (2× past 2**31); peak VRAM ≈ 8 GiB.
+_SMALL_T = 131072
+_SMALL_TOP_K = 8
+_SMALL_E = 4
+_SMALL_K = 256
+_SMALL_INTERMEDIATE = 2048
+_SMALL_MIN_FREE_GIB = 12.0
+
+
+@pytest.mark.skipif(
+    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
+)
+def test_dense_scatter2scatter_int64_at_overflow_shape_small():
+    device = torch.device("cuda:0")
+    torch.manual_seed(0)
+    y_dim = 2 * _SMALL_INTERMEDIATE
+    x = torch.randn(_SMALL_T, _SMALL_K, device=device, dtype=DTYPE)
+    W = torch.randn(_SMALL_E, _SMALL_K, y_dim, device=device, dtype=DTYPE) * 0.01
+
+    logits = torch.randn(_SMALL_T, _SMALL_E, device=device)
+    _, top_idx = torch.topk(torch.softmax(logits, dim=-1), _SMALL_TOP_K, dim=-1)
+    sei, ssi, _ = flatten_sort_count(top_idx, _SMALL_E)
+
+    L_scattered = sei.size(0)
+    assert L_scattered * y_dim >= _INT32_LIMIT, (
+        f"precondition: L_scattered * y_dim ({L_scattered * y_dim}) must "
+        f"straddle the int32 overflow boundary ({_INT32_LIMIT})"
+    )
+
+    out_i64 = base_ops.scatter2scatter(
+        X=x,
+        W=W,
+        sorted_expert_idxs=sei,
+        sorted_scattered_idxs=ssi,
+        k=_SMALL_TOP_K,
+        x_grouped=False,
+        y_grouped=True,
+        int64_indices=True,
+    )
+    torch.cuda.synchronize()
+
+    overflow_threshold_row = _INT32_LIMIT // y_dim
+    sample_rows = [
+        0,
+        overflow_threshold_row - 1,
+        overflow_threshold_row,
+        overflow_threshold_row + 1,
+        L_scattered - 1,
+    ]
+    for row in sample_rows:
+        assert (out_i64[row] != 0).any().item(), (
+            f"int64 kernel left row {row} all-zero (overflow boundary "
+            f"= {overflow_threshold_row}, L_scattered = {L_scattered})"
+        )
+    assert torch.isfinite(out_i64).all().item()
+
+
+@pytest.mark.skipif(
+    not _has_free_gpu_mem(_SMALL_MIN_FREE_GIB),
+    reason=f"small overflow shape needs ~{_SMALL_MIN_FREE_GIB:.0f} GiB free GPU memory",
+)
+def test_parallel_linear_overflow_takes_int64_kernel_path_small(monkeypatch):
+    from axolotl.integrations.kernels.libs.scattermoe_lora import parallel_experts
+    from axolotl.integrations.kernels.libs.scattermoe_lora.parallel_experts import (
+        parallel_linear,
+    )
+
+    device = torch.device("cuda:0")
+    torch.manual_seed(0)
+    y_dim = 2 * _SMALL_INTERMEDIATE
+    x = torch.randn(_SMALL_T, _SMALL_K, device=device, dtype=DTYPE)
+    W = torch.randn(_SMALL_E, _SMALL_K, y_dim, device=device, dtype=DTYPE) * 0.01
+
+    logits = torch.randn(_SMALL_T, _SMALL_E, device=device)
+    _, top_idx = torch.topk(torch.softmax(logits, dim=-1), _SMALL_TOP_K, dim=-1)
+    sei, ssi, eo = flatten_sort_count(top_idx, _SMALL_E)
+
+    launches = []
+    real_compileable = parallel_experts.kernels.ops.scatter2scatter_compileable
+
+    def _spy_compileable(*args, **kwargs):
+        launches.append(
+            {
+                "int64": args[9]
+                if len(args) > 9
+                else kwargs.get("int64_indices", False),
+            }
+        )
+        return real_compileable(*args, **kwargs)
+
+    monkeypatch.setattr(
+        parallel_experts.kernels.ops,
+        "scatter2scatter_compileable",
+        _spy_compileable,
+    )
+
+    with torch.no_grad():
+        out = parallel_linear(
+            x,
+            W,
+            _SMALL_TOP_K,
+            sei,
+            ssi,
+            eo,
+            grouped_in=False,
+            grouped_out=True,
+        )
+        torch.cuda.synchronize()
+
+    assert len(launches) == 1, (
+        f"expected exactly one kernel launch (direct int64 path), got {len(launches)}"
+    )
+    assert launches[0]["int64"] is True, (
+        "auto-dispatch should have set int64_indices=True at the overflow shape"
+    )
+    assert out.shape == (_SMALL_T * _SMALL_TOP_K, y_dim)
+    assert torch.isfinite(out).all().item()
