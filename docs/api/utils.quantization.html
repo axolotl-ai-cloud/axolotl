@@ -798,6 +798,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.utils.quantization.convert_qat_model" id="toc-axolotl.utils.quantization.convert_qat_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.convert_qat_model">convert_qat_model</a></li>
   <li><a href="#axolotl.utils.quantization.get_quantization_config" id="toc-axolotl.utils.quantization.get_quantization_config" class="nav-link" data-scroll-target="#axolotl.utils.quantization.get_quantization_config">get_quantization_config</a></li>
+  <li><a href="#axolotl.utils.quantization.patch_transformers_skip_quantized_init" id="toc-axolotl.utils.quantization.patch_transformers_skip_quantized_init" class="nav-link" data-scroll-target="#axolotl.utils.quantization.patch_transformers_skip_quantized_init">patch_transformers_skip_quantized_init</a></li>
   <li><a href="#axolotl.utils.quantization.prepare_model_for_qat" id="toc-axolotl.utils.quantization.prepare_model_for_qat" class="nav-link" data-scroll-target="#axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</a></li>
   <li><a href="#axolotl.utils.quantization.quantize_model" id="toc-axolotl.utils.quantization.quantize_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.quantize_model">quantize_model</a></li>
   <li><a href="#axolotl.utils.quantization.save_quantized_model" id="toc-axolotl.utils.quantization.save_quantized_model" class="nav-link" data-scroll-target="#axolotl.utils.quantization.save_quantized_model">save_quantized_model</a></li>
@@ -835,14 +836,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>This function is used to build a post-training quantization config.</td>
 </tr>
 <tr class="odd">
+<td><a href="#axolotl.utils.quantization.patch_transformers_skip_quantized_init">patch_transformers_skip_quantized_init</a></td>
+<td>Stop <code>from_pretrained</code> from re-initializing torchao-quantized weights.</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</a></td>
 <td>This function is used to prepare a model for QAT by swapping the model’s linear</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.utils.quantization.quantize_model">quantize_model</a></td>
 <td>This function is used to quantize a model.</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><a href="#axolotl.utils.quantization.save_quantized_model">save_quantized_model</a></td>
 <td>Save a quantized model, handling MXTensor serialization.</td>
 </tr>
@@ -944,15 +949,27 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 </section>
 </section>
+<section id="axolotl.utils.quantization.patch_transformers_skip_quantized_init" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.utils.quantization.patch_transformers_skip_quantized_init">patch_transformers_skip_quantized_init</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.patch_transformers_skip_quantized_init()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Stop <code>from_pretrained</code> from re-initializing torchao-quantized weights.</p>
+<p>transformers re-runs <code>_init_weights</code> on every module during loading; the
+generic implementation does <code>init.normal_(module.weight.float(), ...)</code>.
+<code>.float()</code> on a torchao tensor subclass (e.g.&nbsp;<code>MXTensor</code>) returns a new
+tensor that both drops the <code>_is_hf_initialized</code> skip flag and does not
+implement <code>normal_</code>, so loading an MX checkpoint raises NotImplementedError.
+Re-initializing an already-loaded quantized weight is never correct, so we
+skip those modules entirely.</p>
+</section>
 <section id="axolotl.utils.quantization.prepare_model_for_qat" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.quantization.prepare_model_for_qat">prepare_model_for_qat</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.prepare_model_for_qat(</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.prepare_model_for_qat(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This function is used to prepare a model for QAT by swapping the model’s linear
 layers with fake quantized linear layers, and optionally the embedding weights with
 fake quantized embedding weights.</p>
@@ -1034,13 +1051,13 @@ fake quantized embedding weights.</p>
 </section>
 <section id="axolotl.utils.quantization.quantize_model" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.quantization.quantize_model">quantize_model</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.quantize_model(</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.quantize_model(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    weight_dtype,</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    group_size<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>    activation_dtype<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    quantize_embedding<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>This function is used to quantize a model.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
@@ -1096,7 +1113,7 @@ fake quantized embedding weights.</p>
 </section>
 <section id="axolotl.utils.quantization.save_quantized_model" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.quantization.save_quantized_model">save_quantized_model</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.save_quantized_model(model, save_dir, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.quantization.save_quantized_model(model, save_dir, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Save a quantized model, handling MXTensor serialization.</p>
 <p>MXTensor does not have a valid storage pointer, which causes
 <code>save_pretrained</code> to crash (both in <code>remove_tied_weights_from_state_dict</code>
