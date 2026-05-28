@@ -897,10 +897,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </section>
 <section id="expert-kernels" class="level3">
 <h3 class="anchored" data-anchor-id="expert-kernels">Expert Kernels</h3>
-<p>Optimized kernel implementations for Mixture of Experts (MoE) model training.</p>
+<p>Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.</p>
 <ul>
-<li><p><strong>ScatterMoE</strong>: Triton-based MoE kernels with fused LoRA support.</p></li>
-<li><p><strong>SonicMoE</strong>: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.</p></li>
+<li><p><strong>ScatterMoE</strong>: Triton, any CUDA GPU.</p></li>
+<li><p><strong>SonicMoE</strong>: CUTLASS / cute-DSL, Hopper+ only.</p></li>
+<li><p><strong>Config:</strong> <code>use_scattermoe: true</code> or <code>use_sonicmoe: true</code></p></li>
 <li><p><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#kernels-integration">Custom Integrations - Kernels Integration</a></p></li>
 </ul>
 </section>
@@ -942,7 +943,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </ul>
 <section id="n-d-parallelism-beta" class="level3">
 <h3 class="anchored" data-anchor-id="n-d-parallelism-beta">N-D Parallelism (Beta)</h3>
-<p>For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.</p>
+<p>For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.</p>
 <ul>
 <li><strong>Learn more:</strong> <a href="../docs/nd_parallelism.html">N-D Parallelism Guide</a></li>
 </ul>
