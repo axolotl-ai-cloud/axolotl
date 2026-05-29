@@ -37,6 +37,7 @@ from .kernels.lora_ops import (
     scatter2scatter_lora_mx,
 )
 from .mx_weights import MXLayout, MXWeights
+from .parallel_experts import _INT_MAX, _needs_int64_indices
 
 
 class ScatterMoELoRA(torch.autograd.Function):
@@ -80,6 +81,15 @@ class ScatterMoELoRA(torch.autograd.Function):
             is_mx = False
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
+        L_scattered = sorted_expert_idxs.size(0)
+        if is_mx:
+            N_dim = expert_weights.N  # type: ignore[union-attr]
+        else:
+            N_dim = expert_weights.size(-1)  # type: ignore[union-attr]
+        # Forward output is [L_scattered, N]. Overflow risk is dominated by
+        # that buffer; also probe X for the unusual case where it alone is
+        # huge (e.g. very wide hidden with modest seq).
+        needs_int64_fwd = (L_scattered * N_dim) >= _INT_MAX or _needs_int64_indices(x)
         with torch.device(x.device):
             if is_mx:
                 # Fused MXFP4 forward: dequant happens inside the K-loop
@@ -95,6 +105,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     b=expert_biases,
                     x_grouped=grouped_in,
                     y_grouped=grouped_out,
+                    int64_indices=needs_int64_fwd,
                 )
             else:
                 # Fused forward: Y = X @ W + scaling * (X @ A^T) @ B^T
@@ -110,6 +121,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     b=expert_biases,
                     x_grouped=grouped_in,
                     y_grouped=grouped_out,
+                    int64_indices=needs_int64_fwd,
                 )
 
             # Handle gating (weighted combination of top-k expert outputs)
@@ -216,6 +228,15 @@ class ScatterMoELoRA(torch.autograd.Function):
                 and fuse_gather_workload < _FUSE_GATHER_THRESHOLD
             )
 
+            # The backward path indexes into grad_out [M_total, N] and x [M, K]
+            # using either M_idx (grouped) or scatter_idx (ungrouped). Overflow
+            # risk is dominated by the largest indexed buffer along the M axis.
+            needs_int64_bwd = (
+                (M_total * N_dim) >= _INT_MAX
+                or (M_total * K_dim) >= _INT_MAX
+                or _needs_int64_indices(grad_out, x)
+            )
+
             if can_fuse_gather:
                 # ------------------------------------------------------------------
                 # Fused path: skip group(x) entirely
@@ -233,6 +254,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     k=k,
                     scaling=scaling,
                     dy_grouped=grouped_out,
+                    int64_indices=needs_int64_bwd,
                 )
 
                 # Prepare grouped_grad_out for the dX path (needed by both
@@ -277,6 +299,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     expert_offsets=expert_offsets,
                     E=E,
                     scaling=scaling,
+                    int64_indices=needs_int64_bwd,
                 )
 
             # ------------------------------------------------------------------
@@ -298,6 +321,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=False,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
                 else:
                     d_expanded_input = scatter2scatter_lora_dX_mx(
@@ -312,6 +336,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=True,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
             elif ctx.use_fused_dX:
                 if can_fuse_gather and not grouped_out:
@@ -328,6 +353,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=False,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
                 else:
                     # Fused dX only: read from pre-grouped DY
@@ -343,6 +369,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=True,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
             else:
                 # Original path: separate base scatter2scatter + LoRA Python loop
@@ -355,6 +382,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     k=1,
                     y_grouped=grouped_in,
                     out=d_expanded_input,
+                    int64_indices=needs_int64_bwd,
                 )
 
                 # LoRA part: dX_lora = scaling * (dY @ B) @ A

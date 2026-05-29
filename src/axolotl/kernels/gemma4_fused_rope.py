@@ -1,20 +1,4 @@
-"""
-Fused RMSNorm + RoPE Triton kernel for Gemma 4.
-
-Fuses three operations into one kernel launch:
-  1. RMSNorm: x_norm = (x / sqrt(mean(x^2) + eps)) * weight
-  2. RoPE:    y = x_norm * cos + rotate_half(x_norm) * sin
-  3. (optional) RMSNorm without scale (for v_norm)
-
-This eliminates two intermediate tensor materializations per Q/K path;
-churn from rotate_half / apply_rotary_pos_emb.
-
-Shapes:
-  X:      (rows, head_dim)  — flattened from (batch, seq_len, num_heads, head_dim)
-  W:      (head_dim,)       — RMSNorm weight (None for with_scale=False)
-  cos:    (rows, head_dim)  — flattened from (batch, seq_len, 1, head_dim) after broadcast
-  sin:    (rows, head_dim)  — same as cos
-"""
+"""Fused RMSNorm + (partial) RoPE Triton kernel for Gemma 4 / Qwen3 Q/K paths."""
 
 import math
 import operator
@@ -25,10 +9,10 @@ import triton.language as tl
 from liger_kernel.ops.utils import (
     calculate_settings,
     compare_version,
-    ensure_contiguous,
     torch_to_triton_dtype,
 )
 from liger_kernel.utils import is_npu_available
+from torch.library import triton_op, wrap_triton
 
 if compare_version("triton", operator.ge, "3.0.0") and not is_npu_available():
     try:
@@ -37,6 +21,11 @@ if compare_version("triton", operator.ge, "3.0.0") and not is_npu_available():
         from triton.language.extra.cuda.libdevice import rsqrt
 else:
     from triton.language.math import rsqrt
+
+# Backward over-subscription factor: number of program blocks per SM. The
+# weight-gradient reduction needs one private partial per block, so this also
+# sizes the dW scratch buffer. ~8 saturates occupancy on tested GPUs.
+_BWD_BLOCKS_PER_SM = 8
 
 
 @triton.jit
@@ -57,6 +46,7 @@ def _rms_norm_rope_forward_kernel(
     n_heads,
     eps,
     HAS_WEIGHT: tl.constexpr,
+    UNIT_OFFSET: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
@@ -100,7 +90,10 @@ def _rms_norm_rope_forward_kernel(
     # Apply weight if present (with_scale=True)
     if HAS_WEIGHT:
         W_row = tl.load(W_ptr + col_offsets, mask=mask, other=0).to(tl.float32)
-        X_norm = X_norm * W_row
+        if UNIT_OFFSET:
+            X_norm = X_norm * (W_row + 1.0)
+        else:
+            X_norm = X_norm * W_row
 
     # RoPE: load cos/sin (broadcast across heads). For col >= n_rot we get
     # cos=1, sin=0 so the formula leaves X_norm untouched.
@@ -130,7 +123,10 @@ def _rms_norm_rope_forward_kernel(
     X_rot_norm = X_rot * rstd
     if HAS_WEIGHT:
         W_rot = tl.load(W_ptr + rot_offsets, mask=rot_load_mask, other=0).to(tl.float32)
-        X_rot_norm = X_rot_norm * W_rot
+        if UNIT_OFFSET:
+            X_rot_norm = X_rot_norm * (W_rot + 1.0)
+        else:
+            X_rot_norm = X_rot_norm * W_rot
 
     # Negate the first half (rotate_half negates x2, which becomes the first half)
     sign = tl.where(col_offsets < half_rot, -1.0, 1.0)
@@ -146,6 +142,16 @@ def _rms_norm_rope_forward_kernel(
     )
 
 
+_BWD_AUTOTUNE_CONFIGS = [
+    triton.Config({}, num_warps=w, num_stages=s)
+    for w in (2, 4, 8, 16)
+    for s in (1, 2, 3)
+]
+
+
+# num_warps/num_stages optima for the latency-bound row loop vary by GPU; key on
+# n_cols (head_dim) so head_dim=128 and 256 each get their own tuned config.
+@triton.autotune(configs=_BWD_AUTOTUNE_CONFIGS, key=["n_cols"])
 @triton.jit
 def _rms_norm_rope_backward_kernel(
     dY_ptr,
@@ -170,6 +176,7 @@ def _rms_norm_rope_backward_kernel(
     n_heads,
     rows_per_program,
     HAS_WEIGHT: tl.constexpr,
+    UNIT_OFFSET: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
@@ -245,7 +252,10 @@ def _rms_norm_rope_backward_kernel(
 
         if HAS_WEIGHT:
             dW_acc += dN * n
-            dm = dN * W_row
+            if UNIT_OFFSET:
+                dm = dN * (W_row + 1.0)
+            else:
+                dm = dN * W_row
         else:
             dm = dN
 
@@ -267,33 +277,28 @@ def _rms_norm_rope_backward_kernel(
         )
 
 
-def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads, n_rot):
-    """
-    Args:
-        X:   (B*S*H, head_dim) — contiguous, flattened from (B, S, H, D)
-        W:   (head_dim,) or None — RMSNorm weight
-        cos: (B*S, n_rot) — position embeddings (broadcast across heads)
-        sin: (B*S, n_rot) — position embeddings (broadcast across heads)
-        eps: float
-        n_heads: int — number of attention heads (for cos/sin indexing)
-        n_rot: int — rotary dim (== head_dim for full rotary, < head_dim for
-            partial rotary). Must be even and ``<= head_dim``.
-    Returns:
-        Y, X_saved, RSTD, BLOCK_SIZE, num_warps
-    """
+@triton_op("axolotl::fused_rms_norm_rope_fwd", mutates_args=())
+def _fused_rms_norm_rope_fwd(
+    X: torch.Tensor,
+    W: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    eps: float,
+    n_heads: int,
+    n_rot: int,
+    unit_offset: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Returns ``(Y, RSTD)``; ``wrap_triton`` keeps it ``torch.compile``-safe."""
     n_rows, n_cols = X.shape
     BLOCK_SIZE, num_warps = calculate_settings(n_cols)
-    has_weight = W is not None
-
     Y = torch.empty_like(X)
     RSTD = torch.empty(n_rows, dtype=torch.float32, device=X.device)
-
-    _rms_norm_rope_forward_kernel[(n_rows,)](
+    wrap_triton(_rms_norm_rope_forward_kernel)[(n_rows,)](
         Y,
         Y.stride(0),
         X,
         X.stride(0),
-        W if has_weight else X,  # dummy pointer when no weight
+        W,
         cos,
         cos.stride(0),
         sin,
@@ -304,30 +309,40 @@ def rms_norm_rope_forward(X, W, cos, sin, eps, n_heads, n_rot):
         n_rot,
         n_heads,
         eps,
-        HAS_WEIGHT=has_weight,
+        HAS_WEIGHT=True,
+        UNIT_OFFSET=unit_offset,
         BLOCK_SIZE=BLOCK_SIZE,
         num_warps=num_warps,
     )
-    return Y, X, RSTD, BLOCK_SIZE, num_warps
+    return Y, RSTD
 
 
-def rms_norm_rope_backward(
-    dY, X, W, cos, sin, RSTD, n_heads, n_rot, BLOCK_SIZE, num_warps
-):
+@triton_op("axolotl::fused_rms_norm_rope_bwd", mutates_args=())
+def _fused_rms_norm_rope_bwd(
+    dY: torch.Tensor,
+    X: torch.Tensor,
+    W: torch.Tensor,
+    cos: torch.Tensor,
+    sin: torch.Tensor,
+    RSTD: torch.Tensor,
+    n_heads: int,
+    n_rot: int,
+    unit_offset: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Returns ``(dX, dW)``."""
     n_rows, n_cols = dY.shape
-    has_weight = W is not None
-
+    BLOCK_SIZE, _ = calculate_settings(n_cols)
+    # One block per SM serializes a long row-loop at 1 block/SM occupancy; the
+    # forward runs a block per row. Over-subscribe the SMs so the latency-bound
+    # row loop has enough resident blocks to hide global-load latency. Each
+    # block still writes a private dW partial that's summed below (no atomics).
     sm_count = torch.cuda.get_device_properties(X.device).multi_processor_count
-    rows_per_program = math.ceil(n_rows / sm_count)
-
+    target_programs = min(_BWD_BLOCKS_PER_SM * sm_count, n_rows)
+    rows_per_program = max(1, math.ceil(n_rows / target_programs))
+    n_programs = math.ceil(n_rows / rows_per_program)
     dX = torch.empty_like(X)
-
-    if has_weight:
-        _dW = torch.empty((sm_count, n_cols), dtype=torch.float32, device=X.device)
-    else:
-        _dW = torch.empty((1, n_cols), dtype=torch.float32, device=X.device)
-
-    _rms_norm_rope_backward_kernel[(sm_count,)](
+    _dW = torch.empty((n_programs, n_cols), dtype=torch.float32, device=X.device)
+    wrap_triton(_rms_norm_rope_backward_kernel)[(n_programs,)](
         dY,
         dY.stride(0),
         dX,
@@ -335,7 +350,7 @@ def rms_norm_rope_backward(
         X,
         X.stride(0),
         torch_to_triton_dtype[X.dtype],
-        W if has_weight else X,  # dummy
+        W,
         cos,
         cos.stride(0),
         sin,
@@ -349,81 +364,50 @@ def rms_norm_rope_backward(
         n_rot,
         n_heads,
         rows_per_program,
-        HAS_WEIGHT=has_weight,
+        HAS_WEIGHT=True,
+        UNIT_OFFSET=unit_offset,
         BLOCK_SIZE=BLOCK_SIZE,
-        num_warps=num_warps,
     )
-
-    dW = _dW.sum(dim=0).to(W.dtype) if has_weight else None
+    dW = _dW.sum(dim=0).to(W.dtype)
     return dX, dW
 
 
-class FusedRMSNormRoPEFunction(torch.autograd.Function):
-    @staticmethod
-    @ensure_contiguous
-    def forward(ctx, X, W, cos, sin, eps, n_heads, n_rot):
-        """
-        X:    (B*S*H, head_dim)
-        W:    (head_dim,) or None
-        cos:  (B*S, n_rot) — broadcast across heads
-        sin:  (B*S, n_rot) — broadcast across heads
-        n_heads: int
-        n_rot:   int — rotary dim (<= head_dim)
-        """
-        Y, X_saved, RSTD, BLOCK_SIZE, num_warps = rms_norm_rope_forward(
-            X,
-            W,
-            cos,
-            sin,
-            eps,
-            n_heads,
-            n_rot,
-        )
-        ctx.eps = eps
-        ctx.BLOCK_SIZE = BLOCK_SIZE
-        ctx.num_warps = num_warps
-        ctx.n_heads = n_heads
-        ctx.n_rot = n_rot
-        ctx.has_weight = W is not None
-        ctx.save_for_backward(X_saved, W, cos, sin, RSTD)
-        return Y
-
-    @staticmethod
-    @ensure_contiguous
-    def backward(ctx, dY):
-        X, W, cos, sin, RSTD = ctx.saved_tensors
-        dX, dW = rms_norm_rope_backward(
-            dY,
-            X,
-            W,
-            cos,
-            sin,
-            RSTD,
-            ctx.n_heads,
-            ctx.n_rot,
-            ctx.BLOCK_SIZE,
-            ctx.num_warps,
-        )
-        return dX, dW, None, None, None, None, None
+def _fused_rms_norm_rope_setup_context(ctx, inputs, output):
+    X, W, cos, sin, _eps, n_heads, n_rot, unit_offset = inputs
+    _, RSTD = output
+    ctx.save_for_backward(X, W, cos, sin, RSTD)
+    ctx.n_heads = n_heads
+    ctx.n_rot = n_rot
+    ctx.unit_offset = unit_offset
 
 
-def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6):
+def _fused_rms_norm_rope_backward(ctx, grad_Y, grad_RSTD):
+    X, W, cos, sin, RSTD = ctx.saved_tensors
+    grad_Y = grad_Y.contiguous()
+    dX, dW = _fused_rms_norm_rope_bwd(
+        grad_Y, X, W, cos, sin, RSTD, ctx.n_heads, ctx.n_rot, ctx.unit_offset
+    )
+    return dX, dW, None, None, None, None, None, None
+
+
+_fused_rms_norm_rope_fwd.register_autograd(
+    _fused_rms_norm_rope_backward,
+    setup_context=_fused_rms_norm_rope_setup_context,
+)
+
+
+def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6, unit_offset=False):
     """
     Apply fused RMSNorm + (partial) RoPE.
 
-    Args:
-        x:      (batch, seq_len, num_heads, head_dim) — after projection + view
-        weight: (head_dim,) — RMSNorm weight, or None for no-scale norm
-        cos:    (batch, seq_len, n_rot) — from RotaryEmbedding. ``n_rot``
-                must be even and ``<= head_dim``. When ``n_rot < head_dim``
-                the trailing ``head_dim - n_rot`` columns are RMSNorm-only
-                (partial-rotary pass-through), matching stock Gemma 4 with
-                ``partial_rotary_factor < 1.0``.
-        sin:    (batch, seq_len, n_rot) — same shape as ``cos``
-        eps:    float — RMSNorm epsilon
+    Shapes:
+        x:      (B, S, H, D) — post-projection
+        weight: (D,) — required; use ``fused_rms_norm_noscale`` for the no-weight variant
+        cos:    (B, S, n_rot) — ``n_rot`` must be even and ``<= D``; trailing
+                ``D - n_rot`` columns are RMSNorm-only (partial rotary).
+        sin:    (B, S, n_rot)
 
-    Returns:
-        y: (batch, seq_len, num_heads, head_dim) — normalized + rotated
+    ``unit_offset=True`` scales by ``(weight + 1.0)`` (Gemma-style).
     """
     shape = x.shape  # (B, S, H, D)
     B, S, H, D = shape
@@ -438,13 +422,8 @@ def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6):
     if n_rot % 2 != 0:
         raise ValueError(f"rotary dim must be even, got {n_rot}")
 
-    # Flatten to 2D: (B*S*H, D)
     x_flat = x.reshape(-1, D).contiguous()
-    # cos/sin may broadcast over the batch dim (e.g. (1, S, n_rot) when
-    # all sequences share the same rotary positions). The kernel needs a
-    # dense (B*S, n_rot) buffer so that row_idx // n_heads maps cleanly
-    # onto a single (b, s) pair, so expand-then-contiguous to materialize
-    # the per-batch broadcast. Expand is a no-op when B == cos.shape[0].
+    # Kernel needs a dense (B*S, n_rot) buffer; materialize the batch-broadcast.
     if cos.shape[0] != B:
         if cos.shape[0] != 1:
             raise ValueError(
@@ -456,8 +435,8 @@ def fused_rms_norm_rope(x, weight, cos, sin, eps=1e-6):
     cos_flat = cos.reshape(B * S, n_rot).contiguous()
     sin_flat = sin.reshape(B * S, n_rot).contiguous()
 
-    y_flat = FusedRMSNormRoPEFunction.apply(
-        x_flat, weight, cos_flat, sin_flat, eps, H, n_rot
+    y_flat, _ = _fused_rms_norm_rope_fwd(
+        x_flat, weight, cos_flat, sin_flat, eps, H, n_rot, unit_offset
     )
     return y_flat.view(shape)
 
@@ -526,68 +505,76 @@ def _rms_norm_noscale_backward_kernel(
     )
 
 
-class FusedRMSNormNoScaleFunction(torch.autograd.Function):
-    """RMSNorm without learnable scale — used for Gemma4's v_norm."""
+@triton_op("axolotl::fused_rms_norm_noscale_fwd", mutates_args=())
+def _fused_rms_norm_noscale_fwd(
+    X: torch.Tensor, eps: float
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Returns ``(Y, RSTD)``."""
+    n_rows, n_cols = X.shape
+    BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+    Y = torch.empty_like(X)
+    RSTD = torch.empty(n_rows, dtype=torch.float32, device=X.device)
+    wrap_triton(_rms_norm_forward_kernel)[(n_rows,)](
+        Y,
+        Y.stride(0),
+        X,
+        X.stride(0),
+        RSTD,
+        RSTD.stride(0),
+        n_cols,
+        eps,
+        BLOCK_SIZE=BLOCK_SIZE,
+        num_warps=num_warps,
+    )
+    return Y, RSTD
 
-    @staticmethod
-    @ensure_contiguous
-    def forward(ctx, X, eps):
-        n_rows, n_cols = X.shape
-        BLOCK_SIZE, num_warps = calculate_settings(n_cols)
-        Y = torch.empty_like(X)
-        RSTD = torch.empty(n_rows, dtype=torch.float32, device=X.device)
 
-        _rms_norm_forward_kernel[(n_rows,)](
-            Y,
-            Y.stride(0),
-            X,
-            X.stride(0),
-            RSTD,
-            RSTD.stride(0),
-            n_cols,
-            eps,
-            BLOCK_SIZE=BLOCK_SIZE,
-            num_warps=num_warps,
-        )
-        ctx.BLOCK_SIZE = BLOCK_SIZE
-        ctx.num_warps = num_warps
-        ctx.save_for_backward(X, RSTD)
-        ctx.n_cols = n_cols
-        return Y
+@triton_op("axolotl::fused_rms_norm_noscale_bwd", mutates_args=())
+def _fused_rms_norm_noscale_bwd(
+    dY: torch.Tensor, X: torch.Tensor, RSTD: torch.Tensor
+) -> torch.Tensor:
+    n_rows, n_cols = X.shape
+    BLOCK_SIZE, num_warps = calculate_settings(n_cols)
+    dX = torch.empty_like(X)
+    wrap_triton(_rms_norm_noscale_backward_kernel)[(n_rows,)](
+        dY,
+        dY.stride(0),
+        dX,
+        dX.stride(0),
+        X,
+        X.stride(0),
+        torch_to_triton_dtype[X.dtype],
+        RSTD,
+        RSTD.stride(0),
+        n_cols,
+        BLOCK_SIZE=BLOCK_SIZE,
+        num_warps=num_warps,
+    )
+    return dX
 
-    @staticmethod
-    @ensure_contiguous
-    def backward(ctx, dY):
-        X, RSTD = ctx.saved_tensors
-        n_rows = X.shape[0]
-        dX = torch.empty_like(X)
-        _rms_norm_noscale_backward_kernel[(n_rows,)](
-            dY,
-            dY.stride(0),
-            dX,
-            dX.stride(0),
-            X,
-            X.stride(0),
-            torch_to_triton_dtype[X.dtype],
-            RSTD,
-            RSTD.stride(0),
-            ctx.n_cols,
-            BLOCK_SIZE=ctx.BLOCK_SIZE,
-            num_warps=ctx.num_warps,
-        )
-        return dX, None
+
+def _fused_rms_norm_noscale_setup_context(ctx, inputs, output):
+    X, _eps = inputs
+    _, RSTD = output
+    ctx.save_for_backward(X, RSTD)
+
+
+def _fused_rms_norm_noscale_backward(ctx, grad_Y, grad_RSTD):
+    X, RSTD = ctx.saved_tensors
+    grad_Y = grad_Y.contiguous()
+    dX = _fused_rms_norm_noscale_bwd(grad_Y, X, RSTD)
+    return dX, None
+
+
+_fused_rms_norm_noscale_fwd.register_autograd(
+    _fused_rms_norm_noscale_backward,
+    setup_context=_fused_rms_norm_noscale_setup_context,
+)
 
 
 def fused_rms_norm_noscale(x, eps=1e-6):
-    """
-    RMSNorm without scale for v_norm.
-
-    Args:
-        x: (batch, seq_len, num_heads, head_dim)
-    Returns:
-        y: same shape, normalized
-    """
+    """RMSNorm without a learned scale (used for v_norm)."""
     shape = x.shape
-    x_flat = x.reshape(-1, shape[-1])
-    y_flat = FusedRMSNormNoScaleFunction.apply(x_flat, eps)
+    x_flat = x.reshape(-1, shape[-1]).contiguous()
+    y_flat, _ = _fused_rms_norm_noscale_fwd(x_flat, eps)
     return y_flat.view(shape)
