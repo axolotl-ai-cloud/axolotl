@@ -184,9 +184,33 @@ class TestModelsUtils:
         assert isinstance(quant_config, TorchAoConfig)
         assert isinstance(quant_config.quant_type, Float8WeightOnlyConfig)
 
-    def test_set_quantization_config_torchao_rejects_quantized_checkpoint(self):
-        """If the checkpoint already advertises a quant_method, peft.backend
-        must not silently lose to it — we raise instead."""
+    @pytest.mark.parametrize(
+        "ckpt_qcfg",
+        [
+            # gpt-oss native MXFP4
+            {"quant_method": "mxfp4"},
+            # AMD Quark MXFP4 with per-module exclusion list (real shape from
+            # amd/Kimi-K2.6-MXFP4: experts MXFP4, attention/lm_head/vision
+            # bf16). peft.backend must NOT re-quantize on top of this.
+            {
+                "quant_method": "quark",
+                "exclude": [
+                    "language_model.lm_head",
+                    "language_model.model.layers.0.self_attn.q_a_proj",
+                ],
+            },
+            # AWQ / GPTQ / BNB checkpoints — the earlier if-branch in
+            # _set_quantization_config used to silently consume these and
+            # drop peft.backend on the floor. Now caught upfront.
+            {"quant_method": "awq", "bits": 4},
+            {"quant_method": "gptq", "bits": 4, "group_size": 128},
+            {"quant_method": "bitsandbytes", "load_in_4bit": True},
+        ],
+    )
+    def test_set_quantization_config_torchao_rejects_quantized_checkpoint(
+        self, ckpt_qcfg
+    ):
+        """peft.backend must not silently lose to any checkpoint quant_method."""
         pytest.importorskip("torchao")
         from axolotl.utils.schemas.enums import TorchAOQuantDType
 
@@ -196,13 +220,7 @@ class TestModelsUtils:
         self.cfg.peft = DictDefault(
             {"backend": "torchao", "weight_dtype": TorchAOQuantDType.int4}
         )
-        # Simulate a checkpoint that already carries a Mxfp4Config-style
-        # quantization_config (e.g. gpt-oss). The if-branch above us in
-        # _set_quantization_config only matches GPTQ/AWQ/BNB quant_methods,
-        # so MXFP4-style would fall through to our elif and we should raise.
-        self.model_loader.model_config.quantization_config = {
-            "quant_method": "mxfp4",
-        }
+        self.model_loader.model_config.quantization_config = ckpt_qcfg
         with pytest.raises(ValueError, match="already quantized"):
             self.model_loader._set_quantization_config()
 

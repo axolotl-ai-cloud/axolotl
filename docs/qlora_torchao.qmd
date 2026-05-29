@@ -71,13 +71,24 @@ The validator and loader reject the conflicts explicitly:
 | `peft.backend: torchao` + `gptq: true`                      | rejected at validation |
 | `peft.backend: torchao` + checkpoint with embedded quant    | rejected at load time |
 
-If you want **experts in MXFP4 + attention in bf16** (gpt-oss-style), drop
-`peft.backend` entirely and either:
+Modern quantized checkpoints encode the mix via a per-module **exclusion
+list** in their own `quantization_config`. For example,
+[`amd/Kimi-K2.6-MXFP4`](https://huggingface.co/amd/Kimi-K2.6-MXFP4) ships
+with `quant_method: quark`, MXFP4 weights, and ~305 excluded modules
+(every attention projection, `lm_head`, the vision tower, the
+mm_projector). Loading that checkpoint just lets transformers honor the
+checkpoint's own scheme — attention layers stay in their native dtype,
+only the listed modules get quantized.
 
-- load the model from a checkpoint that already carries the right
-  `quantization_config` (gpt-oss MXFP4 checkpoints, AWQ/GPTQ checkpoints), or
-- set `quantize_moe_experts: true` and let axolotl quantize the expert
-  tensors at load time while leaving attention in its checkpoint dtype.
+If you want **experts in MXFP4 + attention in bf16**, drop `peft.backend`
+entirely and pick one of:
+
+- Load a checkpoint that already carries the right `quantization_config`
+  (gpt-oss MXFP4, AMD Quark MXFP4, AWQ/GPTQ, …). Axolotl forwards the
+  checkpoint's config to transformers unchanged, exclusion list and all.
+- For a bf16 MoE checkpoint where you want MXFP4 experts at load time,
+  set `quantize_moe_experts: true`. Attention stays in its checkpoint
+  dtype; the expert tensors get quantized via the path landed in #3663.
 
 Attention-only LoRA on a MoE model with quantized experts is the natural
 training-time recipe; see [Expert Quantization](expert_quantization.qmd).

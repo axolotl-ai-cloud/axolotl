@@ -630,6 +630,35 @@ class ModelLoader:
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
 
+        # peft.backend: torchao is a uniform-base-quant shorthand that builds
+        # one TorchAoConfig over every linear. If the checkpoint already has
+        # its own quantization_config (gpt-oss MXFP4, AMD Quark MXFP4 with
+        # exclusion lists, AWQ, GPTQ, BNB, …) the prior branches in this
+        # function would either route through the checkpoint's quant_method
+        # or be silently overwritten by ours. Surface the conflict before
+        # any branch can pick a winner.
+        if (
+            self.cfg.peft
+            and self.cfg.peft.backend == "torchao"
+            and not self.cfg.merge_lora
+            and hasattr(self.model_config, "quantization_config")
+            and self.model_config.quantization_config
+        ):
+            ckpt_qcfg = self.model_config.quantization_config
+            quant_method = (
+                ckpt_qcfg.get("quant_method")
+                if isinstance(ckpt_qcfg, dict)
+                else getattr(ckpt_qcfg, "quant_method", "unknown")
+            )
+            raise ValueError(
+                f"Base model checkpoint is already quantized "
+                f"(quant_method={quant_method!r}); peft.backend: torchao "
+                "cannot re-quantize on top of it. Modern checkpoints encode "
+                "mixed-quant via per-module exclusion lists in their own "
+                "quantization_config — drop peft.backend so the checkpoint's "
+                "config flows through unchanged."
+            )
+
         if self.cfg.model_quantization_config == "Mxfp4Config":
             from transformers import Mxfp4Config
 
@@ -687,26 +716,6 @@ class ModelLoader:
             and self.cfg.peft.backend == "torchao"
             and not self.cfg.merge_lora
         ):
-            # Checkpoint-embedded quant (gpt-oss MXFP4, pre-quantized AWQ/
-            # GPTQ/BNB) is handled by the preceding ``if`` branch. If we land
-            # here while the checkpoint also advertises one, the user's
-            # peft.backend choice would silently lose to it at load time —
-            # raise instead so they pick one path explicitly.
-            ckpt_qcfg = getattr(self.model_config, "quantization_config", None)
-            if ckpt_qcfg:
-                quant_method = (
-                    ckpt_qcfg.get("quant_method")
-                    if isinstance(ckpt_qcfg, dict)
-                    else getattr(ckpt_qcfg, "quant_method", "unknown")
-                )
-                raise ValueError(
-                    f"Base model is already quantized in its checkpoint "
-                    f"(quant_method={quant_method!r}); peft.backend: torchao "
-                    "cannot re-quantize on top of it. Remove peft.backend (the "
-                    "checkpoint's quant_method wins) or pick a different base "
-                    "model."
-                )
-
             from transformers import TorchAoConfig
 
             from axolotl.utils.schemas.enums import TorchAOQuantDType
