@@ -196,7 +196,9 @@ def check_tensorboard(
     else:
         assert df.value.values[-1] < lt_val, assertion_err
     if gt_zero:
-        assert df.value.values[-1] > 1e-5, "Expected loss to be greater than zero"
+        assert df.value.values[-1] > 1e-5, (
+            f"Expected {tag} to be greater than zero, got {df.value.values[-1]}"
+        )
 
 
 def check_tensorboard_loss_decreased(

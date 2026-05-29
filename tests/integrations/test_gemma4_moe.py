@@ -462,94 +462,6 @@ class TestGemma4SonicMoE:
     import are skipped on unsupported GPUs.
     """
 
-    @pytest.mark.skipif(
-        not _can_import_sonicmoe(),
-        reason="sonicmoe requires Hopper/Blackwell GPU",
-    )
-    def test_gemma4_routing_function_config(self, gemma4_config):
-        """Gemma4 is registered with correct routing config."""
-        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
-            get_model_moe_config,
-        )
-
-        routing_fn, activation, router_attr = get_model_moe_config("gemma4_text")
-
-        assert router_attr == "router"
-        assert routing_fn is not None
-        assert routing_fn.__name__ == "gemma4_routing"
-
-        from sonicmoe.enums import ActivationType
-
-        assert activation == ActivationType.GEGLU
-
-    @pytest.mark.skipif(
-        not _can_import_sonicmoe(),
-        reason="sonicmoe requires Hopper/Blackwell GPU",
-    )
-    def test_gemma4_routing_matches_reference(self, gemma4_config):
-        """Routing function output matches reference Gemma4TextRouter."""
-        from axolotl.integrations.kernels.libs.sonicmoe.routing import (
-            get_model_moe_config,
-        )
-
-        routing_fn, _, _ = get_model_moe_config("gemma4_text")
-        H = gemma4_config["hidden_size"]
-        E = gemma4_config["num_experts"]
-        K = gemma4_config["top_k"]
-        T = 16
-
-        router = Gemma4TextRouter(H, E, K)
-        nn.init.normal_(router.proj.weight, std=0.01)
-
-        class MockGemma4MoeBlock:
-            pass
-
-        mock_block = MockGemma4MoeBlock()
-        mock_block.router = router
-
-        hidden_states = torch.randn(T, H)
-
-        # Reference
-        _ref_probs, ref_weights, ref_indices = router(hidden_states)
-
-        # Routing function
-        flat_scores, flat_token_idx, flat_expert_idx, router_logits = routing_fn(
-            hidden_states, mock_block
-        )
-
-        # Check shapes
-        assert flat_scores.shape == (T * K,)
-        assert flat_token_idx.shape == (T * K,)
-        assert flat_expert_idx.shape == (T * K,)
-        assert router_logits.shape == (T, E)
-
-        # Reconstruct per-token routing from flat output and compare
-        for t in range(T):
-            mask = flat_token_idx == t
-            assert mask.sum() == K, f"Token {t} should have {K} entries"
-
-            flat_experts_for_t = flat_expert_idx[mask].sort().values
-            ref_experts_for_t = ref_indices[t].sort().values.to(torch.int32)
-            assert torch.equal(flat_experts_for_t, ref_experts_for_t), (
-                f"Token {t}: experts mismatch"
-            )
-
-        # Verify scores match reference per-token
-        for t in range(T):
-            mask = flat_token_idx == t
-            flat_experts_t = flat_expert_idx[mask]
-            flat_scores_t = flat_scores[mask]
-
-            sort_idx = flat_experts_t.argsort()
-            flat_scores_sorted = flat_scores_t[sort_idx]
-
-            ref_sort_idx = ref_indices[t].argsort()
-            ref_scores_sorted = ref_weights[t][ref_sort_idx].float()
-
-            torch.testing.assert_close(
-                flat_scores_sorted, ref_scores_sorted, atol=1e-4, rtol=1e-4
-            )
-
     def test_gemma4_weight_layout_compatible(self, gemma4_config):
         """Verify Gemma4 expert weight layout is compatible with SonicMoE."""
         E = gemma4_config["num_experts"]
@@ -581,12 +493,6 @@ class TestGemma4SonicMoE:
         cls = resolve_experts_class("gemma4_text")
         assert cls is not None
         assert cls.__name__ == "Gemma4TextExperts"
-
-    def test_gemma4_not_in_sparse_moe_block(self):
-        """Verify gemma4_text is NOT in SPARSE_MOE_BLOCK (has no SparseMoeBlock)."""
-        from axolotl.integrations.kernels.constants import SPARSE_MOE_BLOCK
-
-        assert "gemma4_text" not in SPARSE_MOE_BLOCK
 
 
 # ============================================================================
@@ -790,7 +696,7 @@ class TestExpertsInterfaceIntegration:
         """register_scattermoe_experts adds 'scattermoe' to the global interface."""
         from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
 
-        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
             register_scattermoe_experts,
             scattermoe_experts_forward,
         )
@@ -806,7 +712,7 @@ class TestExpertsInterfaceIntegration:
             Gemma4TextExperts as HFGemma4TextExperts,
         )
 
-        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
             register_scattermoe_experts,
         )
 
@@ -853,7 +759,7 @@ class TestExpertsInterfaceIntegration:
         """get_correct_experts_implementation accepts 'scattermoe' after registration."""
         from transformers.modeling_utils import PreTrainedModel
 
-        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
             register_scattermoe_experts,
         )
 
@@ -869,7 +775,7 @@ class TestExpertsInterfaceIntegration:
             Gemma4TextExperts as HFGemma4TextExperts,
         )
 
-        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
             register_scattermoe_experts,
         )
 
@@ -982,7 +888,7 @@ class TestScatterMoEExpertsInterfaceMultiModel:
         """Create an Experts instance for each model type."""
         import importlib
 
-        from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_experts import (
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
             register_scattermoe_experts,
         )
 

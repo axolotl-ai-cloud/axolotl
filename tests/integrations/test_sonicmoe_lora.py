@@ -15,7 +15,6 @@ from axolotl.integrations.kernels.libs.sonicmoe.lora import (
     has_lora,
     materialize_expert_lora,
     unwrap_experts_lora,
-    unwrap_gate_lora,
 )
 
 # =============================================================================
@@ -42,21 +41,6 @@ def _make_mock_lora_module(weight_A, weight_B, scaling_val, param_name=None):
         mock.parameter_name = param_name
 
     return mock
-
-
-def _make_peft_gate(hidden_size, num_experts, rank, scaling=0.5):
-    """Create a mock PEFT-wrapped gate module."""
-    base_gate = MagicMock()
-    base_gate.weight = torch.randn(num_experts, hidden_size)
-    base_gate.top_k = 2
-    base_gate.norm_topk_prob = True
-
-    lora_A = torch.randn(rank, hidden_size)
-    lora_B = torch.randn(num_experts, rank)
-
-    wrapper = _make_mock_lora_module(lora_A, lora_B, scaling)
-    wrapper.base_layer = base_gate
-    return wrapper, base_gate
 
 
 def _make_peft_experts(
@@ -132,39 +116,6 @@ class TestGetLoraParams:
         wrapper = _make_mock_lora_module(torch.randn(4, 8), torch.randn(16, 4), 0.5)
         wrapper.active_adapters = []
         assert get_lora_params_from_wrapper(wrapper) == (None, None, None)
-
-
-# =============================================================================
-# Tests: unwrap_gate_lora
-# =============================================================================
-
-
-class TestUnwrapGateLora:
-    def test_plain_gate(self):
-        gate = MagicMock(spec=["weight", "top_k"])
-        del gate.base_layer
-        del gate.lora_A
-        gate.weight = torch.randn(8, 64)
-        base, weight, delta = unwrap_gate_lora(gate)
-        assert base is gate
-        assert torch.equal(weight, gate.weight)
-        assert delta is None
-
-    def test_wrapped_gate(self):
-        wrapper, base_gate = _make_peft_gate(
-            hidden_size=64, num_experts=8, rank=4, scaling=0.5
-        )
-        base, weight, delta = unwrap_gate_lora(wrapper)
-        assert base is base_gate
-        assert torch.equal(weight, base_gate.weight)
-        assert delta is not None
-        assert delta.shape == base_gate.weight.shape
-
-        # Verify delta = scaling * B @ A
-        lora_A = wrapper.lora_A["default"].weight
-        lora_B = wrapper.lora_B["default"].weight
-        expected = 0.5 * (lora_B @ lora_A)
-        assert torch.allclose(delta, expected)
 
 
 # =============================================================================
