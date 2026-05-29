@@ -3974,14 +3974,14 @@
     "href": "docs/api/integrations.kd.trainer.html",
     "title": "integrations.kd.trainer",
     "section": "",
-    "text": "integrations.kd.trainer\nKD trainer\n\n\n\n\n\nName\nDescription\n\n\n\n\nAxolotlKDTrainer\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer(*args, **kwargs)\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nName\nDescription\n\n\n\n\ncompute_loss\nHow the loss is computed by Trainer. By default, all models return the loss in the first element.\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer.compute_loss(\n    model,\n    inputs,\n    return_outputs=False,\n    num_items_in_batch=None,\n)\nHow the loss is computed by Trainer. By default, all models return the loss in the first element.\nSubclass and override for custom behavior."
+    "text": "integrations.kd.trainer\nKD trainer\n\n\n\n\n\nName\nDescription\n\n\n\n\nAxolotlKDTrainer\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer(*args, **kwargs)\nCustom trainer subclass for Knowledge Distillation (KD)"
   },
   {
     "objectID": "docs/api/integrations.kd.trainer.html#classes",
     "href": "docs/api/integrations.kd.trainer.html#classes",
     "title": "integrations.kd.trainer",
     "section": "",
-    "text": "Name\nDescription\n\n\n\n\nAxolotlKDTrainer\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer(*args, **kwargs)\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nName\nDescription\n\n\n\n\ncompute_loss\nHow the loss is computed by Trainer. By default, all models return the loss in the first element.\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer.compute_loss(\n    model,\n    inputs,\n    return_outputs=False,\n    num_items_in_batch=None,\n)\nHow the loss is computed by Trainer. By default, all models return the loss in the first element.\nSubclass and override for custom behavior."
+    "text": "Name\nDescription\n\n\n\n\nAxolotlKDTrainer\nCustom trainer subclass for Knowledge Distillation (KD)\n\n\n\n\n\nintegrations.kd.trainer.AxolotlKDTrainer(*args, **kwargs)\nCustom trainer subclass for Knowledge Distillation (KD)"
   },
   {
     "objectID": "docs/api/utils.lora.html",

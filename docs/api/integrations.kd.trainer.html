@@ -832,36 +832,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <h3 class="anchored" data-anchor-id="axolotl.integrations.kd.trainer.AxolotlKDTrainer">AxolotlKDTrainer</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kd.trainer.AxolotlKDTrainer(<span class="op">*</span>args, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Custom trainer subclass for Knowledge Distillation (KD)</p>
-<section id="methods" class="level4">
-<h4 class="anchored" data-anchor-id="methods">Methods</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><a href="#axolotl.integrations.kd.trainer.AxolotlKDTrainer.compute_loss">compute_loss</a></td>
-<td>How the loss is computed by Trainer. By default, all models return the loss in the first element.</td>
-</tr>
-</tbody>
-</table>
-<section id="axolotl.integrations.kd.trainer.AxolotlKDTrainer.compute_loss" class="level5">
-<h5 class="anchored" data-anchor-id="axolotl.integrations.kd.trainer.AxolotlKDTrainer.compute_loss">compute_loss</h5>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.kd.trainer.AxolotlKDTrainer.compute_loss(</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    model,</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    inputs,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    return_outputs<span class="op">=</span><span class="va">False</span>,</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    num_items_in_batch<span class="op">=</span><span class="va">None</span>,</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>How the loss is computed by Trainer. By default, all models return the loss in the first element.</p>
-<p>Subclass and override for custom behavior.</p>
 
 
-</section>
-</section>
 </section>
 </section>
 </section>
