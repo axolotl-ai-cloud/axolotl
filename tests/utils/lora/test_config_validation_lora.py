@@ -54,7 +54,9 @@ class TestLoRAConfigValidation:
         assert result["peft_use_dora"] is True
 
     def test_qlora_4bit_validation(self):
-        """Test legacy QLoRA 4-bit configuration validation"""
+        """Legacy ``adapter: qlora`` + ``load_in_4bit: true`` is demoted to
+        ``adapter: lora`` + ``load_in_4bit: true`` (QLoRA is just a name for
+        that combo). Existing configs keep working unchanged otherwise."""
         valid_config = DictDefault(
             {
                 "adapter": "qlora",
@@ -68,26 +70,26 @@ class TestLoRAConfigValidation:
             }
         )
         result = validate_config(valid_config)
-        assert result["adapter"] == "qlora"
+        assert result["adapter"] == "lora"
         assert result["load_in_4bit"] is True
 
-        # Test QLoRA without 4-bit (should fail via PEFT validation)
-        with pytest.raises(ValueError, match=r"Require cfg\.load_in_4bit"):
-            invalid_config = DictDefault(
-                {
-                    "adapter": "qlora",
-                    "load_in_4bit": False,
-                    "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
-                    "micro_batch_size": 1,
-                    "gradient_accumulation_steps": 1,
-                    "learning_rate": 1e-5,
-                    "base_model": "dummy_model",
-                }
-            )
-            validate_config(invalid_config)
+        # Bare ``adapter: qlora`` (no explicit flag) auto-sets load_in_4bit.
+        valid_config = DictDefault(
+            {
+                "adapter": "qlora",
+                "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "learning_rate": 1e-5,
+                "base_model": "dummy_model",
+            }
+        )
+        result = validate_config(valid_config)
+        assert result["adapter"] == "lora"
+        assert result["load_in_4bit"] is True
 
-        # Test QLoRA with 8-bit (incompatible)
-        with pytest.raises(ValueError, match="Can't load qlora in 8bit"):
+        # ``adapter: qlora`` + ``load_in_8bit`` is contradictory.
+        with pytest.raises(ValueError, match="qlora with load_in_8bit is ambiguous"):
             invalid_config = DictDefault(
                 {
                     "adapter": "qlora",
@@ -148,7 +150,7 @@ class TestStructuredQuantizationConfig:
 
     # --- bnb shorthand (replaces adapter: qlora + load_in_4bit) ---
 
-    def test_bnb_nf4_promotes_to_qlora_4bit(self):
+    def test_bnb_nf4_sets_load_in_4bit(self):
         cfg = DictDefault(
             {
                 "adapter": "lora",
@@ -157,7 +159,8 @@ class TestStructuredQuantizationConfig:
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
+        # adapter stays lora; QLoRA-ness is the load_in_4bit flag.
+        assert result["adapter"] == "lora"
         assert result["load_in_4bit"] is True
 
     def test_bnb_int8_stays_lora_8bit(self):
@@ -175,7 +178,7 @@ class TestStructuredQuantizationConfig:
     # --- torchao shorthand ---
 
     @pytest.mark.parametrize("weight_dtype", ["int4", "nf4", "nvfp4"])
-    def test_torchao_4bit_auto_promotes_qlora(self, weight_dtype):
+    def test_torchao_4bit_keeps_lora_adapter(self, weight_dtype):
         cfg = DictDefault(
             {
                 "adapter": "lora",
@@ -186,7 +189,12 @@ class TestStructuredQuantizationConfig:
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
+        # adapter stays lora; the quantized base lives in model_quantization_config.
+        assert result["adapter"] == "lora"
+        assert (
+            result["model_quantization_config"]["torchao"]["weight_dtype"]
+            == weight_dtype
+        )
 
     @pytest.mark.parametrize("weight_dtype", ["int8", "fp8"])
     def test_torchao_weight_only_stays_lora(self, weight_dtype):
@@ -257,7 +265,9 @@ class TestStructuredQuantizationConfig:
         result = validate_config(cfg)
         assert result["model_quantization_config"] == "Mxfp4Config"
 
-    def test_legacy_pre_existing_qlora_path_unchanged(self):
+    def test_legacy_pre_existing_qlora_path_demoted(self):
+        """Legacy ``adapter: qlora`` + ``load_in_4bit: true`` ends up as
+        ``adapter: lora`` + ``load_in_4bit: true`` (functionally identical)."""
         cfg = DictDefault(
             {
                 "adapter": "qlora",
@@ -266,7 +276,7 @@ class TestStructuredQuantizationConfig:
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
+        assert result["adapter"] == "lora"
         assert result["load_in_4bit"] is True
 
     # --- Conflict surfaces ---
@@ -338,5 +348,5 @@ class TestStructuredQuantizationConfig:
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
+        assert result["adapter"] == "lora"
         assert result["peft_use_dora"] is True

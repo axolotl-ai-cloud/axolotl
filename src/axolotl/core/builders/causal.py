@@ -170,7 +170,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
-        if self.cfg.adapter == "qlora":
+        # AxolotlTrainingArguments.qlora is the dead "is this QLoRA?" flag;
+        # qlora is just LoRA + bnb 4-bit, so key it off the actual flag.
+        if self.cfg.load_in_4bit:
             training_arguments_kwargs["qlora"] = True
 
         # deepspeed

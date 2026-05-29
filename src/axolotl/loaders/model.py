@@ -187,19 +187,26 @@ class ModelLoader:
 
     @property
     def is_qlora_and_fsdp_enabled(self):
-        """Property that determines if FSDP with QLoRA is enabled."""
-        return self.is_fsdp_enabled and self.cfg.adapter == "qlora"
+        """True iff FSDP is enabled and the base model is bnb-4-bit-quantized
+        (the classic QLoRA scenario whose loading paths need bnb-specific
+        FSDP shims). QLoRA is ``adapter: lora`` + ``load_in_4bit: true`` now.
+        """
+        return (
+            self.is_fsdp_enabled
+            and self.cfg.adapter == "lora"
+            and self.cfg.load_in_4bit
+        )
 
     @property
     def is_torchao_qlora(self):
-        """True iff this run uses torchao as the LoRA/QLoRA base-quant backend.
+        """True iff this run uses torchao as the base-quant backend.
 
         Despite the name, this also covers ``adapter: lora`` + torchao int8/fp8
         because both flows install a ``TorchAoConfig`` and need the same
         bnb-specific code paths skipped.
         """
         return (
-            self.cfg.adapter in ("lora", "qlora")
+            self.cfg.adapter == "lora"
             and _torchao_subconfig(self.cfg.model_quantization_config) is not None
         )
 
@@ -840,7 +847,9 @@ class ModelLoader:
                     f"Unsupported torchao weight_dtype: {weight_dtype}. "
                     "Supported: int4, int8, nf4, nvfp4, fp8."
                 )
-        elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
+        elif self.cfg.adapter == "lora" and self.cfg.load_in_4bit:
+            # QLoRA = LoRA + bnb 4-bit base; the validator demotes any
+            # legacy ``adapter: qlora`` to ``adapter: lora`` upstream.
             bnb_config = {
                 "load_in_4bit": True,
                 "llm_int8_threshold": 6.0,

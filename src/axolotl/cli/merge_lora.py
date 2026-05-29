@@ -84,12 +84,12 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
 
     # Detect NF4 quantization from config to simulate QLoRA training dynamics.
     # Check both current and original (pre-override) config values since do_cli
-    # forces load_in_4bit=False for the legacy path.
+    # forces load_in_4bit=False for the legacy path. ``adapter: qlora`` is
+    # demoted to ``adapter: lora`` + ``load_in_4bit: True`` upstream, so
+    # the load_in_4bit checks cover the full surface.
     simulate_nf4 = bool(
         getattr(cfg, "load_in_4bit", False)
         or getattr(cfg, "_original_load_in_4bit", False)
-        or getattr(cfg, "adapter", None) == "qlora"
-        or getattr(cfg, "_original_adapter", None) == "qlora"
     )
 
     bnb_config_kwargs = getattr(cfg, "bnb_config_kwargs", None) or {}

@@ -1244,6 +1244,32 @@ class SystemValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def deprecate_legacy_model_quantization_config_string(cls, data):
+        """Warn when the legacy string form of model_quantization_config
+        (with model_quantization_config_kwargs) is used; point at the
+        structured form."""
+        mqc = data.get("model_quantization_config")
+        if isinstance(mqc, str):
+            from axolotl.utils.logging import get_logger
+
+            backend = "mxfp4" if mqc == "Mxfp4Config" else "fp8"
+            kwargs = data.get("model_quantization_config_kwargs")
+            kwargs_snippet = f"\n      config_kwargs: {kwargs}" if kwargs else ""
+            get_logger(__name__).warning(
+                "DEPRECATED: `model_quantization_config: %s` (string form) "
+                "with `model_quantization_config_kwargs` is being kept for "
+                "backward compatibility. Prefer the structured form:\n"
+                "  model_quantization_config:\n"
+                "    %s:%s\n"
+                "The string form will be removed in a future release.",
+                mqc,
+                backend,
+                kwargs_snippet or " {}",
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_torchao_backend_exclusivity(cls, data):
         """``model_quantization_config.torchao`` is a uniform base-quant
         shorthand. It cannot compose with the other axolotl quant mechanisms.

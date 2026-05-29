@@ -57,7 +57,7 @@ class TestModelsUtils:
         # check torch_dtype
         assert self.cfg.torch_dtype == self.model_loader.model_kwargs["torch_dtype"]
 
-    @pytest.mark.parametrize("adapter", ["lora", "qlora", None])
+    @pytest.mark.parametrize("adapter", ["lora", None])
     @pytest.mark.parametrize("load_in_8bit", [True, False])
     @pytest.mark.parametrize("load_in_4bit", [True, False])
     @pytest.mark.parametrize("gptq", [True, False])
@@ -68,7 +68,12 @@ class TestModelsUtils:
         load_in_4bit,
         gptq,
     ):
-        # init cfg as args
+        # init cfg as args. ``adapter: qlora`` no longer exists at this layer
+        # — the validator demotes it to ``lora`` + ``load_in_4bit: True``
+        # upstream, so the loader-side branches key off the flags.
+        if load_in_4bit and load_in_8bit:
+            # Validator blocks the combo, so the loader never sees it.
+            return
         self.cfg.load_in_8bit = load_in_8bit
         self.cfg.load_in_4bit = load_in_4bit
         self.cfg.gptq = gptq
@@ -81,7 +86,7 @@ class TestModelsUtils:
                 and hasattr(self.model_loader.model_kwargs, "load_in_4bit")
             )
 
-        if self.cfg.adapter == "qlora" and load_in_4bit:
+        if self.cfg.adapter == "lora" and load_in_4bit:
             assert isinstance(
                 self.model_loader.model_kwargs.get("quantization_config"),
                 BitsAndBytesConfig,
