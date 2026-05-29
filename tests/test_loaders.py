@@ -103,34 +103,32 @@ class TestModelsUtils:
             )
 
     @pytest.mark.parametrize(
-        "weight_dtype_name,adapter,quant_config_attr",
+        "weight_dtype,adapter,quant_config_attr",
         [
             ("int4", "qlora", "Int4WeightOnlyConfig"),
             ("int8", "lora", "Int8WeightOnlyConfig"),
         ],
     )
     def test_set_quantization_config_torchao_qlora(
-        self, weight_dtype_name, adapter, quant_config_attr
+        self, weight_dtype, adapter, quant_config_attr
     ):
         """torchao backend installs a TorchAoConfig with the right quant_type."""
         pytest.importorskip("torchao")
         import torchao.quantization as tq
         from transformers import TorchAoConfig
 
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         expected_cls = getattr(tq, quant_config_attr)
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = adapter
-        # model.py compares the weight_dtype to the enum members; this mirrors
-        # what the schema validator produces post-load.
-        self.cfg.peft = DictDefault(
-            {
-                "backend": "torchao",
-                "weight_dtype": getattr(TorchAOQuantDType, weight_dtype_name),
-            }
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype=weight_dtype),
         )
 
         self.model_loader._set_quantization_config()
@@ -147,13 +145,16 @@ class TestModelsUtils:
             pytest.skip("torchao build lacks NVFP4WeightOnlyConfig")
         from transformers import TorchAoConfig
 
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "qlora"
-        self.cfg.peft = DictDefault(
-            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.nvfp4}
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype="nvfp4"),
         )
 
         self.model_loader._set_quantization_config()
@@ -170,13 +171,16 @@ class TestModelsUtils:
             pytest.skip("torchao build lacks Float8WeightOnlyConfig")
         from transformers import TorchAoConfig
 
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "lora"
-        self.cfg.peft = DictDefault(
-            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.float8_e4m3fn}
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype="fp8"),
         )
 
         self.model_loader._set_quantization_config()
@@ -210,15 +214,18 @@ class TestModelsUtils:
     def test_set_quantization_config_torchao_rejects_quantized_checkpoint(
         self, ckpt_qcfg
     ):
-        """peft.backend must not silently lose to any checkpoint quant_method."""
+        """torchao base-quant must not silently lose to any checkpoint quant_method."""
         pytest.importorskip("torchao")
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "qlora"
-        self.cfg.peft = DictDefault(
-            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.int4}
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype="int4"),
         )
         self.model_loader.model_config.quantization_config = ckpt_qcfg
         with pytest.raises(ValueError, match="already quantized"):
@@ -227,13 +234,16 @@ class TestModelsUtils:
     def test_set_quantization_config_torchao_mxfp4_errors(self):
         """mxfp4 has no weight-only flavor; loader points at quantize_moe_experts."""
         pytest.importorskip("torchao")
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "lora"
-        self.cfg.peft = DictDefault(
-            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.mxfp4}
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype="mxfp4"),
         )
 
         with pytest.raises(ValueError, match="quantize_moe_experts"):
@@ -254,13 +264,16 @@ class TestModelsUtils:
             except ImportError:
                 pytest.skip("torchao build lacks NF4WeightOnlyConfig")
 
-        from axolotl.utils.schemas.enums import TorchAOQuantDType
+        from axolotl.utils.schemas.model import (
+            ModelQuantizationConfig,
+            TorchAoBaseQuantConfig,
+        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "qlora"
-        self.cfg.peft = DictDefault(
-            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.nf4}
+        self.cfg.model_quantization_config = ModelQuantizationConfig(
+            torchao=TorchAoBaseQuantConfig(weight_dtype="nf4"),
         )
 
         self.model_loader._set_quantization_config()

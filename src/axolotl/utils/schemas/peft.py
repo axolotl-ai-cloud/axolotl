@@ -4,9 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from axolotl.utils.schemas.enums import TorchAOQuantDType
-from axolotl.utils.schemas.quantization import validate_ao_dtype
-
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
@@ -14,7 +11,6 @@ class LoftQConfig(BaseModel):
     loftq_bits: int = Field(
         default=4, json_schema_extra={"description": "typically 4 bits"}
     )
-    # loftq_iter: int = Field(default=1, json_schema_extra={"description": "Alternating iterations for LoftQ"})
 
 
 class PeftConfig(BaseModel):
@@ -26,29 +22,6 @@ class PeftConfig(BaseModel):
             "description": "Configuration options for loftq initialization for LoRA"
         },
     )
-    backend: Literal["bnb", "torchao"] | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Quantization backend for QLoRA. 'bnb' for bitsandbytes (default), 'torchao' for torchao."
-        },
-    )
-    weight_dtype: TorchAOQuantDType | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Weight quantization dtype (int4, int8, or nf4). Also used with bnb backend to auto-configure quantization."
-        },
-    )
-    group_size: int | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Group size for quantization. Defaults to 128 for int4, 64 for nf4."
-        },
-    )
-
-    @field_validator("weight_dtype", mode="before")
-    @classmethod
-    def validate_weight_dtype(cls, v):
-        return validate_ao_dtype(v)
 
 
 class LoraConfig(BaseModel):
@@ -191,55 +164,36 @@ class LoraConfig(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def auto_detect_qlora(cls, data):
-        """Auto-set adapter type and quantization flags from peft config.
+        """Promote ``adapter: lora`` to ``qlora`` (and set bnb flags) based on
+        a structured ``model_quantization_config`` value, so users can drop the
+        ``adapter: qlora`` + ``load_in_4bit: true`` boilerplate.
 
-        When peft.backend and peft.weight_dtype are set, this infers the correct
-        adapter type and internal flags (load_in_4bit, load_in_8bit) so users
-        don't need to set them manually.
+        Only the structured-dict form participates in auto-promotion. The
+        legacy string form (``Mxfp4Config`` / ``FineGrainedFP8Config``) is
+        about an entirely quantized checkpoint flow and stays untouched.
         """
-        peft = data.get("peft")
-        if not isinstance(peft, dict):
-            return data
-
-        backend = peft.get("backend")
-        weight_dtype = peft.get("weight_dtype")
-
-        # Validate: weight_dtype requires backend
-        if weight_dtype and not backend:
-            raise ValueError(
-                "peft.backend is required when peft.weight_dtype is set. "
-                "Use 'torchao' or 'bnb'."
-            )
-
-        if not weight_dtype:
+        mqc = data.get("model_quantization_config")
+        if not isinstance(mqc, dict):
             return data
 
         adapter = data.get("adapter")
+        bnb = mqc.get("bnb")
+        torchao = mqc.get("torchao")
 
-        if backend == "torchao":
-            # 4-bit dtypes (int4/nf4/nvfp4) imply qlora; int8 / fp8 stay as
-            # weight-only-quantized lora (matches the bnb int8 split).
-            # MXFP4 has no weight-only flavour for arbitrary linears — for
-            # MoE expert tensors use ``quantize_moe_experts: true`` instead;
-            # the loader emits the pointer to that path when it sees mxfp4.
-            if weight_dtype in ("int4", "nf4", "nvfp4"):
-                if adapter == "lora":
-                    data["adapter"] = "qlora"
-
-        elif backend == "bnb":
+        if isinstance(bnb, dict):
+            weight_dtype = bnb.get("weight_dtype")
             if weight_dtype == "nf4":
-                # bnb nf4 = qlora with load_in_4bit
                 if adapter == "lora":
                     data["adapter"] = "qlora"
                 data.setdefault("load_in_4bit", True)
             elif weight_dtype == "int8":
-                # bnb int8 = lora with load_in_8bit
                 data.setdefault("load_in_8bit", True)
-            else:
-                raise ValueError(
-                    f"peft.weight_dtype '{weight_dtype}' is not supported with bnb backend. "
-                    "Supported: nf4, int8."
-                )
+
+        if isinstance(torchao, dict):
+            weight_dtype = torchao.get("weight_dtype")
+            # 4-bit dtypes imply qlora; int8 / fp8 stay weight-only LoRA.
+            if weight_dtype in ("int4", "nf4", "nvfp4") and adapter == "lora":
+                data["adapter"] = "qlora"
 
         return data
 
@@ -269,17 +223,22 @@ class LoraConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_qlora(self):
-        is_torchao = self.peft and self.peft.backend == "torchao"
+        from axolotl.utils.schemas.model import ModelQuantizationConfig
 
-        # torchao backend never coexists with bnb's load_in_*bit flags.
+        mqc = getattr(self, "model_quantization_config", None)
+        is_torchao = (
+            isinstance(mqc, ModelQuantizationConfig) and mqc.torchao is not None
+        )
+
+        # torchao backend never coexists with bnb's load_in_*bit flags
+        # (the bnb branch of mqc sets those flags via auto_detect_qlora;
+        # the torchao branch deliberately doesn't, so any presence here is
+        # a user error).
         if is_torchao and (self.load_in_4bit or self.load_in_8bit):
             raise ValueError(
                 "load_in_4bit/load_in_8bit are for bitsandbytes. "
-                "With peft.backend: torchao, quantization is handled by torchao."
-            )
-        if is_torchao and not self.peft.weight_dtype:
-            raise ValueError(
-                "peft.weight_dtype is required when peft.backend is 'torchao'"
+                "With model_quantization_config.torchao, quantization is "
+                "handled by torchao."
             )
 
         # torchao + merge: the memory-efficient merger simulates bnb NF4

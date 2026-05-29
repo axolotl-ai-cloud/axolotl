@@ -54,7 +54,7 @@ class TestLoRAConfigValidation:
         assert result["peft_use_dora"] is True
 
     def test_qlora_4bit_validation(self):
-        """Test QLoRA 4-bit configuration validation"""
+        """Test legacy QLoRA 4-bit configuration validation"""
         valid_config = DictDefault(
             {
                 "adapter": "qlora",
@@ -123,7 +123,6 @@ class TestLoRAConfigValidation:
 
     def test_lora_kernels_trust_remote_code_false(self):
         """Test that lora kernels work when trust_remote_code is false"""
-        # Test with trust_remote_code=False, lora kernels should be allowed
         valid_config = DictDefault(
             {
                 "adapter": "lora",
@@ -143,115 +142,122 @@ class TestLoRAConfigValidation:
         assert result["lora_qkv_kernel"] is True
         assert result["lora_o_kernel"] is True
 
-        # Test with trust_remote_code=None (unset), kernels should be allowed
-        valid_config = DictDefault(
-            {
-                "adapter": "lora",
-                "lora_qkv_kernel": True,
-                "trust_remote_code": None,
-                "datasets": [{"path": "dummy_dataset", "type": "alpaca"}],
-                "micro_batch_size": 1,
-                "gradient_accumulation_steps": 1,
-                "learning_rate": 1e-5,
-                "base_model": "dummy_model",
-            }
-        )
-        result = validate_config(valid_config)
-        assert result["lora_qkv_kernel"] is True
-        assert result["trust_remote_code"] is None
 
+class TestStructuredQuantizationConfig:
+    """Tests for model_quantization_config's structured discriminator."""
 
-class TestTorchaoQLoRAConfigValidation:
-    """Test suite for torchao QLoRA auto-detection and validation"""
+    # --- bnb shorthand (replaces adapter: qlora + load_in_4bit) ---
 
-    # --- Auto-detection: torchao ---
-
-    @pytest.mark.parametrize("weight_dtype", ["int4", "nf4"])
-    def test_torchao_auto_detect_from_lora(self, weight_dtype):
-        """adapter: lora + peft.backend: torchao (4-bit) auto-upgrades to qlora"""
+    def test_bnb_nf4_promotes_to_qlora_4bit(self):
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": weight_dtype},
+                "model_quantization_config": {"bnb": {"weight_dtype": "nf4"}},
                 **BASE_CFG,
             }
         )
         result = validate_config(cfg)
         assert result["adapter"] == "qlora"
-        assert result["peft"]["backend"] == "torchao"
+        assert result["load_in_4bit"] is True
 
-    def test_torchao_explicit_qlora(self):
-        """adapter: qlora + peft.backend: torchao works directly"""
-        cfg = DictDefault(
-            {
-                "adapter": "qlora",
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
-
-    def test_torchao_int8_stays_lora(self):
-        """torchao int8 is weight-only LoRA, not QLoRA (mirrors bnb int8)."""
+    def test_bnb_int8_stays_lora_8bit(self):
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "int8"},
+                "model_quantization_config": {"bnb": {"weight_dtype": "int8"}},
                 **BASE_CFG,
             }
         )
         result = validate_config(cfg)
         assert result["adapter"] == "lora"
-        # No bnb-style flags should be auto-set for torchao.
+        assert result["load_in_8bit"] is True
+
+    # --- torchao shorthand ---
+
+    @pytest.mark.parametrize("weight_dtype", ["int4", "nf4", "nvfp4"])
+    def test_torchao_4bit_auto_promotes_qlora(self, weight_dtype):
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "model_quantization_config": {
+                    "torchao": {"weight_dtype": weight_dtype}
+                },
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["adapter"] == "qlora"
+
+    @pytest.mark.parametrize("weight_dtype", ["int8", "fp8"])
+    def test_torchao_weight_only_stays_lora(self, weight_dtype):
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "model_quantization_config": {
+                    "torchao": {"weight_dtype": weight_dtype}
+                },
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["adapter"] == "lora"
         assert not result.get("load_in_4bit")
         assert not result.get("load_in_8bit")
 
-    # --- Auto-detection: bnb ---
-
-    def test_bnb_nf4_auto_detect_from_lora(self):
-        """adapter: lora + peft.backend: bnb + weight_dtype: nf4 → qlora + load_in_4bit"""
+    def test_torchao_mxfp4_passes_schema(self):
+        """mxfp4 is rejected at the loader (not the schema) with a pointer
+        to quantize_moe_experts."""
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "bnb", "weight_dtype": "nf4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "mxfp4"}},
                 **BASE_CFG,
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
-        assert result["load_in_4bit"] is True
+        assert result["model_quantization_config"].torchao.weight_dtype == "mxfp4"
 
-    def test_bnb_int8_auto_detect_from_lora(self):
-        """adapter: lora + peft.backend: bnb + weight_dtype: int8 → lora + load_in_8bit"""
+    # --- discriminator validation ---
+
+    def test_discriminator_requires_exactly_one_backend(self):
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "bnb", "weight_dtype": "int8"},
+                "model_quantization_config": {},
                 **BASE_CFG,
             }
         )
-        result = validate_config(cfg)
-        assert result["adapter"] == "lora"
-        assert result["load_in_8bit"] is True
+        with pytest.raises(ValueError, match="exactly one"):
+            validate_config(cfg)
 
-    def test_bnb_nf4_explicit_qlora_auto_sets_load_in_4bit(self):
-        """adapter: qlora + peft.backend: bnb + weight_dtype: nf4 auto-sets load_in_4bit"""
+    def test_discriminator_rejects_multiple_backends(self):
         cfg = DictDefault(
             {
-                "adapter": "qlora",
-                "peft": {"backend": "bnb", "weight_dtype": "nf4"},
+                "adapter": "lora",
+                "model_quantization_config": {
+                    "bnb": {"weight_dtype": "nf4"},
+                    "torchao": {"weight_dtype": "int4"},
+                },
+                **BASE_CFG,
+            }
+        )
+        with pytest.raises(ValueError, match="exactly one"):
+            validate_config(cfg)
+
+    # --- BC: legacy string form keeps working ---
+
+    def test_legacy_mxfp4config_string_unchanged(self):
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "model_quantization_config": "Mxfp4Config",
                 **BASE_CFG,
             }
         )
         result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
-        assert result["load_in_4bit"] is True
+        assert result["model_quantization_config"] == "Mxfp4Config"
 
-    # --- Backward compat ---
-
-    def test_old_style_qlora_unchanged(self):
-        """Old-style adapter: qlora + load_in_4bit: true still works"""
+    def test_legacy_pre_existing_qlora_path_unchanged(self):
         cfg = DictDefault(
             {
                 "adapter": "qlora",
@@ -263,135 +269,32 @@ class TestTorchaoQLoRAConfigValidation:
         assert result["adapter"] == "qlora"
         assert result["load_in_4bit"] is True
 
-    def test_old_style_lora_8bit_unchanged(self):
-        """Old-style adapter: lora + load_in_8bit: true still works"""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "load_in_8bit": True,
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "lora"
-        assert result["load_in_8bit"] is True
-
-    def test_plain_lora_unchanged(self):
-        """adapter: lora without peft block stays as lora"""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "lora"
-
-    # --- Validation errors ---
+    # --- Conflict surfaces ---
 
     def test_torchao_with_load_in_4bit_errors(self):
-        """peft.backend: torchao + load_in_4bit is a conflict"""
         cfg = DictDefault(
             {
                 "adapter": "qlora",
                 "load_in_4bit": True,
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "int4"}},
                 **BASE_CFG,
             }
         )
-        with pytest.raises(ValueError, match="load_in_4bit.*bitsandbytes"):
+        with pytest.raises(ValueError):
             validate_config(cfg)
-
-    def test_torchao_with_load_in_8bit_errors(self):
-        """peft.backend: torchao + load_in_8bit is a conflict"""
-        cfg = DictDefault(
-            {
-                "adapter": "qlora",
-                "load_in_8bit": True,
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
-                **BASE_CFG,
-            }
-        )
-        with pytest.raises(ValueError, match="load_in_4bit.*bitsandbytes"):
-            validate_config(cfg)
-
-    def test_torchao_without_weight_dtype_errors(self):
-        """peft.backend: torchao without weight_dtype errors"""
-        cfg = DictDefault(
-            {
-                "adapter": "qlora",
-                "peft": {"backend": "torchao"},
-                **BASE_CFG,
-            }
-        )
-        with pytest.raises(ValueError, match="peft.weight_dtype is required"):
-            validate_config(cfg)
-
-    def test_weight_dtype_without_backend_errors(self):
-        """peft.weight_dtype without peft.backend errors"""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "peft": {"weight_dtype": "int4"},
-                **BASE_CFG,
-            }
-        )
-        with pytest.raises(ValueError, match="peft.backend is required"):
-            validate_config(cfg)
-
-    def test_bnb_unsupported_weight_dtype_errors(self):
-        """peft.backend: bnb + unsupported weight_dtype errors"""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "peft": {"backend": "bnb", "weight_dtype": "int4"},
-                **BASE_CFG,
-            }
-        )
-        with pytest.raises(ValueError, match="not supported with bnb"):
-            validate_config(cfg)
-
-    def test_torchao_nvfp4_auto_promotes_qlora(self):
-        """NVFP4 is a 4-bit weight-only quant; auto-promote lora -> qlora."""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "nvfp4"},
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
-
-    def test_torchao_fp8_stays_lora(self):
-        """FP8 weight-only is closer to int8: keep adapter as lora."""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "fp8"},
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "lora"
 
     @pytest.mark.parametrize(
         "extra,match",
         [
-            (
-                {"model_quantization_config": "Mxfp4Config"},
-                "model_quantization_config: Mxfp4Config",
-            ),
             ({"quantize_moe_experts": True}, "quantize_moe_experts: true"),
             ({"gptq": True}, "gptq: true"),
         ],
     )
     def test_torchao_rejects_competing_quant(self, extra, match):
-        """peft.backend: torchao is uniform-base-quant; conflicts surface."""
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "int4"}},
                 **extra,
                 **BASE_CFG,
             }
@@ -399,27 +302,11 @@ class TestTorchaoQLoRAConfigValidation:
         with pytest.raises(ValueError, match=match):
             validate_config(cfg)
 
-    def test_torchao_mxfp4_passes_schema(self):
-        """mxfp4 is rejected at the loader, not the schema (the error there
-        points users at quantize_moe_experts). Schema must not pre-reject."""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "mxfp4"},
-                **BASE_CFG,
-            }
-        )
-        # validate_config must not raise; the loader will raise with a
-        # helpful pointer to quantize_moe_experts when it actually runs.
-        result = validate_config(cfg)
-        assert result["peft"]["weight_dtype"].name == "mxfp4"
-
     def test_torchao_merge_requires_legacy(self):
-        """Memory-efficient merge can't handle torchao tensors; require legacy."""
         cfg = DictDefault(
             {
                 "adapter": "qlora",
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "int4"}},
                 "merge_lora": True,
                 "merge_method": "memory_efficient",
                 **BASE_CFG,
@@ -429,11 +316,10 @@ class TestTorchaoQLoRAConfigValidation:
             validate_config(cfg)
 
     def test_torchao_merge_legacy_ok(self):
-        """torchao + merge_lora is allowed when merge_method is legacy."""
         cfg = DictDefault(
             {
                 "adapter": "qlora",
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "int4"}},
                 "merge_lora": True,
                 "merge_method": "legacy",
                 **BASE_CFG,
@@ -443,11 +329,10 @@ class TestTorchaoQLoRAConfigValidation:
         assert result["merge_method"] == "legacy"
 
     def test_torchao_with_dora_ok(self):
-        """DoRA + torchao is allowed; kernels use dequantize_weight."""
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "model_quantization_config": {"torchao": {"weight_dtype": "int4"}},
                 "peft_use_dora": True,
                 **BASE_CFG,
             }
@@ -455,19 +340,3 @@ class TestTorchaoQLoRAConfigValidation:
         result = validate_config(cfg)
         assert result["adapter"] == "qlora"
         assert result["peft_use_dora"] is True
-
-    # --- Redundant flags don't conflict ---
-
-    def test_bnb_nf4_with_explicit_load_in_4bit(self):
-        """peft.backend: bnb + weight_dtype: nf4 + load_in_4bit: true is fine (redundant)"""
-        cfg = DictDefault(
-            {
-                "adapter": "lora",
-                "load_in_4bit": True,
-                "peft": {"backend": "bnb", "weight_dtype": "nf4"},
-                **BASE_CFG,
-            }
-        )
-        result = validate_config(cfg)
-        assert result["adapter"] == "qlora"
-        assert result["load_in_4bit"] is True

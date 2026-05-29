@@ -706,7 +706,9 @@ class PatchManager:
 
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
-        is_torchao = self.cfg.peft and self.cfg.peft.backend == "torchao"
+        from axolotl.loaders.model import _torchao_subconfig
+
+        is_torchao = _torchao_subconfig(self.cfg.model_quantization_config) is not None
         if (
             self.cfg.fsdp_config
             and str(self.cfg.fsdp_version) == "2"

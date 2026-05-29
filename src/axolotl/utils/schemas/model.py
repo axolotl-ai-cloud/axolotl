@@ -2,11 +2,122 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+class BnbBaseQuantConfig(BaseModel):
+    """bitsandbytes base-weight quantization for LoRA training.
+
+    Replaces the older ``adapter: qlora`` + ``load_in_4bit: true`` boilerplate
+    for the common case. ``nf4`` implies 4-bit QLoRA (auto-promotes
+    ``adapter: lora`` to ``qlora`` and sets ``load_in_4bit``); ``int8`` stays
+    as 8-bit LoRA (sets ``load_in_8bit``).
+    """
+
+    weight_dtype: Literal["nf4", "int8"] = Field(
+        json_schema_extra={
+            "description": "bnb base-weight dtype. nf4 → QLoRA 4-bit; int8 → 8-bit LoRA."
+        }
+    )
+
+
+class TorchAoBaseQuantConfig(BaseModel):
+    """torchao base-weight quantization for LoRA training.
+
+    Compile- and FSDP2-friendly alternative to bitsandbytes. 4-bit dtypes
+    (``int4`` / ``nf4`` / ``nvfp4``) auto-promote the adapter to ``qlora``;
+    ``int8`` / ``fp8`` stay as weight-only LoRA. ``mxfp4`` is rejected here
+    because torchao has no weight-only flavour for arbitrary linears — for
+    MoE experts use ``quantize_moe_experts: true`` instead.
+    """
+
+    weight_dtype: Literal["int4", "nf4", "nvfp4", "int8", "fp8", "mxfp4"] = Field(
+        json_schema_extra={
+            "description": (
+                "torchao base-weight dtype. int4/nf4/nvfp4 → QLoRA; int8/fp8 "
+                "→ weight-only LoRA; mxfp4 is unsupported as a base-quant "
+                "shorthand (use quantize_moe_experts for MoE MXFP4)."
+            )
+        }
+    )
+    group_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Quant group size. Defaults: int4/int8 → 128, nf4 → 64, "
+                "nvfp4 → 16. Ignored for fp8."
+            )
+        },
+    )
+
+
+class Mxfp4BaseQuantConfig(BaseModel):
+    """Structured form of ``model_quantization_config: Mxfp4Config``.
+
+    Pass-through ``config_kwargs`` go straight to ``transformers.Mxfp4Config``.
+    """
+
+    config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Forwarded to transformers.Mxfp4Config."},
+    )
+
+
+class FineGrainedFp8BaseQuantConfig(BaseModel):
+    """Structured form of ``model_quantization_config: FineGrainedFP8Config``."""
+
+    config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Forwarded to transformers.FineGrainedFP8Config."
+        },
+    )
+
+
+class ModelQuantizationConfig(BaseModel):
+    """Structured discriminator for the base model's quantization scheme.
+
+    Exactly one of ``bnb`` / ``torchao`` / ``mxfp4`` / ``fp8`` must be set.
+    The legacy string form (``model_quantization_config: Mxfp4Config``) keeps
+    working via a normalizer in the top-level validator.
+    """
+
+    bnb: BnbBaseQuantConfig | None = None
+    torchao: TorchAoBaseQuantConfig | None = None
+    mxfp4: Mxfp4BaseQuantConfig | None = None
+    fp8: FineGrainedFp8BaseQuantConfig | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_backend(self):
+        chosen = [
+            name
+            for name, value in (
+                ("bnb", self.bnb),
+                ("torchao", self.torchao),
+                ("mxfp4", self.mxfp4),
+                ("fp8", self.fp8),
+            )
+            if value is not None
+        ]
+        if len(chosen) != 1:
+            raise ValueError(
+                "model_quantization_config must select exactly one of "
+                "bnb / torchao / mxfp4 / fp8 (got: "
+                f"{chosen or 'none'})."
+            )
+        return self
+
+    @property
+    def backend(self) -> str:
+        """Name of the selected discriminator (one of bnb/torchao/mxfp4/fp8)."""
+        for name in ("bnb", "torchao", "mxfp4", "fp8"):
+            if getattr(self, name) is not None:
+                return name
+        raise RuntimeError("model_quantization_config has no backend set")
 
 
 class ModelInputConfig(BaseModel):
@@ -93,15 +204,28 @@ class ModelInputConfig(BaseModel):
         json_schema_extra={"description": "Use custom kernels, e.g. MegaBlocks."},
     )
 
-    model_quantization_config: Literal["Mxfp4Config", "FineGrainedFP8Config"] | None = (
-        Field(
-            default=None,
-            json_schema_extra={"description": "Model loading quantization config"},
-        )
+    model_quantization_config: (
+        Literal["Mxfp4Config", "FineGrainedFP8Config"] | ModelQuantizationConfig | None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Base-model quantization. Accepts the legacy string form "
+                "(`Mxfp4Config` / `FineGrainedFP8Config`) or a structured "
+                "form selecting exactly one of `bnb` / `torchao` / `mxfp4` "
+                "/ `fp8` (see ModelQuantizationConfig)."
+            )
+        },
     )
     model_quantization_config_kwargs: dict[str, Any] | None = Field(
         default=None,
-        json_schema_extra={"description": "kwargs for model quantization config"},
+        json_schema_extra={
+            "description": (
+                "kwargs forwarded to the model quantization config (only "
+                "with the legacy string form of model_quantization_config; "
+                "the structured form carries kwargs inline)."
+            )
+        },
     )
     use_onebitllms: bool | None = Field(
         default=None,

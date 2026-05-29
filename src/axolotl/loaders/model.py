@@ -69,6 +69,33 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def _mqc_branch(mqc: Any, name: str) -> Any:
+    """Return the named sub-branch of a structured model_quantization_config,
+    tolerating both Pydantic-model and model_dump'd-dict forms.
+
+    ``validate_config`` runs ``model_dump(exclude_none=True)`` and wraps the
+    result in a ``DictDefault``, so by the time the loader runs, structured
+    fields arrive as dicts; tests, however, construct Pydantic instances
+    directly. Probe both.
+    """
+    if mqc is None or isinstance(mqc, str):
+        return None
+    if isinstance(mqc, dict):
+        return mqc.get(name)
+    return getattr(mqc, name, None)
+
+
+def _torchao_subconfig(mqc: Any) -> dict | None:
+    """Return the torchao sub-config as a dict, regardless of source form."""
+    branch = _mqc_branch(mqc, "torchao")
+    if branch is None:
+        return None
+    if isinstance(branch, dict):
+        return branch
+    # Pydantic model instance — normalize to dict via model_dump.
+    return branch.model_dump(exclude_none=True)
+
+
 class ModelLoader:
     """Manages model configuration, initialization and application of patches during
     model loading.
@@ -165,16 +192,15 @@ class ModelLoader:
 
     @property
     def is_torchao_qlora(self):
-        """True iff this run uses torchao as the LoRA/QLoRA quantization backend.
+        """True iff this run uses torchao as the LoRA/QLoRA base-quant backend.
 
-        Despite the name, this also covers ``adapter: lora`` + torchao int8
+        Despite the name, this also covers ``adapter: lora`` + torchao int8/fp8
         because both flows install a ``TorchAoConfig`` and need the same
         bnb-specific code paths skipped.
         """
         return (
             self.cfg.adapter in ("lora", "qlora")
-            and self.cfg.peft
-            and self.cfg.peft.backend == "torchao"
+            and _torchao_subconfig(self.cfg.model_quantization_config) is not None
         )
 
     @send_errors
@@ -630,16 +656,23 @@ class ModelLoader:
     def _set_quantization_config(self):
         """Set up quantization config (bitsandbytes, awq, gptq, etc.)"""
 
-        # peft.backend: torchao is a uniform-base-quant shorthand that builds
-        # one TorchAoConfig over every linear. If the checkpoint already has
-        # its own quantization_config (gpt-oss MXFP4, AMD Quark MXFP4 with
-        # exclusion lists, AWQ, GPTQ, BNB, …) the prior branches in this
-        # function would either route through the checkpoint's quant_method
-        # or be silently overwritten by ours. Surface the conflict before
-        # any branch can pick a winner.
+        # Structured field arrives either as a Pydantic instance (direct
+        # construction in tests) or as a dict (after validate_config's
+        # model_dump). Normalize via _torchao_subconfig / _mqc_branch.
+        mqc = self.cfg.model_quantization_config
+        mqc_torchao = _torchao_subconfig(mqc)
+        mqc_mxfp4 = _mqc_branch(mqc, "mxfp4")
+        mqc_fp8 = _mqc_branch(mqc, "fp8")
+
+        # model_quantization_config.torchao is a uniform-base-quant shorthand
+        # that builds one TorchAoConfig over every linear. If the checkpoint
+        # already has its own quantization_config (gpt-oss MXFP4, AMD Quark
+        # MXFP4 with exclusion lists, AWQ, GPTQ, BNB, …) the later branches
+        # would either route through the checkpoint's quant_method or be
+        # silently overwritten by ours. Surface the conflict before any
+        # branch can pick a winner.
         if (
-            self.cfg.peft
-            and self.cfg.peft.backend == "torchao"
+            mqc_torchao is not None
             and not self.cfg.merge_lora
             and hasattr(self.model_config, "quantization_config")
             and self.model_config.quantization_config
@@ -652,27 +685,45 @@ class ModelLoader:
             )
             raise ValueError(
                 f"Base model checkpoint is already quantized "
-                f"(quant_method={quant_method!r}); peft.backend: torchao "
-                "cannot re-quantize on top of it. Modern checkpoints encode "
-                "mixed-quant via per-module exclusion lists in their own "
-                "quantization_config — drop peft.backend so the checkpoint's "
-                "config flows through unchanged."
+                f"(quant_method={quant_method!r}); "
+                "model_quantization_config.torchao cannot re-quantize on top "
+                "of it. Modern checkpoints encode mixed-quant via per-module "
+                "exclusion lists in their own quantization_config — drop "
+                "model_quantization_config.torchao so the checkpoint's config "
+                "flows through unchanged."
             )
 
-        if self.cfg.model_quantization_config == "Mxfp4Config":
+        # Mxfp4Config — accept both the legacy string form and the structured
+        # {mxfp4: {...}} branch.
+        mxfp4_kwargs = None
+        if mqc == "Mxfp4Config":
+            mxfp4_kwargs = self.cfg.model_quantization_config_kwargs or {}
+        elif mqc_mxfp4 is not None:
+            extra = (
+                mqc_mxfp4.get("config_kwargs")
+                if isinstance(mqc_mxfp4, dict)
+                else getattr(mqc_mxfp4, "config_kwargs", None)
+            )
+            mxfp4_kwargs = extra or {}
+        if mxfp4_kwargs is not None:
             from transformers import Mxfp4Config
 
-            mxfp4_kwargs = {}
-            if self.cfg.model_quantization_config_kwargs:
-                mxfp4_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = Mxfp4Config(**mxfp4_kwargs)
 
-        if self.cfg.model_quantization_config == "FineGrainedFP8Config":
+        # FineGrainedFP8Config — same dual form.
+        fp8_kwargs = None
+        if mqc == "FineGrainedFP8Config":
+            fp8_kwargs = self.cfg.model_quantization_config_kwargs or {}
+        elif mqc_fp8 is not None:
+            extra = (
+                mqc_fp8.get("config_kwargs")
+                if isinstance(mqc_fp8, dict)
+                else getattr(mqc_fp8, "config_kwargs", None)
+            )
+            fp8_kwargs = extra or {}
+        if fp8_kwargs is not None:
             from transformers import FineGrainedFP8Config
 
-            fp8_kwargs = {}
-            if self.cfg.model_quantization_config_kwargs:
-                fp8_kwargs = self.cfg.model_quantization_config_kwargs
             self.model_kwargs["quantization_config"] = FineGrainedFP8Config(
                 **fp8_kwargs
             )
@@ -712,30 +763,26 @@ class ModelLoader:
                 )
         elif (
             self.cfg.adapter in ("lora", "qlora")
-            and self.cfg.peft
-            and self.cfg.peft.backend == "torchao"
+            and mqc_torchao is not None
             and not self.cfg.merge_lora
         ):
             from transformers import TorchAoConfig
 
-            from axolotl.utils.schemas.enums import TorchAOQuantDType
-
-            weight_dtype = self.cfg.peft.weight_dtype
-            if weight_dtype == TorchAOQuantDType.int4:
+            weight_dtype = mqc_torchao["weight_dtype"]
+            group_size = mqc_torchao.get("group_size")
+            if weight_dtype == "int4":
                 from torchao.quantization import Int4WeightOnlyConfig
 
-                group_size = self.cfg.peft.group_size or 128
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type=Int4WeightOnlyConfig(group_size=group_size),
+                    quant_type=Int4WeightOnlyConfig(group_size=group_size or 128),
                 )
-            elif weight_dtype == TorchAOQuantDType.int8:
+            elif weight_dtype == "int8":
                 from torchao.quantization import Int8WeightOnlyConfig
 
-                group_size = self.cfg.peft.group_size or 128
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type=Int8WeightOnlyConfig(group_size=group_size),
+                    quant_type=Int8WeightOnlyConfig(group_size=group_size or 128),
                 )
-            elif weight_dtype == TorchAOQuantDType.nf4:
+            elif weight_dtype == "nf4":
                 # NF4WeightOnlyConfig moved from torchao.dtypes._nf4tensor_api to
                 # torchao.prototype._nf4tensor_api around 0.13; tolerate either.
                 try:
@@ -747,28 +794,28 @@ class ModelLoader:
                         NF4WeightOnlyConfig,
                     )
 
-                block_size = self.cfg.peft.group_size or 64
                 # NF4WeightOnlyConfig takes no constructor args across torchao
                 # versions in scope; fields are mutable attributes with sane
                 # defaults (block_size=64, scaler_block_size=256).
                 nf4_cfg = NF4WeightOnlyConfig()
-                nf4_cfg.block_size = block_size
+                nf4_cfg.block_size = group_size or 64
                 nf4_cfg.scaler_block_size = 256
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
                     quant_type=nf4_cfg,
                 )
-            elif weight_dtype == TorchAOQuantDType.nvfp4:
+            elif weight_dtype == "nvfp4":
                 from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
                 # NVFP4 mandates group_size=16; surface the constraint early.
-                if self.cfg.peft.group_size not in (None, 16):
+                if group_size not in (None, 16):
                     raise ValueError(
-                        "peft.weight_dtype: nvfp4 requires group_size=16 (or unset)."
+                        "model_quantization_config.torchao with weight_dtype: "
+                        "nvfp4 requires group_size=16 (or unset)."
                     )
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
                     quant_type=NVFP4WeightOnlyConfig(),
                 )
-            elif weight_dtype == TorchAOQuantDType.float8_e4m3fn:
+            elif weight_dtype == "fp8":
                 from torchao.quantization import Float8WeightOnlyConfig
 
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
@@ -776,21 +823,22 @@ class ModelLoader:
                         weight_dtype=torch.float8_e4m3fn,
                     ),
                 )
-            elif weight_dtype == TorchAOQuantDType.mxfp4:
+            elif weight_dtype == "mxfp4":
                 # MXFP4 is dynamic-activation + weight, not weight-only;
                 # there's no torchao config that fits the LoRA-on-base-linear
                 # story. For MoE experts, use the dedicated path instead.
                 raise ValueError(
-                    "peft.weight_dtype: mxfp4 has no weight-only torchao config "
-                    "for arbitrary linear layers. For MoE expert tensors, use "
+                    "model_quantization_config.torchao with weight_dtype: "
+                    "mxfp4 has no weight-only torchao config for arbitrary "
+                    "linear layers. For MoE expert tensors, use "
                     "`quantize_moe_experts: true` with `lora_target_parameters` "
                     "targeting gate_up_proj/down_proj. For inference-time "
                     "MXFP4, use the `qat:` or `ptq:` config blocks."
                 )
             else:
                 raise ValueError(
-                    f"Unsupported torchao weight_dtype for LoRA/QLoRA: {weight_dtype}. "
-                    "Supported: int4, int8, nf4, nvfp4, float8_e4m3fn"
+                    f"Unsupported torchao weight_dtype: {weight_dtype}. "
+                    "Supported: int4, int8, nf4, nvfp4, fp8."
                 )
         elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
             bnb_config = {

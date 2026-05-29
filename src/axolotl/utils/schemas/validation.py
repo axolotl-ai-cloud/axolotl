@@ -1226,45 +1226,39 @@ class SystemValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_model_quantization_config_vs_bnb(cls, data):
-        if data.get("model_quantization_config"):
-            if data.get("load_in_8bit") or data.get("load_in_4bit"):
-                raise ValueError(
-                    "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
-                )
+        mqc = data.get("model_quantization_config")
+        if not mqc:
+            return data
+        # The structured ``bnb`` form is *expected* to set load_in_4bit /
+        # load_in_8bit via auto_detect_qlora — exempt it from the legacy
+        # check, which only targets the older Mxfp4Config / FineGrainedFP8Config
+        # string form (and the mxfp4/fp8 branches of the structured form).
+        is_bnb_structured = isinstance(mqc, dict) and isinstance(mqc.get("bnb"), dict)
+        if is_bnb_structured:
+            return data
+        if data.get("load_in_8bit") or data.get("load_in_4bit"):
+            raise ValueError(
+                "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
+            )
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_torchao_backend_exclusivity(cls, data):
-        """``peft.backend: torchao`` is a uniform base-quant shorthand.
-
-        It composes badly with any other quantization mechanism in axolotl:
-        - ``model_quantization_config: Mxfp4Config`` / ``FineGrainedFP8Config``
-          would be overwritten by our TorchAoConfig (silent loss of intent).
-        - A checkpoint with embedded ``quantization_config`` (gpt-oss MXFP4,
-          pre-quantized AWQ/GPTQ/BNB) would *win* over our TorchAoConfig at
-          load time, so the user's ``peft.backend`` setting would be silently
-          ignored.
-        - ``quantize_moe_experts: true`` would race with TorchAoConfig over
-          the same expert tensors.
-        - ``gptq: true`` is a separate quantization path.
+        """``model_quantization_config.torchao`` is a uniform base-quant
+        shorthand. It cannot compose with the other axolotl quant mechanisms.
 
         Mixed-quant flows (experts MXFP4 + attention bf16) are expressed via
-        ``quantize_moe_experts`` / ``model_quantization_config`` *without*
-        ``peft.backend``. Surface the conflict instead of silently picking
+        ``quantize_moe_experts`` directly, or by letting the checkpoint's own
+        ``quantization_config`` (gpt-oss, AMD Quark, AWQ, GPTQ, BNB) flow
+        through unchanged. Surface the conflict instead of silently picking
         a winner.
         """
-        peft = data.get("peft")
-        if not isinstance(peft, dict):
-            return data
-        if peft.get("backend") != "torchao":
+        mqc = data.get("model_quantization_config")
+        if not isinstance(mqc, dict) or not mqc.get("torchao"):
             return data
 
         conflicting = []
-        if data.get("model_quantization_config"):
-            conflicting.append(
-                f"model_quantization_config: {data['model_quantization_config']}"
-            )
         if data.get("quantize_moe_experts"):
             conflicting.append("quantize_moe_experts: true")
         if data.get("gptq"):
@@ -1272,11 +1266,13 @@ class SystemValidationMixin:
 
         if conflicting:
             raise ValueError(
-                "peft.backend: torchao applies a single TorchAoConfig to every "
-                "linear layer; it cannot be combined with another quantization "
-                "mechanism (" + ", ".join(conflicting) + "). For mixed-quant "
-                "models (e.g. MoE experts in MXFP4 + attention in bf16), drop "
-                "peft.backend and use that mechanism directly. See "
+                "model_quantization_config.torchao applies a single "
+                "TorchAoConfig to every linear layer; it cannot be combined "
+                "with another quantization mechanism ("
+                + ", ".join(conflicting)
+                + "). For mixed-quant models (e.g. MoE experts in MXFP4 + "
+                "attention in bf16), drop model_quantization_config.torchao "
+                "and use that mechanism directly. See "
                 "docs/qlora_torchao.qmd."
             )
         return data
@@ -1519,7 +1515,11 @@ class ModelCompatibilityValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_gpt_oss_fsdp_loading(cls, data):
-        if data.get("model_quantization_config", "") == "Mxfp4Config":
+        mqc = data.get("model_quantization_config", "")
+        is_mxfp4 = mqc == "Mxfp4Config" or (
+            isinstance(mqc, dict) and mqc.get("mxfp4") is not None
+        )
+        if is_mxfp4:
             fsdp_config = data.get("fsdp_config") or {}
             if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
                 raise ValueError(
