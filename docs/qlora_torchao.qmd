@@ -56,6 +56,32 @@ models, the MXFP4 LoRA path lives behind `quantize_moe_experts: true` with
 (`gate_up_proj` / `down_proj`). See
 [Expert Quantization](expert_quantization.qmd) for that flow.
 
+### Mixed-quant models
+
+`peft.backend: torchao` is a single-knob shorthand that installs *one*
+`TorchAoConfig` covering every linear layer in the model. It deliberately does
+*not* try to compose with other quantization mechanisms in axolotl —
+combining them produces silent overrides or fights over the same tensors.
+The validator and loader reject the conflicts explicitly:
+
+| Combination                                                 | Outcome |
+|-------------------------------------------------------------|---------|
+| `peft.backend: torchao` + `model_quantization_config: …`    | rejected at validation |
+| `peft.backend: torchao` + `quantize_moe_experts: true`      | rejected at validation |
+| `peft.backend: torchao` + `gptq: true`                      | rejected at validation |
+| `peft.backend: torchao` + checkpoint with embedded quant    | rejected at load time |
+
+If you want **experts in MXFP4 + attention in bf16** (gpt-oss-style), drop
+`peft.backend` entirely and either:
+
+- load the model from a checkpoint that already carries the right
+  `quantization_config` (gpt-oss MXFP4 checkpoints, AWQ/GPTQ checkpoints), or
+- set `quantize_moe_experts: true` and let axolotl quantize the expert
+  tensors at load time while leaving attention in its checkpoint dtype.
+
+Attention-only LoRA on a MoE model with quantized experts is the natural
+training-time recipe; see [Expert Quantization](expert_quantization.qmd).
+
 The equivalent bnb shorthand uses the same block:
 
 ```yaml

@@ -184,6 +184,28 @@ class TestModelsUtils:
         assert isinstance(quant_config, TorchAoConfig)
         assert isinstance(quant_config.quant_type, Float8WeightOnlyConfig)
 
+    def test_set_quantization_config_torchao_rejects_quantized_checkpoint(self):
+        """If the checkpoint already advertises a quant_method, peft.backend
+        must not silently lose to it — we raise instead."""
+        pytest.importorskip("torchao")
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = "qlora"
+        self.cfg.peft = DictDefault(
+            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.int4}
+        )
+        # Simulate a checkpoint that already carries a Mxfp4Config-style
+        # quantization_config (e.g. gpt-oss). The if-branch above us in
+        # _set_quantization_config only matches GPTQ/AWQ/BNB quant_methods,
+        # so MXFP4-style would fall through to our elif and we should raise.
+        self.model_loader.model_config.quantization_config = {
+            "quant_method": "mxfp4",
+        }
+        with pytest.raises(ValueError, match="already quantized"):
+            self.model_loader._set_quantization_config()
+
     def test_set_quantization_config_torchao_mxfp4_errors(self):
         """mxfp4 has no weight-only flavor; loader points at quantize_moe_experts."""
         pytest.importorskip("torchao")

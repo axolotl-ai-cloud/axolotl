@@ -375,6 +375,30 @@ class TestTorchaoQLoRAConfigValidation:
         result = validate_config(cfg)
         assert result["adapter"] == "lora"
 
+    @pytest.mark.parametrize(
+        "extra,match",
+        [
+            (
+                {"model_quantization_config": "Mxfp4Config"},
+                "model_quantization_config: Mxfp4Config",
+            ),
+            ({"quantize_moe_experts": True}, "quantize_moe_experts: true"),
+            ({"gptq": True}, "gptq: true"),
+        ],
+    )
+    def test_torchao_rejects_competing_quant(self, extra, match):
+        """peft.backend: torchao is uniform-base-quant; conflicts surface."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                **extra,
+                **BASE_CFG,
+            }
+        )
+        with pytest.raises(ValueError, match=match):
+            validate_config(cfg)
+
     def test_torchao_mxfp4_passes_schema(self):
         """mxfp4 is rejected at the loader, not the schema (the error there
         points users at quantize_moe_experts). Schema must not pre-reject."""

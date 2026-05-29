@@ -1235,6 +1235,54 @@ class SystemValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_torchao_backend_exclusivity(cls, data):
+        """``peft.backend: torchao`` is a uniform base-quant shorthand.
+
+        It composes badly with any other quantization mechanism in axolotl:
+        - ``model_quantization_config: Mxfp4Config`` / ``FineGrainedFP8Config``
+          would be overwritten by our TorchAoConfig (silent loss of intent).
+        - A checkpoint with embedded ``quantization_config`` (gpt-oss MXFP4,
+          pre-quantized AWQ/GPTQ/BNB) would *win* over our TorchAoConfig at
+          load time, so the user's ``peft.backend`` setting would be silently
+          ignored.
+        - ``quantize_moe_experts: true`` would race with TorchAoConfig over
+          the same expert tensors.
+        - ``gptq: true`` is a separate quantization path.
+
+        Mixed-quant flows (experts MXFP4 + attention bf16) are expressed via
+        ``quantize_moe_experts`` / ``model_quantization_config`` *without*
+        ``peft.backend``. Surface the conflict instead of silently picking
+        a winner.
+        """
+        peft = data.get("peft")
+        if not isinstance(peft, dict):
+            return data
+        if peft.get("backend") != "torchao":
+            return data
+
+        conflicting = []
+        if data.get("model_quantization_config"):
+            conflicting.append(
+                f"model_quantization_config: {data['model_quantization_config']}"
+            )
+        if data.get("quantize_moe_experts"):
+            conflicting.append("quantize_moe_experts: true")
+        if data.get("gptq"):
+            conflicting.append("gptq: true")
+
+        if conflicting:
+            raise ValueError(
+                "peft.backend: torchao applies a single TorchAoConfig to every "
+                "linear layer; it cannot be combined with another quantization "
+                "mechanism (" + ", ".join(conflicting) + "). For mixed-quant "
+                "models (e.g. MoE experts in MXFP4 + attention in bf16), drop "
+                "peft.backend and use that mechanism directly. See "
+                "docs/qlora_torchao.qmd."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_npu_config(cls, data):
         if is_torch_npu_available():
             # check attention config
