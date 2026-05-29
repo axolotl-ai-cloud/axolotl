@@ -24,6 +24,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -771,6 +806,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#layer-offloading" id="toc-layer-offloading" class="nav-link" data-scroll-target="#layer-offloading">Layer Offloading</a></li>
   <li><a href="#cut-cross-entropy-cce" id="toc-cut-cross-entropy-cce" class="nav-link" data-scroll-target="#cut-cross-entropy-cce">Cut Cross Entropy (CCE)</a></li>
   <li><a href="#liger-kernels" id="toc-liger-kernels" class="nav-link" data-scroll-target="#liger-kernels">Liger Kernels</a></li>
+  <li><a href="#fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" id="toc-fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" class="nav-link" data-scroll-target="#fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe">Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)</a></li>
   <li><a href="#expert-kernels" id="toc-expert-kernels" class="nav-link" data-scroll-target="#expert-kernels">Expert Kernels</a></li>
   </ul></li>
   <li><a href="#long-context-models" id="toc-long-context-models" class="nav-link" data-scroll-target="#long-context-models">Long Context Models</a>
@@ -893,6 +929,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <p>Provides efficient Triton kernels to improve training speed and reduce memory usage.</p>
 <ul>
 <li><strong>Learn more:</strong> <a href="../docs/custom_integrations.html#liger-kernels">Custom Integrations - Liger Kernels</a></li>
+</ul>
+</section>
+<section id="fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe" class="level3">
+<h3 class="anchored" data-anchor-id="fused-rmsnorm-rope-qwen3-qwen3-moe-qwen3.5-qwen3.5-moe-qwen3.6-dense-qwen3.6-moe">Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)</h3>
+<p>Replaces the per-layer <code>q_norm + apply_rotary_pos_emb</code> (and matching K path) with a single Triton kernel launch on the full-attention layers. Opt-in. The kernel computes in fp32 and rounds once, so it matches an fp32 reference to within bf16 rounding — i.e.&nbsp;it is <em>more</em> accurate than the eager bf16 path, which rounds at several intermediate steps. Gemma 4 always uses the fused path (no flag needed). Qwen3.6 checkpoints are loaded by transformers under the <code>qwen3_5</code> / <code>qwen3_5_moe</code> model_types, so the same flag covers both generations.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">fused_attn_kernel</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<ul>
+<li><strong>Compile-safe:</strong> the kernel is wrapped as a <code>torch.library.triton_op</code> and traces under <code>torch.compile(fullgraph=True)</code>.</li>
+<li><strong>Hardware note:</strong> on sm_120 (Blackwell) combining with <code>torch_compile: true</code> is a net win; on sm_86 (Ampere consumer) <code>torch_compile: true</code> currently regresses the surrounding Inductor-generated kernels — keep compile off there.</li>
 </ul>
 </section>
 <section id="expert-kernels" class="level3">
