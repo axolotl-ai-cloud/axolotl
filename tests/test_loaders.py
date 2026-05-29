@@ -138,6 +138,67 @@ class TestModelsUtils:
         assert isinstance(quant_config, TorchAoConfig)
         assert isinstance(quant_config.quant_type, expected_cls)
 
+    def test_set_quantization_config_torchao_nvfp4(self):
+        """torchao NVFP4 installs an NVFP4WeightOnlyConfig inside TorchAoConfig."""
+        pytest.importorskip("torchao")
+        try:
+            from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
+        except ImportError:
+            pytest.skip("torchao build lacks NVFP4WeightOnlyConfig")
+        from transformers import TorchAoConfig
+
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = "qlora"
+        self.cfg.peft = DictDefault(
+            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.nvfp4}
+        )
+
+        self.model_loader._set_quantization_config()
+        quant_config = self.model_loader.model_kwargs.get("quantization_config")
+        assert isinstance(quant_config, TorchAoConfig)
+        assert isinstance(quant_config.quant_type, NVFP4WeightOnlyConfig)
+
+    def test_set_quantization_config_torchao_fp8(self):
+        """torchao FP8 installs a Float8WeightOnlyConfig inside TorchAoConfig."""
+        pytest.importorskip("torchao")
+        try:
+            from torchao.quantization import Float8WeightOnlyConfig
+        except ImportError:
+            pytest.skip("torchao build lacks Float8WeightOnlyConfig")
+        from transformers import TorchAoConfig
+
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = "lora"
+        self.cfg.peft = DictDefault(
+            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.float8_e4m3fn}
+        )
+
+        self.model_loader._set_quantization_config()
+        quant_config = self.model_loader.model_kwargs.get("quantization_config")
+        assert isinstance(quant_config, TorchAoConfig)
+        assert isinstance(quant_config.quant_type, Float8WeightOnlyConfig)
+
+    def test_set_quantization_config_torchao_mxfp4_errors(self):
+        """mxfp4 has no weight-only flavor; loader points at quantize_moe_experts."""
+        pytest.importorskip("torchao")
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = "lora"
+        self.cfg.peft = DictDefault(
+            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.mxfp4}
+        )
+
+        with pytest.raises(ValueError, match="quantize_moe_experts"):
+            self.model_loader._set_quantization_config()
+
     def test_set_quantization_config_torchao_nf4(self):
         """torchao NF4 installs an NF4WeightOnlyConfig inside TorchAoConfig."""
         pytest.importorskip("torchao")

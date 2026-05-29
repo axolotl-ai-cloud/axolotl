@@ -217,20 +217,14 @@ class LoraConfig(BaseModel):
         adapter = data.get("adapter")
 
         if backend == "torchao":
-            # Mirror bnb semantics: 4-bit dtypes (int4/nf4) imply qlora,
-            # int8 stays as a (light) lora variant. Other dtypes are routed
-            # through the QAT/PTQ flows instead and are rejected here.
-            if weight_dtype in ("int4", "nf4"):
+            # 4-bit dtypes (int4/nf4/nvfp4) imply qlora; int8 / fp8 stay as
+            # weight-only-quantized lora (matches the bnb int8 split).
+            # MXFP4 has no weight-only flavour for arbitrary linears — for
+            # MoE expert tensors use ``quantize_moe_experts: true`` instead;
+            # the loader emits the pointer to that path when it sees mxfp4.
+            if weight_dtype in ("int4", "nf4", "nvfp4"):
                 if adapter == "lora":
                     data["adapter"] = "qlora"
-            elif weight_dtype == "int8":
-                pass  # adapter remains lora
-            else:
-                raise ValueError(
-                    f"peft.weight_dtype '{weight_dtype}' is not supported with the "
-                    "torchao backend for LoRA/QLoRA. Supported: int4, nf4, int8. "
-                    "For fp8/nvfp4/mxfp4 use the dedicated QAT or PTQ flow."
-                )
 
         elif backend == "bnb":
             if weight_dtype == "nf4":

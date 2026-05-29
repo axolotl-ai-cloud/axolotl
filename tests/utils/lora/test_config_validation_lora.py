@@ -351,18 +351,44 @@ class TestTorchaoQLoRAConfigValidation:
         with pytest.raises(ValueError, match="not supported with bnb"):
             validate_config(cfg)
 
-    @pytest.mark.parametrize("weight_dtype", ["fp8", "nvfp4", "mxfp4"])
-    def test_torchao_qat_only_dtype_errors(self, weight_dtype):
-        """fp8/nvfp4/mxfp4 belong to QAT/PTQ, not the peft.backend shorthand."""
+    def test_torchao_nvfp4_auto_promotes_qlora(self):
+        """NVFP4 is a 4-bit weight-only quant; auto-promote lora -> qlora."""
         cfg = DictDefault(
             {
                 "adapter": "lora",
-                "peft": {"backend": "torchao", "weight_dtype": weight_dtype},
+                "peft": {"backend": "torchao", "weight_dtype": "nvfp4"},
                 **BASE_CFG,
             }
         )
-        with pytest.raises(ValueError, match="not supported with the torchao backend"):
-            validate_config(cfg)
+        result = validate_config(cfg)
+        assert result["adapter"] == "qlora"
+
+    def test_torchao_fp8_stays_lora(self):
+        """FP8 weight-only is closer to int8: keep adapter as lora."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": "fp8"},
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["adapter"] == "lora"
+
+    def test_torchao_mxfp4_passes_schema(self):
+        """mxfp4 is rejected at the loader, not the schema (the error there
+        points users at quantize_moe_experts). Schema must not pre-reject."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": "mxfp4"},
+                **BASE_CFG,
+            }
+        )
+        # validate_config must not raise; the loader will raise with a
+        # helpful pointer to quantize_moe_experts when it actually runs.
+        result = validate_config(cfg)
+        assert result["peft"]["weight_dtype"].name == "mxfp4"
 
     def test_torchao_merge_requires_legacy(self):
         """Memory-efficient merge can't handle torchao tensors; require legacy."""

@@ -728,10 +728,40 @@ class ModelLoader:
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
                     quant_type=nf4_cfg,
                 )
+            elif weight_dtype == TorchAOQuantDType.nvfp4:
+                from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
+
+                # NVFP4 mandates group_size=16; surface the constraint early.
+                if self.cfg.peft.group_size not in (None, 16):
+                    raise ValueError(
+                        "peft.weight_dtype: nvfp4 requires group_size=16 (or unset)."
+                    )
+                self.model_kwargs["quantization_config"] = TorchAoConfig(
+                    quant_type=NVFP4WeightOnlyConfig(),
+                )
+            elif weight_dtype == TorchAOQuantDType.float8_e4m3fn:
+                from torchao.quantization import Float8WeightOnlyConfig
+
+                self.model_kwargs["quantization_config"] = TorchAoConfig(
+                    quant_type=Float8WeightOnlyConfig(
+                        weight_dtype=torch.float8_e4m3fn,
+                    ),
+                )
+            elif weight_dtype == TorchAOQuantDType.mxfp4:
+                # MXFP4 is dynamic-activation + weight, not weight-only;
+                # there's no torchao config that fits the LoRA-on-base-linear
+                # story. For MoE experts, use the dedicated path instead.
+                raise ValueError(
+                    "peft.weight_dtype: mxfp4 has no weight-only torchao config "
+                    "for arbitrary linear layers. For MoE expert tensors, use "
+                    "`quantize_moe_experts: true` with `lora_target_parameters` "
+                    "targeting gate_up_proj/down_proj. For inference-time "
+                    "MXFP4, use the `qat:` or `ptq:` config blocks."
+                )
             else:
                 raise ValueError(
                     f"Unsupported torchao weight_dtype for LoRA/QLoRA: {weight_dtype}. "
-                    "Supported: int4, int8, nf4"
+                    "Supported: int4, int8, nf4, nvfp4, float8_e4m3fn"
                 )
         elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:
             bnb_config = {
