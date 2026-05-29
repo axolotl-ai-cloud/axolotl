@@ -18,7 +18,7 @@ class TestPreprocess:
 
         cfg = DictDefault(
             {
-                "base_model": "Qwen/Qwen2.5-0.5B",
+                "base_model": "axolotl-ai-co/tiny-qwen2-129m",
                 "sequence_len": 2048,
                 "val_set_size": 0.01,
                 "datasets": [

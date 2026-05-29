@@ -96,6 +96,8 @@ def fixture_dpo_cfg(base_cfg):
             "dpo_use_weighting": True,
             "dpo_label_smoothing": 0.1,
             "beta": 0.1,  # DPO beta
+            "dpo_loss_type": ["sigmoid", "sft"],
+            "dpo_loss_weights": [1.0, 0.5],
         }
     )
     return cfg
@@ -164,7 +166,8 @@ def fixture_ipo_cfg(base_cfg):
     cfg = base_cfg.copy()
     cfg.update(
         {
-            "rl": RLType.IPO,
+            "rl": RLType.DPO,
+            "dpo_loss_type": ["ipo"],
             "dpo_label_smoothing": 0,
             "beta": 0.1,
         }
@@ -289,6 +292,7 @@ class TestHFRLTrainerBuilder:
         # assert training_arguments.gradient_checkpointing is True
 
     def test_dpo_training_arguments(self, dpo_cfg, model, tokenizer):
+        dpo_cfg["precompute_ref_log_probs"] = True
         builder = HFRLTrainerBuilder(dpo_cfg, model, tokenizer)
         training_arguments, _ = builder._build_training_arguments(100)
 
@@ -298,6 +302,9 @@ class TestHFRLTrainerBuilder:
         assert hasattr(training_arguments, "use_weighting")
         assert training_arguments.use_weighting is True
         assert training_arguments.label_smoothing == 0.1
+        assert training_arguments.precompute_ref_log_probs is True
+        assert training_arguments.loss_type == ["sigmoid", "sft"]
+        assert training_arguments.loss_weights == [1.0, 0.5]
 
     def test_orpo_training_arguments(self, orpo_cfg, model, tokenizer):
         builder = HFRLTrainerBuilder(orpo_cfg, model, tokenizer)
@@ -536,7 +543,7 @@ class TestHFCausalTrainerBuilder:
         "cfg_string",
         [
             "sft_cfg",
-            # "rm_cfg",  # TODO fix for num_labels = 2 vs 1
+            "rm_cfg",
             "prm_cfg",
         ],
     )

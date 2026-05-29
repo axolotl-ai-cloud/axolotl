@@ -21,6 +21,10 @@ class DeprecatedParameters(BaseModel):
     eval_max_new_tokens: int | None = None
     dpo_use_logits_to_keep: bool | None = None
     dpo_generate_during_eval: bool | None = None
+    dpo_norm_loss: bool | None = None
+    rpo_alpha: float | None = None
+    s2_attention: bool | None = None
+    flash_attn_rms_norm: bool | None = None
 
     @field_validator("max_packed_sequence_len")
     @classmethod
@@ -99,6 +103,42 @@ class DeprecatedParameters(BaseModel):
                 "it has been removed in TRL >= 0.29.0"
             )
         return dpo_generate_during_eval
+
+    @field_validator("dpo_norm_loss")
+    @classmethod
+    def validate_dpo_norm_loss(cls, dpo_norm_loss):
+        if dpo_norm_loss is not None:
+            raise DeprecationWarning(
+                "`dpo_norm_loss` is no longer supported, "
+                "due to breaking changes in TRL >= 0.29.0"
+            )
+        return dpo_norm_loss
+
+    @field_validator("rpo_alpha")
+    @classmethod
+    def validate_rpo_alpha(cls, rpo_alpha):
+        if rpo_alpha is not None:
+            raise DeprecationWarning(
+                "`rpo_alpha` has been deprecated in TRL >= 0.29.0, "
+                "and now requires passing multiple loss types, which is not yet supported by Axolotl."
+            )  # TODO: change this warning once multiple dpo loss types are supported.
+        return rpo_alpha
+
+    @field_validator("s2_attention")
+    @classmethod
+    def validate_s2_attention(cls, s2_attention):
+        if s2_attention:
+            raise DeprecationWarning(
+                "`s2_attention` (shifted-sparse attention) is no longer supported."
+            )
+        return s2_attention
+
+    @field_validator("flash_attn_rms_norm")
+    @classmethod
+    def validate_flash_attn_rms_norm(cls, flash_attn_rms_norm):
+        if flash_attn_rms_norm:
+            raise DeprecationWarning("`flash_attn_rms_norm` is no longer supported.")
+        return flash_attn_rms_norm
 
 
 class RemappedParameters(BaseModel):

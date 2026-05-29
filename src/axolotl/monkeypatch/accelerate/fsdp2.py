@@ -4,6 +4,7 @@ monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interatio
 
 import copy
 import functools
+import gc
 import os
 import sys
 
@@ -12,6 +13,7 @@ import torch.distributed as dist
 from torch import nn
 
 from axolotl.utils.bench import log_gpu_memory_usage
+from axolotl.utils.fp32_norms import get_fp32_norm_patterns, shard_norms_fp32
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -60,6 +62,13 @@ def fsdp2_load_full_state_dict(
                 sharded_meta_param.placements,
                 src_data_rank=0,
             )
+            # Clone the local shard to allow full_tensor to be freed.
+            if (
+                sharded_param._local_tensor.untyped_storage().size()
+                > sharded_param._local_tensor.nelement()
+                * sharded_param._local_tensor.element_size()
+            ):
+                sharded_param = sharded_param.clone()
         else:
             # Non-sharded parameters
             if _accelerator.is_main_process:
@@ -154,6 +163,7 @@ def get_state_dict(self, model, unwrap=True):
 
         state_dict = {}
         sharded_state_dict = model.state_dict()
+        is_rank_zero = torch.distributed.get_rank() == 0
         for param_name, param in sharded_state_dict.items():
             if param.is_cpu:
                 param = param.to(torch.device("cuda"))
@@ -161,9 +171,20 @@ def get_state_dict(self, model, unwrap=True):
             if isinstance(param, DTensor):
                 param = param.full_tensor()
 
-            if torch.distributed.get_rank() == 0:
+            if is_rank_zero:
                 state_dict[param_name] = param.cpu()
+            # Drop the GPU-resident gathered tensor before the next iteration
+            # allocates the next one; otherwise the caching allocator holds
+            # both reservations and we accumulate ~model-size of VRAM.
+            del param
             torch.distributed.barrier()
+
+        # Release the sharded view and force the allocator to give back the
+        # gather buffers.
+        del sharded_state_dict
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     elif self.distributed_type == DistributedType.FSDP:
         from torch.distributed.fsdp import (
             FullStateDictConfig,
@@ -393,8 +414,27 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         if any(isinstance(m, ParamWrapper) for m in model.modules()):
             patch_peft_param_wrapper_for_fsdp2()
 
+    # EP+FSDP: pre-wrap experts on `dp_shard` before the outer auto-wrap so
+    # the walker skips them. See `expert_parallel/README.md`.
+    if (
+        mesh is not None
+        and "ep" in getattr(mesh, "mesh_dim_names", ())
+        and "dp_shard" in mesh.mesh_dim_names
+    ):
+        from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
+
+        ExpertParallelPlugin.fully_shard_experts(model, mesh["dp_shard"], fsdp2_kwargs)
+
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False
+    fp32_norm_patterns = get_fp32_norm_patterns(model)
+    if fp32_norm_patterns:
+        shard_norms_fp32(
+            model,
+            patterns=fp32_norm_patterns,
+            fully_shard_kwargs=fsdp2_kwargs,
+        )
+
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
             if is_peft_model and isinstance(module, LoraLayer):

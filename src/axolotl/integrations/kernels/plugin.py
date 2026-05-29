@@ -1,6 +1,5 @@
 import importlib
 import os
-from pathlib import Path
 
 import torch
 
@@ -61,61 +60,43 @@ class KernelsPlugin(BasePlugin):
         return "axolotl.integrations.kernels.KernelsArgs"
 
     def pre_model_load(self, cfg):
-        if cfg.use_scattermoe:
-            self._register_kernels()
-            self._kernelize_model(cfg.model_config_type)
-        elif cfg.use_sonicmoe:
-            if not importlib.util.find_spec("sonicmoe"):
-                raise RuntimeError(
-                    "SonicMoE is not installed. See installation instructions at "
-                    "https://github.com/axolotl-ai-cloud/axolotl/blob/main/src/axolotl/integrations/kernels/README.md#sonicmoe-installation"
-                )
+        """Register the requested kernel into ``ALL_EXPERTS_FUNCTIONS`` and pin cfg.
 
+        Architecture-agnostic: routing stays in each model's SparseMoEBlock; only
+        the experts call is dispatched through the registry.
+        """
+        # When EP is active, the ExpertParallelPlugin selects a `deep_ep_*`
+        # composite for `experts_implementation`. Don't overwrite that here —
+        # plugin order is YAML-defined, so we can't rely on EP running last.
+        ep_active = (getattr(cfg, "expert_parallel_size", 1) or 1) > 1
+
+        if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+                register_scattermoe_experts,
+            )
+
+            register_scattermoe_experts()
+            if not ep_active:
+                cfg.experts_implementation = "scattermoe"
+            LOG.info("Registered 'scattermoe' in transformers ExpertsInterface")
+        elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
 
-            from axolotl.integrations.kernels.sonicmoe import patch_sonicmoe
-
-            LOG.info(
-                f"Applying SonicMoE patches for model type: {cfg.model_config_type}"
-            )
-            patch_sonicmoe(
-                cfg.model_config_type,
-                torch_compile=bool(getattr(cfg, "torch_compile", False)),
+            from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+                register_sonicmoe_experts,
             )
 
-    def _register_kernels(self):
-        from kernels import (
-            LocalLayerRepository,
-            Mode,
-            register_kernel_mapping,
-        )
+            register_sonicmoe_experts()
+            if not ep_active:
+                cfg.experts_implementation = "sonicmoe"
+            LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
 
-        plugin_root = Path(__file__).parent
-        register_kernel_mapping(
-            {
-                "HFScatterMoEParallelExperts": {
-                    "cuda": {
-                        Mode.TRAINING: LocalLayerRepository(
-                            repo_path=plugin_root / "libs" / "scattermoe_lora",
-                            package_name="scattermoe_lora",
-                            layer_name="HFScatterMoEGatedMLP",
-                        ),
-                        Mode.INFERENCE: LocalLayerRepository(
-                            repo_path=plugin_root / "libs" / "scattermoe_lora",
-                            package_name="scattermoe_lora",
-                            layer_name="HFScatterMoEGatedMLP",
-                        ),
-                    },
-                }
-            }
-        )
-
-    def _kernelize_model(self, model_type: str):
-        from kernels import replace_kernel_forward_from_hub
-
-        from axolotl.integrations.kernels.constants import resolve_moe_block_classes
-
-        for model_moe_cls in resolve_moe_block_classes(model_type):
-            replace_kernel_forward_from_hub(
-                model_moe_cls, "HFScatterMoEParallelExperts"
+    def add_callbacks_pre_trainer(self, cfg, model):
+        callbacks = []
+        if cfg.use_scattermoe:
+            from axolotl.integrations.kernels.autotune_callback import (
+                AutotuneReportCallback,
             )
+
+            callbacks.append(AutotuneReportCallback())
+        return callbacks

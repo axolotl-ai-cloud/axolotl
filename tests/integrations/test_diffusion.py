@@ -42,7 +42,7 @@ def diffusion_trainer_instance(mock_tokenizer, diffusion_config):
     """Create a diffusion trainer instance for testing methods directly."""
     # Create a minimal trainer instance just for testing methods
     trainer = object.__new__(DiffusionTrainer)  # Bypass __init__
-    trainer.cfg = diffusion_config
+    trainer.axolotl_cfg = diffusion_config
     trainer._special_token_ids = {0, 1, 2}  # pad, bos, eos
     trainer.processing_class = mock_tokenizer
     trainer.store_metrics = Mock()  # Mock metrics storage
@@ -70,7 +70,7 @@ class TestDiffusionTrainer:
         assert not masked_indices[special_token_positions].any()
 
         # Check that mask token is applied
-        mask_token_id = diffusion_trainer_instance.cfg.diffusion.mask_token_id
+        mask_token_id = diffusion_trainer_instance.axolotl_cfg.diffusion.mask_token_id
         masked_positions = masked_indices
         if masked_positions.any():
             assert (noisy_batch[masked_positions] == mask_token_id).all()
@@ -132,7 +132,7 @@ class TestDiffusionTrainer:
         self, diffusion_trainer_instance
     ):
         """Test bidirectional attention mask with sample packing."""
-        diffusion_trainer_instance.cfg.sample_packing = True
+        diffusion_trainer_instance.axolotl_cfg.sample_packing = True
         input_ids = torch.tensor([[1, 10, 20, 30, 40, 2]], dtype=torch.long)
         # Sample IDs: first sample (1), second sample (2)
         attention_mask = torch.tensor([[1, 1, 1, 2, 2, 2]], dtype=torch.long)
@@ -184,7 +184,7 @@ class TestDiffusionTrainer:
         mock_outputs.logits = torch.randn(1, seq_len, vocab_size, requires_grad=True)
         mock_model.return_value = mock_outputs
         mock_model.training = True
-        diffusion_trainer_instance.cfg.datasets = Mock()
+        diffusion_trainer_instance.axolotl_cfg.datasets = Mock()
 
         input_ids = torch.tensor([[1, 10, 20, 30, 2]], dtype=torch.long)
         labels = torch.tensor([[-100, -100, 20, 30, 2]], dtype=torch.long)

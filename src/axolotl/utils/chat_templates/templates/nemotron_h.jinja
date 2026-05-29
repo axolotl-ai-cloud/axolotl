@@ -1,0 +1,16 @@
+{%- if messages and messages[0].role == 'system' %}
+    {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+    {%- set messages = messages[1:] %}
+{%- endif %}
+{%- for message in messages %}
+    {%- if message.role == 'user' %}
+        {{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}
+    {%- elif message.role == 'assistant' %}
+        {{- '<|im_start|>assistant\n' + message.content + '<|im_end|>\n' }}
+    {%- else %}
+        {{- raise_exception('Unexpected role: ' + message.role) }}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+{%- endif %}

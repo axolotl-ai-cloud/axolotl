@@ -24,7 +24,7 @@ output_dir: ./outputs/out_math_72b/
 
 sequence_len: 4096
 sample_packing: true
-flash_attention: true
+attn_implementation: flash_attention_2
 
 wandb_entity:
 wandb_watch:

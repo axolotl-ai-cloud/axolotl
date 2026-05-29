@@ -1,8 +1,0 @@
-codecov
-codecov-cli
-pytest
-pytest-cov
-pytest-retry
-pytest-sugar
-pytest-xdist
-tbparse

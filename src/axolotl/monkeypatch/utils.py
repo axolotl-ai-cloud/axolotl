@@ -3,15 +3,10 @@ Shared utils for the monkeypatches
 """
 
 import re
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
-from transformers.modeling_attn_mask_utils import (
-    _prepare_4d_causal_attention_mask,
-    _prepare_4d_causal_attention_mask_for_sdpa,
-)
-from transformers.utils import is_torch_bf16_gpu_available
 
 
 @torch.jit.script
@@ -168,65 +163,6 @@ def set_module_name(model, name, value):
         child_name = name
 
     setattr(parent, child_name, value)
-
-
-def mask_2d_to_4d(
-    mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None
-):
-    """
-    Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
-    This expansion handles packed sequences so that sequences share the same attention mask integer value
-    when they attend to each other within that sequence.
-    This expansion transforms the mask to lower triangular form to prevent future peeking.
-    """
-    bsz, src_len = mask.size()
-    tgt_len = tgt_len if tgt_len is not None else src_len
-
-    mask = mask.unsqueeze(1).unsqueeze(2)
-    mask = mask.expand(bsz, 1, tgt_len, src_len)
-
-    # Create a binary mask from the original mask where zeros remain zeros and all other values are set to one
-    binary_mask = torch.where(
-        mask != 0,
-        torch.tensor(1, device=mask.device).to(dtype),
-        torch.tensor(0, device=mask.device).to(dtype),
-    )
-
-    # Create a block-diagonal mask.
-    # we multiply by the binary mask so that 0's in the original mask are correctly excluded
-    zero_one_mask = torch.eq(mask, mask.transpose(-1, -2)).int() * binary_mask
-
-    # Now let's create a lower triangular mask of ones that will zero out the upper triangular part
-    lower_triangular_ones = torch.tril(torch.ones((tgt_len, src_len), dtype=dtype)).to(
-        mask.device
-    )
-
-    # Use the lower triangular mask to zero out the upper triangular part of the zero_one_mask
-    masked_zero_one_mask = zero_one_mask * lower_triangular_ones
-
-    return masked_zero_one_mask
-
-
-def patched_prepare_4d_causal_attention_mask(
-    attention_mask: Optional[torch.Tensor],
-    *args,
-):
-    dtype = torch.bfloat16 if is_torch_bf16_gpu_available() else torch.float32
-    return _prepare_4d_causal_attention_mask(
-        mask_2d_to_4d(attention_mask, dtype=dtype),
-        *args,
-    )
-
-
-def patched_prepare_4d_causal_attention_mask_for_sdpa(
-    attention_mask: Optional[torch.Tensor],
-    *args,
-):
-    dtype = torch.bfloat16 if is_torch_bf16_gpu_available() else torch.float32
-    return _prepare_4d_causal_attention_mask_for_sdpa(
-        mask_2d_to_4d(attention_mask, dtype=dtype),
-        *args,
-    )
 
 
 def detab_code(code: str) -> Tuple[str, str]:

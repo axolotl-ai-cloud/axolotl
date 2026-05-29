@@ -1,5 +1,5 @@
 ---
-title: Gradient Checkpointing and Activation Offloading
+title: Gradient Checkpointing, Activation Offloading, and Layer Offloading
 ---
 
 Gradient checkpointing and activation offloading are techniques used to optimize the performance of deep learning
@@ -27,3 +27,33 @@ The `activation_offloading: legacy` naively offloads activations to CPU and with
 
 For resource constrained environments with limited CPU memory, `activation_offloading: disk` offloads
 activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.
+
+### Enabling Layer Offloading
+
+```yaml
+layer_offloading: true
+```
+
+Layer offloading reduces GPU memory usage by moving frozen (non-trainable) decoder layer parameters to CPU
+and streaming them back to GPU one layer at a time during the forward and backward passes. This is
+particularly useful for LoRA/QLoRA training where most of the model's parameters are frozen — only the
+trainable adapter weights stay on GPU permanently.
+
+During training, forward and backward hooks on each decoder layer handle the transfer automatically:
+
+- **Forward pass:** Before a layer executes, its frozen params are loaded to GPU. The next layer is
+  prefetched asynchronously on a separate CUDA stream for overlap.
+- **Backward pass:** Same pattern in reverse — the current layer's frozen params are loaded and the
+  previous layer is prefetched.
+
+After each layer finishes, its frozen params are offloaded back to CPU pinned memory.
+
+This approach trades some CPU-GPU transfer overhead for significant GPU memory savings — the freed memory
+is roughly equal to the size of all frozen parameters across all decoder layers, minus one layer's worth
+that is kept on GPU at any given time.
+
+**Requirements:**
+
+- CUDA GPU (CPU-only training is not supported for this feature)
+- Works with any HuggingFace model architecture that uses decoder layers (Llama, Mistral, Qwen, etc.)
+- Best combined with LoRA/QLoRA where most parameters are frozen

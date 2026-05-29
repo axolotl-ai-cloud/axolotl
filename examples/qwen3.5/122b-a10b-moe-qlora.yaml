@@ -31,8 +31,12 @@ lora_target_modules:
   - k_proj
   - v_proj
   - o_proj
+  # Add gate_up_proj and down_proj to also target shared experts (nn.Linear):
+  # - gate_up_proj
+  # - down_proj
 
-#lora_target_parameters:
+# Target routed experts (3D nn.Parameter tensors, not nn.Linear — use lora_target_parameters):
+# lora_target_parameters:
 #   - mlp.experts.gate_up_proj
 #   - mlp.experts.down_proj
 
@@ -52,7 +56,6 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 
-
 lora_mlp_kernel: false
 lora_qkv_kernel: false
 lora_o_kernel: false
@@ -62,7 +65,7 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 resume_from_checkpoint:
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

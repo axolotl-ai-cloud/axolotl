@@ -128,15 +128,12 @@ quartodoc:
         - monkeypatch.mistral_attn_hijack_flash
         - monkeypatch.multipack
         - monkeypatch.relora
-        - monkeypatch.llama_expand_mask
         - monkeypatch.lora_kernels
         - monkeypatch.utils
         - monkeypatch.btlm_attn_hijack_flash
-        - monkeypatch.llama_patch_multipack
         - monkeypatch.stablelm_attn_hijack_flash
         - monkeypatch.trainer_fsdp_optim
         - monkeypatch.transformers_fa_utils
-        - monkeypatch.unsloth_
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
         - monkeypatch.gradient_checkpointing.offload_cpu
@@ -240,6 +237,7 @@ website:
         - section: "Getting Started"
           contents:
             - docs/getting-started.qmd
+            - docs/choosing_method.qmd
             - docs/installation.qmd
             - docs/inference.qmd
             - section: "Model Guides"
@@ -304,12 +302,16 @@ website:
           contents:
             - docs/multimodal.qmd
             - docs/rlhf.qmd
+            - docs/grpo.qmd
+            - docs/ebft.qmd
+            - docs/vllm_serving.qmd
             - docs/reward_modelling.qmd
             - docs/lr_groups.qmd
             - docs/lora_optims.qmd
             - docs/dataset_loading.qmd
             - docs/qat.qmd
             - docs/quantize.qmd
+            - docs/1_58bit_finetuning.qmd
             - docs/optimizations.qmd
 
         - section: "Core Concepts"
@@ -325,7 +327,6 @@ website:
         - section: "Advanced Features"
           contents:
             - docs/fsdp_qlora.qmd
-            - docs/unsloth.qmd
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd
@@ -336,6 +337,7 @@ website:
         - section: "Troubleshooting"
           contents:
             - docs/faq.qmd
+            - docs/training_stability.qmd
             - docs/debugging.qmd
             - docs/nccl.qmd
 

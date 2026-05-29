@@ -86,7 +86,20 @@ class LigerPlugin(BasePlugin):
             liger_fn_sig = inspect.signature(apply_liger_fn)
             kwargs = {}
             if "rope" in liger_fn_sig.parameters:
-                kwargs["rope"] = cfg.liger_rope
+                rope_value = cfg.liger_rope
+                # cfg.liger_rope defaults to None, which would override upstream's rope=True for Qwen-VL.
+                if rope_value is None and cfg.model_config_type in (
+                    "qwen2_vl",
+                    "qwen2_5_vl",
+                    "qwen3_vl",
+                    "qwen3_vl_moe",
+                    "qwen2_vl_text",
+                    "qwen2_5_vl_text",
+                    "qwen3_vl_text",
+                    "qwen3_vl_moe_text",
+                ):
+                    rope_value = True
+                kwargs["rope"] = rope_value
             if "cross_entropy" in liger_fn_sig.parameters:
                 kwargs["cross_entropy"] = cfg.liger_cross_entropy
             if "fused_linear_cross_entropy" in liger_fn_sig.parameters:
@@ -174,6 +187,19 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
+        elif cfg.model_config_type == "qwen3_5":
+            from axolotl.integrations.liger.models.qwen3_5 import (
+                apply_liger_kernel_to_qwen3_5,
+            )
+
+            apply_liger_kernel_to_qwen3_5(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
+                layer_norm=cfg.liger_layer_norm,
+            )
         elif cfg.model_config_type == "qwen3_moe":
             from axolotl.integrations.liger.models.qwen3_moe import (
                 apply_liger_kernel_to_qwen3_moe,
@@ -186,6 +212,19 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 layer_norm=cfg.liger_layer_norm,
             )
+        elif cfg.model_config_type == "qwen3_5_moe":
+            from axolotl.integrations.liger.models.qwen3_5_moe import (
+                apply_liger_kernel_to_qwen3_5_moe,
+            )
+
+            apply_liger_kernel_to_qwen3_5_moe(
+                cross_entropy=cfg.liger_cross_entropy,
+                fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
+                glu_activation=cfg.liger_glu_activation,
+                rms_norm=cfg.liger_rms_norm,
+                rms_norm_gated=getattr(cfg, "liger_rms_norm_gated", False),
+                layer_norm=cfg.liger_layer_norm,
+            )
         elif cfg.model_config_type == "granitemoe":
             from liger_kernel.transformers import apply_liger_kernel_to_granite
 
@@ -195,6 +234,56 @@ class LigerPlugin(BasePlugin):
                 fused_linear_cross_entropy=cfg.liger_fused_linear_cross_entropy,
                 rms_norm=cfg.liger_rms_norm,
                 swiglu=cfg.liger_glu_activation,
+            )
+        elif cfg.model_config_type in ("gemma4", "gemma4_text"):
+            # Gemma4: offset=0 (NOT 1 like Gemma3), in_place=False required for
+            # gradient checkpointing compatibility, RoPE incompatible (separate q/k).
+            from liger_kernel.transformers.geglu import LigerGEGLUMLP
+            from transformers.models.gemma4 import modeling_gemma4
+
+            if cfg.liger_rms_norm:
+                _OrigGemma4RMSNorm = modeling_gemma4.Gemma4RMSNorm
+
+                class _LigerGemma4RMSNorm(LigerRMSNorm):
+                    """LigerRMSNorm for Gemma4 with in_place=False and with_scale support."""
+
+                    def __new__(cls, dim, eps=1e-6, with_scale=True):
+                        if not with_scale:
+                            return _OrigGemma4RMSNorm(dim, eps, with_scale=False)
+                        return super().__new__(cls)
+
+                    def __init__(self, dim, eps=1e-6, with_scale=True):
+                        if not with_scale:
+                            return
+                        # offset=0.0 (standard), in_place=False (gradient checkpointing safe)
+                        super().__init__(
+                            dim, eps, offset=0.0, casting_mode="llama", in_place=False
+                        )
+
+                modeling_gemma4.Gemma4RMSNorm = _LigerGemma4RMSNorm
+            if cfg.liger_glu_activation:
+
+                class _LigerGemma4MLP(LigerGEGLUMLP):
+                    def __init__(self, config, layer_idx=None):
+                        super().__init__(config)
+
+                modeling_gemma4.Gemma4TextMLP = _LigerGemma4MLP
+            if cfg.liger_rope:
+                LOG.warning(
+                    "Liger RoPE is not compatible with Gemma4 (separate q/k application). Skipping."
+                )
+            if cfg.liger_layer_norm:
+                modeling_gemma4.nn.LayerNorm = LigerLayerNorm
+            if cfg.liger_cross_entropy:
+                modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not compatible with Gemma4. Skipping."
+                )
+            LOG.info(
+                f"Applied Liger kernels for gemma4: "
+                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
             )
         elif cfg.liger_fused_linear_cross_entropy:
             try:

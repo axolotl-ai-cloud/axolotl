@@ -38,7 +38,7 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: true
 logging_steps: 1
-flash_attention: true
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

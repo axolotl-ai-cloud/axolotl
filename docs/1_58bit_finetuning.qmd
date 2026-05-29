@@ -1,0 +1,70 @@
+---
+title: "1.58-bit Finetuning"
+back-to-top-navigation: true
+toc: true
+toc-expand: 2
+toc-depth: 4
+---
+
+## Overview
+
+1.58-bit finetuning allows you to finetune BitNet models when their prequantized weights are provided. In theory, it will be possible to fine-tune any LLM in 1.58bit format but the performance degradation will be dramatic.
+
+Axolotl supports 1.58-bit finetuning via the [`onebitllms`](https://github.com/tiiuae/onebitllms) library, which replaces standard linear layers with BitNet-compatible counterparts ready to use for training.
+
+::: {.callout-note}
+LoRA is not supported for BitNet models
+:::
+
+## Installation
+
+Install the `onebitllms` package before using this feature:
+
+```bash
+uv pip install onebitllms
+```
+
+Or from source:
+
+```bash
+uv pip install git+https://github.com/tiiuae/onebitllms
+```
+
+## Supported models
+
+For now, only `Falcon-E` series of models are supported. Make sure to use their `-prequantized` version:
+
+```bash
+tiiuae/Falcon-E-3B-Base-prequantized
+tiiuae/Falcon-E-1B-Base-prequantized
+```
+
+In theory, any other model would 'work' but the performance degradation will be huge. This remains an area of exploration.
+
+## Configuration
+
+To enable 1.58-bit finetuning, set the following in your configuration file:
+
+```yaml
+base_model: tiiuae/Falcon-E-3B-Base-prequantized  # A BitNet-compatible model
+
+use_onebitllms: true
+```
+
+::: {.callout-note}
+For BitNet models, it is recommended to use a higher learning rate than classic models (usually in the order of magnitude of 10x).
+:::
+
+## Considerations after training
+
+Once your model has been trained with 1.58bit fine-tuning, you can convert the trained model in ternary format using the `onebitllms` CLI:
+
+```bash
+onebitllms quantize_to_1bit INPUT_PATH OUTPUT_PATH
+```
+
+After that, you can use supported packages such as `llama.cpp` or Apple MLX package to run the trained model.
+
+## Example Configuration
+
+You can find example configurations in `examples/falcon-e` which contain one configuration for SFT and one configuration for DPO.

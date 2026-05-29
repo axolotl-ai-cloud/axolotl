@@ -2,7 +2,7 @@
 
 from axolotl.common.datasets import load_datasets
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, validate_config
+from axolotl.utils.config import normalize_config, prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 from tests.e2e.utils import check_model_output_exists
@@ -62,6 +62,7 @@ class TestDiffusion:
             }
         )
 
+        prepare_plugins(cfg)
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
@@ -119,6 +120,7 @@ class TestDiffusion:
             }
         )
 
+        prepare_plugins(cfg)
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)

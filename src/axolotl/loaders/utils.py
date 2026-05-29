@@ -234,4 +234,6 @@ def get_linear_embedding_layers(model_type: str) -> list[str]:
         return ["embed_in", "embed_out"]
     if model_type == "falcon":
         return ["word_embeddings", "lm_head"]
+    if model_type == "nemotron_h":
+        return ["embeddings", "lm_head"]
     return ["embed_tokens", "lm_head"]

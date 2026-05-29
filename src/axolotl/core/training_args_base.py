@@ -83,13 +83,18 @@ class AxolotlTrainingMixins:
         default=None,
         metadata={"help": "The number of processes to use for data processing"},
     )
-    relora_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "how often to reset for ReLoRA"},
-    )
     relora_prune_ratio: Optional[float] = field(
-        default=0.9,
-        metadata={"help": "prune ratio for magnitude pruning of the optimizer"},
+        default=None,
+        metadata={
+            "help": (
+                "prune ratio for optimizer state pruning; "
+                "defaults to 0.999 for reset method, 0.9 for others"
+            )
+        },
+    )
+    relora_prune_method: Optional[str] = field(
+        default=None,
+        metadata={"help": "optimizer state pruning method: magnitude | random | reset"},
     )
     jagged_restart_steps: Optional[int] = field(
         default=None,
@@ -233,6 +238,13 @@ class AxolotlTrainingMixins:
     activation_offloading: bool | None = field(
         default=None,
         metadata={"help": "Use activation offloading with CUDA streams for training."},
+    )
+
+    layer_offloading: bool | None = field(
+        default=None,
+        metadata={
+            "help": "Offload model layer parameters to CPU during forward, prefetch back during backward."
+        },
     )
 
     # multi-modal section

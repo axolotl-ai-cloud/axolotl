@@ -41,6 +41,7 @@ from axolotl.utils.callbacks import (
     GCCallback,
     SaveAxolotlConfigtoWandBCallback,
     SaveModelOnFirstStepCallback,
+    SkipEvalOnResumeCallback,
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
@@ -118,6 +119,9 @@ class TrainerBuilderBase(abc.ABC):
             plugin_manager.add_callbacks_pre_trainer(cfg=self.cfg, model=self.model)
         )
 
+        if self.cfg.resume_from_checkpoint:
+            callbacks.append(SkipEvalOnResumeCallback())
+
         if self.cfg.gc_steps:
             callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
 
@@ -176,6 +180,18 @@ class TrainerBuilderBase(abc.ABC):
         telemetry_manager = TelemetryManager.get_instance()
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
+
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
 
         return callbacks
 
@@ -250,7 +266,7 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_precision_settings(self, training_args_kwargs: dict):
         training_args_kwargs["fp16"] = (self.cfg.fp16 and not self.cfg.bf16) or False
-        training_args_kwargs["tf32"] = self.cfg.tf32
+        training_args_kwargs["tf32"] = True if self.cfg.tf32 is True else False
         if self.cfg.bf16 == "full":
             training_args_kwargs["bf16_full_eval"] = True
         else:
@@ -329,7 +345,7 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = AdamW
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "ao_adamw_fp8":
-                from torchao.prototype.low_bit_optim import AdamWFp8
+                from torchao.optim.adam import AdamWFp8
 
                 optimizer_cls = AdamWFp8
                 optimizer_kwargs.update(adam_kwargs)
@@ -353,6 +369,56 @@ class TrainerBuilderBase(abc.ABC):
                 adam_kwargs["eps"] = (eps1, eps2)
 
                 optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "q_galore_adamw8bit":
+                from axolotl.utils.optimizers.qgalore import (
+                    build_qgalore_param_groups,
+                    patch_q_galore_for_modern_bnb,
+                )
+
+                patch_q_galore_for_modern_bnb()
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                optimizer_cls = QGaLoreAdamW8bit
+                optimizer_kwargs["params"] = build_qgalore_param_groups(
+                    self.model,
+                    self.cfg.optim_target_modules,
+                    rank=self.cfg.qgalore_rank,
+                    update_proj_gap=self.cfg.qgalore_update_proj_gap,
+                    scale=self.cfg.qgalore_scale,
+                    proj_type=self.cfg.qgalore_proj_type,
+                    proj_quant=self.cfg.qgalore_proj_quant,
+                    proj_bits=self.cfg.qgalore_proj_bits,
+                    proj_group_size=self.cfg.qgalore_proj_group_size,
+                    cos_threshold=self.cfg.qgalore_cos_threshold,
+                    gamma_proj=self.cfg.qgalore_gamma_proj,
+                    queue_size=self.cfg.qgalore_queue_size,
+                )
+
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adamw":
+                from flashoptim import FlashAdamW
+
+                optimizer_cls = FlashAdamW
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_adam":
+                from flashoptim import FlashAdam
+
+                optimizer_cls = FlashAdam
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "flash_sgd":
+                from flashoptim import FlashSGD
+
+                optimizer_cls = FlashSGD
+            elif self.cfg.optimizer == "flash_sgdw":
+                from flashoptim import FlashSGDW
+
+                optimizer_cls = FlashSGDW
+            elif self.cfg.optimizer == "flash_lion":
+                from flashoptim import FlashLion
+
+                optimizer_cls = FlashLion
+                if "betas" in adam_kwargs:
+                    optimizer_kwargs["betas"] = adam_kwargs["betas"]
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
@@ -484,6 +550,8 @@ class TrainerBuilderBase(abc.ABC):
             training_args_kwargs["accelerator_config"] = AcceleratorConfig()
 
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
+        if self.cfg.layer_offloading:
+            training_args_kwargs["layer_offloading"] = True
         if self.cfg.activation_offloading is True:
             # don't use the HF gradient checkpointing, manually wrap
             training_args_kwargs["gradient_checkpointing"] = False
@@ -543,6 +611,8 @@ class TrainerBuilderBase(abc.ABC):
             "dion_rank_fraction",
             "dion_rank_multiple_of",
             "dataset_num_proc",
+            # memory management
+            "torch_empty_cache_steps",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)

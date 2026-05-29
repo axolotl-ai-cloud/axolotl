@@ -36,7 +36,9 @@ class DiffusionGenerationCallback(TrainerCallback):
         """Generate samples at specified intervals."""
         if (
             state.global_step > 0
-            and state.global_step % self.trainer.cfg.diffusion.generation_interval == 0
+            and state.global_step
+            % self.trainer.axolotl_cfg.diffusion.generation_interval
+            == 0
         ):
             if not self.trainer.state.is_world_process_zero:
                 return
@@ -52,7 +54,7 @@ class DiffusionGenerationCallback(TrainerCallback):
                 dataloader = self.trainer.get_train_dataloader()
 
             # Generate samples
-            diffusion_cfg = self.trainer.cfg.diffusion
+            diffusion_cfg = self.trainer.axolotl_cfg.diffusion
             samples = generate_samples(
                 model=self.trainer.model,
                 tokenizer=self.trainer.processing_class,
@@ -142,11 +144,11 @@ class DiffusionGenerationCallback(TrainerCallback):
 
         logger.info("=" * 60)
 
-        if self.trainer.cfg.use_wandb:
-            if wandb.run is not None:
-                wandb.log(
+        if self.trainer.axolotl_cfg.use_wandb:
+            if wandb.run is not None:  # type: ignore[attr-defined]
+                wandb.log(  # type: ignore[attr-defined]
                     {
-                        "generated_samples": wandb.Table(
+                        "generated_samples": wandb.Table(  # type: ignore[attr-defined]
                             columns=[
                                 "step",
                                 "original",

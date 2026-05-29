@@ -8,7 +8,13 @@ from axolotl.utils.dict import DictDefault
 
 @pytest.fixture()
 def gpu_caps():
-    return {"compute_capability": "sm_89", "bf16": True, "n_gpu": 1, "n_node": 1}
+    return {
+        "compute_capability": "sm_89",
+        "bf16": True,
+        "tf32": False,
+        "n_gpu": 1,
+        "n_node": 1,
+    }
 
 
 @pytest.fixture()
@@ -175,6 +181,10 @@ class TestMoeAdapterTrainMergeRoundtrip:
                 # Model definition order: gate_up_proj first, then down_proj.
                 self.gate_up_proj = nn.Parameter(torch.randn(4, 16, 8))
                 self.down_proj = nn.Parameter(torch.randn(4, 8, 16))
+                # peft >= 0.19 reads base_layer.weight.device unconditionally
+                # in _maybe_shard_state_dict_for_tp; target_parameters-style
+                # modules legitimately don't have .weight, so stub a buffer.
+                self.register_buffer("weight", torch.empty(0), persistent=False)
 
             def forward(self, x):
                 x = torch.matmul(x, self.gate_up_proj[0].T)  # (batch, 16)

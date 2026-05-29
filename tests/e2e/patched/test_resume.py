@@ -9,8 +9,8 @@ import subprocess
 from transformers.utils import is_torch_bf16_gpu_available
 
 from axolotl.common.datasets import load_datasets
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.train import train
-from axolotl.utils.callbacks.tokens_per_second import TOKENS_STATE_FILE
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 

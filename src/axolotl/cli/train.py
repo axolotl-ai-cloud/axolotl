@@ -11,11 +11,16 @@ from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
 from axolotl.cli.checks import check_accelerate_default_config, check_user_token
-from axolotl.cli.config import load_cfg
+from axolotl.cli.config import (
+    gpu_capabilities,
+    load_cfg,
+    plugin_set_cfg,
+    prepare_plugins,
+)
 from axolotl.common.datasets import load_datasets, load_preference_datasets
 from axolotl.integrations.base import PluginManager
 from axolotl.train import train
-from axolotl.utils.config import normalize_config, resolve_dtype
+from axolotl.utils.config import normalize_config, resolve_dtype, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.trainer import prepare_optim_env
 
@@ -84,18 +89,49 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
                 storage_path=Path(parsed_cfg.output_dir).absolute().as_posix(),
             ),
         )
-        return trainer.fit()
-    return do_train(parsed_cfg, parsed_cli_args)
+
+        trainer.fit()
+        return
+
+    do_train(parsed_cfg, parsed_cli_args)
 
 
 def ray_train_func(kwargs: dict):
+    """Ray Train entrypoint executed on each GPU worker.
+
+    Re-validates the config against worker-local GPU capabilities (deferred from
+    the driver), then runs the standard training pipeline.
+    """
     # cast `cfg` back to DictDefault (ray tune deepcopy has issues with DictDefault so needed it to be dict)
     # also renormalize the config now that TorchTrainer has spawned distributed workers
     cfg = DictDefault(kwargs["cfg"])
+
+    # Plugins must be registered before `validate_config` so the plugin-extended
+    # pydantic schema is in scope on this worker; otherwise plugin-specific cfg
+    # fields are silently dropped by `model_dump(exclude_none=True)`.
+    if cfg.get("plugins"):
+        prepare_plugins(cfg)
+
+    # GPU capability detection was deferred from the driver; run the checks now
+    # that we are on a worker that actually has the training device attached.
+    capabilities, env_capabilities = gpu_capabilities()
+    cfg = validate_config(
+        cfg,
+        capabilities=capabilities,
+        env_capabilities=env_capabilities,
+    )
+
+    # Derive here (not in controller normalize_config) so the worker's
+    # validate_config above doesn't see both set and trip check_gas_bsz.
+    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+        cfg.batch_size // cfg.micro_batch_size
+    )
+    cfg.batch_size = (
+        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+    )
+
     prepare_optim_env(cfg)
     normalize_config(cfg)
-
-    # now that we are on the worker node, we can check `is_torch_bf16_gpu_available` to resolve dtype
     resolve_dtype(cfg)
 
     # ray serializing objects gets rid of frozen attribute - HF expects dict not DefaultDict
@@ -105,11 +141,8 @@ def ray_train_func(kwargs: dict):
     # initialize accelerator before model instantiation
     Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
 
-    # Register plugins in Ray workers
+    # Bind the post-validation cfg to the plugin manager.
     if cfg.get("plugins"):
-        from axolotl.cli.config import plugin_set_cfg, prepare_plugins
-
-        prepare_plugins(cfg)
         plugin_set_cfg(cfg)
 
     kwargs["cfg"] = cfg

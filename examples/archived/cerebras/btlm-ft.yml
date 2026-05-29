@@ -59,8 +59,7 @@ gradient_checkpointing: false
 resume_from_checkpoint:
 logging_steps: 1
 
-flash_attention: true
-sdp_attention:
+attn_implementation: flash_attention_2
 flash_optimum:
 
 gptq_groupsize:

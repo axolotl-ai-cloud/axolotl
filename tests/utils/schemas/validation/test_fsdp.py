@@ -2,6 +2,8 @@
 tests for pydantic fsdp validation
 """
 
+import logging
+
 import pytest
 
 from axolotl.utils.config import validate_config
@@ -135,6 +137,77 @@ class TestFSDPValidation:
         assert cfg.fsdp_config.auto_wrap_policy == "TRANSFORMER_BASED_WRAP"
         assert cfg.fsdp_config.transformer_layer_cls_to_wrap == "LlamaDecoderLayer"
         assert cfg.fsdp_config.reshard_after_forward is True
+
+    def test_fp32_norms_requires_fsdp_config(self, min_base_cfg):
+        # fsdp_config is the canonical "is_fsdp" signal; fp32_norms requires it.
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fsdp_version=2,
+        )
+        with pytest.raises(ValueError, match="fp32_norms requires FSDP to be enabled"):
+            validate_config(cfg)
+
+    def test_fp32_norms_requires_fsdp2(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fsdp_version=1,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        with pytest.raises(ValueError, match="fp32_norms requires fsdp_version: 2"):
+            validate_config(cfg)
+
+    def test_fp32_norms_cpu_ram_efficient_loading_ok(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fsdp_version=2,
+            fsdp_config={
+                "reshard_after_forward": True,
+                "cpu_ram_efficient_loading": True,
+            },
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fp32_norms is True
+        assert validated_cfg.fsdp_config.cpu_ram_efficient_loading is True
+
+    def test_fp32_norms_tensor_parallel_ok(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fsdp_version=2,
+            tensor_parallel_size=2,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fp32_norms is True
+        assert validated_cfg.tensor_parallel_size == 2
+
+    def test_fp32_norms_fsdp2_ok(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norms=True,
+            fp32_norm_classes=["AfmoeRMSNorm"],
+            fsdp_version=2,
+            fsdp_config={"reshard_after_forward": True},
+        )
+        validated_cfg = validate_config(cfg)
+        assert validated_cfg.fp32_norms is True
+        assert validated_cfg.fp32_norm_classes == ["AfmoeRMSNorm"]
+
+    def test_fp32_norm_classes_without_fp32_norms_warns(self, min_base_cfg, caplog):
+        cfg = min_base_cfg | DictDefault(
+            fp32_norm_classes=["AfmoeRMSNorm"],
+        )
+        # axolotl.cli.configure_logging() sets propagate=False on the `axolotl`
+        # logger, so pytest caplog (attached to root) can't see records by
+        # default. Temporarily re-enable propagation for this assertion.
+        ax_logger = logging.getLogger("axolotl")
+        old_propagate = ax_logger.propagate
+        ax_logger.propagate = True
+        try:
+            with caplog.at_level("WARNING", logger="axolotl"):
+                validated_cfg = validate_config(cfg)
+        finally:
+            ax_logger.propagate = old_propagate
+        assert not validated_cfg.fp32_norms
+        assert "fp32_norm_classes is set but fp32_norms is not enabled" in caplog.text
 
     def test_muon_fsdp1_rejected(self, min_base_cfg):
         cfg = min_base_cfg | DictDefault(

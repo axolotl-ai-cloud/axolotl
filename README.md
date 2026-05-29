@@ -29,8 +29,11 @@
 
 ## 🎉 Latest Updates
 
+- 2026/04:
+  - New model support has been added in Axolotl for [Mistral Medium 3.5](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral-medium-3_5) and [Gemma 4](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/gemma4).
+  - Axolotl is now [uv-first](https://github.com/axolotl-ai-cloud/axolotl/pull/3545) and has [SonicMoE fused LoRA](https://github.com/axolotl-ai-cloud/axolotl/pull/3519) support.
 - 2026/03:
-  - New model support has been added in Axolotl for [Qwen3.5, Qwen3.5 MoE](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen3.5), [GLM-4.7-Flash](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm47-flash), [GLM-4.6V](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm46v), and [GLM-4.5-Air](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
+  - New model support has been added in Axolotl for [Mistral Small 4](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/mistral4), [Qwen3.5, Qwen3.5 MoE](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/qwen3.5), [GLM-4.7-Flash](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm47-flash), [GLM-4.6V](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm46v), and [GLM-4.5-Air](https://github.com/axolotl-ai-cloud/axolotl/tree/main/examples/glm45).
   - [MoE expert quantization](https://docs.axolotl.ai/docs/expert_quantization.html) support (via `quantize_moe_experts: true`) greatly reduces VRAM when training MoE models (FSDP2 compat).
 - 2026/02:
   - [ScatterMoE LoRA](https://github.com/axolotl-ai-cloud/axolotl/pull/3410) support. LoRA fine-tuning directly on MoE expert weights using custom Triton kernels.
@@ -86,8 +89,8 @@ Features:
 **Requirements**:
 
 - NVIDIA GPU (Ampere or newer for `bf16` and Flash Attention) or AMD GPU
-- Python 3.11
-- PyTorch ≥2.8.0
+- Python >=3.11 (3.12 recommended)
+- PyTorch ≥2.9.1
 
 ### Google Colab
 
@@ -95,11 +98,19 @@ Features:
 
 ### Installation
 
-#### Using pip
-
 ```bash
-pip3 install -U packaging==26.0 setuptools==75.8.0 wheel ninja
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+# install uv if you don't already have it installed (restart shell after)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# change depending on system
+export UV_TORCH_BACKEND=cu128
+
+# create a new virtual environment
+uv venv --python 3.12
+source .venv/bin/activate
+
+uv pip install torch==2.10.0 torchvision
+uv pip install --no-build-isolation axolotl[deepspeed]
 
 # Download example axolotl configs, deepspeed configs
 axolotl fetch examples
@@ -110,7 +121,7 @@ axolotl fetch deepspeed_configs  # OPTIONAL
 
 Installing with Docker can be less error prone than installing in your own environment.
 ```bash
-docker run --gpus '"all"' --rm -it axolotlai/axolotl:main-latest
+docker run --gpus '"all"' --ipc=host --rm -it axolotlai/axolotl:main-latest
 ```
 
 Other installation approaches are described [here](https://docs.axolotl.ai/docs/installation.html).
@@ -156,6 +167,29 @@ That's it! Check out our [Getting Started Guide](https://docs.axolotl.ai/docs/ge
 - [Multipacking](https://docs.axolotl.ai/docs/multipack.html)
 - [API Reference](https://docs.axolotl.ai/docs/api/) - Auto-generated code documentation
 - [FAQ](https://docs.axolotl.ai/docs/faq.html) - Frequently asked questions
+
+## AI Agent Support
+
+Axolotl ships with built-in documentation optimized for AI coding agents (Claude Code, Cursor, Copilot, etc.). These docs are bundled with the pip package — no repo clone needed.
+
+```bash
+# Show overview and available training methods
+axolotl agent-docs
+
+# Topic-specific references
+axolotl agent-docs sft                 # supervised fine-tuning
+axolotl agent-docs grpo                # GRPO online RL
+axolotl agent-docs preference_tuning   # DPO, KTO, ORPO, SimPO
+axolotl agent-docs reward_modelling    # outcome and process reward models
+axolotl agent-docs pretraining         # continual pretraining
+axolotl agent-docs --list              # list all topics
+
+# Dump config schema for programmatic use
+axolotl config-schema
+axolotl config-schema --field adapter
+```
+
+If you're working with the source repo, agent docs are also available at `docs/agents/` and the project overview is in `AGENTS.md`.
 
 ## 🤝 Getting Help
 

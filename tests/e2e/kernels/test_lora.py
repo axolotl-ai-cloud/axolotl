@@ -102,7 +102,7 @@ def mock_proj():
 def test_get_lora_parameters(mock_proj):
     """Tests get_lora_parameters function"""
     # Test with LoRA enabled
-    W, b, _, A, B, s = get_lora_parameters(mock_proj)
+    W, b, _, A, B, s, *_ = get_lora_parameters(mock_proj)
 
     assert isinstance(W, torch.Tensor)
     assert W.shape == (128, 64)
@@ -113,13 +113,13 @@ def test_get_lora_parameters(mock_proj):
 
     # Test with LoRA disabled
     mock_proj.disable_adapters = True
-    W, b, _, A, B, s = get_lora_parameters(mock_proj)
+    W, b, _, A, B, s, *_ = get_lora_parameters(mock_proj)
     assert A is None and B is None and s is None
 
     # Test with merged state
     mock_proj.disable_adapters = False
     mock_proj.merged = True
-    W, b, _, A, B, s = get_lora_parameters(mock_proj)
+    W, b, _, A, B, s, *_ = get_lora_parameters(mock_proj)
     assert A is None and B is None and s is None
 
 
@@ -176,24 +176,31 @@ def test_lora_mlp_direct(sample_tensors, activation_forward, activation_backward
     X.requires_grad = True
     output = LoRA_MLP.apply(
         X,
+        None,  # X_drop
         gate_proj.weight,
         gate_proj.bias,
         None,  # gate_quant
         None,  # gate_A
         None,  # gate_B
         None,  # gate_scale
+        None,  # gate_lora_bias
+        None,  # gate_magnitude
         up_proj.weight,
         up_proj.bias,
         None,  # up_quant
         None,  # up_A
         None,  # up_B
         None,  # up_scale
+        None,  # up_lora_bias
+        None,  # up_magnitude
         down_proj.weight,
         down_proj.bias,
         None,  # down_quant
         None,  # down_A
         None,  # down_B
         None,  # down_scale
+        None,  # down_lora_bias
+        None,  # down_magnitude
         activation_forward,
         activation_backward,
         True,  # inplace
@@ -247,24 +254,31 @@ def test_lora_mlp_with_adapters(
     # Forward pass with adapters
     output = LoRA_MLP.apply(
         X,
+        None,  # X_drop
         gate_proj.weight,
         gate_proj.bias,
         None,
         gate_A,
         gate_B,
         scale,
+        None,  # gate_lora_bias
+        None,  # gate_magnitude
         up_proj.weight,
         up_proj.bias,
         None,
         up_A,
         up_B,
         scale,
+        None,  # up_lora_bias
+        None,  # up_magnitude
         down_proj.weight,
         down_proj.bias,
         None,
         down_A,
         down_B,
         scale,
+        None,  # down_lora_bias
+        None,  # down_magnitude
         activation_forward,
         activation_backward,
         True,
@@ -334,25 +348,32 @@ def test_lora_qkv(sample_tensors):
 
     Q1, K1, V1 = LoRA_QKV.apply(
         X,
+        None,  # X_drop
         q_weight,
         None,
         None,
         None,
         None,
         None,
+        None,
+        None,  # Q: weight, bias, quant, A, B, scale, lora_bias, magnitude
         k_weight,
         None,
         None,
         None,
         None,
         None,
+        None,
+        None,  # K
         v_weight,
         None,
         None,
         None,
         None,
         None,
-        True,
+        None,
+        None,  # V
+        True,  # inplace
     )
 
     assert Q1.shape == K1.shape == V1.shape == X.shape
@@ -366,25 +387,32 @@ def test_lora_qkv(sample_tensors):
     # Test with LoRA adapters
     Q2, K2, V2 = LoRA_QKV.apply(
         X,
+        None,  # X_drop
         q_weight,
         None,
         None,
         q_A,
         q_B,
         scale,
+        None,
+        None,  # Q
         k_weight,
         None,
         None,
         k_A,
         k_B,
         scale,
+        None,
+        None,  # K
         v_weight,
         None,
         None,
         v_A,
         v_B,
         scale,
-        True,
+        None,
+        None,  # V
+        True,  # inplace
     )
 
     assert Q2.shape == K2.shape == V2.shape == X.shape
@@ -427,7 +455,9 @@ def test_lora_o(sample_tensors):
 
     # Test forward pass
     X.requires_grad = True
-    output = LoRA_O.apply(X, W, b, None, A, B, scale)
+    output = LoRA_O.apply(
+        X, None, W, b, None, A, B, scale, None, None
+    )  # X_drop, ..., lora_bias, magnitude
 
     assert output.shape == (X.shape[0], X.shape[1], W.shape[0])
 
@@ -542,6 +572,7 @@ def test_inplace_operations(sample_tensors, apply_function):
             "down_proj": nn.Linear(shapes["out"], shapes["hidden"]).to(
                 device="cuda", dtype=torch.float16
             ),
+            "training": False,
         },
     )
 

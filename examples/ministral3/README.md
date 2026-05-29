@@ -23,7 +23,7 @@ Note: This is still experimental given it is based on transformers v5 RC.
     git checkout transformers-v5
 
     # Install packages for transformers v5
-    pip install -e .
+    uv pip install -e .
     ```
 
 4. Run the fine-tuning:

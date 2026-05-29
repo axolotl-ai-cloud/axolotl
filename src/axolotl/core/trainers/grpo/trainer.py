@@ -40,6 +40,7 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
     DistributedParallelMixin,
@@ -64,6 +65,19 @@ class AxolotlGRPOTrainer(
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
+
+
+class AxolotlAsyncGRPOTrainer(
+    RngLoaderMixin,
+    SchedulerMixin,
+    OptimizerMixin,
+    OptimizerInitMixin,
+    DistributedParallelMixin,
+    FastAsyncGRPOTrainer,
+):
+    """Extend AsyncGRPOTrainer with axolotl helpers"""
+
+    _tag_names = ["trl", "grpo", "async", "axolotl"]
 
 
 class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):

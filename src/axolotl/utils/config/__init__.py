@@ -22,7 +22,12 @@ from axolotl.utils.schemas.config import (
     AxolotlConfigWCapabilities as AxolotlConfigWCapabilitiesBase,
     AxolotlInputConfig as AxolotlInputConfigBase,
 )
-from axolotl.utils.schemas.datasets import DPODataset, KTODataset, SFTDataset
+from axolotl.utils.schemas.datasets import (
+    DPODataset,
+    KTODataset,
+    SFTDataset,
+    SyntheticDataset,
+)
 
 LOG = get_logger(__name__)
 
@@ -84,7 +89,7 @@ def resolve_dtype(cfg):
             cfg.fp16 = True
         cfg.bf16 = False
     else:
-        if cfg.tf32:
+        if cfg.tf32 is True:
             torch.set_float32_matmul_precision("high")
             if is_torch_greater_or_equal("2.9.0"):
                 torch.backends.fp32_precision = "tf32"
@@ -106,12 +111,13 @@ def resolve_dtype(cfg):
 
 def normalize_config(cfg):
     # setup some derived config / hyperparams
-    cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
-        cfg.batch_size // cfg.micro_batch_size
-    )
-    cfg.batch_size = (
-        cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
-    )
+    if not cfg.use_ray:
+        cfg.gradient_accumulation_steps = cfg.gradient_accumulation_steps or (
+            cfg.batch_size // cfg.micro_batch_size
+        )
+        cfg.batch_size = (
+            cfg.batch_size or cfg.micro_batch_size * cfg.gradient_accumulation_steps
+        )
     if cfg.eval_batch_size is None:
         cfg.eval_batch_size = cfg.micro_batch_size
     cfg.world_size = int(os.environ.get("WORLD_SIZE", 1))
@@ -195,6 +201,15 @@ def normalize_config(cfg):
 
     cfg.model_config_type = model_config.model_type
 
+    # Resolve inner text backbone type for VLM wrappers (e.g. mistral3 -> mistral4)
+    if callable(getattr(model_config, "get_text_config", None)):
+        text_config = model_config.get_text_config()
+        if (
+            hasattr(text_config, "model_type")
+            and text_config.model_type != model_config.model_type
+        ):
+            cfg.model_config_type_text = text_config.model_type
+
     # figure out if the model is llama
     cfg.is_llama_derived_model = (
         (
@@ -254,6 +269,37 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
+    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms cause
+    # "marked ready twice" errors with reentrant checkpointing) and
+    # ddp_find_unused_parameters=True (per_layer_projection LoRA params may not
+    # receive gradients on every step).
+    if cfg.model_config_type == "gemma4":
+        if cfg.gradient_checkpointing:
+            if cfg.gradient_checkpointing_kwargs is None:
+                cfg.gradient_checkpointing_kwargs = {}
+            if cfg.gradient_checkpointing_kwargs.get("use_reentrant") is not False:
+                LOG.warning(
+                    "Gemma4 requires use_reentrant=False for gradient checkpointing "
+                    "in distributed training. Setting use_reentrant=False."
+                )
+                cfg.gradient_checkpointing_kwargs["use_reentrant"] = False
+        if cfg.ddp and cfg.ddp_find_unused_parameters is None:
+            if cfg.activation_offloading is True:
+                # activation_offloading uses checkpoint wrappers that conflict
+                # with find_unused_parameters (causes "marked ready twice").
+                # Use freeze_mm_modules instead to eliminate unused params.
+                LOG.info(
+                    "Gemma4 + DDP + activation_offloading: skipping "
+                    "ddp_find_unused_parameters (use freeze_mm_modules to "
+                    "handle unused vision/audio params)."
+                )
+            else:
+                LOG.warning(
+                    "Gemma4 requires ddp_find_unused_parameters=True for DDP. "
+                    "Auto-enabling."
+                )
+                cfg.ddp_find_unused_parameters = True
+
     log_gpu_memory_usage(LOG, "baseline", cfg.device)
 
 
@@ -299,6 +345,14 @@ def validate_config(
                 cfg["datasets"][idx] = DPODataset(**ds_cfg)
             elif cfg.get("rl") == "kto" and not isinstance(ds_cfg, KTODataset):
                 cfg["datasets"][idx] = KTODataset(**dict(ds_cfg))
+            elif (
+                ds_cfg.get("type")
+                if isinstance(ds_cfg, dict)
+                else getattr(ds_cfg, "type", None)
+            ) == "_synthetic" and not isinstance(ds_cfg, SyntheticDataset):
+                cfg["datasets"][idx] = SyntheticDataset(
+                    **(ds_cfg if isinstance(ds_cfg, dict) else dict(ds_cfg))
+                )
             elif not isinstance(ds_cfg, SFTDataset):
                 cfg["datasets"][idx] = SFTDataset(**dict(ds_cfg))
 

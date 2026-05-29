@@ -102,7 +102,7 @@ bf16: auto
 tf32: false
 
 gradient_checkpointing: true
-flash_attention: true
+attn_implementation: flash_attention_2
 
 # ============================================================================
 # Checkpointing and Logging

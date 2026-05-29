@@ -1,13 +1,25 @@
 #!/bin/bash
 set -e
 
-python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__"
+python -c "import torch; assert '$PYTORCH_VERSION' in torch.__version__, f'Expected torch $PYTORCH_VERSION but got {torch.__version__}'"
 
-# curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xpf - -C "${HF_HOME}/hub/"  --use-compress-program unzstd --strip-components=1
-hf download "NousResearch/Meta-Llama-3-8B"
-hf download "NousResearch/Meta-Llama-3-8B-Instruct"
-hf download "microsoft/Phi-4-reasoning"
-hf download "microsoft/Phi-3.5-mini-instruct"
+set -o pipefail
+for i in 1 2 3; do
+  if curl --silent --show-error --fail -L \
+    https://axolotl-ci.b-cdn.net/hf-cache.tar.zst \
+    | tar -xpf - -C "${HF_HOME}/hub/" --use-compress-program unzstd --strip-components=1; then
+    echo "HF cache extracted successfully"
+    break
+  fi
+  echo "Attempt $i failed, cleaning up and retrying in 15s..."
+  rm -rf "${HF_HOME}/hub/"*
+  sleep 15
+done
+# hf download "NousResearch/Meta-Llama-3-8B"
+# hf download "NousResearch/Meta-Llama-3-8B-Instruct"
+# hf download "microsoft/Phi-4-reasoning"
+# hf download "microsoft/Phi-3.5-mini-instruct"
+# hf download "microsoft/Phi-3-medium-128k-instruct"
 
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \
@@ -31,8 +43,17 @@ pytest --full-trace -vvv --durations=10 \
   --cov-append
 
 # Run solo tests with coverage append
+# test_rm_lora is run in its own process below (it fails on py3.11 when sharing
+# the solo process with other tests; isolating it avoids cross-test state).
 pytest -v --durations=10 -n1 \
+  --ignore=tests/e2e/solo/test_reward_model_smollm2.py \
   /workspace/axolotl/tests/e2e/solo/ \
+  --cov=axolotl \
+  --cov-append
+
+# Run reward-model test isolated in its own process
+pytest -v --durations=10 -s \
+  /workspace/axolotl/tests/e2e/solo/test_reward_model_smollm2.py \
   --cov=axolotl \
   --cov-append
 

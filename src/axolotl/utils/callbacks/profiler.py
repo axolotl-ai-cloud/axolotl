@@ -17,6 +17,8 @@ from transformers import (
 class PytorchProfilerCallback(TrainerCallback):
     """
     PyTorch Profiler callback to create snapshots of GPU memory usage at specified steps.
+
+    Also runs torch.profiler to produce a Chrome trace for timing analysis.
     """
 
     def __init__(self, steps_to_profile: int = 5, profiler_steps_start: int = 0):
@@ -26,9 +28,10 @@ class PytorchProfilerCallback(TrainerCallback):
         if profiler_steps_start == 0:
             # start recording memory allocations before everything is allocated, because if we start
             # at the beginning of step 0, we won't have any memory allocations in the traces
-            torch.cuda.memory._record_memory_history(enabled="all")
+            torch.cuda.memory._record_memory_history(enabled="all", stacks="all")
             profiler_steps_start = -1
         self.profiler_steps_start = profiler_steps_start
+        self._profiler = None
 
     def on_step_begin(
         self,
@@ -38,7 +41,21 @@ class PytorchProfilerCallback(TrainerCallback):
         **kwargs,
     ):
         if state.global_step == self.profiler_steps_start:
-            torch.cuda.memory._record_memory_history(enabled="all")
+            torch.cuda.memory._record_memory_history(enabled="all", stacks="all")
+
+        # Start torch.profiler on the first profiled step
+        if state.global_step == max(self.profiler_steps_start, 0):
+            profiler = torch.profiler.profile(
+                activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                    torch.profiler.ProfilerActivity.CUDA,
+                ],
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+            )
+            profiler.__enter__()
+            self._profiler = profiler
 
     def on_step_end(
         self,
@@ -54,6 +71,13 @@ class PytorchProfilerCallback(TrainerCallback):
 
             # tell CUDA to stop recording memory allocations now
             torch.cuda.memory._record_memory_history(enabled=None)
+
+            # Stop and export torch.profiler trace
+            if self._profiler is not None:
+                self._profiler.__exit__(None, None, None)
+                trace_path = Path(args.output_dir) / "profiler_trace.json"
+                self._profiler.export_chrome_trace(str(trace_path))
+                self._profiler = None
 
     def on_train_end(
         self,
@@ -73,3 +97,9 @@ class PytorchProfilerCallback(TrainerCallback):
 
             # tell CUDA to stop recording memory allocations now
             torch.cuda.memory._record_memory_history(enabled=None)
+
+        if self._profiler is not None:
+            self._profiler.__exit__(None, None, None)
+            trace_path = Path(args.output_dir) / "profiler_trace.json"
+            self._profiler.export_chrome_trace(str(trace_path))
+            self._profiler = None

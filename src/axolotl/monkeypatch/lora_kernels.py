@@ -12,9 +12,11 @@ from torch import nn
 from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
+    apply_lora_embedding,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
+    apply_lora_qk,
     apply_lora_qkv,
 )
 from axolotl.monkeypatch.utils import detab_code
@@ -51,6 +53,31 @@ QKV_PATCHES = [
     value_states = value_states.view(hidden_shape).transpose(1, 2)
 """.lstrip("\n"),
     ),
+    (
+        """
+    query_states, gate = torch.chunk(
+        self.q_proj(hidden_states).view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
+    )
+    gate = gate.reshape(*input_shape, -1)
+
+    query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
+    key_states = self.k_norm(self.k_proj(hidden_states).view(hidden_shape)).transpose(1, 2)
+    value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+""".lstrip("\n"),
+        """
+    query_states, key_states, value_states = self.apply_qkv(hidden_states)
+    query_states, gate = torch.chunk(
+        query_states.view(*input_shape, -1, self.head_dim * 2), 2, dim=-1
+    )
+    gate = gate.reshape(*input_shape, -1)
+
+    query_states = self.q_norm(query_states.view(hidden_shape)).transpose(1, 2)
+    key_states = self.k_norm(key_states.view(hidden_shape)).transpose(1, 2)
+    value_states = value_states.view(hidden_shape).transpose(1, 2)
+""".lstrip("\n"),
+    ),
+    # Gemma4 has no entry: its fused forward already calls apply_qkv/apply_o,
+    # and patch_self_attn_lora skips it (see the skip there).
 ]
 
 ORIGINAL_O_CODE = """
@@ -85,6 +112,23 @@ def original_apply_qkv(
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
     value_states = self.v_proj(hidden_states)
+
+    return query_states, key_states, value_states
+
+
+def original_apply_qkv_optional_v(
+    self: nn.Module, hidden_states: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """QKV projection for models where v_proj may be None (e.g. Gemma4 attention_k_eq_v).
+
+    When v_proj is None, key_states are reused as value_states.
+    """
+    query_states = self.q_proj(hidden_states)
+    key_states = self.k_proj(hidden_states)
+    if self.v_proj is not None:
+        value_states = self.v_proj(hidden_states)
+    else:
+        value_states = key_states
 
     return query_states, key_states, value_states
 
@@ -159,6 +203,11 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Gemma3Attention
 
+    if model_type in ("gemma4", "gemma4_text"):
+        from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
+
+        return Gemma4TextAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
@@ -196,6 +245,23 @@ def patch_self_attn_lora(cfg: DictDefault):
     if hasattr(attention_cls, "_original_forward"):
         LOG.info(f"{attention_cls.__name__} already patched")
         return
+
+    # Skip Gemma4: patch_manager applies patch_gemma4_fused_attn
+    # unconditionally for gemma4 before this runs, and that fused forward
+    # already calls apply_qkv/apply_o, so the source rewrite is dead.
+    try:
+        from transformers.models.gemma4.modeling_gemma4 import (
+            Gemma4TextAttention,
+        )
+
+        if attention_cls is Gemma4TextAttention:
+            LOG.info(
+                "Gemma4TextAttention uses the fused attention path "
+                "(apply_qkv/apply_o) - skipping LoRA source rewrite"
+            )
+            return
+    except ImportError:
+        pass
 
     self_attn_forward = inspect.getsource(attention_cls.forward)
     attention_cls._original_forward = self_attn_forward
@@ -299,6 +365,8 @@ def get_layers(model: PeftModelForCausalLM) -> list[nn.Module]:
     if hasattr(pretrained_model, "language_model"):
         return pretrained_model.language_model.layers
     if hasattr(pretrained_model, "model"):
+        if hasattr(pretrained_model.model, "language_model"):
+            return pretrained_model.model.language_model.layers
         return pretrained_model.model.layers
 
     raise NotImplementedError(
@@ -345,13 +413,13 @@ def apply_lora_kernel_patches(
         active_adapter = model.active_adapter
     lora_config = model.model.peft_config[active_adapter]
 
-    # Only patch if conditions are met
-    can_patch = lora_config.lora_dropout == 0 and lora_config.bias == "none"
-
-    if not can_patch:
-        LOG.warning("Cannot patch layers - requires no dropout and no bias")
-        LOG.warning("Please specify `lora_dropout: 0` in your axolotl config file")
-        return model
+    # Log what features are active
+    if lora_config.lora_dropout > 0:
+        LOG.info(f"LoRA kernels: dropout={lora_config.lora_dropout} enabled")
+    if lora_config.bias != "none":
+        LOG.info(f"LoRA kernels: bias={lora_config.bias} enabled")
+    if lora_config.use_dora:
+        LOG.info("LoRA kernels: DoRA enabled")
 
     # This needs to be reset after patching
     original_level = LOG.getEffectiveLevel()
@@ -368,14 +436,14 @@ def apply_lora_kernel_patches(
         activation = text_config.hidden_act
     elif hasattr(text_config, "hidden_activation"):
         activation = text_config.hidden_activation
+    elif hasattr(text_config, "mlp_hidden_act"):
+        # Hybrid models (e.g. nemotron_h) use mlp_hidden_act instead of hidden_act
+        activation = text_config.mlp_hidden_act
 
     # map activation to supported activation
-    if "gelu" in activation:
+    if activation and "gelu" in activation:
         # gemma3 uses gelu_pytorch_tanh
         activation = "gelu"
-
-    if activation not in SUPPORTED_ACTIVATIONS:
-        raise NotImplementedError(f"Activation {activation} is not supported")
 
     layers = get_layers(model)
 
@@ -384,54 +452,68 @@ def apply_lora_kernel_patches(
         # Add QKV, O fallback implementations to start
         # These will be overwritten later (if some conditions apply)
         for self_attn in find_self_attn_in_layer(layer):
-            self_attn.apply_qkv = types.MethodType(original_apply_qkv, self_attn)
+            # Use v_proj-optional fallback for models where v_proj can be None
+            # (e.g. Gemma4 with attention_k_eq_v=True)
+            if getattr(self_attn, "v_proj", None) is None:
+                self_attn.apply_qkv = types.MethodType(
+                    original_apply_qkv_optional_v, self_attn
+                )
+            else:
+                self_attn.apply_qkv = types.MethodType(original_apply_qkv, self_attn)
             self_attn.apply_o = types.MethodType(original_apply_o, self_attn)
 
             if cfg.lora_qkv_kernel:
                 # Query, key, value patching
-                layer_modules = [
-                    getattr(self_attn, linear_proj)
-                    for linear_proj in ["q_proj", "k_proj", "v_proj"]
-                ]
+                # Filter out None projections (e.g. Gemma4 v_proj when attention_k_eq_v=True)
+                has_v_proj = getattr(self_attn, "v_proj", None) is not None
+                proj_names = (
+                    ["q_proj", "k_proj", "v_proj"]
+                    if has_v_proj
+                    else ["q_proj", "k_proj"]
+                )
+                layer_modules = [getattr(self_attn, name) for name in proj_names]
                 can_patch_qkv = all(
-                    hasattr(module, "lora_A")
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-                    for module in layer_modules
+                    hasattr(module, "lora_A") for module in layer_modules
                 )
 
                 if can_patch_qkv:
-                    # Add optimized implementation
-                    self_attn.apply_qkv = types.MethodType(apply_lora_qkv, self_attn)
+                    if has_v_proj:
+                        self_attn.apply_qkv = types.MethodType(
+                            apply_lora_qkv, self_attn
+                        )
+                    else:
+                        self_attn.apply_qkv = types.MethodType(apply_lora_qk, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention QKV projections - requires LoRA "
-                        "adapters and no lora_magnitude_vector (DoRA)"
+                        "Cannot patch some attention QKV projections - requires LoRA adapters"
                     )
             if cfg.lora_o_kernel:
                 # Output patching
                 layer_modules = [
                     getattr(self_attn, linear_proj) for linear_proj in ["o_proj"]
                 ]
-                can_patch_o = all(
-                    hasattr(module, "lora_A")
-                    and len(getattr(module, "lora_magnitude_vector", []) or []) == 0
-                    for module in layer_modules
-                )
+                can_patch_o = all(hasattr(module, "lora_A") for module in layer_modules)
 
                 if can_patch_o:
                     self_attn.apply_o = types.MethodType(apply_lora_o, self_attn)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some attention output projection - requires LoRA "
-                        "adapters and no lora_magnitude_vector (DoRA)"
+                        "Cannot patch some attention output projection - requires LoRA adapters"
                     )
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
+                # Check is inside lora_mlp_kernel guard so models with an
+                # unsupported activation (e.g. nemotron_h uses relu2) can set
+                # lora_mlp_kernel: false without hitting an error here.
+                if activation not in SUPPORTED_ACTIVATIONS:
+                    raise NotImplementedError(
+                        f"Activation {activation!r} is not supported by lora_mlp_kernel. "
+                        f"Set `lora_mlp_kernel: false` in your config or use a model with "
+                        f"a supported activation ({SUPPORTED_ACTIVATIONS})."
+                    )
                 # MLP patching
                 can_patch_mlp = all(
-                    hasattr(proj, "lora_A")
-                    and len(getattr(proj, "lora_magnitude_vector", []) or []) == 0
-                    for proj in (gate_proj, up_proj, down_proj)
+                    hasattr(proj, "lora_A") for proj in (gate_proj, up_proj, down_proj)
                 )
 
                 if can_patch_mlp:
@@ -439,13 +521,48 @@ def apply_lora_kernel_patches(
                     layer.mlp.forward = types.MethodType(apply_fn, mlp)
                 else:
                     LOG.warning_once(
-                        "Cannot patch some MLP layers - requires LoRA adapters and no "
-                        "lora_magnitude_vector (DoRA)"
+                        "Cannot patch some MLP layers - requires LoRA adapters"
                     )
+
+    # Patch embedding layers (model-level, not per-layer)
+    if cfg.lora_embedding_kernel:
+        _patch_embedding_layers(model, cfg)
 
     LOG.setLevel(original_level)
 
     return model
+
+
+def _patch_embedding_layers(model: PeftModelForCausalLM, cfg: DictDefault):
+    """Patch embedding layers with fused LoRA kernel.
+
+    Handles both embed_tokens (nn.Embedding with lora_embedding_A/B) and
+    lm_head (nn.Linear with lora_A/B, used when tied embeddings are untied by PEFT).
+    """
+    pretrained_model = model.model
+    patched = 0
+
+    # Find embedding modules - check common locations
+    for attr_path in [
+        ("model", "embed_tokens"),
+        ("model", "language_model", "embed_tokens"),
+    ]:
+        parent = pretrained_model
+        for attr in attr_path:
+            parent = getattr(parent, attr, None)
+            if parent is None:
+                break
+        if parent is not None and hasattr(parent, "lora_embedding_A"):
+            LOG.info(f"Patching embedding layer: {'.'.join(attr_path)}")
+            parent.forward = types.MethodType(apply_lora_embedding, parent)
+            patched += 1
+
+    # lm_head with LoRA is a Linear layer - already handled by LoRA_O/LoRA_W kernels
+    # when included in target_modules. No special embedding handling needed since
+    # PEFT wraps it as a Linear (not Embedding) even for tied models.
+
+    if not patched:
+        LOG.debug("No embedding layers with LoRA found to patch")
 
 
 class FakeMLP(nn.Module):

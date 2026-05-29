@@ -1,0 +1,206 @@
+---
+title: "Which Fine-Tuning Method Should I Use?"
+description: "A decision guide for choosing the right fine-tuning method, adapter, and hardware configuration in Axolotl."
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+execute:
+  enabled: false
+---
+
+## Overview {#sec-overview}
+
+Axolotl supports four broad categories of fine-tuning, each suited to different data types, objectives, and resource constraints.
+
+| Method | What It Does | Data You Need |
+|--------|-------------|---------------|
+| **Supervised Fine-Tuning (SFT)** | Teaches the model to produce specific outputs given inputs | Input-output pairs (instructions, conversations, completions) |
+| **Preference Learning (DPO/KTO/ORPO)** | Steers the model toward preferred outputs and away from dispreferred ones | Chosen/rejected response pairs (DPO, ORPO) or binary labels (KTO) |
+| **Reinforcement Learning (GRPO)** | Optimizes the model against a reward signal through online generation | A reward function (code or model-based) and a prompt dataset |
+| **Reward Modeling** | Trains a model to score responses, for use as a reward signal in RL | Preference pairs ranked by quality |
+
+Each method is configured through a YAML file with `rl: <method>` (or omitted for SFT). All methods support LoRA, QLoRA, and full fine-tuning unless otherwise noted.
+
+## Decision Tree {#sec-decision-tree}
+
+Use the following flowchart to choose your method. Start at the top and follow the path that matches your situation.
+
+```
+Do you have a reward function (code-based or model-based)?
+├── YES
+│   └── Use GRPO (rl: grpo)
+│       The model generates its own completions and learns from reward scores.
+│       Best for: math, code, reasoning, tasks with verifiable answers.
+│       See: rlhf.qmd#grpo
+│
+└── NO
+    │
+    Do you have preference pairs (chosen vs. rejected responses)?
+    ├── YES
+    │   │
+    │   Are they paired (same prompt, one chosen, one rejected)?
+    │   ├── YES → Use DPO (rl: dpo)
+    │   │         Direct optimization without a separate reward model.
+    │   │         See: rlhf.qmd#dpo
+    │   │
+    │   └── NO (only binary good/bad labels)
+    │       └── Use KTO (rl: kto)
+    │           Works with unpaired preference data.
+    │           See: rlhf.qmd#kto
+    │
+    └── NO
+        │
+        Do you have input-output examples?
+        ├── YES → Use SFT
+        │         The simplest and most common method.
+        │         See: getting-started.qmd
+        │
+        └── NO
+            └── You need to create training data first.
+                Consider generating preference pairs with an LLM judge,
+                or writing a reward function for GRPO.
+```
+
+::: {.callout-tip}
+**When in doubt, start with SFT.** It is the most straightforward method and works well for most tasks. You can always move to preference learning or RL later to further refine behavior.
+:::
+
+### Method Comparison at a Glance
+
+| Criterion | SFT | DPO | KTO | GRPO |
+|-----------|-----|-----|-----|------|
+| Data complexity | Low (input-output pairs) | Medium (preference pairs) | Medium (binary labels) | Low (prompts + reward code) |
+| Compute cost | Low | Medium | Medium | High (requires vLLM server) |
+| Learning signal | Supervised | Contrastive | Contrastive | Online reward |
+| Online generation | No | No | No | Yes |
+| Reward model needed | No | No | No | No (uses reward functions) |
+| Best for | Task adaptation, instruction following | Safety, style alignment | Unpaired preference data | Reasoning, math, code |
+
+::: {.callout-note}
+**ORPO** is an alternative to DPO that combines SFT and preference optimization in a single training stage, removing the need for a separate SFT step. Configure with `rl: orpo`. See [rlhf.qmd](rlhf.qmd) for details.
+:::
+
+## Adapter Selection {#sec-adapter-selection}
+
+Once you have chosen a method, decide how to apply the parameter updates. The three main options trade off VRAM usage against model quality.
+
+### QLoRA
+
+- **How it works**: The base model is loaded in 4-bit (NF4) quantization. Small low-rank adapter matrices are trained in higher precision on top.
+- **VRAM savings**: Roughly 4x reduction in model memory compared to full fine-tuning.
+- **Quality**: Slight degradation due to quantization noise, but often negligible for task-specific fine-tuning.
+- **When to use**: When your GPU cannot fit the model in full precision, or when you want fast experimentation.
+
+```yaml
+adapter: qlora
+load_in_4bit: true
+lora_r: 32
+lora_alpha: 64
+lora_target_linear: true
+```
+
+### LoRA
+
+- **How it works**: The base model is loaded at full precision (or 8-bit). Low-rank adapter matrices are trained alongside.
+- **VRAM savings**: Roughly 2-3x reduction compared to full fine-tuning (model weights are frozen, only adapters + optimizer states for adapters are stored).
+- **Quality**: Very close to full fine-tuning for most tasks, especially with higher rank values.
+- **When to use**: When you have enough VRAM for the base model but not for full optimizer states.
+
+```yaml
+adapter: lora
+lora_r: 32
+lora_alpha: 64
+lora_target_linear: true
+```
+
+::: {.callout-tip}
+For GRPO training, LoRA is strongly recommended. The vLLM server needs to sync weights from the trainer, and LoRA sync (`trl.vllm_lora_sync: true`) is far more efficient than syncing full merged weights. See [vLLM Serving](vllm_serving.qmd) for details.
+:::
+
+### Full Fine-Tuning
+
+- **How it works**: All model parameters are updated during training. No adapters.
+- **VRAM savings**: None. Requires memory for model weights, gradients, and optimizer states (roughly 4x model size in bf16 with AdamW).
+- **Quality**: Highest potential quality, especially for large distribution shifts.
+- **When to use**: When you have ample GPU memory or multi-GPU setups, and need maximum performance. Also required for pre-training.
+
+```yaml
+# No adapter or load_in_* lines needed
+micro_batch_size: 1
+gradient_accumulation_steps: 16
+```
+
+### Quick Comparison
+
+| | QLoRA | LoRA | Full |
+|---|---|---|---|
+| Trainable params | ~0.1-1% | ~0.1-1% | 100% |
+| Model memory | ~25% of full | ~50-100% of full | 100% |
+| Optimizer memory | Tiny (adapters only) | Tiny (adapters only) | 2x model size (AdamW) |
+| Training speed | Slower (dequantization overhead) | Baseline | Faster per-step (no adapter overhead) |
+| Inference | Merge or serve with adapter | Merge or serve with adapter | Direct |
+| Multi-GPU required? | Rarely | For 13B+ models | For 7B+ models |
+
+## Hardware Mapping {#sec-hardware-mapping}
+
+The tables below provide approximate GPU memory requirements. Actual usage depends on context length, batch size, and optimizer choice.
+
+### SFT / Preference Learning
+
+| Model Size | QLoRA (4-bit) | LoRA (bf16) | Full (bf16 + AdamW) |
+|------------|--------------|-------------|---------------------|
+| 1-3B | 6-8 GB | 8-12 GB | 24-32 GB |
+| 7-8B | 10-14 GB | 16-24 GB | 60-80 GB |
+| 13-14B | 16-20 GB | 28-40 GB | 120+ GB |
+| 30-34B | 24-32 GB | 64-80 GB | 2-4x 80 GB |
+| 70-72B | 40-48 GB | 2x 80 GB | 4-8x 80 GB |
+
+::: {.callout-important}
+These estimates assume a short context length (512-2048 tokens) and micro_batch_size of 1-2. Longer sequences and larger batches increase memory significantly due to activations. Use [gradient checkpointing](gradient_checkpointing.qmd) to reduce activation memory at the cost of ~30% slower training.
+:::
+
+### GRPO (RL Training)
+
+GRPO requires additional GPU(s) for the vLLM generation server. Plan for at least two GPUs: one for training, one for vLLM.
+
+| Model Size | Training GPU (LoRA, bf16) | vLLM GPU | Total GPUs |
+|------------|--------------------------|----------|------------|
+| 0.5-3B | 1x 24 GB | 1x 24 GB | 2x 24 GB |
+| 7-8B | 1x 80 GB | 1x 80 GB | 2x 80 GB |
+| 13-14B | 1-2x 80 GB | 1-2x 80 GB | 2-4x 80 GB |
+| 30-72B | 2-4x 80 GB (FSDP/DeepSpeed) | 2-4x 80 GB (tensor parallel) | 4-8x 80 GB |
+
+::: {.callout-tip}
+For single-GPU GRPO, use `vllm_mode: colocate` with `vllm_enable_sleep_mode: true`. The vLLM engine shares the GPU and offloads VRAM when not generating. This works for smaller models (up to ~3B on a 24 GB GPU) but is slower than the two-GPU server mode.
+:::
+
+### Multi-GPU Threshold
+
+You need multi-GPU training when:
+
+- **Full fine-tuning** of models 7B+ (use FSDP or DeepSpeed ZeRO)
+- **LoRA** of models 30B+ (or 13B+ with long contexts)
+- **GRPO** almost always (separate vLLM server), unless using colocate mode
+
+See [Multi-GPU Training](multi-gpu.qmd) for FSDP and DeepSpeed configuration.
+
+## Quick Links {#sec-quick-links}
+
+| Method | Config Key | Documentation | Example Config |
+|--------|-----------|---------------|----------------|
+| SFT | *(default, no `rl:` key)* | [Getting Started](getting-started.qmd) | `examples/llama-3/lora-1b.yml` |
+| DPO | `rl: dpo` | [RLHF - DPO](rlhf.qmd#dpo) | See rlhf.qmd |
+| KTO | `rl: kto` | [RLHF - KTO](rlhf.qmd#kto) | See rlhf.qmd |
+| ORPO | `rl: orpo` | [RLHF - ORPO](rlhf.qmd#orpo) | See rlhf.qmd |
+| GRPO | `rl: grpo` | [RLHF - GRPO](rlhf.qmd#grpo), [vLLM Serving](vllm_serving.qmd) | See rlhf.qmd |
+| Reward Modeling | `rl: reward_trainer` | [Reward Modelling](reward_modelling.qmd) | See reward_modelling.qmd |
+
+### Related Guides
+
+- [Configuration Reference](config-reference.qmd) -- Full list of all config options
+- [Dataset Formats](dataset-formats) -- How to structure your training data
+- [Optimizations](optimizations.qmd) -- Flash attention, gradient checkpointing, mixed precision
+- [Multi-GPU Training](multi-gpu.qmd) -- FSDP and DeepSpeed setup
+- [vLLM Serving](vllm_serving.qmd) -- Setting up vLLM for GRPO training

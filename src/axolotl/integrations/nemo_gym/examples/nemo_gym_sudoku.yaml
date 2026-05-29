@@ -1,0 +1,62 @@
+# Axolotl + NeMo Gym: Sudoku RL Training Example
+#
+# This config trains a model to solve 4x4 Mini Sudoku puzzles using GRPO
+# with NeMo Gym's reasoning_gym environment as the reward signal.
+#
+# Prerequisites:
+#   - uv (https://github.com/astral-sh/uv) installed
+#   - Git installed
+#   - The NeMo Gym repo will be auto-cloned to ~/Gym on first run
+#
+# Usage:
+#   axolotl train examples/nemo_gym_sudoku.yaml
+
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+model_type: AutoModelForCausalLM
+
+sequence_len: 4096
+load_in_4bit: false
+
+# RL configuration
+rl: grpo
+chat_template: tokenizer_default
+
+# GRPO / TRL settings
+trl:
+  use_vllm: false
+  num_generations: 8
+  max_completion_length: 2048
+
+# NeMo Gym plugin
+plugins:
+  - axolotl.integrations.nemo_gym.NemoGymPlugin
+
+nemo_gym_enabled: true
+nemo_gym_dir: ~/Gym
+nemo_gym_auto_clone: true
+nemo_gym_auto_start: true
+nemo_gym_head_port: 11000
+nemo_gym_server_timeout: 360
+nemo_gym_verify_timeout: 30
+nemo_gym_config_paths:
+  - resources_servers/reasoning_gym/configs/resources_only.yaml
+nemo_gym_datasets:
+  - path: resources_servers/reasoning_gym/data/train_mini_sudoku.jsonl
+    server_name: reasoning_gym
+    max_samples: 2000
+
+# Training hyperparameters
+learning_rate: 1.0e-5
+weight_decay: 0.001
+lr_scheduler: linear
+warmup_ratio: 0.0
+optimizer: adamw_8bit
+
+num_epochs: 1
+max_steps: 100
+micro_batch_size: 1
+gradient_accumulation_steps: 64
+
+logging_steps: 1
+save_steps: 100
+output_dir: ./outputs/nemo_gym_sudoku

@@ -240,8 +240,10 @@ def _load_from_local_path(
     elif local_path.is_file():
         dataset_type = get_dataset_type(dataset_config)
 
-        # For single file datasets, HF always creates only a "train" split
-        if dataset_type in ("json", "csv", "text"):
+        # Single-file paths always expose only a "train" split regardless of format.
+        # Preserve any user-provided slice syntax (e.g. "train[:500]"); only
+        # fall back to "train" when no split was specified.
+        if not load_dataset_kwargs.get("split"):
             load_dataset_kwargs["split"] = "train"
 
         return load_dataset(
@@ -516,12 +518,21 @@ def generate_dataset_hash_from_config(
     Returns:
         MD5 hash string representing the configuration.
     """
+    # When added_tokens_overrides is set, tokenizer.name_or_path contains output_dir.
+    # Use the canonical tokenizer config + overrides content so the hash is stable across output_dir changes.
+    if cfg.get("added_tokens_overrides"):
+        tokenizer_fingerprint = f"{cfg.tokenizer_config}+overrides:" + ",".join(
+            f"{k}={v}" for k, v in sorted(cfg.added_tokens_overrides.items())
+        )
+    else:
+        tokenizer_fingerprint = tokenizer_name
+
     config_str = (
         f"{cfg.sequence_len}@{cfg.sample_packing}@{cfg.eval_sample_packing}@"
         f"{cfg.group_by_length}@{cfg.kd_temperature or 1.0}@"
         f"{cfg.dataset_exact_deduplication or False}|"
         f"{'|'.join(sorted([f'{d.path}:{d.type}:{d.shards}:{d.conversation}:{d.split}:{d.temperature or 1.0}:{d.weight or 1.0}' for d in cfg_datasets]))}"
-        f"|{tokenizer_name}"
+        f"|{tokenizer_fingerprint}"
     )
     return str(md5(config_str))
 

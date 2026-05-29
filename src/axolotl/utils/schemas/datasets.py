@@ -166,10 +166,10 @@ class SFTDataset(BaseModel):
             "description": "Roles to train on. The tokens from these roles will be considered for the loss."
         },
     )
-    train_on_eos: Literal["all", "turn", "last"] | None = Field(
+    train_on_eos: Literal["all", "turn", "last", "none"] | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation"
+            "description": "Which EOS tokens to train on in the conversation. Possible values are: all: train on all EOS tokens, turn (default): train on the EOS token at the end of each trainable turn, last: train on the last EOS token in the conversation, none: never train on EOS tokens"
         },
     )
     roles: dict[str, list[str]] | None = Field(
@@ -307,4 +307,42 @@ class KTODataset(BaseModel):
     revision: str | None = None
 
 
-DatasetConfig = SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset
+class SyntheticDataset(BaseModel):
+    """Synthetic dataset configuration for benchmarking and testing.
+
+    Generates datasets with configurable sequence length, dataset size, and token ID
+    ranges. Useful for benchmarking memory usage and speed by sequence length, and for
+    validating weighted dataset mixes.
+    """
+
+    path: Literal["synthetic"] = "synthetic"
+    type: Literal["_synthetic"] = "_synthetic"
+    length: int = Field(
+        default=1000,
+        json_schema_extra={"description": "Number of rows to generate"},
+    )
+    sequence_length: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Sequence length per row (defaults to sequence_len from config)"
+        },
+    )
+    min_input_id: int = Field(
+        default=100,
+        json_schema_extra={"description": "Minimum token ID for generation"},
+    )
+    max_input_id: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Maximum token ID for generation (defaults to tokenizer vocab_size)"
+        },
+    )
+    seed: int | None = Field(
+        default=None,
+        json_schema_extra={"description": "Random seed for reproducibility"},
+    )
+
+
+DatasetConfig = (
+    SFTDataset | DPODataset | KTODataset | StepwiseSupervisedDataset | SyntheticDataset
+)

@@ -13,6 +13,7 @@ from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.mlflow_ import setup_mlflow_env_vars
 from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
+from axolotl.utils.schemas.datasets import SFTDataset
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
 warnings.filterwarnings("error")
@@ -276,6 +277,34 @@ class TestValidation(BaseValidation):
 
         new_cfg = validate_config(cfg)
         assert new_cfg.type_of_model == "AutoModelForCausalLM"
+
+    def test_reward_model_defaults(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "reward_model": True,
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.num_labels == 1
+        assert new_cfg.type_of_model == "AutoModelForSequenceClassification"
+
+    def test_process_reward_model_defaults(self, minimal_cfg):
+        cfg = (
+            DictDefault(
+                {
+                    "process_reward_model": True,
+                }
+            )
+            | minimal_cfg
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.num_labels == 2
+        assert new_cfg.type_of_model == "AutoModelForTokenClassification"
 
     def test_model_revision_remap(self, minimal_cfg):
         cfg = (
@@ -697,8 +726,12 @@ class TestValidation(BaseValidation):
             | minimal_cfg
         )
 
-        with pytest.raises(ValueError, match=r".*AMP is not supported on this GPU*"):
+        with self._caplog.at_level("WARNING"):
             AxolotlConfigWCapabilities(**cfg.to_dict())
+            assert any(
+                "AMP is not supported" in record.message
+                for record in self._caplog.records
+            )
 
         cfg = (
             DictDefault(
@@ -1212,20 +1245,6 @@ class TestValidation(BaseValidation):
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
         )
 
-    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self, minimal_cfg):
-        test_cfg = DictDefault(
-            {
-                "s2_attention": True,
-                "sample_packing": True,
-            }
-            | minimal_cfg
-        )
-        with pytest.raises(
-            ValidationError,
-            match=r".*shifted-sparse attention does not currently support sample packing*",
-        ):
-            validate_config(test_cfg)
-
 
 class TestTorchCompileValidation(BaseValidation):
     """
@@ -1703,3 +1722,101 @@ class TestDataloaderValidation(BaseValidation):
         assert new_cfg.dataloader_num_workers == 8
         assert new_cfg.dataloader_pin_memory is True
         assert new_cfg.dataloader_prefetch_factor == 256
+
+
+class TestGCStepsMigration(BaseValidation):
+    """
+    Tests for gc_steps -> torch_empty_cache_steps / gc_collect_steps migration
+    """
+
+    def test_gc_steps_maps_to_new_options(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 10
+        assert new_cfg.gc_collect_steps == 10
+
+    def test_gc_steps_negative_maps_gc_collect_only(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": -1})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # -1 means only epoch end/eval GC, not periodic; torch_empty_cache_steps
+        # should not be set for negative values
+        assert new_cfg.torch_empty_cache_steps is None
+        assert new_cfg.gc_collect_steps == -1
+
+    def test_new_options_take_precedence(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10, "torch_empty_cache_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # New options take precedence; gc_steps migration is skipped
+        assert new_cfg.torch_empty_cache_steps == 5
+        assert new_cfg.gc_collect_steps is None
+
+    def test_torch_empty_cache_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "torch_empty_cache_steps": 8})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 8
+        assert new_cfg.gc_collect_steps is None
+
+    def test_gc_collect_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_collect_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.gc_collect_steps == 5
+        assert new_cfg.torch_empty_cache_steps is None
+
+
+class TestSyntheticDatasetValidation(BaseValidation):
+    """
+    Tests for synthetic dataset config validation
+    """
+
+    @staticmethod
+    def _make_cfg(minimal_cfg, datasets):
+        raw = dict(minimal_cfg)
+        raw["datasets"] = datasets
+        return DictDefault(raw)
+
+    def test_synthetic_dict_config_validates(self, minimal_cfg):
+        """Synthetic dataset passed as a raw dict should not raise."""
+        cfg = self._make_cfg(
+            minimal_cfg,
+            [
+                {
+                    "path": "synthetic",
+                    "type": "_synthetic",
+                    "length": 100,
+                    "sequence_length": 64,
+                }
+            ],
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "synthetic"
+
+    def test_synthetic_already_sft_does_not_crash(self, minimal_cfg):
+        """Synthetic dataset already parsed as SFTDataset should not raise AttributeError."""
+        sft = SFTDataset(path="synthetic", type="_synthetic")
+        cfg = self._make_cfg(minimal_cfg, [sft])
+
+        # Before the fix, this raised:
+        #   AttributeError: 'SFTDataset' object has no attribute 'get'
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "synthetic"
+
+    def test_non_synthetic_sft_validates(self, minimal_cfg):
+        """A regular SFT dataset should validate without being treated as synthetic."""
+        cfg = self._make_cfg(
+            minimal_cfg,
+            [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+        )
+
+        new_cfg = validate_config(cfg)
+        assert new_cfg.datasets[0]["path"] == "mhenrichsen/alpaca_2k_test"

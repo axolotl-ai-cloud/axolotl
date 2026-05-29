@@ -36,7 +36,7 @@ from axolotl.telemetry.manager import TelemetryManager
 from axolotl.utils.ctx_managers.sequence_parallel import SequenceParallelContextManager
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import cleanup_distributed
-from axolotl.utils.freeze import freeze_layers_except
+from axolotl.utils.freeze import freeze_layers_except, freeze_mm_modules
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import RLType
 from axolotl.utils.train import determine_last_checkpoint
@@ -82,7 +82,7 @@ def setup_model_and_tokenizer(
 
     model_loader = ModelLoader(cfg, tokenizer, processor=processor)
     model, peft_config = model_loader.load()
-    if model.generation_config is not None:
+    if getattr(model, "generation_config", None) is not None:
         model.generation_config.do_sample = True
 
     model_properties = model.config.to_dict()
@@ -114,6 +114,10 @@ def setup_model_and_tokenizer(
         ):
             model.enable_input_require_grads()
 
+    # Freeze multimodal modules for text-only training of multimodal models
+    if cfg.freeze_mm_modules:
+        freeze_mm_modules(model)
+
     return model, tokenizer, peft_config, processor
 
 
@@ -138,7 +142,11 @@ def setup_reference_model(
             model_ref = None  # explicit setting to None
         else:
             reference_model: bool = True
-            if cfg.rl == RLType.GRPO and cfg.trl.beta == 0:
+            trl_cfg = getattr(cfg, "trl", None)
+            if (
+                cfg.rl in {RLType.GRPO, RLType.EBFT}
+                and getattr(trl_cfg, "beta", 0) == 0
+            ):
                 reference_model = False
             # load the model again for model_ref/baseline
             model_loader = ModelLoader(cfg, tokenizer, reference_model=reference_model)
@@ -206,7 +214,7 @@ def execute_training(
                     gradient_accumulation_steps=cfg.gradient_accumulation_steps,
                     ring_attn_func=cfg.ring_attn_func,
                     heads_k_stride=cfg.heads_k_stride,
-                    gather_outputs=cfg.rl is RLType.GRPO,
+                    gather_outputs=cfg.rl in {RLType.GRPO, RLType.EBFT},
                     device_mesh=trainer.accelerator.torch_device_mesh,
                 )
             )
@@ -219,6 +227,28 @@ def execute_training(
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         PLUGIN_MANAGER.post_train(cfg, trainer.model)
+
+
+def _rename_fsdp_merged_to_adapter(merged_dir: Path):
+    """Rename model*.safetensors files to adapter_model* in place.
+
+    Also rewrites the index JSON weight_map if sharded output was produced.
+    """
+    for file in sorted(merged_dir.iterdir()):
+        if file.name.startswith("model") and ".safetensors" in file.name:
+            file.rename(merged_dir / file.name.replace("model", "adapter_model", 1))
+
+    index = merged_dir / "adapter_model.safetensors.index.json"
+    if index.exists():
+        data = json.loads(index.read_text(encoding="utf-8"))
+        if "weight_map" in data:
+            data["weight_map"] = {
+                k: v.replace("model", "adapter_model", 1)
+                for k, v in data["weight_map"].items()
+            }
+        index.write_text(
+            json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
 
 
 def save_trained_model(
@@ -255,7 +285,9 @@ def save_trained_model(
         )
     # Handle ReLoRA early return case
     if cfg.relora:
-        if cfg.adapter == "lora" and not (cfg.load_in_4bit or cfg.load_in_8bit):
+        if hasattr(model, "merge_and_unload") and not (
+            cfg.load_in_4bit or cfg.load_in_8bit
+        ):
             model = model.merge_and_unload()
         else:
             # final model weights have already been saved by `ReLoRACallback.on_train_end`
@@ -290,12 +322,17 @@ def save_trained_model(
                 )
                 trainer.accelerator.wait_for_everyone()
                 if trainer.accelerator.is_main_process:
-                    # move all files in merged_path to cfg.output_dir
+                    # FSDP checkpoints for PEFT only contain adapter weights;
+                    # rename model* → adapter_model* so it loads correctly.
+                    is_peft = cfg.adapter and not cfg.relora
+                    if is_peft:
+                        _rename_fsdp_merged_to_adapter(Path(merged_path))
                     for merged_file in Path(merged_path).iterdir():
-                        if (Path(cfg.output_dir) / merged_file.name).exists():
-                            (Path(cfg.output_dir) / merged_file.name).unlink()
-                        shutil.move(str(merged_file), cfg.output_dir)
-                    shutil.rmtree(merged_path)  # remove what should be an empty dir
+                        dest = Path(cfg.output_dir) / merged_file.name
+                        if dest.exists():
+                            dest.unlink()
+                        shutil.move(str(merged_file), dest)
+                    shutil.rmtree(merged_path)
         # TODO(wing):see https://github.com/huggingface/transformers/pull/40207
         # cleanup the FSDP prefix in the model config.json
         if trainer.accelerator.is_main_process:

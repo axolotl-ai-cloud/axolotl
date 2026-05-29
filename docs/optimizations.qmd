@@ -22,12 +22,12 @@ Improves GPU utilization by combining multiple short sequences into a single pac
 
 Using an optimized attention implementation is critical for training speed.
 
-- **[Flash Attention 2](https://github.com/Dao-AILab/flash-attention)**: `flash_attention: true`. **(Recommended)** The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check [AMD Support](https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support).
-- **[Flex Attention](https://pytorch.org/blog/flexattention/)**: `flex_attention: true`.
-- **[SDP Attention](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)**: `sdp_attention: true`. PyTorch's native implementation.
-- **[Xformers](https://github.com/facebookresearch/xformers)**: `xformers_attention: true`. Works with FP16.
+- **[Flash Attention 2](https://github.com/Dao-AILab/flash-attention)**: `attn_implementation: flash_attention_2`. **(Recommended)** The industry standard for fast attention on modern GPUs. Requires Ampere or higher. For AMD, check [AMD Support](https://github.com/Dao-AILab/flash-attention?tab=readme-ov-file#amd-rocm-support).
+- **[Flex Attention](https://pytorch.org/blog/flexattention/)**: `attn_implementation: flex_attention`.
+- **[SDP Attention](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)**: `attn_implementation: sdpa`. PyTorch's native implementation.
+- **[Xformers](https://github.com/facebookresearch/xformers)**: `attn_implementation: xformers`. Works with FP16.
 
-*Note: You should only enable one attention backend.*
+See [Attention](attention.qmd) for the full list of backends and the canonical values.
 
 ### LoRA Optimizations
 
@@ -54,6 +54,13 @@ These techniques save VRAM by changing how activations are handled.
 - Activation Offloading: moves activations to CPU RAM or disk, trading I/O overhead for VRAM.
 - Learn more: [Gradient Checkpointing and Offloading Docs](gradient_checkpointing.qmd)
 
+### Layer Offloading
+
+Offloads frozen (non-trainable) decoder layer parameters to CPU and streams them back to GPU one layer at a time during forward/backward passes using CUDA stream prefetching. Especially effective for LoRA/QLoRA where most parameters are frozen.
+
+- **Config:** `layer_offloading: true`
+- **Learn more:** [Layer Offloading Docs](gradient_checkpointing.qmd#enabling-layer-offloading)
+
 ### Cut Cross Entropy (CCE)
 
 Reduces VRAM usage by using an optimized cross-entropy loss calculation.
@@ -66,13 +73,25 @@ Provides efficient Triton kernels to improve training speed and reduce memory us
 
 - **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
+### Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)
+
+Replaces the per-layer `q_norm + apply_rotary_pos_emb` (and matching K path) with a single Triton kernel launch on the full-attention layers. Opt-in. The kernel computes in fp32 and rounds once, so it matches an fp32 reference to within bf16 rounding — i.e. it is *more* accurate than the eager bf16 path, which rounds at several intermediate steps. Gemma 4 always uses the fused path (no flag needed). Qwen3.6 checkpoints are loaded by transformers under the `qwen3_5` / `qwen3_5_moe` model_types, so the same flag covers both generations.
+
+```yaml
+fused_attn_kernel: true
+```
+
+- **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
+- **Hardware note:** on sm_120 (Blackwell) combining with `torch_compile: true` is a net win; on sm_86 (Ampere consumer) `torch_compile: true` currently regresses the surrounding Inductor-generated kernels — keep compile off there.
+
 ### Expert Kernels
 
-Optimized kernel implementations for Mixture of Experts (MoE) model training.
+Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 
-- **ScatterMoE**: Triton-based MoE kernels with fused LoRA support.
-- **SonicMoE**: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.
+- **ScatterMoE**: Triton, any CUDA GPU.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper+ only.
 
+- **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
 
 ## Long Context Models
@@ -110,7 +129,7 @@ To train models that don't fit on a single GPU, you'll need to use a distributed
 
 ### N-D Parallelism (Beta)
 
-For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
 
 - **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
 

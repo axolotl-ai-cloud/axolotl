@@ -2,38 +2,40 @@
 Utilities for quantization including QAT and PTQ using torchao.
 """
 
+import functools
+
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
-from torchao.prototype.qat import MXFakeQuantizeConfig
 from torchao.quantization import quantize_
+from torchao.quantization.granularity import PerGroup
 from torchao.quantization.qat import (
     QATConfig,
 )
+from torchao.quantization.qat.fake_quantize_config import Int4WeightFakeQuantizeConfig
 from torchao.quantization.quant_api import (
     Float8DynamicActivationFloat8WeightConfig,
     Float8DynamicActivationInt4WeightConfig,
-    Int8DynamicActivationInt4WeightConfig,
+    Int4WeightOnlyConfig,
+    Int8DynamicActivationIntxWeightConfig,
 )
 
 from axolotl.utils.schemas.enums import TorchAOQuantDType
 
 quantization_config_to_str = {
-    Int8DynamicActivationInt4WeightConfig: "int8int4",
+    Int8DynamicActivationIntxWeightConfig: "int8int4",
     Float8DynamicActivationFloat8WeightConfig: "fp8fp8",
     Float8DynamicActivationInt4WeightConfig: "fp8int4",
 }
 
 if version.parse(torch.__version__) >= version.parse("2.8.0"):
     try:
-        from torchao.prototype.mx_formats import NVFP4InferenceConfig
+        from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
-        quantization_config_to_str[NVFP4InferenceConfig] = "nvfp4"
+        quantization_config_to_str[NVFP4WeightOnlyConfig] = "nvfp4"
     except (ImportError, RuntimeError):
         pass
 
-    # int4 weight config imports will fail on machines with fbgemm-gpu installed
-    # without a CUDA runtime available so we do this safely
     try:
         from torchao.quantization.quant_api import Int4WeightOnlyConfig
 
@@ -42,10 +44,12 @@ if version.parse(torch.__version__) >= version.parse("2.8.0"):
         pass
 
     try:
-        from torchao.prototype.qat import MXFakeQuantizeConfig
+        from torchao.prototype.mx_formats import (
+            MXDynamicActivationMXWeightConfig as MXLinearConfig,
+        )
 
-        quantization_config_to_str[MXFakeQuantizeConfig] = "mxfp4"
-    except ImportError:
+        quantization_config_to_str[MXLinearConfig] = "mxfp4"
+    except (ImportError, RuntimeError):
         pass
 
 
@@ -97,10 +101,10 @@ def get_quantization_config(
         activation_dtype == TorchAOQuantDType.int8
         and weight_dtype == TorchAOQuantDType.int4
     ):
+        kwargs = {"weight_dtype": torch.int4}
         if group_size is not None:
-            return Int8DynamicActivationInt4WeightConfig(group_size=group_size)
-        else:
-            return Int8DynamicActivationInt4WeightConfig()
+            kwargs["weight_granularity"] = PerGroup(group_size=group_size)
+        return Int8DynamicActivationIntxWeightConfig(**kwargs)
     if (
         activation_dtype == TorchAOQuantDType.float8_e4m3fn
         and weight_dtype == TorchAOQuantDType.float8_e4m3fn
@@ -112,14 +116,14 @@ def get_quantization_config(
     ):
         return Float8DynamicActivationInt4WeightConfig()
     if weight_dtype == TorchAOQuantDType.nvfp4:
-        from torchao.prototype.mx_formats import NVFP4InferenceConfig
+        from torchao.prototype.mx_formats import NVFP4WeightOnlyConfig
 
         if group_size is not None and group_size != 16:
             raise ValueError("NVFP4 quantization must use a group_size of 16")
-        return NVFP4InferenceConfig()
+        return NVFP4WeightOnlyConfig()
 
     if weight_dtype == TorchAOQuantDType.mxfp4:
-        from torchao.prototype.qat import MXFakeQuantizeConfig
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
 
         # MXFP4 uses block_size=32 by default (vs NVFP4's 16)
         block_size = group_size if group_size is not None else 32
@@ -128,11 +132,71 @@ def get_quantization_config(
                 "MXFP4 quantization must use a block_size (group_size) of 32"
             )
 
-        return MXFakeQuantizeConfig(dtype=torch.float4_e2m1fn_x2, block_size=block_size)
+        return MXDynamicActivationMXWeightConfig(
+            activation_dtype=torch.float4_e2m1fn_x2,
+            weight_dtype=torch.float4_e2m1fn_x2,
+            block_size=block_size,
+        )
 
     raise ValueError(
         f"Invalid activation/weight dtype combination: {activation_dtype}/{weight_dtype}"
     )
+
+
+def _attach_torchao_quantizer(
+    model, quantization_config, include_input_output_embeddings=False
+):
+    """Attach a TorchAoHfQuantizer to the model so save_pretrained uses
+    torchao's flatten_tensor_state_dict path, preserving quantized weights
+    in the safetensors file.
+
+    Note: This does NOT work for MX formats (MXTensor) because MXTensor
+    lacks the ``tensor_data_names`` attribute that flatten_tensor_state_dict
+    requires.  MX formats use ``safe_serialization=False`` instead.
+    """
+    from transformers import TorchAoConfig
+    from transformers.quantizers.quantizer_torchao import TorchAoHfQuantizer
+
+    ao_config = TorchAoConfig(
+        quant_type=quantization_config,
+        include_input_output_embeddings=include_input_output_embeddings,
+    )
+    model.config.quantization_config = ao_config
+    quantizer = TorchAoHfQuantizer(ao_config)
+    model.hf_quantizer = quantizer
+
+
+def patch_transformers_skip_quantized_init():
+    """Stop ``from_pretrained`` from re-initializing torchao-quantized weights.
+
+    transformers re-runs ``_init_weights`` on every module during loading; the
+    generic implementation does ``init.normal_(module.weight.float(), ...)``.
+    ``.float()`` on a torchao tensor subclass (e.g. ``MXTensor``) returns a new
+    tensor that both drops the ``_is_hf_initialized`` skip flag and does not
+    implement ``normal_``, so loading an MX checkpoint raises NotImplementedError.
+    Re-initializing an already-loaded quantized weight is never correct, so we
+    skip those modules entirely.
+    """
+    from torchao.utils import TorchAOBaseTensor
+    from transformers import PreTrainedModel
+
+    if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
+        return
+
+    original = PreTrainedModel._initialize_weights
+
+    @functools.wraps(original)
+    def _initialize_weights(self, module, *args, **kwargs):
+        if any(
+            isinstance(param, TorchAOBaseTensor)
+            for param in module.parameters(recurse=False)
+        ):
+            module._is_hf_initialized = True
+            return None
+        return original(self, module, *args, **kwargs)
+
+    _initialize_weights._axolotl_torchao_patched = True
+    PreTrainedModel._initialize_weights = _initialize_weights
 
 
 def quantize_model(
@@ -172,6 +236,126 @@ def quantize_model(
             filter_fn=lambda m, _: isinstance(m, torch.nn.Embedding),
         )
 
+    is_mx = False
+    try:
+        from torchao.prototype.mx_formats import MXDynamicActivationMXWeightConfig
+
+        is_mx = isinstance(linear_ptq_config, MXDynamicActivationMXWeightConfig)
+    except ImportError:
+        pass
+
+    if is_mx:
+        # MXTensor lacks tensor_data_names so flatten_tensor_state_dict (safetensors)
+        # cannot serialize it.  Mark the model so the caller can use
+        # safe_serialization=False (torch.save) which supports __tensor_flatten__.
+        model._is_mx_quantized = True
+        # MX checkpoints reload via plain from_pretrained (no HF quantizer), so guard
+        # transformers' weight re-init against the MXTensor weights it will encounter.
+        patch_transformers_skip_quantized_init()
+    else:
+        _attach_torchao_quantizer(
+            model,
+            linear_ptq_config,
+            include_input_output_embeddings=bool(quantize_embedding),
+        )
+
+
+def save_quantized_model(model, save_dir, **kwargs):
+    """Save a quantized model, handling MXTensor serialization.
+
+    MXTensor does not have a valid storage pointer, which causes
+    ``save_pretrained`` to crash (both in ``remove_tied_weights_from_state_dict``
+    via ``id_tensor_storage``, and in safetensors serialization).
+    Transformers >=5.5 removed the ``safe_serialization`` parameter entirely.
+
+    For MX-quantized models we save the config/generation_config via
+    ``save_pretrained`` machinery and the weights via ``torch.save``.
+    """
+    import os
+
+    is_mx = getattr(model, "_is_mx_quantized", False)
+    if not is_mx:
+        model.save_pretrained(save_dir, **kwargs)
+        return
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Save config, generation_config, etc.
+    model.config.save_pretrained(save_dir)
+    if hasattr(model, "generation_config") and model.generation_config is not None:
+        model.generation_config.save_pretrained(save_dir)
+
+    # Save weights via torch.save (supports __tensor_flatten__)
+    weights_path = os.path.join(save_dir, "pytorch_model.bin")
+    torch.save(model.state_dict(), weights_path)
+
+
+def _make_qat_config(
+    base_config: AOBaseConfig,
+    weight_dtype: TorchAOQuantDType,
+    activation_dtype: TorchAOQuantDType | None,
+    group_size: int | None,
+) -> QATConfig:
+    """Build a QATConfig, explicitly constructing fake quantize configs to ensure
+    group_size and other params are properly propagated (torchao's QATConfig(base_config)
+    does not always map these correctly)."""
+    from torchao.quantization.qat.fake_quantize_config import (
+        Float8FakeQuantizeConfig,
+        IntxFakeQuantizeConfig,
+    )
+
+    if weight_dtype == TorchAOQuantDType.mxfp4:
+        from torchao.prototype.qat import MXFakeQuantizeConfig
+
+        block_size = getattr(base_config, "block_size", 32)
+        mx_fq = MXFakeQuantizeConfig(
+            dtype=torch.float4_e2m1fn_x2, block_size=block_size
+        )
+        return QATConfig(activation_config=mx_fq, weight_config=mx_fq)
+
+    # Build explicit weight config
+    weight_fq_config: (
+        Int4WeightFakeQuantizeConfig
+        | IntxFakeQuantizeConfig
+        | Float8FakeQuantizeConfig
+        | None
+    ) = None
+    if weight_dtype == TorchAOQuantDType.int4:
+        gs = (
+            group_size
+            if group_size is not None
+            else getattr(base_config, "group_size", 128)
+        )
+        activation_dt = None
+        if activation_dtype == TorchAOQuantDType.int8:
+            activation_dt = torch.bfloat16
+        elif activation_dtype == TorchAOQuantDType.float8_e4m3fn:
+            activation_dt = torch.float8_e4m3fn
+        kwargs = {"group_size": gs}
+        if activation_dt is not None:
+            kwargs["activation_dtype"] = activation_dt
+        weight_fq_config = Int4WeightFakeQuantizeConfig(**kwargs)
+    elif weight_dtype == TorchAOQuantDType.float8_e4m3fn:
+        weight_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+
+    # Build explicit activation config
+    activation_fq_config = None
+    if activation_dtype == TorchAOQuantDType.int8:
+        activation_fq_config = IntxFakeQuantizeConfig(
+            dtype=torch.int8, granularity="per_token", is_symmetric=False
+        )
+    elif activation_dtype == TorchAOQuantDType.float8_e4m3fn:
+        activation_fq_config = Float8FakeQuantizeConfig(dtype=torch.float8_e4m3fn)
+
+    if weight_fq_config is not None:
+        return QATConfig(
+            weight_config=weight_fq_config,
+            activation_config=activation_fq_config,
+        )
+
+    # Fallback to base_config for unhandled combos
+    return QATConfig(base_config)
+
 
 def prepare_model_for_qat(
     model,
@@ -200,13 +384,9 @@ def prepare_model_for_qat(
         activation_dtype=activation_dtype,
         group_size=group_size,
     )
-    if isinstance(base_config, MXFakeQuantizeConfig):
-        qat_config = QATConfig(
-            activation_config=base_config,
-            weight_config=base_config,
-        )
-    else:
-        qat_config = QATConfig(base_config)
+    qat_config = _make_qat_config(
+        base_config, weight_dtype, activation_dtype, group_size
+    )
     quantize_(model, qat_config)
     if quantize_embedding:
         # activation fake quantization is not supported for embedding layers
@@ -215,12 +395,9 @@ def prepare_model_for_qat(
             activation_dtype=None,
             group_size=group_size,
         )
-        if isinstance(embedding_base_config, MXFakeQuantizeConfig):
-            embedding_qat_config = QATConfig(
-                weight_config=embedding_base_config,
-            )
-        else:
-            embedding_qat_config = QATConfig(embedding_base_config)
+        embedding_qat_config = _make_qat_config(
+            embedding_base_config, weight_dtype, None, group_size
+        )
         quantize_(
             model,
             embedding_qat_config,

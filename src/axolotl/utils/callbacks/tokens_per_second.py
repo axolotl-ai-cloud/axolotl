@@ -12,11 +12,10 @@ from transformers import (
     TrainingArguments,
 )
 
+from axolotl.core.trainers.constants import TOKENS_STATE_FILE
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
-
-TOKENS_STATE_FILE = "tokens_state.json"
 
 
 class TokensPerSecondCallback(TrainerCallback):

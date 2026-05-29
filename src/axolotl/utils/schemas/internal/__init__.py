@@ -10,6 +10,7 @@ class GPUCapabilities(BaseModel):
 
     bf16: bool = Field(default=False)
     fp8: bool = Field(default=False)
+    tf32: bool = Field(default=False)
     n_gpu: int = Field(default=1)
     n_node: int = Field(default=1)
     compute_capability: Optional[str] = Field(default=None)

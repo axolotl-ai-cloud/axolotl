@@ -28,8 +28,26 @@ class LigerArgs(BaseModel):
     Input args for LIGER.
     """
 
-    liger_rope: bool | None = None
+    liger_rope: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables Liger's fused RoPE kernel. For Qwen2-VL / Qwen2.5-VL / "
+                "Qwen3-VL (text and VL model_config_types) this auto-defaults to "
+                "True when unset, swapping in the fused multimodal/rotary kernel."
+            )
+        },
+    )
     liger_rms_norm: bool | None = None
+    liger_rms_norm_gated: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Enables fused RMSNorm+SiLU gate Triton kernel for models with "
+                "gated RMSNorm (e.g. Qwen3.5 / Qwen3.5 MoE linear attention layers)."
+            )
+        },
+    )
     liger_layer_norm: bool | None = None
     liger_swiglu: bool | None = None
     liger_glu_activation: bool | None = None
