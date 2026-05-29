@@ -104,6 +104,9 @@ class PatchManager:
         self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
+        # Must precede fused-RoPE patches: re-parses ``Attention.forward``
+        # via ``inspect.getsource``; the QKV regex misses on a patched body.
+        self._apply_self_attention_lora_patch()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -113,7 +116,6 @@ class PatchManager:
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
-        self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
@@ -166,6 +168,7 @@ class PatchManager:
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
+        self._apply_tiled_mlp_post_load(model)
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -350,8 +353,50 @@ class PatchManager:
 
         patch_flash_attn_4(self.model_config)
 
+    _FUSED_ATTN_KERNEL_SUPPORTED = (
+        "qwen3",
+        "qwen3_moe",
+        "qwen3_vl",
+        "qwen3_vl_text",
+        "qwen3_5",
+        "qwen3_5_text",
+        "qwen3_5_moe",
+        "qwen3_5_moe_text",
+        "gemma4",
+        "gemma4_text",
+    )
+
+    @staticmethod
+    def _warn_if_fused_attn_unsupported(cfg):
+        """Warn when ``fused_attn_kernel`` targets an unsupported
+        ``model_config_type`` (derived post-schema by ``normalize_config()``)."""
+        if not getattr(cfg, "fused_attn_kernel", False):
+            return
+        mct = getattr(cfg, "model_config_type", None)
+        if mct and mct not in PatchManager._FUSED_ATTN_KERNEL_SUPPORTED:
+            LOG.warning(
+                "`fused_attn_kernel: true` is set but model_config_type=%r is not "
+                "in the supported set %s. The flag is a silent no-op for this "
+                "model. Remove the flag or use one of the supported model families.",
+                mct,
+                sorted(PatchManager._FUSED_ATTN_KERNEL_SUPPORTED),
+            )
+
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
+        self._warn_if_fused_attn_unsupported(self.cfg)
+
+        if self.cfg.model_config_type == "gemma4" and self.cfg.use_kernels:
+            # transformers' Gemma4VisionAttention registers a bare function via
+            # @use_kernelized_func, which crashes model.kernelize() (triggered by
+            # use_kernels=True) when it tries to register_module() a non-Module.
+            # Strip the dead entry so kernelize() succeeds. The MoE itself is
+            # accelerated via the ExpertsInterface (experts_implementation),
+            # independent of this path.
+            from axolotl.monkeypatch.gemma4_kernelize import patch_gemma4_kernelize
+
+            patch_gemma4_kernelize()
+
         if (
             self.cfg.model_config_type == "llama4"
             and self.cfg.llama4_linearized_experts
@@ -369,22 +414,39 @@ class PatchManager:
 
             patch_kimi_model()
 
-        if self.cfg.model_config_type == "nemotron_h":
-            if self.cfg.sample_packing:
-                from transformers.models.nemotron_h.modeling_nemotron_h import (
-                    NemotronHPreTrainedModel,
-                )
+        ssm_hybrid_patch_needed = (
+            self.cfg.sample_packing or self.cfg.context_parallel_size > 1
+        )
 
-                from axolotl.monkeypatch.models.nemotron_h.modeling import (
-                    patch_nemotron_h_modeling_packing,
-                )
+        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
+            from transformers.models.nemotron_h.modeling_nemotron_h import (
+                NemotronHPreTrainedModel,
+            )
 
-                patch_nemotron_h_modeling_packing()
-                # supports_gradient_checkpointing is only enabled after
-                # patch_nemotron_h_modeling_packing() installs the GC-compatible
-                # NemotronHBlock.forward. Without the patch, upstream marks this
-                # False because the original block forward is not GC-safe.
-                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+            from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                patch_nemotron_h_modeling_packing,
+            )
+
+            patch_nemotron_h_modeling_packing()
+            # supports_gradient_checkpointing is only enabled after
+            # patch_nemotron_h_modeling_packing() installs the GC-compatible
+            # NemotronHBlock.forward. Without the patch, upstream marks this
+            # False because the original block forward is not GC-safe.
+            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
+        if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.falcon_h1.modeling import (
+                patch_falcon_h1_modeling_packing,
+            )
+
+            patch_falcon_h1_modeling_packing()
+
+        if self.cfg.model_config_type == "granitemoehybrid" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
+                patch_granitemoehybrid_modeling_packing,
+            )
+
+            patch_granitemoehybrid_modeling_packing()
 
         # Patches requiring CUDA
         if torch.cuda.is_available():
@@ -443,6 +505,50 @@ class PatchManager:
                 patch_gemma4_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3":
+                from axolotl.monkeypatch.models.qwen3.fused_attn import (
+                    patch_qwen3_fused_attn,
+                )
+
+                patch_qwen3_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3_moe":
+                from axolotl.monkeypatch.models.qwen3_moe.fused_attn import (
+                    patch_qwen3_moe_fused_attn,
+                )
+
+                patch_qwen3_moe_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_vl",
+                "qwen3_vl_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_vl.fused_attn import (
+                    patch_qwen3_vl_fused_attn,
+                )
+
+                patch_qwen3_vl_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5",
+                "qwen3_5_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5.fused_attn import (
+                    patch_qwen3_5_fused_attn,
+                )
+
+                patch_qwen3_5_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5_moe",
+                "qwen3_5_moe_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5_moe.fused_attn import (
+                    patch_qwen3_5_moe_fused_attn,
+                )
+
+                patch_qwen3_5_moe_fused_attn()
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():
@@ -672,7 +778,26 @@ class PatchManager:
                 model_type,
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                use_scattermoe=bool(self.cfg.use_scattermoe),
             )
+
+    def _apply_tiled_mlp_post_load(self, model):
+        """Re-wrap MoE block instances after kernels have installed their forward.
+
+        Needed only when scattermoe-lora is active — ``model.kernelize()``
+        binds ``HFScatterMoEGatedMLP.forward`` per instance, which shadows
+        the class-level tiled patch. See
+        :func:`axolotl.monkeypatch.tiled_mlp.patch_tiled_mlp_moe_instances`.
+        """
+        if not (self.cfg.tiled_mlp and self.cfg.use_scattermoe):
+            return
+        from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp_moe_instances
+
+        patch_tiled_mlp_moe_instances(
+            model,
+            self.cfg.model_config_type,
+            cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+        )
 
     def _apply_voxtral_patches(self):
         """Apply patches for Voxtral model."""
@@ -747,6 +872,7 @@ class PatchManager:
 
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
+
         if (
             self.model_config.model_type
             in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
@@ -756,15 +882,18 @@ class PatchManager:
             and is_flash_attn_available()
             and not self.inference
         ):
-            # TODO(MengqingCao): split these patches separately
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                is_xformers_swiglu_available,
-                replace_llama_mlp_with_swiglu,
-            )
+            try:
+                # TODO(MengqingCao): split these patches separately
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                )
 
-            if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                LOG.info("Patching with SwiGLU...")
-                replace_llama_mlp_with_swiglu(model)
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("Patching with SwiGLU...")
+                    replace_llama_mlp_with_swiglu(model)
+            except ImportError as e:
+                LOG.warning(f"Flash Attention patches not applied: {e}")
 
     def _apply_lora_kernel_patch(self, model):
         """Apply LoRA kernel patches."""

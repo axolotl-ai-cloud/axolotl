@@ -16,11 +16,23 @@
 KD trainer
 """
 
+import torch.nn as nn
 from typing_extensions import override
 
 from axolotl.core.trainers.base import AxolotlTrainer
 
 from .kernels.liger import LigerFusedLinearKLTopKLogprobLoss
+
+
+def _resolve_lm_head(model: nn.Module) -> nn.Module:
+    base = model
+    if hasattr(base, "get_base_model"):
+        base = base.get_base_model()
+    if hasattr(base, "language_model") and hasattr(base.language_model, "lm_head"):
+        return base.language_model.lm_head
+    if hasattr(base, "lm_head"):
+        return base.lm_head
+    raise AttributeError(f"could not find lm_head on {type(model).__name__}")
 
 
 class AxolotlKDTrainer(AxolotlTrainer):
@@ -32,7 +44,7 @@ class AxolotlKDTrainer(AxolotlTrainer):
         super().__init__(*args, **kwargs)
         self.model_accepts_loss_kwargs = True
 
-        loss_fn = LigerFusedLinearKLTopKLogprobLoss(
+        self._kd_loss_fn = LigerFusedLinearKLTopKLogprobLoss(
             self.args.kd_ce_alpha,  # hard label loss
             self.args.kd_alpha,  # kd loss
             self.args.kd_temperature,
@@ -40,14 +52,6 @@ class AxolotlKDTrainer(AxolotlTrainer):
             compute_ce_loss=bool(self.args.kd_ce_alpha),
             normalize_topk=self.args.kd_normalize_topk,
         )
-        target = self.model
-
-        # Unwrap PEFT wrapper
-        if hasattr(target, "get_base_model"):
-            target = target.get_base_model()
-
-        # Set on the actual model instance
-        target._loss_function = loss_fn
 
     def _set_signature_columns_if_needed(self):
         super()._set_signature_columns_if_needed()
@@ -70,34 +74,48 @@ class AxolotlKDTrainer(AxolotlTrainer):
         return_outputs=False,
         num_items_in_batch=None,
     ):
-        """
-        How the loss is computed by Trainer. By default, all models return the loss in the first element.
+        inputs = dict(inputs)
 
-        Subclass and override for custom behavior.
-        """
-        if (
-            self.args.sample_packing
-            and hasattr(inputs, "attention_mask")
-            and hasattr(inputs, "position_ids")
-        ):
-            del inputs["attention_mask"]
+        required_keys = ("labels", "target_token_ids", "target_logprobs", "target_mask")
+        missing = [k for k in required_keys if k not in inputs]
+        if missing:
+            raise KeyError(f"KD batch missing required keys: {missing}")
 
         if num_items_in_batch is None and "labels" in inputs:
             num_items_in_batch = (inputs["labels"] != -100).sum().item()
 
-        if self.model_accepts_loss_kwargs:
-            loss_kwargs = {}
-            if num_items_in_batch is not None:
-                loss_kwargs["num_items_in_batch"] = num_items_in_batch
-            inputs = {**inputs, **loss_kwargs}
+        labels = inputs.pop("labels")
+        target_token_ids = inputs.pop("target_token_ids")
+        target_logprobs = inputs.pop("target_logprobs")
+        target_mask = inputs.pop("target_mask")
 
+        # num_items_in_batch is a loss kwarg, not a forward kwarg.
+        inputs.pop("num_items_in_batch", None)
+
+        inputs["output_hidden_states"] = True
+        inputs["return_dict"] = True
+        inputs["logits_to_keep"] = 1
         outputs = model(**inputs)
+        hidden_states = getattr(outputs, "hidden_states", None)
+        if hidden_states is None:
+            raise RuntimeError(
+                f"{type(model).__name__}.forward did not return hidden_states"
+            )
+        hidden_states = hidden_states[-1]
 
-        if isinstance(outputs, dict):
-            loss = outputs["loss"]
-        elif isinstance(outputs, tuple):
-            loss = outputs[0]
-        else:
-            loss = outputs.loss if hasattr(outputs, "loss") else outputs
+        lm_head = _resolve_lm_head(model)
+        hidden_states = hidden_states.to(lm_head.weight.dtype)
+
+        loss = self._kd_loss_fn(
+            lm_head.weight,
+            hidden_states,
+            target_token_ids,
+            target_logprobs,
+            target_mask,
+            true_labels=labels,
+        )
+
+        if num_items_in_batch is not None and num_items_in_batch > 0:
+            loss = loss / num_items_in_batch
 
         return (loss, outputs) if return_outputs else loss

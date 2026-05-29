@@ -1,18 +1,7 @@
-"""
-ScatterMoE-accelerated experts forward for Gemma4.
+"""ScatterMoE experts forward for the transformers ExpertsInterface.
 
-Gemma4 has no separate SparseMoeBlock — MoE is embedded in the decoder layer.
-The decoder layer handles routing (Gemma4TextRouter) and calls
-``experts(hidden_states, top_k_index, top_k_weights)`` directly.
-
-This module registers a ``"scattermoe"`` implementation in the transformers
-``ExpertsInterface``, which the ``@use_experts_implementation`` decorator
-dispatches to when ``config._experts_implementation == "scattermoe"``.
-
-This is the clean way to hook into transformers' MoE dispatch — no
-monkeypatching required.  Works for Gemma4 and any future model that uses
-``@use_experts_implementation`` with the standard forward signature
-``(hidden_states, top_k_index, top_k_weights) -> Tensor``.
+PEFT LoRA on ``gate_up_proj`` / ``down_proj`` is fused into the
+ScatterMoE Triton call via ``parallel_linear_lora``.
 """
 
 import torch
@@ -139,12 +128,23 @@ def scattermoe_experts_forward(
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """ScatterMoE-accelerated experts forward.
+    """ScatterMoE experts forward with fused-LoRA support."""
+    # Assumes the standard expert layout: gate_up concatenated as [E, 2I, H],
+    # gated SwiGLU, no expert bias. gpt_oss-style experts (interleaved gate/up,
+    # transposed [E, H, 2I], expert bias) would be silently miscomputed by the
+    # fixed transpose/chunk below, so reject rather than corrupt training.
+    if (
+        getattr(self, "is_transposed", False)
+        or not getattr(self, "is_concatenated", True)
+        or getattr(self, "has_bias", False)
+        or not getattr(self, "has_gate", True)
+    ):
+        raise NotImplementedError(
+            "scattermoe supports only concatenated, non-transposed, gated, biasless "
+            "experts (qwen/mixtral/deepseek/glm/...). This model's experts use an "
+            "unsupported layout; use use_sonicmoe or a built-in experts_implementation."
+        )
 
-    Drop-in replacement for the standard Experts forward signature used by
-    ``@use_experts_implementation``-decorated classes (Gemma4, Mixtral, etc.):
-    ``(hidden_states [T, H], top_k_index [T, K], top_k_weights [T, K]) -> [T, H]``
-    """
     K = top_k_index.shape[1]
 
     routing_weights = top_k_weights.to(hidden_states.dtype)
@@ -193,22 +193,24 @@ def scattermoe_experts_forward(
     return output
 
 
+_SCATTERMOE_PATCHED = False
+
+
 def register_scattermoe_experts():
-    """Register ``"scattermoe"`` in the transformers ExpertsInterface.
+    """Register ``"scattermoe"`` in the ExpertsInterface and the validator allowlist.
 
-    After calling this, any model with ``@use_experts_implementation`` will
-    dispatch to ScatterMoE when ``config._experts_implementation == "scattermoe"``.
-
-    Also patches ``get_correct_experts_implementation`` to accept ``"scattermoe"``
-    as a valid value (transformers hardcodes an allowlist).
+    Idempotent.
     """
+    global _SCATTERMOE_PATCHED
+
     from transformers.integrations.moe import ALL_EXPERTS_FUNCTIONS
     from transformers.modeling_utils import PreTrainedModel
 
-    # 1. Register the forward function in the global interface
     ALL_EXPERTS_FUNCTIONS.register("scattermoe", scattermoe_experts_forward)
 
-    # 2. Patch the validation to accept "scattermoe"
+    if _SCATTERMOE_PATCHED:
+        return
+
     _original_get_correct = PreTrainedModel.get_correct_experts_implementation
 
     def _patched_get_correct(self_model, requested_experts: str | None) -> str:
@@ -217,19 +219,4 @@ def register_scattermoe_experts():
         return _original_get_correct(self_model, requested_experts)
 
     PreTrainedModel.get_correct_experts_implementation = _patched_get_correct
-
-
-# Legacy monkeypatch approach (kept for backward compat with existing tests)
-def patch_gemma4_scattermoe():
-    """Monkeypatch Gemma4TextExperts.forward with ScatterMoE kernel."""
-    from axolotl.integrations.kernels.constants import resolve_experts_class
-
-    experts_cls = resolve_experts_class("gemma4_text")
-    if experts_cls is None:
-        raise ValueError("Could not resolve Gemma4TextExperts class")
-
-    if hasattr(experts_cls, "_original_forward"):
-        return  # already patched
-
-    experts_cls._original_forward = experts_cls.forward
-    experts_cls.forward = scattermoe_experts_forward
+    _SCATTERMOE_PATCHED = True

@@ -21,15 +21,17 @@ _KERNEL_REGISTRY: list[tuple[str, str]] = [
     ("group_bwd_lora_fused", "_group_bwd_lora_fused"),
 ]
 
-# The autotune key declared on every kernel: key=["M", "N", "K"]
-_KEY_NAMES: list[str] = ["M", "N", "K"]
+# The autotune key declared on every kernel: key=["M_BUCKET", "N", "K"].
+# M_BUCKET is the seqlen-bucketed M (see _bucket_m in lora_ops.py) so cache
+# entries don't churn with every distinct M.
+_KEY_NAMES: list[str] = ["M_BUCKET", "N", "K"]
 
 
 def _parse_key_tuple(key_tuple: tuple) -> dict[str, Any]:
     """Turn the autotune cache key tuple into a labelled dict.
 
     Triton builds the cache key from the values of the declared ``key``
-    args (``M``, ``N``, ``K``) followed by dtype signature elements.
+    args (``M_BUCKET``, ``N``, ``K``) followed by dtype signature elements.
     We label the first three and store the rest under ``_extra``.
     """
     result: dict[str, Any] = {}
