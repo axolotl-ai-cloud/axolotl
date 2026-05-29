@@ -1,0 +1,105 @@
+---
+title: "QLoRA with torchao"
+description: "Quantize the base model with torchao instead of bitsandbytes for compile-friendly, FSDP2-native LoRA/QLoRA."
+format:
+  html:
+    toc: true
+---
+
+## Background
+
+`bitsandbytes` is the historical backend for QLoRA in Axolotl. It works well in
+single-GPU and FSDP1 setups, but its 4-bit kernels graph-break under
+`torch.compile` and its `Params4bit` storage needs custom patches to cooperate
+with FSDP2.
+
+[torchao](https://github.com/pytorch/ao) provides tensor-subclass quantization
+(`AffineQuantizedTensor`, `NF4Tensor`) that:
+
+- compiles cleanly with `torch.compile` (no graph breaks for INT4/INT8
+  weight-only quant);
+- ships native FSDP2 support via DTensor;
+- shares its codebase with QAT / PTQ, so the same dtype enum (`int4`, `int8`,
+  `nf4`) flows across feature.
+
+Axolotl exposes both backends behind a single `peft:` block.
+
+## Usage
+
+Set `peft.backend: torchao` and pick a `weight_dtype`. The adapter type is
+auto-detected from the dtype — `int4` / `nf4` imply QLoRA, `int8` stays as a
+weight-only-quantized LoRA.
+
+```yaml
+adapter: lora            # auto-promoted to qlora for int4 / nf4
+peft:
+  backend: torchao
+  weight_dtype: int4     # one of: int4, nf4, int8
+  # group_size: 128      # defaults: int4/int8 → 128, nf4 → 64
+```
+
+| `weight_dtype` | Effective adapter | torchao quant config             |
+|----------------|-------------------|----------------------------------|
+| `int4`         | `qlora`           | `int4_weight_only`               |
+| `nf4`          | `qlora`           | `NF4WeightOnlyConfig`            |
+| `int8`         | `lora`            | `int8_weight_only`               |
+
+The equivalent bnb shorthand uses the same block:
+
+```yaml
+adapter: lora
+peft:
+  backend: bnb
+  weight_dtype: nf4      # qlora + load_in_4bit
+```
+
+```yaml
+adapter: lora
+peft:
+  backend: bnb
+  weight_dtype: int8     # lora + load_in_8bit
+```
+
+Old-style configs (`adapter: qlora` + `load_in_4bit: true`) keep working and
+default to the bnb backend.
+
+## Constraints
+
+- **DoRA** works with torchao (the kernels dequantize through the unified
+  `dequantize_weight` helper). Other PEFT extras follow standard LoRA rules.
+- **Merging adapters** with `axolotl merge-lora` requires
+  `merge_method: legacy`. The memory-efficient merger simulates bnb's NF4
+  quantization and does not yet understand torchao tensor subclasses.
+- **PEFT's `TorchaoLoraLinear`** only supports INT8. Axolotl patches
+  `dispatch_torchao` so INT4 / NF4 weights fall back to standard `Linear` LoRA
+  layers (the kernels dequantize the base weight on access).
+- `load_in_4bit` and `load_in_8bit` are bnb-only. They cannot be combined with
+  `peft.backend: torchao` — the validator will reject the config.
+- `fp8`, `nvfp4`, and `mxfp4` are routed through the dedicated
+  [QAT](qat.qmd) / [PTQ](quantize.qmd) flows, not the `peft.backend`
+  shorthand.
+
+## Example config
+
+See [`examples/llama-3/qlora-torchao.yaml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/qlora-torchao.yaml).
+
+## FSDP2
+
+torchao tensor subclasses are first-class DTensor citizens, so the bnb-specific
+FSDP2 patches (sharded-init shims, `Linear8bitLt` save patch) are skipped
+automatically when `peft.backend: torchao` is in use.
+
+```yaml
+adapter: lora
+peft:
+  backend: torchao
+  weight_dtype: nf4
+
+fsdp_version: 2
+fsdp_config:
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+```

@@ -115,3 +115,80 @@ def test_dequantize_weight_plain_tensor_transpose():
     result = dequantize_weight(W, quant_state=None, transpose=True)
     assert result.shape == (64, 32)
     assert torch.equal(result, W.t())
+
+
+class _FakeAffineQuantizedTensor(torch.Tensor):
+    """Stand-in for ``torchao.dtypes.AffineQuantizedTensor`` for unit tests.
+
+    Only models the surface ``dequantize_weight`` touches: a ``dequantize()``
+    method returning the unquantized tensor, and not being a plain
+    ``torch.Tensor`` (so ``type(W) is not torch.Tensor`` is True).
+    """
+
+    @staticmethod
+    def __new__(cls, original, *args, **kwargs):
+        return torch.Tensor._make_subclass(cls, original)
+
+    def __init__(self, original):
+        super().__init__()
+        self._original = original
+
+    def dequantize(self):
+        return self._original
+
+
+class _FakeNF4Tensor(torch.Tensor):
+    """Stand-in for ``torchao.dtypes.NF4Tensor`` for unit tests."""
+
+    @staticmethod
+    def __new__(cls, original, *args, **kwargs):
+        return torch.Tensor._make_subclass(cls, original)
+
+    def __init__(self, original):
+        super().__init__()
+        self._original = original
+
+    def get_original_weight(self):
+        return self._original
+
+
+def test_dequantize_weight_affine_quantized_tensor():
+    """AffineQuantizedTensor: dequantize_weight calls .dequantize()."""
+    base = torch.randn(8, 16)
+    W = _FakeAffineQuantizedTensor(torch.zeros_like(base))
+    W._original = base
+
+    result = dequantize_weight(W, quant_state=None)
+    assert torch.equal(result, base)
+
+
+def test_dequantize_weight_affine_quantized_tensor_transpose():
+    """AffineQuantizedTensor: dequantize_weight honors transpose=True."""
+    base = torch.randn(8, 16)
+    W = _FakeAffineQuantizedTensor(torch.zeros_like(base))
+    W._original = base
+
+    result = dequantize_weight(W, quant_state=None, transpose=True)
+    assert result.shape == (16, 8)
+    assert torch.equal(result, base.t())
+
+
+def test_dequantize_weight_nf4_tensor():
+    """NF4Tensor: dequantize_weight calls .get_original_weight()."""
+    base = torch.randn(8, 16)
+    W = _FakeNF4Tensor(torch.zeros_like(base))
+    W._original = base
+
+    result = dequantize_weight(W, quant_state=None)
+    assert torch.equal(result, base)
+
+
+def test_dequantize_weight_nf4_tensor_transpose():
+    """NF4Tensor: dequantize_weight honors transpose=True."""
+    base = torch.randn(8, 16)
+    W = _FakeNF4Tensor(torch.zeros_like(base))
+    W._original = base
+
+    result = dequantize_weight(W, quant_state=None, transpose=True)
+    assert result.shape == (16, 8)
+    assert torch.equal(result, base.t())

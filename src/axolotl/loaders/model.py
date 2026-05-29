@@ -165,9 +165,14 @@ class ModelLoader:
 
     @property
     def is_torchao_qlora(self):
-        """Property that determines if torchao backend is used for QLoRA."""
+        """True iff this run uses torchao as the LoRA/QLoRA quantization backend.
+
+        Despite the name, this also covers ``adapter: lora`` + torchao int8
+        because both flows install a ``TorchAoConfig`` and need the same
+        bnb-specific code paths skipped.
+        """
         return (
-            self.cfg.adapter == "qlora"
+            self.cfg.adapter in ("lora", "qlora")
             and self.cfg.peft
             and self.cfg.peft.backend == "torchao"
         )
@@ -677,7 +682,7 @@ class ModelLoader:
                     **self.model_config.quantization_config
                 )
         elif (
-            self.cfg.adapter == "qlora"
+            self.cfg.adapter in ("lora", "qlora")
             and self.cfg.peft
             and self.cfg.peft.backend == "torchao"
             and not self.cfg.merge_lora
@@ -688,30 +693,44 @@ class ModelLoader:
 
             weight_dtype = self.cfg.peft.weight_dtype
             if weight_dtype == TorchAOQuantDType.int4:
+                from torchao.quantization import Int4WeightOnlyConfig
+
                 group_size = self.cfg.peft.group_size or 128
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type="int4_weight_only",
-                    group_size=group_size,
+                    quant_type=Int4WeightOnlyConfig(group_size=group_size),
                 )
             elif weight_dtype == TorchAOQuantDType.int8:
+                from torchao.quantization import Int8WeightOnlyConfig
+
                 group_size = self.cfg.peft.group_size or 128
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type="int8_weight_only",
-                    group_size=group_size,
+                    quant_type=Int8WeightOnlyConfig(group_size=group_size),
                 )
             elif weight_dtype == TorchAOQuantDType.nf4:
-                from torchao.dtypes._nf4tensor_api import NF4WeightOnlyConfig
+                # NF4WeightOnlyConfig moved from torchao.dtypes._nf4tensor_api to
+                # torchao.prototype._nf4tensor_api around 0.13; tolerate either.
+                try:
+                    from torchao.prototype._nf4tensor_api import (
+                        NF4WeightOnlyConfig,
+                    )
+                except ImportError:
+                    from torchao.dtypes._nf4tensor_api import (  # type: ignore[no-redef]
+                        NF4WeightOnlyConfig,
+                    )
 
                 block_size = self.cfg.peft.group_size or 64
+                # NF4WeightOnlyConfig takes no constructor args across torchao
+                # versions in scope; fields are mutable attributes with sane
+                # defaults (block_size=64, scaler_block_size=256).
+                nf4_cfg = NF4WeightOnlyConfig()
+                nf4_cfg.block_size = block_size
+                nf4_cfg.scaler_block_size = 256
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type=NF4WeightOnlyConfig(
-                        block_size=block_size,
-                        scaler_block_size=256,
-                    ),
+                    quant_type=nf4_cfg,
                 )
             else:
                 raise ValueError(
-                    f"Unsupported torchao weight_dtype for QLoRA: {weight_dtype}. "
+                    f"Unsupported torchao weight_dtype for LoRA/QLoRA: {weight_dtype}. "
                     "Supported: int4, int8, nf4"
                 )
         elif self.cfg.adapter == "qlora" and self.cfg.load_in_4bit:

@@ -217,9 +217,20 @@ class LoraConfig(BaseModel):
         adapter = data.get("adapter")
 
         if backend == "torchao":
-            # torchao: any quantized weight_dtype means qlora
-            if adapter == "lora":
-                data["adapter"] = "qlora"
+            # Mirror bnb semantics: 4-bit dtypes (int4/nf4) imply qlora,
+            # int8 stays as a (light) lora variant. Other dtypes are routed
+            # through the QAT/PTQ flows instead and are rejected here.
+            if weight_dtype in ("int4", "nf4"):
+                if adapter == "lora":
+                    data["adapter"] = "qlora"
+            elif weight_dtype == "int8":
+                pass  # adapter remains lora
+            else:
+                raise ValueError(
+                    f"peft.weight_dtype '{weight_dtype}' is not supported with the "
+                    "torchao backend for LoRA/QLoRA. Supported: int4, nf4, int8. "
+                    "For fp8/nvfp4/mxfp4 use the dedicated QAT or PTQ flow."
+                )
 
         elif backend == "bnb":
             if weight_dtype == "nf4":
@@ -264,9 +275,30 @@ class LoraConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_qlora(self):
-        if self.adapter == "qlora":
-            is_torchao = self.peft and self.peft.backend == "torchao"
+        is_torchao = self.peft and self.peft.backend == "torchao"
 
+        # torchao backend never coexists with bnb's load_in_*bit flags.
+        if is_torchao and (self.load_in_4bit or self.load_in_8bit):
+            raise ValueError(
+                "load_in_4bit/load_in_8bit are for bitsandbytes. "
+                "With peft.backend: torchao, quantization is handled by torchao."
+            )
+        if is_torchao and not self.peft.weight_dtype:
+            raise ValueError(
+                "peft.weight_dtype is required when peft.backend is 'torchao'"
+            )
+
+        # torchao + merge: the memory-efficient merger simulates bnb NF4
+        # quantization. Force the legacy path until the efficient one learns
+        # torchao tensor subclasses.
+        if is_torchao and self.merge_lora and self.merge_method != "legacy":
+            raise ValueError(
+                "Merging a torchao-quantized LoRA adapter requires "
+                "merge_method: legacy. The memory-efficient merger only "
+                "supports bnb NF4 quantization today."
+            )
+
+        if self.adapter == "qlora":
             if self.merge_lora:
                 # can't merge qlora if loaded in 8bit or 4bit
                 if self.load_in_8bit:
@@ -279,16 +311,8 @@ class LoraConfig(BaseModel):
                     raise ValueError("Can't merge qlora if loaded in 4bit")
 
             elif is_torchao:
-                # torchao backend: validate torchao-specific requirements
-                if self.load_in_4bit or self.load_in_8bit:
-                    raise ValueError(
-                        "load_in_4bit/load_in_8bit are for bitsandbytes. "
-                        "With peft.backend: torchao, quantization is handled by torchao."
-                    )
-                if not self.peft.weight_dtype:
-                    raise ValueError(
-                        "peft.weight_dtype is required when peft.backend is 'torchao'"
-                    )
+                # All torchao-specific qlora checks already handled above.
+                pass
 
             else:
                 # Default bnb path

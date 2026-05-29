@@ -327,6 +327,7 @@ website:
         - section: "Advanced Features"
           contents:
             - docs/fsdp_qlora.qmd
+            - docs/qlora_torchao.qmd
             - docs/torchao.qmd
             - docs/custom_integrations.qmd
             - docs/sequence_parallelism.qmd

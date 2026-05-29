@@ -166,9 +166,9 @@ class TestTorchaoQLoRAConfigValidation:
 
     # --- Auto-detection: torchao ---
 
-    @pytest.mark.parametrize("weight_dtype", ["int4", "int8", "nf4"])
+    @pytest.mark.parametrize("weight_dtype", ["int4", "nf4"])
     def test_torchao_auto_detect_from_lora(self, weight_dtype):
-        """adapter: lora + peft.backend: torchao auto-upgrades to qlora"""
+        """adapter: lora + peft.backend: torchao (4-bit) auto-upgrades to qlora"""
         cfg = DictDefault(
             {
                 "adapter": "lora",
@@ -191,6 +191,21 @@ class TestTorchaoQLoRAConfigValidation:
         )
         result = validate_config(cfg)
         assert result["adapter"] == "qlora"
+
+    def test_torchao_int8_stays_lora(self):
+        """torchao int8 is weight-only LoRA, not QLoRA (mirrors bnb int8)."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": "int8"},
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["adapter"] == "lora"
+        # No bnb-style flags should be auto-set for torchao.
+        assert not result.get("load_in_4bit")
+        assert not result.get("load_in_8bit")
 
     # --- Auto-detection: bnb ---
 
@@ -335,6 +350,61 @@ class TestTorchaoQLoRAConfigValidation:
         )
         with pytest.raises(ValueError, match="not supported with bnb"):
             validate_config(cfg)
+
+    @pytest.mark.parametrize("weight_dtype", ["fp8", "nvfp4", "mxfp4"])
+    def test_torchao_qat_only_dtype_errors(self, weight_dtype):
+        """fp8/nvfp4/mxfp4 belong to QAT/PTQ, not the peft.backend shorthand."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": weight_dtype},
+                **BASE_CFG,
+            }
+        )
+        with pytest.raises(ValueError, match="not supported with the torchao backend"):
+            validate_config(cfg)
+
+    def test_torchao_merge_requires_legacy(self):
+        """Memory-efficient merge can't handle torchao tensors; require legacy."""
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "merge_lora": True,
+                "merge_method": "memory_efficient",
+                **BASE_CFG,
+            }
+        )
+        with pytest.raises(ValueError, match="merge_method: legacy"):
+            validate_config(cfg)
+
+    def test_torchao_merge_legacy_ok(self):
+        """torchao + merge_lora is allowed when merge_method is legacy."""
+        cfg = DictDefault(
+            {
+                "adapter": "qlora",
+                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "merge_lora": True,
+                "merge_method": "legacy",
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["merge_method"] == "legacy"
+
+    def test_torchao_with_dora_ok(self):
+        """DoRA + torchao is allowed; kernels use dequantize_weight."""
+        cfg = DictDefault(
+            {
+                "adapter": "lora",
+                "peft": {"backend": "torchao", "weight_dtype": "int4"},
+                "peft_use_dora": True,
+                **BASE_CFG,
+            }
+        )
+        result = validate_config(cfg)
+        assert result["adapter"] == "qlora"
+        assert result["peft_use_dora"] is True
 
     # --- Redundant flags don't conflict ---
 

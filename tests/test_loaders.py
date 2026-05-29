@@ -102,6 +102,71 @@ class TestModelsUtils:
                 is True
             )
 
+    @pytest.mark.parametrize(
+        "weight_dtype_name,adapter,quant_config_attr",
+        [
+            ("int4", "qlora", "Int4WeightOnlyConfig"),
+            ("int8", "lora", "Int8WeightOnlyConfig"),
+        ],
+    )
+    def test_set_quantization_config_torchao_qlora(
+        self, weight_dtype_name, adapter, quant_config_attr
+    ):
+        """torchao backend installs a TorchAoConfig with the right quant_type."""
+        pytest.importorskip("torchao")
+        import torchao.quantization as tq
+        from transformers import TorchAoConfig
+
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        expected_cls = getattr(tq, quant_config_attr)
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = adapter
+        # model.py compares the weight_dtype to the enum members; this mirrors
+        # what the schema validator produces post-load.
+        self.cfg.peft = DictDefault(
+            {
+                "backend": "torchao",
+                "weight_dtype": getattr(TorchAOQuantDType, weight_dtype_name),
+            }
+        )
+
+        self.model_loader._set_quantization_config()
+        quant_config = self.model_loader.model_kwargs.get("quantization_config")
+        assert isinstance(quant_config, TorchAoConfig)
+        assert isinstance(quant_config.quant_type, expected_cls)
+
+    def test_set_quantization_config_torchao_nf4(self):
+        """torchao NF4 installs an NF4WeightOnlyConfig inside TorchAoConfig."""
+        pytest.importorskip("torchao")
+        from transformers import TorchAoConfig
+
+        try:
+            from torchao.prototype._nf4tensor_api import NF4WeightOnlyConfig
+        except ImportError:
+            try:
+                from torchao.dtypes._nf4tensor_api import (
+                    NF4WeightOnlyConfig,
+                )
+            except ImportError:
+                pytest.skip("torchao build lacks NF4WeightOnlyConfig")
+
+        from axolotl.utils.schemas.enums import TorchAOQuantDType
+
+        self.cfg.load_in_8bit = False
+        self.cfg.load_in_4bit = False
+        self.cfg.adapter = "qlora"
+        self.cfg.peft = DictDefault(
+            {"backend": "torchao", "weight_dtype": TorchAOQuantDType.nf4}
+        )
+
+        self.model_loader._set_quantization_config()
+        quant_config = self.model_loader.model_kwargs.get("quantization_config")
+        assert isinstance(quant_config, TorchAoConfig)
+        assert isinstance(quant_config.quant_type, NF4WeightOnlyConfig)
+
     def test_message_property_mapping(self):
         """Test message property mapping configuration validation"""
         from axolotl.utils.schemas.datasets import SFTDataset

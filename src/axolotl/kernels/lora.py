@@ -18,7 +18,7 @@ from torch import nn
 from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
-from .quantize import dequantize, dequantize_weight
+from .quantize import dequantize_weight
 from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
@@ -180,7 +180,7 @@ def _compute_dora_scale(
         return result
 
     # PyTorch fallback
-    W_full = dequantize(W.t(), W_quant).t().to(dtype)  # [out, in]
+    W_full = dequantize_weight(W, W_quant).to(dtype)  # [out, in]
     lora_weight = B.to(dtype) @ A.to(dtype)
     combined = W_full + s * lora_weight
     weight_norm = torch.linalg.norm(combined, dim=1).to(dtype)
@@ -213,7 +213,7 @@ def _compute_dora_scale_cached(
             return magnitude.to(dtype) / cached_norm
 
     # Cache miss - full recomputation
-    W_full = dequantize(W.t(), W_quant).t().to(dtype)
+    W_full = dequantize_weight(W, W_quant).to(dtype)
     lora_weight = B.to(dtype) @ A.to(dtype)
     combined = W_full + s * lora_weight
     weight_norm = torch.linalg.norm(combined, dim=1).to(dtype).detach()
