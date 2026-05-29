@@ -68,18 +68,30 @@ model_quantization_config:
 
 ### Deprecations
 
-The following legacy shapes keep working with a deprecation warning at config
-load; they will be removed in a future release:
+There is only one canonical shape for base-quant LoRA training:
 
-- `adapter: qlora` — normalized to `adapter: lora`. QLoRA is "LoRA with a
-  4-bit base quant" expressed via `load_in_4bit: true` or
-  `model_quantization_config: {bnb: {weight_dtype: nf4}}`. Bare
-  `adapter: qlora` (no explicit flag) is treated as `adapter: lora` +
-  `load_in_4bit: true`.
+```yaml
+adapter: lora
+model_quantization_config:
+  bnb:                          # or torchao / mxfp4 / fp8
+    weight_dtype: nf4
+```
+
+The following legacy shapes keep working — they are translated to the
+canonical form at config load and emit a `DEPRECATED:` warning. They will
+be removed in a future release:
+
+- `adapter: qlora` (with or without `load_in_4bit: true`) → `adapter: lora`
+  + `model_quantization_config: {bnb: {weight_dtype: nf4}}`. QLoRA is just
+  "LoRA with a 4-bit base quant"; there is no separate adapter type.
+- `load_in_4bit: true` (alone) → `model_quantization_config:
+  {bnb: {weight_dtype: nf4}}`.
+- `load_in_8bit: true` (alone) → `model_quantization_config:
+  {bnb: {weight_dtype: int8}}`.
 - `model_quantization_config: Mxfp4Config` (string) with
-  `model_quantization_config_kwargs: …` — prefer
-  `model_quantization_config: {mxfp4: {config_kwargs: …}}`.
-- `model_quantization_config: FineGrainedFP8Config` (string) — prefer
+  `model_quantization_config_kwargs: …` → `model_quantization_config:
+  {mxfp4: {config_kwargs: …}}`.
+- `model_quantization_config: FineGrainedFP8Config` (string) →
   `model_quantization_config: {fp8: {config_kwargs: …}}`.
 
 ## Mxfp4Config / FineGrainedFP8Config

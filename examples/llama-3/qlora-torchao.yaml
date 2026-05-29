@@ -3,11 +3,12 @@ model_type: AutoModelForCausalLM
 tokenizer_type: AutoTokenizer
 
 # torchao QLoRA. Compile-friendly alternative to bitsandbytes; works with FSDP2.
-# adapter is auto-promoted to qlora when weight_dtype is int4 / nf4 / nvfp4.
+# QLoRA is `adapter: lora` with a 4-bit base quant — there is no separate
+# qlora adapter type.
 adapter: lora
 model_quantization_config:
   torchao:
-    weight_dtype: int4   # one of: int4, nf4, nvfp4 (QLoRA) | int8, fp8 (LoRA)
+    weight_dtype: int4   # one of: int4, nf4, nvfp4 | int8, fp8
     # group_size: 128    # defaults: int4/int8 → 128, nf4 → 64, nvfp4 → 16
 
 datasets:

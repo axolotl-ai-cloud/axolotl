@@ -30,11 +30,24 @@ class LoraConfig(BaseModel):
     load_in_8bit: bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer"
+            "description": (
+                "DEPRECATED: prefer `model_quantization_config: {bnb: "
+                "{weight_dtype: int8}}`. Legacy bnb 8-bit shorthand; kept "
+                "for backward compatibility, translated to the structured "
+                "form at validation time with a deprecation warning."
+            )
         },
     )
     load_in_4bit: bool | None = Field(
-        default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
+        default=False,
+        json_schema_extra={
+            "description": (
+                "DEPRECATED: prefer `model_quantization_config: {bnb: "
+                "{weight_dtype: nf4}}`. Legacy bnb 4-bit shorthand; kept "
+                "for backward compatibility, translated to the structured "
+                "form at validation time with a deprecation warning."
+            )
+        },
     )
 
     adapter: str | None = Field(
@@ -163,69 +176,87 @@ class LoraConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def normalize_adapter_qlora(cls, data):
-        """``adapter: qlora`` is just ``adapter: lora`` with a 4-bit base
-        quant. Demote it to ``lora`` and infer the bnb 4-bit base quant if
-        no other base-quant choice is spelled out — the rest of the codebase
-        keys off the actual quant state, not the adapter name.
+    def normalize_base_quant_inputs(cls, data):
+        """Funnel every legacy base-quant spelling into the canonical
+        ``model_quantization_config`` structured form, emit deprecation
+        warnings, and then mirror back into ``load_in_4bit`` /
+        ``load_in_8bit`` for the downstream loader.
 
-        Existing configs using ``adapter: qlora`` keep working unchanged
-        (they all set ``load_in_4bit: true`` alongside).
+        Why both directions? ``model_quantization_config`` is the new source
+        of truth and the only thing users should write; ``load_in_4bit`` /
+        ``load_in_8bit`` are kept alive (deprecated) for downstream loader
+        code that still keys off them. Putting the translation in a single
+        validator guarantees both representations end up in lockstep,
+        regardless of how the user spelled it.
+
+        Translations (legacy → canonical, all with deprecation warnings):
+        - ``adapter: qlora``               → ``adapter: lora`` + bnb nf4
+        - ``adapter: qlora`` + ``load_in_4bit: true``
+                                            → ``adapter: lora`` + bnb nf4
+        - ``load_in_4bit: true`` (alone)   → bnb nf4
+        - ``load_in_8bit: true`` (alone)   → bnb int8
         """
         from axolotl.utils.logging import get_logger
 
-        if data.get("adapter") != "qlora":
-            return data
+        log = get_logger(__name__)
 
-        if data.get("load_in_8bit") and not data.get("load_in_4bit"):
-            raise ValueError(
-                "adapter: qlora with load_in_8bit is ambiguous (QLoRA is a "
-                "4-bit base quant). Use adapter: lora with load_in_8bit "
-                "(or model_quantization_config.bnb.weight_dtype: int8) for "
-                "8-bit LoRA."
+        mqc = data.get("model_quantization_config")
+        had_qlora_adapter = data.get("adapter") == "qlora"
+        had_load_in_4bit = bool(data.get("load_in_4bit"))
+        had_load_in_8bit = bool(data.get("load_in_8bit"))
+
+        if had_qlora_adapter:
+            if had_load_in_8bit and not had_load_in_4bit:
+                raise ValueError(
+                    "adapter: qlora with load_in_8bit is ambiguous (QLoRA is "
+                    "a 4-bit base quant). Use adapter: lora with "
+                    "model_quantization_config.bnb.weight_dtype: int8 for "
+                    "8-bit LoRA."
+                )
+            data["adapter"] = "lora"
+            log.warning(
+                "DEPRECATED: `adapter: qlora` is being normalized to "
+                "`adapter: lora`. QLoRA is just LoRA with a 4-bit base "
+                "quant — express it via "
+                "`model_quantization_config: {bnb: {weight_dtype: nf4}}`. "
+                "The qlora alias will be removed in a future release."
             )
 
-        has_quant_choice = data.get("load_in_4bit") or data.get(
-            "model_quantization_config"
-        )
-        if not has_quant_choice:
-            # Bare ``adapter: qlora`` is the legacy shorthand for ``lora`` +
-            # bnb NF4 4-bit; auto-set the flag so the bnb loader branch fires.
-            data["load_in_4bit"] = True
-
-        data["adapter"] = "lora"
-        get_logger(__name__).warning(
-            "DEPRECATED: `adapter: qlora` is being normalized to "
-            "`adapter: lora` (QLoRA is just LoRA with a 4-bit base quant). "
-            "Update your config to `adapter: lora` plus either "
-            "`load_in_4bit: true` or `model_quantization_config: "
-            "{bnb: {weight_dtype: nf4}}`. The qlora alias will be removed "
-            "in a future release."
-        )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def auto_detect_quant_flags(cls, data):
-        """Set ``load_in_4bit`` / ``load_in_8bit`` from the structured
-        ``model_quantization_config.bnb`` shorthand so the existing bnb
-        loader branches fire without the user repeating themselves.
-
-        Only the structured-dict form participates. The legacy string form
-        (``Mxfp4Config`` / ``FineGrainedFP8Config``) is about a separate
-        already-quantized checkpoint flow and stays untouched.
-        """
-        mqc = data.get("model_quantization_config")
+        # Step 1: if user only spelled out a legacy flag (no structured
+        # form), synthesise the structured form so it becomes the single
+        # source of truth.
         if not isinstance(mqc, dict):
-            return data
+            if had_load_in_4bit or had_qlora_adapter:
+                data["model_quantization_config"] = {"bnb": {"weight_dtype": "nf4"}}
+                if had_load_in_4bit:
+                    log.warning(
+                        "DEPRECATED: `load_in_4bit: true` is being translated "
+                        "to `model_quantization_config: "
+                        "{bnb: {weight_dtype: nf4}}`. Drop `load_in_4bit` "
+                        "from your config; it will be removed as a "
+                        "user-facing knob in a future release."
+                    )
+            elif had_load_in_8bit:
+                data["model_quantization_config"] = {"bnb": {"weight_dtype": "int8"}}
+                log.warning(
+                    "DEPRECATED: `load_in_8bit: true` is being translated "
+                    "to `model_quantization_config: "
+                    "{bnb: {weight_dtype: int8}}`. Drop `load_in_8bit` "
+                    "from your config; it will be removed as a "
+                    "user-facing knob in a future release."
+                )
 
-        bnb = mqc.get("bnb")
-        if isinstance(bnb, dict):
-            weight_dtype = bnb.get("weight_dtype")
-            if weight_dtype == "nf4":
-                data.setdefault("load_in_4bit", True)
-            elif weight_dtype == "int8":
-                data.setdefault("load_in_8bit", True)
+        # Step 2: mirror the structured form back into load_in_4bit /
+        # load_in_8bit for downstream loader compat.
+        mqc = data.get("model_quantization_config")
+        if isinstance(mqc, dict):
+            bnb = mqc.get("bnb")
+            if isinstance(bnb, dict):
+                weight_dtype = bnb.get("weight_dtype")
+                if weight_dtype == "nf4":
+                    data.setdefault("load_in_4bit", True)
+                elif weight_dtype == "int8":
+                    data.setdefault("load_in_8bit", True)
 
         return data
 
