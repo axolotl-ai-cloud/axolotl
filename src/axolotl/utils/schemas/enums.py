@@ -156,7 +156,7 @@ ATTN_IMPLS_USING_FLASH_LIB = frozenset(
 # Backends for which embeddings stay in fp32. Everything else needs fp16/bf16.
 ATTN_IMPLS_WITHOUT_DTYPE_CAST = frozenset({"eager", "sdpa"})
 
-# Narrow allowlist; arbitrary inductor flags can change compiler behavior non-obviously.
+# Narrow allowlist of real torch._inductor.config attrs (verified on torch 2.11; sentinel test guards renames).
 INDUCTOR_COMPILE_OPTIONS_ALLOWLIST = frozenset(
     {
         "coordinate_descent_tuning",

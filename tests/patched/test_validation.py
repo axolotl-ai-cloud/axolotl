@@ -16,6 +16,8 @@ from axolotl.utils.schemas.config import AxolotlConfigWCapabilities
 from axolotl.utils.schemas.datasets import SFTDataset
 from axolotl.utils.wandb_ import setup_wandb_env_vars
 
+from tests.conftest import capture_axolotl_warnings
+
 warnings.filterwarnings("error")
 
 
@@ -1375,6 +1377,37 @@ class TestTorchCompileValidation(BaseValidation):
             cfg, capabilities={"bf16": True}, env_capabilities=env_capabilities
         )
         assert updated_cfg.torch_compile_options == {"coordinate_descent_tuning": True}
+
+    def test_cudagraphs_with_sample_packing_warns(self, minimal_cfg, caplog):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {"triton.cudagraphs": True},
+                    "sample_packing": True,
+                    "pad_to_sequence_len": True,
+                }
+            )
+            | minimal_cfg
+        )
+        with capture_axolotl_warnings(caplog):
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "CUDA graphs require static shapes" in caplog.text
+
+    def test_cudagraphs_without_sample_packing_no_warn(self, minimal_cfg, caplog):
+        cfg = (
+            DictDefault(
+                {
+                    "torch_compile": True,
+                    "torch_compile_options": {"triton.cudagraphs": True},
+                    "sample_packing": False,
+                }
+            )
+            | minimal_cfg
+        )
+        with capture_axolotl_warnings(caplog):
+            validate_config(cfg, capabilities={"bf16": True}, env_capabilities={})
+        assert "CUDA graphs require static shapes" not in caplog.text
 
 
 class TestSampleOptimConfigValidation(BaseValidation):
