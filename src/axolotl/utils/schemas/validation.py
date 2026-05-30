@@ -626,8 +626,19 @@ class LoRAValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
+        # Trigger on both the legacy alias and the post-normalization
+        # canonical shape (adapter: lora + bnb 4-bit). The PEFT validator
+        # may already have demoted qlora → lora by the time this runs.
+        adapter = data.get("adapter")
+        mqc = data.get("model_quantization_config")
+        bnb_4bit = (
+            isinstance(mqc, dict)
+            and isinstance(mqc.get("bnb"), dict)
+            and mqc["bnb"].get("weight_dtype") == "nf4"
+        ) or bool(data.get("load_in_4bit"))
+        is_qlora_shape = adapter == "qlora" or (adapter == "lora" and bnb_4bit)
         if (
-            data.get("adapter") == "qlora"
+            is_qlora_shape
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False

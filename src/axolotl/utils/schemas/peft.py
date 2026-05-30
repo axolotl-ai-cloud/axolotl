@@ -204,14 +204,29 @@ class LoraConfig(BaseModel):
         had_qlora_adapter = data.get("adapter") == "qlora"
         had_load_in_4bit = bool(data.get("load_in_4bit"))
         had_load_in_8bit = bool(data.get("load_in_8bit"))
+        explicit_load_in_4bit_false = (
+            "load_in_4bit" in data and data.get("load_in_4bit") is False
+        )
 
         if had_qlora_adapter:
+            if data.get("gptq"):
+                raise ValueError(
+                    "adapter: qlora with gptq is not supported. QLoRA is a "
+                    "bitsandbytes 4-bit base quant; gptq is a separate "
+                    "quantization backend. Pick one."
+                )
             if had_load_in_8bit and not had_load_in_4bit:
                 raise ValueError(
                     "adapter: qlora with load_in_8bit is ambiguous (QLoRA is "
                     "a 4-bit base quant). Use adapter: lora with "
                     "model_quantization_config.bnb.weight_dtype: int8 for "
                     "8-bit LoRA."
+                )
+            if explicit_load_in_4bit_false:
+                raise ValueError(
+                    "adapter: qlora with load_in_4bit: false is "
+                    "contradictory. QLoRA requires a 4-bit base; either drop "
+                    "load_in_4bit or switch to adapter: lora."
                 )
             data["adapter"] = "lora"
             log.warning(
@@ -323,11 +338,11 @@ class LoraConfig(BaseModel):
             # in-place A@B add). Reject the combo regardless of how the
             # quant was spelled.
             if self.load_in_8bit:
-                raise ValueError("Can't merge a LoRA adapter on top of an 8-bit base.")
+                raise ValueError("Can't merge a LoRA adapter on top of an 8bit base.")
             if self.load_in_4bit:
-                raise ValueError("Can't merge a LoRA adapter on top of a 4-bit base.")
+                raise ValueError("Can't merge a LoRA adapter on top of a 4bit base.")
             if self.gptq:
-                raise ValueError("Can't merge a LoRA adapter on top of a GPTQ base.")
+                raise ValueError("Can't merge a LoRA adapter on top of a gptq base.")
         return self
 
     @field_validator("loraplus_lr_embedding")
