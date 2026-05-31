@@ -1,0 +1,78 @@
+# Kimi Linear (MLA) + Flash Sparse Attention.
+#
+# attn_implementation: fsa swaps the full-attention (MLA) layers for the
+# Flash-Sparse-Attention module (https://arxiv.org/abs/2508.18224), an
+# efficient implementation of Native Sparse Attention. The swapped layers are
+# randomly initialised and trained, so use this as a "train sparse attention"
+# recipe rather than a weight-preserving one. Requires an Ampere+ GPU and the
+# flash-sparse-attn package. Use `attn_implementation: nsa` for the same path.
+base_model: moonshotai/Kimi-Linear-48B-A3B-Instruct
+
+trust_remote_code: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+
+load_in_8bit: true
+load_in_4bit: false
+strict: false
+
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+    split: train
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.2
+output_dir: ./outputs/lora-out
+
+adapter: lora
+lora_model_dir:
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_fan_in_fan_out:
+lora_target_modules:
+  - gate_proj
+  - down_proj
+  - up_proj
+  - q_proj
+  - v_proj
+  - k_proj
+  - o_proj
+
+gradient_accumulation_steps: 2
+micro_batch_size: 2
+num_epochs: 1
+optimizer: adamw_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+fp16:
+tf32: false
+
+gradient_checkpointing: true
+logging_steps: 1
+
+attn_implementation: fsa
+nsa_block_size: 64
+nsa_topk: 16
+nsa_kernel_size: 32
+nsa_kernel_stride: 16
+nsa_window_size: 512
+nsa_init_blocks: 1
+nsa_local_blocks: 2
+
+warmup_ratio: 0.1
+evals_per_epoch: 2
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:

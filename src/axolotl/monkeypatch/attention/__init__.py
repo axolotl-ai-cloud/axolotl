@@ -43,3 +43,22 @@ def register_sage_attn():
     ALL_MASK_ATTENTION_FUNCTIONS.register(
         "sage", ALL_MASK_ATTENTION_FUNCTIONS["flash_attention_2"]
     )
+
+
+def register_sparse_attn():
+    """Register nsa/fsa names so transformers accepts them at load time.
+
+    The actual computation is a model-specific module swap
+    (:func:`axolotl.monkeypatch.attention.sparse_attn.patch_sparse_attention`);
+    the registered forward is a stub that must never be invoked.
+    """
+    from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    from .sparse_attn import sparse_attention_stub
+
+    for name in ("nsa", "fsa"):
+        ALL_ATTENTION_FUNCTIONS.register(name, sparse_attention_stub)
+        ALL_MASK_ATTENTION_FUNCTIONS.register(
+            name, ALL_MASK_ATTENTION_FUNCTIONS["flash_attention_2"]
+        )

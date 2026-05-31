@@ -1167,8 +1167,14 @@ class KimiLinearModel(KimiPreTrainedModel):
         )
         self.norm = KimiRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
+        # nsa/fsa are accepted here; axolotl swaps the MLA module post-build, so
+        # the impl carried on the config never reaches the attention forward.
         if getattr(config, "_attn_implementation", None) is not None:
-            if config._attn_implementation != "flash_attention_2":
+            if config._attn_implementation not in (
+                "flash_attention_2",
+                "nsa",
+                "fsa",
+            ):
                 logger.warning_once(
                     f"Ignoring the provided attention implementation {config._attn_implementation}"
                 )
