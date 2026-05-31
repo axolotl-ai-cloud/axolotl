@@ -181,6 +181,12 @@ class TRLConfig(BaseModel):
             "description": "Loss formulation to use. Supported values: grpo, bnpo, dr_grpo."
         },
     )
+    advantage_estimator: Literal["grpo", "rloo", "reinforce_plus_plus"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Advantage baseline for GRPO: grpo, rloo, or reinforce_plus_plus."
+        },
+    )
     mask_truncated_completions: bool = Field(
         default=False,
         json_schema_extra={

@@ -40,6 +40,9 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.async_trainer import (
+    compute_advantages_with_estimator,
+)
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
@@ -607,6 +610,12 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         advantages = rewards - mean_grouped_rewards
         if self.args.scale_rewards:
             advantages = advantages / (std_grouped_rewards + 1e-4)
+
+        advantage_estimator = getattr(self.args, "advantage_estimator", "grpo")
+        if advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, _ = compute_advantages_with_estimator(
+                advantage_estimator, rewards, self.num_generations
+            )
 
         # Slice to keep only the local part of the data
         if self.args.context_parallel_size > 1:
