@@ -15,6 +15,17 @@ CUDA_STREAM: torch.cuda.Stream | None = None
 HAS_CUDA_STREAM: bool = Version(bnb.__version__) > Version("0.43.3")
 
 
+def is_quant_tensor_subclass(W: torch.Tensor) -> bool:
+    """True for torchao quant tensor subclasses (NF4Tensor,
+    AffineQuantizedTensor, etc.) — anything that is not plain
+    ``torch.Tensor`` or ``torch.nn.Parameter``. ``type(W) is not
+    torch.Tensor`` alone is unsafe: ``Parameter`` is a *subclass* of
+    Tensor, not the same type, so the bare check misclassifies every
+    unquantized PEFT base weight.
+    """
+    return type(W) is not torch.Tensor and type(W) is not torch.nn.Parameter
+
+
 def dequantize_fp8(
     W: torch.Tensor,
     scale_inv: torch.Tensor,
@@ -222,7 +233,7 @@ def dequantize_weight(
         Dequantized float tensor, optionally transposed.
     """
     # torchao path: tensor subclass with embedded quantization state
-    if quant_state is None and type(W) is not torch.Tensor:
+    if quant_state is None and is_quant_tensor_subclass(W):
         result = None
         # NF4Tensor (check first — NF4Tensor.dequantize is a static method)
         if hasattr(W, "get_original_weight"):

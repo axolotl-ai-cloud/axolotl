@@ -18,7 +18,7 @@ from torch import nn
 from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
-from .quantize import dequantize_weight
+from .quantize import dequantize_weight, is_quant_tensor_subclass
 from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
@@ -259,7 +259,7 @@ def matmul_lora(
     dtype = X.dtype
     # Tensor subclasses (torchao NF4/AffineQuantized) advertise no W_quant but
     # still need dequantize+free; track materialization via type check.
-    is_quantized = W_quant is not None or type(W) is not torch.Tensor
+    is_quantized = W_quant is not None or is_quant_tensor_subclass(W)
     W = dequantize_weight(W, W_quant, transpose=transpose)
 
     reshape = False
