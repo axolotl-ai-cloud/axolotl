@@ -26,8 +26,15 @@ def apply_init_sharded_param_patch():
     original_source = inspect.getsource(FSDPParam._init_sharded_param)
     original_source, _ = detab_code(original_source)
 
-    # Define the replacement
-    original_param_creation = """    self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
+    # torch 2.12 rewrote the sharded-param construction from a two-line
+    # form (Parameter() + requires_grad_()) to a single multi-line
+    # Parameter() call with requires_grad= as a kwarg. Try the 2.12
+    # anchor first, fall back to the 2.11 form.
+    anchors_2120 = """    self.sharded_param = nn.Parameter(
+        self.to_sharded_dtensor(sharded_param),
+        requires_grad=param.requires_grad,
+    )"""
+    anchors_2110 = """    self.sharded_param = nn.Parameter(self.to_sharded_dtensor(sharded_param))
     self.sharded_param.requires_grad_(param.requires_grad)"""
 
     patched_param_creation = """    import bitsandbytes as bnb
@@ -59,8 +66,13 @@ def apply_init_sharded_param_patch():
             requires_grad=param.requires_grad,
         )"""
 
+    original_param_creation = next(
+        (a for a in (anchors_2120, anchors_2110) if a in original_source),
+        None,
+    )
+
     # Apply the replacement
-    if original_param_creation in original_source:
+    if original_param_creation is not None:
         patched_source = original_source.replace(
             original_param_creation, patched_param_creation
         )
