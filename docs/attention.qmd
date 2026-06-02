@@ -208,9 +208,16 @@ nsa_init_blocks: 1         # leading blocks always selected
 nsa_local_blocks: 2        # trailing blocks always selected
 ```
 
+Install the `fsa` extra, which pulls in both Flash-Sparse-Attention and a
+matching `flash-attn`:
+
 ```bash
-pip install git+https://github.com/Relaxed-System-Lab/Flash-Sparse-Attention.git
+pip install "axolotl[fsa]"
 ```
+
+Building `flash-attn` from source requires a CUDA toolkit (`nvcc`) and an
+Ampere+ GPU; restrict the build to your architecture (e.g.
+`TORCH_CUDA_ARCH_LIST=8.0` for A100) to keep compile time and memory in check.
 
 Unlike sage/xformers (drop-in attention functions), the sparse block is a full
 attention module with its own projections, compression branch and learned gate,

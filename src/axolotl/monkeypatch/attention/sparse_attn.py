@@ -44,8 +44,10 @@ def _is_fsa_available() -> bool:
 def _check_fsa_imported():
     if not _is_fsa_available():
         raise ImportError(
-            "Flash-Sparse-Attention is not installed. Install it from source: "
-            "`pip install git+https://github.com/Relaxed-System-Lab/Flash-Sparse-Attention.git`"
+            "Flash-Sparse-Attention is not installed. Install the extra:\n"
+            "  pip install 'axolotl[fsa]'\n"
+            "(this also builds flash-attn, which requires a CUDA toolkit and an "
+            "Ampere+ GPU)."
         )
 
 
