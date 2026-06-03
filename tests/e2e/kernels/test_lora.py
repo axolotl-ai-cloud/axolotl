@@ -144,11 +144,16 @@ def test_matmul_lora(sample_tensors):
     expected1 = matmul + b
     assert torch.allclose(out1, expected1, rtol=1e-3)
 
-    # Test with LoRA
+    # Test with LoRA. matmul_lora fuses the add via in-place addmm_ (fp32 accumulate,
+    # no [M, out] LoRA temp), so compare against an fp32 reference rather than a fp16
+    # one whose intermediate rounding the kernel intentionally no longer mirrors.
     out2 = matmul_lora(X, W, b, None, A, B, scale)
-    lora_term = scale * torch.matmul(torch.matmul(X, A.t()), B.t())
-    expected2 = matmul + lora_term + b
-    assert torch.allclose(out2, expected2, rtol=1e-3)
+    expected2 = (
+        X.float() @ W.float().t()
+        + scale * (X.float() @ A.float().t()) @ B.float().t()
+        + b.float()
+    )
+    assert torch.allclose(out2.float(), expected2, rtol=2e-3, atol=2e-2)
 
     # Test 3D input reshaping
     X_3d = X.clone()
@@ -580,3 +585,39 @@ def test_inplace_operations(sample_tensors, apply_function):
     out2 = apply_function(mlp, X.clone(), inplace=False)
 
     assert torch.allclose(out1, out2, rtol=1e-3)
+
+
+def test_matmul_lora_fp8_base():
+    """matmul_lora runs the native fp8 _scaled_mm forward for a torchao Float8
+    weight (instead of dequantizing to bf16), matching the fp32 reference within
+    fp8 tolerance. Forward-only fast path; gated on fp8-capable hardware."""
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9):
+        pytest.skip("fp8 tensor cores require sm89+")
+    try:
+        from torchao.quantization import Float8WeightOnlyConfig, quantize_
+    except ImportError:
+        pytest.skip("torchao fp8 unavailable")
+
+    from axolotl.kernels.quantize import fp8_base_forward
+
+    torch.manual_seed(0)
+    M, N, K, r = 256, 512, 256, 16
+    lin = nn.Linear(K, N, bias=False).to("cuda", torch.bfloat16)
+    W_bf16 = lin.weight.detach().clone()
+    quantize_(lin, Float8WeightOnlyConfig(weight_dtype=torch.float8_e4m3fn))
+    W = lin.weight  # torchao Float8Tensor
+
+    X = torch.randn(M, K, device="cuda", dtype=torch.bfloat16)
+    # fast path engages for the fp8 weight, and falls back (None) for a plain one
+    assert fp8_base_forward(X, W) is not None
+    assert fp8_base_forward(X, W_bf16) is None
+
+    A = torch.randn(r, K, device="cuda", dtype=torch.bfloat16) * 0.02
+    B = torch.randn(N, r, device="cuda", dtype=torch.bfloat16) * 0.02
+    s = 2.0
+    got = matmul_lora(X, W, None, None, A, B, s)
+    ref = (
+        X.float() @ W_bf16.float().t() + s * (X.float() @ A.float().t()) @ B.float().t()
+    )
+    rel = ((got.float() - ref).abs().max() / ref.abs().max()).item()
+    assert rel < 6e-2, rel

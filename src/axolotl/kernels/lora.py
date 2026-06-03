@@ -18,7 +18,7 @@ from torch import nn
 from torch.distributed.tensor import DTensor
 
 from .geglu import geglu_backward, geglu_forward
-from .quantize import dequantize_weight, is_quant_tensor_subclass
+from .quantize import dequantize_weight, fp8_base_forward, is_quant_tensor_subclass
 from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
 
@@ -260,7 +260,6 @@ def matmul_lora(
     # Tensor subclasses (torchao NF4/AffineQuantized) advertise no W_quant but
     # still need dequantize+free; track materialization via type check.
     is_quantized = W_quant is not None or is_quant_tensor_subclass(W)
-    W = dequantize_weight(W, W_quant, transpose=transpose)
 
     reshape = False
     if X.dim() == 3:
@@ -270,14 +269,28 @@ def matmul_lora(
             X_drop = X_drop.view(-1, X_drop.shape[-1])
         reshape = True
 
-    out = torch.matmul(X, W, out=out)
-    if is_quantized:
-        del W
+    # Forward base GEMM in native fp8 for torchao Float8 weights (sm89+), instead
+    # of dequantizing to bf16. Backward dX stays bf16 (transpose=False), so this
+    # fast path is forward-only and keeps a single fp8 weight copy.
+    out_fp8 = (
+        fp8_base_forward(X, W)
+        if transpose and out is None and W_quant is None
+        else None
+    )
+    if out_fp8 is not None:
+        out = out_fp8
+    else:
+        W = dequantize_weight(W, W_quant, transpose=transpose)
+        out = torch.matmul(X, W, out=out)
+        if is_quantized:
+            del W
 
     if A is not None:
         X_lora = X_drop if X_drop is not None else X
         A, B = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
-        out += s * X_lora @ A @ B
+        # out += s * (X_lora @ A) @ B fused in-place: addmm_ avoids materializing
+        # the [M, out_features] LoRA intermediate (X_lora @ A is only [M, rank]).
+        out.addmm_(X_lora @ A, B, alpha=s)
         if lora_bias is not None:
             out += s * lora_bias
 

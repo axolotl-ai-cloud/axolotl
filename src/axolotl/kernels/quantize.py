@@ -26,6 +26,62 @@ def is_quant_tensor_subclass(W: torch.Tensor) -> bool:
     return type(W) is not torch.Tensor and type(W) is not torch.nn.Parameter
 
 
+_FP8_E4M3_MAX = 448.0
+
+
+def _is_fp8_rowwise_weight(W: torch.Tensor) -> bool:
+    """True for a torchao Float8 weight-only tensor with rowwise (per-output)
+    e4m3 scales — the layout torchao's Float8WeightOnlyConfig produces and the
+    one ``torch._scaled_mm`` can consume directly for the forward base GEMM."""
+    qd = getattr(W, "qdata", None)
+    sc = getattr(W, "scale", None)
+    return (
+        qd is not None
+        and sc is not None
+        and qd.dtype == torch.float8_e4m3fn
+        and sc.numel() == qd.shape[0]  # one scale per output channel
+    )
+
+
+def fp8_base_forward(X: torch.Tensor, W: torch.Tensor) -> torch.Tensor | None:
+    """Forward base GEMM ``X @ W^T`` run natively in fp8 on the tensor cores.
+
+    For a frozen torchao Float8 weight (``W.qdata`` e4m3 ``[out, in]``,
+    ``W.scale`` ``[out, 1]``) the weight is already quantized, so only the
+    activation is quantized at runtime (rowwise, dynamic) and the GEMM runs via
+    ``torch._scaled_mm`` instead of dequantizing the weight to bf16. This is the
+    forward half of fp8 LoRA: backward ``dX`` stays bf16 (its rowwise weight
+    scale sits on the contraction axis), keeping a single fp8 weight copy and
+    clean gradients.
+
+    Returns the ``[*, out]`` result in ``X.dtype``, or ``None`` when the fast
+    path does not apply (non-fp8 weight, unsupported hardware/shape) so the
+    caller can fall back to the dequantize path.
+    """
+    if X.dtype not in (torch.bfloat16, torch.float16):
+        return None
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability() < (8, 9):
+        return None  # fp8 tensor cores: Ada (8.9), Hopper (9.0), Blackwell (10.0/12.0)
+    if not _is_fp8_rowwise_weight(W):
+        return None
+    qd, wsc = W.qdata, W.scale
+    out_features, in_features = qd.shape
+    X2 = X.reshape(-1, in_features) if X.dim() != 2 else X
+    if X2.shape[1] % 16 or out_features % 16:  # _scaled_mm 16-element constraint
+        return None
+    amax = X2.abs().amax(dim=1, keepdim=True).clamp(min=1e-4)
+    x_inv_scale = amax / _FP8_E4M3_MAX
+    xq = (X2 / x_inv_scale).to(torch.float8_e4m3fn)
+    out = torch._scaled_mm(
+        xq,
+        qd.t(),  # [in, out], column-major — the layout _scaled_mm wants for mat2
+        scale_a=x_inv_scale.to(torch.float32),
+        scale_b=wsc.reshape(1, out_features).to(torch.float32),
+        out_dtype=X.dtype,
+    )
+    return out.view(*X.shape[:-1], out_features) if X.dim() != 2 else out
+
+
 def dequantize_fp8(
     W: torch.Tensor,
     scale_inv: torch.Tensor,
