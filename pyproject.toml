@@ -90,6 +90,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Fused LoRA kernels for Blackwell GeForce/RTX (sm_120/sm_121). Enable with
+# `lora_mlp_kernel`/`lora_qkv_kernel`/`lora_o_kernel: true`. CuTe-DSL is sm_120
+# only; imports are lazy + arch-gated so this is not needed on other hardware.
+blackwell = ["nvidia-cutlass-dsl==4.4.2"]
 flash-attn = ["flash-attn==2.8.3"]
 ring-flash-attn = [
     "flash-attn==2.8.3",

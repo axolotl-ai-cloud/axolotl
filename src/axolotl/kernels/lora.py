@@ -726,6 +726,41 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
     # Shared dropout mask for gate and up (same input)
     X_drop = _apply_dropout(gateDrop, X, self.training)
 
+    # Fused sm_120 (Blackwell) path: applicable for the common bf16 / unquantized
+    # / no-DoRA / no-bias / no-dropout case; returns None to fall back otherwise.
+    if X_drop is None:
+        from axolotl.kernels.blackwell.dispatch import maybe_lora_mlp_swiglu
+
+        fused = maybe_lora_mlp_swiglu(
+            X,
+            gateW,
+            gateA,
+            gateB,
+            gateS,
+            gateW_quant,
+            gateMag,
+            gateb,
+            gateLB,
+            upW,
+            upA,
+            upB,
+            upS,
+            upW_quant,
+            upMag,
+            upb,
+            upLB,
+            downW,
+            downA,
+            downB,
+            downS,
+            downW_quant,
+            downMag,
+            downb,
+            downLB,
+        )
+        if fused is not None:
+            return fused
+
     out = LoRA_MLP.apply(
         X,
         X_drop,
@@ -781,6 +816,39 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
     )
 
     X_drop = _apply_dropout(gateDrop, X, self.training)
+
+    if X_drop is None:
+        from axolotl.kernels.blackwell.dispatch import maybe_lora_mlp_geglu
+
+        fused = maybe_lora_mlp_geglu(
+            X,
+            gateW,
+            gateA,
+            gateB,
+            gateS,
+            gateW_quant,
+            gateMag,
+            gateb,
+            gateLB,
+            upW,
+            upA,
+            upB,
+            upS,
+            upW_quant,
+            upMag,
+            upb,
+            upLB,
+            downW,
+            downA,
+            downB,
+            downS,
+            downW_quant,
+            downMag,
+            downb,
+            downLB,
+        )
+        if fused is not None:
+            return fused
 
     out = LoRA_MLP.apply(
         X,
@@ -1260,6 +1328,39 @@ def apply_lora_qkv(
     # Apply dropout outside autograd.Function (shared mask for Q, K, V)
     X_drop = _apply_dropout(Qdrop, X, self.training)
 
+    if X_drop is None:
+        from axolotl.kernels.blackwell.dispatch import maybe_lora_qkv
+
+        fused = maybe_lora_qkv(
+            X,
+            QW,
+            QA,
+            QB,
+            QS,
+            QW_quant,
+            Qmag,
+            Qb,
+            Qlb,
+            KW,
+            KA,
+            KB,
+            KS,
+            KW_quant,
+            Kmag,
+            Kb,
+            Klb,
+            VW,
+            VA,
+            VB,
+            VS,
+            VW_quant,
+            Vmag,
+            Vb,
+            Vlb,
+        )
+        if fused is not None:
+            return fused
+
     Q, K, V = LoRA_QKV.apply(
         X,
         X_drop,
@@ -1602,6 +1703,32 @@ def apply_lora_qk(
     # Apply dropout outside autograd.Function (shared mask for Q, K)
     X_drop = _apply_dropout(Qdrop, X, self.training)
 
+    if X_drop is None:
+        from axolotl.kernels.blackwell.dispatch import maybe_lora_qk
+
+        fused = maybe_lora_qk(
+            X,
+            QW,
+            QA,
+            QB,
+            QS,
+            QW_quant,
+            Qmag,
+            Qb,
+            Qlb,
+            KW,
+            KA,
+            KB,
+            KS,
+            KW_quant,
+            Kmag,
+            Kb,
+            Klb,
+        )
+        if fused is not None:
+            Q, K = fused
+            return Q, K, K  # caller uses K as V (v_proj is None)
+
     Q, K = LoRA_QK.apply(
         X,
         X_drop,
@@ -1786,6 +1913,14 @@ def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
     """
     OW, Ob, OW_quant, OA, OB, OS, Olb, Odrop, Omag = get_lora_parameters(self.o_proj)
     X_drop = _apply_dropout(Odrop, X, self.training)
+
+    if X_drop is None:
+        from axolotl.kernels.blackwell.dispatch import maybe_lora_o
+
+        fused = maybe_lora_o(X, OW, OA, OB, OS, OW_quant, Omag, Ob, Olb)
+        if fused is not None:
+            return fused
+
     output = LoRA_O.apply(X, X_drop, OW, Ob, OW_quant, OA, OB, OS, Olb, Omag)
 
     return output
