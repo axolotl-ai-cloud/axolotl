@@ -312,14 +312,6 @@ class PatchManager:
 
                 patch_trl_prepare_fsdp2()
 
-        # if self.cfg.fsdp_config:
-        #     # see transformers#39152
-        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
-        #         patch_training_loop_for_fsdp,
-        #     )
-        #
-        #     patch_training_loop_for_fsdp()
-
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
         if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
