@@ -5,8 +5,6 @@ import pytest
 from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
 
-from tests.hf_offline_utils import enable_hf_offline
-
 
 class TestHFCausalTrainerBuilder:
     """
@@ -50,7 +48,6 @@ class TestHFCausalTrainerBuilder:
             "prm_cfg",
         ],
     )
-    @enable_hf_offline
     def test_builder_w_rm_trainers(self, request, cfg_string, model, tokenizer):
         cfg = request.getfixturevalue(cfg_string)
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)

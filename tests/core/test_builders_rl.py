@@ -11,7 +11,6 @@ from axolotl.utils.data import prepare_preference_datasets
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
-from tests.hf_offline_utils import enable_hf_offline
 
 
 class TestHFRLTrainerBuilder:
@@ -173,7 +172,6 @@ def rand_reward_func(prompts, completions) -> list[float]:
             # ),
         ],
     )
-    @enable_hf_offline
     def test_custom_optimizer_cls_and_kwargs(
         self,
         request,

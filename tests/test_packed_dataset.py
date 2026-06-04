@@ -30,7 +30,6 @@ class TestPacking(unittest.TestCase):
             }
         )
 
-    @enable_hf_offline
     @with_temp_dir
     def test_lora_packing(self, temp_dir):
         cfg = DictDefault(

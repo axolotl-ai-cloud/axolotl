@@ -222,12 +222,6 @@ def download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset():
     )
 
 
-@pytest.fixture(scope="session", autouse=True)
-def download_trl_lib_math_shepherd_dataset():
-    # download the dataset (process reward model trainer test)
-    snapshot_download_w_retry("trl-lib/math_shepherd", repo_type="dataset")
-
-
 # @pytest.fixture(scope="session", autouse=True)
 # def download_fozzie_alpaca_dpo_dataset():
 #     # download the dataset
@@ -422,46 +416,6 @@ def download_mlx_mistral_7b_model_fixture():
         "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
         repo_type="model",
         allow_patterns=["*token*", "config.json"],
-    )
-
-
-# mistral-common tokenizer file is `tekken.json` (not matched by `*token*`)
-_MISTRAL_TOKENIZER_PATTERNS = [
-    "*token*",
-    "tekken.json",
-    "params.json",
-    "*.model*",
-    "config.json",
-]
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_magistral_small_model_fixture():
-    # download the tokenizer only
-    snapshot_download_w_retry(
-        "mistralai/Magistral-Small-2506",
-        repo_type="model",
-        allow_patterns=_MISTRAL_TOKENIZER_PATTERNS,
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_devstral_small_2505_model_fixture():
-    # download the tokenizer only
-    snapshot_download_w_retry(
-        "mistralai/Devstral-Small-2505",
-        repo_type="model",
-        allow_patterns=_MISTRAL_TOKENIZER_PATTERNS,
-    )
-
-
-@pytest.fixture(scope="session", autouse=True)
-def download_devstral_small_2507_model_fixture():
-    # download the tokenizer only
-    snapshot_download_w_retry(
-        "mistralai/Devstral-Small-2507",
-        repo_type="model",
-        allow_patterns=_MISTRAL_TOKENIZER_PATTERNS,
     )
 
 

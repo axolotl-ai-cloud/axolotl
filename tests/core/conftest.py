@@ -7,8 +7,6 @@ from axolotl.utils.config import normalize_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.enums import RLType
 
-from tests.hf_offline_utils import enable_hf_offline
-
 
 @pytest.fixture(name="base_cfg")
 def fixture_base_cfg():
@@ -237,13 +235,11 @@ def fixture_prm_cfg(sft_cfg):
 
 
 @pytest.fixture(name="tokenizer")
-@enable_hf_offline
 def fixture_tokenizer(base_cfg):
     return load_tokenizer(base_cfg)
 
 
 @pytest.fixture(name="model")
-@enable_hf_offline
 def fixture_model(base_cfg, tokenizer):
     model, _ = ModelLoader(base_cfg, tokenizer).load()
     return model
