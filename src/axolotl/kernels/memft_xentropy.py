@@ -123,7 +123,7 @@ class MemFTLinearCrossEntropy(torch.autograd.Function):
     def forward(
         ctx, hidden, weight, labels, critical_loss, epsilon, ignore_index, chunk_tokens
     ):
-        n_tokens, hidden_size = hidden.shape
+        n_tokens, _hidden_size = hidden.shape
         vocab_size = weight.shape[0]
         device = hidden.device
 

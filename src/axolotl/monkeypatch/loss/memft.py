@@ -61,7 +61,10 @@ def _segment_anchor(error, position, mask):
 
     new_sample = position == 0
     seg = new_sample.cumsum(dim=1)  # [B, S] segment index within each row
-    num_seg = int(seg.max().item()) + 1
+    # a row can hold at most seq_len segments, so use that fixed bucket count
+    # instead of seg.max().item() — avoids a device sync at negligible extra
+    # allocation (bsz * (seq_len + 1) scalars)
+    num_seg = seq_len + 1
 
     flat_key = (torch.arange(bsz, device=device).unsqueeze(1) * num_seg + seg).reshape(
         -1

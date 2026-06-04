@@ -390,9 +390,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             trainer_kwargs["compute_loss_func"] = configured_eaft_loss
 
-        # MemFT computes its loss inside the patched CausalLM forward (see
-        # patch_manager._apply_memft_patch) so it can see position_ids for
-        # packing-aware shifting; no compute_loss_func wiring is needed.
+        # MemFT computes its loss inside the patched CausalLM forward (patch_manager._apply_memft_patch); no compute_loss_func wiring needed.
 
         trainer_cls = self._get_trainer_cls()
 

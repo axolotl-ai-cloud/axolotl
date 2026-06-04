@@ -94,15 +94,17 @@ def test_grad_weight_precision_under_many_chunks():
 
 
 def test_out_of_range_label_treated_as_ignore():
-    # a negative label that is not the ignore sentinel must not OOB-load; it is
-    # masked like ignore_index.
+    # labels outside [0, vocab) (below 0 or >= vocab) and not the ignore
+    # sentinel must not OOB-load; the kernel masks them like ignore_index.
     torch.manual_seed(0)
     dev = "cuda"
     n, h, v = 16, 32, 128
     hidden = torch.randn(n, h, device=dev)
     weight = torch.randn(v, h, device=dev)
     labels = torch.randint(0, v, (n,), device=dev)
-    labels[3] = -5  # out of range, not ignore_index
+    labels[3] = -5  # below range, not ignore_index
+    labels[7] = v  # at the upper bound (== vocab_size)
+    labels[9] = v + 4  # above range
 
     hf = hidden.clone().requires_grad_(True)
     wf = weight.clone().requires_grad_(True)
@@ -110,7 +112,7 @@ def test_out_of_range_label_treated_as_ignore():
     loss_f.backward()
 
     ref_labels = labels.clone()
-    ref_labels[3] = -100  # reference: the bad position is ignored
+    ref_labels[[3, 7, 9]] = -100  # reference: the bad positions are ignored
     hr = hidden.clone().requires_grad_(True)
     wr = weight.clone().requires_grad_(True)
     loss_r = _reference(hr, wr, ref_labels)
