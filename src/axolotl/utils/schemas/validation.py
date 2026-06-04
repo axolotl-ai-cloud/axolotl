@@ -1013,6 +1013,7 @@ class OptimizationValidationMixin:
         - chunked_cross_entropy
         - liger_cross_entropy (LigerPlugin)
         - liger_fused_linear_cross_entropy (LigerPlugin)
+        - memft (MemFT token-weighted loss)
         """
         ce_options = {
             "cut_cross_entropy": data.get("cut_cross_entropy"),
@@ -1021,6 +1022,7 @@ class OptimizationValidationMixin:
             "liger_fused_linear_cross_entropy": data.get(
                 "liger_fused_linear_cross_entropy"
             ),
+            "memft": data.get("memft"),
         }
 
         enabled_options = [k for k, v in ce_options.items() if v]
