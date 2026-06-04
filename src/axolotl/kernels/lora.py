@@ -646,7 +646,7 @@ class LoRA_MLP(torch.autograd.Function):
             del up_weight_deq
 
             gate_weight_deq = dequantize(gate_weight, gate_quant)
-            dX += grad_gate @ gate_weight_deq
+            dX.addmm_(grad_gate, gate_weight_deq)
             del gate_weight_deq
 
             # LoRA path: reuse grad_B_up and grad_B_gate from above
