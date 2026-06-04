@@ -8,6 +8,8 @@ from transformers import PreTrainedTokenizerFast
 from axolotl.prompt_strategies.ebft import load as load_ebft
 from axolotl.utils.dict import DictDefault
 
+from tests.hf_offline_utils import enable_hf_offline
+
 
 @pytest.fixture
 def tokenizer():
@@ -290,6 +292,7 @@ class TestMultiTurnSeparators:
             {"role": "assistant", "content": "A2"},
         ]
 
+    @enable_hf_offline
     def test_multiturn_gt_reconstruction_via_chat_template(self):
         """Trainer-side GT reconstruction should insert role markers between turns.
 
@@ -299,9 +302,7 @@ class TestMultiTurnSeparators:
         """
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen2-0.5B-Instruct", trust_remote_code=True
-        )
+        tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
 
         # Simulate the transform output
         prompt_msgs = [{"role": "user", "content": "Q1"}]
@@ -340,13 +341,12 @@ class TestMultiTurnSeparators:
             "Full GT should start with the rendered prompt"
         )
 
+    @enable_hf_offline
     def test_multiturn_gt_reconstruction_fallback_single_turn(self):
         """Single-turn prompts in a multi-turn dataset should use raw concatenation."""
         from transformers import AutoTokenizer
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            "Qwen/Qwen2-0.5B-Instruct", trust_remote_code=True
-        )
+        tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M-Instruct")
 
         prompt_msgs = [{"role": "user", "content": "Q1"}]
         gt = "A1"

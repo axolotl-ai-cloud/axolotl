@@ -154,11 +154,16 @@ def fixture_gemma2_tokenizer():
     return tokenizer
 
 
+# revision=None lets mistral-common's offline fallback resolve the cached snapshot via
+# refs/main; the "main" default makes it look for a snapshots/main dir that never exists,
+# so a throttled list_repo_files would fail instead of using prefetched local files.
 @pytest.fixture(name="magistral_tokenizer")
 def fixture_magistral_tokenizer():
     from axolotl.utils.mistral import HFMistralTokenizer
 
-    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Magistral-Small-2506")
+    tokenizer = HFMistralTokenizer.from_pretrained(
+        "mistralai/Magistral-Small-2506", revision=None
+    )
     return tokenizer
 
 
@@ -166,7 +171,9 @@ def fixture_magistral_tokenizer():
 def fixture_devstral_tokenizer():
     from axolotl.utils.mistral import HFMistralTokenizer
 
-    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2505")
+    tokenizer = HFMistralTokenizer.from_pretrained(
+        "mistralai/Devstral-Small-2505", revision=None
+    )
     return tokenizer
 
 
@@ -174,7 +181,9 @@ def fixture_devstral_tokenizer():
 def fixture_devstral_1_1_tokenizer():
     from axolotl.utils.mistral import HFMistralTokenizer
 
-    tokenizer = HFMistralTokenizer.from_pretrained("mistralai/Devstral-Small-2507")
+    tokenizer = HFMistralTokenizer.from_pretrained(
+        "mistralai/Devstral-Small-2507", revision=None
+    )
     return tokenizer
 
 

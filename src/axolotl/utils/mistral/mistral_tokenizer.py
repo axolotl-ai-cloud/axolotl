@@ -210,7 +210,8 @@ class HFMistralTokenizer(MistralCommonBackend):
         if not os.path.isfile(pretrained_model_name_or_path):
             tokenizer_path = download_tokenizer_from_hf_hub(
                 repo_id=str(pretrained_model_name_or_path),
-                cache_dir=str(cache_dir),
+                # str(None) -> "None" would download into a stray ./None dir and miss the HF cache
+                cache_dir=str(cache_dir) if cache_dir is not None else None,
                 token=token,
                 revision=revision,
                 force_download=force_download,
