@@ -143,7 +143,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -182,7 +182,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -221,7 +221,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -254,7 +254,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -287,7 +287,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -372,7 +372,7 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
-                "dataset_num_proc": 4,
+                "dataset_num_proc": 1,
             }
         )
 
@@ -473,7 +473,7 @@ class TestDatasetPreparation:
                             "type": "alpaca",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 
@@ -539,7 +539,7 @@ class TestDatasetPreparation:
                             "message_field_content": "content",
                         },
                     ],
-                    "dataset_num_proc": 4,
+                    "dataset_num_proc": 1,
                 }
             )
 

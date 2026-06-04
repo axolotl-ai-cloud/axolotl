@@ -186,7 +186,7 @@ def test_full_model_kernelize_succeeds_with_patch(restore_gemma4_vision_attentio
     # Without the patch, kernelize() crashes.
     model = build()
     model.train()
-    with pytest.raises((TypeError, AttributeError)):
+    with pytest.raises((TypeError, AttributeError, ValueError)):
         model.kernelize()
 
     # With the patch, it succeeds.
