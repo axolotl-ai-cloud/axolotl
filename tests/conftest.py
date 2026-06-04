@@ -92,6 +92,23 @@ def snapshot_download_w_retry(*args, **kwargs):
         return snapshot_download(*args, **kwargs)
 
 
+@retry_on_request_exceptions(max_retries=3, delay=5)
+def load_dataset_w_retry(*args, **kwargs):
+    """
+    Build the local *datasets* cache so tests can later ``load_dataset`` offline.
+    ``snapshot_download`` only fills the hub cache, which is not enough for an
+    offline ``load_dataset`` (it still resolves the dataset via the Hub). Try the
+    cache first to avoid hitting the HF Hub API, then fetch from the hub on a miss.
+    """
+    with hf_offline_context(True):
+        try:
+            return datasets.load_dataset(*args, **kwargs)
+        except Exception:  # pylint: disable=broad-except  # not cached yet
+            pass
+    with hf_offline_context(False):
+        return datasets.load_dataset(*args, **kwargs)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def download_ds_fixture_bundle():
     ds_dir = snapshot_download_w_retry(
@@ -172,8 +189,8 @@ def download_tatsu_lab_alpaca_dataset():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_mhenrichsen_alpaca_2k_dataset():
-    # download the dataset
-    snapshot_download_w_retry("mhenrichsen/alpaca_2k_test", repo_type="dataset")
+    # load_dataset (not snapshot_download) so it can be loaded offline by tests
+    load_dataset_w_retry("mhenrichsen/alpaca_2k_test")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -200,32 +217,26 @@ def download_argilla_distilabel_capybara_dpo_7k_binarized_dataset():
 
 @pytest.fixture(scope="session", autouse=True)
 def download_argilla_distilabel_intel_orca_dpo_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "argilla/distilabel-intel-orca-dpo-pairs", repo_type="dataset"
-    )
+    # load_dataset (not snapshot_download) so it can be loaded offline by tests
+    load_dataset_w_retry("argilla/distilabel-intel-orca-dpo-pairs")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_argilla_ultrafeedback_binarized_preferences_cleaned_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "argilla/ultrafeedback-binarized-preferences-cleaned", repo_type="dataset"
-    )
+    # load_dataset (not snapshot_download) so it can be loaded offline by tests
+    load_dataset_w_retry("argilla/ultrafeedback-binarized-preferences-cleaned")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_argilla_ultrafeedback_binarized_preferences_cleaned_kto_dataset():
-    # download the dataset
-    snapshot_download_w_retry(
-        "argilla/ultrafeedback-binarized-preferences-cleaned-kto", repo_type="dataset"
-    )
+    # load_dataset (not snapshot_download) so it can be loaded offline by tests
+    load_dataset_w_retry("argilla/ultrafeedback-binarized-preferences-cleaned-kto")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def download_trl_lib_math_shepherd_dataset():
-    # download the dataset (process reward model trainer test)
-    snapshot_download_w_retry("trl-lib/math_shepherd", repo_type="dataset")
+    # load_dataset (not snapshot_download) so it can be loaded offline by tests
+    load_dataset_w_retry("trl-lib/math_shepherd")
 
 
 # @pytest.fixture(scope="session", autouse=True)
