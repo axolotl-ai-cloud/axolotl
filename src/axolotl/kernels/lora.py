@@ -270,7 +270,7 @@ def matmul_lora(
     if A is not None:
         X_lora = X_drop if X_drop is not None else X
         A, B = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
-        out += s * X_lora @ A @ B
+        out.addmm_(X_lora @ A, B, alpha=s)
         if lora_bias is not None:
             out += s * lora_bias
 
