@@ -1,6 +1,7 @@
 """Unit tests for axolotl.core.builders"""
 
 import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -576,6 +577,78 @@ class TestHFCausalTrainerBuilder:
         # Ensure optimizer is created with correct class
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
+
+    def test_scao_import_fallback_from_submodule(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "scao"
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        training_args_kwargs = {
+            "learning_rate": 0.00005,
+            "weight_decay": 0.01,
+            "adam_beta1": 0.998,
+            "adam_beta2": 0.9,
+            "adam_epsilon": 0.00001,
+        }
+        trainer_kwargs = {}
+
+        class FakeSCAO:
+            pass
+
+        scao_module = types.ModuleType("scao")
+        scao_optimizer_module = types.ModuleType("scao.optimizer")
+        scao_optimizer_module.SCAO = FakeSCAO
+        scao_module.optimizer = scao_optimizer_module
+
+        with patch.dict(
+            sys.modules,
+            {
+                "scao": scao_module,
+                "scao.optimizer": scao_optimizer_module,
+            },
+            clear=False,
+        ):
+            builder._configure_optimizer(training_args_kwargs, trainer_kwargs)
+
+        optimizer_cls, optimizer_kwargs = trainer_kwargs["optimizer_cls_and_kwargs"]
+        assert optimizer_cls is FakeSCAO
+        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["eps"] == 0.00001
+
+    def test_scao_import_from_top_level_with_optim_args(
+        self, sft_cfg, model, tokenizer
+    ):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "scao"
+        cfg["optim_args"] = {"precond_freq": 10, "k_max": 64}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        training_args_kwargs = {
+            "learning_rate": 0.00005,
+            "weight_decay": 0.01,
+            "adam_beta1": 0.998,
+            "adam_beta2": 0.9,
+            "adam_epsilon": 0.00001,
+        }
+        trainer_kwargs = {}
+
+        class FakeSCAO:
+            pass
+
+        scao_module = types.ModuleType("scao")
+        scao_module.SCAO = FakeSCAO
+
+        with patch.dict(sys.modules, {"scao": scao_module}, clear=False):
+            builder._configure_optimizer(training_args_kwargs, trainer_kwargs)
+
+        optimizer_cls, optimizer_kwargs = trainer_kwargs["optimizer_cls_and_kwargs"]
+        assert optimizer_cls is FakeSCAO
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["betas"] == (0.998, 0.9)
+        assert optimizer_kwargs["eps"] == 0.00001
+        assert optimizer_kwargs["precond_freq"] == 10
+        assert optimizer_kwargs["k_max"] == 64
 
 
 class TestTrainerClsPlugin:

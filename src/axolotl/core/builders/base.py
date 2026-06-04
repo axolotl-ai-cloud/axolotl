@@ -419,6 +419,23 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = FlashLion
                 if "betas" in adam_kwargs:
                     optimizer_kwargs["betas"] = adam_kwargs["betas"]
+            elif self.cfg.optimizer == "scao":
+                try:
+                    from scao import SCAO
+                except ImportError as err:
+                    try:
+                        # Compatibility with package layouts exposing the optimizer
+                        # under scao.optimizer instead of top-level scao.
+                        from scao.optimizer import SCAO  # type: ignore[no-redef]
+                    except ImportError:
+                        raise ImportError(
+                            "SCAO optimizer not found. Please install it with 'pip install scao'"
+                        ) from err
+                optimizer_cls = SCAO
+                beta1 = training_args_kwargs.get("adam_beta1", 0.9)
+                beta2 = training_args_kwargs.get("adam_beta2", 0.999)
+                adam_kwargs["betas"] = (beta1, beta2)
+                optimizer_kwargs.update(adam_kwargs)
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
