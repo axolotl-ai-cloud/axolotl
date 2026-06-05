@@ -160,6 +160,7 @@ class PatchManager:
         # cleanly in the same call even though one is instance-scoped
         # and the other is module-scoped.
         self._apply_gemma_hybrid_attention(model)
+        self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -169,6 +170,17 @@ class PatchManager:
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
         self._apply_tiled_mlp_post_load(model)
+
+    def _apply_gemma4_loss_kwargs(self):
+        # Flip accepts_loss_kwargs True so the Trainer normalizes loss by
+        # num_items_in_batch under grad accumulation (must run before trainer init).
+        if self.cfg.model_config_type not in ("gemma4", "gemma4_unified"):
+            return
+        from axolotl.monkeypatch.gemma4_loss_kwargs import (
+            patch_gemma4_accepts_loss_kwargs,
+        )
+
+        patch_gemma4_accepts_loss_kwargs()
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -356,6 +368,8 @@ class PatchManager:
         "qwen3_5_moe_text",
         "gemma4",
         "gemma4_text",
+        "gemma4_unified",
+        "gemma4_unified_text",
     )
 
     @staticmethod
@@ -495,6 +509,28 @@ class PatchManager:
                     or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
                 )
                 patch_gemma4_fused_attn(
+                    install_shared_kv_workaround=needs_shared_kv_workaround
+                )
+
+            # gemma4_unified reuses the same fused RMSNorm+RoPE kernels (identical
+            # q/k/v-norm + RoPE math) but in its own module namespace. Opt-in via
+            # ``fused_attn_kernel`` (unlike standard gemma4, which is auto-on)
+            # pending GPU validation against released unified checkpoints.
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
+                from axolotl.monkeypatch.models.gemma4_unified.fused_attn import (
+                    patch_gemma4_unified_fused_attn,
+                )
+
+                fsdp_cfg = self.cfg.fsdp_config
+                needs_shared_kv_workaround = (not self.inference) and bool(
+                    self.cfg.gradient_checkpointing
+                    or self.cfg.activation_offloading
+                    or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
+                )
+                patch_gemma4_unified_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
 

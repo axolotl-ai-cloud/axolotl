@@ -186,6 +186,8 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
                 "gemma4",
                 "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
             ):
                 from axolotl.kernels.autotune_telemetry import (
                     FusedRopeAutotuneReportCallback,
