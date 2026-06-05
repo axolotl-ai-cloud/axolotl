@@ -234,13 +234,15 @@ class LigerPlugin(BasePlugin):
                 class _LigerGemma4RMSNorm(LigerRMSNorm):
                     """LigerRMSNorm for Gemma4 with in_place=False and with_scale support."""
 
-                    def __new__(cls, dim, eps=1e-6, with_scale=True):
+                    # dim defaults to None so copy.deepcopy (PEFT modules_to_save clone) can reconstruct via __new__(cls).
+                    def __new__(cls, dim=None, eps=1e-6, with_scale=True):
                         if not with_scale:
                             return _OrigGemma4RMSNorm(dim, eps, with_scale=False)
                         return super().__new__(cls)
 
-                    def __init__(self, dim, eps=1e-6, with_scale=True):
-                        if not with_scale:
+                    def __init__(self, dim=None, eps=1e-6, with_scale=True):
+                        # No-op on the dim=None deepcopy path; __setstate__ restores state.
+                        if dim is None or not with_scale:
                             return
                         # offset=0.0 (standard), in_place=False (gradient checkpointing safe)
                         super().__init__(
