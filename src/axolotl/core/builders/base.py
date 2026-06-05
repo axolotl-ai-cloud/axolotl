@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -45,9 +44,10 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo

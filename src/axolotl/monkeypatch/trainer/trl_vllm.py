@@ -7,14 +7,15 @@ Adds:
 - split_tensor_dict / shuffle_sequence_dict: scalar type handling (int/float/bool passthrough)
 """
 
-import logging
 import math
 from functools import wraps
 
 import torch
 from torch import nn
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 
 def _batch_update_named_params(
