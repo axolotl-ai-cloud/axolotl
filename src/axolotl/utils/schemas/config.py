@@ -834,6 +834,25 @@ class AxolotlInputConfig(
         },
     )
 
+    fused_attn_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) "
+                "with a single fused RMSNorm+RoPE Triton kernel launch. Currently "
+                "implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE "
+                "full-attention layers; Gemma 4 always uses the fused path. Disabled "
+                "(None/False) falls back "
+                "to the eager transformers implementation. Compile-safe via "
+                "torch.library.triton_op — traces under torch.compile(fullgraph=True). "
+                "Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. "
+                "Combining with torch_compile=true is a clear win on sm_120 (+9% "
+                "extra) but currently regresses on sm_86 due to Inductor autotune "
+                "biases — flip them on independently and benchmark."
+            )
+        },
+    )
+
     experts_implementation: str | None = Field(
         default=None,
         json_schema_extra={
@@ -973,6 +992,27 @@ class AxolotlInputConfig(
     fsdp_version: int | None = Field(
         default=None,
         json_schema_extra={"description": "FSDP version"},
+    )
+    fp32_norms: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them "
+                "under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2."
+            )
+        },
+    )
+    fp32_norm_classes: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Class-name patterns to match for fp32 norm sharding. Patterns "
+                "without a '.' match against type(module).__name__ as a suffix. "
+                "Patterns containing a '.' match the fully qualified class path "
+                "exactly. Defaults to ['RMSNorm', 'LayerNorm'] when fp32_norms is "
+                "true and this is unset."
+            )
+        },
     )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
@@ -1476,6 +1516,30 @@ class AxolotlInputConfig(
             f"Expected one of: {sorted(CANONICAL_ATTN_IMPLS)}, or a hub-kernel "
             f"path containing '/'."
         )
+
+    @model_validator(mode="after")
+    def check_fp32_norms(self):
+        if self.fp32_norms:
+            # FSDP must actually be configured — fsdp_version alone is not
+            # sufficient since the rest of axolotl treats fsdp_config as the
+            # canonical "is_fsdp" signal.
+            if self.fsdp_config is None:
+                raise ValueError(
+                    "fp32_norms requires FSDP to be enabled "
+                    "(fsdp_config block must be set)."
+                )
+            if str(self.fsdp_version) != "2":
+                raise ValueError(
+                    "fp32_norms requires fsdp_version: 2. FSDP1's flat-param "
+                    "dtype uniformity constraint is incompatible with keeping "
+                    "norms in fp32 while decoder layers run in bf16."
+                )
+        if self.fp32_norm_classes and not self.fp32_norms:
+            LOG.warning(
+                "fp32_norm_classes is set but fp32_norms is not enabled; "
+                "it will be ignored."
+            )
+        return self
 
     @model_validator(mode="after")
     def check_sageattn_wo_sample_packing(self):

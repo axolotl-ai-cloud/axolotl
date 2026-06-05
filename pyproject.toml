@@ -17,10 +17,10 @@ dependencies = [
     "huggingface_hub>=1.1.7",
     "peft>=0.19.1,<0.20.0",
     "tokenizers>=0.22.1",
-    "transformers==5.8.1",
+    "transformers==5.9.0",
     "accelerate==1.13.0",
     "datasets>=4.8.4,<4.9.0",
-    "trl==1.1.0",
+    "trl==1.5.1",
     "hf_xet==1.4.3",
     "kernels==0.13.0",
     "trackio>=0.16.1",
@@ -40,6 +40,7 @@ dependencies = [
     "colorama",
     "numba>=0.61.2",
     "numpy>=2.2.6",
+    "typer<0.26.0",
 
     # Evaluation & metrics
     "evaluate==0.4.1",

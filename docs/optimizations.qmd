@@ -73,13 +73,25 @@ Provides efficient Triton kernels to improve training speed and reduce memory us
 
 - **Learn more:** [Custom Integrations - Liger Kernels](custom_integrations.qmd#liger-kernels)
 
+### Fused RMSNorm + RoPE (Qwen3 / Qwen3-MoE / Qwen3.5 / Qwen3.5-MoE / Qwen3.6 dense / Qwen3.6-MoE)
+
+Replaces the per-layer `q_norm + apply_rotary_pos_emb` (and matching K path) with a single Triton kernel launch on the full-attention layers. Opt-in. The kernel computes in fp32 and rounds once, so it matches an fp32 reference to within bf16 rounding — i.e. it is *more* accurate than the eager bf16 path, which rounds at several intermediate steps. Gemma 4 always uses the fused path (no flag needed). Qwen3.6 checkpoints are loaded by transformers under the `qwen3_5` / `qwen3_5_moe` model_types, so the same flag covers both generations.
+
+```yaml
+fused_attn_kernel: true
+```
+
+- **Compile-safe:** the kernel is wrapped as a `torch.library.triton_op` and traces under `torch.compile(fullgraph=True)`.
+- **Hardware note:** on sm_120 (Blackwell) combining with `torch_compile: true` is a net win; on sm_86 (Ampere consumer) `torch_compile: true` currently regresses the surrounding Inductor-generated kernels — keep compile off there.
+
 ### Expert Kernels
 
-Optimized kernel implementations for Mixture of Experts (MoE) model training.
+Optimized per-expert grouped-GEMM kernels for MoE training, with LoRA support.
 
-- **ScatterMoE**: Triton-based MoE kernels with fused LoRA support.
-- **SonicMoE**: CUTLASS-based MoE kernels for NVIDIA Hopper and Blackwell GPUs.
+- **ScatterMoE**: Triton, any CUDA GPU.
+- **SonicMoE**: CUTLASS / cute-DSL, Hopper+ only.
 
+- **Config:** `use_scattermoe: true` or `use_sonicmoe: true`
 - **Learn more:** [Custom Integrations - Kernels Integration](custom_integrations.qmd#kernels-integration)
 
 ## Long Context Models
@@ -117,7 +129,7 @@ To train models that don't fit on a single GPU, you'll need to use a distributed
 
 ### N-D Parallelism (Beta)
 
-For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
+For advanced scaling, Axolotl allows you to compose different parallelism techniques (e.g., Data, Tensor, Sequence, Expert Parallelism). This is a powerful approach to train an extremely large model by overcoming multiple bottlenecks at once.
 
 - **Learn more:** [N-D Parallelism Guide](nd_parallelism.qmd)
 

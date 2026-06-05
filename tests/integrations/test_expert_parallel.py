@@ -1,6 +1,10 @@
 """Tests for the Expert-Parallel (DeepEP) integration."""
 
 import os
+import queue as queue_mod
+import socket
+import time
+from datetime import timedelta
 from importlib.util import find_spec
 
 import pytest
@@ -180,6 +184,10 @@ class TestShardingSingleRank:
             os.environ.setdefault("WORLD_SIZE", "1")
             dist.init_process_group(backend="gloo", rank=0, world_size=1)
 
+    def teardown_method(self):
+        if dist.is_initialized():
+            dist.destroy_process_group()
+
     def test_no_op_at_world_size_1(self):
         block = _build_qwen3moe_block(num_experts=16)
         original_shape = tuple(block.experts.gate_up_proj.shape)
@@ -279,7 +287,12 @@ def _ep_topology_worker(rank, world_size, ep_size, dp_shard_size, port, q):
     os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(
+        backend="gloo",
+        rank=rank,
+        world_size=world_size,
+        timeout=timedelta(seconds=120),
+    )
 
     try:
         from types import SimpleNamespace
@@ -316,7 +329,12 @@ def _ep_topology_worker_expects_error(
     os.environ["MASTER_PORT"] = str(port)
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(
+        backend="gloo",
+        rank=rank,
+        world_size=world_size,
+        timeout=timedelta(seconds=120),
+    )
     try:
         from types import SimpleNamespace
 
@@ -337,13 +355,45 @@ def _ep_topology_worker_expects_error(
         ExpertParallelPlugin._device_mesh = None
 
 
-def _spawn_topology_check(world_size, ep_size, dp_shard_size, port_base):
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _collect_worker_results(procs, q, world_size, timeout=120):
+    """Collect one result per worker, bailing out early if a worker dies.
+
+    A bare ``q.get(timeout=...)`` blocks the full timeout even after a worker has
+    crashed without reporting; here we stop once all workers have exited so an
+    infra failure surfaces as a clear assertion instead of a silent hang.
+    """
+    results = []
+    deadline = time.monotonic() + timeout
+    while len(results) < world_size and time.monotonic() < deadline:
+        try:
+            results.append(q.get(timeout=5))
+        except queue_mod.Empty:
+            if all(not p.is_alive() for p in procs):
+                break
+    for p in procs:
+        p.join(timeout=20)
+    exitcodes = [p.exitcode for p in procs]
+    assert len(results) == world_size, (
+        f"only {len(results)}/{world_size} workers reported; exitcodes={exitcodes}"
+    )
+    assert all(code == 0 for code in exitcodes), f"worker exitcodes={exitcodes}"
+    return results
+
+
+def _spawn_topology_check(world_size, ep_size, dp_shard_size):
     ctx = mp.get_context("spawn")
     q = ctx.Queue()
+    port = _find_free_port()
     procs = [
         ctx.Process(
             target=_ep_topology_worker,
-            args=(r, world_size, ep_size, dp_shard_size, port_base, q),
+            args=(r, world_size, ep_size, dp_shard_size, port, q),
         )
         for r in range(world_size)
     ]
@@ -363,10 +413,7 @@ class TestMeshTopology:
         """At world=4 with ep=2 and dp_shard=2, EP groups must be strided
         ({0,2}, {1,3}) and dp_shard groups contiguous ({0,1}, {2,3}).
         """
-        # Use large random-ish port base to avoid collision with anything else.
-        results = _spawn_topology_check(
-            world_size=4, ep_size=2, dp_shard_size=2, port_base=37610
-        )
+        results = _spawn_topology_check(world_size=4, ep_size=2, dp_shard_size=2)
         # Build per-rank groupings from results.
         ep_groups_by_rank = {r: tuple(eps) for r, eps, _ in results}
         dp_groups_by_rank = {r: tuple(dps) for r, _, dps in results}
@@ -385,29 +432,29 @@ class TestMeshTopology:
 
     def test_world4_ep4_dp1_uses_world(self):
         """ep_size == world_size short-circuits to dist.group.WORLD."""
-        results = _spawn_topology_check(
-            world_size=4, ep_size=4, dp_shard_size=1, port_base=37710
-        )
+        results = _spawn_topology_check(world_size=4, ep_size=4, dp_shard_size=1)
         for rank, ep_ranks, dp_ranks in results:
             assert ep_ranks == [0, 1, 2, 3], (rank, ep_ranks)
             assert dp_ranks is None  # no 2D mesh built
 
-    def test_world4_ep2_dp1_invalid_product_raises(self):
-        """ep<world without dp_shard filling the rest must raise (product mismatch)."""
+    def _spawn_expects_error(self, ep_size, dp_shard_size, world_size=4):
         ctx = mp.get_context("spawn")
         q = ctx.Queue()
+        port = _find_free_port()
         procs = [
             ctx.Process(
                 target=_ep_topology_worker_expects_error,
-                args=(r, 4, 2, 1, 37810, q),
+                args=(r, world_size, ep_size, dp_shard_size, port, q),
             )
-            for r in range(4)
+            for r in range(world_size)
         ]
         for p in procs:
             p.start()
-        results = [q.get(timeout=60) for _ in range(4)]
-        for p in procs:
-            p.join(timeout=10)
+        return _collect_worker_results(procs, q, world_size)
+
+    def test_world4_ep2_dp1_invalid_product_raises(self):
+        """ep<world without dp_shard filling the rest must raise (product mismatch)."""
+        results = self._spawn_expects_error(ep_size=2, dp_shard_size=1)
         for rank, err in results:
             assert err is not None, (
                 f"rank {rank} did not raise; expected product mismatch"
@@ -416,20 +463,7 @@ class TestMeshTopology:
 
     def test_mesh_axis_product_mismatch_raises(self):
         """world=4 with ep=2*dp=4 (product 8 != 4) raises clearly."""
-        ctx = mp.get_context("spawn")
-        q = ctx.Queue()
-        procs = [
-            ctx.Process(
-                target=_ep_topology_worker_expects_error,
-                args=(r, 4, 2, 4, 37910, q),
-            )
-            for r in range(4)
-        ]
-        for p in procs:
-            p.start()
-        results = [q.get(timeout=60) for _ in range(4)]
-        for p in procs:
-            p.join(timeout=10)
+        results = self._spawn_expects_error(ep_size=2, dp_shard_size=4)
         for rank, err in results:
             assert err is not None, f"rank {rank} did not raise"
             assert "must equal" in err.lower() or "world_size" in err.lower(), err

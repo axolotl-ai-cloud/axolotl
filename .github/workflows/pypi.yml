@@ -8,9 +8,6 @@ on:
 
 permissions: {}
 
-env:
-  UV_SYSTEM_PYTHON: "1"
-
 jobs:
   setup_release:
     name: Create Release
@@ -24,7 +21,10 @@ jobs:
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        # idempotent: don't fail a re-run if the release already exists
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --generate-notes
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
@@ -47,13 +47,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
-      - name: Install dependencies
-        run: |
-          uv pip install wheel packaging
-          uv pip install --no-build-isolation -e .
-          uv pip install black mypy pre-commit types-requests quartodoc jupyter blobfile tiktoken \
-            codecov codecov-cli pytest pytest-cov pytest-retry pytest-sugar pytest-xdist tbparse
-
       - name: Extract tag name
         id: tag
         run: echo "TAG_NAME=$(echo $GITHUB_REF | cut -d / -f 3)" >> "$GITHUB_OUTPUT"
@@ -62,9 +55,10 @@ jobs:
         run: |
           echo "${{ steps.tag.outputs.TAG_NAME }}" | sed 's/^v//' > VERSION
 
-      - name: Build a source dist
-        run: |
-          python setup.py sdist
+      - name: Build sdist and wheel
+        # PEP 517 build via uv (setuptools backend reads the version from VERSION);
+        # replaces the removed `python setup.py sdist` after the pyproject migration.
+        run: uv build
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

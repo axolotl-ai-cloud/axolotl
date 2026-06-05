@@ -68,11 +68,11 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.9.1", "2.10.0"]
+        pytorch_version: ["2.9.1", "2.10.0", "2.11.0", "2.12.0"]
         exclude:
           - python_version: "3.14"
             pytorch_version: "2.9.1"
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: cleanup node
@@ -155,7 +155,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
-        pytorch_version: ["2.9.1", "2.10.0"]
+        pytorch_version: ["2.9.1", "2.10.0", "2.11.0", "2.12.0"]
         exclude:
           - python_version: "3.14"
             pytorch_version: "2.9.1"
@@ -274,7 +274,7 @@ jobs:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.9.1
+            pytorch: 2.12.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -302,7 +302,7 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
-          modal run cicd.e2e_tests
+          modal run -m cicd.e2e_tests
 
   docker-e2e-tests:
     if: >
@@ -323,19 +323,13 @@ jobs:
           - cuda: 128
             cuda_version: 12.8.1
             python_version: "3.11"
-            pytorch: 2.9.1
-            num_gpus: 1
-            axolotl_extras:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
             pytorch: 2.10.0
             num_gpus: 1
             axolotl_extras:
           - cuda: 130
             cuda_version: 13.0.0
-            python_version: "3.11"
-            pytorch: 2.9.1
+            python_version: "3.12"
+            pytorch: 2.11.0
             num_gpus: 1
             axolotl_extras:
     steps:
@@ -364,7 +358,7 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
-          modal run cicd.e2e_tests
+          modal run -m cicd.e2e_tests
 
   docker-e2e-cleanup:
     runs-on: [self-hosted, modal]
@@ -404,4 +398,4 @@ jobs:
           echo "N_GPUS=${{ matrix.num_gpus }}" >> $GITHUB_ENV
       - name: Run tests job on Modal
         run: |
-          modal run cicd.cleanup
+          modal run -m cicd.cleanup

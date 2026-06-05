@@ -43,8 +43,17 @@ pytest --full-trace -vvv --durations=10 \
   --cov-append
 
 # Run solo tests with coverage append
+# test_rm_lora is run in its own process below (it fails on py3.11 when sharing
+# the solo process with other tests; isolating it avoids cross-test state).
 pytest -v --durations=10 -n1 \
+  --ignore=tests/e2e/solo/test_reward_model_smollm2.py \
   /workspace/axolotl/tests/e2e/solo/ \
+  --cov=axolotl \
+  --cov-append
+
+# Run reward-model test isolated in its own process
+pytest -v --durations=10 -s \
+  /workspace/axolotl/tests/e2e/solo/test_reward_model_smollm2.py \
   --cov=axolotl \
   --cov-append
 
