@@ -1,21 +1,8 @@
 """Tests for the MiniMax ``kernelize()`` / ``use_kernels`` crash fix.
 
-transformers decorates ``MiniMaxM2Attention`` (and ``MiniMaxAttention``) with
-``@use_kernelized_func(apply_rotary_pos_emb)`` where the target is a plain
-function. Under ``use_kernels=True`` (force-enabled by axolotl's ScatterMoE /
-SonicMoE path), ``model.kernelize()`` then tries to ``register_module()`` that
-function and crashes with::
-
-    ValueError: Attempted to register a kernel for apply_rotary_pos_emb, but it
-    was not a `torch.nn.Module`.
-
-The patch strips the non-Module ``_hidden_kernels`` entry so ``kernelize()``
-succeeds. The attention ``forward`` calls the module-level
-``apply_rotary_pos_emb`` directly (never via the ``_hidden_kernels`` dict), so
-removing the entry is numerically neutral for the forward path.
-
-``minimax_m2`` is also the architecture for the M2.x point releases and MiniMax
-M3, so this covers the whole MiniMax MoE line.
+The patch strips the non-Module ``apply_rotary_pos_emb`` ``_hidden_kernels``
+entry that crashes ``model.kernelize()`` under ``use_kernels=True``. See
+:mod:`axolotl.monkeypatch.minimax_kernelize` for the full rationale.
 """
 
 import pytest
@@ -29,13 +16,15 @@ pytest.importorskip(
 @pytest.fixture
 def restore_minimax_attention():
     """Snapshot the patched ``__init__``\\ s and reset patch state after each test."""
-    from transformers.models.minimax.modeling_minimax import MiniMaxAttention
     from transformers.models.minimax_m2.modeling_minimax_m2 import MiniMaxM2Attention
 
-    saved = {
-        MiniMaxM2Attention: MiniMaxM2Attention.__init__,
-        MiniMaxAttention: MiniMaxAttention.__init__,
-    }
+    saved = {MiniMaxM2Attention: MiniMaxM2Attention.__init__}
+    try:
+        from transformers.models.minimax.modeling_minimax import MiniMaxAttention
+    except ImportError:
+        pass
+    else:
+        saved[MiniMaxAttention] = MiniMaxAttention.__init__
     yield
     from axolotl.monkeypatch import minimax_kernelize
 
@@ -76,6 +65,8 @@ def test_patch_installs_and_is_idempotent(restore_minimax_attention):
 
 
 def test_patch_strips_non_module_hidden_kernels(restore_minimax_attention):
+    import torch.nn as nn
+
     from axolotl.monkeypatch.minimax_kernelize import patch_minimax_kernelize
 
     attn_cls, cfg = _m2_attention()
@@ -84,9 +75,12 @@ def test_patch_strips_non_module_hidden_kernels(restore_minimax_attention):
     attn_before = attn_cls(cfg, layer_idx=0)
     assert "apply_rotary_pos_emb" in getattr(attn_before, "_hidden_kernels", {})
 
+    # The patch only drops non-Module entries; module-backed kernels stay.
     patch_minimax_kernelize()
     attn_after = attn_cls(cfg, layer_idx=0)
-    assert dict(getattr(attn_after, "_hidden_kernels", {})) == {}
+    hidden_kernels = dict(getattr(attn_after, "_hidden_kernels", {}))
+    assert "apply_rotary_pos_emb" not in hidden_kernels
+    assert all(isinstance(fn, nn.Module) for fn in hidden_kernels.values())
 
 
 def test_patch_does_not_alter_weights(restore_minimax_attention):

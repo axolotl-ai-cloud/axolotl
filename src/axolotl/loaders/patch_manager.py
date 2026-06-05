@@ -401,10 +401,7 @@ class PatchManager:
             self.cfg.model_config_type in ("minimax", "minimax_m2")
             and self.cfg.use_kernels
         ):
-            # Same transformers bug as Gemma4: MiniMax attention registers a bare
-            # apply_rotary_pos_emb via @use_kernelized_func, crashing kernelize()
-            # (triggered by use_kernels=True). Strip the dead entry; the MoE is
-            # still accelerated via the ExpertsInterface, independent of this path.
+            # Same kernelize() crash as Gemma4 above, in MiniMax attention.
             from axolotl.monkeypatch.minimax_kernelize import patch_minimax_kernelize
 
             patch_minimax_kernelize()

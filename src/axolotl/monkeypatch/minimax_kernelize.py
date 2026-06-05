@@ -26,6 +26,22 @@ _TARGETS = [
 _PATCHED_CLASSES: list[type] = []
 
 
+def _strip_non_module_kernels(orig_init):
+    """Wrap ``__init__`` to drop non-Module ``_hidden_kernels`` after construction."""
+    import torch.nn as nn
+
+    def init(self, *args, **kwargs):
+        orig_init(self, *args, **kwargs)
+        hidden_kernels = self.__dict__.get("_hidden_kernels") or {}
+        for name in [
+            n for n, fn in hidden_kernels.items() if not isinstance(fn, nn.Module)
+        ]:
+            del hidden_kernels[name]
+
+    init._axolotl_original = orig_init  # type: ignore[attr-defined]
+    return init
+
+
 def patch_minimax_kernelize() -> bool:
     """Strip dead non-Module ``_hidden_kernels`` entries on MiniMax attention.
 
@@ -34,38 +50,21 @@ def patch_minimax_kernelize() -> bool:
     """
     import importlib
 
-    import torch.nn as nn
-
     patched_any = False
     for module_path, attr in _TARGETS:
         try:
             module = importlib.import_module(module_path)
         except ImportError:
             continue
-
         cls = getattr(module, attr, None)
-        if cls is None or cls in _PATCHED_CLASSES:
-            patched_any = patched_any or cls in _PATCHED_CLASSES
+        if cls is None:
+            continue
+        patched_any = True
+        if cls in _PATCHED_CLASSES:
             continue
 
-        orig_init = cls.__init__
-
-        def init(self, *args, _orig_init=orig_init, **kwargs):
-            _orig_init(self, *args, **kwargs)
-            hidden_kernels = self.__dict__.get("_hidden_kernels")
-            if hidden_kernels:
-                stale = [
-                    name
-                    for name, fn in hidden_kernels.items()
-                    if not isinstance(fn, nn.Module)
-                ]
-                for name in stale:
-                    del hidden_kernels[name]
-
-        init._axolotl_original = orig_init  # type: ignore[attr-defined]
-        cls.__init__ = init
+        cls.__init__ = _strip_non_module_kernels(cls.__init__)
         _PATCHED_CLASSES.append(cls)
-        patched_any = True
         LOG.info(
             "minimax_kernelize: patched %s to drop non-Module _hidden_kernels "
             "entries so use_kernels/kernelize() does not crash",

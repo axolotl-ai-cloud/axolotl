@@ -86,8 +86,6 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `gemma4_text`     |    Yes    |   Yes    |
 | `gpt_oss`         |    No     |   Yes    |
 
-`minimax_m2` is the architecture for the whole MiniMax MoE line: the M2.x point releases (M2.1/M2.5/M2.7) and MiniMax M3 all ship as `model_type: minimax_m2` / `architectures: ["MiniMaxM2ForCausalLM"]`, so they pick up both kernels through this row. (`minimax` is the older sliding-window M1 architecture.)
-
 `gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. The SonicMoE forward reads these flags off `self` and dispatches accordingly. The ScatterMoE forward assumes the standard `[E, 2*I, H]` concat layout and SiLU-GLU without bias, so it does not yet support `gpt_oss`.
 
 ## Feature comparison
