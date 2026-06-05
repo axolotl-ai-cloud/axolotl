@@ -128,10 +128,9 @@ class MoELoRAMaterialize(torch.autograd.Function):
         A_3d = lora_A.reshape(E, r, dim2)
         B_3d = lora_B.reshape(dim1, r, E).permute(2, 0, 1).contiguous()  # [E, dim1, r]
 
-        # Batched matmul: [E, dim1, r] @ [E, r, dim2] = [E, dim1, dim2]
-        delta = torch.bmm(B_3d, A_3d)
-
-        W_eff = base_weight + scaling * delta
+        # Fuse base_weight + scaling * (B_3d @ A_3d) into one op: avoids both the
+        # [E, dim1, dim2] bmm temp and the scaling-scaled copy of it.
+        W_eff = torch.baddbmm(base_weight, B_3d, A_3d, alpha=scaling)
 
         ctx.save_for_backward(lora_A, lora_B)
         ctx.scaling = scaling
