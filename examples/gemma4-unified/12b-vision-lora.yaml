@@ -1,22 +1,16 @@
-# Gemma 4 12B Unified — Vision LoRA
-#
-# Encoder-free multimodal Gemma 4 (raw pixels/waveform projected directly into
-# the LM, no vision/audio tower). Fine-tunes LM LoRA adapters with the
-# multimodal projection modules frozen. The base ProcessingStrategy is inherited
-# from Gemma 4 (auto-detects image/audio/video token ids from the processor).
-
 base_model: google/gemma-4-12B-it
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.liger.LigerPlugin
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+
 processor_type: AutoProcessor
 freeze_mm_modules: true
-
-# NOTE: Cut Cross Entropy is intentionally omitted. The multimodal
-# Gemma4UnifiedForConditionalGeneration computes its loss through Axolotl's
-# external loss path (accepts_loss_kwargs=False, to fix num_items_in_batch
-# normalization), which materializes logits and bypasses CCE. CCE is registered
-# upstream but only takes effect on the text-only gemma4_unified_text path.
 strict: false
 
-# Required for multimodal training
 skip_prepare_dataset: true
 remove_unused_columns: false
 sample_packing: false
@@ -37,8 +31,6 @@ pad_to_sequence_len: false
 lora_r: 16
 lora_alpha: 32
 lora_dropout: 0
-# Target language-model layers only — encoder-free mm projections are frozen
-# via freeze_mm_modules. Structure: model.language_model.layers.N.{self_attn,mlp}
 lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
 
 gradient_accumulation_steps: 4
@@ -56,11 +48,8 @@ gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
 logging_steps: 1
-# FA2/FA4 cannot support the global layers' head_dim=512, so use sdpa here.
-# (The flash_attention + gemma4_hybrid_attn_impl hybrid path currently covers
-# only the text-only backbone, not this multimodal ForConditionalGeneration,
-# whose masks are built via create_masks_for_generate.)
 attn_implementation: sdpa
+fused_attn_kernel: true
 
 warmup_ratio: 0.1
 weight_decay: 0.0
