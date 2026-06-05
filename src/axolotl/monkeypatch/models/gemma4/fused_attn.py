@@ -31,13 +31,6 @@ def _get_shared_kv_states():
     return _GEMMA4_SHARED_KV_STORE["store"]
 
 
-def _shared_kv_read_key(attn):
-    # transformers >=5.8 keys shared kv by layer_type; older builds used kv_shared_layer_index
-    if hasattr(attn, "kv_shared_layer_index"):
-        return attn.kv_shared_layer_index
-    return attn.layer_type
-
-
 def _shared_kv_store_key(attn):
     if hasattr(attn, "kv_shared_layer_index"):
         return attn.layer_idx
@@ -57,7 +50,7 @@ def _make_fused_forward(original_forward):
         hidden_states: torch.Tensor,
         position_embeddings: torch.Tensor,
         attention_mask: torch.Tensor | None,
-        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]] | None = None,
+        shared_kv_states: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None,
         past_key_values=None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:
@@ -98,7 +91,7 @@ def _make_fused_forward(original_forward):
 
         # ---- K/V path ----
         if self.is_kv_shared_layer:
-            key_states, value_states = shared_kv_states[_shared_kv_read_key(self)]
+            key_states, value_states = shared_kv_states[self.layer_type]
             key_states = key_states.to(query_states.device)
             value_states = value_states.to(query_states.device)
         else:
@@ -137,7 +130,7 @@ def _make_fused_forward(original_forward):
                 key_states, value_states, self.layer_idx
             )
         if self.store_full_length_kv:
-            shared_kv_states[_shared_kv_store_key(self)] = key_states, value_states
+            shared_kv_states[self.layer_type] = key_states, value_states
 
         attention_interface: Callable = eager_attention_forward
         if self.config._attn_implementation != "eager":
