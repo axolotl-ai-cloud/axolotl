@@ -10,7 +10,9 @@ from pydantic import (
     BaseModel,
     Field,
     StringConstraints,
+    computed_field,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
@@ -27,7 +29,17 @@ from axolotl.utils.schemas.datasets import (
 )
 from axolotl.utils.schemas.deprecated import DeprecatedParameters, RemappedParameters
 from axolotl.utils.schemas.dynamic_checkpoint import DynamicCheckpointConfig
-from axolotl.utils.schemas.enums import ChatTemplate, RingAttnFunc, RLType
+from axolotl.utils.schemas.enums import (
+    ATTN_IMPLS_SUPPORTING_PACKING,
+    ATTN_IMPLS_USING_FLASH_LIB,
+    ATTN_IMPLS_WITHOUT_DTYPE_CAST,
+    CANONICAL_ATTN_IMPLS,
+    LEGACY_ATTN_FLAG_TO_IMPL,
+    SHORT_FORM_ALIAS_TO_CANONICAL,
+    ChatTemplate,
+    RingAttnFunc,
+    RLType,
+)
 from axolotl.utils.schemas.fsdp import FSDPConfig
 from axolotl.utils.schemas.integrations import (
     CometConfig,
@@ -309,6 +321,16 @@ class AxolotlInputConfig(
 
     dpo_padding_free: bool | None = None
 
+    dpo_loss_type: Annotated[list[str], MinLen(1)] | None = Field(
+        default=None,
+        json_schema_extra={"description": "List of DPO losses to use."},
+    )
+
+    dpo_loss_weights: Annotated[list[float], MinLen(1)] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Weights for each DPO loss."},
+    )
+
     datasets: (
         Annotated[
             list[
@@ -507,8 +529,25 @@ class AxolotlInputConfig(
 
     gc_steps: int | None = Field(
         default=None,
+        deprecated=(
+            "Use `torch_empty_cache_steps` to control CUDA cache clearing and "
+            "`gc_collect_steps` for Python garbage collection. "
+            "`gc_steps` will be removed in a future version."
+        ),
         json_schema_extra={
-            "description": "Run garbage collection every `gc_steps` steps. -1 will run on epoch end and before evaluations. Default is 0 (disabled)."
+            "description": "Deprecated. Run garbage collection every `gc_steps` steps. Use `torch_empty_cache_steps` and `gc_collect_steps` instead."
+        },
+    )
+    torch_empty_cache_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Steps between native HF Trainer `torch.cuda.empty_cache()` calls."
+        },
+    )
+    gc_collect_steps: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Steps between Python `gc.collect()` calls. -1 runs on epoch end and before evals only; None disables."
         },
     )
 
@@ -663,6 +702,12 @@ class AxolotlInputConfig(
             "description": "Pad inputs so each step uses constant sized buffers. This will reduce memory fragmentation and may prevent OOMs, by re-using memory more efficiently. Defaults to True if `sample_packing` enabled"
         },
     )
+    pad_to_multiple_of: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": ("Pad each batch to a multiple of this value.")
+        },
+    )
     curriculum_sampling: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -715,40 +760,34 @@ class AxolotlInputConfig(
 
     xformers_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: xformers` instead.",
         json_schema_extra={
-            "description": "Whether to use xformers attention patch https://github.com/facebookresearch/xformers"
+            "description": "[DEPRECATED] Use `attn_implementation: xformers`. https://github.com/facebookresearch/xformers"
         },
     )
     sdp_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: sdpa` instead.",
         json_schema_extra={
-            "description": "Whether to use scaled-dot-product attention https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html"
+            "description": "[DEPRECATED] Use `attn_implementation: sdpa`."
         },
     )
-    s2_attention: bool | None = Field(
+    flex_attention: bool | None = Field(
         default=None,
-        json_schema_extra={
-            "description": "Shifted-sparse attention (only llama) - https://arxiv.org/pdf/2309.12307.pdf"
-        },
+        deprecated="Use `attn_implementation: flex_attention` instead.",
     )
-    flex_attention: bool | None = None
     flex_attn_compile_kwargs: dict[str, Any] | None = None
     flash_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: flash_attention_2` instead.",
         json_schema_extra={
-            "description": "Whether to use flash attention patch https://github.com/Dao-AILab/flash-attention"
+            "description": "[DEPRECATED] Use `attn_implementation: flash_attention_2`. https://github.com/Dao-AILab/flash-attention"
         },
     )
     flash_attn_cross_entropy: bool | None = Field(
         default=None,
         json_schema_extra={
             "description": "Whether to use flash-attention cross entropy implementation - advanced use only"
-        },
-    )
-    flash_attn_rms_norm: bool | None = Field(
-        default=None,
-        json_schema_extra={
-            "description": "Whether to use flash-attention rms norm implementation - advanced use only"
         },
     )
     flash_attn_fuse_mlp: bool | None = Field(
@@ -763,17 +802,26 @@ class AxolotlInputConfig(
     )
     sage_attention: bool | None = Field(
         default=None,
+        deprecated="Use `attn_implementation: sage` instead.",
         json_schema_extra={
-            "description": "Whether to use SageAttention https://github.com/thu-ml/SageAttention"
+            "description": "[DEPRECATED] Use `attn_implementation: sage`. https://github.com/thu-ml/SageAttention"
         },
     )
 
-    eager_attention: bool | None = None
+    eager_attention: bool | None = Field(
+        default=None,
+        deprecated="Use `attn_implementation: eager` instead.",
+    )
 
     attn_implementation: str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Specify a custom attention implementation, used mostly for kernels."
+            "description": (
+                "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
+                "flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel "
+                "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
+                "through to transformers."
+            )
         },
     )
 
@@ -783,6 +831,25 @@ class AxolotlInputConfig(
             "description": "Use hybrid attention for Gemma 4: flash_attention_2 for sliding window layers "
             "and sdpa for global (full_attention) layers. Global layers have head_dim=512 which "
             "exceeds flash attention's supported size."
+        },
+    )
+
+    fused_attn_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Replace ``q_norm + apply_rotary_pos_emb`` (and the matching k path) "
+                "with a single fused RMSNorm+RoPE Triton kernel launch. Currently "
+                "implemented for Qwen3, Qwen3-MoE, Qwen3.5, and Qwen3.5-MoE "
+                "full-attention layers; Gemma 4 always uses the fused path. Disabled "
+                "(None/False) falls back "
+                "to the eager transformers implementation. Compile-safe via "
+                "torch.library.triton_op — traces under torch.compile(fullgraph=True). "
+                "Per-step wins are arch-dependent: ~+7-12% across sm_86 and sm_120. "
+                "Combining with torch_compile=true is a clear win on sm_120 (+9% "
+                "extra) but currently regresses on sm_86 due to Inductor autotune "
+                "biases — flip them on independently and benchmark."
+            )
         },
     )
 
@@ -926,6 +993,27 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={"description": "FSDP version"},
     )
+    fp32_norms: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Keep norm modules (RMSNorm/LayerNorm) in fp32 by sharding them "
+                "under their own FSDP2 MixedPrecisionPolicy. Requires fsdp_version: 2."
+            )
+        },
+    )
+    fp32_norm_classes: list[str] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Class-name patterns to match for fp32 norm sharding. Patterns "
+                "without a '.' match against type(module).__name__ as a suffix. "
+                "Patterns containing a '.' match the fully qualified class path "
+                "exactly. Defaults to ['RMSNorm', 'LayerNorm'] when fp32_norms is "
+                "true and this is unset."
+            )
+        },
+    )
     fsdp_final_state_dict_type: (
         Literal["FULL_STATE_DICT", "LOCAL_STATE_DICT", "SHARDED_STATE_DICT"] | None
     ) = Field(
@@ -1000,7 +1088,7 @@ class AxolotlInputConfig(
     torch_compile: Literal["auto"] | bool | None = Field(
         default=None,
         json_schema_extra={
-            "description": "Whether to use torch.compile and which backend to use. setting to `auto` will enable torch compile when torch>=2.6.0"
+            "description": "Whether to use torch.compile and which backend to use."
         },
     )
     torch_compile_backend: str | None = Field(
@@ -1311,6 +1399,25 @@ class AxolotlInputConfig(
             return [ds_config.model_dump(exclude_none=True) for ds_config in ds_configs]
         return None
 
+    # --- Attention capability flags (derived from attn_implementation) ---
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_supports_packing(self) -> bool:
+        return self.attn_implementation in ATTN_IMPLS_SUPPORTING_PACKING
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_uses_flash_lib(self) -> bool:
+        return self.attn_implementation in ATTN_IMPLS_USING_FLASH_LIB
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def attn_needs_dtype_cast(self) -> bool:
+        if self.attn_implementation is None:
+            return False
+        return self.attn_implementation not in ATTN_IMPLS_WITHOUT_DTYPE_CAST
+
     @model_validator(mode="before")
     @classmethod
     def warn_peft_trainable_token_to_fix_untrained(cls, data):
@@ -1333,24 +1440,128 @@ class AxolotlInputConfig(
 
     @model_validator(mode="before")
     @classmethod
-    def check_sageattn_wo_sample_packing(cls, data):
-        if (not data.get("sample_packing", False)) and data.get("sage_attention"):
-            if not data.get("pad_to_sequence_len", False):
-                LOG.warning(
-                    "We recommend turning on `pad_to_sequence_len` for SageAttention without packing."
-                    "This is because there has been signs that the loss explodes after a few steps."
+    def normalize_attn_implementation(cls, data):
+        """Map legacy boolean attention flags to canonical attn_implementation, warn, then strip."""
+        if not isinstance(data, dict):
+            return data
+
+        attn_impl = data.get("attn_implementation")
+        set_flags = [f for f in LEGACY_ATTN_FLAG_TO_IMPL if data.get(f)]
+
+        # gemma4_hybrid requires flash_attention_2 for the sliding-window layers;
+        # post-load patching swaps global layers to sdpa (see
+        # `_apply_gemma_hybrid_attention`). Default it in when the user didn't
+        # pick a backend; reject any incompatible explicit choice.
+        if data.get("gemma4_hybrid_attn_impl"):
+            if not attn_impl and not set_flags:
+                data["attn_implementation"] = "flash_attention_2"
+                attn_impl = "flash_attention_2"
+            elif attn_impl and attn_impl != "flash_attention_2":
+                raise ValueError(
+                    f"gemma4_hybrid_attn_impl requires attn_implementation="
+                    f"flash_attention_2 (sliding-window layers run under FA2); "
+                    f"got {attn_impl!r}."
                 )
+
+        if attn_impl and set_flags:
+            raise ValueError(
+                f"attn_implementation={attn_impl!r} cannot be combined with legacy "
+                f"attention flags ({', '.join(sorted(set_flags))}). The legacy "
+                f"flags are deprecated — set only `attn_implementation`."
+            )
+
+        if not attn_impl and set_flags:
+            # Priority: specific backends beat generic flash/sdp/eager fallbacks.
+            for flag in LEGACY_ATTN_FLAG_TO_IMPL:
+                if flag in set_flags:
+                    canonical = LEGACY_ATTN_FLAG_TO_IMPL[flag]
+                    data["attn_implementation"] = canonical
+                    LOG.warning(
+                        "`%s: true` is deprecated and will be removed in a future "
+                        "release. Use `attn_implementation: %s` instead.",
+                        flag,
+                        canonical,
+                    )
+                    break
+
+        # Strip legacy flags from validated data — canonical field is authoritative.
+        for flag in LEGACY_ATTN_FLAG_TO_IMPL:
+            data.pop(flag, None)
+
         return data
 
-    @model_validator(mode="before")
+    @field_validator("attn_implementation", mode="before")
     @classmethod
-    def check_sageattn_fft(cls, data):
-        if (not data.get("adapter", False)) and data.get("sage_attention"):
-            LOG.warning(
-                "We found loss to drop to 0 with SageAttention full finetuning."
-                "Please observe the loss, otherwise switch to LoRA/QLoRA or another attention method."
+    def validate_attn_implementation(cls, value):
+        """Accept canonical names and hub-kernel paths; reject short-form aliases."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError(
+                f"attn_implementation must be a string, got {type(value).__name__}"
             )
-        return data
+        if value in CANONICAL_ATTN_IMPLS:
+            return value
+        if "/" in value:
+            # Hub-kernel path, e.g. "kernels-community/flash-attn3". Pass through.
+            return value
+        if value in SHORT_FORM_ALIAS_TO_CANONICAL:
+            canonical = SHORT_FORM_ALIAS_TO_CANONICAL[value]
+            raise ValueError(
+                f"attn_implementation={value!r} is not accepted. "
+                f"Use the canonical name {canonical!r} instead."
+            )
+        raise ValueError(
+            f"attn_implementation={value!r} is not a recognized backend. "
+            f"Expected one of: {sorted(CANONICAL_ATTN_IMPLS)}, or a hub-kernel "
+            f"path containing '/'."
+        )
+
+    @model_validator(mode="after")
+    def check_fp32_norms(self):
+        if self.fp32_norms:
+            # FSDP must actually be configured — fsdp_version alone is not
+            # sufficient since the rest of axolotl treats fsdp_config as the
+            # canonical "is_fsdp" signal.
+            if self.fsdp_config is None:
+                raise ValueError(
+                    "fp32_norms requires FSDP to be enabled "
+                    "(fsdp_config block must be set)."
+                )
+            if str(self.fsdp_version) != "2":
+                raise ValueError(
+                    "fp32_norms requires fsdp_version: 2. FSDP1's flat-param "
+                    "dtype uniformity constraint is incompatible with keeping "
+                    "norms in fp32 while decoder layers run in bf16."
+                )
+        if self.fp32_norm_classes and not self.fp32_norms:
+            LOG.warning(
+                "fp32_norm_classes is set but fp32_norms is not enabled; "
+                "it will be ignored."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_sageattn_wo_sample_packing(self):
+        if (
+            self.attn_implementation == "sage"
+            and not self.sample_packing
+            and not self.pad_to_sequence_len
+        ):
+            LOG.warning(
+                "We recommend turning on `pad_to_sequence_len` for SageAttention "
+                "without packing. The loss has been observed to explode otherwise."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_sageattn_fft(self):
+        if self.attn_implementation == "sage" and not self.adapter:
+            LOG.warning(
+                "SageAttention full finetuning has been observed to drop loss to 0. "
+                "Monitor the loss, or switch to LoRA/QLoRA or another attention method."
+            )
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -1426,17 +1637,13 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             )
         return self
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_sample_packing_w_sdpa_bf16(cls, data):
-        is_sm_90: bool = (
-            data["capabilities"]
-            and data["capabilities"].get("compute_capability") == "sm_90"
-        )
+    @model_validator(mode="after")
+    def check_sample_packing_w_sdpa_bf16(self):
+        is_sm_90 = self.capabilities and self.capabilities.compute_capability == "sm_90"
         if (
-            data.get("sample_packing")
-            and data.get("sdp_attention")
-            and (data.get("bfloat16") or data.get("bf16"))
+            self.sample_packing
+            and self.attn_implementation == "sdpa"
+            and (self.bfloat16 or self.bf16)
             and not is_sm_90
         ):
             # https://github.com/pytorch/pytorch/blob/1b03423526536b5f3d35bdfa95ccc6197556cf9b/test/test_transformers.py#L2440-L2450
@@ -1444,23 +1651,51 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 "sample_packing & torch sdpa with bf16 is unsupported may results in 0.0 loss. "
                 "This may work on H100s."
             )
+        return self
 
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def check_compute_capability_w_sageattn(cls, data):
+    @model_validator(mode="after")
+    def check_compute_capability_w_sageattn(self):
         if (
-            data.get("sage_attention")
-            and data.get("capabilities")
-            and data.get("capabilities").get("compute_capability")
+            self.attn_implementation == "sage"
+            and self.capabilities
+            and self.capabilities.compute_capability
             not in ["sm_80", "sm_86", "sm_89", "sm_90", "sm_120"]
         ):
             raise ValueError(
                 "SageAttention supports compute capability between sm_80 and sm_120. "
                 "Please use a different attention implementation."
             )
-        return data
+        return self
+
+    @model_validator(mode="after")
+    def check_fp8_attention_preflight(self):
+        """fp8 attention requires SM90+ and torch >= 2.11 (torchao >= 0.17 is pinned)."""
+        if self.attn_implementation != "fp8":
+            return self
+
+        if self.capabilities and self.capabilities.compute_capability:
+            cc = self.capabilities.compute_capability
+            # Accept sm_90 (H100/H200), sm_100 (B100/B200), sm_120 (B300-class).
+            if not cc.startswith("sm_") or int(cc.split("_", 1)[1]) < 90:
+                raise ValueError(
+                    f"attn_implementation=fp8 requires compute capability sm_90 or "
+                    f"higher (Hopper+). Detected {cc!r}."
+                )
+
+        torch_version = (
+            self.env_capabilities.torch_version if self.env_capabilities else None
+        )
+        if torch_version is None:
+            import torch
+
+            torch_version = str(torch.__version__).split("+", maxsplit=1)[0]
+        if version.parse(torch_version) < version.parse("2.11.0"):
+            raise ValueError(
+                f"attn_implementation=fp8 requires PyTorch >= 2.11.0. "
+                f"Detected {torch_version}."
+            )
+
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -1616,13 +1851,12 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_flex_torch_version(cls, data):
-        if (data.get("flex_attention") is not None) and (data.get("flex_attention")):
-            env_capabilities = data.get("env_capabilities", {})
-            torch_version = env_capabilities.get("torch_version")
-
+    @model_validator(mode="after")
+    def check_flex_torch_version(self):
+        if self.attn_implementation == "flex_attention":
+            torch_version = (
+                self.env_capabilities.torch_version if self.env_capabilities else None
+            )
             if torch_version is None:
                 import torch
 
@@ -1632,7 +1866,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 raise ValueError(
                     "Flex attention is not supported on torch version < 2.6.0"
                 )
-        return data
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -1750,6 +1984,31 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             del data["dataset_processes"]
         elif data.get("dataset_num_proc") is None:
             data["dataset_num_proc"] = get_default_process_count()
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_gc_steps(cls, data):
+        gc_steps = data.get("gc_steps")
+        if gc_steps is not None:
+            if (
+                data.get("torch_empty_cache_steps") is None
+                and data.get("gc_collect_steps") is None
+            ):
+                # Map gc_steps to both new options to preserve original behavior
+                if gc_steps > 0:
+                    data["torch_empty_cache_steps"] = gc_steps
+                data["gc_collect_steps"] = gc_steps
+                LOG.warning(
+                    "`gc_steps` is deprecated; mapping gc_steps=%d to "
+                    "`torch_empty_cache_steps` and `gc_collect_steps`.",
+                    gc_steps,
+                )
+            else:
+                LOG.warning(
+                    "`gc_steps` ignored; `torch_empty_cache_steps` / "
+                    "`gc_collect_steps` take precedence."
+                )
         return data
 
     @model_validator(mode="before")

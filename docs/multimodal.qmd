@@ -285,6 +285,10 @@ For multi-modal datasets, we adopt an extended `chat_template` format similar to
 - `role` can be `system`, `user`, `assistant`, etc.
 - `content` is a list of `type` and (`text`, `image`, `path`, `url`, `base64`, or `audio`).
 
+::: {.callout-note}
+The recommended column name is `messages` with the OpenAI-style `role`/`content` schema shown above. If your upstream data already lives under a different column name (e.g., `conversations`, `dialogue`), set `field_messages: <your_column>` in the dataset config; this is a rename-only escape hatch — the inner schema must still match one of the two formats above (`role`/`content` or ShareGPT's `from`/`value`).
+:::
+
 ### Image
 
 ::: {.callout-note}

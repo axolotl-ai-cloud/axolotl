@@ -407,7 +407,10 @@ def selective_log_softmax(logits, index) -> torch.Tensor:
     K = index.shape[-1]
     original_index_shape = index.shape
 
-    flat_logits = logits.reshape(-1, V).contiguous()
+    try:
+        flat_logits = logits.view(-1, V)
+    except RuntimeError:
+        flat_logits = logits.reshape(-1, V).contiguous()
     flat_index = index.reshape(-1, K).contiguous()
 
     BLOCK_V = 4096

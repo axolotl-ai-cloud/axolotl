@@ -1245,20 +1245,6 @@ class TestValidation(BaseValidation):
             cfg, capabilities=capabilities, env_capabilities=env_capabilities
         )
 
-    def test_cfg_throws_error_with_s2_attention_and_sample_packing(self, minimal_cfg):
-        test_cfg = DictDefault(
-            {
-                "s2_attention": True,
-                "sample_packing": True,
-            }
-            | minimal_cfg
-        )
-        with pytest.raises(
-            ValidationError,
-            match=r".*shifted-sparse attention does not currently support sample packing*",
-        ):
-            validate_config(test_cfg)
-
 
 class TestTorchCompileValidation(BaseValidation):
     """
@@ -1736,6 +1722,55 @@ class TestDataloaderValidation(BaseValidation):
         assert new_cfg.dataloader_num_workers == 8
         assert new_cfg.dataloader_pin_memory is True
         assert new_cfg.dataloader_prefetch_factor == 256
+
+
+class TestGCStepsMigration(BaseValidation):
+    """
+    Tests for gc_steps -> torch_empty_cache_steps / gc_collect_steps migration
+    """
+
+    def test_gc_steps_maps_to_new_options(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 10
+        assert new_cfg.gc_collect_steps == 10
+
+    def test_gc_steps_negative_maps_gc_collect_only(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": -1})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # -1 means only epoch end/eval GC, not periodic; torch_empty_cache_steps
+        # should not be set for negative values
+        assert new_cfg.torch_empty_cache_steps is None
+        assert new_cfg.gc_collect_steps == -1
+
+    def test_new_options_take_precedence(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_steps": 10, "torch_empty_cache_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        # New options take precedence; gc_steps migration is skipped
+        assert new_cfg.torch_empty_cache_steps == 5
+        assert new_cfg.gc_collect_steps is None
+
+    def test_torch_empty_cache_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "torch_empty_cache_steps": 8})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.torch_empty_cache_steps == 8
+        assert new_cfg.gc_collect_steps is None
+
+    def test_gc_collect_steps_standalone(self, minimal_cfg):
+        cfg = DictDefault({**minimal_cfg, "gc_collect_steps": 5})
+
+        new_cfg = validate_config(cfg, {"n_gpu": 1}, {"torch_version": "2.6.0"})
+
+        assert new_cfg.gc_collect_steps == 5
+        assert new_cfg.torch_empty_cache_steps is None
 
 
 class TestSyntheticDatasetValidation(BaseValidation):

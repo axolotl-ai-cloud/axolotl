@@ -31,10 +31,11 @@ PRs are **greatly welcome**!
 
 Please run below to setup env
 ```bash
-# Install axolotl + dev and test dependencies from lockfile
+# Install axolotl + dev and test dependencies
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv sync --extra flash-attn --extra deepspeed --group dev --group test
+uv venv --no-project --relocatable
 source .venv/bin/activate
+uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
 pre-commit install
 
 # test

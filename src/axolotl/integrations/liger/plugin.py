@@ -86,7 +86,20 @@ class LigerPlugin(BasePlugin):
             liger_fn_sig = inspect.signature(apply_liger_fn)
             kwargs = {}
             if "rope" in liger_fn_sig.parameters:
-                kwargs["rope"] = cfg.liger_rope
+                rope_value = cfg.liger_rope
+                # cfg.liger_rope defaults to None, which would override upstream's rope=True for Qwen-VL.
+                if rope_value is None and cfg.model_config_type in (
+                    "qwen2_vl",
+                    "qwen2_5_vl",
+                    "qwen3_vl",
+                    "qwen3_vl_moe",
+                    "qwen2_vl_text",
+                    "qwen2_5_vl_text",
+                    "qwen3_vl_text",
+                    "qwen3_vl_moe_text",
+                ):
+                    rope_value = True
+                kwargs["rope"] = rope_value
             if "cross_entropy" in liger_fn_sig.parameters:
                 kwargs["cross_entropy"] = cfg.liger_cross_entropy
             if "fused_linear_cross_entropy" in liger_fn_sig.parameters:

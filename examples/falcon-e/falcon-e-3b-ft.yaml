@@ -1,0 +1,100 @@
+base_model: tiiuae/Falcon-E-3B-Base-prequantized
+output_dir: ./output
+
+plugins:
+  - axolotl.integrations.kernels.KernelsPlugin
+
+use_kernels: false
+use_scattermoe: false
+use_sonicmoe: false
+use_onebitllms: true
+
+load_in_8bit: false
+load_in_4bit: false
+
+chat_template: tokenizer_default
+
+datasets:
+  - path: cgato/SlimOrcaDedupCleaned
+    type: chat_template
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+
+dataset_prepared_path: ./axolotl_dataset_cache
+
+sequence_len: 32768
+trust_remote_code: false
+
+
+gradient_accumulation_steps: 4 # This can run on 4 GPUs
+
+# Very important to enable gradient accumulation with FSDP
+# https://github.com/huggingface/transformers/issues/29425
+accelerator_config:
+  gradient_accumulation_kwargs:
+    sync_each_batch: True
+
+
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 5.0e-4
+# adamw hyperparams
+adam_beta1: 0.9
+adam_beta2: 0.95
+
+bf16: true
+tf32: false
+
+logging_steps: 1
+
+flash_attention: true
+
+loss_watchdog_threshold: 15.0
+loss_watchdog_patience: 3
+
+warmup_steps: 128
+evals_per_epoch: 0
+
+save_steps: 500
+save_strategy: steps
+
+weight_decay: 0.01
+
+sample_packing: true
+pad_to_sequence_len: true
+
+shuffle_merged_datasets: true
+experimental_skip_move_to_device: true
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true
+# save_first_step: true  # uncomment this to validate checkpoint saving works with your config
+
+# Comment to disable CP
+# The number of GPUs to shard the model parameters across (FSDP dimension).
+dp_shard_size: 1
+
+# The number of times to replicate the sharded model (DDP dimension).
+dp_replicate_size: 1
+
+# Number of GPUs for Tensor Parallelism.
+tensor_parallel_size: 1  # (default is 1, no TP)
+
+# Number of GPUs for Context/Sequence Parallelism.
+context_parallel_size: 1 # (default is 1, no CP)
+
+special_tokens:
+  eos_token: <|end_of_text|>
+
+eot_tokens:
+  - <|im_end|>

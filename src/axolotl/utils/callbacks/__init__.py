@@ -878,15 +878,21 @@ class SaveAxolotlConfigtoWandBCallback(TrainerCallback):
 
 
 class GCCallback(TrainerCallback):
-    """Callback to garbage collect torch cache"""
+    """Runs ``gc.collect()`` + ``torch.cuda.empty_cache()`` on
+    ``gc_collect_steps`` intervals and on eval/save/epoch boundaries that
+    the Trainer's native ``torch_empty_cache_steps`` doesn't cover. The two
+    settings are complementary; overlapping intervals just double-clear.
+    """
 
-    def __init__(self, gc_steps: int | None = -1):
-        self.gc_steps: int = gc_steps or -1
+    def __init__(self, gc_collect_steps: int | None = -1, gc_steps: int | None = None):
+        if gc_steps is not None and gc_collect_steps in (-1, None):
+            gc_collect_steps = gc_steps
+        self.gc_collect_steps: int = gc_collect_steps or -1
         self.next_gc_on_begin_step: int = -1
 
     def _gc(self):
-        torch.cuda.empty_cache()
         gc.collect()
+        torch.cuda.empty_cache()
 
     def on_train_begin(
         self,
@@ -919,7 +925,9 @@ class GCCallback(TrainerCallback):
             self._gc()
             # also GC on the start of the next step after the eval
             self.next_gc_on_begin_step = state.global_step + 1
-        elif self.gc_steps > 0 and state.global_step % self.gc_steps == 0:
+        elif (
+            self.gc_collect_steps > 0 and state.global_step % self.gc_collect_steps == 0
+        ):
             self._gc()
         elif (
             args.save_strategy == SaveStrategy.STEPS
@@ -955,7 +963,10 @@ def colab_inference_post_train_callback(trainer: Trainer):
             """
             handle T4 gpu, we need to convert attention to eager for inference
             """
-            if "Tesla T4" in self.gpu_name and self.cfg.xformers_attention:
+            if (
+                "Tesla T4" in self.gpu_name
+                and self.cfg.attn_implementation == "xformers"
+            ):
                 trainer.model.config._attn_implementation = "eager"
             trainer.model.gradient_checkpointing_disable()
             trainer.model.config.use_cache = True

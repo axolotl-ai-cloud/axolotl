@@ -62,7 +62,7 @@ activation_offloading: true
 logging_steps: 1
 
 # FA not supported
-flex_attention: true
+attn_implementation: flex_attention
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

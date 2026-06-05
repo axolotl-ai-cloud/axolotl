@@ -181,6 +181,18 @@ class TrainerBuilderBase(abc.ABC):
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
 
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):
@@ -355,6 +367,32 @@ class TrainerBuilderBase(abc.ABC):
                 eps2 = training_args_kwargs.get("adam_epsilon2", 1e-16)
                 adam_kwargs["betas"] = (beta1, beta2, beta3)
                 adam_kwargs["eps"] = (eps1, eps2)
+
+                optimizer_kwargs.update(adam_kwargs)
+            elif self.cfg.optimizer == "q_galore_adamw8bit":
+                from axolotl.utils.optimizers.qgalore import (
+                    build_qgalore_param_groups,
+                    patch_q_galore_for_modern_bnb,
+                )
+
+                patch_q_galore_for_modern_bnb()
+                from q_galore_torch import QGaLoreAdamW8bit
+
+                optimizer_cls = QGaLoreAdamW8bit
+                optimizer_kwargs["params"] = build_qgalore_param_groups(
+                    self.model,
+                    self.cfg.optim_target_modules,
+                    rank=self.cfg.qgalore_rank,
+                    update_proj_gap=self.cfg.qgalore_update_proj_gap,
+                    scale=self.cfg.qgalore_scale,
+                    proj_type=self.cfg.qgalore_proj_type,
+                    proj_quant=self.cfg.qgalore_proj_quant,
+                    proj_bits=self.cfg.qgalore_proj_bits,
+                    proj_group_size=self.cfg.qgalore_proj_group_size,
+                    cos_threshold=self.cfg.qgalore_cos_threshold,
+                    gamma_proj=self.cfg.qgalore_gamma_proj,
+                    queue_size=self.cfg.qgalore_queue_size,
+                )
 
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "flash_adamw":
@@ -573,6 +611,8 @@ class TrainerBuilderBase(abc.ABC):
             "dion_rank_fraction",
             "dion_rank_multiple_of",
             "dataset_num_proc",
+            # memory management
+            "torch_empty_cache_steps",
         ]:
             if hasattr(self.cfg, arg) and getattr(self.cfg, arg) is not None:
                 training_args_kwargs[arg] = getattr(self.cfg, arg)

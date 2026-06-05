@@ -46,7 +46,7 @@ lora_dropout: 0.05
 lora_target_linear: true
 
 bf16: auto
-flash_attention: true
+attn_implementation: flash_attention_2
 gradient_checkpointing: true
 
 special_tokens:

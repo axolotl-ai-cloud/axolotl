@@ -20,6 +20,8 @@ examples:
     title: Arcee AFM
 
   # MistralAI
+  - name: mistral-medium-3_5
+    title: Mistral Medium 3.5
   - name: ministral3/think
     title: Ministral 3 Thinking
   - name: ministral3/vision

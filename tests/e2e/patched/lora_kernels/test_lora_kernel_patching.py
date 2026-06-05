@@ -32,12 +32,12 @@ from axolotl.utils.dict import DictDefault
 
 MODEL_CONFIGS = [
     {
-        "name": "trl-internal-testing/tiny-MistralForCausalLM-0.2",
+        "name": "axolotl-ai-co/tiny-mistral-25m",
         "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
     {
-        "name": "trl-internal-testing/tiny-Qwen2ForCausalLM-2.5",
+        "name": "axolotl-ai-co/tiny-qwen2-129m",
         "expected_activation": apply_lora_mlp_swiglu,
         "dtype": torch.float16,
     },
@@ -47,7 +47,7 @@ MODEL_CONFIGS = [
         "dtype": torch.float32,
     },
     {
-        "name": "trl-internal-testing/tiny-Gemma2ForCausalLM",
+        "name": "axolotl-ai-co/tiny-gemma2-137m",
         "expected_activation": apply_lora_mlp_geglu,
         "dtype": torch.float16,
     },
@@ -159,7 +159,7 @@ def test_swiglu_mlp_integration(small_llama_model):
 def test_geglu_model_integration():
     """Test GeGLU activation with Gemma model."""
     model = AutoModelForCausalLM.from_pretrained(
-        "trl-internal-testing/tiny-Gemma2ForCausalLM",
+        "axolotl-ai-co/tiny-gemma2-137m",
         dtype=torch.float16,
         device_map="cuda:0",
     )

@@ -25,6 +25,17 @@ LOG = get_logger(__name__)
 LOG.setLevel("INFO")
 
 
+def _extract_input_ids(result):
+    """Return the ``input_ids`` from a ``build_prompt`` result.
+
+    With a processor configured, ``build_prompt`` returns a dict of
+    processor outputs (``input_ids``, ``attention_mask``, optional
+    ``pixel_values``, etc.). Without a processor it returns a plain
+    ``list[int]`` from the tokenizer.
+    """
+    return result["input_ids"] if isinstance(result, dict) else result
+
+
 class ChatTemplatePrompter(Prompter):
     """Prompter for HF chat templates"""
 
@@ -394,8 +405,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
     def is_prompt_batched(self, prompt: dict[str, Any]) -> bool:
         try:
-            return all(isinstance(v, list) for v in prompt.values()) and all(
-                isinstance(v, list) for v in prompt[self.prompter.field_messages]
+            return all(isinstance(v, (str, list)) for v in prompt.values()) and all(
+                isinstance(v, (str, list)) for v in prompt[self.prompter.field_messages]
             )
         except KeyError:
             return False
@@ -468,7 +479,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         turns = self.get_conversation_thread(prompt)
         tools = self._get_tools(prompt)
-        input_ids = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
+        result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
+        if not isinstance(result, dict):
+            result = {"input_ids": result}
+        input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         last_eos_idx = -1
@@ -624,11 +638,11 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         LOG.debug(f"Final labels: {labels}")
 
-        return {
-            "input_ids": input_ids,
-            "labels": labels,
-            "attention_mask": [1] * len(input_ids),
-        }
+        # ``result`` already carries any processor outputs (pixel_values, image
+        # grid info, etc.); just set the fields we computed locally.
+        result["labels"] = labels
+        result.setdefault("attention_mask", [1] * len(input_ids))
+        return result
 
     def find_first_eos_token(self, input_ids, start_idx):
         eos_token_id = self.tokenizer.eos_token_id
@@ -705,14 +719,18 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         real_last_index = len(turns) - 1
 
         # Generate the conversation up to the turn, with final turn replaced with dummy content
-        dummy_ids = self.prompter.build_prompt(
-            turns_with_empty, tools=tools, real_last_index=real_last_index
-        )  # type: ignore
+        dummy_ids = _extract_input_ids(
+            self.prompter.build_prompt(  # type: ignore
+                turns_with_empty, tools=tools, real_last_index=real_last_index
+            )
+        )
 
         # Generate the conversation up to the turn, with final turn included
-        full_ids = self.prompter.build_prompt(
-            turns_with_content, tools=tools, real_last_index=real_last_index
-        )  # type: ignore
+        full_ids = _extract_input_ids(
+            self.prompter.build_prompt(  # type: ignore
+                turns_with_content, tools=tools, real_last_index=real_last_index
+            )
+        )
 
         if not full_ids or not dummy_ids:
             LOG.warning(f"Empty template generated for turn {turn_idx}")
@@ -1004,6 +1022,13 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if tools is None:
             return None
 
+        # Some datasets have tools set to str
+        if isinstance(tools, str):
+            try:
+                tools = json.loads(tools)
+            except json.JSONDecodeError as e:
+                LOG.error(f"Error parsing tool parameters as JSON. Error: {e}")
+                raise
         if isinstance(tools, list):
             # Process each tool to handle JSON string parameters
             for tool in tools:
@@ -1033,6 +1058,22 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         messages = prompt.get(self.prompter.field_messages, None)
         if messages is None:
             raise ValueError("Messages is null. Please check `field_messages`.")
+
+        if isinstance(messages, str):
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError as e:
+                LOG.error(f"Error parsing messages as JSON. Error: {e}")
+                raise
+            assert isinstance(messages, list), (
+                f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
+            )
+
+            # Extra check here to make sure decoded json is a list of dicts.
+            for i, message in enumerate(messages):
+                assert isinstance(message, dict), (
+                    f"For SFT datasets that are stored in `str` format, each turns must be saved in a dictionary, got {type(message)} for the turn {i}"
+                )
 
         if isinstance(messages, list):
             return messages

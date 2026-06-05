@@ -13,8 +13,8 @@ Thanks to the team at MistralAI for giving us early access to prepare for these 
     Here is an example of how to install from pip:
 
 ```bash
-# Ensure you have Pytorch installed (Pytorch 2.7.0 min)
-uv pip install --no-build-isolation 'axolotl[flash-attn]>=0.12.0'
+# Ensure you have Pytorch installed (Pytorch 2.9.1 min)
+uv pip install --no-build-isolation 'axolotl>=0.16.1'
 ```
 
 2. Install [Cut Cross Entropy](https://docs.axolotl.ai/docs/custom_integrations.html#cut-cross-entropy) to reduce training VRAM usage

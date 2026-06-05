@@ -39,7 +39,7 @@ from transformers.integrations.deepspeed import (
 
 from axolotl.common.architectures import MOE_ARCH_BLOCK
 from axolotl.integrations.base import PluginManager
-from axolotl.loaders.adapter import load_adapter, load_lora
+from axolotl.loaders.adapter import load_adapter
 from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.patch_manager import PatchManager
 from axolotl.loaders.utils import (
@@ -55,6 +55,11 @@ from axolotl.utils.distributed import (
     build_parallelism_config,
     get_device_count,
     get_device_type,
+)
+from axolotl.utils.fp32_norms import (
+    _matches_norm_class,
+    get_fp32_norm_patterns,
+    tag_model_fp32_norms,
 )
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
@@ -191,6 +196,9 @@ class ModelLoader:
         self.patch_manager.apply_post_model_load_patches(self.model)
         PLUGIN_MANAGER.post_model_load(self.cfg, self.model)
 
+        if self.cfg.fp32_norms:
+            tag_model_fp32_norms(self.model, self.cfg)
+
         return self.model, lora_config
 
     def _apply_pre_model_load_setup(self):
@@ -221,6 +229,18 @@ class ModelLoader:
         self._set_attention_config()
         self._check_model_requirements()
 
+        # MX-quantized checkpoints carry MXTensor weights but no HF quantizer, so
+        # transformers' load-time weight re-init would crash on them; this guards it.
+        # torchao is absent on macOS/aarch64, where MX checkpoints can't exist anyway.
+        try:
+            from axolotl.utils.quantization import (
+                patch_transformers_skip_quantized_init,
+            )
+
+            patch_transformers_skip_quantized_init()
+        except ImportError:
+            pass
+
     def _apply_post_model_load_setup(self):
         """Configure the model after it has been loaded."""
         # Handle PeftModel if needed
@@ -233,14 +253,71 @@ class ModelLoader:
         self._configure_experts_implementation()
         self._apply_activation_checkpointing()
         self._resize_token_embeddings()
+        self._reinitialize_classification_head()
         self._adjust_model_config()
         self._configure_embedding_dtypes()
         self._configure_qat()
         log_gpu_memory_usage(LOG, "Memory usage after model load", 0)
 
+    def _reinitialize_classification_head(self):
+        """Re-init an uninitialized reward / PRM classification head.
+
+        The ``score``/``classifier`` head is missing from a base-LM checkpoint, so
+        transformers allocates it with ``torch.empty`` and is then supposed to
+        initialize it. But transformers 5.8's ``_init_weights`` does
+        ``init.normal_(module.weight.float(), ...)`` — the ``.float()`` copy makes
+        this a no-op on a ``bfloat16`` head, leaving uninitialized memory: harmless
+        zeros on some allocators, NaN/inf garbage on others (→ NaN grads, 0 loss).
+        Detect that state and initialize the head ourselves.
+        """
+        if not (self.cfg.reward_model or self.cfg.process_reward_model):
+            return
+
+        head = getattr(self.model, "score", None) or getattr(
+            self.model, "classifier", None
+        )
+        if not isinstance(head, torch.nn.Linear):
+            return
+
+        weight = head.weight
+        # A freshly-initialized head is all-zero (benign) or garbage (huge/non-finite);
+        # a head loaded from a real reward checkpoint is finite and reasonably scaled.
+        looks_uninitialized = (
+            not torch.isfinite(weight).all()
+            or weight.abs().max() > 100
+            or bool((weight == 0).all())
+        )
+        if not looks_uninitialized:
+            return
+
+        std = getattr(self.model.config, "initializer_range", 0.02) or 0.02
+        with torch.no_grad():
+            weight.normal_(mean=0.0, std=std)
+            if head.bias is not None:
+                head.bias.zero_()
+        LOG.info(
+            f"Re-initialized {type(self.model).__name__} classification head "
+            f"(std={std})."
+        )
+
     def _configure_experts_implementation(self):
-        if self.cfg.experts_implementation is not None:
-            self.model.set_experts_implementation(self.cfg.experts_implementation)
+        impl = self.cfg.experts_implementation
+        if impl is None:
+            return
+
+        if impl in ("scattermoe", "sonicmoe"):
+            model_classes = {
+                type(m) for m in self.model.modules() if isinstance(m, PreTrainedModel)
+            }
+            if not any(cls._can_set_experts_implementation() for cls in model_classes):
+                LOG.warning(
+                    f"experts_implementation={impl!r} requested, but no submodule of "
+                    f"{type(self.model).__name__} uses transformers' ExpertsInterface "
+                    "(@use_experts_implementation). The kernel will NOT be applied; "
+                    "training falls back to the model's native experts path."
+                )
+
+        self.model.set_experts_implementation(impl)
 
     def _apply_activation_checkpointing(self):
         if self.cfg.activation_offloading is True:
@@ -343,12 +420,7 @@ class ModelLoader:
             # LlamaRMSNorm layers are in fp32 after kbit_training or full finetune, so
             # we need to convert them back to fp16/bf16 for flash-attn compatibility.
             (
-                (
-                    needs_fa2_dtype
-                    or self.cfg.flash_attention
-                    or self.cfg.flex_attention
-                    or self.cfg.sage_attention
-                )
+                (needs_fa2_dtype or self.cfg.attn_needs_dtype_cast)
                 and not self.is_qlora_and_fsdp_enabled
             )
             or (
@@ -391,8 +463,12 @@ class ModelLoader:
                 and self.cfg.rl in [RLType.DPO, RLType.IPO, RLType.KTO]
                 and not self.cfg.merge_lora
             ):
-                _, lora_config = load_lora(
-                    self.model, self.cfg, inference=False, config_only=True
+                _, lora_config = load_adapter(
+                    self.model,
+                    self.cfg,
+                    self.cfg.adapter,
+                    inference=False,
+                    config_only=True,
                 )
             else:
                 self.model, lora_config = load_adapter(
@@ -633,35 +709,14 @@ class ModelLoader:
             )
 
     def _set_attention_config(self):
-        """Sample packing uses custom FA2 patch"""
-        if self.cfg.gemma4_hybrid_attn_impl:
-            # Load model with flash_attention_2 for sliding window layers;
-            # global layers will be patched to sdpa post-load.
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-            # Set flash_attention so multipack/sample_packing patches activate
-            self.cfg.flash_attention = True
-        elif self.cfg.attn_implementation:
-            self.model_kwargs["attn_implementation"] = self.cfg.attn_implementation
-        elif self.cfg.flex_attention:
-            self.model_kwargs["attn_implementation"] = "flex_attention"
-            self.model_config._attn_implementation = "flex_attention"
-
-        elif self.cfg.flash_attention:
-            if not self.cfg.sample_packing and self.cfg.s2_attention:
-                pass
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.sdp_attention:
-            self.model_kwargs["attn_implementation"] = "sdpa"
-            self.model_config._attn_implementation = "sdpa"
-        elif self.cfg.sage_attention:
-            # sets FA2 attention to re-use same internal handling like masking
-            self.model_kwargs["attn_implementation"] = "flash_attention_2"
-            self.model_config._attn_implementation = "flash_attention_2"
-        elif self.cfg.eager_attention:
-            self.model_kwargs["attn_implementation"] = "eager"
-            self.model_config._attn_implementation = "eager"
+        # fp8 replaces sdpa post-load (load as sdpa).
+        _LOAD_TIME_OVERRIDE = {"fp8": "sdpa"}
+        if self.cfg.attn_implementation:
+            hf_impl = _LOAD_TIME_OVERRIDE.get(
+                self.cfg.attn_implementation, self.cfg.attn_implementation
+            )
+            self.model_kwargs["attn_implementation"] = hf_impl
+            self.model_config._attn_implementation = hf_impl
 
         if self.cfg.low_cpu_mem_usage:
             self.model_kwargs["low_cpu_mem_usage"] = True
@@ -846,6 +901,17 @@ class ModelLoader:
             else:
                 self.model = self._load_model_from_pretrained(model_loader_class)
 
+        if self.cfg.use_onebitllms:
+            try:
+                from onebitllms import replace_linear_with_bitnet_linear
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'onebitllms' package is required for use_onebitllms. "
+                    "Install it with: `uv pip install onebitllms`"
+                ) from exc
+
+            self.model = replace_linear_with_bitnet_linear(self.model)
+
         if is_deepspeed_zero3_enabled():
             skip_move_to_device = True
 
@@ -922,8 +988,11 @@ class ModelLoader:
         dest = {"dtype": dist_dtype}
         if self.cfg.lora_on_cpu:
             dest["device"] = "cpu"
+        fp32_norm_patterns = get_fp32_norm_patterns(self.cfg)
         for name, module in self.model.named_modules():
-            if "norm" in name:
+            if fp32_norm_patterns and _matches_norm_class(module, fp32_norm_patterns):
+                module.to(torch.float32)
+            elif "norm" in name:
                 module.to(dist_dtype)
             if before_kbit_train_or_finetune:
                 if name.endswith(".gate"):

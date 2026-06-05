@@ -257,19 +257,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs["curriculum_sampling"] = self.cfg.curriculum_sampling
 
         training_arguments_kwargs["sample_packing"] = bool(self.cfg.sample_packing)
-        training_arguments_kwargs["sample_packing_drop_attention_mask"] = bool(
-            self.cfg.flash_attention
-            or self.cfg.xformers_attention
-            or self.cfg.flex_attention
+        training_arguments_kwargs["sample_packing_drop_attention_mask"] = (
+            self.cfg.attn_supports_packing
         )
         training_arguments_kwargs["multipack_real_batches"] = (
             self.cfg.multipack_real_batches
             if self.cfg.multipack_real_batches is not None
-            else not (
-                self.cfg.flash_attention
-                or self.cfg.flex_attention
-                or self.cfg.xformers_attention
-            )
+            else not self.cfg.attn_supports_packing
         )
         training_arguments_kwargs["eval_sample_packing"] = bool(
             self.cfg.eval_sample_packing
@@ -292,9 +286,13 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
 
         if self.cfg.relora and self.cfg.jagged_restart_steps:
-            if self.cfg.relora_prune_ratio:
+            if self.cfg.relora_prune_ratio is not None:
                 training_arguments_kwargs["relora_prune_ratio"] = (
                     self.cfg.relora_prune_ratio
+                )
+            if self.cfg.relora_prune_method:
+                training_arguments_kwargs["relora_prune_method"] = (
+                    self.cfg.relora_prune_method
                 )
 
         if self.cfg.jagged_restart_steps:
@@ -370,7 +368,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         data_collator_kwargs = {
             "padding": True,  # True/"longest" is the default
         }
-        multiple = 64
+        multiple = getattr(self.cfg, "pad_to_multiple_of", None) or 64
         if self.cfg.pad_to_sequence_len:
             data_collator_kwargs["pad_to_multiple_of"] = multiple * math.ceil(
                 self.cfg.sequence_len / multiple
@@ -508,11 +506,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             # Use V2BatchSamplerDataCollatorForSeq2Seq for flex attention,
             # supported multipack models, or non-flash-attention llama
             if (
-                self.cfg.flex_attention
+                self.cfg.attn_implementation == "flex_attention"
                 or self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
                 or (
                     self.cfg.model_config_type in ["llama"]
-                    and self.cfg.flash_attention is not True
+                    and self.cfg.attn_implementation != "flash_attention_2"
                 )
             ):
                 collator = V2BatchSamplerDataCollatorForSeq2Seq
@@ -521,12 +519,61 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         else:
             if self.cfg.processor_type and self.processor:
                 collator = MultiModalChatDataCollator
+                # Mirror ChatTemplateStrategy: per-dataset masking knobs from first MM dataset, else global cfg.
+                # NOTE: Multi-dataset configs use the first dataset's masking knobs for all datasets;
+                # heterogeneous per-dataset overrides are not supported in the MM path today.
+                ds_entries = self.cfg.datasets or []
+                ds_cfg = ds_entries[0] if ds_entries else None
+
+                def _ds_get(cfg_obj, key):
+                    # Handle DictDefault / dict / pydantic uniformly:
+                    # dict-style .get first, then attribute access.
+                    if cfg_obj is None:
+                        return None
+                    if hasattr(cfg_obj, "get"):
+                        try:
+                            return cfg_obj.get(key)
+                        except (AttributeError, KeyError, TypeError):
+                            pass
+                    return getattr(cfg_obj, key, None)
+
+                roles_to_train = _ds_get(ds_cfg, "roles_to_train")
+                train_on_eos = _ds_get(ds_cfg, "train_on_eos")
+
+                # cfg.role_boundaries replaces the strategy's built-in markers.
+                role_boundaries_override = None
+                if self.cfg.role_boundaries:
+                    role_boundaries_override = list(self.cfg.role_boundaries)
+
+                # Deduped union of per-dataset `field_messages` for the MM collator.
+                field_messages = []
+                for dataset_cfg in ds_entries:
+                    field_message = _ds_get(dataset_cfg, "field_messages")
+                    if field_message and field_message not in field_messages:
+                        field_messages.append(field_message)
+
+                # build() calls build_collator twice (eval + train); log once.
+                if not is_eval:
+                    LOG.info(
+                        "MM collator: train_on_inputs=%s roles_to_train=%s "
+                        "train_on_eos=%s role_boundaries_override=%s",
+                        bool(self.cfg.train_on_inputs),
+                        roles_to_train,
+                        train_on_eos,
+                        "set" if role_boundaries_override else "none",
+                    )
+
                 kwargs["processing_strategy"] = get_processing_strategy(
                     self.processor,
                     training_args.chat_template,
                     self.cfg.chat_template,
                     image_size=training_args.image_size,
                     image_resize_algorithm=training_args.image_resize_algorithm,
+                    train_on_inputs=bool(self.cfg.train_on_inputs),
+                    roles_to_train=roles_to_train,
+                    train_on_eos=train_on_eos,
+                    role_boundaries_override=role_boundaries_override,
+                    field_messages=field_messages or None,
                 )
             elif self.cfg.batch_flattening:
                 collator = DataCollatorWithFlattening

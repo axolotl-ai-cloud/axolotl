@@ -15,12 +15,14 @@ This guide covers all the ways you can install and set up Axolotl for your envir
 
 - NVIDIA GPU (Ampere architecture or newer for `bf16` and Flash Attention) or AMD GPU
 - Python ≥3.11
-- PyTorch ≥2.9.0
+- PyTorch ≥2.9.1
 
 ## Installation {#sec-installation}
 
 ::: {.callout-important}
-For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 12.8.
+For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 13.0. CUDA 12.8 cannot
+compile for `sm_103a` (B300), and using CUDA 13.0 also avoids first-launch JIT
+overhead on B100 / B200 / RTX 50-series.
 :::
 
 ### Quick Install {#sec-uv}
@@ -36,9 +38,9 @@ source $HOME/.local/bin/env
 Choose your CUDA version (e.g. `cu128`, `cu130`), create a venv, and install:
 ```{.bash}
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv venv --no-project --relocatable
+uv venv
 source .venv/bin/activate
-uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
+uv pip install --no-build-isolation axolotl[deepspeed]
 ```
 
 ### Edge/Development Build {#sec-edge-build}
@@ -49,11 +51,10 @@ For the latest features between releases:
 git clone https://github.com/axolotl-ai-cloud/axolotl.git
 cd axolotl
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv sync --extra flash-attn --extra deepspeed
+uv venv
 source .venv/bin/activate
+uv pip install --no-build-isolation -e '.[deepspeed]'
 ```
-
-`uv sync` creates a `.venv`, installs exact pinned versions from `uv.lock`, and sets up an editable install automatically.
 
 ### Docker {#sec-docker}
 
@@ -80,7 +81,7 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it \
 :::
 
 ::: {.callout-important}
-For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.11-cu128-2.9.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.11-cu128-2.9.1`.
+For Blackwell GPUs, please use `axolotlai/axolotl-uv:main-py3.11-cu130-2.9.1` or the cloud variant `axolotlai/axolotl-cloud-uv:main-py3.11-cu130-2.9.1`.
 :::
 
 Please refer to the [Docker documentation](docker.qmd) for more information on the different Docker images that are available.
@@ -132,11 +133,11 @@ source $HOME/.local/bin/env
 
 # Create a fresh venv (recommended for a clean start)
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv venv --no-project --relocatable
+uv venv
 source .venv/bin/activate
 
 # Reinstall axolotl
-uv pip install --no-build-isolation axolotl[flash-attn,deepspeed]
+uv pip install --no-build-isolation axolotl[deepspeed]
 ```
 
 ## Using pip (Alternative) {#sec-pip}
@@ -151,13 +152,13 @@ Follow the instructions at: [https://pytorch.org/get-started/locally/](https://p
 
 ```{.bash}
 pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation axolotl[flash-attn,deepspeed]
+pip3 install --no-build-isolation axolotl[deepspeed]
 ```
 
 For editable/development installs:
 ```{.bash}
 pip3 install -U packaging setuptools wheel ninja
-pip3 install --no-build-isolation -e '.[flash-attn,deepspeed]'
+pip3 install --no-build-isolation -e '.[deepspeed]'
 ```
 
 ## Troubleshooting {#sec-troubleshooting}

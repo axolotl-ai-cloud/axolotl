@@ -77,8 +77,9 @@ Make sure you have an [editable install](https://setuptools.pypa.io/en/latest/us
 
 ```bash
 export UV_TORCH_BACKEND=cu128  # or cu130
-uv sync --extra flash-attn --extra deepspeed --group dev --group test
+uv venv --no-project --relocatable
 source .venv/bin/activate
+uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
 ```
 
 #### Remote Hosts
@@ -218,8 +219,9 @@ docker run --privileged --gpus '"all"' --shm-size 10g --rm -it --name axolotl --
 You will now be in the container.  Next, install Axolotl with dev dependencies:
 
 ```bash
-uv sync --extra flash-attn --extra deepspeed --group dev --group test
+uv venv --no-project --relocatable
 source .venv/bin/activate
+uv pip install --no-build-isolation -e '.[deepspeed]' --group dev --group test
 ```
 
 ### Attach To Container

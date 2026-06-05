@@ -23,7 +23,7 @@ Backward (W frozen):
   dB = scaling * dY^T @ (X @ A^T)                   (per-expert, on grouped data)
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 
@@ -33,7 +33,11 @@ from .kernels.lora_ops import (
     group_bwd_lora_fused,
     scatter2scatter_lora,
     scatter2scatter_lora_dX,
+    scatter2scatter_lora_dX_mx,
+    scatter2scatter_lora_mx,
 )
+from .mx_weights import MXLayout, MXWeights
+from .parallel_experts import _INT_MAX, _needs_int64_indices
 
 
 class ScatterMoELoRA(torch.autograd.Function):
@@ -50,7 +54,7 @@ class ScatterMoELoRA(torch.autograd.Function):
     def forward(
         ctx,
         x: torch.Tensor,
-        expert_weights: torch.Tensor,
+        expert_weights: Union[torch.Tensor, MXWeights],
         k: int,
         sorted_expert_idxs: torch.Tensor,
         sorted_scattered_idxs: torch.Tensor,
@@ -65,26 +69,60 @@ class ScatterMoELoRA(torch.autograd.Function):
         use_fused_dX: bool = False,
         use_fused_gather: bool = False,
     ):
-        # Cast weights to match input dtype (e.g. 8-bit LoRA)
-        if expert_weights.dtype != x.dtype:
-            expert_weights = expert_weights.to(x.dtype)
+        if isinstance(expert_weights, MXWeights):
+            assert expert_weights.layout == MXLayout.FWD, (
+                "MXWeights passed to forward must be in FWD layout"
+            )
+            is_mx = True
+        else:
+            # Cast weights to match input dtype (e.g. 8-bit LoRA)
+            if expert_weights.dtype != x.dtype:
+                expert_weights = expert_weights.to(x.dtype)
+            is_mx = False
         if expert_biases is not None and expert_biases.dtype != x.dtype:
             expert_biases = expert_biases.to(x.dtype)
+        L_scattered = sorted_expert_idxs.size(0)
+        if is_mx:
+            N_dim = expert_weights.N  # type: ignore[union-attr]
+        else:
+            N_dim = expert_weights.size(-1)  # type: ignore[union-attr]
+        # Forward output is [L_scattered, N]. Overflow risk is dominated by
+        # that buffer; also probe X for the unusual case where it alone is
+        # huge (e.g. very wide hidden with modest seq).
+        needs_int64_fwd = (L_scattered * N_dim) >= _INT_MAX or _needs_int64_indices(x)
         with torch.device(x.device):
-            # Fused forward: Y = X @ W + scaling * (X @ A^T) @ B^T
-            output = scatter2scatter_lora(
-                X=x,
-                W=expert_weights,
-                sorted_expert_idxs=sorted_expert_idxs,
-                sorted_scattered_idxs=sorted_scattered_idxs,
-                k=k,
-                lora_A=lora_A,
-                lora_B=lora_B,
-                scaling=scaling,
-                b=expert_biases,
-                x_grouped=grouped_in,
-                y_grouped=grouped_out,
-            )
+            if is_mx:
+                # Fused MXFP4 forward: dequant happens inside the K-loop
+                output = scatter2scatter_lora_mx(
+                    X=x,
+                    W_mx=expert_weights,
+                    sorted_expert_idxs=sorted_expert_idxs,
+                    sorted_scattered_idxs=sorted_scattered_idxs,
+                    k=k,
+                    lora_A=lora_A,
+                    lora_B=lora_B,
+                    scaling=scaling,
+                    b=expert_biases,
+                    x_grouped=grouped_in,
+                    y_grouped=grouped_out,
+                    int64_indices=needs_int64_fwd,
+                )
+            else:
+                # Fused forward: Y = X @ W + scaling * (X @ A^T) @ B^T
+                output = scatter2scatter_lora(
+                    X=x,
+                    W=expert_weights,
+                    sorted_expert_idxs=sorted_expert_idxs,
+                    sorted_scattered_idxs=sorted_scattered_idxs,
+                    k=k,
+                    lora_A=lora_A,
+                    lora_B=lora_B,
+                    scaling=scaling,
+                    b=expert_biases,
+                    x_grouped=grouped_in,
+                    y_grouped=grouped_out,
+                    int64_indices=needs_int64_fwd,
+                )
 
             # Handle gating (weighted combination of top-k expert outputs)
             if gates is not None:
@@ -117,8 +155,12 @@ class ScatterMoELoRA(torch.autograd.Function):
             ctx.grouped_out = grouped_out
             ctx.k = k
             ctx.scaling = scaling
-            ctx.use_fused_dX = use_fused_dX
-            ctx.use_fused_gather = use_fused_gather
+            # MXFP4 forces fused dX + gather: the non-fused dX path would have
+            # to materialise a bf16 weight tile, defeating the kernel-fusion
+            # win, and the gather/scatter pattern is identical.
+            ctx.use_fused_dX = True if is_mx else use_fused_dX
+            ctx.use_fused_gather = True if is_mx else use_fused_gather
+            ctx.is_mx = is_mx
 
         return output
 
@@ -141,7 +183,11 @@ class ScatterMoELoRA(torch.autograd.Function):
             scaling = ctx.scaling
             grouped_in = ctx.grouped_in
             grouped_out = ctx.grouped_out
-            E = expert_weights.size(0)
+            is_mx = ctx.is_mx
+            if is_mx:
+                E = expert_weights.packed.size(0)
+            else:
+                E = expert_weights.size(0)
 
             # ------------------------------------------------------------------
             # Gate gradients (if using top-k gating with routing weights)
@@ -171,7 +217,7 @@ class ScatterMoELoRA(torch.autograd.Function):
             #     -> use dy_grouped=True in the fused kernel
             M_total = sorted_scattered_idxs.size(0)
             K_dim = x.size(-1)
-            N_dim = expert_weights.size(-1)
+            N_dim = expert_weights.N if is_mx else expert_weights.size(-1)
             fuse_gather_workload = M_total * max(K_dim, N_dim)
             _FUSE_GATHER_THRESHOLD = 2**24  # ~16M elements
 
@@ -180,6 +226,15 @@ class ScatterMoELoRA(torch.autograd.Function):
                 and not grouped_in  # X must be ungrouped for scatter access
                 and gates is None  # gate coeff requires multiplicative gather
                 and fuse_gather_workload < _FUSE_GATHER_THRESHOLD
+            )
+
+            # The backward path indexes into grad_out [M_total, N] and x [M, K]
+            # using either M_idx (grouped) or scatter_idx (ungrouped). Overflow
+            # risk is dominated by the largest indexed buffer along the M axis.
+            needs_int64_bwd = (
+                (M_total * N_dim) >= _INT_MAX
+                or (M_total * K_dim) >= _INT_MAX
+                or _needs_int64_indices(grad_out, x)
             )
 
             if can_fuse_gather:
@@ -199,6 +254,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     k=k,
                     scaling=scaling,
                     dy_grouped=grouped_out,
+                    int64_indices=needs_int64_bwd,
                 )
 
                 # Prepare grouped_grad_out for the dX path (needed by both
@@ -243,12 +299,46 @@ class ScatterMoELoRA(torch.autograd.Function):
                     expert_offsets=expert_offsets,
                     E=E,
                     scaling=scaling,
+                    int64_indices=needs_int64_bwd,
                 )
 
             # ------------------------------------------------------------------
             # Input gradient: dX = dY @ W^T + scaling * (dY @ B) @ A
             # ------------------------------------------------------------------
-            if ctx.use_fused_dX:
+            if is_mx:
+                # dX kernel reuses the forward MX layout (block axis = K) —
+                # no pre-transpose/re-quantize needed.
+                if can_fuse_gather and not grouped_out:
+                    d_expanded_input = scatter2scatter_lora_dX_mx(
+                        DY=grad_out,
+                        W_mx=expert_weights,
+                        sorted_expert_idxs=sorted_expert_idxs,
+                        sorted_scattered_idxs=sorted_scattered_idxs,
+                        k=1,
+                        lora_A=lora_A,
+                        lora_B=lora_B,
+                        scaling=scaling,
+                        dy_grouped=False,
+                        dx_grouped=grouped_in,
+                        out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
+                    )
+                else:
+                    d_expanded_input = scatter2scatter_lora_dX_mx(
+                        DY=grouped_grad_out,
+                        W_mx=expert_weights,
+                        sorted_expert_idxs=sorted_expert_idxs,
+                        sorted_scattered_idxs=sorted_scattered_idxs,
+                        k=1,
+                        lora_A=lora_A,
+                        lora_B=lora_B,
+                        scaling=scaling,
+                        dy_grouped=True,
+                        dx_grouped=grouped_in,
+                        out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
+                    )
+            elif ctx.use_fused_dX:
                 if can_fuse_gather and not grouped_out:
                     # Fully fused: read ungrouped DY via scatter pattern
                     d_expanded_input = scatter2scatter_lora_dX(
@@ -263,6 +353,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=False,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
                 else:
                     # Fused dX only: read from pre-grouped DY
@@ -278,6 +369,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                         dy_grouped=True,
                         dx_grouped=grouped_in,
                         out=d_expanded_input,
+                        int64_indices=needs_int64_bwd,
                     )
             else:
                 # Original path: separate base scatter2scatter + LoRA Python loop
@@ -290,6 +382,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                     k=1,
                     y_grouped=grouped_in,
                     out=d_expanded_input,
+                    int64_indices=needs_int64_bwd,
                 )
 
                 # LoRA part: dX_lora = scaling * (dY @ B) @ A
@@ -317,12 +410,16 @@ class ScatterMoELoRA(torch.autograd.Function):
                     x.size(0), k, d_expanded_input.size(-1)
                 ).sum(-2)
 
-            # W is frozen during LoRA training -- skip weight gradient
-            d_weights = (
-                torch.zeros_like(expert_weights)
-                if expert_weights.requires_grad
-                else None
-            )
+            # W is frozen during LoRA training -- skip weight gradient.
+            # (MX weights are containers, not tensors, and never carry grad.)
+            if is_mx:
+                d_weights = None
+            else:
+                d_weights = (
+                    torch.zeros_like(expert_weights)
+                    if expert_weights.requires_grad
+                    else None
+                )
             d_biases = None
 
         return (

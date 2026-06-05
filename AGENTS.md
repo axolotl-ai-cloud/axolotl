@@ -26,7 +26,7 @@ axolotl config-schema                  # Dump config JSON schema
 | Method | Config Key | When to Use |
 |--------|-----------|-------------|
 | SFT | *(default)* | Input-output pairs, instruction tuning |
-| DPO/IPO | `rl: dpo` / `rl: ipo` | Paired preference data (chosen vs rejected) |
+| DPO/IPO | `rl: dpo` / `rl: dpo, dpo_loss_type: ["ipo"]` | Paired preference data (chosen vs rejected) |
 | KTO | `rl: kto` | Unpaired binary preference labels |
 | ORPO | `rl: orpo` | Single-stage alignment, no ref model |
 | GRPO | `rl: grpo` | RL with verifiable reward functions (math, code) |
@@ -84,6 +84,14 @@ docs/                            # Quarto documentation site
 - Plugin system: `plugins:` list in config loads integration modules
 - Trainer mixins: `core/trainers/mixins/` for composable trainer behaviors
 - Schemas: all config validation via Pydantic in `utils/schemas/`
+
+## Comment Style
+
+- Default to no comment. Only add one when the WHY is non-obvious (hidden constraint, subtle invariant, workaround for a specific bug).
+- Don't explain WHAT the code does — names and types already do that.
+- Don't reference the current task, PR, or callers (e.g. "added for X", "used by Y", "fixes #123"). Those belong in commit messages / PR descriptions and rot fast.
+- Prefer one short line max.
+- Don't add planning/decision/analysis markdown files unless explicitly requested.
 
 ## Key Documentation
 

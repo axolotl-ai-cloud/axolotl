@@ -245,7 +245,7 @@ For GRPO, also reduce `max_completion_length`. Memory scales quadratically with 
 Reduces attention memory from O(n^2) to O(n):
 
 ```yaml
-flash_attention: true
+attn_implementation: flash_attention_2
 ```
 
 ### Step 6: Offload with DeepSpeed

@@ -76,85 +76,8 @@ QKV_PATCHES = [
     value_states = value_states.view(hidden_shape).transpose(1, 2)
 """.lstrip("\n"),
     ),
-    # Gemma4: norm between proj and transpose, RoPE between norm and transpose,
-    # conditional KV sharing (is_kv_shared_layer), v_proj may be None (attention_k_eq_v).
-    # We only fuse the projection calls; norms, RoPE, and KV sharing stay as-is.
-    (
-        """
-    query_states = self.q_proj(hidden_states).view(hidden_shape)
-    query_states = self.q_norm(query_states)
-    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
-    query_states = query_states.transpose(1, 2)
-
-    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer
-    if self.is_kv_shared_layer and past_key_values is not None:
-        key_states, value_states = past_key_values.shared_layers[self.kv_shared_layer_index]
-        # Device of past layer may be different from current one
-        key_states = key_states.to(query_states.device)
-        value_states = value_states.to(query_states.device)
-    else:
-        key_states = self.k_proj(hidden_states).view(hidden_shape)
-        value_states = self.v_proj(hidden_states).view(hidden_shape) if self.v_proj is not None else key_states
-""".lstrip("\n"),
-        """
-    query_states, key_states, value_states = self.apply_qkv(hidden_states)
-    query_states = query_states.view(hidden_shape)
-    query_states = self.q_norm(query_states)
-    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
-    query_states = query_states.transpose(1, 2)
-
-    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer
-    if self.is_kv_shared_layer and past_key_values is not None:
-        key_states, value_states = past_key_values.shared_layers[self.kv_shared_layer_index]
-        # Device of past layer may be different from current one
-        key_states = key_states.to(query_states.device)
-        value_states = value_states.to(query_states.device)
-    else:
-        key_states = key_states.view(hidden_shape)
-        value_states = value_states.view(hidden_shape) if self.v_proj is not None else key_states
-""".lstrip("\n"),
-    ),
-    # Gemma4 (transformers >= 5.6): shared_kv_states parameter replaces
-    # past_key_values.shared_layers, and v_norm added after k_norm.
-    (
-        """
-    query_states = self.q_proj(hidden_states).view(hidden_shape)
-    query_states = self.q_norm(query_states)
-    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
-    query_states = query_states.transpose(1, 2)
-
-    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer.
-    # We cannot simply reuse the cached state if we have a Cache, as sliding layers will not remember the full states in their Cache
-    # once we are past the sliding window - so we always use `shared_kv_states` instead, even when past_key_values is not None
-    if self.is_kv_shared_layer:
-        key_states, value_states = shared_kv_states[self.kv_shared_layer_index]
-        # Device of past layer may be different from current one
-        key_states = key_states.to(query_states.device)
-        value_states = value_states.to(query_states.device)
-    else:
-        key_states = self.k_proj(hidden_states).view(hidden_shape)
-        value_states = self.v_proj(hidden_states).view(hidden_shape) if self.v_proj is not None else key_states
-""".lstrip("\n"),
-        """
-    query_states, key_states, value_states = self.apply_qkv(hidden_states)
-    query_states = query_states.view(hidden_shape)
-    query_states = self.q_norm(query_states)
-    query_states = apply_rotary_pos_emb(query_states, cos, sin, unsqueeze_dim=2)
-    query_states = query_states.transpose(1, 2)
-
-    # For layers with shared KV (from kv sharing point onwards), we reuse the same keys/values states as the last non-sharing layer.
-    # We cannot simply reuse the cached state if we have a Cache, as sliding layers will not remember the full states in their Cache
-    # once we are past the sliding window - so we always use `shared_kv_states` instead, even when past_key_values is not None
-    if self.is_kv_shared_layer:
-        key_states, value_states = shared_kv_states[self.kv_shared_layer_index]
-        # Device of past layer may be different from current one
-        key_states = key_states.to(query_states.device)
-        value_states = value_states.to(query_states.device)
-    else:
-        key_states = key_states.view(hidden_shape)
-        value_states = value_states.view(hidden_shape) if self.v_proj is not None else key_states
-""".lstrip("\n"),
-    ),
+    # Gemma4 has no entry: its fused forward already calls apply_qkv/apply_o,
+    # and patch_self_attn_lora skips it (see the skip there).
 ]
 
 ORIGINAL_O_CODE = """
@@ -322,6 +245,23 @@ def patch_self_attn_lora(cfg: DictDefault):
     if hasattr(attention_cls, "_original_forward"):
         LOG.info(f"{attention_cls.__name__} already patched")
         return
+
+    # Skip Gemma4: patch_manager applies patch_gemma4_fused_attn
+    # unconditionally for gemma4 before this runs, and that fused forward
+    # already calls apply_qkv/apply_o, so the source rewrite is dead.
+    try:
+        from transformers.models.gemma4.modeling_gemma4 import (
+            Gemma4TextAttention,
+        )
+
+        if attention_cls is Gemma4TextAttention:
+            LOG.info(
+                "Gemma4TextAttention uses the fused attention path "
+                "(apply_qkv/apply_o) - skipping LoRA source rewrite"
+            )
+            return
+    except ImportError:
+        pass
 
     self_attn_forward = inspect.getsource(attention_cls.forward)
     attention_cls._original_forward = self_attn_forward
