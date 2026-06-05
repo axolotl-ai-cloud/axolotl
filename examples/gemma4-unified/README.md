@@ -11,7 +11,7 @@
 3. Run the finetuning example:
 
 ```bash
-# Text LoRA (1x96GB @ ~24.2 GiB)
+# Text LoRA (1x96GB @ ~22.91 GiB)
 axolotl train examples/gemma4-unified/12b-text-lora.yaml
 
 # Vision LoRA (1x96GB @ ~23.2 GiB)
