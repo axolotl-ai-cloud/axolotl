@@ -1,8 +1,3 @@
-# Gemma 4 E2B Vision LoRA
-#
-# Fine-tuning LM LoRA adapters on multimodal Gemma4 with vision/multimodal modules frozen.
-# Uses the base ProcessingStrategy (auto-detects image_token from processor).
-
 base_model: google/gemma-4-E2B-it
 processor_type: AutoProcessor
 freeze_mm_modules: true

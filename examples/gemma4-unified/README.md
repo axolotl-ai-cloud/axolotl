@@ -11,7 +11,7 @@
 3. Run the finetuning example:
 
 ```bash
-# Text LoRA (1x96GB @ ~22.91 GiB)
+# Text LoRA (1x96GB @ ~25.6 GiB)
 axolotl train examples/gemma4-unified/12b-text-lora.yaml
 
 # Vision LoRA (1x96GB @ ~23.2 GiB)
@@ -20,10 +20,10 @@ axolotl train examples/gemma4-unified/12b-vision-lora.yaml
 
 ## Limitations
 
-- **Flash Attention**: FA2 (max head_dim=256) / FA4 (max head_dim=128) does not support `global_head_dim=512`. Use `attn_implementation: sdpa`. The hybrid FA2 path (`gemma4_hybrid_attn_impl`) covers only the text-only backbone, not the multimodal forward.
+- **Attention**: FA2 (max head_dim=256) / FA4 (max head_dim=128) cannot serve `global_head_dim=512`, so `flex_attention` is the only varlen-capable backend. Use `attn_implementation: flex_attention` (the text example pairs it with `torch_compile: true`) whenever `sample_packing: true` — `sdpa` does not decontaminate packed samples and corrupts the loss. `sdpa` is fine only with packing off (the vision example).
 - **LoRA QKV/O kernels** (`lora_qkv_kernel`, `lora_o_kernel`): require `fused_attn_kernel: true`. Without it they are skipped with a warning; the MLP and embedding LoRA kernels still apply.
 - **lora_target_linear**: incompatible for multimodal. Use `lora_target_modules` as seen in vision example.
-- **Sample packing**: not supported (raw pixel/waveform tokens interleave in-sequence) for multimodal.
+- **Sample packing**: text only, and requires `attn_implementation: flex_attention` (`sdpa` attends across sample boundaries). Not supported for multimodal; raw pixel/waveform tokens interleave in-sequence.
 
 ### TIPS
 

@@ -11,34 +11,20 @@
 3. Run the finetuning example:
 
 ```bash
-# 26B MoE QLoRA (1x80GB @ ~50 GiB)
+# 26B MoE QLoRA (1x80GB)
 axolotl train examples/gemma4/26b-a4b-moe-qlora.yaml
 
-# 31B Dense QLoRA (1x80GB @ ~44 GiB)
+# 31B Dense QLoRA (1x80GB)
 axolotl train examples/gemma4/31b-qlora.yaml
-
-# 31B Dense QLoRA Flex Attn (1x80GB @ ~26 GiB)
-axolotl train examples/gemma4/31b-qlora-flex.yaml
 ```
 
 ### MoE Expert Quantization & Expert LoRA (26B-A4B only)
 
 The 26B-A4B config uses ScatterMoE kernels via the transformers `ExpertsInterface` and quantizes expert weights on load. To learn about expert quantization, expert LoRA targeting, and related limitations, see the [MoE Expert Quantization](https://docs.axolotl.ai/docs/expert_quantization.html) docs.
 
-## Flex Attention
-
-Reduce ~40% VRAM (at the cost of up to half throughput) by setting the below (shown in `examples/gemma4/31b-qlora-flex.yaml`):
-
-```yaml
-torch_compile: true
-flex_attention: true
-```
-
-This works for both the MoE and Dense model.
-
 ## Limitations
 
-- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot support Gemma 4's `global_head_dim=512`. Use SDP or flex attention instead.
+- **Flash Attention**: FA2 (max head_dim=256) and FA4 (max head_dim=128) cannot serve Gemma 4's `global_head_dim=512`. Use `flex_attention` (required with `sample_packing` — `sdpa` leaks across packed samples), or `sdpa` when packing is off.
 - **LoRA kernels**: Not supported due to KV-sharing layers.
 - **lora_target_linear**: Incompatible for multimodal models — use `lora_target_modules` with a regex to restrict LoRA to the text backbone.
 

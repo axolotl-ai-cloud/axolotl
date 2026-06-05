@@ -59,8 +59,8 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA not supported
-attn_implementation: sdpa
+# FA not supported (head_dim=512); flex is varlen-capable, required for sample_packing
+attn_implementation: flex_attention
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

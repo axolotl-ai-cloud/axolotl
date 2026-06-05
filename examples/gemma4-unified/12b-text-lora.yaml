@@ -48,7 +48,8 @@ tf32: true
 gradient_checkpointing: true
 logging_steps: 1
 
-attn_implementation: sdpa
+attn_implementation: flex_attention
+torch_compile: true
 fused_attn_kernel: true
 
 warmup_ratio: 0.1
