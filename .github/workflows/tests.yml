@@ -65,6 +65,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
@@ -136,8 +137,8 @@ jobs:
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -158,6 +159,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        max-parallel: 2
         python_version: ["3.12", "3.14"]
         pytorch_version: ["2.9.1", "2.10.0", "2.11.0", "2.12.0"]
         exclude:
@@ -226,6 +228,10 @@ jobs:
           axolotl agent-docs sft | grep -q "SFT"
           python -c "from axolotl.cli.agent_docs import get_doc, list_topics; assert len(list_topics()) >= 5; assert 'GRPO' in get_doc('grpo')"
 
+      - name: Pre-Download dataset fixture
+        run: |
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
       - name: Show HF cache
         run: hf cache ls
 
@@ -235,8 +241,8 @@ jobs:
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
