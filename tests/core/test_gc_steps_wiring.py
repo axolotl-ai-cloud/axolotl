@@ -11,9 +11,10 @@ def _get_callbacks(cfg_dict):
     builder = HFCausalTrainerBuilder.__new__(HFCausalTrainerBuilder)
     builder.cfg = DictDefault(cfg_dict)
     builder.model = MagicMock()
-    with patch("axolotl.core.builders.base.PluginManager") as pm, patch(
-        "axolotl.core.builders.base.TelemetryManager"
-    ) as tm:
+    with (
+        patch("axolotl.core.builders.base.PluginManager") as pm,
+        patch("axolotl.core.builders.base.TelemetryManager") as tm,
+    ):
         pm.get_instance.return_value.add_callbacks_pre_trainer.return_value = []
         tm.get_instance.return_value.enabled = False
         return builder.get_callbacks()
