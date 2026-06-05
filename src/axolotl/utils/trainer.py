@@ -614,6 +614,8 @@ def setup_fsdp_envs(cfg):
         os.environ["FSDP_TRANSFORMER_CLS_TO_WRAP"] = (
             cfg.fsdp_config.transformer_layer_cls_to_wrap
         )
+    if cfg.fsdp_config.min_num_params:
+        os.environ["FSDP_MIN_NUM_PARAMS"] = str(cfg.fsdp_config.min_num_params)
     if cfg.fsdp_config.reshard_after_forward:
         os.environ["FSDP_RESHARD_AFTER_FORWARD"] = "true"
 
