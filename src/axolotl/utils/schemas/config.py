@@ -1768,16 +1768,6 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if data.get("trust_remote_code"):
                 return data
 
-            # Skip auto-enable for gemma4_unified: its attention has cross-layer KV
-            # sharing (shared layers lack independent k/v projections) and an opt-in
-            # fused path, so the generic QKV/O LoRA source rewrite can't attach.
-            # Users can still opt in explicitly (qkv/o require fused_attn_kernel).
-            if data.get("model_config_type") in (
-                "gemma4_unified",
-                "gemma4_unified_text",
-            ):
-                return data
-
             # Skip auto-enable for MoE models when native grouped_mm is unavailable
             # (torch < 2.9). The grouped_mm fallback in transformers uses torch.mm
             # with out= which bypasses autocast and fails on mixed dtypes during eval.

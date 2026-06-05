@@ -270,10 +270,7 @@ def patch_self_attn_lora(cfg: DictDefault):
     except ImportError:
         pass
 
-    # gemma4_unified: the generic QKV/O source rewrite cannot match the unified
-    # attention forward (cross-layer KV sharing, separate q_norm/RoPE lines). The
-    # opt-in fused path supplies apply_qkv/apply_o, so we skip the rewrite when it
-    # is on; with it off, the QKV/O LoRA kernels cannot attach at all.
+    # gemma4_unified's attention forward can't be source-rewritten (KV sharing); skip.
     try:
         from transformers.models.gemma4_unified.modeling_gemma4_unified import (
             Gemma4UnifiedTextAttention,
@@ -290,12 +287,14 @@ def patch_self_attn_lora(cfg: DictDefault):
                 "Gemma4UnifiedTextAttention uses the fused attention path "
                 "(apply_qkv/apply_o) - skipping LoRA source rewrite"
             )
-            return
-        raise ValueError(
-            "lora_qkv_kernel/lora_o_kernel are not supported for gemma4_unified "
-            "unless fused_attn_kernel: true is also set. Either set "
-            "fused_attn_kernel: true, or disable lora_qkv_kernel and lora_o_kernel."
-        )
+        else:
+            LOG.warning(
+                "lora_qkv_kernel/lora_o_kernel cannot attach to gemma4_unified "
+                "without fused_attn_kernel: true - skipping QKV/O rewrite "
+                "(MLP/embedding kernels still apply). Set fused_attn_kernel: true "
+                "to enable them."
+            )
+        return
 
     self_attn_forward = inspect.getsource(attention_cls.forward)
     attention_cls._original_forward = self_attn_forward
