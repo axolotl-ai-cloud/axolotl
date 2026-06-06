@@ -20,7 +20,8 @@ class LigerPlugin(BasePlugin):
         return "axolotl.integrations.liger.LigerArgs"
 
     def pre_model_load(self, cfg):
-        # shim: liger-kernel 0.7.0 imports ORPOTrainer from old trl path
+        # shim: liger-kernel imports ORPOTrainer from the old trl.trainer path,
+        # which modern trl has moved to trl.experimental.orpo
         import trl.trainer
         from trl.experimental.orpo import ORPOTrainer
 
@@ -81,7 +82,18 @@ class LigerPlugin(BasePlugin):
 
             LigerFusedLinearCrossEntropyLoss.__init__ = patched_init
 
-        if cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN:
+        # liger-kernel 0.8.0 added native dispatch entries for these model types,
+        # but the axolotl branches below add handling those native paths lack:
+        # fused gated-RMSNorm (Qwen3_5RMSNormGated / Qwen3_5MoeRMSNormGated, used by
+        # the linear-attention layers) for qwen3_5 / qwen3_5_moe, and checkpoint-safe
+        # (in_place=False) RMSNorm/GEGLU for gemma4_text. Keep routing them to the
+        # axolotl branches instead of the generic native dispatch.
+        axolotl_override_liger_fn = {"qwen3_5", "qwen3_5_moe", "gemma4_text"}
+
+        if (
+            cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN
+            and cfg.model_config_type not in axolotl_override_liger_fn
+        ):
             apply_liger_fn = MODEL_TYPE_TO_APPLY_LIGER_FN[cfg.model_config_type]
             liger_fn_sig = inspect.signature(apply_liger_fn)
             kwargs = {}
