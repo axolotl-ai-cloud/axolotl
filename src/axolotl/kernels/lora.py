@@ -270,7 +270,7 @@ def matmul_lora(
     if A is not None:
         X_lora = X_drop if X_drop is not None else X
         A, B = A.t().to(dtype), B.t().to(dtype)  # type: ignore[union-attr]
-        out += s * X_lora @ A @ B
+        out.addmm_(X_lora @ A, B, alpha=s)
         if lora_bias is not None:
             out += s * lora_bias
 
@@ -646,7 +646,7 @@ class LoRA_MLP(torch.autograd.Function):
             del up_weight_deq
 
             gate_weight_deq = dequantize(gate_weight, gate_quant)
-            dX += grad_gate @ gate_weight_deq
+            dX.addmm_(grad_gate, gate_weight_deq)
             del gate_weight_deq
 
             # LoRA path: reuse grad_B_up and grad_B_gate from above
