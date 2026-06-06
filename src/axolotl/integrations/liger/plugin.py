@@ -250,8 +250,7 @@ class LigerPlugin(BasePlugin):
                 _OrigGemma4RMSNorm = modeling_gemma4.Gemma4RMSNorm
 
                 class _LigerGemma4RMSNorm(LigerRMSNorm):
-                    """LigerRMSNorm for Gemma4: offset=0 (not 1 like Gemma3), in_place=False
-                    for gradient-checkpointing safety, with_scale support."""
+                    """LigerRMSNorm for Gemma4: offset=0, in_place=False (grad-ckpt safe), with_scale support."""
 
                     def __new__(cls, dim, eps=1e-6, with_scale=True):
                         if not with_scale:
