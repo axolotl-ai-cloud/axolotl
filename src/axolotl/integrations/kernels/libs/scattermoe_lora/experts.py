@@ -122,13 +122,8 @@ def _parallel_linear_maybe_lora(
     )
 
 
-def scattermoe_experts_forward(
-    self,
-    hidden_states: torch.Tensor,
-    top_k_index: torch.Tensor,
-    top_k_weights: torch.Tensor,
-) -> torch.Tensor:
-    """ScatterMoE experts forward with fused-LoRA support."""
+def _check_supported_layout(self):
+    """Reject expert layouts the fixed transpose/chunk below would miscompute."""
     # Assumes the standard expert layout: gate_up concatenated as [E, 2I, H],
     # gated SwiGLU, no expert bias. gpt_oss-style experts (interleaved gate/up,
     # transposed [E, H, 2I], expert bias) would be silently miscomputed by the
@@ -144,6 +139,16 @@ def scattermoe_experts_forward(
             "experts (qwen/mixtral/deepseek/glm/...). This model's experts use an "
             "unsupported layout; use use_sonicmoe or a built-in experts_implementation."
         )
+
+
+def scattermoe_experts_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> torch.Tensor:
+    """ScatterMoE experts forward with fused-LoRA support."""
+    _check_supported_layout(self)
 
     K = top_k_index.shape[1]
 
@@ -190,6 +195,91 @@ def scattermoe_experts_forward(
         gates=routing_weights,
     )
 
+    return output
+
+
+def scattermoe_experts_forward_ep(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> torch.Tensor:
+    """ScatterMoE experts forward for the DeepEP local path, skipping EP sentinels.
+
+    After DeepEP dispatch ``top_k_index`` holds local expert ids in ``[0, E_local)``
+    for slots this rank owns and ``-1`` for slots routed to remote ranks. Rather than
+    map sentinels to expert 0 / weight 0 and run the full grouped GEMM over all
+    ``N*K`` rows (compute-and-mask), drop the sentinel rows so only the valid routed
+    rows hit the GEMM + per-row LoRA. Output matches the masked path since sentinel
+    slots carry weight 0.
+
+    Runs both projections fully grouped (the sentinel-compacted routing breaks the
+    ``L_scattered == X.rows * k`` fan-out contract of the scattered path), with the
+    weighted token-combine done via ``index_add_``.
+    """
+    _check_supported_layout(self)
+
+    N = hidden_states.size(0)
+    K = top_k_index.shape[1]
+    E_local = self.num_experts
+
+    idx_flat = top_k_index.reshape(-1)
+    valid = idx_flat >= 0
+    e_v = idx_flat[valid].to(torch.long)
+    if e_v.numel() == 0:
+        return torch.zeros_like(hidden_states)
+
+    tok = torch.arange(N, device=hidden_states.device).repeat_interleave(K)
+    tok_v = tok[valid]
+    w_v = top_k_weights.reshape(-1)[valid].to(hidden_states.dtype)
+
+    # Sort valid rows by expert so each expert's rows are contiguous (grouped layout).
+    se, order = torch.sort(e_v)
+    tok_sorted = tok_v[order].to(torch.int32)
+    w_sorted = w_v[order]
+    expert_offsets = torch.bincount(e_v, minlength=E_local).cumsum(-1)
+    M = se.size(0)
+    ss = torch.arange(M, device=hidden_states.device, dtype=torch.int32)
+
+    gate_up_weight = _get_base_param(self.gate_up_proj).transpose(2, 1)
+    down_weight = _get_base_param(self.down_proj).transpose(2, 1)
+
+    gup_lora, down_lora = None, None
+    if _has_peft_wrapper(self):
+        _, gup_lora, down_lora = _unwrap_experts_lora(self)
+
+    # Pre-gather token rows into expert-grouped order; both projections run grouped.
+    grouped_x = hidden_states.index_select(0, tok_sorted.to(torch.long))
+
+    gates_h = _parallel_linear_maybe_lora(
+        grouped_x,
+        gate_up_weight,
+        1,
+        se,
+        ss,
+        expert_offsets,
+        gup_lora,
+        grouped_in=True,
+        grouped_out=True,
+    )
+    gates, h = gates_h.chunk(2, dim=-1)
+    h = self.act_fn(gates) * h
+
+    down_out = _parallel_linear_maybe_lora(
+        h,
+        down_weight,
+        1,
+        se,
+        ss,
+        expert_offsets,
+        down_lora,
+        grouped_in=True,
+        grouped_out=True,
+    )
+    down_out = down_out * w_sorted.unsqueeze(-1)
+
+    output = hidden_states.new_zeros((N, down_out.size(-1)))
+    output.index_add_(0, tok_sorted.to(torch.long), down_out)
     return output
 
 
