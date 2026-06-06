@@ -82,7 +82,7 @@ class LigerPlugin(BasePlugin):
             LigerFusedLinearCrossEntropyLoss.__init__ = patched_init
 
         # liger 0.8.0 natively dispatches these, but axolotl's branches add kernels native lacks
-        axolotl_override_liger_fn = {"qwen3_5", "qwen3_5_moe", "gemma4_text"}
+        axolotl_override_liger_fn = {"qwen3_5", "qwen3_5_moe"}
 
         if (
             cfg.model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN
@@ -241,9 +241,8 @@ class LigerPlugin(BasePlugin):
                 rms_norm=cfg.liger_rms_norm,
                 swiglu=cfg.liger_glu_activation,
             )
-        elif cfg.model_config_type in ("gemma4", "gemma4_text"):
-            # Gemma4: offset=0 (NOT 1 like Gemma3), in_place=False required for
-            # gradient checkpointing compatibility, RoPE incompatible (separate q/k).
+        elif cfg.model_config_type == "gemma4":
+            # multimodal gemma4 only; gemma4_text uses liger 0.8.0 native dispatch (incl. FLCE)
             from liger_kernel.transformers.geglu import LigerGEGLUMLP
             from transformers.models.gemma4 import modeling_gemma4
 
@@ -251,7 +250,8 @@ class LigerPlugin(BasePlugin):
                 _OrigGemma4RMSNorm = modeling_gemma4.Gemma4RMSNorm
 
                 class _LigerGemma4RMSNorm(LigerRMSNorm):
-                    """LigerRMSNorm for Gemma4 with in_place=False and with_scale support."""
+                    """LigerRMSNorm for Gemma4: offset=0 (not 1 like Gemma3), in_place=False
+                    for gradient-checkpointing safety, with_scale support."""
 
                     def __new__(cls, dim, eps=1e-6, with_scale=True):
                         if not with_scale:
@@ -284,7 +284,8 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 LOG.warning(
-                    "Liger fused linear cross entropy is not compatible with Gemma4. Skipping."
+                    "Liger fused linear cross entropy is not supported for multimodal gemma4. "
+                    "Skipping (the gemma4_text language model gets FLCE via liger's native path)."
                 )
             LOG.info(
                 f"Applied Liger kernels for gemma4: "
