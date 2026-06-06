@@ -284,8 +284,9 @@ class LigerPlugin(BasePlugin):
                 modeling_gemma4.nn.CrossEntropyLoss = LigerCrossEntropyLoss
             if cfg.liger_fused_linear_cross_entropy:
                 LOG.warning(
-                    "Liger fused linear cross entropy is not supported for multimodal gemma4. "
-                    "Skipping (the gemma4_text language model gets FLCE via liger's native path)."
+                    "Liger fused linear cross entropy for multimodal gemma4 is not in "
+                    "liger-kernel 0.8.0 (added upstream in PR #1203, post-0.8.0). Skipping; "
+                    "the gemma4_text language model gets FLCE via liger's native path."
                 )
             LOG.info(
                 f"Applied Liger kernels for gemma4: "
