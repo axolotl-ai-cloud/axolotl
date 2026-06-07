@@ -39,9 +39,16 @@ def _grouped_gram_configs():
 @triton.autotune(configs=_grouped_gram_configs(), key=["M_BUCKET", "WIDE", "RANK_IS_I"])
 @triton.jit
 def _grouped_gram_kernel(
-    P_ptr, stride_pm, stride_pd,
-    Q_ptr, stride_qm, stride_qd,
-    OUT_ptr, stride_og, stride_oi, stride_oj,
+    P_ptr,
+    stride_pm,
+    stride_pd,
+    Q_ptr,
+    stride_qm,
+    stride_qd,
+    OUT_ptr,
+    stride_og,
+    stride_oi,
+    stride_oj,
     offsets_ptr,
     M_BUCKET,
     WIDE: tl.constexpr,
@@ -89,41 +96,55 @@ def _grouped_gram_kernel(
         if RANK_IS_I:
             p = tl.load(
                 P_ptr + m_idx[:, None] * stride_pm + r_idx[None, :] * stride_pd,
-                mask=m_mask[:, None] & r_mask[None, :], other=0.0,
+                mask=m_mask[:, None] & r_mask[None, :],
+                other=0.0,
             ).to(input_dtype)
             q = tl.load(
                 Q_ptr + m_idx[:, None] * stride_qm + w_idx[None, :] * stride_qd,
-                mask=m_mask[:, None] & w_mask[None, :], other=0.0,
+                mask=m_mask[:, None] & w_mask[None, :],
+                other=0.0,
             ).to(input_dtype)
             acc += tl.dot(tl.trans(p), q, allow_tf32=allow_tf32)
         else:
             p = tl.load(
                 P_ptr + m_idx[:, None] * stride_pm + w_idx[None, :] * stride_pd,
-                mask=m_mask[:, None] & w_mask[None, :], other=0.0,
+                mask=m_mask[:, None] & w_mask[None, :],
+                other=0.0,
             ).to(input_dtype)
             q = tl.load(
                 Q_ptr + m_idx[:, None] * stride_qm + r_idx[None, :] * stride_qd,
-                mask=m_mask[:, None] & r_mask[None, :], other=0.0,
+                mask=m_mask[:, None] & r_mask[None, :],
+                other=0.0,
             ).to(input_dtype)
             acc += tl.dot(tl.trans(p), q, allow_tf32=allow_tf32)
 
     acc = acc * scaling
     if RANK_IS_I:
-        out_ptrs = OUT_ptr + g * stride_og + r_idx[:, None] * stride_oi + w_idx[None, :] * stride_oj
+        out_ptrs = (
+            OUT_ptr
+            + g * stride_og
+            + r_idx[:, None] * stride_oi
+            + w_idx[None, :] * stride_oj
+        )
         out_mask = r_mask[:, None] & w_mask[None, :]
     else:
-        out_ptrs = OUT_ptr + g * stride_og + w_idx[:, None] * stride_oi + r_idx[None, :] * stride_oj
+        out_ptrs = (
+            OUT_ptr
+            + g * stride_og
+            + w_idx[:, None] * stride_oi
+            + r_idx[None, :] * stride_oj
+        )
         out_mask = w_mask[:, None] & r_mask[None, :]
     tl.store(out_ptrs, acc.to(OUT_ptr.dtype.element_ty), mask=out_mask)
 
 
 def grouped_lora_weight_grads(
     grouped_grad_out: torch.Tensor,  # DY  [M*k, N], grouped
-    grouped_x: torch.Tensor,         # X   [M*k, K], grouped
-    yb: torch.Tensor,                # DY@B [M*k, R], grouped (reused from dX path)
-    xa: torch.Tensor,                # X@A^T [M*k, R], grouped (saved from forward)
-    lora_A: torch.Tensor,            # [E*T*R, K]
-    lora_B: torch.Tensor,            # [N, E*T*R]
+    grouped_x: torch.Tensor,  # X   [M*k, K], grouped
+    yb: torch.Tensor,  # DY@B [M*k, R], grouped (reused from dX path)
+    xa: torch.Tensor,  # X@A^T [M*k, R], grouped (saved from forward)
+    lora_A: torch.Tensor,  # [E*T*R, K]
+    lora_B: torch.Tensor,  # [N, E*T*R]
     combined_offsets: torch.Tensor,
     e_total: int,
     scaling: float,
@@ -145,21 +166,45 @@ def grouped_lora_weight_grads(
 
     grid_a = lambda meta: (e_total, triton.cdiv(k_dim, meta["BLOCK_WIDE"]))  # noqa: E731
     _grouped_gram_kernel[grid_a](
-        yb, yb.stride(0), yb.stride(1),
-        grouped_x, grouped_x.stride(0), grouped_x.stride(1),
-        dA, rank * dA.stride(0), dA.stride(0), dA.stride(1),
-        combined_offsets, m_bucket, WIDE=k_dim, RANK=rank, scaling=scaling,
-        RANK_IS_I=True, BLOCK_R=block_r, allow_tf32=ALLOW_TF32,
+        yb,
+        yb.stride(0),
+        yb.stride(1),
+        grouped_x,
+        grouped_x.stride(0),
+        grouped_x.stride(1),
+        dA,
+        rank * dA.stride(0),
+        dA.stride(0),
+        dA.stride(1),
+        combined_offsets,
+        m_bucket,
+        WIDE=k_dim,
+        RANK=rank,
+        scaling=scaling,
+        RANK_IS_I=True,
+        BLOCK_R=block_r,
+        allow_tf32=ALLOW_TF32,
     )
 
     grid_b = lambda meta: (e_total, triton.cdiv(n_dim, meta["BLOCK_WIDE"]))  # noqa: E731
     _grouped_gram_kernel[grid_b](
-        grouped_grad_out, grouped_grad_out.stride(0), grouped_grad_out.stride(1),
-        xa, xa.stride(0), xa.stride(1),
-        dB, rank * dB.stride(1), dB.stride(0), dB.stride(1),
-        combined_offsets, m_bucket, WIDE=n_dim, RANK=rank, scaling=scaling,
-        RANK_IS_I=False, BLOCK_R=block_r, allow_tf32=ALLOW_TF32,
+        grouped_grad_out,
+        grouped_grad_out.stride(0),
+        grouped_grad_out.stride(1),
+        xa,
+        xa.stride(0),
+        xa.stride(1),
+        dB,
+        rank * dB.stride(1),
+        dB.stride(0),
+        dB.stride(1),
+        combined_offsets,
+        m_bucket,
+        WIDE=n_dim,
+        RANK=rank,
+        scaling=scaling,
+        RANK_IS_I=False,
+        BLOCK_R=block_r,
+        allow_tf32=ALLOW_TF32,
     )
     return dA, dB
-
-

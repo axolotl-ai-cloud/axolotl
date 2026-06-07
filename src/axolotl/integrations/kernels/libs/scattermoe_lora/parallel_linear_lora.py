@@ -30,7 +30,6 @@ import torch
 from .kernels import ops as base_ops
 from .kernels.grouped_gram import grouped_lora_weight_grads
 from .kernels.lora_ops import (
-    group_bwd_lora,
     group_bwd_lora_fused,
     scatter2scatter_lora,
     scatter2scatter_lora_dX,
@@ -302,21 +301,36 @@ class ScatterMoELoRA(torch.autograd.Function):
                 n_dim = lora_B.size(0)
                 w_yb = lora_B.reshape(n_dim, E, rank).permute(1, 0, 2).contiguous()
                 yb = base_ops.scatter2scatter(
-                    X=grouped_grad_out, W=w_yb, k=1,
+                    X=grouped_grad_out,
+                    W=w_yb,
+                    k=1,
                     sorted_expert_idxs=sorted_expert_idxs,
                     sorted_scattered_idxs=sorted_scattered_idxs,
-                    x_grouped=True, y_grouped=True, int64_indices=needs_int64_bwd,
+                    x_grouped=True,
+                    y_grouped=True,
+                    int64_indices=needs_int64_bwd,
                 )
                 w_xa = lora_A.reshape(E, rank, k_dim).permute(0, 2, 1).contiguous()
                 xa = base_ops.scatter2scatter(
-                    X=grouped_x, W=w_xa, k=1,
+                    X=grouped_x,
+                    W=w_xa,
+                    k=1,
                     sorted_expert_idxs=sorted_expert_idxs,
                     sorted_scattered_idxs=sorted_scattered_idxs,
-                    x_grouped=True, y_grouped=True, int64_indices=needs_int64_bwd,
+                    x_grouped=True,
+                    y_grouped=True,
+                    int64_indices=needs_int64_bwd,
                 )
                 d_lora_A, d_lora_B = grouped_lora_weight_grads(
-                    grouped_grad_out, grouped_x, yb, xa, lora_A, lora_B,
-                    expert_offsets, E, scaling,
+                    grouped_grad_out,
+                    grouped_x,
+                    yb,
+                    xa,
+                    lora_A,
+                    lora_B,
+                    expert_offsets,
+                    E,
+                    scaling,
                 )
 
             # ------------------------------------------------------------------
@@ -493,17 +507,25 @@ def _compute_lora_input_grad(
         if yb is None:
             w_yb = lora_B.reshape(N, E, R).permute(1, 0, 2).contiguous()  # [E, N, R]
             yb = base_ops.scatter2scatter(
-                X=grouped_grad_out, W=w_yb, k=1,
+                X=grouped_grad_out,
+                W=w_yb,
+                k=1,
                 sorted_expert_idxs=sorted_expert_idxs,
                 sorted_scattered_idxs=sorted_scattered_idxs,
-                x_grouped=True, y_grouped=True, int64_indices=int64_indices,
+                x_grouped=True,
+                y_grouped=True,
+                int64_indices=int64_indices,
             )
         w_a = lora_A.reshape(E, R, K).contiguous()  # [E, R, K]
         dx = base_ops.scatter2scatter(
-            X=yb, W=w_a, k=1,
+            X=yb,
+            W=w_a,
+            k=1,
             sorted_expert_idxs=sorted_expert_idxs,
             sorted_scattered_idxs=sorted_scattered_idxs,
-            x_grouped=True, y_grouped=True, int64_indices=int64_indices,
+            x_grouped=True,
+            y_grouped=True,
+            int64_indices=int64_indices,
         )
         return dx.mul_(scaling)
 
@@ -511,7 +533,9 @@ def _compute_lora_input_grad(
     offsets = expert_offsets.tolist()
     compute_dtype = grouped_grad_out.dtype
     d_input_lora = torch.zeros(
-        (grouped_grad_out.size(0), K), device=grouped_grad_out.device, dtype=compute_dtype
+        (grouped_grad_out.size(0), K),
+        device=grouped_grad_out.device,
+        dtype=compute_dtype,
     )
     prev_offset = 0
     for e in range(E):
