@@ -91,6 +91,7 @@ def _parallel_linear_maybe_lora(
     grouped_in,
     grouped_out,
     gates=None,
+    expert_biases=None,
 ):
     """Call parallel_linear or parallel_linear_lora depending on whether LoRA is active."""
     if lora_tuple is not None:
@@ -105,6 +106,7 @@ def _parallel_linear_maybe_lora(
             lora_A,
             lora_B,
             scaling,
+            expert_biases=expert_biases,
             grouped_in=grouped_in,
             grouped_out=grouped_out,
             gates=gates,
@@ -116,29 +118,118 @@ def _parallel_linear_maybe_lora(
         sorted_expert_idxs,
         sorted_scattered_idxs,
         expert_offsets,
+        expert_biases=expert_biases,
         grouped_in=grouped_in,
         grouped_out=grouped_out,
         gates=gates,
     )
 
 
-def _check_supported_layout(self):
-    """Reject expert layouts the fixed transpose/chunk below would miscompute."""
-    # Assumes the standard expert layout: gate_up concatenated as [E, 2I, H],
-    # gated SwiGLU, no expert bias. gpt_oss-style experts (interleaved gate/up,
-    # transposed [E, H, 2I], expert bias) would be silently miscomputed by the
-    # fixed transpose/chunk below, so reject rather than corrupt training.
-    if (
+def scattermoe_supports_layout(self) -> bool:
+    """True iff this experts module uses the standard layout scattermoe handles:
+    gate_up concatenated as [E, 2I, H], gated SwiGLU, no expert bias. gpt_oss-style
+    experts (interleaved gate/up, transposed [E, H, 2I], expert bias) return False."""
+    return not (
         getattr(self, "is_transposed", False)
         or not getattr(self, "is_concatenated", True)
         or getattr(self, "has_bias", False)
         or not getattr(self, "has_gate", True)
-    ):
+    )
+
+
+def _check_supported_layout(self):
+    """Reject expert layouts the fixed transpose/chunk below would miscompute."""
+    # gpt_oss-style experts (interleaved gate/up, transposed [E, H, 2I], expert
+    # bias) would be silently miscomputed by the fixed transpose/chunk below, so
+    # reject rather than corrupt training.
+    if not scattermoe_supports_layout(self):
         raise NotImplementedError(
             "scattermoe supports only concatenated, non-transposed, gated, biasless "
             "experts (qwen/mixtral/deepseek/glm/...). This model's experts use an "
             "unsupported layout; use use_sonicmoe or a built-in experts_implementation."
         )
+
+
+def _is_gptoss_layout(self) -> bool:
+    """gpt_oss expert layout: transposed [E, H, 2I] weights, interleaved gate/up,
+    per-expert bias, clamped sigmoid-GLU. Handled by the Triton path below."""
+    return (
+        getattr(self, "is_transposed", False)
+        and not getattr(self, "is_concatenated", True)
+        and getattr(self, "has_bias", False)
+        and getattr(self, "has_gate", True)
+        and hasattr(self, "gate_up_proj_bias")
+        and hasattr(self, "down_proj_bias")
+    )
+
+
+def _gptoss_glu(gate_up: torch.Tensor, alpha: float, limit: float) -> torch.Tensor:
+    """gpt_oss clamped sigmoid-GLU over interleaved gate/up columns (matches
+    ``GptOssExperts._apply_gate``)."""
+    gate, up = gate_up[..., ::2], gate_up[..., 1::2]
+    gate = gate.clamp(max=limit)
+    up = up.clamp(min=-limit, max=limit)
+    glu = gate * torch.sigmoid(gate * alpha)
+    return (up + 1) * glu
+
+
+def _scattermoe_gptoss_forward(
+    self,
+    hidden_states: torch.Tensor,
+    top_k_index: torch.Tensor,
+    top_k_weights: torch.Tensor,
+) -> torch.Tensor:
+    """ScatterMoE forward for gpt_oss-style experts (transposed/interleaved/biased).
+
+    gpt_oss stores weights already in ``[E, in, out]`` form, so no transpose; gate/up
+    are interleaved (``[..., ::2]`` / ``[..., 1::2]``); per-expert bias is folded into
+    the grouped GEMM; the activation is the clamped sigmoid-GLU. LoRA fuses exactly as
+    in the standard path (in/out dims match), and the down bias is added per row before
+    the routing-weight combine.
+    """
+    K = top_k_index.shape[1]
+    routing_weights = top_k_weights.to(hidden_states.dtype)
+    sorted_expert_idxs, sorted_scattered_idxs, expert_offsets = flatten_sort_count(
+        top_k_index, num_experts=self.num_experts
+    )
+
+    gate_up_weight = _get_base_param(self.gate_up_proj)  # [E, H, 2I], already [E,in,out]
+    down_weight = _get_base_param(self.down_proj)  # [E, I, H]
+    gate_up_bias = _get_base_param(self.gate_up_proj_bias)  # [E, 2I]
+    down_bias = _get_base_param(self.down_proj_bias)  # [E, H]
+
+    gup_lora, down_lora = None, None
+    if _has_peft_wrapper(self):
+        _, gup_lora, down_lora = _unwrap_experts_lora(self)
+
+    gate_up = _parallel_linear_maybe_lora(
+        hidden_states,
+        gate_up_weight,
+        K,
+        sorted_expert_idxs,
+        sorted_scattered_idxs,
+        expert_offsets,
+        gup_lora,
+        grouped_in=False,
+        grouped_out=True,
+        expert_biases=gate_up_bias,
+    )
+    h = _gptoss_glu(gate_up, getattr(self, "alpha", 1.702), getattr(self, "limit", 7.0))
+
+    output = _parallel_linear_maybe_lora(
+        h,
+        down_weight,
+        1,
+        sorted_expert_idxs,
+        sorted_scattered_idxs,
+        expert_offsets,
+        down_lora,
+        grouped_in=True,
+        grouped_out=False,
+        gates=routing_weights,
+        expert_biases=down_bias,
+    )
+    return output
 
 
 def scattermoe_experts_forward(
@@ -148,7 +239,12 @@ def scattermoe_experts_forward(
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
     """ScatterMoE experts forward with fused-LoRA support."""
-    _check_supported_layout(self)
+    if not scattermoe_supports_layout(self):
+        if _is_gptoss_layout(self):
+            return _scattermoe_gptoss_forward(
+                self, hidden_states, top_k_index, top_k_weights
+            )
+        _check_supported_layout(self)  # raises for any other unsupported layout
 
     K = top_k_index.shape[1]
 
