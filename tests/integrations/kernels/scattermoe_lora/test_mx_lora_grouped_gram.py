@@ -12,7 +12,6 @@ through the grouped-Gram path rather than the fused-gather kernel.
 """
 
 import pytest
-import torch
 
 torch = pytest.importorskip("torch")
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
@@ -62,7 +61,9 @@ def test_mxfp4_lora_grads_base_agnostic_large_workload():
     _, top = torch.topk(torch.softmax(torch.randn(M, E, device=dev), -1), topk, dim=-1)
     sei, ssi, eo = flatten_sort_count(top, E)
 
-    assert sei.size(0) * max(K, N) > _FUSE_GATHER_THRESHOLD  # exercises grouped-Gram dA/dB
+    assert (
+        sei.size(0) * max(K, N) > _FUSE_GATHER_THRESHOLD
+    )  # exercises grouped-Gram dA/dB
 
     grad = torch.randn(sei.size(0), N, device=dev, dtype=dt)
     _, dx_mx, da_mx, db_mx = _run(mx_w, x, A, B, sei, ssi, eo, topk, scaling, grad)
