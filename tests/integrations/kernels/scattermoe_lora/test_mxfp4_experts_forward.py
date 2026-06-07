@@ -83,6 +83,59 @@ def test_mxfp4_forward_uses_fused_kernel_matches_dequant(monkeypatch):
         assert torch.isfinite(gl_mx[i]).all()
 
 
+def test_mxfp4_ep_matches_dequant(monkeypatch):
+    """Fused MXFP4 through the EP (sentinel-skip) forward matches the bf16-dequant ref,
+    and _sonicmoe_local routes there on a device the sonic-moe kernel can't run."""
+    from axolotl.integrations.expert_parallel.experts_fn import _sonicmoe_local
+    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+        scattermoe_experts_forward_ep,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        _sonicmoe_kernel_supported,
+    )
+
+    dt = torch.bfloat16
+    g = torch.Generator(device=DEV).manual_seed(0)
+    mx = lambda W: MXTensor.to_mx(W, elem_dtype=torch.float4_e2m1fn_x2, block_size=32)
+    gu_mx = mx(torch.randn(E, 2 * I, H, device=DEV, dtype=dt, generator=g) * 0.1)
+    dn_mx = mx(torch.randn(E, H, I, device=DEV, dtype=dt, generator=g) * 0.1)
+    gu_deq, dn_deq = gu_mx.dequantize(dt).contiguous(), dn_mx.dequantize(dt).contiguous()
+    mk = lambda *s: (torch.randn(*s, device=DEV, dtype=dt, generator=g) * 0.05).requires_grad_(True)
+    A1, B1, A2, B2 = mk(R * E, H), mk(2 * I, R * E), mk(R * E, I), mk(H, R * E)
+    lora = [A1, B1, A2, B2]
+    monkeypatch.setattr(ex, "_has_peft_wrapper", lambda s: True)
+    monkeypatch.setattr(ex, "_unwrap_experts_lora", lambda s: (s, (A1, B1, SC), (A2, B2, SC)))
+
+    # routing with -1 remote sentinels (post-DeepEP-dispatch shape)
+    idx = torch.randint(0, E, (N, K), device=DEV, generator=g)
+    remote = torch.rand(N, K, device=DEV, generator=g) < 0.5
+    remote[:, 0] = False
+    idx = torch.where(remote, torch.full_like(idx, -1), idx)
+    w = torch.rand(N, K, device=DEV, generator=g).to(dt)
+    active = torch.unique(torch.sort(idx.reshape(-1)[idx.reshape(-1) >= 0]).values)
+    row = (active.long()[:, None] * R + torch.arange(R, device=DEV)[None, :]).reshape(-1)
+    grad = torch.randn(N, H, device=DEV, dtype=dt, generator=g)
+
+    def run(m):
+        for t in lora:
+            t.grad = None
+        x = torch.randn(N, H, device=DEV, dtype=dt,
+                        generator=torch.Generator(DEV).manual_seed(7)).requires_grad_(True)
+        scattermoe_experts_forward_ep(m, x, idx, w).backward(grad)
+        return x.grad.detach(), [t.grad.clone() for t in lora]
+
+    dx_mx, gl_mx = run(_module(gu_mx, dn_mx))
+    dx_bf, gl_bf = run(_module(gu_deq, dn_deq))
+    rel = lambda a, b: (a - b).float().abs().max().item() / max(b.float().abs().max().item(), 1e-6)
+    assert rel(dx_mx, dx_bf) < 6e-2
+    for i, slc in ((0, row), (1, (slice(None), row)), (2, row), (3, (slice(None), row))):
+        assert rel(gl_mx[i][slc], gl_bf[i][slc]) < 6e-2, f"lora grad {i}"
+
+    if not _sonicmoe_kernel_supported():  # e.g. sm_120: sonicmoe+EP falls back to scattermoe
+        out = _sonicmoe_local(_module(gu_mx, dn_mx), torch.randn(N, H, device=DEV, dtype=dt), idx, w)
+        assert out.shape == (N, H) and torch.isfinite(out).all()
+
+
 def test_mxfp4_without_lora_falls_back_to_dequant(monkeypatch):
     """MXFP4 base with no LoRA must not hit the fused (LoRA-only) MX kernel."""
     dt = torch.bfloat16

@@ -82,7 +82,27 @@ def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
 
 
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    raise NotImplementedError("Sonicmoe + EP is not yet properly implemented.")
+    # The sonic-moe CUTLASS kernel can't run on sm_120 (Blackwell); for standard-layout
+    # experts there, use the vendored scattermoe EP path (sentinel-skip + fused MXFP4),
+    # which runs on sm_120 and gives sonicmoe + LoRA + EP. Elsewhere sonicmoe+EP is not
+    # yet wired (needs the upstream EP-sentinel kernel).
+    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+        scattermoe_experts_forward_ep,
+        scattermoe_supports_layout,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        _sonicmoe_kernel_supported,
+    )
+
+    if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(experts):
+        return scattermoe_experts_forward_ep(
+            experts, recv_x, recv_topk_idx, recv_topk_weights
+        )
+    raise NotImplementedError(
+        "Sonicmoe + EP is not yet implemented on this device/layout. On sm_120 with a "
+        "standard expert layout it falls back to the scattermoe EP path automatically; "
+        "otherwise use use_scattermoe."
+    )
 
 
 _LOCAL_KERNELS = {

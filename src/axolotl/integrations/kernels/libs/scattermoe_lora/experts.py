@@ -132,6 +132,39 @@ def _parallel_linear_maybe_lora(
     )
 
 
+def _prepare_weights_and_lora(
+    gu_param, dn_param, sorted_expert_idxs, expert_offsets, num_experts,
+    gup_lora, down_lora, dtype,
+):
+    """Resolve the gate_up / down weights (+ routing + LoRA) for the grouped GEMM.
+
+    For an MXFP4 base with LoRA on both projections, keep the weights packed (4-bit)
+    and route through the fused MX kernel: select the active experts and remap the
+    routing / LoRA to that compact set (dequant happens inside the kernel K-loop).
+    Otherwise return bf16 ``[E, in, out]`` weights (dequantizing MXFP4 explicitly when
+    LoRA is absent, since the fused kernel is LoRA-only and MXTensor has no transpose).
+
+    Returns ``(gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
+    gup_lora, down_lora)``.
+    """
+    if is_mxfp4_param(gu_param) and gup_lora is not None and down_lora is not None:
+        active = get_active_experts(sorted_expert_idxs, num_experts)
+        sorted_expert_idxs, expert_offsets = remap_expert_indices(
+            sorted_expert_idxs, expert_offsets, active, num_experts
+        )
+        gate_up_weight = selective_mx_weights_fwd(gu_param, active)
+        down_weight = selective_mx_weights_fwd(dn_param, active)
+        gup_lora = (*selective_lora_weights(gup_lora[0], gup_lora[1], active, num_experts), gup_lora[2])
+        down_lora = (*selective_lora_weights(down_lora[0], down_lora[1], active, num_experts), down_lora[2])
+    elif is_mxfp4_param(gu_param):
+        gate_up_weight = gu_param.dequantize(dtype).transpose(2, 1)
+        down_weight = dn_param.dequantize(dtype).transpose(2, 1)
+    else:
+        gate_up_weight = gu_param.transpose(2, 1)  # bf16 [E, out, in] -> [E, in, out]
+        down_weight = dn_param.transpose(2, 1)
+    return gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets, gup_lora, down_lora
+
+
 def scattermoe_supports_layout(self) -> bool:
     """True iff this experts module uses the standard layout scattermoe handles:
     gate_up concatenated as [E, 2I, H], gated SwiGLU, no expert bias. gpt_oss-style
@@ -265,34 +298,15 @@ def scattermoe_experts_forward(
     if _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
-    gu_param = _get_base_param(self.gate_up_proj)
-    dn_param = _get_base_param(self.down_proj)
-
-    # Fused MXFP4: keep the frozen base weights packed (dequant happens inside the
-    # kernel's K-loop) instead of materializing bf16. Only the LoRA path has an
-    # MX-aware kernel, so this needs LoRA on both projections; otherwise fall through
-    # to the dequant-on-cast path below.
-    if (
-        is_mxfp4_param(gu_param)
-        and gup_lora is not None
-        and down_lora is not None
-    ):
-        active = get_active_experts(sorted_expert_idxs, self.num_experts)
-        sorted_expert_idxs, expert_offsets = remap_expert_indices(
-            sorted_expert_idxs, expert_offsets, active, self.num_experts
-        )
-        gate_up_weight = selective_mx_weights_fwd(gu_param, active)
-        down_weight = selective_mx_weights_fwd(dn_param, active)
-        gup_lora = (*selective_lora_weights(gup_lora[0], gup_lora[1], active, self.num_experts), gup_lora[2])
-        down_lora = (*selective_lora_weights(down_lora[0], down_lora[1], active, self.num_experts), down_lora[2])
-    elif is_mxfp4_param(gu_param):
-        # MXFP4 base without LoRA: the fused kernel is LoRA-only and MXTensor has no
-        # transpose, so dequantize to bf16 here (frozen-base inference path).
-        gate_up_weight = gu_param.dequantize(hidden_states.dtype).transpose(2, 1)
-        down_weight = dn_param.dequantize(hidden_states.dtype).transpose(2, 1)
-    else:
-        gate_up_weight = gu_param.transpose(2, 1)  # bf16 [E, out, in] -> [E, in, out]
-        down_weight = dn_param.transpose(2, 1)
+    (
+        gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
+        gup_lora, down_lora,
+    ) = _prepare_weights_and_lora(
+        _get_base_param(self.gate_up_proj),
+        _get_base_param(self.down_proj),
+        sorted_expert_idxs, expert_offsets, self.num_experts,
+        gup_lora, down_lora, hidden_states.dtype,
+    )
 
     # Gate-up projection (with optional LoRA)
     gates_h = _parallel_linear_maybe_lora(
@@ -369,12 +383,17 @@ def scattermoe_experts_forward_ep(
     M = se.size(0)
     ss = torch.arange(M, device=hidden_states.device, dtype=torch.int32)
 
-    gate_up_weight = _get_base_param(self.gate_up_proj).transpose(2, 1)
-    down_weight = _get_base_param(self.down_proj).transpose(2, 1)
-
     gup_lora, down_lora = None, None
     if _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
+
+    gate_up_weight, down_weight, se, expert_offsets, gup_lora, down_lora = (
+        _prepare_weights_and_lora(
+            _get_base_param(self.gate_up_proj),
+            _get_base_param(self.down_proj),
+            se, expert_offsets, E_local, gup_lora, down_lora, hidden_states.dtype,
+        )
+    )
 
     # Pre-gather token rows into expert-grouped order; both projections run grouped.
     grouped_x = hidden_states.index_select(0, tok_sorted.to(torch.long))
