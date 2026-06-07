@@ -6,8 +6,15 @@ ScatterMoE Triton call via ``parallel_linear_lora``.
 
 import torch
 
+from .mx_weights import selective_mx_weights_fwd
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
+from .selective_dequant import (
+    get_active_experts,
+    is_mxfp4_param,
+    remap_expert_indices,
+    selective_lora_weights,
+)
 
 
 def _has_peft_wrapper(module):
@@ -253,14 +260,39 @@ def scattermoe_experts_forward(
         top_k_index, num_experts=self.num_experts
     )
 
-    # Get base weights (unwrap PEFT if needed)
-    gate_up_weight = _get_base_param(self.gate_up_proj).transpose(2, 1)
-    down_weight = _get_base_param(self.down_proj).transpose(2, 1)
-
     # Extract LoRA params if PEFT is active
     gup_lora, down_lora = None, None
     if _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
+
+    gu_param = _get_base_param(self.gate_up_proj)
+    dn_param = _get_base_param(self.down_proj)
+
+    # Fused MXFP4: keep the frozen base weights packed (dequant happens inside the
+    # kernel's K-loop) instead of materializing bf16. Only the LoRA path has an
+    # MX-aware kernel, so this needs LoRA on both projections; otherwise fall through
+    # to the dequant-on-cast path below.
+    if (
+        is_mxfp4_param(gu_param)
+        and gup_lora is not None
+        and down_lora is not None
+    ):
+        active = get_active_experts(sorted_expert_idxs, self.num_experts)
+        sorted_expert_idxs, expert_offsets = remap_expert_indices(
+            sorted_expert_idxs, expert_offsets, active, self.num_experts
+        )
+        gate_up_weight = selective_mx_weights_fwd(gu_param, active)
+        down_weight = selective_mx_weights_fwd(dn_param, active)
+        gup_lora = (*selective_lora_weights(gup_lora[0], gup_lora[1], active, self.num_experts), gup_lora[2])
+        down_lora = (*selective_lora_weights(down_lora[0], down_lora[1], active, self.num_experts), down_lora[2])
+    elif is_mxfp4_param(gu_param):
+        # MXFP4 base without LoRA: the fused kernel is LoRA-only and MXTensor has no
+        # transpose, so dequantize to bf16 here (frozen-base inference path).
+        gate_up_weight = gu_param.dequantize(hidden_states.dtype).transpose(2, 1)
+        down_weight = dn_param.dequantize(hidden_states.dtype).transpose(2, 1)
+    else:
+        gate_up_weight = gu_param.transpose(2, 1)  # bf16 [E, out, in] -> [E, in, out]
+        down_weight = dn_param.transpose(2, 1)
 
     # Gate-up projection (with optional LoRA)
     gates_h = _parallel_linear_maybe_lora(
