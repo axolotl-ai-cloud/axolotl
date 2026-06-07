@@ -133,8 +133,14 @@ def _parallel_linear_maybe_lora(
 
 
 def _prepare_weights_and_lora(
-    gu_param, dn_param, sorted_expert_idxs, expert_offsets, num_experts,
-    gup_lora, down_lora, dtype,
+    gu_param,
+    dn_param,
+    sorted_expert_idxs,
+    expert_offsets,
+    num_experts,
+    gup_lora,
+    down_lora,
+    dtype,
 ):
     """Resolve the gate_up / down weights (+ routing + LoRA) for the grouped GEMM.
 
@@ -154,15 +160,28 @@ def _prepare_weights_and_lora(
         )
         gate_up_weight = selective_mx_weights_fwd(gu_param, active)
         down_weight = selective_mx_weights_fwd(dn_param, active)
-        gup_lora = (*selective_lora_weights(gup_lora[0], gup_lora[1], active, num_experts), gup_lora[2])
-        down_lora = (*selective_lora_weights(down_lora[0], down_lora[1], active, num_experts), down_lora[2])
+        gup_lora = (
+            *selective_lora_weights(gup_lora[0], gup_lora[1], active, num_experts),
+            gup_lora[2],
+        )
+        down_lora = (
+            *selective_lora_weights(down_lora[0], down_lora[1], active, num_experts),
+            down_lora[2],
+        )
     elif is_mxfp4_param(gu_param):
         gate_up_weight = gu_param.dequantize(dtype).transpose(2, 1)
         down_weight = dn_param.dequantize(dtype).transpose(2, 1)
     else:
         gate_up_weight = gu_param.transpose(2, 1)  # bf16 [E, out, in] -> [E, in, out]
         down_weight = dn_param.transpose(2, 1)
-    return gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets, gup_lora, down_lora
+    return (
+        gate_up_weight,
+        down_weight,
+        sorted_expert_idxs,
+        expert_offsets,
+        gup_lora,
+        down_lora,
+    )
 
 
 def scattermoe_supports_layout(self) -> bool:
@@ -233,7 +252,9 @@ def _scattermoe_gptoss_forward(
         top_k_index, num_experts=self.num_experts
     )
 
-    gate_up_weight = _get_base_param(self.gate_up_proj)  # [E, H, 2I], already [E,in,out]
+    gate_up_weight = _get_base_param(
+        self.gate_up_proj
+    )  # [E, H, 2I], already [E,in,out]
     down_weight = _get_base_param(self.down_proj)  # [E, I, H]
     gate_up_bias = _get_base_param(self.gate_up_proj_bias)  # [E, 2I]
     down_bias = _get_base_param(self.down_proj_bias)  # [E, H]
@@ -299,13 +320,21 @@ def scattermoe_experts_forward(
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
     (
-        gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
-        gup_lora, down_lora,
+        gate_up_weight,
+        down_weight,
+        sorted_expert_idxs,
+        expert_offsets,
+        gup_lora,
+        down_lora,
     ) = _prepare_weights_and_lora(
         _get_base_param(self.gate_up_proj),
         _get_base_param(self.down_proj),
-        sorted_expert_idxs, expert_offsets, self.num_experts,
-        gup_lora, down_lora, hidden_states.dtype,
+        sorted_expert_idxs,
+        expert_offsets,
+        self.num_experts,
+        gup_lora,
+        down_lora,
+        hidden_states.dtype,
     )
 
     # Gate-up projection (with optional LoRA)
@@ -391,7 +420,12 @@ def scattermoe_experts_forward_ep(
         _prepare_weights_and_lora(
             _get_base_param(self.gate_up_proj),
             _get_base_param(self.down_proj),
-            se, expert_offsets, E_local, gup_lora, down_lora, hidden_states.dtype,
+            se,
+            expert_offsets,
+            E_local,
+            gup_lora,
+            down_lora,
+            hidden_states.dtype,
         )
     )
 

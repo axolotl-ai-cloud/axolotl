@@ -16,7 +16,6 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-torch = pytest.importorskip("torch")
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 import axolotl.integrations.kernels.libs.scattermoe_lora.experts as ex  # noqa: E402
@@ -32,7 +31,7 @@ from axolotl.integrations.kernels.libs.scattermoe_lora.layers import (  # noqa: 
 
 DEV = "cuda"
 ALPHA, LIMIT = 1.702, 7.0
-E, H, I, N, K, R, SC = 8, 256, 128, 64, 4, 16, 0.5
+E, H, IM, N, K, R, SC = 8, 256, 128, 64, 4, 16, 0.5
 
 
 @pytest.fixture(autouse=True)
@@ -54,18 +53,26 @@ def _glu(gate_up):
 
 
 def _module(dt):
-    mk = lambda *s: (torch.randn(*s, device=DEV, dtype=dt) * 0.02).requires_grad_(True)
+    def mk(*s):
+        return (torch.randn(*s, device=DEV, dtype=dt) * 0.02).requires_grad_(True)
+
     return SimpleNamespace(
         num_experts=E,
-        gate_up_proj=mk(E, H, 2 * I), gate_up_proj_bias=mk(E, 2 * I),
-        down_proj=mk(E, I, H), down_proj_bias=mk(E, H),
-        alpha=ALPHA, limit=LIMIT,
-        is_transposed=True, is_concatenated=False, has_bias=True, has_gate=True,
+        gate_up_proj=mk(E, H, 2 * IM),
+        gate_up_proj_bias=mk(E, 2 * IM),
+        down_proj=mk(E, IM, H),
+        down_proj_bias=mk(E, H),
+        alpha=ALPHA,
+        limit=LIMIT,
+        is_transposed=True,
+        is_concatenated=False,
+        has_bias=True,
+        has_gate=True,
     )
 
 
 def _eager(x, m, idx, w, weff=None):
-    gup, dp = (weff if weff else (m.gate_up_proj, m.down_proj))
+    gup, dp = weff if weff else (m.gate_up_proj, m.down_proj)
     fe = idx.reshape(-1)
     xg = x.repeat_interleave(K, dim=0)
     gate_up = torch.bmm(xg.unsqueeze(1), gup[fe]).squeeze(1) + m.gate_up_proj_bias[fe]
@@ -92,9 +99,12 @@ def test_gptoss_base_matches_eager(dt):
     def run(eager):
         for p in ps:
             p.grad = None
-        x = torch.randn(N, H, device=DEV, dtype=dt,
-                        generator=torch.Generator(DEV).manual_seed(3)).requires_grad_(True)
-        out = _eager(x, m, idx, w) if eager else scattermoe_experts_forward(m, x, idx, w)
+        x = torch.randn(
+            N, H, device=DEV, dtype=dt, generator=torch.Generator(DEV).manual_seed(3)
+        ).requires_grad_(True)
+        out = (
+            _eager(x, m, idx, w) if eager else scattermoe_experts_forward(m, x, idx, w)
+        )
         out.backward(grad)
         return out.detach(), x.grad, [p.grad.clone() for p in ps]
 
@@ -103,7 +113,7 @@ def test_gptoss_base_matches_eager(dt):
     tol = 2e-4 if dt == torch.float32 else 5e-2
     assert _rel(ok, oe) < tol
     assert _rel(dxk, dxe) < tol
-    for a, b in zip(gk, ge):
+    for a, b in zip(gk, ge, strict=True):
         assert _rel(a, b) < tol
 
 
@@ -112,16 +122,27 @@ def test_gptoss_lora_matches_eager(dt, monkeypatch):
     g = torch.Generator(device=DEV).manual_seed(0)
     base = SimpleNamespace(
         num_experts=E,
-        gate_up_proj=torch.randn(E, H, 2 * I, device=DEV, dtype=dt, generator=g) * 0.02,
-        gate_up_proj_bias=torch.randn(E, 2 * I, device=DEV, dtype=dt, generator=g) * 0.02,
-        down_proj=torch.randn(E, I, H, device=DEV, dtype=dt, generator=g) * 0.02,
+        gate_up_proj=torch.randn(E, H, 2 * IM, device=DEV, dtype=dt, generator=g)
+        * 0.02,
+        gate_up_proj_bias=torch.randn(E, 2 * IM, device=DEV, dtype=dt, generator=g)
+        * 0.02,
+        down_proj=torch.randn(E, IM, H, device=DEV, dtype=dt, generator=g) * 0.02,
         down_proj_bias=torch.randn(E, H, device=DEV, dtype=dt, generator=g) * 0.02,
-        alpha=ALPHA, limit=LIMIT,
-        is_transposed=True, is_concatenated=False, has_bias=True, has_gate=True,
+        alpha=ALPHA,
+        limit=LIMIT,
+        is_transposed=True,
+        is_concatenated=False,
+        has_bias=True,
+        has_gate=True,
     )
-    mk = lambda *s: (torch.randn(*s, device=DEV, dtype=dt, generator=g) * 0.05).requires_grad_(True)
-    pA1, pB1 = mk(R * E, H), mk(2 * I, R * E)
-    pA2, pB2 = mk(R * E, I), mk(H, R * E)
+
+    def mk(*s):
+        return (
+            torch.randn(*s, device=DEV, dtype=dt, generator=g) * 0.05
+        ).requires_grad_(True)
+
+    pA1, pB1 = mk(R * E, H), mk(2 * IM, R * E)
+    pA2, pB2 = mk(R * E, IM), mk(H, R * E)
     lora = [pA1, pB1, pA2, pB2]
     gup_l = (*peft_lora_to_scattermoe(pA1, pB1, E, R), SC)
     dwn_l = (*peft_lora_to_scattermoe(pA2, pB2, E, R), SC)
@@ -129,8 +150,10 @@ def test_gptoss_lora_matches_eager(dt, monkeypatch):
     monkeypatch.setattr(ex, "_unwrap_experts_lora", lambda s: (s, gup_l, dwn_l))
 
     # eager W_eff: ΔW_e = scaling * A_e^T @ W_B[e], W_B = lora_B.T.reshape(E,R,out)
-    A1 = pA1.reshape(E, R, H); WB1 = peft_lora_B_to_scattermoe(pB1, E, R).t().reshape(E, R, 2 * I)
-    A2 = pA2.reshape(E, R, I); WB2 = peft_lora_B_to_scattermoe(pB2, E, R).t().reshape(E, R, H)
+    A1 = pA1.reshape(E, R, H)
+    WB1 = peft_lora_B_to_scattermoe(pB1, E, R).t().reshape(E, R, 2 * IM)
+    A2 = pA2.reshape(E, R, IM)
+    WB2 = peft_lora_B_to_scattermoe(pB2, E, R).t().reshape(E, R, H)
     gup_eff = base.gate_up_proj + SC * torch.bmm(A1.transpose(1, 2), WB1)
     dp_eff = base.down_proj + SC * torch.bmm(A2.transpose(1, 2), WB2)
 
@@ -141,10 +164,14 @@ def test_gptoss_lora_matches_eager(dt, monkeypatch):
     def run(eager):
         for t in lora:
             t.grad = None
-        x = torch.randn(N, H, device=DEV, dtype=dt,
-                        generator=torch.Generator(DEV).manual_seed(3)).requires_grad_(True)
-        out = (_eager(x, base, idx, w, weff=(gup_eff, dp_eff)) if eager
-               else scattermoe_experts_forward(base, x, idx, w))
+        x = torch.randn(
+            N, H, device=DEV, dtype=dt, generator=torch.Generator(DEV).manual_seed(3)
+        ).requires_grad_(True)
+        out = (
+            _eager(x, base, idx, w, weff=(gup_eff, dp_eff))
+            if eager
+            else scattermoe_experts_forward(base, x, idx, w)
+        )
         out.backward(grad)
         return out.detach(), x.grad, [t.grad.clone() for t in lora]
 
@@ -153,6 +180,6 @@ def test_gptoss_lora_matches_eager(dt, monkeypatch):
     tol = 3e-4 if dt == torch.float32 else 5e-2
     assert _rel(ok, oe) < tol
     assert _rel(dxk, dxe) < tol
-    for a, b in zip(gk, ge):
+    for a, b in zip(gk, ge, strict=True):
         assert _rel(a, b) < tol
         assert a.abs().sum() > 0  # LoRA grads actually populated
