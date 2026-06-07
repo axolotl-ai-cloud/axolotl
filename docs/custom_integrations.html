@@ -839,6 +839,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#how-it-works-1" id="toc-how-it-works-1" class="nav-link" data-scroll-target="#how-it-works-1">How It Works</a></li>
   <li><a href="#lora-support" id="toc-lora-support" class="nav-link" data-scroll-target="#lora-support">LoRA Support</a></li>
   <li><a href="#model-support" id="toc-model-support" class="nav-link" data-scroll-target="#model-support">Model Support</a></li>
+  <li><a href="#blackwell-sm_120-note" id="toc-blackwell-sm_120-note" class="nav-link" data-scroll-target="#blackwell-sm_120-note">Blackwell (sm_120) note</a></li>
   <li><a href="#feature-comparison" id="toc-feature-comparison" class="nav-link" data-scroll-target="#feature-comparison">Feature comparison</a></li>
   <li><a href="#note-on-megablocks" id="toc-note-on-megablocks" class="nav-link" data-scroll-target="#note-on-megablocks">Note on MegaBlocks</a></li>
   </ul></li>
@@ -1634,12 +1635,16 @@ The quick brown fox jumps over the loud dog</code></pre>
 </tr>
 <tr class="odd">
 <td><code>gpt_oss</code></td>
-<td style="text-align: center;">No</td>
+<td style="text-align: center;">Yes</td>
 <td style="text-align: center;">Yes</td>
 </tr>
 </tbody>
 </table>
-<p><code>gpt_oss</code> carries the decorator with <code>is_concatenated=False, is_transposed=True, has_bias=True</code> and uses a sigmoid-GLU activation with clamping. The SonicMoE forward reads these flags off <code>self</code> and dispatches accordingly. The ScatterMoE forward assumes the standard <code>[E, 2*I, H]</code> concat layout and SiLU-GLU without bias, so it does not yet support <code>gpt_oss</code>.</p>
+<p><code>gpt_oss</code> carries the decorator with <code>is_concatenated=False, is_transposed=True, has_bias=True</code> and uses a sigmoid-GLU activation with clamping. Both forwards read these flags off <code>self</code> and dispatch accordingly: the ScatterMoE forward handles the transposed/interleaved/biased layout and clamped sigmoid-GLU via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM); the SonicMoE forward uses the upstream CUTLASS kernel.</p>
+</section>
+<section id="blackwell-sm_120-note" class="level3">
+<h3 class="anchored" data-anchor-id="blackwell-sm_120-note">Blackwell (sm_120) note</h3>
+<p>The SonicMoE CUTLASS kernel (<code>kernels-community/sonic-moe</code>) does not currently run on consumer Blackwell (sm_120) — its bundled quack <code>GemmSm120</code> predates the <code>concat_layout</code> arg the dispatcher passes. On sm_120, <code>use_sonicmoe</code> with a standard-layout model transparently falls back to the ScatterMoE Triton path, which runs there. <code>gpt_oss</code> on sm_120 should use <code>use_scattermoe</code> directly (bf16 base; MXFP4 weights dequantize on the fly as with other MXFP4 models — fused MXFP4 for <code>gpt_oss</code> is not yet wired).</p>
 </section>
 <section id="feature-comparison" class="level3">
 <h3 class="anchored" data-anchor-id="feature-comparison">Feature comparison</h3>
