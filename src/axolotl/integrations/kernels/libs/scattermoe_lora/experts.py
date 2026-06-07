@@ -6,12 +6,13 @@ ScatterMoE Triton call via ``parallel_linear_lora``.
 
 import torch
 
-from .mx_weights import selective_mx_weights_fwd
+from .mx_weights import selective_mx_weights_fwd, selective_nvfp4_weights_fwd
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
 from .selective_dequant import (
     get_active_experts,
     is_mxfp4_param,
+    is_nvfp4_param,
     remap_expert_indices,
     selective_lora_weights,
 )
@@ -144,22 +145,25 @@ def _prepare_weights_and_lora(
 ):
     """Resolve the gate_up / down weights (+ routing + LoRA) for the grouped GEMM.
 
-    For an MXFP4 base with LoRA on both projections, keep the weights packed (4-bit)
-    and route through the fused MX kernel: select the active experts and remap the
-    routing / LoRA to that compact set (dequant happens inside the kernel K-loop).
-    Otherwise return bf16 ``[E, in, out]`` weights (dequantizing MXFP4 explicitly when
-    LoRA is absent, since the fused kernel is LoRA-only and MXTensor has no transpose).
+    For an MXFP4 or NVFP4 base with LoRA on both projections, keep the weights packed
+    (4-bit) and route through the fused kernel: select the active experts and remap the
+    routing / LoRA to that compact set (dequant happens inside the kernel K-loop; NVFP4
+    reuses the MXWeights container with linear E4M3 block scales). Otherwise return bf16
+    ``[E, in, out]`` weights (dequantizing FP4 explicitly when LoRA is absent, since the
+    fused kernel is LoRA-only and the FP4 tensors have no transpose).
 
     Returns ``(gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
     gup_lora, down_lora)``.
     """
-    if is_mxfp4_param(gu_param) and gup_lora is not None and down_lora is not None:
+    is_mx, is_nv = is_mxfp4_param(gu_param), is_nvfp4_param(gu_param)
+    if (is_mx or is_nv) and gup_lora is not None and down_lora is not None:
+        select = selective_mx_weights_fwd if is_mx else selective_nvfp4_weights_fwd
         active = get_active_experts(sorted_expert_idxs, num_experts)
         sorted_expert_idxs, expert_offsets = remap_expert_indices(
             sorted_expert_idxs, expert_offsets, active, num_experts
         )
-        gate_up_weight = selective_mx_weights_fwd(gu_param, active)
-        down_weight = selective_mx_weights_fwd(dn_param, active)
+        gate_up_weight = select(gu_param, active)
+        down_weight = select(dn_param, active)
         gup_lora = (
             *selective_lora_weights(gup_lora[0], gup_lora[1], active, num_experts),
             gup_lora[2],
@@ -168,7 +172,9 @@ def _prepare_weights_and_lora(
             *selective_lora_weights(down_lora[0], down_lora[1], active, num_experts),
             down_lora[2],
         )
-    elif is_mxfp4_param(gu_param):
+    elif is_mx or is_nv:
+        # quantized base without LoRA: the fused kernel is LoRA-only and the FP4
+        # tensors have no transpose, so dequantize to bf16 here.
         gate_up_weight = gu_param.dequantize(dtype).transpose(2, 1)
         down_weight = dn_param.dequantize(dtype).transpose(2, 1)
     else:
