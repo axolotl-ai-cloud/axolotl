@@ -825,7 +825,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.kernels.quantize.dequantize">dequantize</a></td>
-<td>Fast NF4 dequantization using <code>bitsandbytes</code> CUDA kernels.</td>
+<td>NF4 / FP8 dequantization; under <code>torch.compile</code> NF4 dispatches via <code>torch.ops.axolotl.nf4_dequantize</code>.</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</a></td>
@@ -835,173 +835,15 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.kernels.quantize.dequantize" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.quantize.dequantize">dequantize</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.dequantize(W, quant_state<span class="op">=</span><span class="va">None</span>, out<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Fast NF4 dequantization using <code>bitsandbytes</code> CUDA kernels.</p>
-<p>Performs efficient dequantization of weights from NF4 format using <code>bitsandbytes</code>’
-optimized CUDA implementations. Supports both legacy list and new <code>QuantState</code>
-formats.</p>
-<section id="parameters" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 5%">
-<col style="width: 19%">
-<col style="width: 69%">
-<col style="width: 5%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>W</td>
-<td>torch.Tensor</td>
-<td>Quantized weight tensor to dequantize</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>quant_state</td>
-<td>QuantState | list | torch.Tensor | None</td>
-<td>Quantization state containing metadata needed for dequantization. Can be either a <code>QuantState</code> object or legacy list format. If None, returns <code>W</code> unchanged.</td>
-<td><code>None</code></td>
-</tr>
-<tr class="odd">
-<td>out</td>
-<td>torch.Tensor | None</td>
-<td>Optional output tensor for storing dequantized results. Must match expected shape and dtype if provided.</td>
-<td><code>None</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 7%">
-<col style="width: 13%">
-<col style="width: 78%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Dequantized tensor in the specified dtype (fp16 or bf16). Will be transposed if</td>
-</tr>
-<tr class="even">
-<td></td>
-<td>torch.Tensor</td>
-<td>input <code>W</code> was transposed.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="raises" class="level4 doc-section doc-section-raises">
-<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises">Raises</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 17%">
-<col style="width: 73%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>AssertionError</td>
-<td>If provided output tensor doesn’t match expected shape / dtype.</td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="note" class="level4 doc-section doc-section-note">
-<h4 class="doc-section doc-section-note anchored" data-anchor-id="note">Note</h4>
-<p>Uses CUDA streams for better performance when available in newer <code>bitsandbytes</code>
-versions (&gt;0.43.3).</p>
-</section>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.dequantize(W, quant_state<span class="op">=</span><span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>NF4 / FP8 dequantization; under <code>torch.compile</code> NF4 dispatches via <code>torch.ops.axolotl.nf4_dequantize</code>.</p>
 </section>
 <section id="axolotl.kernels.quantize.dequantize_fp8" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.kernels.quantize.dequantize_fp8">dequantize_fp8</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>kernels.quantize.dequantize_fp8(W, scale_inv, dtype<span class="op">=</span>torch.bfloat16)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Dequantize FP8 block-quantized weights: W_dequant = W_fp8 * scale_inv.</p>
-<section id="parameters-1" class="level4 doc-section doc-section-parameters">
-<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 8%">
-<col style="width: 11%">
-<col style="width: 65%">
-<col style="width: 14%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-<th>Default</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>W</td>
-<td>torch.Tensor</td>
-<td>FP8 weight tensor [out_features, in_features] in float8_e4m3fn.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="even">
-<td>scale_inv</td>
-<td>torch.Tensor</td>
-<td>Per-block inverse scale [ceil(out/block), ceil(in/block)] or per-tensor scalar.</td>
-<td><em>required</em></td>
-</tr>
-<tr class="odd">
-<td>dtype</td>
-<td>torch.dtype</td>
-<td>Output dtype (default bf16).</td>
-<td><code>torch.bfloat16</code></td>
-</tr>
-</tbody>
-</table>
-</section>
-<section id="returns-1" class="level4 doc-section doc-section-returns">
-<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Name</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td></td>
-<td>torch.Tensor</td>
-<td>Dequantized tensor in the specified dtype.</td>
-</tr>
-</tbody>
-</table>
 
 
-</section>
 </section>
 </section>
 </section>
