@@ -131,6 +131,7 @@ Other installation approaches are described [here](https://docs.axolotl.ai/docs/
 <details>
 
 - [RunPod](https://runpod.io/gsc?template=v2ickqhz9s&ref=6i7fkpdz)
+- [AI Badgr](https://aibadgr.com/gpu/launch?template=axolotl) (`badgr run template axolotl --max-cost 20 --max-runtime 120`)
 - [Vast.ai](https://cloud.vast.ai?ref_id=62897&template_id=bdd4a49fa8bce926defc99471864cace&utm_source=github&utm_medium=developer_community&utm_campaign=template_launch_axolotl&utm_content=readme)
 - [PRIME Intellect](https://app.primeintellect.ai/dashboard/create-cluster?image=axolotl&location=Cheapest&security=Cheapest&show_spot=true)
 - [Modal](https://www.modal.com?utm_source=github&utm_medium=github&utm_campaign=axolotl)
