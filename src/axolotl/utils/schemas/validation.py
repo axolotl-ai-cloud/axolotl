@@ -1650,6 +1650,12 @@ class ComplexValidationMixin:
                 "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
             )
         elif self.context_parallel_size > 1:
+            # The ringmaster context-parallel plugin provides its own CP attention
+            # (no ring_flash_attn); it only needs axolotl's cp device mesh.
+            if any(
+                "ContextParallelPlugin" in str(p) for p in (self.plugins or [])
+            ):
+                return self
             if not self.attn_uses_flash_lib:
                 raise ValueError(
                     "context_parallel_size > 1 requires flash attention "
@@ -1693,13 +1699,8 @@ class ComplexValidationMixin:
                 ].is_flash_attn_greater_or_equal_2_10 = (
                     is_flash_attn_greater_or_equal_2_10
                 )
-                import ring_flash_attn  # noqa: F401  # Required after monkey-patching
-            except ImportError as exception:
-                raise ImportError(
-                    "context_parallel_size > 1 but ring_flash_attn is not installed. "
-                    "Please install it with `pip install axolotl[ring-flash-attn] "
-                    "or `pip install ring-flash-attn>=0.1.4`."
-                ) from exception
+            except ImportError:
+                pass
 
             LOG.warning(
                 "Sequence parallelism (SP) is enabled with "

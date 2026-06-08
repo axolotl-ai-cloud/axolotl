@@ -14,12 +14,22 @@ import importlib
 
 import torch
 
-from axolotl.monkeypatch.models.mamba_utils import (
-    ensure_mamba_kernels_loaded,
-    get_seq_idx,
-    is_cp_active,
-    wrap_mamba_scan_for_cp,
-)
+# ringmaster owns SSM context-parallelism (autograd-aware state passing); fall back
+# to axolotl's bundled copy if ringmaster is not installed.
+try:
+    from ringmaster.strategies.mamba import (
+        ensure_mamba_kernels_loaded,
+        get_seq_idx,
+        is_cp_active,
+        wrap_mamba_scan_for_cp,
+    )
+except ImportError:
+    from axolotl.monkeypatch.models.mamba_utils import (
+        ensure_mamba_kernels_loaded,
+        get_seq_idx,
+        is_cp_active,
+        wrap_mamba_scan_for_cp,
+    )
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
