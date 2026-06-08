@@ -84,9 +84,13 @@ Any model whose `Experts` class is decorated with `@use_experts_implementation` 
 | `ernie4_5_moe`    |    Yes    |   Yes    |
 | `hunyuan_v1_moe`  |    Yes    |   Yes    |
 | `gemma4_text`     |    Yes    |   Yes    |
-| `gpt_oss`         |    No     |   Yes    |
+| `gpt_oss`         |    Yes    |   Yes    |
 
-`gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. The SonicMoE forward reads these flags off `self` and dispatches accordingly. The ScatterMoE forward assumes the standard `[E, 2*I, H]` concat layout and SiLU-GLU without bias, so it does not yet support `gpt_oss`.
+`gpt_oss` carries the decorator with `is_concatenated=False, is_transposed=True, has_bias=True` and uses a sigmoid-GLU activation with clamping. Both forwards read these flags off `self` and dispatch accordingly: the ScatterMoE forward handles the transposed/interleaved/biased layout and clamped sigmoid-GLU via its Triton path (no weight transpose, interleaved gate/up, per-expert bias folded into the grouped GEMM); the SonicMoE forward uses the upstream CUTLASS kernel.
+
+### Blackwell (sm_120) note
+
+The SonicMoE CUTLASS kernel (`kernels-community/sonic-moe`) does not currently run on consumer Blackwell (sm_120) — its bundled quack `GemmSm120` predates the `concat_layout` arg the dispatcher passes. On sm_120, `use_sonicmoe` with a standard-layout model transparently falls back to the ScatterMoE Triton path, which runs there. `gpt_oss` on sm_120 should use `use_scattermoe` directly (bf16 base; MXFP4 weights dequantize on the fly as with other MXFP4 models — fused MXFP4 for `gpt_oss` is not yet wired).
 
 ## Feature comparison
 

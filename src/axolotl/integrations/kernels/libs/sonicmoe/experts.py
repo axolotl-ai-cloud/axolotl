@@ -6,6 +6,8 @@ Wraps upstream ``_sonicmoe_wrapper`` and materializes expert LoRA via
 
 from __future__ import annotations
 
+import functools
+
 import torch
 
 from .lora import (
@@ -55,13 +57,38 @@ def _resolve_weights_and_lora(experts_module):
     return w1, b1, w2, b2, lora_w1, lora_w2
 
 
+@functools.lru_cache(maxsize=1)
+def _sonicmoe_kernel_supported() -> bool:
+    """The kernels-community/sonic-moe CUTLASS GEMM fails to compile on sm_120
+    (Blackwell): its bundled quack ``GemmSm120`` predates the ``concat_layout`` arg
+    the dispatcher passes. Gate it off there so standard-layout models fall back to
+    the vendored scattermoe Triton path. Drop this once a fixed sonic-moe ships."""
+    if not torch.cuda.is_available():
+        return True
+    return torch.cuda.get_device_capability()[0] < 12
+
+
 def sonicmoe_experts_forward_with_lora(
     self,
     hidden_states: torch.Tensor,
     top_k_index: torch.Tensor,
     top_k_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """Sonicmoe experts forward with PEFT LoRA materialization."""
+    """Sonicmoe experts forward with PEFT LoRA materialization.
+
+    On devices where the sonic-moe kernel can't run (sm_120), standard-layout
+    experts transparently use the vendored scattermoe Triton path instead.
+    """
+    from ..scattermoe_lora.experts import (
+        scattermoe_experts_forward,
+        scattermoe_supports_layout,
+    )
+
+    if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(self):
+        return scattermoe_experts_forward(
+            self, hidden_states, top_k_index, top_k_weights
+        )
+
     from transformers.integrations.sonicmoe import _sonicmoe_wrapper
 
     if not getattr(self, "has_gate", True):

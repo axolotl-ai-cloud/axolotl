@@ -144,11 +144,16 @@ def test_matmul_lora(sample_tensors):
     expected1 = matmul + b
     assert torch.allclose(out1, expected1, rtol=1e-3)
 
-    # Test with LoRA
+    # Test with LoRA. matmul_lora fuses the add via in-place addmm_ (fp32 accumulate,
+    # no [M, out] LoRA temp), so compare against an fp32 reference rather than a fp16
+    # one whose intermediate rounding the kernel intentionally no longer mirrors.
     out2 = matmul_lora(X, W, b, None, A, B, scale)
-    lora_term = scale * torch.matmul(torch.matmul(X, A.t()), B.t())
-    expected2 = matmul + lora_term + b
-    assert torch.allclose(out2, expected2, rtol=1e-3)
+    expected2 = (
+        X.float() @ W.float().t()
+        + scale * (X.float() @ A.float().t()) @ B.float().t()
+        + b.float()
+    )
+    assert torch.allclose(out2.float(), expected2, rtol=2e-3, atol=2e-2)
 
     # Test 3D input reshaping
     X_3d = X.clone()
