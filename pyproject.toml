@@ -17,7 +17,7 @@ dependencies = [
     "huggingface_hub>=1.5.0",
     "peft>=0.19.1,<0.20.0",
     "tokenizers>=0.22.1",
-    "transformers==5.10.1",
+    "transformers==5.10.2",
     "accelerate==1.13.0",
     "datasets>=4.8.4,<4.9.0",
     "trl==1.5.1",
