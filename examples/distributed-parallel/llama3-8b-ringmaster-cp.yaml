@@ -1,0 +1,44 @@
+# Long-context fine-tuning with ringmaster context parallelism (Ulysses/Ring/USP).
+# Wraps HF-kernels Flash-Attention; requires torch >= 2.11. Launch on 8 GPUs:
+#   axolotl train examples/distributed-parallel/llama3-8b-ringmaster-cp.yaml
+base_model: NousResearch/Meta-Llama-3.1-8B
+
+plugins:
+  - axolotl.integrations.context_parallel.ContextParallelPlugin
+
+flash_attention: true            # the kernel ringmaster's Ulysses leg wraps
+
+context_parallel:
+  size: 8                        # total context-parallel degree
+  backend: auto                  # auto-selects ulysses / ring / usp from KV heads + topology
+  rotate_method: allgather       # ring KV movement (allgather is fastest at scale)
+  load_balance: head_tail        # ring-only zigzag balancing (Ulysses is inherently balanced)
+  ring_impl: auto                # auto -> hf_kernels flash for ring (no flash_attn pypi)
+
+# Composes with FSDP2; the cp dim is taken from the accelerate device mesh.
+dp_shard_size: 1
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: LlamaDecoderLayer
+  reshard_after_forward: true
+
+sequence_len: 32768              # long context — split across the 8 CP ranks
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+sample_packing: false           # varlen/packing is v2; long single sequences for now
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+val_set_size: 0.0
+output_dir: ./outputs/llama3-ringmaster-cp
+
+learning_rate: 1.0e-5
+optimizer: adamw_torch
+lr_scheduler: cosine
+bf16: true
+gradient_checkpointing: true    # compose with axolotl memory opts (tiled_mlp, CCE, offload)
+num_epochs: 1
