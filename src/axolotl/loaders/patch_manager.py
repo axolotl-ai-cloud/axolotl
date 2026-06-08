@@ -488,19 +488,12 @@ class PatchManager:
 
                 patch_qwen3_5_vlm_flash_attention()
 
-            if self.cfg.model_config_type in ("gemma4", "gemma4_text"):
-                # The fused attn path is now compatible with
-                # ``gemma4_hybrid_attn_impl``: the kernel handles partial
-                # rotary (cos.shape[-1] < head_dim) and the fused forward
-                # mirrors the current ``Gemma4TextAttention.forward`` API
-                # for shared kv (read from / write to
-                # ``past_key_values.shared_layers``). See
-                # ``src/axolotl/kernels/GEMMA4_FUSED_ROPE_HYBRID_ATTN_BUG.md``
-                # for the history.
-                from axolotl.monkeypatch.models.gemma4.fused_attn import (
-                    patch_gemma4_fused_attn,
-                )
-
+            if self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
                 # Shared-KV side channel when activation checkpointing (PR #3611).
                 fsdp_cfg = self.cfg.fsdp_config
                 needs_shared_kv_workaround = (not self.inference) and bool(
@@ -508,29 +501,18 @@ class PatchManager:
                     or self.cfg.activation_offloading
                     or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
                 )
-                patch_gemma4_fused_attn(
-                    install_shared_kv_workaround=needs_shared_kv_workaround
-                )
-
-            # gemma4_unified reuses the same fused RMSNorm+RoPE kernels (identical
-            # q/k/v-norm + RoPE math) but in its own module namespace. Opt-in via
-            # ``fused_attn_kernel`` (unlike standard gemma4, which is auto-on)
-            # pending GPU validation against released unified checkpoints.
-            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
-                "gemma4_unified",
-                "gemma4_unified_text",
-            ):
-                from axolotl.monkeypatch.models.gemma4_unified.fused_attn import (
-                    patch_gemma4_unified_fused_attn,
-                )
-
-                fsdp_cfg = self.cfg.fsdp_config
-                needs_shared_kv_workaround = (not self.inference) and bool(
-                    self.cfg.gradient_checkpointing
-                    or self.cfg.activation_offloading
-                    or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
-                )
-                patch_gemma4_unified_fused_attn(
+                if self.cfg.model_config_type in (
+                    "gemma4_unified",
+                    "gemma4_unified_text",
+                ):
+                    from axolotl.monkeypatch.models.gemma4_unified.fused_attn import (
+                        patch_gemma4_unified_fused_attn as patch_fused_attn,
+                    )
+                else:
+                    from axolotl.monkeypatch.models.gemma4.fused_attn import (
+                        patch_gemma4_fused_attn as patch_fused_attn,
+                    )
+                patch_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
 
