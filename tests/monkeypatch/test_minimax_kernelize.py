@@ -19,12 +19,6 @@ def restore_minimax_attention():
     from transformers.models.minimax_m2.modeling_minimax_m2 import MiniMaxM2Attention
 
     saved = {MiniMaxM2Attention: MiniMaxM2Attention.__init__}
-    try:
-        from transformers.models.minimax.modeling_minimax import MiniMaxAttention
-    except ImportError:
-        pass
-    else:
-        saved[MiniMaxAttention] = MiniMaxAttention.__init__
     yield
     from axolotl.monkeypatch import minimax_kernelize
 
@@ -146,7 +140,7 @@ def test_full_model_kernelize_succeeds_with_patch(restore_minimax_attention):
 
     model = build()
     model.train()
-    with pytest.raises((TypeError, AttributeError, ValueError)):
+    with pytest.raises(ValueError, match=r"not a .torch\.nn\.Module"):
         model.kernelize()
 
     patch_minimax_kernelize()

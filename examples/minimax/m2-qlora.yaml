@@ -1,9 +1,4 @@
-# MiniMax MoE (sigmoid-routed) QLoRA example.
-#
-# This config covers the whole MiniMax M2 family. Every released point
-# release (M2.1 / M2.5 / M2.7) and MiniMax M3 ship as `model_type: minimax_m2`
-# (architectures: ["MiniMaxM2ForCausalLM"]), so to fine-tune M3 just swap
-# `base_model` to the M3 repo once its weights are public — no other changes.
+# MiniMax M2 MoE (sigmoid-routed) QLoRA example.
 base_model: MiniMaxAI/MiniMax-M2
 
 plugins:

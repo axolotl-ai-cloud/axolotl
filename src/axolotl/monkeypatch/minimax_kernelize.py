@@ -1,12 +1,11 @@
-"""Fix for transformers' MiniMax ``kernelize()`` crash under ``use_kernels``.
+"""Fix for transformers' MiniMax M2 ``kernelize()`` crash under ``use_kernels``.
 
-MiniMax attention decorates with ``@use_kernelized_func(apply_rotary_pos_emb)``
-over a plain function, so ``kernelize()`` tries to ``register_module()`` a
+MiniMax M2 attention registers ``apply_rotary_pos_emb`` (a plain function) in
+``_hidden_kernels``, so ``kernelize()`` tries to ``register_module()`` a
 non-``nn.Module`` and raises ``ValueError``. ``forward`` calls the module-level
-``apply_rotary_pos_emb`` directly, so dropping the dead ``_hidden_kernels`` entry
-is numerically neutral. Same bug as :mod:`axolotl.monkeypatch.gemma4_kernelize`.
+``apply_rotary_pos_emb`` directly, so dropping that entry is numerically neutral.
 
-The patch wraps each attention ``__init__`` to strip non-Module ``_hidden_kernels``
+The patch wraps the attention ``__init__`` to strip non-Module ``_hidden_kernels``
 entries; Module entries are left intact. Idempotent; install before model build.
 """
 
@@ -16,11 +15,8 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# (module path, attribute) pairs covering the MiniMax MoE line. ``minimax_m2`` is
-# also the architecture for the M2.x point releases and MiniMax M3.
 _TARGETS = [
     ("transformers.models.minimax_m2.modeling_minimax_m2", "MiniMaxM2Attention"),
-    ("transformers.models.minimax.modeling_minimax", "MiniMaxAttention"),
 ]
 
 _PATCHED_CLASSES: list[type] = []
