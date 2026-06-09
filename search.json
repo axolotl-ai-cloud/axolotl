@@ -3169,7 +3169,14 @@
     "href": "docs/api/core.trainers.utils.html",
     "title": "core.trainers.utils",
     "section": "",
-    "text": "core.trainers.utils\ncore.trainers.utils\nUtils for Axolotl trainers"
+    "text": "core.trainers.utils\nUtils for Axolotl trainers\n\n\n\n\n\nName\nDescription\n\n\n\n\ntrainable_tokens_per_sec_per_gpu\nEffective per-GPU trainable-token throughput over a logging window.\n\n\n\n\n\ncore.trainers.utils.trainable_tokens_per_sec_per_gpu(\n    prev_trainable,\n    curr_trainable,\n    world_size,\n    elapsed,\n)\nEffective per-GPU trainable-token throughput over a logging window.\ncurr_trainable/prev_trainable are the cumulative trainable-token\ncounter (SUM-reduced across all ranks) at this log and the previous one, so\nthe delta covers every gradient-accumulation microbatch and the elapsed wall\ntime captures in-window overhead. Returns None when there is no prior window."
+  },
+  {
+    "objectID": "docs/api/core.trainers.utils.html#functions",
+    "href": "docs/api/core.trainers.utils.html#functions",
+    "title": "core.trainers.utils",
+    "section": "",
+    "text": "Name\nDescription\n\n\n\n\ntrainable_tokens_per_sec_per_gpu\nEffective per-GPU trainable-token throughput over a logging window.\n\n\n\n\n\ncore.trainers.utils.trainable_tokens_per_sec_per_gpu(\n    prev_trainable,\n    curr_trainable,\n    world_size,\n    elapsed,\n)\nEffective per-GPU trainable-token throughput over a logging window.\ncurr_trainable/prev_trainable are the cumulative trainable-token\ncounter (SUM-reduced across all ranks) at this log and the previous one, so\nthe delta covers every gradient-accumulation microbatch and the elapsed wall\ntime captures in-window overhead. Returns None when there is no prior window."
   },
   {
     "objectID": "docs/api/loaders.adapter.html",
