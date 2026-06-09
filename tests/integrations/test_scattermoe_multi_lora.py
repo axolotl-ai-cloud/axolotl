@@ -74,6 +74,56 @@ def test_multilora_forward_backward_matches_reference(num_experts, num_tenants, 
     assert torch.allclose(b.grad, br.grad, atol=5e-2, rtol=5e-2)
 
 
+def test_multilora_true_fp32_when_tf32_disabled():
+    """With TF32 off, the fused multi-adapter dA/dB must be true-fp32 (~1e-7), not
+    TF32 (~1e-3). Guards the ALLOW_TF32 live-binding fix: an import-time value copy
+    left the grouped-Gram dA/dB kernel on TF32 while the forward honored the flag."""
+    import axolotl.integrations.kernels.libs.scattermoe_lora.kernels.lora_ops as lo
+    import axolotl.integrations.kernels.libs.scattermoe_lora.kernels.ops as base_ops
+
+    torch.manual_seed(0)
+    dev, dt = "cuda", torch.float32
+    e, t, r = 4, 3, 8
+    K, N, M, scaling = 16, 12, 48, 0.5
+
+    saved = (torch.backends.cuda.matmul.allow_tf32, lo.ALLOW_TF32, base_ops.ALLOW_TF32)
+    torch.backends.cuda.matmul.allow_tf32 = False
+    lo.ALLOW_TF32 = base_ops.ALLOW_TF32 = False
+    try:
+        w = torch.randn(e, K, N, device=dev, dtype=dt)
+        a = (torch.randn(e * t * r, K, device=dev, dtype=dt) * 0.1).requires_grad_(True)
+        b = (torch.randn(N, e * t * r, device=dev, dtype=dt) * 0.1).requires_grad_(True)
+        x = torch.randn(M, K, device=dev, dtype=dt, requires_grad=True)
+        expert = torch.randint(0, e, (M,), device=dev)
+        tenant = torch.randint(0, t, (M,), device=dev)
+
+        se, sc, ss, eo, co = build_multilora_routing(expert, tenant, e, t)
+        y = scatter2scatter_multilora(x, w, 1, se, sc, ss, eo, co, a, b, scaling)
+
+        xr = x.detach().clone().requires_grad_(True)
+        ar = a.detach().clone().requires_grad_(True)
+        br = b.detach().clone().requires_grad_(True)
+        yr = _reference(xr, w, ar, br, expert, tenant, t, r, scaling)
+
+        grad = torch.randn_like(y)
+        y.backward(grad)
+        yr.backward(grad)
+    finally:
+        (
+            torch.backends.cuda.matmul.allow_tf32,
+            lo.ALLOW_TF32,
+            base_ops.ALLOW_TF32,
+        ) = saved
+
+    def _rel(p, q):
+        return (p - q).abs().max().item() / max(q.abs().max().item(), 1e-12)
+
+    assert _rel(y, yr) < 1e-4
+    assert _rel(x.grad, xr.grad) < 1e-4
+    assert _rel(a.grad, ar.grad) < 1e-4  # dA: TF32 leak would be ~1e-3
+    assert _rel(b.grad, br.grad) < 1e-4  # dB: TF32 leak would be ~1e-3
+
+
 def test_misrouting_would_fail():
     """Sanity: a wrong tenant assignment produces O(1) error, confirming the
     tolerance above actually checks routing."""

@@ -31,8 +31,8 @@ import torch
 import triton
 import triton.language as tl
 
-from .kernels import ops as base_ops
-from .kernels.lora_ops import ALLOW_TF32, _block_r_for_rank, _bucket_m
+from .kernels import lora_ops, ops as base_ops
+from .kernels.lora_ops import _block_r_for_rank, _bucket_m
 from .parallel_experts import compileable_bincount
 
 
@@ -198,7 +198,7 @@ def grouped_lora_weight_grads(
         scaling=scaling,
         RANK_IS_I=True,
         BLOCK_R=block_r,
-        allow_tf32=ALLOW_TF32,
+        allow_tf32=lora_ops.ALLOW_TF32,
     )
 
     grid_b = lambda meta: (e_total, triton.cdiv(n_dim, meta["BLOCK_WIDE"]))  # noqa: E731
@@ -220,7 +220,7 @@ def grouped_lora_weight_grads(
         scaling=scaling,
         RANK_IS_I=False,
         BLOCK_R=block_r,
-        allow_tf32=ALLOW_TF32,
+        allow_tf32=lora_ops.ALLOW_TF32,
     )
     return dA, dB
 
