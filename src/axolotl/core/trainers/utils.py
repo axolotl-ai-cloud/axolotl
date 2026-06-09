@@ -1,6 +1,24 @@
 """Utils for Axolotl trainers"""
 
 
+def trainable_tokens_per_sec_per_gpu(
+    prev_trainable: float | None,
+    curr_trainable: float,
+    world_size: int,
+    elapsed: float,
+) -> float | None:
+    """Effective per-GPU trainable-token throughput over a logging window.
+
+    ``curr_trainable``/``prev_trainable`` are the cumulative trainable-token
+    counter (SUM-reduced across all ranks) at this log and the previous one, so
+    the delta covers every gradient-accumulation microbatch and the elapsed wall
+    time captures in-window overhead. Returns None when there is no prior window.
+    """
+    if prev_trainable is None or elapsed <= 0:
+        return None
+    return (curr_trainable - prev_trainable) / max(1, world_size) / elapsed
+
+
 def sanitize_kwargs_for_tagging(tag_names, kwargs=None):
     if isinstance(tag_names, str):
         tag_names = [tag_names]
