@@ -48,8 +48,8 @@ tf32: true
 gradient_checkpointing: true
 logging_steps: 1
 
-attn_implementation: flex_attention
-torch_compile: true
+gemma4_hybrid_attn_impl: true
+attn_implementation: flash_attention
 
 warmup_ratio: 0.1
 evals_per_epoch: 4
