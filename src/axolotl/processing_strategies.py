@@ -1,9 +1,11 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
+import bisect
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
 
+import torch
 from PIL import Image, ImageOps
 from PIL.Image import Resampling
 from torch import Tensor, zeros_like
@@ -333,10 +335,10 @@ class ProcessingStrategy:
 
         return processed_examples
 
-    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
-        """Mask non-trainable role regions to -100 using ``self.role_boundaries``."""
+    def _mask_non_assistant_keep(self, input_ids: Tensor) -> Tensor:
+        """Return a [B, L] bool keep tensor (True = contributes to loss)."""
         if self.train_on_inputs:
-            return labels
+            return torch.ones_like(input_ids, dtype=torch.bool)
 
         # Legacy no-op for boundary-less strategies; warn once so the miss shows up in logs.
         if not self.role_boundaries:
@@ -355,40 +357,46 @@ class ProcessingStrategy:
                     "list of strategies on this fallback path.",
                     key,
                 )
-            return labels
+            return torch.ones_like(input_ids, dtype=torch.bool)
 
-        return _apply_role_boundaries(
-            labels,
+        # Vectorized path regresses 9-13x under multi-threaded torch.
+        scanner = (
+            _compute_role_keep_mask_vectorized
+            if torch.get_num_threads() == 1
+            else _compute_role_keep_mask
+        )
+        return scanner(
+            input_ids,
             self.role_boundaries,
             roles_to_train=set(self.roles_to_train),
             train_on_eos=self.train_on_eos,
         )
 
+    def _mask_non_assistant(self, labels: Tensor) -> Tensor:
+        """Mask non-trainable role regions to -100 using ``self.role_boundaries``."""
+        keep = self._mask_non_assistant_keep(labels)
+        labels[~keep] = -100
+        return labels
+
     def process_labels(self, input_ids: Tensor) -> Tensor:
-        labels = input_ids.clone()
-        labels = self._mask_non_assistant(labels)
+        keep = self._mask_non_assistant_keep(input_ids)
         pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
         if pad_id is not None:
-            labels[labels == pad_id] = -100
+            keep = keep & (input_ids != pad_id)
         if self.image_token_id is not None:
-            labels[labels == self.image_token_id] = -100
+            keep = keep & (input_ids != self.image_token_id)
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
-def _apply_role_boundaries(
+def _compute_role_keep_mask(
     labels: Tensor,
     role_boundaries: list[RoleBoundary],
     roles_to_train: set[str],
     train_on_eos: str,
 ) -> Tensor:
-    """Mask tokens outside trainable role spans to -100.
-
-    Scan is greedy-left with longest-prefix-wins on start_tokens to disambiguate
-    nested markers (e.g. ``<|im_start|>assistant`` vs ``<|im_start|>``).
-    ``train_on_eos`` accepts ``"turn"`` (end marker in loss on trainable turns
-    only), ``"all"`` (always), ``"none"`` (never — overrides ``include_end``),
-    ``"last"`` (only on the last trainable turn in the sequence).
-    """
+    """Return a [B, L] bool keep mask (True = contributes to loss)."""
     mask = zeros_like(labels)
     # For "last": remember each trainable turn's end-marker span so we can
     # unmask only the final one after the scan finishes.
@@ -475,8 +483,202 @@ def _apply_role_boundaries(
             s, e = span
             mask[i][s:e] = 1
 
-        labels[i][mask[i] == 0] = -100
+    return mask.bool()
 
+
+def _apply_role_boundaries(
+    labels: Tensor,
+    role_boundaries: list[RoleBoundary],
+    roles_to_train: set[str],
+    train_on_eos: str,
+) -> Tensor:
+    """Mask tokens outside trainable role spans to -100.
+
+    Scan is greedy-left with longest-prefix-wins on start_tokens to disambiguate
+    nested markers (e.g. ``<|im_start|>assistant`` vs ``<|im_start|>``).
+    ``train_on_eos`` accepts ``"turn"`` (end marker in loss on trainable turns
+    only), ``"all"`` (always), ``"none"`` (never — overrides ``include_end``),
+    ``"last"`` (only on the last trainable turn in the sequence).
+    """
+    keep = _compute_role_keep_mask(
+        labels, role_boundaries, roles_to_train, train_on_eos
+    )
+    labels[~keep] = -100
+    return labels
+
+
+def _compute_role_keep_mask_vectorized(
+    labels: Tensor,
+    role_boundaries: list[RoleBoundary],
+    roles_to_train: set[str],
+    train_on_eos: str,
+) -> Tensor:
+    """Vectorized variant of :func:`_compute_role_keep_mask`. Byte-identical output; faster under single-threaded torch."""
+    if labels.numel() == 0:
+        return torch.zeros_like(labels, dtype=torch.bool)
+    if not role_boundaries:
+        # Defensive: match reference all-mask semantics on empty boundaries.
+        return torch.zeros_like(labels, dtype=torch.bool)
+
+    B, L = labels.shape
+    device = labels.device
+
+    # Longer start_tokens first so longest-prefix-wins tie-break holds.
+    indexed = list(enumerate(role_boundaries))
+    indexed.sort(key=lambda ib: -len(ib[1].start_tokens))
+
+    start_winner = torch.full((B, L), -1, dtype=torch.int64, device=device)
+    # Track match length so equal-length ties keep the first writer (matches reference).
+    start_winner_len = torch.zeros((B, L), dtype=torch.int64, device=device)
+    end_match: list[Optional[Tensor]] = [None] * len(role_boundaries)
+
+    for orig_idx, b in indexed:
+        s_tok = b.start_tokens
+        s_len = len(s_tok)
+        if s_len == 0:
+            continue  # defensive: empty start never matches
+
+        if s_len > L:
+            start_mask = torch.zeros((B, 0), dtype=torch.bool, device=device)
+        else:
+            s_tok_t = torch.tensor(s_tok, dtype=labels.dtype, device=device)
+            windows = labels.unfold(1, s_len, 1)
+            start_mask = (windows == s_tok_t).all(dim=-1)
+
+        # Pad to L so absolute position j indexes into start_mask.
+        pad_w = L - start_mask.shape[1]
+        if pad_w > 0:
+            start_mask = torch.cat(
+                [
+                    start_mask,
+                    torch.zeros((B, pad_w), dtype=torch.bool, device=device),
+                ],
+                dim=1,
+            )
+
+        # Strictly-longer gate + longest-first iteration => first writer sticks.
+        update = start_mask & (start_winner_len < s_len)
+        start_winner = torch.where(
+            update, torch.full_like(start_winner, orig_idx), start_winner
+        )
+        start_winner_len = torch.where(
+            update, torch.full_like(start_winner_len, s_len), start_winner_len
+        )
+
+        e_tok = b.end_tokens
+        e_len = len(e_tok)
+        if e_len == 0:
+            end_match[orig_idx] = None
+        elif e_len > L:
+            end_match[orig_idx] = torch.zeros((B, 0), dtype=torch.bool, device=device)
+        else:
+            e_tok_t = torch.tensor(e_tok, dtype=labels.dtype, device=device)
+            ewindows = labels.unfold(1, e_len, 1)
+            end_match[orig_idx] = (ewindows == e_tok_t).all(dim=-1)
+
+    # Lift to CPU lists: hot per-row loop is Python, tensor access is slow.
+    start_winner_cpu = start_winner.cpu().tolist()
+    # Per boundary, per row: sorted end-match start positions, so the inner loop
+    # bisects for the next end instead of scanning every position in the span.
+    end_pos: list[Optional[list[list[int]]]] = []
+    for em in end_match:
+        if em is None:
+            end_pos.append(None)
+        else:
+            nz = em.nonzero(as_tuple=False)
+            rows: list[list[int]] = [[] for _ in range(B)]
+            for r, c in nz.tolist():
+                rows[r].append(c)
+            end_pos.append(rows)
+
+    bnd_start_len = [len(b.start_tokens) for b in role_boundaries]
+    bnd_end_len = [len(b.end_tokens) for b in role_boundaries]
+    bnd_include_start = [b.include_start for b in role_boundaries]
+    bnd_include_end = [b.include_end for b in role_boundaries]
+    bnd_role_in_loss = [b.role in roles_to_train for b in role_boundaries]
+
+    mask = zeros_like(labels)
+    ONE = b"\x01"
+
+    for i in range(B):
+        row_start = start_winner_cpu[i]
+        n = L
+        last_trainable_end_span: Optional[tuple[int, int]] = None
+        # bytearray slice-assignment beats per-element writes; one tensor per row.
+        row_mask = bytearray(n)
+
+        j = 0
+        while j < n:
+            bidx = row_start[j]
+            if bidx == -1:
+                j += 1
+                continue
+
+            s_len = bnd_start_len[bidx]
+            start_of_content = j + s_len
+            e_len = bnd_end_len[bidx]
+            include_start = bnd_include_start[bidx]
+            include_end = bnd_include_end[bidx]
+            role_in_loss = bnd_role_in_loss[bidx]
+
+            if e_len == 0:
+                end_after = n
+                found_end = False
+            else:
+                positions = end_pos[bidx][i]  # type: ignore[index]
+                limit = n - e_len
+                idx = bisect.bisect_left(positions, start_of_content)
+                if idx < len(positions) and positions[idx] <= limit:
+                    found_end = True
+                    end_after = positions[idx] + e_len
+                else:
+                    found_end = False
+                    end_after = n
+
+            if role_in_loss:
+                if include_start:
+                    row_mask[j:start_of_content] = ONE * (start_of_content - j)
+                content_end = end_after - e_len if found_end else end_after
+                row_mask[start_of_content:content_end] = ONE * (
+                    content_end - start_of_content
+                )
+                if found_end and include_end and train_on_eos not in ("none", "last"):
+                    row_mask[content_end:end_after] = ONE * (end_after - content_end)
+                if found_end and include_end and train_on_eos == "last":
+                    last_trainable_end_span = (content_end, end_after)
+            else:
+                if found_end and include_end and train_on_eos == "all":
+                    content_end = end_after - e_len
+                    row_mask[content_end:end_after] = ONE * (end_after - content_end)
+
+            # include_end=False rewind: re-match the end as the next start.
+            if found_end and not include_end and e_len:
+                j = end_after - e_len
+            else:
+                j = end_after
+
+        if train_on_eos == "last" and last_trainable_end_span is not None:
+            s, e = last_trainable_end_span
+            row_mask[s:e] = ONE * (e - s)
+
+        # One tensor write per row — keep heavyweight op out of inner loop.
+        if any(row_mask):
+            mask[i] = torch.frombuffer(row_mask, dtype=torch.uint8).to(mask.dtype)
+
+    return mask.bool()
+
+
+def _apply_role_boundaries_vectorized(
+    labels: Tensor,
+    role_boundaries: list[RoleBoundary],
+    roles_to_train: set[str],
+    train_on_eos: str,
+) -> Tensor:
+    """Vectorized variant of :func:`_apply_role_boundaries`."""
+    keep = _compute_role_keep_mask_vectorized(
+        labels, role_boundaries, roles_to_train, train_on_eos
+    )
+    labels[~keep] = -100
     return labels
 
 
@@ -629,9 +831,16 @@ class Qwen3_5ProcessingStrategy(Qwen2VLProcessingStrategy):
         )
 
     def process_labels(self, input_ids):
-        labels = super().process_labels(input_ids)
+        keep = self._mask_non_assistant_keep(input_ids)
+        pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
+        if pad_id is not None:
+            keep = keep & (input_ids != pad_id)
+        if self.image_token_id is not None:
+            keep = keep & (input_ids != self.image_token_id)
         if self.video_token_id is not None:
-            labels[labels == self.video_token_id] = -100
+            keep = keep & (input_ids != self.video_token_id)
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -700,16 +909,23 @@ class Gemma3ProcessingStrategy(_GemmaTurnStrategy):
             self.image_token_id = processor.tokenizer.convert_tokens_to_ids(boi)
 
     def process_labels(self, input_ids):
-        labels = super().process_labels(input_ids)
+        keep = self._mask_non_assistant_keep(input_ids)
+        pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
+        if pad_id is not None:
+            keep = keep & (input_ids != pad_id)
+        if self.image_token_id is not None:
+            keep = keep & (input_ids != self.image_token_id)
         # Resolve <image_soft_token> via tokenizer; fall back to default id
         # if not in vocab. Matches Gemma4's pattern.
         tok = self.processor.tokenizer
         soft_id = tok.convert_tokens_to_ids("<image_soft_token>")
         unk_id = getattr(tok, "unk_token_id", None)
         if soft_id is not None and soft_id != unk_id:
-            labels[labels == soft_id] = -100
+            keep = keep & (input_ids != soft_id)
         else:
-            labels[labels == 262144] = -100
+            keep = keep & (input_ids != 262144)
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -717,8 +933,13 @@ class Gemma3nProcessingStrategy(_GemmaTurnStrategy):
     """Gemma3n: same turn boundaries as Gemma3, additionally masks audio/delimiter tokens."""
 
     def process_labels(self, input_ids):
-        labels = super().process_labels(input_ids)
+        keep = self._mask_non_assistant_keep(input_ids)
         tok = self.processor.tokenizer
+        pad_id = getattr(tok, "pad_token_id", None)
+        if pad_id is not None:
+            keep = keep & (input_ids != pad_id)
+        if self.image_token_id is not None:
+            keep = keep & (input_ids != self.image_token_id)
         # Follows huggingface-gemma-recipes fine_tune_gemma3n_on_t4 notebook.
         for attr in (
             "image_token_id",
@@ -728,7 +949,9 @@ class Gemma3nProcessingStrategy(_GemmaTurnStrategy):
         ):
             tok_id = getattr(tok, attr, None)
             if tok_id is not None:
-                labels[labels == tok_id] = -100
+                keep = keep & (input_ids != tok_id)
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -768,15 +991,21 @@ class Gemma4ProcessingStrategy(ProcessingStrategy):
         return boundaries
 
     def process_labels(self, input_ids):
-        labels = super().process_labels(input_ids)
+        keep = self._mask_non_assistant_keep(input_ids)
 
         tokenizer = self.processor.tokenizer
         unk_id = getattr(tokenizer, "unk_token_id", None)
 
+        pad_id = getattr(tokenizer, "pad_token_id", None)
+        if pad_id is not None:
+            keep = keep & (input_ids != pad_id)
+        if self.image_token_id is not None:
+            keep = keep & (input_ids != self.image_token_id)
+
         if getattr(tokenizer, "image_token_id", None) is not None:
-            labels[labels == tokenizer.image_token_id] = -100
+            keep = keep & (input_ids != tokenizer.image_token_id)
         if getattr(tokenizer, "audio_token_id", None) is not None:
-            labels[labels == tokenizer.audio_token_id] = -100
+            keep = keep & (input_ids != tokenizer.audio_token_id)
 
         # boi/eoi/boa/eoa are only string attrs on the processor; resolve ids here.
         for attr in ("boi_token", "eoi_token", "boa_token", "eoa_token"):
@@ -786,13 +1015,15 @@ class Gemma4ProcessingStrategy(ProcessingStrategy):
             token_id = tokenizer.convert_tokens_to_ids(token_str)
             if token_id is None or token_id == unk_id:
                 continue
-            labels[labels == token_id] = -100
+            keep = keep & (input_ids != token_id)
 
         # Video id lives on the processor, not the tokenizer.
         video_token_id = getattr(self.processor, "video_token_id", None)
         if video_token_id is not None and video_token_id != unk_id:
-            labels[labels == video_token_id] = -100
+            keep = keep & (input_ids != video_token_id)
 
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -950,17 +1181,18 @@ class VoxtralProcessingStrategy(ProcessingStrategy):
         self.begin_audio_token = special_ids.begin_audio
 
     def process_labels(self, input_ids):
-        labels = input_ids.clone()
-        labels = self._mask_non_assistant(labels)
+        keep = self._mask_non_assistant_keep(input_ids)
 
         pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
         if pad_id is not None:
-            labels[labels == pad_id] = -100
+            keep = keep & (input_ids != pad_id)
         if self.audio_token is not None:
-            labels[labels == self.audio_token] = -100
+            keep = keep & (input_ids != self.audio_token)
         if self.begin_audio_token is not None:
-            labels[labels == self.begin_audio_token] = -100
+            keep = keep & (input_ids != self.begin_audio_token)
 
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -1040,16 +1272,17 @@ class Mistral3ProcessingStrategy(ProcessingStrategy):
         self.image_end_token = special_ids.img_end
 
     def process_labels(self, input_ids):
-        labels = input_ids.clone()
-        labels = self._mask_non_assistant(labels)
+        keep = self._mask_non_assistant_keep(input_ids)
 
         pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
         if pad_id is not None:
-            labels[labels == pad_id] = -100
+            keep = keep & (input_ids != pad_id)
         for tok_id in (self.image_token, self.image_break_token, self.image_end_token):
             if tok_id is not None:
-                labels[labels == tok_id] = -100
+                keep = keep & (input_ids != tok_id)
 
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -1090,18 +1323,19 @@ class InternVLProcessingStrategy(ProcessingStrategy):
         self.image_token_ids = processor.image_ids
 
     def process_labels(self, input_ids):
-        labels = input_ids.clone()
-        labels = self._mask_non_assistant(labels)
+        keep = self._mask_non_assistant_keep(input_ids)
 
         pad_id = getattr(self.processor.tokenizer, "pad_token_id", None)
         if pad_id is not None:
-            labels[labels == pad_id] = -100
+            keep = keep & (input_ids != pad_id)
 
         for ids in self.image_token_ids:
             if ids is not None:
-                labels[labels == ids] = -100
+                keep = keep & (input_ids != ids)
 
         # Video tokens get converted to image patches during media processing; masking may be redundant.
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
@@ -1161,12 +1395,11 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
         )
 
     def process_labels(self, input_ids):
-        labels = input_ids.clone()
-        labels = self._mask_non_assistant(labels)
+        keep = self._mask_non_assistant_keep(input_ids)
 
         pad_id = getattr(self.tokenizer, "pad_token_id", None)
         if pad_id is not None:
-            labels[labels == pad_id] = -100
+            keep = keep & (input_ids != pad_id)
 
         for tok_id in (
             self.image_token_id,
@@ -1177,8 +1410,10 @@ class Glm4vProcessingStrategy(ProcessingStrategy):
             self.end_video_token_id,
         ):
             if tok_id is not None:
-                labels[labels == tok_id] = -100
+                keep = keep & (input_ids != tok_id)
 
+        labels = input_ids.clone()
+        labels[~keep] = -100
         return labels
 
 
