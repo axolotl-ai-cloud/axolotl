@@ -538,3 +538,113 @@ class TestPixtralRewindAdversarial:
         boundaries = _pixtral_like()
         seq = [[100, 1, 200, 200, 5, 6, 2]]
         _assert_equiv(boundaries, seq, ["assistant"], "turn")
+
+
+# --------------------------------------------------------------------------- #
+# Long-span / multi-end-marker inputs aimed at the bisect end-finder
+# --------------------------------------------------------------------------- #
+
+
+def _build_long_multi_end_sequence(
+    rng: random.Random,
+    boundaries: list[RoleBoundary],
+    seq_len: int,
+    pad_id: int = 0,
+) -> list[int]:
+    """Like ``_build_random_sequence`` but with long turns that embed *multiple*
+    full end-marker copies inside one content region.
+
+    The vectorized scanner finds turn ends by bisecting a sorted list of
+    end-match positions for the next end >= start_of_content. Turns that carry
+    several full end markers (plus partial first-byte collisions) exercise the
+    "pick the first valid end, not the closest scanned" branch that a linear
+    walk would otherwise mask.
+    """
+    marker_tokens: set[int] = set()
+    for b in boundaries:
+        marker_tokens.update(b.start_tokens)
+        marker_tokens.update(b.end_tokens)
+    safe_filler = [t for t in range(300, 500) if t not in marker_tokens]
+
+    seq: list[int] = []
+    while len(seq) < seq_len:
+        b = rng.choice(boundaries)
+        seq.extend(b.start_tokens)
+        # Long filler so a turn can span well past the old 200-token cap.
+        filler_n = rng.randint(200, max(200, min(1500, seq_len - len(seq) + 200)))
+        for _ in range(filler_n):
+            r = rng.random()
+            if r < 0.04 and b.end_tokens:
+                # Full extra end marker mid-content: with include_end this closes
+                # the turn early; without it the rewind re-reads it as a start.
+                seq.extend(b.end_tokens)
+            elif r < 0.09 and safe_filler:
+                bb = rng.choice(boundaries)
+                if bb.start_tokens:
+                    seq.append(bb.start_tokens[0])  # partial first-byte collision
+                    continue
+                seq.append(rng.choice(safe_filler))
+            else:
+                seq.append(rng.choice(safe_filler))
+        if rng.random() < 0.8 and b.end_tokens:
+            seq.extend(b.end_tokens)
+
+    seq = seq[:seq_len]
+    while len(seq) < seq_len:
+        seq.append(pad_id)
+    return seq
+
+
+def test_bisect_first_end_in_span_explicit():
+    """Two full end markers inside one assistant turn: the span must close on the
+    first, leaving the second outside the trainable region."""
+    boundaries = _pixtral_like()  # [/INST] == [200], rewind on include_end=False
+    # assistant turn opens at [/INST] (200), content, end-of-turn (2) appears
+    # twice; the first 2 closes the turn, everything after is a fresh scan.
+    seq = [[100, 1, 2, 200, 5, 6, 7, 2, 9, 9, 9, 2, 100, 11, 200, 12, 2]]
+    _assert_equiv(boundaries, seq, ["assistant"], "turn")
+    _assert_equiv(boundaries, seq, ["assistant"], "all")
+    _assert_equiv(boundaries, seq, ["assistant"], "last")
+    _assert_equiv(boundaries, seq, ["assistant"], "none")
+
+
+def test_differential_fuzz_long_spans():
+    """500 configs with long, multi-end-marker turns over large sequences.
+
+    Targets the bisect end-finder and bytearray slice-fills, which the original
+    short-span fuzz (filler <= 200) under-exercises.
+    """
+    failures: list[tuple[int, str]] = []
+
+    BATCH_SIZES = [1, 2, 4]
+    SEQ_LENS = [1024, 2048, 4096]
+    EOS_MODES = ["turn", "all", "none", "last"]
+    ROLES_OPTIONS = [["assistant"], ["assistant", "user"], [], ["assistant", "system"]]
+    SHAPES = list(BOUNDARY_CATALOG.keys())
+
+    N_CONFIGS = 500
+
+    for seed in range(N_CONFIGS):
+        rng = random.Random(10_000 + seed)
+        bs = rng.choice(BATCH_SIZES)
+        sl = rng.choice(SEQ_LENS)
+        eos = rng.choice(EOS_MODES)
+        rtt = rng.choice(ROLES_OPTIONS)
+        shape = rng.choice(SHAPES)
+        boundaries = BOUNDARY_CATALOG[shape]()
+
+        rows = [_build_long_multi_end_sequence(rng, boundaries, sl) for _ in range(bs)]
+
+        try:
+            _assert_equiv(boundaries, rows, rtt, eos)
+        except AssertionError as e:
+            failures.append((seed, str(e)))
+            if len(failures) >= 5:
+                break
+
+    if failures:
+        joined = "\n\n---\n\n".join(f"seed={s}:\n{m}" for s, m in failures)
+        pytest.fail(
+            f"Long-span differential fuzz: {len(failures)} mismatches in "
+            f"{N_CONFIGS} configs.\n\n{joined}"
+        )

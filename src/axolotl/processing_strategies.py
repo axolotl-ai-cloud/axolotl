@@ -1,5 +1,6 @@
 """Module containing ProcessingStrategy classes and its derivative for different MultiModal Model types"""
 
+import bisect
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
@@ -577,9 +578,18 @@ def _compute_role_keep_mask_vectorized(
 
     # Lift to CPU lists: hot per-row loop is Python, tensor access is slow.
     start_winner_cpu = start_winner.cpu().tolist()
-    end_match_cpu: list[Optional[list[list[bool]]]] = []
+    # Per boundary, per row: sorted end-match start positions, so the inner loop
+    # bisects for the next end instead of scanning every position in the span.
+    end_pos: list[Optional[list[list[int]]]] = []
     for em in end_match:
-        end_match_cpu.append(None if em is None else em.cpu().tolist())
+        if em is None:
+            end_pos.append(None)
+        else:
+            nz = em.nonzero(as_tuple=False)
+            rows: list[list[int]] = [[] for _ in range(B)]
+            for r, c in nz.tolist():
+                rows[r].append(c)
+            end_pos.append(rows)
 
     bnd_start_len = [len(b.start_tokens) for b in role_boundaries]
     bnd_end_len = [len(b.end_tokens) for b in role_boundaries]
@@ -588,12 +598,13 @@ def _compute_role_keep_mask_vectorized(
     bnd_role_in_loss = [b.role in roles_to_train for b in role_boundaries]
 
     mask = zeros_like(labels)
+    ONE = b"\x01"
 
     for i in range(B):
         row_start = start_winner_cpu[i]
         n = L
         last_trainable_end_span: Optional[tuple[int, int]] = None
-        # bytearray is faster to write than a tensor per element.
+        # bytearray slice-assignment beats per-element writes; one tensor per row.
         row_mask = bytearray(n)
 
         j = 0
@@ -614,37 +625,31 @@ def _compute_role_keep_mask_vectorized(
                 end_after = n
                 found_end = False
             else:
-                em_row = end_match_cpu[bidx][i]  # type: ignore[index]
+                positions = end_pos[bidx][i]  # type: ignore[index]
                 limit = n - e_len
-                k = start_of_content
-                found_end = False
-                while k <= limit:
-                    if em_row[k]:
-                        found_end = True
-                        break
-                    k += 1
-                if found_end:
-                    end_after = k + e_len
+                idx = bisect.bisect_left(positions, start_of_content)
+                if idx < len(positions) and positions[idx] <= limit:
+                    found_end = True
+                    end_after = positions[idx] + e_len
                 else:
+                    found_end = False
                     end_after = n
 
             if role_in_loss:
                 if include_start:
-                    for p in range(j, start_of_content):
-                        row_mask[p] = 1
+                    row_mask[j:start_of_content] = ONE * (start_of_content - j)
                 content_end = end_after - e_len if found_end else end_after
-                for p in range(start_of_content, content_end):
-                    row_mask[p] = 1
+                row_mask[start_of_content:content_end] = ONE * (
+                    content_end - start_of_content
+                )
                 if found_end and include_end and train_on_eos not in ("none", "last"):
-                    for p in range(content_end, end_after):
-                        row_mask[p] = 1
+                    row_mask[content_end:end_after] = ONE * (end_after - content_end)
                 if found_end and include_end and train_on_eos == "last":
                     last_trainable_end_span = (content_end, end_after)
             else:
                 if found_end and include_end and train_on_eos == "all":
                     content_end = end_after - e_len
-                    for p in range(content_end, end_after):
-                        row_mask[p] = 1
+                    row_mask[content_end:end_after] = ONE * (end_after - content_end)
 
             # include_end=False rewind: re-match the end as the next start.
             if found_end and not include_end and e_len:
@@ -654,12 +659,11 @@ def _compute_role_keep_mask_vectorized(
 
         if train_on_eos == "last" and last_trainable_end_span is not None:
             s, e = last_trainable_end_span
-            for p in range(s, e):
-                row_mask[p] = 1
+            row_mask[s:e] = ONE * (e - s)
 
         # One tensor write per row — keep heavyweight op out of inner loop.
         if any(row_mask):
-            mask[i] = torch.tensor(row_mask, dtype=mask.dtype, device=device)
+            mask[i] = torch.frombuffer(row_mask, dtype=torch.uint8).to(mask.dtype)
 
     return mask.bool()
 
