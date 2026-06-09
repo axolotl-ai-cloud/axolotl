@@ -49,7 +49,6 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 logging_steps: 1
 attn_implementation: sdpa
-fused_attn_kernel: true
 
 warmup_ratio: 0.1
 weight_decay: 0.0
