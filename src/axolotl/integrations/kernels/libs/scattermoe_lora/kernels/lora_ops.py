@@ -2403,6 +2403,7 @@ def _compute_expert_block_lora_mxfp4(
     BLOCK_N: tl.constexpr,
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
 ):
@@ -2469,8 +2470,13 @@ def _compute_expert_block_lora_mxfp4(
         packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
         nibble = tl.where(K_is_high[None, :], (packed >> 4) & 0xF, packed & 0xF)
         codebook_val = tl.load(Codebook_ptr + nibble)  # [BLOCK_N, BLOCK_K] fp32
-        scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
-        scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
+        if SCALE_LINEAR:
+            # NVFP4: scale is a linear fp multiplier (E4M3 block scale * per-tensor)
+            scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+        else:
+            # MXFP4: E8M0 scale, decode as 2^(byte-127)
+            scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+            scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
         w_dq_nk = (codebook_val * scale_fp).to(INPUT_DTYPE)  # [BLOCK_N, BLOCK_K]
         w_tile = tl.trans(w_dq_nk)  # [BLOCK_K, BLOCK_N]
 
@@ -2644,6 +2650,7 @@ def _scatter2scatter_lora_mx(
     BLOCK_K: tl.constexpr,
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
     ACC_TYPE: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
@@ -2653,7 +2660,7 @@ def _scatter2scatter_lora_mx(
     NO_N_MASK: tl.constexpr,
     INT64_INDICES: tl.constexpr = False,
 ):
-    """Fused scatter2scatter forward with MXFP4 base weights + LoRA."""
+    """Fused scatter2scatter forward with MXFP4/NVFP4 base weights + LoRA."""
     pid = tl.program_id(axis=0)
     N_BLOCK_COUNT = tl.cdiv(N, BLOCK_N)
     M_block_id = pid // N_BLOCK_COUNT
@@ -2717,6 +2724,7 @@ def _scatter2scatter_lora_mx(
             BLOCK_N,
             BLOCK_R,
             MX_BLOCK_SIZE,
+            SCALE_LINEAR,
             scaling,
             allow_tf32=allow_tf32,
         )
@@ -2829,7 +2837,8 @@ def scatter2scatter_lora_mx(
         E=E,
         ACTUAL_R=R,
         BLOCK_R=BLOCK_R,
-        MX_BLOCK_SIZE=_MX_BLOCK_SIZE,
+        MX_BLOCK_SIZE=W_mx.block_size,
+        SCALE_LINEAR=W_mx.scale_is_linear,
         ACC_TYPE=tl.float32,
         scaling=scaling,
         allow_tf32=ALLOW_TF32,
@@ -2879,6 +2888,7 @@ def _compute_expert_block_lora_dX_mxfp4(
     BLOCK_K: tl.constexpr,
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
 ):
@@ -2950,8 +2960,11 @@ def _compute_expert_block_lora_dX_mxfp4(
         packed = tl.load(Wp_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
         nibble = tl.where(K_is_high[:, None], (packed >> 4) & 0xF, packed & 0xF)
         codebook_val = tl.load(Codebook_ptr + nibble)
-        scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
-        scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
+        if SCALE_LINEAR:
+            scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+        else:
+            scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
+            scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
         w_dq = (codebook_val * scale_fp).to(INPUT_DTYPE)  # [BLOCK_K, BLOCK_N]
 
         # Base: acc += DY @ W^T  ([M, N] @ [N, K] -> [M, K])
@@ -3107,6 +3120,7 @@ def _scatter2scatter_lora_dX_mx(
     BLOCK_K: tl.constexpr,
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
+    SCALE_LINEAR: tl.constexpr,
     ACC_TYPE: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
@@ -3115,7 +3129,7 @@ def _scatter2scatter_lora_dX_mx(
     NO_N_MASK: tl.constexpr,
     INT64_INDICES: tl.constexpr = False,
 ):
-    """Fused MXFP4 dX kernel."""
+    """Fused MXFP4/NVFP4 dX kernel."""
     pid = tl.program_id(axis=0)
     K_BLOCK_COUNT = tl.cdiv(K, BLOCK_K)
     M_block_id = pid // K_BLOCK_COUNT
@@ -3179,6 +3193,7 @@ def _scatter2scatter_lora_dX_mx(
             BLOCK_K,
             BLOCK_R,
             MX_BLOCK_SIZE,
+            SCALE_LINEAR,
             scaling,
             allow_tf32=allow_tf32,
         )
@@ -3285,7 +3300,8 @@ def scatter2scatter_lora_dX_mx(
         E=E,
         ACTUAL_R=R,
         BLOCK_R=BLOCK_R,
-        MX_BLOCK_SIZE=_MX_BLOCK_SIZE,
+        MX_BLOCK_SIZE=W_mx.block_size,
+        SCALE_LINEAR=W_mx.scale_is_linear,
         ACC_TYPE=tl.float32,
         scaling=scaling,
         allow_tf32=ALLOW_TF32,
