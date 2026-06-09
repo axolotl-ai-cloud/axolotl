@@ -369,22 +369,39 @@ class PatchManager:
 
             patch_kimi_model()
 
-        if self.cfg.model_config_type == "nemotron_h":
-            if self.cfg.sample_packing:
-                from transformers.models.nemotron_h.modeling_nemotron_h import (
-                    NemotronHPreTrainedModel,
-                )
+        ssm_hybrid_patch_needed = (
+            self.cfg.sample_packing or self.cfg.context_parallel_size > 1
+        )
 
-                from axolotl.monkeypatch.models.nemotron_h.modeling import (
-                    patch_nemotron_h_modeling_packing,
-                )
+        if self.cfg.model_config_type == "nemotron_h" and ssm_hybrid_patch_needed:
+            from transformers.models.nemotron_h.modeling_nemotron_h import (
+                NemotronHPreTrainedModel,
+            )
 
-                patch_nemotron_h_modeling_packing()
-                # supports_gradient_checkpointing is only enabled after
-                # patch_nemotron_h_modeling_packing() installs the GC-compatible
-                # NemotronHBlock.forward. Without the patch, upstream marks this
-                # False because the original block forward is not GC-safe.
-                NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+            from axolotl.monkeypatch.models.nemotron_h.modeling import (
+                patch_nemotron_h_modeling_packing,
+            )
+
+            patch_nemotron_h_modeling_packing()
+            # supports_gradient_checkpointing is only enabled after
+            # patch_nemotron_h_modeling_packing() installs the GC-compatible
+            # NemotronHBlock.forward. Without the patch, upstream marks this
+            # False because the original block forward is not GC-safe.
+            NemotronHPreTrainedModel.supports_gradient_checkpointing = True
+
+        if self.cfg.model_config_type == "falcon_h1" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.falcon_h1.modeling import (
+                patch_falcon_h1_modeling_packing,
+            )
+
+            patch_falcon_h1_modeling_packing()
+
+        if self.cfg.model_config_type == "granitemoehybrid" and ssm_hybrid_patch_needed:
+            from axolotl.monkeypatch.models.granitemoehybrid.modeling import (
+                patch_granitemoehybrid_modeling_packing,
+            )
+
+            patch_granitemoehybrid_modeling_packing()
 
         # Patches requiring CUDA
         if torch.cuda.is_available():
@@ -722,29 +739,6 @@ class PatchManager:
             )
 
             patch_fa_llama_cross_entropy()
-        if self.cfg.flash_attn_rms_norm and self.has_flash_attn:
-            from axolotl.monkeypatch.llama_attn_hijack_flash import patch_llama_rms_norm
-
-            patch_llama_rms_norm()
-
-    def _patch_llama_flash_attention(self):
-        """Apply Flash Attention patches for LLaMA models."""
-        from axolotl.monkeypatch.llama_attn_hijack_flash import (
-            replace_llama_attn_with_flash_attn,
-        )
-
-        if self.cfg.attn_implementation == "s2":
-            LOG.info("patching w/ flash-enabled, shifted-sparse attention")
-            replace_llama_attn_with_flash_attn(
-                cross_entropy=self.cfg.flash_attn_cross_entropy,
-                rms_norm=self.cfg.flash_attn_rms_norm,
-                use_shifted_sparse_attn=True,
-            )
-        elif self.cfg.flash_attn_cross_entropy or self.cfg.flash_attn_rms_norm:
-            replace_llama_attn_with_flash_attn(
-                cross_entropy=self.cfg.flash_attn_cross_entropy,
-                rms_norm=self.cfg.flash_attn_rms_norm,
-            )
 
     def _patch_llama_xformers_attention(self):
         """Apply xformers attention patches for LLaMA models."""
@@ -757,19 +751,16 @@ class PatchManager:
 
     def _patch_llama_derived_model(self):
         """Modify all llama derived models in one block."""
-        if self.cfg.is_llama_derived_model and not (
-            self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
-            and self.cfg.attn_supports_packing
-            and self.cfg.sample_packing
+        if (
+            self.cfg.is_llama_derived_model
+            and self.cfg.attn_implementation == "xformers"
+            and not (
+                self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
+                and self.cfg.attn_supports_packing
+                and self.cfg.sample_packing
+            )
         ):
-            if self.cfg.attn_uses_flash_lib:
-                self._patch_llama_flash_attention()
-            elif self.cfg.attn_implementation == "xformers":
-                self._patch_llama_xformers_attention()
-            elif self.cfg.attn_implementation == "s2":
-                raise NotImplementedError(
-                    "Shifted-sparse attention not currently implemented without flash attention."
-                )
+            self._patch_llama_xformers_attention()
 
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""

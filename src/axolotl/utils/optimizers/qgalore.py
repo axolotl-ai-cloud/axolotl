@@ -12,6 +12,9 @@ The companion INT8-weight-wrapping recipe from the paper is not yet wired up
 
 from __future__ import annotations
 
+import inspect
+import types
+
 from torch import nn
 
 from axolotl.utils.logging import get_logger
@@ -19,13 +22,37 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-def _name_matches(name: str, patterns: list[str]) -> bool:
-    return any(pat in name for pat in patterns)
+def patch_q_galore_for_modern_bnb() -> None:
+    """bnb >=0.44 inserted (beta3, alpha) into ``optimizer_update_8bit_blockwise``
+    and ``optimizer_update_32bit``; q-galore-torch==1.0 still calls the legacy
+    positional layout. Swap q_galore's bnb handle for one that re-emits the
+    modern layout. No-op on older bnb."""
+    import bitsandbytes.functional as F
+    import q_galore_torch.q_galore_adamw8bit as mod
+
+    if "beta3" not in inspect.signature(F.optimizer_update_8bit_blockwise).parameters:
+        return
+
+    bw, fp32 = F.optimizer_update_8bit_blockwise, F.optimizer_update_32bit
+    mod.F = types.SimpleNamespace(
+        optimizer_update_8bit_blockwise=(
+            lambda *a, **kw: bw(
+                *(a[:7] + (0.0, 0.0) + a[7:] if len(a) == 15 else a), **kw
+            )
+        ),
+        optimizer_update_32bit=(
+            lambda *a, **kw: fp32(
+                *(a[:10] + (0.0, 0.0) + a[10:] if len(a) == 13 else a), **kw
+            )
+        ),
+        optimizer_update_8bit=F.optimizer_update_8bit,
+        percentile_clipping=F.percentile_clipping,
+    )
 
 
 def build_qgalore_param_groups(
     model: nn.Module,
-    target_modules: list[str] | None,
+    target_modules: list[str],
     *,
     rank: int,
     update_proj_gap: int,
@@ -48,47 +75,36 @@ def build_qgalore_param_groups(
     parameter names — identical semantics to ``optim_target_modules`` for the
     upstream HuggingFace GaLore integration.
     """
-    if not target_modules:
-        target_modules = ["attn", "mlp"]
-
-    galore_params: list[nn.Parameter] = []
-    other_params: list[nn.Parameter] = []
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
+    galore, plain = [], []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
             continue
         # Only 2D weight matrices benefit from the low-rank projection; 1D
         # tensors (norms, biases) go to the plain AdamW group.
-        if param.dim() == 2 and _name_matches(name, target_modules):
-            galore_params.append(param)
+        if p.dim() == 2 and any(t in name for t in target_modules):
+            galore.append(p)
         else:
-            other_params.append(param)
-
-    if not galore_params:
+            plain.append(p)
+    if not galore:
         raise ValueError(
             "Q-GaLore: no parameters matched optim_target_modules="
             f"{target_modules!r}. Check the pattern list against the model's "
             "parameter names."
         )
-
-    LOG.info(
-        "Q-GaLore param groups: %d projected, %d plain (target_modules=%s)",
-        len(galore_params),
-        len(other_params),
-        target_modules,
-    )
-
-    galore_group = {
-        "params": galore_params,
-        "rank": rank,
-        "update_proj_gap": update_proj_gap,
-        "scale": scale,
-        "proj_type": proj_type,
-        "quant": proj_quant,
-        "quant_n_bit": proj_bits,
-        "quant_group_size": proj_group_size,
-        "cos_threshold": cos_threshold,
-        "gamma_proj": gamma_proj,
-        "queue_size": queue_size,
-    }
-    plain_group = {"params": other_params}
-    return [galore_group, plain_group]
+    LOG.info("Q-GaLore param groups: %d projected, %d plain", len(galore), len(plain))
+    return [
+        {
+            "params": galore,
+            "rank": rank,
+            "update_proj_gap": update_proj_gap,
+            "scale": scale,
+            "proj_type": proj_type,
+            "quant": proj_quant,
+            "quant_n_bit": proj_bits,
+            "quant_group_size": proj_group_size,
+            "cos_threshold": cos_threshold,
+            "gamma_proj": gamma_proj,
+            "queue_size": queue_size,
+        },
+        {"params": plain},
+    ]

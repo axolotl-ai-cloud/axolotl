@@ -48,7 +48,6 @@ resume_from_checkpoint:
 logging_steps: 1
 attn_implementation: flash_attention_2
 flash_attn_cross_entropy: false
-flash_attn_rms_norm: true
 flash_attn_fuse_mlp: true
 
 warmup_ratio: 0.1

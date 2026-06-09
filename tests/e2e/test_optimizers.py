@@ -238,11 +238,9 @@ class TestCustomOptimizers(unittest.TestCase):
                 "save_first_step": False,
             }
         )
-
         cfg = validate_config(cfg)
         normalize_config(cfg)
         dataset_meta = load_datasets(cfg=cfg)
-
         _, _, trainer = train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
         assert "AdamW8bit" in trainer.optimizer.optimizer.__class__.__name__

@@ -218,7 +218,6 @@ class HyperparametersConfig(BaseModel):
             "description": "Q-GaLore: length of the moving-average queue used by the adaptive-frequency scheduler."
         },
     )
-
     max_grad_norm: float | None = Field(
         default=None, json_schema_extra={"description": "Gradient clipping max norm"}
     )
