@@ -3,7 +3,7 @@ base_model: google/gemma-4-31B
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.liger.LigerPlugin
-torch_compile: false
+torch_compile: true
 liger_layer_norm: true
 liger_rope: true
 liger_rms_norm: true
