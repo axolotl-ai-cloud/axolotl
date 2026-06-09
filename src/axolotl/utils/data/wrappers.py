@@ -13,6 +13,7 @@ from transformers import PreTrainedTokenizer
 from transformers.processing_utils import ProcessorMixin
 
 from axolotl.datasets import TokenizedPromptDataset, wrap_dataset_for_tokenized_prompt
+from axolotl.datasets_work_queue import wrap_dataset_for_work_queue_tokenized_prompt
 from axolotl.prompt_strategies import load
 from axolotl.prompt_strategies.bradley_terry import load as bradley_terry_load
 from axolotl.prompt_tokenizers import (
@@ -220,11 +221,25 @@ def _handle_loaded_strategy(
         return dataset_strategy.wrap_dataset(dataset, **dataset_kwargs), None
 
     dataset_prompter = UnsupportedPrompter()
-    dataset_wrapper = wrap_dataset_for_tokenized_prompt(
-        dataset_strategy,
-        dataset,
-        **dataset_kwargs,
-    )
+
+    # Use work queue processing for high process counts
+    process_count = dataset_kwargs.get("process_count", 1)
+    LOG.info(f"Process count: {process_count}")
+    if process_count and process_count > 1:
+        LOG.info(f"Using work queue processing for {process_count} processes")
+        dataset_wrapper = wrap_dataset_for_work_queue_tokenized_prompt(
+            dataset_strategy,
+            dataset,
+            **dataset_kwargs,
+        )
+    else:
+        LOG.info(f"Using standard processing for {process_count} processes")
+        dataset_wrapper = wrap_dataset_for_tokenized_prompt(
+            dataset_strategy,
+            dataset,
+            **dataset_kwargs,
+        )
+
     return dataset_wrapper, dataset_prompter
 
 
