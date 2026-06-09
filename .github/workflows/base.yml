@@ -43,15 +43,6 @@ jobs:
           - cuda: "128"
             cuda_version: 12.8.1
             cudnn_version: ""
-            python_version: "3.11"
-            pytorch: 2.10.0
-            torchvision: 0.25.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-base"
-            platforms: "linux/amd64,linux/arm64"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.10.0
             torchvision: 0.25.0
@@ -71,16 +62,6 @@ jobs:
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.11"
-            pytorch: 2.9.1
-            torchvision: 0.24.1
-            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-            dockerfile: "Dockerfile-base"
-            # arm64 disabled: torchvision 0.24.1+cu130 has no aarch64 wheel
-            platforms: "linux/amd64"
-          - cuda: "130"
-            cuda_version: 13.0.0
-            cudnn_version: ""
-            python_version: "3.12"
             pytorch: 2.9.1
             torchvision: 0.24.1
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
@@ -229,21 +210,21 @@ jobs:
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
-          - cuda: "128"
-            cuda_version: 12.8.1
-            cudnn_version: ""
-            python_version: "3.12"
-            pytorch: 2.11.0
-            torchvision: 0.26.0
-            torch_cuda_arch_list: "7.0 7.5 8.0 8.6 8.7 8.9 9.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
           - cuda: "130"
             cuda_version: 13.0.0
             cudnn_version: ""
             python_version: "3.12"
             pytorch: 2.11.0
             torchvision: 0.26.0
+            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+            dockerfile: "Dockerfile-uv-base"
+            platforms: "linux/amd64,linux/arm64"
+          - cuda: "130"
+            cuda_version: 13.0.0
+            cudnn_version: ""
+            python_version: "3.12"
+            pytorch: 2.12.0
+            torchvision: 0.27.0
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"

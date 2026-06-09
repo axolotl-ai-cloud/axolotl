@@ -9,7 +9,7 @@ from axolotl.train import train
 from axolotl.utils.config import normalize_config, validate_config
 from axolotl.utils.dict import DictDefault
 
-from .utils import check_model_output_exists, check_tensorboard, with_temp_dir
+from ..utils import check_model_output_exists, check_tensorboard, with_temp_dir
 
 
 class TestRewardModelLoraSmolLM2(unittest.TestCase):

@@ -56,7 +56,7 @@ class TestMultiGPULlama:
                     },
                 ],
                 "num_epochs": 1,
-                "max_steps": 2,
+                "max_steps": 20,
                 "micro_batch_size": 1,
                 "gradient_accumulation_steps": 2,
                 # "gradient_checkpointing": True,
@@ -69,6 +69,7 @@ class TestMultiGPULlama:
                 "use_tensorboard": True,
                 "bf16": True,
                 "save_first_step": False,
+                "seed": 42,
             }
         )
 
@@ -90,7 +91,7 @@ class TestMultiGPULlama:
         )
 
         check_tensorboard(
-            temp_dir + "/runs", "train/train_loss", 2.8, "Train Loss (%s) is too high"
+            temp_dir + "/runs", "train/train_loss", 2.5, "Train Loss (%s) is too high"
         )
 
     @pytest.mark.parametrize(

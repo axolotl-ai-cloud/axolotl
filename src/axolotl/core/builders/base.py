@@ -181,6 +181,18 @@ class TrainerBuilderBase(abc.ABC):
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
 
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
+
         return callbacks
 
     def get_post_trainer_create_callbacks(self, trainer):

@@ -2,6 +2,8 @@
 Utilities for quantization including QAT and PTQ using torchao.
 """
 
+import functools
+
 import torch
 from packaging import version
 from torchao.core.config import AOBaseConfig
@@ -164,6 +166,39 @@ def _attach_torchao_quantizer(
     model.hf_quantizer = quantizer
 
 
+def patch_transformers_skip_quantized_init():
+    """Stop ``from_pretrained`` from re-initializing torchao-quantized weights.
+
+    transformers re-runs ``_init_weights`` on every module during loading; the
+    generic implementation does ``init.normal_(module.weight.float(), ...)``.
+    ``.float()`` on a torchao tensor subclass (e.g. ``MXTensor``) returns a new
+    tensor that both drops the ``_is_hf_initialized`` skip flag and does not
+    implement ``normal_``, so loading an MX checkpoint raises NotImplementedError.
+    Re-initializing an already-loaded quantized weight is never correct, so we
+    skip those modules entirely.
+    """
+    from torchao.utils import TorchAOBaseTensor
+    from transformers import PreTrainedModel
+
+    if getattr(PreTrainedModel._initialize_weights, "_axolotl_torchao_patched", False):
+        return
+
+    original = PreTrainedModel._initialize_weights
+
+    @functools.wraps(original)
+    def _initialize_weights(self, module, *args, **kwargs):
+        if any(
+            isinstance(param, TorchAOBaseTensor)
+            for param in module.parameters(recurse=False)
+        ):
+            module._is_hf_initialized = True
+            return None
+        return original(self, module, *args, **kwargs)
+
+    _initialize_weights._axolotl_torchao_patched = True
+    PreTrainedModel._initialize_weights = _initialize_weights
+
+
 def quantize_model(
     model,
     weight_dtype: TorchAOQuantDType,
@@ -214,6 +249,9 @@ def quantize_model(
         # cannot serialize it.  Mark the model so the caller can use
         # safe_serialization=False (torch.save) which supports __tensor_flatten__.
         model._is_mx_quantized = True
+        # MX checkpoints reload via plain from_pretrained (no HF quantizer), so guard
+        # transformers' weight re-init against the MXTensor weights it will encounter.
+        patch_transformers_skip_quantized_init()
     else:
         _attach_torchao_quantizer(
             model,
