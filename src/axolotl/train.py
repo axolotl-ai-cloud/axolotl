@@ -251,6 +251,34 @@ def _rename_fsdp_merged_to_adapter(merged_dir: Path):
         )
 
 
+def _nvfp4_final_state_dict(cfg: DictDefault, model: PreTrainedModel):
+    """For nvfp4_training.save_nvfp4: write the FP4-packed sidecar for the final
+    model and, for FFT, return a state_dict with the bf16 FP4-module weights
+    dropped (so the main safetensors shard isn't a redundant bf16 copy).
+
+    Returns the filtered state_dict, or ``None`` when no filtering is needed
+    (flag off, no NVFP4 modules, or a LoRA/PEFT adapter whose main shard already
+    excludes the base). The sidecar is written as a side effect when applicable.
+    """
+    nvfp4 = getattr(cfg, "nvfp4_training", None)
+    if not (nvfp4 and nvfp4.enabled and getattr(nvfp4, "save_nvfp4", False)):
+        return None
+    from axolotl.utils.nvfp4_training import (
+        collect_nvfp4_packed_state,
+        save_nvfp4_packed,
+    )
+
+    if save_nvfp4_packed(model, cfg.output_dir) == 0:
+        return None
+    # PEFT adapter save_pretrained writes only the adapter (no base in the shard),
+    # so there is nothing to drop — the sidecar alone carries the FP4 base.
+    if cfg.adapter:
+        return None
+    _, drop = collect_nvfp4_packed_state(model)
+    sd = model.state_dict()
+    return {k: v for k, v in sd.items() if k not in drop}
+
+
 def save_trained_model(
     cfg: DictDefault,
     trainer: Any,
@@ -372,7 +400,11 @@ def save_trained_model(
         if cfg.rl and cfg.adapter and not cfg.rl_adapter_ref_model:
             trainer.model.save_pretrained(cfg.output_dir)
 
-        model.save_pretrained(cfg.output_dir)
+        save_state_dict = _nvfp4_final_state_dict(cfg, model)
+        if save_state_dict is not None:
+            model.save_pretrained(cfg.output_dir, state_dict=save_state_dict)
+        else:
+            model.save_pretrained(cfg.output_dir)
 
     if hasattr(cfg, "llmcompressor") and cfg.llmcompressor:
         # TODO: add integration support so this can be implemented completely within the plugin

@@ -581,6 +581,20 @@ class ModelLoader:
         elif not is_ds_zero3:
             self.model_kwargs["device_map"] = device_map
 
+            # NVFP4 LoRA streams the base to FP4 during the post-load swap, so load
+            # it on CPU first: the full bf16 model never sits on the GPU (and
+            # device_map can't strand weights on meta on a model that nearly fills
+            # VRAM, which then can't be quantized). The swap moves the FP4 base and
+            # the rest of the model onto the GPU.
+            if (
+                self.cfg.nvfp4_training
+                and self.cfg.nvfp4_training.enabled
+                and self.cfg.adapter in ("lora", "qlora")
+            ):
+                # No device_map: a plain CPU load (no accelerate dispatch hooks to
+                # fight the swap's manual .to(cuda)).
+                self.model_kwargs.pop("device_map", None)
+
             # quantize_moe_experts quantizes expert weights on-the-fly during loading,
             # so the actual VRAM usage is much less than bf16 estimates.
             # When device_map is "auto", accelerate's infer_auto_device_map computes

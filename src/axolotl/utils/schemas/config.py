@@ -58,6 +58,7 @@ from axolotl.utils.schemas.model import (
     SpecialTokensConfig,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
+from axolotl.utils.schemas.nvfp4 import NVFP4TrainingConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
 from axolotl.utils.schemas.quantization import PTQConfig, QATConfig
 from axolotl.utils.schemas.training import HyperparametersConfig, JaggedLRConfig
@@ -206,6 +207,19 @@ class AxolotlInputConfig(
 
     model_config = {"populate_by_name": True}
 
+    axolotl_cli_mode: Literal["train", "inference", "other"] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Internal CLI mode used for mode-specific validation."
+        },
+    )
+    model_config_type: str | None = Field(
+        default=None,
+        exclude=True,
+        json_schema_extra={
+            "description": "Internal model type resolved from the HF config."
+        },
+    )
     strict: bool | None = Field(
         default=False,
         json_schema_extra={"description": "Allow overwrite yml config using from cli"},
@@ -574,6 +588,13 @@ class AxolotlInputConfig(
             "improve training speed by 10-15% when FSDP is enabled."
         },
     )
+    nvfp4_training: NVFP4TrainingConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "NVFP4-GEMM training (real FP4 compute on Blackwell). "
+            "Full fine-tune or LoRA/QLoRA adapters; the speedup requires torch.compile."
+        },
+    )
     bfloat16: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -818,9 +839,9 @@ class AxolotlInputConfig(
         json_schema_extra={
             "description": (
                 "Attention backend. Canonical values: eager, sdpa, flash_attention_2, "
-                "flash_attention_3, flex_attention, xformers, sage, fp8. Hub-kernel "
-                "paths (e.g. kernels-community/flash-attn3) are also accepted and passed "
-                "through to transformers."
+                "flash_attention_3, flex_attention, xformers, sage, fp8. "
+                "Hub-kernel paths (e.g. kernels-community/flash-attn3) are also accepted "
+                "and passed through to transformers."
             )
         },
     )
@@ -912,6 +933,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Apply custom LoRA autograd function for embedding layers. See: https://docs.axolotl.ai/docs/lora_optims.html"
+        },
+    )
+    lora_batch_kernel: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Batch the per-projection LoRA adapter GEMMs that share an input (q/k/v and gate/up) into a single concatenated matmul to cut tiny-kernel launch overhead. Opt-in; only affects the lora_qkv_kernel/lora_mlp_kernel fast path (no DoRA/dropout/lora_bias)."
         },
     )
 
@@ -1638,6 +1665,153 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         return self
 
     @model_validator(mode="after")
+    def check_nvfp4_training(self):
+        if not (self.nvfp4_training and self.nvfp4_training.enabled):
+            return self
+
+        if self.adapter and self.adapter not in ("lora", "qlora"):
+            raise ValueError(
+                f"nvfp4_training supports full fine-tune or adapter in (lora, qlora), "
+                f"got adapter={self.adapter!r}."
+            )
+
+        if self.nvfp4_training.fp8_lm_head_cross_entropy and (
+            self.nvfp4_training.quantize_lm_head
+            or self.nvfp4_training.fused_fp4_cross_entropy
+        ):
+            raise ValueError(
+                "nvfp4_training.fp8_lm_head_cross_entropy requires the lm_head to "
+                "remain a frozen plain nn.Linear. Disable quantize_lm_head/"
+                "fused_fp4_cross_entropy, or use fused_fp4_cross_entropy for an "
+                "NVFP4-quantized lm_head."
+            )
+        if self.nvfp4_training.bf16_lm_head_cross_entropy and (
+            self.nvfp4_training.quantize_lm_head
+            or self.nvfp4_training.fused_fp4_cross_entropy
+            or self.nvfp4_training.fp8_lm_head_cross_entropy
+        ):
+            raise ValueError(
+                "nvfp4_training.bf16_lm_head_cross_entropy requires the lm_head to "
+                "remain a frozen plain nn.Linear. Disable quantize_lm_head/"
+                "fused_fp4_cross_entropy/fp8_lm_head_cross_entropy."
+            )
+        # The fused LoRA kernels now route the base GEMM through the native NVFP4
+        # modules (detected via is_nvfp4_base in kernels/lora.py), so the native
+        # backend is allowed with the kernels. The te backend still bypasses them:
+        # te.Linear keeps a real .weight, so the kernels would silently run bf16.
+        if (
+            self.adapter
+            and self.nvfp4_training.backend == "te"
+            and (self.lora_mlp_kernel or self.lora_qkv_kernel or self.lora_o_kernel)
+        ):
+            raise ValueError(
+                "nvfp4_training backend=te is incompatible with the fused LoRA "
+                "kernels (te.Linear exposes a real .weight, so the kernels would "
+                "silently run the base GEMM in bf16 and bypass NVFP4). Set "
+                "lora_mlp_kernel, lora_qkv_kernel, lora_o_kernel to false, or use "
+                "backend=native."
+            )
+
+        # DoRA's weight-norm reads base_layer.weight; the FP4 base modules
+        # (compute/storage) expose no .weight, and the hp base's bf16 master is
+        # decorrelated from the FP4 forward — either way DoRA is wrong here.
+        if self.adapter and self.peft_use_dora:
+            raise ValueError(
+                "nvfp4_training does not support DoRA (peft_use_dora): the NVFP4 "
+                "base layer has no high-precision weight for the DoRA magnitude. "
+                "Set peft_use_dora: false."
+            )
+
+        # `adapter: qlora` implies a quantized base; the FP4-storage path REPLACES
+        # bnb NF4, so the two quant schemes on the same base layer conflict.
+        wants_fp4_storage = bool(self.adapter) and (
+            self.nvfp4_training.quantize_base
+            or self.adapter == "qlora"
+            or self.nvfp4_training.base_mode == "storage"
+        )
+        if wants_fp4_storage and (self.load_in_4bit or self.load_in_8bit):
+            raise ValueError(
+                "nvfp4_training FP4-storage QLoRA (adapter: qlora or "
+                "nvfp4_training.quantize_base: true) replaces bnb quantized storage; "
+                "it conflicts with load_in_4bit/load_in_8bit on the same base. "
+                "For NVFP4-QLoRA use `adapter: lora` + "
+                "`nvfp4_training.quantize_base: true` and drop "
+                "load_in_4bit/load_in_8bit (note `adapter: qlora` forces "
+                "load_in_4bit, so it cannot pair with FP4 storage)."
+            )
+
+        # The standard fused linear cross-entropy kernel reads the lm_head weight
+        # directly, bypassing the NVFP4 lm_head forward. The FP4-aware fused CE
+        # path is the explicit opt-in exception.
+        if (
+            self.nvfp4_training.quantize_lm_head
+            and getattr(self, "cut_cross_entropy", None)
+            and not self.nvfp4_training.fused_fp4_cross_entropy
+        ):
+            raise ValueError(
+                "nvfp4_training.quantize_lm_head is incompatible with "
+                "cut_cross_entropy: the fused linear cross-entropy kernel consumes "
+                "the lm_head weight directly and bypasses the NVFP4 lm_head forward. "
+                "Disable one, or set nvfp4_training.fused_fp4_cross_entropy: true "
+                "to use the FP4-aware fused CE path."
+            )
+
+        if self.deepspeed:
+            raise ValueError(
+                "nvfp4_training is not compatible with DeepSpeed (no ZeRO path for "
+                "the FP4-GEMM module swap). Use FSDP or single-GPU."
+            )
+
+        # torchao's NVFP4 quantizer rejects fp16 ("torch.float16 not supported"),
+        # and a swapped layer feeds its activation through it. Refuse early with a
+        # clear message instead of a deep torchao assert. bf16 is the right choice
+        # on Blackwell regardless.
+        if self.fp16 or self.float16:
+            raise ValueError(
+                "nvfp4_training does not support fp16 (torchao NVFP4 quantization "
+                "requires bf16/fp32). Set bf16: true."
+            )
+
+        # NVFP4-QLoRA under FSDP2 shards the FP4 base via custom all-gather hooks
+        # (NVFP4FrozenBaseLinear is built with fsdp=True). Cross-rank training is
+        # validated; the fused LoRA Triton kernels bypass the FP4 base, so warn to
+        # disable them on this path.
+        if (
+            wants_fp4_storage
+            and (self.fsdp_config or self.fsdp)
+            and (self.lora_mlp_kernel or self.lora_qkv_kernel or self.lora_o_kernel)
+        ):
+            LOG.warning(
+                "nvfp4_training FP4-storage QLoRA under FSDP: set "
+                "lora_mlp_kernel/lora_qkv_kernel/lora_o_kernel to false — the fused "
+                "LoRA kernels bypass the FP4 base."
+            )
+
+        # Under torch.compile, variable batch lengths recompile the FP4 GEMM path
+        # (the token dim is padded to a multiple of 32, and torchao's scale-swizzle
+        # re-specializes per 128-block); automatic-dynamic bounds the graph count
+        # but the recompiles are individually expensive. Pinning one static shape
+        # avoids them entirely.
+        if (
+            self.torch_compile
+            and not self.sample_packing
+            and not self.pad_to_sequence_len
+        ):
+            LOG.warning(
+                "nvfp4_training + torch_compile without pad_to_sequence_len: variable "
+                "batch lengths trigger torch.compile recompiles of the FP4 GEMM path. "
+                "Set pad_to_sequence_len: true (or sample_packing: true) to pin one "
+                "shape and avoid recompile stalls."
+            )
+
+        from axolotl.utils.nvfp4_training import nvfp4_supported
+
+        ok, reason = nvfp4_supported()
+        if not ok:
+            raise ValueError(f"nvfp4_training requested, but {reason}")
+        return self
+
+    @model_validator(mode="after")
     def check_sample_packing_w_sdpa_bf16(self):
         is_sm_90 = self.capabilities and self.capabilities.compute_capability == "sm_90"
         if (
@@ -1749,6 +1923,21 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("rl"):
             # RL trainers not tested so don't enable kernels by default
             return data
+        nvfp4 = data.get("nvfp4_training")
+        if nvfp4:
+            nvfp4_enabled = (
+                nvfp4.get("enabled") if isinstance(nvfp4, dict) else nvfp4.enabled
+            )
+            nvfp4_backend = (
+                nvfp4.get("backend", "native")
+                if isinstance(nvfp4, dict)
+                else nvfp4.backend
+            )
+            # Native backend kernels now route the base GEMM through the NVFP4
+            # modules, so leave auto-enable in place. The te backend still bypasses
+            # them (te.Linear has a real .weight → silent bf16), so skip there.
+            if nvfp4_enabled and nvfp4_backend == "te":
+                return data
         if data.get("adapter") in ["lora", "qlora"]:
             # Skip if already set or using 8-bit
             kernel_fields = [

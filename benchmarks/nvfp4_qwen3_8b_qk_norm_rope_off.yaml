@@ -1,0 +1,65 @@
+base_model: Qwen/Qwen3-8B
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+is_qwen_derived_model: true
+
+plugins:
+  - axolotl.integrations.liger.LigerPlugin
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_layer_norm: true
+liger_fused_linear_cross_entropy: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+datasets:
+  - path: last_run_prepared/6c980767859aa760de482237ed1b2764
+    type: alpaca
+dataset_prepared_path: last_run_prepared
+skip_prepare_dataset: true
+val_set_size: 0.0
+output_dir: ./outputs/tmp_nvfp4_qwen3_8b_qk_norm_rope_off
+
+sequence_len: 1024
+sample_packing: true
+pad_to_sequence_len: true
+attn_implementation: flash_attention_2
+
+bf16: true
+tf32: true
+torch_compile: true
+gradient_checkpointing: false
+
+micro_batch_size: 4
+gradient_accumulation_steps: 1
+optimizer: adamw_torch_fused
+learning_rate: 0.0002
+lr_scheduler: cosine
+warmup_steps: 10
+max_steps: 60
+save_steps: 60
+save_total_limit: 1
+logging_steps: 1
+
+nvfp4_training:
+  enabled: true
+  base_mode: compute
+  stochastic_rounding: true
+  hadamard: true
+  exclude_modules: [lm_head, embed_tokens]
+  skip_first_n_blocks: 0
+  skip_last_n_blocks: 0
+  fuse_rmsnorm: false
+  fuse_qk_norm_rope: false

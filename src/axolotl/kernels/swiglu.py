@@ -99,6 +99,12 @@ def _swiglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)  # grad wrt up
 
 
+# Run eager even under torch.compile: the raw @triton.jit launches below would
+# otherwise be traced into the compiled (joint) graph as triton_kernel_wrapper
+# HOPs, and Inductor's backward decompose_triton_kernel_wrapper_functional pass
+# asserts on them. Disabling keeps these hand-tuned kernels on their intended
+# eager path while the rest of the model still compiles around the LoRA op.
+@torch.compiler.disable
 def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     SwiGLU forward pass. Computes SwiGLU activation: `x * sigmoid(x) * up`, where
@@ -113,7 +119,9 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     batch, seq_len, hidden_dim = gate.shape
     n_elements = gate.numel()
-    out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
+    out = torch.empty(
+        (batch, seq_len, hidden_dim), dtype=gate.dtype, device=gate.device
+    )
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["block_size"]),)  # noqa: E731
     _swiglu_fwd_kernel[grid](
@@ -127,6 +135,7 @@ def swiglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     return out
 
 
+@torch.compiler.disable
 def swiglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

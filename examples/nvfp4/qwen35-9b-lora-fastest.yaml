@@ -1,0 +1,112 @@
+# Fastest measured native NVFP4 training path for Qwen3.5-9B LoRA on Blackwell.
+#
+# Target shape: text-only SFT, sequence_len 2048, sample packing, no gradient
+# checkpointing. Measured on RTX PRO 6000 Blackwell 96GB with
+# scripts/bench_nvfp4.sh (20 -> 60 marginal train_runtime):
+#   bf16 b6 stable baseline: 2.1550 s/step, ~5701 tok/s, 89.61 GiB active
+#                              (learning_rate 2e-5; finite grad norms)
+#   all-on NVFP4 b4 baseline: 1.2475 s/step, ~6567 tok/s, 69.26 GiB active
+#   this saved-pack path:      1.1525-1.2075 s/step, ~6784-7108 tok/s,
+#                              69.63 GiB active
+#   plus FLA boundary:         1.1708 s/step, ~6997 tok/s, 69.63 GiB active
+#   plus BF16 dK/dV scratch:   1.1415-1.1485 s/step, ~7133-7177 tok/s,
+#                              62.03 GiB active
+#   beta lock-down repeat:     1.2017 s/step, ~6817 tok/s,
+#                              62.03 GiB active
+#   clean GPU3 repeat:         1.0635 s/step, ~7701 tok/s,
+#                              69.63 GiB active
+#   b5 no CE repeat:           1.5195 s/step, ~6740 tok/s,
+#                              74.43 GiB active
+#   b6 no CE repeat:           1.8473 s/step, ~6652 tok/s,
+#                              86.83 GiB active
+#   FP8 lm_head CE b6:         1.7700-1.7807 s/step, ~6902-6943 tok/s,
+#                              80.32 GiB active (slower; one validation run
+#                              loss-collapsed with non-finite grad norms)
+#   FP8 lm_head CE b5 repeat:  1.5312 s/step, ~6688 tok/s, 69.60 GiB active
+#                              (memory win, not a throughput win)
+#
+# Do not use fp16 as the convergence baseline here: with NVFP4 omitted and
+# max_grad_norm: 1.0 explicit, fp16 produced NaN LoRA gradients at the first AMP
+# unscale. bf16 is the natural full-precision Blackwell baseline.
+#
+# base_mode: compute pre-quantizes the frozen base into the two NVFP4 layouts so
+# fprop and dgrad run as pure FP4 GEMMs with no per-step base-quant prologue. The
+# standalone fp8_lm_head, FP8 lm_head CE, CCE, and Liger fused-linear CE switches
+# are intentionally omitted: CCE/Liger CE loss-collapse with non-finite grad norms
+# in this NVFP4 training setup, and FP8 CE is a memory win, not a throughput win.
+#
+# For benchmark comparisons, copy this config to /tmp, set base_model to the
+# local model path, and keep dataset_prepared_path fixed across compared runs.
+base_model: Qwen/Qwen3.5-9B
+model_config_type: qwen3_5
+strict: false
+
+chat_template: qwen3_5
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+val_set_size: 0.0
+dataset_prepared_path: /tmp/axolotl_nvfp4_qwen35_fastest_prepared
+output_dir: /tmp/axolotl_nvfp4_qwen35_fastest_out
+
+sequence_len: 2048
+sample_packing: true
+pad_to_sequence_len: true
+
+load_in_8bit: false
+load_in_4bit: false
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  - linear_attn.in_proj_qkv
+  - linear_attn.in_proj_z
+  - linear_attn.out_proj
+
+gradient_accumulation_steps: 1
+# This measured b4 path targets 96GB Blackwell. Reduce micro_batch_size on
+# smaller cards or enable gradient_checkpointing if you need memory headroom.
+micro_batch_size: 4
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2.0e-4
+max_grad_norm: 1.0
+
+bf16: true
+fp16: false
+tf32: true
+torch_compile: true
+
+gradient_checkpointing: false
+attn_implementation: flash_attention_2
+
+nvfp4_training:
+  enabled: true
+  base_mode: compute
+  stochastic_rounding: true
+  hadamard: true
+  exclude_modules: [lm_head, embed_tokens]
+  skip_first_n_blocks: 0
+  skip_last_n_blocks: 0
+  fuse_rmsnorm: false
+  # Reuse one NVFP4 activation pack across fused LoRA QKV/QK base fprops.
+  # Locally faster in the QKV microbench, but below whole-step noise on this
+  # 8-full-attention-layer hybrid model. Try true on models with more attention layers.
+  shared_lora_base_fprop: false
+
+warmup_steps: 10
+logging_steps: 1
+save_strategy: "no"
+saves_per_epoch:
+evals_per_epoch:
+weight_decay: 0.0
+special_tokens:

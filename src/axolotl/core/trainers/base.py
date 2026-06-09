@@ -373,9 +373,47 @@ class AxolotlTrainer(
         # return self.accelerator.prepare(DataLoader(bench_dataset, **dataloader_params))
 
     @override
+    def training_step(self, *args, **kwargs):
+        # TE NVFP4: wrap the whole step so the te.Linear GEMMs run FP4. This must
+        # span backward too — under gradient checkpointing the recompute forward
+        # runs inside backward (outside compute_loss), so a compute_loss-only wrap
+        # would silently recompute in bf16.
+        recipe = getattr(
+            self.accelerator.unwrap_model(self.model), "_te_nvfp4_recipe", None
+        )
+        if recipe is not None and not getattr(self, "_in_te_autocast", False):
+            import transformer_engine.pytorch as te
+
+            self._in_te_autocast = True
+            try:
+                with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
+                    return super().training_step(*args, **kwargs)
+            finally:
+                self._in_te_autocast = False
+        return super().training_step(*args, **kwargs)
+
+    @override
     def compute_loss(
         self, model, inputs, return_outputs=False, num_items_in_batch=None
     ):
+        # NVFP4 training, Transformer Engine backend: te.Linear layers only run
+        # FP4 GEMMs inside an fp8_autocast region. The recipe is stashed on the
+        # model at swap time; wrap the whole loss computation in it once. (During
+        # training this is already covered by the training_step wrap above; this
+        # also covers eval, which calls compute_loss without training_step.)
+        recipe = getattr(self.accelerator.unwrap_model(model), "_te_nvfp4_recipe", None)
+        if recipe is not None and not getattr(self, "_in_te_autocast", False):
+            import transformer_engine.pytorch as te
+
+            self._in_te_autocast = True
+            try:
+                with te.fp8_autocast(enabled=True, fp8_recipe=recipe):
+                    return self.compute_loss(
+                        model, inputs, return_outputs, num_items_in_batch
+                    )
+            finally:
+                self._in_te_autocast = False
+
         # use one's weighted cross entropy loss calc
         # if self.args.sample_packing:
         #     labels = inputs.pop("labels")
@@ -838,12 +876,37 @@ class AxolotlTrainer(
 
         return result
 
+    def _nvfp4_save_packed(self, output_dir, state_dict):
+        """When nvfp4_training.save_nvfp4 is on, write the FP4-packed sidecar and
+        return a state_dict with the redundant bf16 FP4-module weights dropped.
+
+        Returns the (possibly filtered) state_dict; a no-op (returns the input
+        unchanged) when the flag is off or there are no NVFP4 modules.
+        """
+        nvfp4 = getattr(self.axolotl_cfg, "nvfp4_training", None)
+        if not (nvfp4 and nvfp4.enabled and getattr(nvfp4, "save_nvfp4", False)):
+            return state_dict
+        from axolotl.utils.nvfp4_training import (
+            collect_nvfp4_packed_state,
+            save_nvfp4_packed,
+        )
+
+        model = self.accelerator.unwrap_model(self.model, keep_torch_compile=False)
+        if save_nvfp4_packed(model, output_dir) == 0:
+            return state_dict
+        _, drop = collect_nvfp4_packed_state(model)
+        if state_dict is None:
+            state_dict = model.state_dict()
+        return {k: v for k, v in state_dict.items() if k not in drop}
+
     # TODO(wing): remove once https://github.com/huggingface/transformers/pull/39866/files is merged
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         # If we are executing this function, we are the process zero, so we don't check for that.
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
         LOG.info(f"Saving model checkpoint to {output_dir}")
+
+        state_dict = self._nvfp4_save_packed(output_dir, state_dict)
 
         # fix for Context Parallel save: CP eval invalidates tensor storage
         # pointers, so clone to CPU to get fresh valid storage for safetensors

@@ -92,6 +92,9 @@ def _dora_fused_norm_kernel(
     tl.store(out_ptr + row, scale)
 
 
+# See swiglu.py: run eager under torch.compile so the raw triton launch doesn't
+# leak into the compiled graph (decompose_triton_kernel_wrapper_functional).
+@torch.compiler.disable
 def triton_dora_scale(
     W: torch.Tensor,
     W_quant,

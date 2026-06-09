@@ -42,6 +42,9 @@ def _geglu_fwd_kernel(
     tl.store(out_ptr + offsets, result, mask=mask)
 
 
+# See swiglu.py: run eager under torch.compile so the raw triton launches don't
+# leak into the compiled backward (decompose_triton_kernel_wrapper_functional).
+@torch.compiler.disable
 def geglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """GEGLU forward pass.
 
@@ -54,7 +57,9 @@ def geglu_forward(gate: torch.Tensor, up: torch.Tensor) -> torch.Tensor:
     """
     batch, seq_len, hidden_dim = gate.shape
     n_elements = gate.numel()
-    out = torch.empty((batch, seq_len, hidden_dim), dtype=gate.dtype, device="cuda")
+    out = torch.empty(
+        (batch, seq_len, hidden_dim), dtype=gate.dtype, device=gate.device
+    )
 
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)  # noqa: E731
     _geglu_fwd_kernel[grid](
@@ -122,6 +127,7 @@ def _geglu_bwd_kernel(
     tl.store(up_ptr + offsets, grad_up, mask=mask)
 
 
+@torch.compiler.disable
 def geglu_backward(
     grad_output: torch.Tensor, gate: torch.Tensor, up: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

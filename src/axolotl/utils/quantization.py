@@ -304,6 +304,17 @@ def _make_qat_config(
         IntxFakeQuantizeConfig,
     )
 
+    if weight_dtype == TorchAOQuantDType.nvfp4:
+        from torchao.prototype.qat import NVFP4FakeQuantizeConfig
+
+        # NVFP4 fixes block_size=16 and the e4m3 scale dtype internally; the
+        # config exposes only scaling-layout/kernel toggles. Both configs are
+        # mandatory — weight-only NVFP4 QAT raises in torchao.
+        if group_size is not None and group_size != 16:
+            raise ValueError("NVFP4 quantization must use a group_size of 16")
+        nv_fq = NVFP4FakeQuantizeConfig()
+        return QATConfig(activation_config=nv_fq, weight_config=nv_fq)
+
     if weight_dtype == TorchAOQuantDType.mxfp4:
         from torchao.prototype.qat import MXFakeQuantizeConfig
 
