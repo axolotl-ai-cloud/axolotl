@@ -413,13 +413,15 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         and not cfg.skip_prepare_dataset
         and not cfg.reward_model
     ):
-        # Avoid .to_pandas() on the input_ids list column
         if "length" in train_dataset.column_names:
-            total_num_tokens = int(pc.sum(train_dataset.data.column("length")).as_py())
+            total_num_tokens = int(
+                pc.sum(train_dataset.data.column("length"), min_count=0).as_py()
+            )
         else:
             total_num_tokens = int(
                 pc.sum(
-                    pc.list_value_length(train_dataset.data.column("input_ids"))
+                    pc.list_value_length(train_dataset.data.column("input_ids")),
+                    min_count=0,
                 ).as_py()
             )
         LOG.debug(f"total_num_tokens: {total_num_tokens:_}")
@@ -440,11 +442,11 @@ def calculate_total_num_steps(cfg, train_dataset, update=True):
         for batch in train_dataset.data.to_batches(max_chunksize=1024):
             labels = batch.column("labels")
             if pa.types.is_list(labels.type) or pa.types.is_large_list(labels.type):
-                flat = labels.values.to_numpy(zero_copy_only=False)
+                flat = labels.flatten().to_numpy(zero_copy_only=False)
             else:
                 flat = labels.to_numpy(zero_copy_only=False)
             total_supervised_tokens += int((flat != -100).sum())
-        LOG.debug(f"`total_supervised_tokens: {total_supervised_tokens:_}`")
+        LOG.debug(f"total_supervised_tokens: {total_supervised_tokens:_}")
         if update:
             cfg.total_supervised_tokens = total_supervised_tokens
 
