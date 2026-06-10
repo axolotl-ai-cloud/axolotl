@@ -16,3 +16,8 @@ __all__ = [
     "parallel_linear_lora",
     "lora_ops",
 ]
+from .multi_lora import (  # noqa: E402,F401
+    ScatterMoEMultiLoRA,
+    build_multilora_routing,
+    scatter2scatter_multilora,
+)
