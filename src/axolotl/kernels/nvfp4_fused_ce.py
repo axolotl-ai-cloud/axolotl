@@ -32,8 +32,20 @@ from torch import nn
 
 # Vocab tile width. The transient logit tile is [M, _VOCAB_BLOCK] in fp32; 4096
 # keeps it small (16 MiB at M=4096) while giving the bf16 tile-matmul enough work
-# to stay efficient. Tunable; not load-bearing for correctness.
-_VOCAB_BLOCK = 4096
+# to stay efficient. Tunable; not load-bearing for correctness (the tile loop is a
+# reduction split — loss/grad are bit-stable across block widths).
+#
+# Granularity is the dominant speed lever for the fp4_matmul=True path: each tile
+# costs one ``torch._scaled_mm`` launch plus a per-tile fp32 logsumexp/gather, and
+# at V=152k the default 4096 (38 tiles) makes the fused FP4 head ~1.4x SLOWER than
+# a dense bf16 lm_head + CE under torch.compile. Coarser tiles amortize the launch
+# overhead: on a 5090 (compiled, M=1024, V=152k, H=2048, fwd+bwd) fp4_matmul moves
+# from 1.40x dense (block 4096) to 0.92x (16384) to 0.84x (32768) dense — crossing
+# below the dense baseline. The cost is a wider transient logit tile (more peak
+# memory), so this is overridable via AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK. The
+# activation FP4-quant is already hoisted out of this loop (once per fwd/bwd), so
+# it is NOT the bottleneck — tile granularity / small-GEMM launch count is.
+_VOCAB_BLOCK = int(os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK", "16384"))
 
 
 def _fp4_scaled_mm_enabled(fp4_matmul: bool | None) -> bool:
