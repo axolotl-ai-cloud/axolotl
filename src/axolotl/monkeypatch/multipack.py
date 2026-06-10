@@ -60,6 +60,7 @@ SUPPORTED_MULTIPACK_MODEL_TYPES = [
     "ministral",
     "ministral3",
     "mistral4",
+    "minimax_m2",
     "afmoe",
     "nemotron",
     "nemotron_h",
