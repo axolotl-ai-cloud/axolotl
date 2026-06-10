@@ -1,0 +1,65 @@
+# NVFP4 fused lm_head + cross-entropy: an FP4-quantized lm_head whose projection
+# is fused with the cross-entropy loss so the full [batch*seq, vocab] logit tensor
+# is never materialized (~1 GiB at vocab 152k / seq 8k). The loss is computed by
+# tiling over the vocab, dequantizing each FP4 weight tile on read, and
+# accumulating logsumexp in fp32 — like cut_cross_entropy, but reading the
+# NVFP4-packed lm_head weight directly (which CCE cannot).
+#
+# What it buys: MEMORY (no logit materialization), not FP4-GEMM throughput. The
+# per-tile matmul runs in bf16, so the lm_head does not hit FP4 tensor cores here;
+# the win is peak memory and bandwidth at long sequence / large vocab. The fused
+# path is currently a torch-level kernel (eager), so keep torch_compile off for it.
+base_model: Qwen/Qwen2.5-3B
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+
+output_dir: ./outputs/nvfp4_fused_ce_out/
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+bf16: true
+torch_compile: false
+
+nvfp4_training:
+  enabled: true
+  quantize_base: true            # FP4 storage on the frozen LoRA base
+  quantize_lm_head: true         # FP4-quantize the output projection
+  fused_fp4_cross_entropy: true  # fuse it with CE — skip materializing logits
+  stochastic_rounding: true
+  hadamard: true
+  exclude_modules: [embed_tokens]
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+learning_rate: 2e-4
+
+logging_steps: 1
+warmup_steps: 10
+weight_decay: 0.0
+max_steps: 10
+save_only_model: true
+
+special_tokens:

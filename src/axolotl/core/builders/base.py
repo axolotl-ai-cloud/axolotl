@@ -17,6 +17,7 @@
 import abc
 import importlib
 import logging
+import os
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -532,8 +533,36 @@ class TrainerBuilderBase(abc.ABC):
 
     def _configure_torch_compile(self, training_args_kwargs: dict):
         if self.cfg.torch_compile and getattr(torch, "_dynamo", None):
-            torch._dynamo.config.suppress_errors = True
+            # AXOLOTL_DYNAMO_NO_SUPPRESS=1 surfaces graph breaks / inductor errors
+            # instead of silently falling back to eager (debugging compile coverage).
+            torch._dynamo.config.suppress_errors = (
+                os.environ.get("AXOLOTL_DYNAMO_NO_SUPPRESS") != "1"
+            )
             torch._dynamo.config.accumulated_cache_size_limit = 256
+            if str(self.cfg.attn_implementation).startswith("flash_attention"):
+                if hasattr(torch._dynamo.config, "capture_scalar_outputs"):
+                    torch._dynamo.config.capture_scalar_outputs = True
+                if hasattr(torch._dynamo.config, "allow_unspec_int_on_nn_module"):
+                    torch._dynamo.config.allow_unspec_int_on_nn_module = True
+            # DDPOptimizer splits the compiled graph at gradient-bucket boundaries.
+            # Under dynamic shapes (variable-length / multimodal NVFP4) it can place a
+            # derived symint in a different subgraph than its base, tripping Inductor
+            # ("expected sN to have been codegen-ed"). Compiling one graph avoids the
+            # split. Scoped to NVFP4 multi-GPU DDP (non-FSDP) so other DDP+compile runs
+            # keep the bucket-overlap optimization.
+            if (
+                self.cfg.nvfp4_training
+                and getattr(self.cfg.nvfp4_training, "enabled", False)
+                and not self.cfg.fsdp_config
+                and int(os.environ.get("WORLD_SIZE", "1") or "1") > 1
+                and hasattr(torch._dynamo.config, "optimize_ddp")
+            ):
+                torch._dynamo.config.optimize_ddp = False
+                LOG.info(
+                    "NVFP4 DDP: disabled torch._dynamo DDPOptimizer (optimize_ddp) to "
+                    "avoid the dynamic-shape graph-split symint codegen error; the "
+                    "model compiles as a single graph."
+                )
             training_args_kwargs["torch_compile"] = self.cfg.torch_compile
             if self.cfg.torch_compile_backend:
                 training_args_kwargs["torch_compile_backend"] = (

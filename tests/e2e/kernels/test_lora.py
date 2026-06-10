@@ -585,3 +585,137 @@ def test_inplace_operations(sample_tensors, apply_function):
     out2 = apply_function(mlp, X.clone(), inplace=False)
 
     assert torch.allclose(out1, out2, rtol=1e-3)
+
+
+def _lora_pair(out_f, in_f, rank, device="cuda"):
+    A = (torch.randn(rank, in_f, device=device) * 0.02).requires_grad_(True)
+    B = (torch.randn(out_f, rank, device=device) * 0.02).requires_grad_(True)
+    return A, B
+
+
+@pytest.mark.parametrize("inplace", [True, False])
+def test_batched_qkv_matches_per_module(inplace):
+    """Batched LoRA QKV must match the per-module path bit-for-bit (same math)."""
+    torch.manual_seed(0)
+    bsz, seq, in_f, rank = 2, 7, 256, 16
+    dt = torch.bfloat16
+    qo, ko, vo = 256, 128, 128
+
+    def run(batched):
+        torch.manual_seed(1)
+        X = torch.randn(bsz, seq, in_f, device="cuda", dtype=dt, requires_grad=True)
+        weights = [
+            torch.randn(o, in_f, device="cuda", dtype=dt) * 0.02 for o in (qo, ko, vo)
+        ]
+        qA, qB = _lora_pair(qo, in_f, rank)
+        kA, kB = _lora_pair(ko, in_f, rank)
+        vA, vB = _lora_pair(vo, in_f, rank)
+        q, k, v = LoRA_QKV.apply(
+            X,
+            None,
+            weights[0],
+            None,
+            None,
+            qA,
+            qB,
+            2.0,
+            None,
+            None,
+            weights[1],
+            None,
+            None,
+            kA,
+            kB,
+            2.0,
+            None,
+            None,
+            weights[2],
+            None,
+            None,
+            vA,
+            vB,
+            2.0,
+            None,
+            None,
+            inplace,
+            batched,
+        )
+        loss = (q.float() ** 2).sum() + (k.float() ** 2).sum() + (v.float() ** 2).sum()
+        loss.backward()
+        return (
+            torch.cat([q.reshape(-1), k.reshape(-1), v.reshape(-1)]).detach(),
+            X.grad.detach().clone(),
+            [g.grad.detach().clone() for g in (qA, qB, kA, kB, vA, vB)],
+        )
+
+    o1, x1, g1 = run(False)
+    o2, x2, g2 = run(True)
+    assert torch.isfinite(o2).all() and torch.isfinite(x2).all()
+    assert torch.equal(o1, o2)
+    assert torch.equal(x1, x2)
+    for a, b in zip(g1, g2, strict=False):
+        assert torch.equal(a, b)
+
+
+@pytest.mark.parametrize("inplace", [True, False])
+def test_batched_mlp_matches_per_module(inplace):
+    """Batched LoRA MLP (gate/up fused) must match per-module path bit-for-bit."""
+    torch.manual_seed(0)
+    bsz, seq, in_f, inter, rank = 2, 7, 256, 512, 16
+    dt = torch.bfloat16
+
+    def run(batched):
+        torch.manual_seed(2)
+        X = torch.randn(bsz, seq, in_f, device="cuda", dtype=dt, requires_grad=True)
+        gW = torch.randn(inter, in_f, device="cuda", dtype=dt) * 0.02
+        uW = torch.randn(inter, in_f, device="cuda", dtype=dt) * 0.02
+        dW = torch.randn(in_f, inter, device="cuda", dtype=dt) * 0.02
+        gA, gB = _lora_pair(inter, in_f, rank)
+        uA, uB = _lora_pair(inter, in_f, rank)
+        dA, dB = _lora_pair(in_f, inter, rank)
+        out = LoRA_MLP.apply(
+            X,
+            None,
+            gW,
+            None,
+            None,
+            gA,
+            gB,
+            2.0,
+            None,
+            None,
+            uW,
+            None,
+            None,
+            uA,
+            uB,
+            2.0,
+            None,
+            None,
+            dW,
+            None,
+            None,
+            dA,
+            dB,
+            2.0,
+            None,
+            None,
+            swiglu_forward,
+            swiglu_backward,
+            inplace,
+            batched,
+        )
+        (out.float() ** 2).sum().backward()
+        return (
+            out.detach().reshape(-1),
+            X.grad.detach().clone(),
+            [g.grad.detach().clone() for g in (gA, gB, uA, uB, dA, dB)],
+        )
+
+    o1, x1, g1 = run(False)
+    o2, x2, g2 = run(True)
+    assert torch.isfinite(o2).all() and torch.isfinite(x2).all()
+    assert torch.equal(o1, o2)
+    assert torch.equal(x1, x2)
+    for a, b in zip(g1, g2, strict=False):
+        assert torch.equal(a, b)

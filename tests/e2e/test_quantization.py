@@ -327,6 +327,86 @@ class TestQuantization:
                 assert isinstance(child, MXFakeQuantizedLinear)
                 assert hasattr(child, "weight_config")
 
+    @pytest.mark.parametrize(
+        "weight_dtype,activation_dtype,group_size,quantize_embedding",
+        [
+            (TorchAOQuantDType.nvfp4, None, 16, False),
+        ],
+    )
+    @require_torch_2_8_0
+    @requires_sm_ge_100
+    def test_prepare_model_for_qat_nvfp4(
+        self, model, weight_dtype, activation_dtype, group_size, quantize_embedding
+    ):
+        prepare_model_for_qat(
+            model,
+            weight_dtype,
+            group_size,
+            activation_dtype,
+            quantize_embedding,
+        )
+
+        from torchao.prototype.qat import NVFP4FakeQuantizedLinear
+
+        for child in list(model.children()):
+            if isinstance(child, torch.nn.Linear):
+                assert isinstance(child, NVFP4FakeQuantizedLinear)
+                assert hasattr(child, "weight_config")
+                assert hasattr(child, "activation_config")
+
+    def test_make_qat_config_nvfp4_invalid_group_size(self):
+        """NVFP4 QAT fixes block_size=16; any other group_size must be rejected."""
+        from axolotl.utils.quantization import _make_qat_config
+
+        base_config = get_quantization_config(
+            TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4, 16
+        )
+        with pytest.raises(ValueError, match="group_size of 16"):
+            _make_qat_config(
+                base_config, TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4, 32
+            )
+
+    @require_torch_2_8_0
+    @requires_sm_ge_100
+    def test_nvfp4_qat_trains_finite_loss(self):
+        """NVFP4 fake-quant linears run a fwd+bwd step with finite loss/grads.
+
+        Uses dims divisible by 16 (the NVFP4 forward GEMM requires it); this is
+        why the full-model swap test above never runs forward through lm_head.
+        """
+        from torchao.prototype.qat import NVFP4FakeQuantizedLinear
+        from torchao.quantization import quantize_
+
+        from axolotl.utils.quantization import _make_qat_config
+
+        torch.manual_seed(0)
+        net = (
+            nn.Sequential(nn.Linear(256, 512), nn.GELU(), nn.Linear(512, 256))
+            .cuda()
+            .bfloat16()
+        )
+        base_config = get_quantization_config(
+            TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4, 16
+        )
+        qat_config = _make_qat_config(
+            base_config, TorchAOQuantDType.nvfp4, TorchAOQuantDType.nvfp4, 16
+        )
+        quantize_(net, qat_config)
+        assert all(
+            isinstance(m, NVFP4FakeQuantizedLinear)
+            for m in net
+            if isinstance(m, nn.Linear)
+        )
+
+        x = torch.randn(32, 256, device="cuda", dtype=torch.bfloat16)
+        for _ in range(3):
+            loss = net(x).float().pow(2).mean()
+            net.zero_grad()
+            loss.backward()
+            grad = net[0].weight.grad
+            assert torch.isfinite(loss).item()
+            assert grad is not None and torch.isfinite(grad).all().item()
+
     @require_torch_2_8_0
     @requires_cuda_ge_8_9
     def test_convert_qat_model(self, model):

@@ -1,3 +1,4 @@
+# mypy: disable-error-code="union-attr"
 """
 Module for definition of Low-Rank Adaptation (LoRA) Triton kernels.
 
@@ -10,6 +11,7 @@ See "DoRA: Weight-Decomposed Low-Rank Adaptation" (https://arxiv.org/abs/2402.09
 Credit to `unsloth` (https://unsloth.ai/) for inspiration for this implementation.
 """
 
+import os
 from typing import Callable
 
 import torch
@@ -21,6 +23,29 @@ from .geglu import geglu_backward, geglu_forward
 from .quantize import dequantize
 from .swiglu import swiglu_backward, swiglu_forward
 from .utils import torch_amp_custom_bwd, torch_amp_custom_fwd
+
+_NVFP4_SHARED_BASE_FPROP_ENV = "AXOLOTL_NVFP4_SHARED_BASE_FPROP"
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
+
+
+def set_nvfp4_shared_base_fprop(enabled: bool | None) -> bool:
+    """Configure the experimental shared NVFP4 LoRA base fprop path.
+
+    ``None`` preserves the environment fallback for quick experiments; an explicit
+    YAML boolean wins over the environment.
+    """
+    global _NVFP4_SHARED_BASE_FPROP  # noqa: PLW0603
+
+    _NVFP4_SHARED_BASE_FPROP = (
+        _truthy_env(_NVFP4_SHARED_BASE_FPROP_ENV) if enabled is None else bool(enabled)
+    )
+    return _NVFP4_SHARED_BASE_FPROP
+
+
+_NVFP4_SHARED_BASE_FPROP = set_nvfp4_shared_base_fprop(None)
 
 
 def get_lora_parameters(
@@ -56,18 +81,39 @@ def get_lora_parameters(
     """
     # For DPO or disabled adapters
     base_layer = proj.base_layer if hasattr(proj, "base_layer") else proj
-    W = base_layer.weight
-    b = base_layer.bias
 
-    if not hasattr(proj, "disable_adapters") or proj.disable_adapters or proj.merged:
+    # NVFP4 native base: thread the MODULE through the W_quant slot (like bnb's
+    # quant_state) and leave W=None — these modules have no high-precision
+    # .weight (except NVFP4Linear) and the base GEMM runs in FP4 downstream.
+    from axolotl.utils.nvfp4_training import is_nvfp4_base
+
+    if is_nvfp4_base(base_layer):
+        b = base_layer.bias
+        if (
+            not hasattr(proj, "disable_adapters")
+            or proj.disable_adapters
+            or proj.merged
+        ):
+            return None, b, base_layer, None, None, None, None, None, None
+        quant_state = base_layer
+        W = None
+    else:
+        W = base_layer.weight
+        b = base_layer.bias
+
+        if (
+            not hasattr(proj, "disable_adapters")
+            or proj.disable_adapters
+            or proj.merged
+        ):
+            quant_state = getattr(W, "quant_state", None)
+            if quant_state is None and W.dtype == torch.float8_e4m3fn:
+                quant_state = getattr(base_layer, "weight_scale_inv", None)
+            return W, b, quant_state, None, None, None, None, None, None
+
         quant_state = getattr(W, "quant_state", None)
         if quant_state is None and W.dtype == torch.float8_e4m3fn:
             quant_state = getattr(base_layer, "weight_scale_inv", None)
-        return W, b, quant_state, None, None, None, None, None, None
-
-    quant_state = getattr(W, "quant_state", None)
-    if quant_state is None and W.dtype == torch.float8_e4m3fn:
-        quant_state = getattr(base_layer, "weight_scale_inv", None)
 
     active_adapter = (
         proj.active_adapters[0]
@@ -161,6 +207,11 @@ def _compute_dora_scale(
     Returns:
         mag_norm_scale: [out_features] tensor = magnitude / ||W + s * B @ A||_2
     """
+    # DoRA + NVFP4 is rejected at config validation (the FP4 base exposes no
+    # high-precision weight for the magnitude norm); W is None here only if that
+    # guard regressed.
+    assert W is not None, "DoRA is not supported on an NVFP4 base (W is None)"
+
     # Check cache on magnitude tensor (avoids expensive norm recomputation)
     # Use tensor._version which increments on any in-place modification
     # (data_ptr doesn't change when optimizers update params in-place)
@@ -234,6 +285,7 @@ def matmul_lora(
     out: torch.Tensor | None = None,
     X_drop: torch.Tensor | None = None,
     lora_bias: torch.Tensor | None = None,
+    nvfp4_dgrad: bool = False,
 ) -> torch.Tensor:
     """
     Efficient fused matmul + LoRA computation.
@@ -248,12 +300,23 @@ def matmul_lora(
         out: Optional output tensor for inplace operations
         X_drop: Optional dropout-applied input for LoRA path (if None, uses X)
         lora_bias: Optional LoRA B layer bias [out_features]
+        nvfp4_dgrad: NVFP4 base only — compute X @ W (dgrad) instead of the
+            X @ W.T fprop. The bf16 path expresses dgrad by passing W.t() so its
+            base GEMM is unaffected; the FP4 module ignores the passed W, so the
+            dgrad direction must be selected explicitly here.
 
     Returns:
         Result of X @ W + s * X_drop @ A @ B + b + s * lora_bias
     """
     dtype = X.dtype
-    W = dequantize(W.t(), W_quant)
+
+    from axolotl.utils.nvfp4_training import (
+        is_nvfp4_base,
+        nvfp4_base_dgrad,
+        nvfp4_base_fprop,
+    )
+
+    is_nvfp4 = is_nvfp4_base(W_quant)
 
     reshape = False
     if X.dim() == 3:
@@ -263,9 +326,19 @@ def matmul_lora(
             X_drop = X_drop.view(-1, X_drop.shape[-1])
         reshape = True
 
-    out = torch.matmul(X, W, out=out)
-    if W_quant is not None:
-        del W
+    if is_nvfp4:
+        # FP4 base GEMM against the NVFP4 module (W is None); the `out=` buffer
+        # cannot be reused since the FP4 GEMM allocates its own output.
+        out = (
+            nvfp4_base_dgrad(X, W_quant)
+            if nvfp4_dgrad
+            else nvfp4_base_fprop(X, W_quant)
+        )
+    else:
+        W = dequantize(W.t(), W_quant)
+        out = torch.matmul(X, W, out=out)
+        if W_quant is not None:
+            del W
 
     if A is not None:
         X_lora = X_drop if X_drop is not None else X
@@ -278,6 +351,105 @@ def matmul_lora(
         out += b
 
     return out.view(batch, seq_len, -1) if reshape else out
+
+
+def _shared_nvfp4_base_fprop(
+    X: torch.Tensor,
+    quants: list[QuantState | torch.Tensor | nn.Module | None],
+    biases: list[torch.Tensor | None],
+) -> list[torch.Tensor] | None:
+    """Opt-in shared activation-pack fprop for fused LoRA NVFP4 bases."""
+    if not _NVFP4_SHARED_BASE_FPROP:
+        return None
+
+    from axolotl.utils.nvfp4_training import nvfp4_base_fprop_many
+
+    outs = nvfp4_base_fprop_many(X, quants)
+    if outs is None:
+        return None
+    for out, bias in zip(outs, biases, strict=False):
+        if bias is not None:
+            out += bias
+    return outs
+
+
+def _add_lora_to_base(
+    base: torch.Tensor,
+    X_lora: torch.Tensor,
+    A: torch.Tensor | None,
+    B: torch.Tensor | None,
+    scale: float,
+    lora_bias: torch.Tensor | None,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    if A is not None:
+        base += _lora_only(X_lora, A, B, scale, lora_bias, dtype)
+    return base
+
+
+def _batched_lora_forward(
+    X: torch.Tensor,
+    bases: list[torch.Tensor],
+    As: list[torch.Tensor | None],
+    Bs: list[torch.Tensor | None],
+    scales: list[float],
+) -> list[torch.Tensor]:
+    """Add LoRA contributions to pre-computed base outputs with a single shared A GEMM.
+
+    All projections must read the same input X. The per-projection A matrices
+    ([rank, in]) are concatenated along rank so `X @ A_cat^T` is one GEMM producing
+    [T, sum(rank)]; the result is split and each chunk fed to its own `@ B^T`.
+    Returns the bases mutated in place (base_i += s_i * X @ A_i^T @ B_i^T).
+
+    Only valid for the plain LoRA path (no DoRA / dropout / lora_bias). Projections
+    with A is None are passed through unchanged.
+    """
+    dtype = X.dtype
+    idx = [i for i, A in enumerate(As) if A is not None]
+    if not idx:
+        return bases
+
+    Xf = X.reshape(-1, X.shape[-1])
+    A_cat = torch.cat([As[i] for i in idx], dim=0).to(dtype)  # [sum_r, in]
+    XA = Xf @ A_cat.t()  # [T, sum_r] — single fused GEMM
+
+    ranks = [As[i].shape[0] for i in idx]
+    offset = 0
+    for j, i in enumerate(idx):
+        r = ranks[j]
+        chunk = XA[:, offset : offset + r]
+        offset += r
+        contrib = scales[i] * (chunk @ Bs[i].t().to(dtype))  # [T, out_i]
+        bases[i].view(-1, bases[i].shape[-1]).add_(contrib)
+    return bases
+
+
+def _batched_lora_dA(
+    X_lora_t: torch.Tensor,
+    grad_Bs: list[torch.Tensor | None],
+    scales: list[float],
+    template_As: list[torch.Tensor | None],
+) -> list[torch.Tensor | None]:
+    """Fused dA for projections sharing input: stack grad_B columns, one X_lora^T @ G GEMM.
+
+    grad_B_i is [T, rank_i]; concatenating along rank gives [T, sum_r], so
+    `X_lora^T @ G_cat` is one GEMM yielding stacked dA [in, sum_r], split back per
+    projection. Returns dA per projection in [in, rank] layout (caller transposes).
+    """
+    idx = [i for i, g in enumerate(grad_Bs) if g is not None]
+    out: list[torch.Tensor | None] = [None] * len(grad_Bs)
+    if not idx:
+        return out
+
+    G_cat = torch.cat([grad_Bs[i] for i in idx], dim=1)  # [T, sum_r]
+    dA_cat = X_lora_t @ G_cat  # [in, sum_r] — single fused GEMM
+    offset = 0
+    for i in idx:
+        r = grad_Bs[i].shape[1]
+        dA_cat[:, offset : offset + r].mul_(scales[i])
+        out[i] = dA_cat[:, offset : offset + r]
+        offset += r
+    return out
 
 
 class LoRA_MLP(torch.autograd.Function):
@@ -325,11 +497,20 @@ class LoRA_MLP(torch.autograd.Function):
         activation_fn: Callable,
         activation_fn_backward: Callable,
         inplace: bool | None = True,
+        batched: bool = False,
     ) -> torch.Tensor:
         has_dropout = X_drop is not None
         has_dora = gate_magnitude is not None
         dtype = X.dtype
         X_lora = X_drop if has_dropout else X
+        # Gate/up share input X; batch their A-GEMM on the plain path only.
+        can_batch_gu = (
+            batched
+            and not has_dora
+            and not has_dropout
+            and gate_lora_bias is None
+            and up_lora_bias is None
+        )
 
         if has_dora:
             # Gate with DoRA
@@ -362,6 +543,16 @@ class LoRA_MLP(torch.autograd.Function):
 
             gate_combined = gate_base + gate_lora
             up_combined = up_base + up_lora
+        elif can_batch_gu:
+            gate = matmul_lora(X, gate_weight, gate_bias, gate_quant, None, None, None)
+            up = matmul_lora(X, up_weight, up_bias, up_quant, None, None, None)
+            _batched_lora_forward(
+                X,
+                [gate, up],
+                [gate_A, up_A],
+                [gate_B, up_B],
+                [gate_scale, up_scale],
+            )
         else:
             gate = matmul_lora(
                 X,
@@ -475,6 +666,7 @@ class LoRA_MLP(torch.autograd.Function):
         ctx.inplace = inplace
         ctx.has_dropout = has_dropout
         ctx.has_dora = has_dora
+        ctx.can_batch_gu = can_batch_gu
 
         return output
 
@@ -568,15 +760,17 @@ class LoRA_MLP(torch.autograd.Function):
         if down_lora_bias is not None:
             d_down_lora_bias = down_scale * grad_output.sum(dim=0)
 
-        # Down projection backward
+        # Down projection backward. NVFP4: down_weight is None (module is in
+        # down_quant), so skip the .t() and let matmul_lora's dgrad branch run.
         grad_down = matmul_lora(
             grad_output,
-            down_weight.t(),
+            down_weight.t() if down_weight is not None else None,
             None,
             down_quant,
             down_B_t,
             down_A_t,
             down_scale,
+            nvfp4_dgrad=True,
         )
 
         # Activation backward
@@ -618,36 +812,66 @@ class LoRA_MLP(torch.autograd.Function):
 
         if up_A_t is not None and up_B_t is not None:
             grad_B_up = grad_up @ up_B_t.t()  # [T, rank] — reuse for dX
-            d_up_A = torch.empty_like(up_A_t)
-            d_up_B = torch.empty_like(up_B_t)
-            d_up_A.addmm_(X_lora.t(), grad_B_up, alpha=up_scale, beta=0)
-            d_up_B.addmm_(up_A_t.t() @ X_lora.t(), grad_up, alpha=up_scale, beta=0)
-
         if gate_A_t is not None and gate_B_t is not None:
             grad_B_gate = grad_gate @ gate_B_t.t()  # [T, rank] — reuse for dX
-            d_gate_A = torch.empty_like(gate_A_t)
-            d_gate_B = torch.empty_like(gate_B_t)
-            d_gate_A.addmm_(X_lora.t(), grad_B_gate, alpha=gate_scale, beta=0)
-            d_gate_B.addmm_(
-                gate_A_t.t() @ X_lora.t(), grad_gate, alpha=gate_scale, beta=0
+
+        if getattr(ctx, "can_batch_gu", False):
+            X_lora_t_gu = X_lora.t()
+            d_gate_A, d_up_A = _batched_lora_dA(
+                X_lora_t_gu,
+                [grad_B_gate, grad_B_up],
+                [gate_scale, up_scale],
+                [gate_A_t, up_A_t],
             )
+            if grad_B_up is not None:
+                d_up_B = torch.empty_like(up_B_t)
+                d_up_B.addmm_(up_A_t.t() @ X_lora_t_gu, grad_up, alpha=up_scale, beta=0)
+            if grad_B_gate is not None:
+                d_gate_B = torch.empty_like(gate_B_t)
+                d_gate_B.addmm_(
+                    gate_A_t.t() @ X_lora_t_gu, grad_gate, alpha=gate_scale, beta=0
+                )
+        else:
+            if grad_B_up is not None:
+                d_up_A = torch.empty_like(up_A_t)
+                d_up_B = torch.empty_like(up_B_t)
+                d_up_A.addmm_(X_lora.t(), grad_B_up, alpha=up_scale, beta=0)
+                d_up_B.addmm_(up_A_t.t() @ X_lora.t(), grad_up, alpha=up_scale, beta=0)
+
+            if grad_B_gate is not None:
+                d_gate_A = torch.empty_like(gate_A_t)
+                d_gate_B = torch.empty_like(gate_B_t)
+                d_gate_A.addmm_(X_lora.t(), grad_B_gate, alpha=gate_scale, beta=0)
+                d_gate_B.addmm_(
+                    gate_A_t.t() @ X_lora.t(), grad_gate, alpha=gate_scale, beta=0
+                )
 
         # Compute input gradients
         dX = None
         dX_drop = None
 
         if ctx.needs_input_grad[0]:
-            # Base path gradients through gate and up
-            up_weight_deq = dequantize(up_weight.t(), up_quant)
-            if ctx.inplace:
-                dX = torch.matmul(grad_up, up_weight_deq.t(), out=X)
-            else:
-                dX = torch.matmul(grad_up, up_weight_deq.t())
-            del up_weight_deq
+            from axolotl.utils.nvfp4_training import is_nvfp4_base, nvfp4_base_dgrad
 
-            gate_weight_deq = dequantize(gate_weight, gate_quant)
-            dX.addmm_(grad_gate, gate_weight_deq)
-            del gate_weight_deq
+            # Base path gradients through gate and up. NVFP4 base: dX = grad @ W
+            # in FP4 (the module is carried in the *_quant slot, weight is None).
+            if is_nvfp4_base(up_quant):
+                # FP4 dgrad allocates its own output, so no inplace into X.
+                dX = nvfp4_base_dgrad(grad_up, up_quant)
+            else:
+                up_weight_deq = dequantize(up_weight.t(), up_quant)
+                if ctx.inplace:
+                    dX = torch.matmul(grad_up, up_weight_deq.t(), out=X)
+                else:
+                    dX = torch.matmul(grad_up, up_weight_deq.t())
+                del up_weight_deq
+
+            if is_nvfp4_base(gate_quant):
+                dX += nvfp4_base_dgrad(grad_gate, gate_quant)
+            else:
+                gate_weight_deq = dequantize(gate_weight, gate_quant)
+                dX.addmm_(grad_gate, gate_weight_deq)
+                del gate_weight_deq
 
             # LoRA path: reuse grad_B_up and grad_B_gate from above
             if has_dropout:
@@ -701,7 +925,8 @@ class LoRA_MLP(torch.autograd.Function):
             None,
             d_down_lora_bias,
             d_down_mag,
-            # Activation fns and flags
+            # activation_fn, activation_fn_backward, inplace, batched
+            None,
             None,
             None,
             None,
@@ -760,6 +985,7 @@ def apply_lora_mlp_swiglu(self, X: torch.Tensor, inplace: bool = True) -> torch.
         swiglu_forward,
         swiglu_backward,
         inplace,
+        getattr(self, "_lora_batch_kernel", False),
     )
 
     return out
@@ -816,6 +1042,7 @@ def apply_lora_mlp_geglu(self, X: torch.Tensor, inplace: bool = True) -> torch.T
         geglu_forward,
         geglu_backward,
         inplace,
+        getattr(self, "_lora_batch_kernel", False),
     )
 
     return out
@@ -864,9 +1091,19 @@ class LoRA_QKV(torch.autograd.Function):
         v_magnitude: torch.Tensor | None,
         # Flags
         inplace: bool = True,
+        batched: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         has_dropout = X_drop is not None
         has_dora = q_magnitude is not None
+        # Batched LoRA only valid on the plain path (no DoRA/dropout/lora_bias).
+        can_batch = (
+            batched
+            and not has_dora
+            and not has_dropout
+            and q_lora_bias is None
+            and k_lora_bias is None
+            and v_lora_bias is None
+        )
 
         if has_dora:
             dtype = X.dtype
@@ -929,41 +1166,85 @@ class LoRA_QKV(torch.autograd.Function):
                 k_lora_bias,
                 v_lora_bias,
             )
+        elif can_batch:
+            # Base outputs only (X @ W), then one fused A-GEMM for all LoRA paths.
+            shared = _shared_nvfp4_base_fprop(
+                X, [q_quant, k_quant, v_quant], [q_bias, k_bias, v_bias]
+            )
+            if shared is None:
+                Q = matmul_lora(X, q_weight, q_bias, q_quant, None, None, None)
+                K = matmul_lora(X, k_weight, k_bias, k_quant, None, None, None)
+                V = matmul_lora(X, v_weight, v_bias, v_quant, None, None, None)
+            else:
+                Q, K, V = shared
+            _batched_lora_forward(
+                X,
+                [Q, K, V],
+                [q_A, k_A, v_A],
+                [q_B, k_B, v_B],
+                [q_scale, k_scale, v_scale],
+            )
+
+            dtype = X.dtype
+            ctx.save_for_backward(
+                X,
+                X,
+                q_A.to(dtype) if q_A is not None else q_A,
+                q_B.to(dtype) if q_B is not None else q_B,
+                k_A.to(dtype) if k_A is not None else k_A,
+                k_B.to(dtype) if k_B is not None else k_B,
+                v_A.to(dtype) if v_A is not None else v_A,
+                v_B.to(dtype) if v_B is not None else v_B,
+                None,
+                None,
+                None,
+            )
         else:
             # Standard LoRA (with optional dropout and bias)
-            Q = matmul_lora(
-                X,
-                q_weight,
-                q_bias,
-                q_quant,
-                q_A,
-                q_B,
-                q_scale,
-                X_drop=X_drop,
-                lora_bias=q_lora_bias,
+            shared = _shared_nvfp4_base_fprop(
+                X, [q_quant, k_quant, v_quant], [q_bias, k_bias, v_bias]
             )
-            K = matmul_lora(
-                X,
-                k_weight,
-                k_bias,
-                k_quant,
-                k_A,
-                k_B,
-                k_scale,
-                X_drop=X_drop,
-                lora_bias=k_lora_bias,
-            )
-            V = matmul_lora(
-                X,
-                v_weight,
-                v_bias,
-                v_quant,
-                v_A,
-                v_B,
-                v_scale,
-                X_drop=X_drop,
-                lora_bias=v_lora_bias,
-            )
+            if shared is None:
+                Q = matmul_lora(
+                    X,
+                    q_weight,
+                    q_bias,
+                    q_quant,
+                    q_A,
+                    q_B,
+                    q_scale,
+                    X_drop=X_drop,
+                    lora_bias=q_lora_bias,
+                )
+                K = matmul_lora(
+                    X,
+                    k_weight,
+                    k_bias,
+                    k_quant,
+                    k_A,
+                    k_B,
+                    k_scale,
+                    X_drop=X_drop,
+                    lora_bias=k_lora_bias,
+                )
+                V = matmul_lora(
+                    X,
+                    v_weight,
+                    v_bias,
+                    v_quant,
+                    v_A,
+                    v_B,
+                    v_scale,
+                    X_drop=X_drop,
+                    lora_bias=v_lora_bias,
+                )
+            else:
+                dtype = X.dtype
+                X_lora = X_drop if has_dropout else X
+                Q, K, V = shared
+                Q = _add_lora_to_base(Q, X_lora, q_A, q_B, q_scale, q_lora_bias, dtype)
+                K = _add_lora_to_base(K, X_lora, k_A, k_B, k_scale, k_lora_bias, dtype)
+                V = _add_lora_to_base(V, X_lora, v_A, v_B, v_scale, v_lora_bias, dtype)
 
             # Pre-convert LoRA matrices to compute dtype to avoid
             # redundant fp32→bf16 conversion in backward
@@ -988,6 +1269,7 @@ class LoRA_QKV(torch.autograd.Function):
         ctx.inplace = inplace
         ctx.has_dropout = has_dropout
         ctx.has_dora = has_dora
+        ctx.can_batch = can_batch
 
         return Q, K, V
 
@@ -1108,39 +1390,75 @@ class LoRA_QKV(torch.autograd.Function):
 
         if A_q is not None and B_q is not None:
             grad_B_q = q_grad @ B_q  # [T, rank] — reused for dA and dX
-            d_A_q = torch.empty_like(A_q.t())
-            d_B_q = torch.empty_like(B_q.t())
-            d_A_q.addmm_(X_lora_t, grad_B_q, alpha=q_scale, beta=0)
-            d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
-
         if A_k is not None and B_k is not None:
             grad_B_k = k_grad @ B_k
-            d_A_k = torch.empty_like(A_k.t())
-            d_B_k = torch.empty_like(B_k.t())
-            d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
-            d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
-
         if A_v is not None and B_v is not None:
             grad_B_v = v_grad @ B_v
-            d_A_v = torch.empty_like(A_v.t())
-            d_B_v = torch.empty_like(B_v.t())
-            d_A_v.addmm_(X_lora_t, grad_B_v, alpha=v_scale, beta=0)
-            d_B_v.addmm_(A_v @ X_lora_t, v_grad, alpha=v_scale, beta=0)
+
+        if getattr(ctx, "can_batch", False):
+            # One fused X_lora^T @ grad_B_cat for all three dA.
+            d_A_q, d_A_k, d_A_v = _batched_lora_dA(
+                X_lora_t,
+                [grad_B_q, grad_B_k, grad_B_v],
+                [q_scale, k_scale, v_scale],
+                [A_q, A_k, A_v],
+            )
+            if grad_B_q is not None:
+                d_B_q = torch.empty_like(B_q.t())
+                d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
+            if grad_B_k is not None:
+                d_B_k = torch.empty_like(B_k.t())
+                d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
+            if grad_B_v is not None:
+                d_B_v = torch.empty_like(B_v.t())
+                d_B_v.addmm_(A_v @ X_lora_t, v_grad, alpha=v_scale, beta=0)
+        else:
+            if grad_B_q is not None:
+                d_A_q = torch.empty_like(A_q.t())
+                d_B_q = torch.empty_like(B_q.t())
+                d_A_q.addmm_(X_lora_t, grad_B_q, alpha=q_scale, beta=0)
+                d_B_q.addmm_(A_q @ X_lora_t, q_grad, alpha=q_scale, beta=0)
+
+            if grad_B_k is not None:
+                d_A_k = torch.empty_like(A_k.t())
+                d_B_k = torch.empty_like(B_k.t())
+                d_A_k.addmm_(X_lora_t, grad_B_k, alpha=k_scale, beta=0)
+                d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
+
+            if grad_B_v is not None:
+                d_A_v = torch.empty_like(A_v.t())
+                d_B_v = torch.empty_like(B_v.t())
+                d_A_v.addmm_(X_lora_t, grad_B_v, alpha=v_scale, beta=0)
+                d_B_v.addmm_(A_v @ X_lora_t, v_grad, alpha=v_scale, beta=0)
 
         # Base path input gradient (can use inplace on X since X_lora refs are done)
+        from axolotl.utils.nvfp4_training import is_nvfp4_base, nvfp4_base_dgrad
+
         out_buffer = X if ctx.inplace else None
 
-        q_weight_t = dequantize(q_weight, q_quant)
-        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
-        del q_weight_t
+        # NVFP4: dX = grad @ W in FP4 (module carried in *_quant). The FP4 dgrad
+        # allocates its own output, so it can't write into out_buffer; accumulate
+        # the q/k/v contributions explicitly.
+        if is_nvfp4_base(q_quant):
+            grad_X = nvfp4_base_dgrad(q_grad, q_quant)
+        else:
+            q_weight_t = dequantize(q_weight, q_quant)
+            grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+            del q_weight_t
 
-        k_weight_t = dequantize(k_weight, k_quant)
-        grad_X.addmm_(k_grad, k_weight_t)
-        del k_weight_t
+        if is_nvfp4_base(k_quant):
+            grad_X = grad_X + nvfp4_base_dgrad(k_grad, k_quant)
+        else:
+            k_weight_t = dequantize(k_weight, k_quant)
+            grad_X.addmm_(k_grad, k_weight_t)
+            del k_weight_t
 
-        v_weight_t = dequantize(v_weight, v_quant)
-        grad_X.addmm_(v_grad, v_weight_t)
-        del v_weight_t
+        if is_nvfp4_base(v_quant):
+            grad_X = grad_X + nvfp4_base_dgrad(v_grad, v_quant)
+        else:
+            v_weight_t = dequantize(v_weight, v_quant)
+            grad_X.addmm_(v_grad, v_weight_t)
+            del v_weight_t
 
         # LoRA path input gradient: s * grad @ B @ A (reuses grad_B_* from above)
         if has_dropout:
@@ -1211,7 +1529,8 @@ class LoRA_QKV(torch.autograd.Function):
             None,
             d_v_lora_bias,
             d_v_mag,
-            # inplace
+            # inplace, batched
+            None,
             None,
         )
 
@@ -1292,6 +1611,7 @@ def apply_lora_qkv(
         Vmag,
         # Flags
         inplace,
+        getattr(self, "_lora_batch_kernel", False),
     )
 
     return Q, K, V
@@ -1383,28 +1703,36 @@ class LoRA_QK(torch.autograd.Function):
             )
         else:
             # Standard LoRA (with optional dropout and bias)
-            Q = matmul_lora(
-                X,
-                q_weight,
-                q_bias,
-                q_quant,
-                q_A,
-                q_B,
-                q_scale,
-                X_drop=X_drop,
-                lora_bias=q_lora_bias,
-            )
-            K = matmul_lora(
-                X,
-                k_weight,
-                k_bias,
-                k_quant,
-                k_A,
-                k_B,
-                k_scale,
-                X_drop=X_drop,
-                lora_bias=k_lora_bias,
-            )
+            shared = _shared_nvfp4_base_fprop(X, [q_quant, k_quant], [q_bias, k_bias])
+            if shared is None:
+                Q = matmul_lora(
+                    X,
+                    q_weight,
+                    q_bias,
+                    q_quant,
+                    q_A,
+                    q_B,
+                    q_scale,
+                    X_drop=X_drop,
+                    lora_bias=q_lora_bias,
+                )
+                K = matmul_lora(
+                    X,
+                    k_weight,
+                    k_bias,
+                    k_quant,
+                    k_A,
+                    k_B,
+                    k_scale,
+                    X_drop=X_drop,
+                    lora_bias=k_lora_bias,
+                )
+            else:
+                dtype = X.dtype
+                X_lora = X_drop if has_dropout else X
+                Q, K = shared
+                Q = _add_lora_to_base(Q, X_lora, q_A, q_B, q_scale, q_lora_bias, dtype)
+                K = _add_lora_to_base(K, X_lora, k_A, k_B, k_scale, k_lora_bias, dtype)
 
             dtype = X.dtype
             ctx.save_for_backward(
@@ -1517,15 +1845,25 @@ class LoRA_QK(torch.autograd.Function):
             d_B_k.addmm_(A_k @ X_lora_t, k_grad, alpha=k_scale, beta=0)
 
         # Base path input gradient
+        from axolotl.utils.nvfp4_training import is_nvfp4_base, nvfp4_base_dgrad
+
         out_buffer = X if ctx.inplace else None
 
-        q_weight_t = dequantize(q_weight, q_quant)
-        grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
-        del q_weight_t
+        # NVFP4: dX = grad @ W in FP4 (module in *_quant); FP4 dgrad allocates its
+        # own output so it can't reuse out_buffer.
+        if is_nvfp4_base(q_quant):
+            grad_X = nvfp4_base_dgrad(q_grad, q_quant)
+        else:
+            q_weight_t = dequantize(q_weight, q_quant)
+            grad_X = torch.mm(q_grad, q_weight_t, out=out_buffer)
+            del q_weight_t
 
-        k_weight_t = dequantize(k_weight, k_quant)
-        grad_X.addmm_(k_grad, k_weight_t)
-        del k_weight_t
+        if is_nvfp4_base(k_quant):
+            grad_X = grad_X + nvfp4_base_dgrad(k_grad, k_quant)
+        else:
+            k_weight_t = dequantize(k_weight, k_quant)
+            grad_X.addmm_(k_grad, k_weight_t)
+            del k_weight_t
 
         # LoRA path input gradient
         if has_dropout:
@@ -1749,10 +2087,16 @@ class LoRA_O(torch.autograd.Function):
             d_A.addmm_(X_lora_t, grad_B, alpha=s, beta=0)
             d_B.addmm_(A @ X_lora_t, dY, alpha=s, beta=0)
 
-        # Base path input gradient
-        W_deq = dequantize(W.t(), W_quant)
-        dX = dY @ W_deq.t()
-        del W_deq
+        # Base path input gradient. NVFP4: dX = dY @ W in FP4 (W is None; the
+        # module is carried in W_quant).
+        from axolotl.utils.nvfp4_training import is_nvfp4_base, nvfp4_base_dgrad
+
+        if is_nvfp4_base(W_quant):
+            dX = nvfp4_base_dgrad(dY, W_quant)
+        else:
+            W_deq = dequantize(W.t(), W_quant)
+            dX = dY @ W_deq.t()
+            del W_deq
 
         if has_dropout:
             dX_drop = None

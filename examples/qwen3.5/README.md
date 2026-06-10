@@ -20,10 +20,17 @@
     axolotl train examples/qwen3.5/<config>.yaml
     ```
 
+   For the NVFP4 config listed below, use its path directly:
+
+    ```bash
+    axolotl train examples/nvfp4/qwen35-9b-lora-fastest.yaml
+    ```
+
 Available configs:
 
 | Config | Model | Type | Peak VRAM |
 |---|---|---|---|
+| `../nvfp4/qwen35-9b-lora-fastest.yaml` | Qwen3.5-9B | Text-only LoRA + native NVFP4 training, no gradient checkpointing | ~70 GiB |
 | `9b-lora-vision.yaml` | Qwen3.5-9B | Vision+text LoRA, single GPU | — |
 | `9b-fft-vision.yaml` | Qwen3.5-9B | Vision+text FFT, single GPU | ~61 GiB |
 | `27b-qlora.yaml` | Qwen3.5-27B | Dense, text-only QLoRA | ~47 GiB |
@@ -45,6 +52,20 @@ lora_target_modules:
   - linear_attn.in_proj_z
   - linear_attn.out_proj
 ```
+
+### Native NVFP4 Training
+
+For Blackwell GPUs, `../nvfp4/qwen35-9b-lora-fastest.yaml` is the fastest measured
+Qwen3.5-9B LoRA training example in this tree. It uses FP4 LoRA base GEMMs,
+native FP4 full-attention backward, RTN gradient packs, saved attention packs,
+and BF16 dK/dV scratch before GQA reduction. The fused `v_proj`, native MLP,
+linear-attention, and standalone FP8 lm_head paths remain eval/no-grad only and
+are intentionally left out of this training-speed config. The opt-in
+FP8 lm_head cross-entropy path can make batch 6 fit without gradient
+checkpointing, but it is currently a memory unlock rather than the fastest
+tokens/sec setting. Cut Cross Entropy and Liger fused-linear CE are not valid
+for this NVFP4 training profile today; they loss-collapse with non-finite grad
+norms in validation.
 
 ### Routed Experts (MoE)
 

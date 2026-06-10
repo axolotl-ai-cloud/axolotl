@@ -188,6 +188,9 @@ def _rms_norm_gated_backward_kernel(
     )
 
 
+# See kernels/swiglu.py: run eager under torch.compile so the raw triton launches
+# don't leak into the compiled backward (decompose_triton_kernel_wrapper_functional).
+@torch.compiler.disable
 def rms_norm_gated_forward(X, G, W, eps, offset):
     shape = X.shape
     dim = shape[-1]
@@ -226,6 +229,7 @@ def rms_norm_gated_forward(X, G, W, eps, offset):
     return Y.view(*shape), X, G, RSTD, BLOCK_SIZE, num_warps
 
 
+@torch.compiler.disable
 def rms_norm_gated_backward(dY, X, G, W, RSTD, offset, BLOCK_SIZE, num_warps):
     shape = dY.shape
     dim = shape[-1]

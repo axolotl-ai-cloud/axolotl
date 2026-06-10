@@ -307,7 +307,9 @@ def do_cli(
         kwargs: Additional keyword arguments to override config file values.
     """
 
-    parsed_cfg = load_cfg(config, inference=True, rl=None, **kwargs)
+    parsed_cfg = load_cfg(
+        config, inference=True, axolotl_cli_mode="inference", rl=None, **kwargs
+    )
     parsed_cfg.sample_packing = False
     parser = transformers.HfArgumentParser(InferenceCliArgs)
     parsed_cli_args, _ = parser.parse_args_into_dataclasses(

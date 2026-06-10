@@ -1,0 +1,60 @@
+# NVFP4 training is a THROUGHPUT play that only pays off for large GEMM dims.
+# Measured on RTX 5090 (sm_120), compiled end-to-end vs compiled bf16:
+#   ~0.5B (hidden 896): ~0.1-0.65x (SLOWER) · ~3B (hidden 2048): ~1.4x ·
+#   7B (hidden 3584): ~1.9x. The per-GEMM quant prologue dominates below
+#   ~hidden 1024, so do NOT use this on sub-3B models. 3B+ is the target.
+base_model: Qwen/Qwen2.5-3B
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+# Full fine-tune mode: no `adapter:` here, so every eligible base nn.Linear is
+# swapped for an FP4-GEMM linear. For LoRA/QLoRA variants see qwen-nvfp4-qlora.yaml.
+
+datasets:
+  - path: yahma/alpaca-cleaned
+    type: alpaca
+
+output_dir: ./outputs/nvfp4_out/
+
+sequence_len: 1024
+sample_packing: true
+pad_to_sequence_len: true
+
+# sample_packing needs a varlen-capable backend. On Blackwell (sm_120) sdpa with
+# a packed block-diagonal mask cannot use the fused flash kernel and falls back to
+# the materialized-softmax math path (6-13x slower attention, and it leaks across
+# packed samples). flash_attention_2 does varlen packing via position_ids — fast
+# AND sample-isolated. Keep it on whenever sample_packing is true.
+attn_implementation: flash_attention_2
+
+bf16: true
+
+# Real FP4 forward/backward GEMMs on Blackwell. The 2.9-3.6x speedup over bf16
+# ONLY materializes under torch.compile — keep it on.
+torch_compile: true
+
+nvfp4_training:
+  enabled: true
+  stochastic_rounding: true
+  hadamard: true
+  exclude_modules: [lm_head, embed_tokens]
+  skip_first_n_blocks: 0
+  skip_last_n_blocks: 0
+
+gradient_accumulation_steps: 1
+micro_batch_size: 8
+num_epochs: 1
+optimizer: adamw_torch_fused
+learning_rate: 2e-5
+
+logging_steps: 1
+warmup_steps: 10
+weight_decay: 0.0
+
+evals_per_epoch: 1
+saves_per_epoch: 1
+save_only_model: true
+
+special_tokens:

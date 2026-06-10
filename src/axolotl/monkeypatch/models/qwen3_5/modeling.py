@@ -20,6 +20,129 @@ except ImportError:
     except ImportError:
         fla_causal_conv1d = None
 
+_FLA_CAUSAL_CONV_COMPILE_BOUNDARY = False
+
+
+def set_fla_causal_conv_compile_boundary(enabled: bool) -> None:
+    global _FLA_CAUSAL_CONV_COMPILE_BOUNDARY
+    _FLA_CAUSAL_CONV_COMPILE_BOUNDARY = bool(enabled)
+
+
+def _call_fla_causal_conv1d(*, x, weight, bias, activation, cu_seqlens):
+    return fla_causal_conv1d(
+        x=x,
+        weight=weight,
+        bias=bias,
+        activation=activation,
+        cu_seqlens=cu_seqlens,
+    )
+
+
+try:
+    import torch._dynamo as _dynamo
+
+    _call_fla_causal_conv1d_disabled = _dynamo.disable(_call_fla_causal_conv1d)
+except Exception:  # pragma: no cover
+    _call_fla_causal_conv1d_disabled = _call_fla_causal_conv1d
+
+
+def _call_self_attn(attn_module, **kwargs):
+    return attn_module(**kwargs)
+
+
+try:
+    import torch._dynamo as _dynamo
+
+    _call_self_attn_disabled = _dynamo.disable(_call_self_attn)
+except Exception:  # pragma: no cover
+    _call_self_attn_disabled = _call_self_attn
+
+
+# torch.compile-friendly wrapper for FLA's FusedRMSNormGated. Its fused gated-norm
+# backward (layer_norm_gated_bwd) calls aten.as_strided in a way torch>=2.12 cannot
+# meta-trace ("mismatch in length of strides and shape"). Registering it as a custom
+# op with a clean fake impl (empty_like — no as_strided) and an OPAQUE recompute
+# backward keeps the op inside the Inductor graph (no graph break), so surrounding
+# ops still fuse, while the un-meta-able FLA backward runs eager and is never traced.
+_FLA_RMSNORM_GATED_OP = None
+
+
+def _build_fla_rmsnorm_gated_op():
+    # Backward is ITS OWN opaque custom op: AOT-autograd traces the backward graph,
+    # so the FLA Triton recompute must also be hidden behind an op or it hits
+    # FakeTensors ("Cannot access data pointer").
+    @torch.library.custom_op("axolotl_fla::rmsnorm_gated_bwd", mutates_args=())
+    def _bwd_op(
+        grad: torch.Tensor,
+        x: torch.Tensor,
+        g: torch.Tensor,
+        weight: torch.Tensor,
+        activation: str,
+        eps: float,
+    ) -> list[torch.Tensor]:
+        from fla.modules.fused_norm_gate import rms_norm_gated
+
+        with torch.enable_grad():
+            xd, gd, wd = (t.detach().requires_grad_(True) for t in (x, g, weight))
+            y = rms_norm_gated(xd, gd, wd, None, activation, eps=eps)
+            dx, dg, dw = torch.autograd.grad(y, (xd, gd, wd), grad)
+        return [dx, dg, dw]
+
+    @_bwd_op.register_fake
+    def _(grad, x, g, weight, activation, eps):
+        return [torch.empty_like(x), torch.empty_like(g), torch.empty_like(weight)]
+
+    @torch.library.custom_op("axolotl_fla::rmsnorm_gated", mutates_args=())
+    def _op(
+        x: torch.Tensor,
+        g: torch.Tensor,
+        weight: torch.Tensor,
+        activation: str,
+        eps: float,
+    ) -> torch.Tensor:
+        from fla.modules.fused_norm_gate import rms_norm_gated
+
+        return rms_norm_gated(x, g, weight, None, activation, eps=eps).contiguous()
+
+    @_op.register_fake
+    def _(x, g, weight, activation, eps):
+        return torch.empty_like(x, memory_format=torch.contiguous_format)
+
+    def _setup(ctx, inputs, output):
+        x, g, weight, activation, eps = inputs
+        ctx.save_for_backward(x, g, weight)
+        ctx.activation, ctx.eps = activation, eps
+
+    def _bwd(ctx, grad):
+        x, g, weight = ctx.saved_tensors
+        dx, dg, dw = _bwd_op(grad.contiguous(), x, g, weight, ctx.activation, ctx.eps)
+        return dx, dg, dw, None, None
+
+    _op.register_autograd(_bwd, setup_context=_setup)
+    return _op
+
+
+def _fla_rmsnorm_gated_compiled_forward(
+    self, x, g, residual=None, prenorm=False, residual_in_fp32=False
+):
+    # Custom-op path only for the common Qwen3.5 case (no residual/prenorm, no bias);
+    # anything else falls back to FLA's eager implementation.
+    if residual is None and not prenorm and self.bias is None:
+        return _FLA_RMSNORM_GATED_OP(x, g, self.weight, self.activation, self.eps)
+    from fla.modules.fused_norm_gate import rms_norm_gated
+
+    return rms_norm_gated(
+        x,
+        g,
+        self.weight,
+        self.bias,
+        self.activation,
+        residual=residual,
+        eps=self.eps,
+        prenorm=prenorm,
+        residual_in_fp32=residual_in_fp32,
+    )
+
 
 def get_cu_seqlens(position_ids):
     """
@@ -46,7 +169,7 @@ def get_cu_seqlens(position_ids):
     )
 
 
-def _inject_fla_kernels(module) -> None:
+def _inject_fla_kernels(module, *, compile_boundary: bool = False) -> None:
     """Inject FLA kernels into a modeling module, bypassing is_flash_linear_attention_available."""
     try:
         from fla.modules import FusedRMSNormGated
@@ -54,6 +177,29 @@ def _inject_fla_kernels(module) -> None:
             chunk_gated_delta_rule,
             fused_recurrent_gated_delta_rule,
         )
+
+        if compile_boundary and not getattr(
+            FusedRMSNormGated, "_axolotl_compile_boundary", False
+        ):
+            # FLA's fused gated-norm backward (layer_norm_gated_bwd) calls
+            # aten.as_strided in a way torch.compile cannot meta-trace on torch
+            # >= 2.12 ("mismatch in length of strides and shape"), so dynamo bails
+            # on the whole attention frame. Prefer the custom-op wrapper (keeps it
+            # in-graph, no break); fall back to an eager boundary if it can't build.
+            global _FLA_RMSNORM_GATED_OP
+            try:
+                if _FLA_RMSNORM_GATED_OP is None:
+                    _FLA_RMSNORM_GATED_OP = _build_fla_rmsnorm_gated_op()
+                FusedRMSNormGated.forward = _fla_rmsnorm_gated_compiled_forward
+                FusedRMSNormGated._axolotl_compile_boundary = True
+            except Exception:  # pragma: no cover
+                try:
+                    import torch._dynamo as _dyn
+
+                    FusedRMSNormGated.forward = _dyn.disable(FusedRMSNormGated.forward)
+                    FusedRMSNormGated._axolotl_compile_boundary = True
+                except Exception:
+                    pass
 
         module.FusedRMSNormGated = FusedRMSNormGated
         module.chunk_gated_delta_rule = chunk_gated_delta_rule
@@ -88,7 +234,15 @@ def _patched_decoder_forward(
             position_ids=position_ids,
         )
     elif self.layer_type == "full_attention":
-        hidden_states, _ = self.self_attn(
+        # Run flash-attention eager under torch.compile. With gradient
+        # checkpointing OFF, Inductor otherwise fuses the FA2 backward with the
+        # gated-output/o_proj dgrad into a region that yields corrupt (~1e5)
+        # input gradients on packed sequences; the gate multiply right after
+        # attention is what makes this region fusable on Qwen3.5 (plain-attention
+        # models such as Qwen3-VL are unaffected). Breaking the graph around the
+        # one attention call avoids the fusion while the rest stays compiled.
+        hidden_states, _ = _call_self_attn_disabled(
+            self.self_attn,
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -167,7 +321,12 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
 
             if fla_causal_conv1d is not None and cu_seqlens is not None:
                 # FLA varlen kernel for packed sequences; input must be contiguous [B, T, D]
-                mixed_qkv, _ = fla_causal_conv1d(
+                conv_fn = (
+                    _call_fla_causal_conv1d_disabled
+                    if _FLA_CAUSAL_CONV_COMPILE_BOUNDARY
+                    else _call_fla_causal_conv1d
+                )
+                mixed_qkv, _ = conv_fn(
                     x=mixed_qkv,
                     weight=self.conv1d.weight.squeeze(1),
                     bias=self.conv1d.bias,
@@ -237,7 +396,13 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
     return patched_forward
 
 
-def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) -> None:
+def _apply_packing_patches(
+    model_type: str,
+    cls_prefix: str,
+    forward_factory,
+    *,
+    fla_causal_conv_compile_boundary: bool = False,
+) -> None:
     module_name = f"transformers.models.{model_type}.modeling_{model_type}"
 
     try:
@@ -246,24 +411,36 @@ def _apply_packing_patches(model_type: str, cls_prefix: str, forward_factory) ->
         LOG.warning(f"{model_type} not found in transformers, skipping packing patches")
         return
 
-    _inject_fla_kernels(module)
+    set_fla_causal_conv_compile_boundary(fla_causal_conv_compile_boundary)
+    _inject_fla_kernels(module, compile_boundary=fla_causal_conv_compile_boundary)
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
 
     LOG.info(
         f"Applied {cls_prefix} packing patch "
-        f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'})"
+        f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'}, "
+        f"compile_boundary={fla_causal_conv_compile_boundary})"
     )
 
 
-def patch_qwen3_5_modeling_packing():
-    _apply_packing_patches("qwen3_5", "Qwen3_5", _make_qwen3_5_gated_delta_forward)
-
-
-def patch_qwen3_5_moe_modeling_packing():
+def patch_qwen3_5_modeling_packing(*, fla_causal_conv_compile_boundary: bool = False):
     _apply_packing_patches(
-        "qwen3_5_moe", "Qwen3_5Moe", _make_qwen3_5_gated_delta_forward
+        "qwen3_5",
+        "Qwen3_5",
+        _make_qwen3_5_gated_delta_forward,
+        fla_causal_conv_compile_boundary=fla_causal_conv_compile_boundary,
+    )
+
+
+def patch_qwen3_5_moe_modeling_packing(
+    *, fla_causal_conv_compile_boundary: bool = False
+):
+    _apply_packing_patches(
+        "qwen3_5_moe",
+        "Qwen3_5Moe",
+        _make_qwen3_5_gated_delta_forward,
+        fla_causal_conv_compile_boundary=fla_causal_conv_compile_boundary,
     )
 
 

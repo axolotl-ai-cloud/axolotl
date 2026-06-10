@@ -79,6 +79,11 @@ dependencies = [
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.49.1 ; sys_platform != 'darwin'",
+    # >=3.7: 3.7 fixes the FP4 tl.dot_scaled square-operand (tile==head_dim) scale
+    # mis-binding on sm_120 — required for correct+fast NVFP4 attention at head_dim
+    # 128 (Qwen3-VL). Older Triton still works but falls back to a slower D=128 tile,
+    # so core only floors at 3.4 (installable on the whole supported-torch matrix);
+    # the NVFP4 extra raises this to >=3.7 where the fast path actually matters.
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
     "liger-kernel==0.8.0 ; sys_platform != 'darwin'",
@@ -91,6 +96,12 @@ dependencies = [
 
 [project.optional-dependencies]
 flash-attn = ["flash-attn==2.8.3"]
+# NVFP4 base-GEMM training kernels. mslk's real build lives only on the cu130 wheel
+# index (PyPI ships an empty 0.0.0 stub), so it is pinned to that index via
+# [tool.uv.sources] below. Needs a cu130 torch + Triton >= 3.7 already present;
+# scripts/install_nvfp4.sh provisions those (and the cu130 torchao build). For uv
+# users who already have cu130 torch: `uv pip install -e ".[nvfp4,flash-attn]"`.
+nvfp4 = ["mslk", "triton>=3.7.0 ; sys_platform != 'darwin'"]
 ring-flash-attn = [
     "flash-attn==2.8.3",
     "ring-flash-attn>=0.1.7",
@@ -133,6 +144,17 @@ llmcompressor = [
     "llmcompressor>=0.10.0",
 ]
 fbgemm-gpu = ["fbgemm-gpu-genai>=1.3.0"]
+# NVFP4 training with the Transformer Engine backend (nvfp4_training.backend: te).
+# Builds from source against the local CUDA toolkit; on consumer Blackwell
+# (sm_120) build with NVTE_CUDA_ARCHS=120. TE needs a cuBLAS that exports
+# cublasLtGroupedMatrixLayoutInit_internal (>= 13.3) — the pip wheel torch
+# bundles can be older, so pin it up; the pip 13.3 wheel keeps torch working too
+# (the CUDA-toolkit cuBLAS does NOT — it ABI-mismatches torch). See
+# docs/nvfp4_training.qmd. The native backend needs none of this.
+transformer-engine = [
+    "transformer_engine[pytorch]>=2.8.0",
+    "nvidia-cublas>=13.3.0.5",
+]
 opentelemetry = [
     "opentelemetry-api",
     "opentelemetry-sdk",
@@ -256,3 +278,14 @@ causal-conv1d = [{ requirement = "torch", match-runtime = true }]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]
+
+# The PyTorch cu130 wheel index, used only by packages that explicitly point at it
+# (explicit = true ⇒ it never participates in general resolution, so it can't shadow
+# PyPI for other packages). mslk's real FP4-kernel build is published only here.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+mslk = { index = "pytorch-cu130" }
