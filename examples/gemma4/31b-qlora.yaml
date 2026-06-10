@@ -59,7 +59,7 @@ activation_offloading: true
 logging_steps: 1
 
 gemma4_hybrid_attn_impl: true
-attn_implementation: flash_attention
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch: 4
