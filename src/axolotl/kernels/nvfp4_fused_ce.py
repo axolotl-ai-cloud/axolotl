@@ -72,11 +72,11 @@ def _nvfp4_lm_head_store(module: nn.Module):
         return None  # MSLK-fast (swizzled), hp (NVFP4Linear), or non-FP4
 
     # Row-slicing the packed buffers is only bit-exact when scales are row-major.
-    try:
-        _, ctx = store.__tensor_flatten__()
-    except Exception:
-        return None
-    if ctx.get("is_swizzled_scales"):
+    # Read the swizzle flag off the attribute directly: ``__tensor_flatten__``
+    # returns a Python ``(names, ctx)`` tuple whose ``ctx.get(...)`` is a
+    # non-Tensor op that forces a Dynamo graph break when this runs inside the
+    # compiled model forward (``_make_fused_forward`` calls it every step).
+    if getattr(store, "is_swizzled_scales", False):
         return None
     return store
 
@@ -124,21 +124,19 @@ def _dequant_vocab_tile(store, lo: int, hi: int, dtype: torch.dtype) -> torch.Te
     Row-slices the packed qdata/scale (bit-identical to slicing a full dequant —
     NVFP4 blocks lie along the hidden dim, so rows are independent) so only one
     tile is ever upcast to bf16, never the whole ``[V, H]`` table.
-    """
-    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
-    _, ctx = store.__tensor_flatten__()
-    sub = NVFP4Tensor.__tensor_unflatten__(
-        {
-            "qdata": store.qdata[lo:hi],
-            "scale": store.scale[lo:hi],
-            "per_tensor_scale": store.per_tensor_scale,
-        },
-        ctx,
-        None,
-        None,
-    )
-    return sub.dequantize(dtype)
+    The slice goes through NVFP4Tensor's registered ``aten.slice`` dispatch
+    (``store[lo:hi]``) rather than a manual ``__tensor_flatten__`` /
+    ``__tensor_unflatten__`` round-trip. Both are bit-exact for a row-major
+    (non-swizzled) store — verified across block-aligned, ragged, and full-vocab
+    tiles, with and without a per-tensor scale — but the slice form is a pure
+    tensor-subclass op that ``torch.compile`` can trace, whereas the manual
+    flatten returns a Python ``(names, ctx)`` tuple whose ``getitem`` is a
+    non-Tensor op that forces a Dynamo graph break at the quant boundary. Callers
+    only ever pass a non-swizzled store (``_nvfp4_lm_head_store`` rejects swizzled
+    scales), which is the regime where row-slicing is exact.
+    """
+    return store[lo:hi].dequantize(dtype)
 
 
 def _slice_vocab_tile(store, lo: int, hi: int):
