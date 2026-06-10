@@ -102,6 +102,8 @@ nvfp4_training:
   # Locally faster in the QKV microbench, but below whole-step noise on this
   # 8-full-attention-layer hybrid model. Try true on models with more attention layers.
   shared_lora_base_fprop: false
+  # max-throughput vocab tile; default is 4096 (lighter). speed knee, loss-invariant
+  fused_ce_vocab_block: 8192
 
 warmup_steps: 10
 logging_steps: 1

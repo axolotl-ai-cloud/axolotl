@@ -111,6 +111,21 @@ class NVFP4TrainingConfig(BaseModel):
             "OFF by default."
         },
     )
+    fused_ce_vocab_block: int = Field(
+        default=4096,
+        gt=0,
+        json_schema_extra={
+            "description": "Vocab-tile width for fused_fp4_cross_entropy. The fused "
+            "CE streams the vocabulary in [tokens, fused_ce_vocab_block] tiles; this "
+            "is a pure speed<->VRAM dial and is loss-invariant (the tile loop is a "
+            "reduction split, so loss/grad are bit-stable across block widths). "
+            "4096 (default) is balanced — lighter than a bf16 head's transient logit "
+            "tile while still faster. 8192 is max throughput (~+0.4% speed for ~+2 "
+            "GiB peak at long seq); wider buys nothing. Overridable at runtime via "
+            "the AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK env var (env wins over this "
+            "config). Only affects fused_fp4_cross_entropy."
+        },
+    )
     bf16_lm_head_cross_entropy: bool = Field(
         default=False,
         json_schema_extra={

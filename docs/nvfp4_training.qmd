@@ -581,6 +581,31 @@ through FP4 `torch._scaled_mm`, but it is off by default and currently slower). 
 contribution is narrow and engineering-level — a memory technique, not a new CE algorithm
 or an FP4 GEMM.
 
+### Tuning the fused-CE vocab tile (`fused_ce_vocab_block`)
+
+`fused_fp4_cross_entropy` streams the vocabulary in `[tokens, fused_ce_vocab_block]`
+tiles. The tile width is a pure **speed ↔ VRAM** dial and is **loss-invariant** — the
+tile loop is a reduction split, so loss and gradients are bit-stable across block
+widths. A sweep (gc-on, Qwen3-1.7B, full-NVFP4, `fp4_matmul` on, 8k seq) put the speed
+knee at **8192**:
+
+- **`4096` (default)** — balanced. Already ~**+9%** faster than a bf16 head, and its
+  transient logit tile is **lighter than the bf16 head's** (−0.5 GiB) — so there is no
+  VRAM regression versus bf16.
+- **`8192`** — max throughput: the last ~**+0.4%** speed for ~**+2 GiB** peak at long
+  seq. Wider than 8192 buys nothing.
+
+Set it under `nvfp4_training:`:
+
+```yaml
+nvfp4_training:
+  fused_ce_vocab_block: 8192   # max throughput; default 4096 is lighter
+```
+
+It is also overridable at runtime via the `AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK`
+environment variable, which **takes precedence over the config** (env > config >
+4096).
+
 ## Configuration reference
 
 The `nvfp4_training:` block (schema: `src/axolotl/utils/schemas/nvfp4.py`,
@@ -601,6 +626,7 @@ The `nvfp4_training:` block (schema: `src/axolotl/utils/schemas/nvfp4.py`,
 | `quantize_vision_tower` | `bool` | `false` | Multimodal only. Swap the **frozen** `nn.Linear`s under the vision encoder (attn qkv/proj, mlp fc1/fc2) to NVFP4; the merger and patch-embed projection are left untouched. Warns if no vision tower is found. |
 | `fused_fp4_cross_entropy` | `bool` | `false` | Opt-in. Requires `quantize_lm_head`. Tiles CE over the FP4 lm_head with online softmax — each tile is dequantized FP4→bf16 just-in-time (per-tile matmul in **bf16** by default) so neither logits nor a dense head are materialized. A **memory** win, not an FP4-GEMM win. The long-context recipe (fits 9B at 64k in 41.6 GiB). See [Long context](#long-context). |
 | `fused_fp4_cross_entropy_fp4_matmul` | `bool` | `false` | **Experimental.** Route the fused-CE per-tile matmul through FP4 `torch._scaled_mm` (hits FP4 tensor cores) instead of bf16. Faster than the memory-only FP4-CE path but slower than materialized bf16/Liger CE — keep off unless benchmarking the next CE-epilogue design. |
+| `fused_ce_vocab_block` | `int` | `4096` | Vocab-tile width for `fused_fp4_cross_entropy`. A pure speed↔VRAM dial, **loss-invariant**. `4096` (default) ≈ a bf16 head's VRAM but faster (~+9%); `8192` is max throughput (~+0.4% for ~+2 GiB at long seq); wider buys nothing. Overridable via `AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK` (env wins over config). |
 | `fp8_lm_head_cross_entropy` | `bool` | `false` | Opt-in. Requires a frozen bias-free plain `nn.Linear` lm_head. Streams FP8 lm_head vocab tiles into CE without full logits materialization; FP8 scaled matmul for `dL/dhidden`; no lm_head weight grad. **Converges but dominated** — slowest and highest-memory CE (8k 31.4 GiB, 32k 71.6 GiB; worse than `fused_fp4`/`bf16_lm_head` on both). Not recommended. |
 | `shared_lora_base_fprop` | `bool \| null` | `null` (env fallback; off) | Experimental LoRA/QLoRA native-backend option. For fused LoRA QKV/QK projections with pre-quantized NVFP4 frozen bases, pack the shared activation once and reuse it across base fprops. YAML `true`/`false` wins; omitted/null falls back to `AXOLOTL_NVFP4_SHARED_BASE_FPROP`. Leave off unless an end-to-end bench on a many-attention-layer model shows a win. |
 | `skip_first_n_blocks` | `int` | `0` | Keep the first N transformer blocks in high precision (see the ~15% high-precision policy below). |

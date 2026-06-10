@@ -30,22 +30,37 @@ import os
 import torch
 from torch import nn
 
-# Vocab tile width. The transient logit tile is [M, _VOCAB_BLOCK] in fp32; 4096
-# keeps it small (16 MiB at M=4096) while giving the bf16 tile-matmul enough work
-# to stay efficient. Tunable; not load-bearing for correctness (the tile loop is a
-# reduction split — loss/grad are bit-stable across block widths).
+# Vocab tile width. The fused CE streams the vocabulary in [M, _VOCAB_BLOCK] tiles;
+# this is a pure speed<->VRAM dial and is loss-invariant (the tile loop is a
+# reduction split — loss/grad are bit-stable across block widths). The transient
+# logit tile is [M, _VOCAB_BLOCK] in fp32 (16 MiB at M=4096, block 4096).
 #
-# Granularity is the dominant speed lever for the fp4_matmul=True path: each tile
-# costs one ``torch._scaled_mm`` launch plus a per-tile fp32 logsumexp/gather, and
-# at V=152k the default 4096 (38 tiles) makes the fused FP4 head ~1.4x SLOWER than
-# a dense bf16 lm_head + CE under torch.compile. Coarser tiles amortize the launch
-# overhead: on a 5090 (compiled, M=1024, V=152k, H=2048, fwd+bwd) fp4_matmul moves
-# from 1.40x dense (block 4096) to 0.92x (16384) to 0.84x (32768) dense — crossing
-# below the dense baseline. The cost is a wider transient logit tile (more peak
-# memory), so this is overridable via AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK. The
-# activation FP4-quant is already hoisted out of this loop (once per fwd/bwd), so
-# it is NOT the bottleneck — tile granularity / small-GEMM launch count is.
-_VOCAB_BLOCK = int(os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK", "16384"))
+# A vocab-block sweep (gc-ON, Qwen3-1.7B, full-NVFP4, fp4_matmul=ON, 8k seq) put the
+# speed knee at 8192: 4096 is already ~+9% over a bf16 head and is LIGHTER than the
+# bf16 head's transient logit tile (-0.5 GiB); 8192 buys the last ~+0.4% speed for
+# ~+2 GiB peak; wider than 8192 buys nothing. So 4096 is the balanced default (no
+# VRAM regression vs bf16) and 8192 is the max-throughput option.
+#
+# Precedence is resolved in ``patch_model_fused_fp4_ce`` (env > config > 4096) and
+# written back to this module global before any training step runs, so the tiled
+# autograd Functions below (which read this global at call time) see the effective
+# value. The env var ``AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK`` always wins, exactly as
+# before — it is honored here at import too, so direct callers that never go through
+# the patch fn still pick it up.
+_VOCAB_BLOCK_DEFAULT = 4096
+_VOCAB_BLOCK = int(
+    os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK", str(_VOCAB_BLOCK_DEFAULT))
+)
+
+
+def _resolve_vocab_block(vocab_block: int | None) -> int:
+    """Effective vocab tile width: env var (if set) > ``vocab_block`` arg > 4096."""
+    env = os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK")
+    if env is not None:
+        return int(env)
+    if vocab_block is not None:
+        return int(vocab_block)
+    return _VOCAB_BLOCK_DEFAULT
 
 
 def _fp4_scaled_mm_enabled(fp4_matmul: bool | None) -> bool:
@@ -507,6 +522,7 @@ def _make_fused_forward(orig_forward, fp4_matmul: bool | None):
 def patch_model_fused_fp4_ce(
     model: nn.Module,
     fp4_matmul: bool | None = None,
+    vocab_block: int | None = None,
 ) -> bool:
     """Patch ``model``'s ForCausalLM forward to use the fused FP4 cross-entropy.
 
@@ -514,7 +530,20 @@ def patch_model_fused_fp4_ce(
     False otherwise. Idempotent per ForCausalLM class. The PEFT wrapper delegates
     its forward to the base model, so patching the underlying ForCausalLM class is
     enough whether or not LoRA is in use.
+
+    ``vocab_block`` is the fused-CE vocab tile width (``fused_ce_vocab_block`` in
+    config). The effective value is env var (if set) > ``vocab_block`` arg > 4096,
+    and it is written back to the module global ``_VOCAB_BLOCK`` here — once, before
+    any training step — so the tiled autograd Functions (which read ``_VOCAB_BLOCK``
+    at call time) use it. This is safe: the patch fn runs at model-load time on the
+    main thread, the autograd Functions never run concurrently with it, and the
+    block width only ever shrinks/grows the reduction split (loss-invariant), so a
+    stale read could at most cost peak memory, never correctness.
     """
+    global _VOCAB_BLOCK
+    effective_block = _resolve_vocab_block(vocab_block)
+    _VOCAB_BLOCK = effective_block
+
     # Find the actual ForCausalLM module (unwrap PEFT) that owns get_output_embeddings.
     causal = model
     if hasattr(model, "get_base_model"):
@@ -541,8 +570,10 @@ def patch_model_fused_fp4_ce(
     cls.forward = _make_fused_forward(cls.forward, fp4_matmul)
     _PATCHED_FORWARDS.add(cls)
     LOG.info(
-        "fused_fp4_cross_entropy: patched %s.forward (logits not materialized%s)",
+        "fused_fp4_cross_entropy: patched %s.forward (logits not materialized%s, "
+        "vocab_block=%d)",
         cls.__name__,
         ", fp4_matmul" if _fp4_scaled_mm_enabled(fp4_matmul) else "",
+        effective_block,
     )
     return True

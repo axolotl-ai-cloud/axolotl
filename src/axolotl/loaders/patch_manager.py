@@ -456,6 +456,7 @@ class PatchManager:
                 fp4_matmul=True
                 if getattr(nvfp4, "fused_fp4_cross_entropy_fp4_matmul", False)
                 else None,
+                vocab_block=getattr(nvfp4, "fused_ce_vocab_block", None),
             )
 
         if getattr(nvfp4, "fp8_lm_head", False):
