@@ -175,6 +175,116 @@ class TestBackendRegistration:
         assert ALL_ATTENTION_FUNCTIONS["flash_attention_2"] is original_fa2
 
 
+class TestSparseAttentionBackends:
+    """nsa/fsa: canonical names, packing support, registration stub, MLA-only
+    model guard, and compute-capability guard."""
+
+    @pytest.mark.parametrize("impl", ["nsa", "fsa"])
+    def test_capability_classification(self, impl):
+        assert impl in CANONICAL_ATTN_IMPLS
+        assert impl in ATTN_IMPLS_SUPPORTING_PACKING
+        assert impl not in ATTN_IMPLS_USING_FLASH_LIB
+        assert impl not in ATTN_IMPLS_WITHOUT_DTYPE_CAST
+
+    @pytest.mark.parametrize("impl", ["nsa", "fsa"])
+    def test_field_validator_accepts(self, impl):
+        assert AxolotlInputConfig.validate_attn_implementation(impl) == impl
+
+    def test_register_sparse_attn(self):
+        from transformers.masking_utils import ALL_MASK_ATTENTION_FUNCTIONS
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        from axolotl.monkeypatch.attention import register_sparse_attn
+
+        register_sparse_attn()
+
+        for name in ("nsa", "fsa"):
+            assert name in ALL_ATTENTION_FUNCTIONS
+            assert (
+                ALL_MASK_ATTENTION_FUNCTIONS[name]
+                == ALL_MASK_ATTENTION_FUNCTIONS["flash_attention_2"]
+            )
+
+    def test_register_does_not_overwrite_fa2(self):
+        from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+        original_fa2 = ALL_ATTENTION_FUNCTIONS["flash_attention_2"]
+
+        from axolotl.monkeypatch.attention import register_sparse_attn
+
+        register_sparse_attn()
+
+        assert ALL_ATTENTION_FUNCTIONS["flash_attention_2"] is original_fa2
+
+    def test_stub_must_not_be_called(self):
+        from axolotl.monkeypatch.attention.sparse_attn import (
+            sparse_attention_stub,
+        )
+
+        with pytest.raises(NotImplementedError, match="module swap"):
+            sparse_attention_stub(None, None, None, None)
+
+    def test_import_guard(self):
+        from axolotl.monkeypatch.attention.sparse_attn import (
+            _check_fsa_imported,
+            _is_fsa_available,
+        )
+
+        if _is_fsa_available():
+            _check_fsa_imported()
+        else:
+            with pytest.raises(ImportError, match="Flash-Sparse-Attention"):
+                _check_fsa_imported()
+
+    @staticmethod
+    def _guard(data):
+        return AxolotlInputConfig.check_sparse_attn_requires_mla_model(data)
+
+    @pytest.mark.parametrize("impl", ["nsa", "fsa"])
+    @pytest.mark.parametrize(
+        "model_type", ["kimi_linear", "deepseek_v2", "deepseek_v3"]
+    )
+    def test_guard_allows_mla_models(self, impl, model_type):
+        data = {"attn_implementation": impl, "model_config_type": model_type}
+        assert self._guard(data) is data
+
+    @pytest.mark.parametrize("impl", ["nsa", "fsa"])
+    def test_guard_rejects_non_mla(self, impl):
+        with pytest.raises(ValueError, match="only.*supported for MLA"):
+            self._guard({"attn_implementation": impl, "model_config_type": "llama"})
+
+    def test_guard_defers_when_model_type_unknown(self):
+        data = {"attn_implementation": "fsa"}
+        assert self._guard(data) is data
+
+    def test_guard_ignores_non_sparse_backend(self):
+        data = {"attn_implementation": "sdpa", "model_config_type": "llama"}
+        assert self._guard(data) is data
+
+    def test_compute_capability_guard_rejects_old_gpu(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="fsa", model_config_type="kimi_linear"
+        )
+        with pytest.raises(ValueError, match="requires compute capability sm_80"):
+            validate_config(
+                cfg,
+                capabilities={"compute_capability": "sm_75"},
+                env_capabilities={"torch_version": "2.9.0"},
+            )
+
+    def test_compute_capability_guard_allows_ampere(self, min_base_cfg):
+        cfg = min_base_cfg | DictDefault(
+            attn_implementation="fsa", model_config_type="kimi_linear"
+        )
+        validated = validate_config(
+            cfg,
+            capabilities={"compute_capability": "sm_90"},
+            env_capabilities={"torch_version": "2.9.0"},
+        )
+        assert validated.attn_implementation == "fsa"
+        assert validated.attn_supports_packing is True
+
+
 class TestLegacyFlagDeprecation:
     """Legacy boolean flags (flash_attention, sdp_attention, ...) map to a
     canonical attn_implementation value, are stripped from the validated

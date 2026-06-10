@@ -26,6 +26,7 @@ backends, axolotl-registered backends, or a hub-kernel path.
 | `sage` | SageAttention (QK int8 / PV fp16). |
 | `s2` | Shifted-Sparse Attention (LLaMA only, FA2 under the hood). |
 | `fp8` | torchao FP8 low-precision attention (requires SM90+, torch ≥ 2.11). Loaded as SDPA and patched post-load. |
+| `nsa` / `fsa` | Native / Flash Sparse Attention. MLA models only (DeepSeek, Kimi Linear). Swaps the full-attention module; requires Ampere+. |
 | `kernels-community/flash-attn3` | HF hub FA3 kernel. |
 | `kernels-community/sage-attention` | HF hub SageAttention kernel. |
 | Other `<org>/<name>` path | Any hub-kernel path supported by `transformers`. |
@@ -187,6 +188,44 @@ flash-attn with FA3. KV caching must be disabled.
 ```yaml
 attn_implementation: fp8
 ```
+
+### Native / Flash Sparse Attention
+
+`nsa` and `fsa` enable block-sparse attention for **MLA models only**
+(`deepseek_v2`, `deepseek_v3`, `kimi_linear`). Both route through the
+[Flash-Sparse-Attention](https://github.com/Relaxed-System-Lab/Flash-Sparse-Attention)
+package — an efficient implementation of
+[Native Sparse Attention](https://arxiv.org/abs/2502.11089).
+
+```yaml
+attn_implementation: fsa   # or: nsa
+nsa_block_size: 64         # KV block granularity
+nsa_topk: 16               # KV blocks attended per query
+nsa_kernel_size: 32        # compression kernel size
+nsa_kernel_stride: 16      # compression kernel stride
+nsa_window_size: 512       # local sliding-window size
+nsa_init_blocks: 1         # leading blocks always selected
+nsa_local_blocks: 2        # trailing blocks always selected
+```
+
+Install the `fsa` extra, which pulls in both Flash-Sparse-Attention and a
+matching `flash-attn`:
+
+```bash
+pip install "axolotl[fsa]"
+```
+
+Building `flash-attn` from source requires a CUDA toolkit (`nvcc`) and an
+Ampere+ GPU; restrict the build to your architecture (e.g.
+`TORCH_CUDA_ARCH_LIST=8.0` for A100) to keep compile time and memory in check.
+
+Unlike sage/xformers (drop-in attention functions), the sparse block is a full
+attention module with its own projections, compression branch and learned gate,
+so Axolotl swaps the model's full-attention layers for it after the model is
+built. The swapped layers are **randomly initialised** — pretrained MLA
+attention weights are discarded — so treat this as a *train sparse attention*
+recipe, not a weight-preserving one. Requires compute capability sm_80+
+(Ampere) and bf16/fp16. See `examples/kimi-linear/kimi-48b-lora-fsa.yaml`.
 
 ### Hub kernels
 

@@ -59,7 +59,13 @@ def find_all_linear_names(model):
             and module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
         ):
             names = name.split(".")
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+            leaf = names[0] if len(names) == 1 else names[-1]
+            # A purely numeric leaf (e.g. an nn.Sequential index like `gate.0`)
+            # collides with layer indices under PEFT's suffix matching and would
+            # target whole decoder layers, so skip it.
+            if leaf.isdigit():
+                continue
+            lora_module_names.add(leaf)
 
     embedding_modules = get_linear_embedding_layers(model.config.model_type)
     output_embedding = embedding_modules[1]
