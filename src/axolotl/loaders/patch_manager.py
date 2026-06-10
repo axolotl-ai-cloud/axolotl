@@ -392,16 +392,10 @@ class PatchManager:
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
 
-        if self.cfg.model_config_type == "gemma4" and self.cfg.use_kernels:
-            # transformers' Gemma4VisionAttention registers a bare function via
-            # @use_kernelized_func, which crashes model.kernelize() (triggered by
-            # use_kernels=True) when it tries to register_module() a non-Module.
-            # Strip the dead entry so kernelize() succeeds. The MoE itself is
-            # accelerated via the ExpertsInterface (experts_implementation),
-            # independent of this path.
-            from axolotl.monkeypatch.gemma4_kernelize import patch_gemma4_kernelize
+        if self.cfg.use_kernels:
+            from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
 
-            patch_gemma4_kernelize()
+            patch_kernelize_fixes()
 
         if (
             self.cfg.model_config_type == "llama4"
