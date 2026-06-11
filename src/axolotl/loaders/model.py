@@ -64,36 +64,15 @@ from axolotl.utils.fp32_norms import (
 from axolotl.utils.logging import get_logger
 from axolotl.utils.model_shard_quant import load_sharded_model_quant
 from axolotl.utils.schemas.enums import RLType
+from axolotl.utils.schemas.model import mqc_as_dict
 
 LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
-def _mqc_branch(mqc: Any, name: str) -> Any:
-    """Return the named sub-branch of a structured model_quantization_config,
-    tolerating both Pydantic-model and model_dump'd-dict forms.
-
-    ``validate_config`` runs ``model_dump(exclude_none=True)`` and wraps the
-    result in a ``DictDefault``, so by the time the loader runs, structured
-    fields arrive as dicts; tests, however, construct Pydantic instances
-    directly. Probe both.
-    """
-    if mqc is None or isinstance(mqc, str):
-        return None
-    if isinstance(mqc, dict):
-        return mqc.get(name)
-    return getattr(mqc, name, None)
-
-
 def _torchao_subconfig(mqc: Any) -> dict | None:
-    """Return the torchao sub-config as a dict, regardless of source form."""
-    branch = _mqc_branch(mqc, "torchao")
-    if branch is None:
-        return None
-    if isinstance(branch, dict):
-        return branch
-    # Pydantic model instance — normalize to dict via model_dump.
-    return branch.model_dump(exclude_none=True)
+    """Return the torchao config as a dict, regardless of source form."""
+    return mqc_as_dict(mqc, "torchao")
 
 
 class ModelLoader:
@@ -665,11 +644,11 @@ class ModelLoader:
 
         # Structured field arrives either as a Pydantic instance (direct
         # construction in tests) or as a dict (after validate_config's
-        # model_dump). Normalize via _torchao_subconfig / _mqc_branch.
+        # model_dump). Normalize via mqc_as_dict.
         mqc = self.cfg.model_quantization_config
         mqc_torchao = _torchao_subconfig(mqc)
-        mqc_mxfp4 = _mqc_branch(mqc, "mxfp4")
-        mqc_fp8 = _mqc_branch(mqc, "fp8")
+        mqc_mxfp4 = mqc_as_dict(mqc, "mxfp4")
+        mqc_fp8 = mqc_as_dict(mqc, "fp8")
 
         # model_quantization_config.torchao is a uniform-base-quant shorthand
         # that builds one TorchAoConfig over every linear. If the checkpoint
@@ -706,12 +685,7 @@ class ModelLoader:
         if mqc == "Mxfp4Config":
             mxfp4_kwargs = self.cfg.model_quantization_config_kwargs or {}
         elif mqc_mxfp4 is not None:
-            extra = (
-                mqc_mxfp4.get("config_kwargs")
-                if isinstance(mqc_mxfp4, dict)
-                else getattr(mqc_mxfp4, "config_kwargs", None)
-            )
-            mxfp4_kwargs = extra or {}
+            mxfp4_kwargs = mqc_mxfp4.get("config_kwargs") or {}
         if mxfp4_kwargs is not None:
             from transformers import Mxfp4Config
 
@@ -722,12 +696,7 @@ class ModelLoader:
         if mqc == "FineGrainedFP8Config":
             fp8_kwargs = self.cfg.model_quantization_config_kwargs or {}
         elif mqc_fp8 is not None:
-            extra = (
-                mqc_fp8.get("config_kwargs")
-                if isinstance(mqc_fp8, dict)
-                else getattr(mqc_fp8, "config_kwargs", None)
-            )
-            fp8_kwargs = extra or {}
+            fp8_kwargs = mqc_fp8.get("config_kwargs") or {}
         if fp8_kwargs is not None:
             from transformers import FineGrainedFP8Config
 
@@ -779,9 +748,17 @@ class ModelLoader:
             group_size = mqc_torchao.get("group_size")
             if weight_dtype == "int4":
                 from torchao.quantization import Int4WeightOnlyConfig
+                from torchao.quantization.quantize_.workflows import (
+                    Int4PackingFormat,
+                )
 
+                # PLAIN packing requires the optional mslk package; tile-packed
+                # uses the in-core tinygemm op.
                 self.model_kwargs["quantization_config"] = TorchAoConfig(
-                    quant_type=Int4WeightOnlyConfig(group_size=group_size or 128),
+                    quant_type=Int4WeightOnlyConfig(
+                        group_size=group_size or 128,
+                        int4_packing_format=Int4PackingFormat.TILE_PACKED_TO_4D,
+                    ),
                 )
             elif weight_dtype == "int8":
                 from torchao.quantization import Int8WeightOnlyConfig
@@ -829,18 +806,6 @@ class ModelLoader:
                     quant_type=Float8WeightOnlyConfig(
                         weight_dtype=torch.float8_e4m3fn,
                     ),
-                )
-            elif weight_dtype == "mxfp4":
-                # MXFP4 is dynamic-activation + weight, not weight-only;
-                # there's no torchao config that fits the LoRA-on-base-linear
-                # story. For MoE experts, use the dedicated path instead.
-                raise ValueError(
-                    "model_quantization_config.torchao with weight_dtype: "
-                    "mxfp4 has no weight-only torchao config for arbitrary "
-                    "linear layers. For MoE expert tensors, use "
-                    "`quantize_moe_experts: true` with `lora_target_parameters` "
-                    "targeting gate_up_proj/down_proj. For inference-time "
-                    "MXFP4, use the `qat:` or `ptq:` config blocks."
                 )
             else:
                 raise ValueError(

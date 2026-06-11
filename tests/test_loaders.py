@@ -108,38 +108,45 @@ class TestModelsUtils:
             )
 
     @pytest.mark.parametrize(
-        "weight_dtype,adapter,quant_config_attr",
+        "weight_dtype,quant_config_attr",
         [
-            ("int4", "qlora", "Int4WeightOnlyConfig"),
-            ("int8", "lora", "Int8WeightOnlyConfig"),
+            ("int4", "Int4WeightOnlyConfig"),
+            ("int8", "Int8WeightOnlyConfig"),
         ],
     )
     def test_set_quantization_config_torchao_qlora(
-        self, weight_dtype, adapter, quant_config_attr
+        self, weight_dtype, quant_config_attr
     ):
-        """torchao backend installs a TorchAoConfig with the right quant_type."""
+        """torchao backend installs a TorchAoConfig with the right quant_type.
+
+        Uses the post-validation cfg shape: adapter normalized to "lora" and
+        model_quantization_config model_dump'd to a dict.
+        """
         pytest.importorskip("torchao")
         import torchao.quantization as tq
         from transformers import TorchAoConfig
-
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
 
         expected_cls = getattr(tq, quant_config_attr)
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
-        self.cfg.adapter = adapter
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype=weight_dtype),
-        )
+        self.cfg.adapter = "lora"
+        self.cfg.model_quantization_config = {
+            "backend": "torchao",
+            "weight_dtype": weight_dtype,
+        }
 
         self.model_loader._set_quantization_config()
         quant_config = self.model_loader.model_kwargs.get("quantization_config")
         assert isinstance(quant_config, TorchAoConfig)
         assert isinstance(quant_config.quant_type, expected_cls)
+        if weight_dtype == "int4":
+            from torchao.quantization.quantize_.workflows import Int4PackingFormat
+
+            assert (
+                quant_config.quant_type.int4_packing_format
+                == Int4PackingFormat.TILE_PACKED_TO_4D
+            )
 
     def test_set_quantization_config_torchao_nvfp4(self):
         """torchao NVFP4 installs an NVFP4WeightOnlyConfig inside TorchAoConfig."""
@@ -150,17 +157,13 @@ class TestModelsUtils:
             pytest.skip("torchao build lacks NVFP4WeightOnlyConfig")
         from transformers import TorchAoConfig
 
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
-
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
-        self.cfg.adapter = "qlora"
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype="nvfp4"),
-        )
+        self.cfg.adapter = "lora"
+        self.cfg.model_quantization_config = {
+            "backend": "torchao",
+            "weight_dtype": "nvfp4",
+        }
 
         self.model_loader._set_quantization_config()
         quant_config = self.model_loader.model_kwargs.get("quantization_config")
@@ -176,17 +179,13 @@ class TestModelsUtils:
             pytest.skip("torchao build lacks Float8WeightOnlyConfig")
         from transformers import TorchAoConfig
 
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
-
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "lora"
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype="fp8"),
-        )
+        self.cfg.model_quantization_config = {
+            "backend": "torchao",
+            "weight_dtype": "fp8",
+        }
 
         self.model_loader._set_quantization_config()
         quant_config = self.model_loader.model_kwargs.get("quantization_config")
@@ -221,37 +220,16 @@ class TestModelsUtils:
     ):
         """torchao base-quant must not silently lose to any checkpoint quant_method."""
         pytest.importorskip("torchao")
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
-
-        self.cfg.load_in_8bit = False
-        self.cfg.load_in_4bit = False
-        self.cfg.adapter = "qlora"
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype="int4"),
-        )
-        self.model_loader.model_config.quantization_config = ckpt_qcfg
-        with pytest.raises(ValueError, match="already quantized"):
-            self.model_loader._set_quantization_config()
-
-    def test_set_quantization_config_torchao_mxfp4_errors(self):
-        """mxfp4 has no weight-only flavor; loader points at quantize_moe_experts."""
-        pytest.importorskip("torchao")
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
 
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
         self.cfg.adapter = "lora"
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype="mxfp4"),
-        )
-
-        with pytest.raises(ValueError, match="quantize_moe_experts"):
+        self.cfg.model_quantization_config = {
+            "backend": "torchao",
+            "weight_dtype": "int4",
+        }
+        self.model_loader.model_config.quantization_config = ckpt_qcfg
+        with pytest.raises(ValueError, match="already quantized"):
             self.model_loader._set_quantization_config()
 
     def test_set_quantization_config_torchao_nf4(self):
@@ -269,17 +247,13 @@ class TestModelsUtils:
             except ImportError:
                 pytest.skip("torchao build lacks NF4WeightOnlyConfig")
 
-        from axolotl.utils.schemas.model import (
-            ModelQuantizationConfig,
-            TorchAoBaseQuantConfig,
-        )
-
         self.cfg.load_in_8bit = False
         self.cfg.load_in_4bit = False
-        self.cfg.adapter = "qlora"
-        self.cfg.model_quantization_config = ModelQuantizationConfig(
-            torchao=TorchAoBaseQuantConfig(weight_dtype="nf4"),
-        )
+        self.cfg.adapter = "lora"
+        self.cfg.model_quantization_config = {
+            "backend": "torchao",
+            "weight_dtype": "nf4",
+        }
 
         self.model_loader._set_quantization_config()
         quant_config = self.model_loader.model_kwargs.get("quantization_config")
@@ -400,3 +374,52 @@ class TestModelsUtils:
             assert res["dp_shard_size"] == expected[2]
         if expected[3] > 1:
             assert res["dp_replicate_size"] == expected[3]
+
+
+class TestPeftTorchaoDispatchPatch:
+    """The patch must rebind dispatch_torchao in the namespace PEFT actually
+    reads (peft.tuners.lora.model imports it as a module-global), and restore
+    it afterwards."""
+
+    def test_patch_and_unpatch_both_namespaces(self):
+        pytest.importorskip("peft")
+        from peft.tuners.lora import model as peft_lora_model, torchao as peft_torchao
+
+        from axolotl.monkeypatch.peft.utils import (
+            patch_peft_torchao_dispatch,
+            unpatch_peft_torchao_dispatch,
+        )
+
+        orig_def = peft_torchao.dispatch_torchao
+        orig_consumer = peft_lora_model.dispatch_torchao
+
+        patch_peft_torchao_dispatch()
+        try:
+            assert peft_torchao.dispatch_torchao is not orig_def
+            assert peft_lora_model.dispatch_torchao is not orig_consumer
+            # _create_new_module reads the consumer namespace; both must point
+            # at the same stub.
+            assert peft_lora_model.dispatch_torchao is peft_torchao.dispatch_torchao
+            assert peft_lora_model.dispatch_torchao(None, "default", None) is None
+        finally:
+            unpatch_peft_torchao_dispatch()
+
+        assert peft_torchao.dispatch_torchao is orig_def
+        assert peft_lora_model.dispatch_torchao is orig_consumer
+
+    def test_patch_is_reentrant(self):
+        pytest.importorskip("peft")
+        from peft.tuners.lora import model as peft_lora_model, torchao as peft_torchao
+
+        from axolotl.monkeypatch.peft.utils import (
+            patch_peft_torchao_dispatch,
+            unpatch_peft_torchao_dispatch,
+        )
+
+        orig_def = peft_torchao.dispatch_torchao
+        patch_peft_torchao_dispatch()
+        patch_peft_torchao_dispatch()
+        unpatch_peft_torchao_dispatch()
+        unpatch_peft_torchao_dispatch()
+        assert peft_torchao.dispatch_torchao is orig_def
+        assert peft_lora_model.dispatch_torchao is orig_def

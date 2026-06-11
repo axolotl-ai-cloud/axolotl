@@ -340,24 +340,33 @@ def load_lora(
     # Must happen before both get_peft_model and PeftModel.from_pretrained,
     # as both trigger LoRA layer dispatch that would fail for INT4/NF4 weights.
     # INT8 is natively supported by PEFT's TorchaoLoraLinear, so skip the patch.
-    if is_torchao and mqc_torchao["weight_dtype"] != "int8":  # type: ignore[index]
+    needs_torchao_dispatch_patch = bool(
+        is_torchao and mqc_torchao["weight_dtype"] != "int8"  # type: ignore[index]
+    )
+    if needs_torchao_dispatch_patch:
         from axolotl.monkeypatch.peft.utils import patch_peft_torchao_dispatch
 
         patch_peft_torchao_dispatch()
 
-    if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT adapter")
-        if cfg.lora_on_cpu:
-            model_kwargs["max_memory"] = {"cpu": "256GiB"}
-            model_kwargs["device_map"] = {"": "cpu"}
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
-    else:
-        model = get_peft_model(model, lora_config, **model_kwargs)
+    try:
+        if cfg.lora_model_dir:
+            LOG.debug("Loading pretrained PEFT adapter")
+            if cfg.lora_on_cpu:
+                model_kwargs["max_memory"] = {"cpu": "256GiB"}
+                model_kwargs["device_map"] = {"": "cpu"}
+            model = PeftModel.from_pretrained(
+                model,
+                cfg.lora_model_dir,
+                is_trainable=(not inference),
+                **model_kwargs,
+            )
+        else:
+            model = get_peft_model(model, lora_config, **model_kwargs)
+    finally:
+        if needs_torchao_dispatch_patch:
+            from axolotl.monkeypatch.peft.utils import unpatch_peft_torchao_dispatch
+
+            unpatch_peft_torchao_dispatch()
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
     # requires a compute dtype (bf16/fp16). Cast trainable LoRA params.
