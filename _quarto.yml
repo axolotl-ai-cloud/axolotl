@@ -132,7 +132,6 @@ quartodoc:
         - monkeypatch.utils
         - monkeypatch.btlm_attn_hijack_flash
         - monkeypatch.stablelm_attn_hijack_flash
-        - monkeypatch.trainer_fsdp_optim
         - monkeypatch.transformers_fa_utils
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
