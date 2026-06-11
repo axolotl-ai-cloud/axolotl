@@ -593,6 +593,10 @@ class TestMultiGPULlama:
                     "auto_wrap",
                 ],
                 "fsdp_config": {
+                    # pinned to FSDP1: accelerate's fsdp2_load_full_state_dict
+                    # cannot resolve prequantized bnb quant-state keys
+                    # (e.g. `...weight.absmax`)
+                    "fsdp_version": 1,
                     "fsdp_offload_params": False,
                     "fsdp_sync_module_states": True,
                     "fsdp_use_orig_params": False,
