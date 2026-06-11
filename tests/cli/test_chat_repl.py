@@ -41,9 +41,13 @@ class FakeGenerator:
     def __init__(self, replies=None):
         self.replies = replies or ["canned reply"]
         self.calls = []
+        self.render_kwargs_seen = []
 
-    def generate_turn(self, conversation, params, on_text):
+    def generate_turn(self, conversation, params, on_text, render_kwargs=None):
         self.calls.append(([dict(m) for m in conversation], dict(params)))
+        self.render_kwargs_seen.append(
+            dict(render_kwargs) if render_kwargs is not None else None
+        )
         content = self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
         on_text(content)
         return TurnResult(content=content, prompt_tokens=10, new_tokens=3)
@@ -346,3 +350,122 @@ def test_unknown_command_suggests_alias():
     assert "Did you mean /clear?" in buf.getvalue()
     repl._dispatch("/tem")
     assert "Did you mean /temp?" in buf.getvalue()
+
+
+class TestThinkStreamRenderer:
+    def make_renderer(self, collapse=True, markers=("<think>", "</think>")):
+        from axolotl.cli.chat import ThinkStreamRenderer
+
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, width=200)
+        return ThinkStreamRenderer(console, collapse=collapse, markers=markers), buf
+
+    def test_collapse_splits_thinking_from_reply(self, capsys):
+        renderer, buf = self.make_renderer()
+        for chunk in ["<thi", "nk>\nreasoning he", "re</th", "ink>\n\nAnswer!"]:
+            renderer.feed(chunk)
+        renderer.finish()
+        assert renderer.think_text.strip() == "reasoning here"
+        assert capsys.readouterr().out == "Answer!"
+        assert "thought for" in buf.getvalue()
+
+    def test_no_thinking_passthrough(self, capsys):
+        renderer, buf = self.make_renderer()
+        renderer.feed("Just a plain reply")
+        renderer.finish()
+        assert renderer.think_text == ""
+        assert capsys.readouterr().out == "Just a plain reply"
+        assert "thought for" not in buf.getvalue()
+
+    def test_unterminated_thinking(self, capsys):
+        renderer, buf = self.make_renderer()
+        renderer.feed("<think>partial reasoning")
+        renderer.finish()
+        assert renderer.think_text == "partial reasoning"
+        assert capsys.readouterr().out == ""
+        assert "no </think>" in buf.getvalue()
+
+    def test_collapse_off_is_passthrough(self, capsys):
+        renderer, buf = self.make_renderer(collapse=False)
+        renderer.feed("<think>abc</think>reply")
+        renderer.finish()
+        assert capsys.readouterr().out == "<think>abc</think>reply"
+        assert buf.getvalue() == ""
+
+    def test_custom_markers(self, capsys):
+        renderer, _ = self.make_renderer(
+            markers=("<|START_THINKING|>", "<|END_THINKING|>")
+        )
+        renderer.feed("<|START_THINKING|>hmm<|END_THINKING|>ok")
+        renderer.finish()
+        assert renderer.think_text == "hmm"
+        assert capsys.readouterr().out == "ok"
+
+
+class TestThinkTokenSplit:
+    def make_generator(self, vocab):
+        from types import SimpleNamespace
+
+        from axolotl.cli.chat import TurnGenerator
+
+        class FakeTokenizer:
+            eos_token_id = 0
+            chat_template = None
+
+            def encode(self, text, **kwargs):
+                return vocab[text]
+
+        model = SimpleNamespace(generation_config=SimpleNamespace(eos_token_id=None))
+        return TurnGenerator(model, FakeTokenizer(), None, "cpu")
+
+    def test_split_counts(self):
+        generator = self.make_generator({"<think>": [100], "</think>": [101]})
+        assert generator.split_think_token_counts([100, 1, 2, 3, 101, 7, 8]) == (3, 2)
+        assert generator.split_think_token_counts([100, 1, 2]) == (2, 0)
+        assert generator.split_think_token_counts([5, 6]) == (0, 2)
+        assert generator.split_think_token_counts([]) == (0, 0)
+
+
+class TestThinkCommands:
+    def test_think_toggle_sets_render_kwargs(self):
+        repl, generator = make_repl(
+            ["/think off", "hi", "/think default", "again", "/quit"]
+        )
+        repl.think_toggle_key = "enable_thinking"
+        repl.run()
+        assert generator.render_kwargs_seen[0] == {"enable_thinking": False}
+        assert generator.render_kwargs_seen[1] is None
+
+    def test_think_without_toggle_key(self):
+        repl, generator = make_repl(["/think off", "hi", "/quit"])
+        repl.run()
+        assert generator.render_kwargs_seen[0] is None
+
+    def test_collapse_toggle_and_expand(self):
+        reply = "<think>secret reasoning</think>\nAnswer."
+        repl, _ = make_repl(
+            ["hi", "/expand", "/collapse off", "/quit"],
+            generator=FakeGenerator([reply]),
+        )
+        repl.run()
+        assert repl.last_think_text == "secret reasoning"
+        assert repl.collapse_thinking is False
+        # raw content with thinking still stored in history
+        assert repl.session.messages[-1]["content"] == reply
+
+
+def test_detect_think_markers_and_toggle_key():
+    from axolotl.cli.chat import detect_think_markers, detect_think_toggle_key
+
+    qwen_like = "{% if enable_thinking %}...{{ '</think>' }}{% endif %}"
+    assert detect_think_toggle_key(qwen_like) == "enable_thinking"
+    assert detect_think_markers(qwen_like) == ("<think>", "</think>")
+
+    command_a_like = "...<|START_THINKING|>...<|END_THINKING|>..."
+    assert detect_think_markers(command_a_like) == (
+        "<|START_THINKING|>",
+        "<|END_THINKING|>",
+    )
+    assert detect_think_toggle_key(command_a_like) is None
+    assert detect_think_toggle_key("{% if thinking %}x{% endif %}") == "thinking"
+    assert detect_think_toggle_key(None) is None

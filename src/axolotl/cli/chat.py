@@ -12,7 +12,9 @@ from typing import Any, Callable
 
 import torch
 from rich.console import Console
+from rich.live import Live
 from rich.markup import escape
+from rich.text import Text
 from transformers import (
     DynamicCache,
     GenerationConfig,
@@ -32,6 +34,37 @@ LOG = get_logger(__name__)
 
 USER_PROMPT = ">>> "
 CONTINUATION_PROMPT = "... "
+
+# marker pairs used by the bundled chat templates (qwen3/exaone4/phi_4 vs command_a)
+THINK_MARKER_PAIRS: tuple[tuple[str, str], ...] = (
+    ("<think>", "</think>"),
+    ("<|START_THINKING|>", "<|END_THINKING|>"),
+)
+DEFAULT_THINK_MARKERS = THINK_MARKER_PAIRS[0]
+
+
+def detect_think_markers(chat_template_str: str | None) -> tuple[str, str]:
+    """Picks the thinking marker pair the template works with. Called once at startup."""
+    if chat_template_str:
+        for pair in THINK_MARKER_PAIRS:
+            if pair[1] in chat_template_str:
+                return pair
+    return DEFAULT_THINK_MARKERS
+
+
+def detect_think_toggle_key(chat_template_str: str | None) -> str | None:
+    """
+    Finds the jinja variable the template uses to toggle thinking at render time
+    (`enable_thinking` in our bundled gemma4/qwen3_5 templates; `thinking` on some
+    hub templates). Called once at startup.
+    """
+    if not chat_template_str:
+        return None
+    if "enable_thinking" in chat_template_str:
+        return "enable_thinking"
+    if "thinking" in chat_template_str:
+        return "thinking"
+    return None
 
 
 @dataclass(frozen=True)
@@ -118,6 +151,16 @@ def longest_common_prefix_len(a: list[int], b: list[int]) -> int:
     return n
 
 
+def find_subsequence(haystack: list[int], needle: list[int], start: int = 0) -> int:
+    if not needle:
+        return -1
+    n = len(needle)
+    for i in range(start, len(haystack) - n + 1):
+        if haystack[i : i + n] == needle:
+            return i
+    return -1
+
+
 @dataclass
 class ChatSession:
     """Holds the conversation state for a chat session."""
@@ -177,6 +220,8 @@ class TurnResult:
     prompt_tokens: int = 0
     reused_tokens: int = 0
     new_tokens: int = 0
+    thinking_tokens: int = 0
+    response_tokens: int = 0
     seconds: float = 0.0
 
 
@@ -198,6 +243,10 @@ class TurnGenerator:
         self.tokenizer = tokenizer
         self.chat_template_str = chat_template_str
         self.device = device
+        self.think_markers = detect_think_markers(
+            chat_template_str or getattr(tokenizer, "chat_template", None)
+        )
+        self._think_marker_ids: tuple[list[int], list[int]] | None = None
 
         self.eos_token_ids: set[int] = set()
         if tokenizer.eos_token_id is not None:
@@ -208,8 +257,10 @@ class TurnGenerator:
         elif isinstance(config_eos, (list, tuple)):
             self.eos_token_ids.update(config_eos)
 
-    def render(self, conversation: list[dict]) -> list[int]:
-        kwargs = {}
+    def render(
+        self, conversation: list[dict], render_kwargs: dict | None = None
+    ) -> list[int]:
+        kwargs = dict(render_kwargs or {})
         if self.chat_template_str:
             kwargs["chat_template"] = self.chat_template_str
         batch = self.tokenizer.apply_chat_template(
@@ -221,11 +272,38 @@ class TurnGenerator:
         )
         return list(batch["input_ids"])
 
+    def split_think_token_counts(self, generated: list[int]) -> tuple[int, int]:
+        """Returns (thinking, response) token counts for a generated sequence."""
+        if self._think_marker_ids is None:
+            try:
+                self._think_marker_ids = (
+                    self.tokenizer.encode(
+                        self.think_markers[0], add_special_tokens=False
+                    ),
+                    self.tokenizer.encode(
+                        self.think_markers[1], add_special_tokens=False
+                    ),
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                self._think_marker_ids = ([], [])
+
+        open_ids, close_ids = self._think_marker_ids
+        i = find_subsequence(generated, open_ids)
+        if i < 0:
+            return 0, len(generated)
+        j = find_subsequence(generated, close_ids, i + len(open_ids))
+        if j < 0:
+            return len(generated) - i - len(open_ids), 0
+        thinking = j - i - len(open_ids)
+        response = len(generated) - j - len(close_ids)
+        return thinking, response
+
     def generate_turn(
         self,
         conversation: list[dict],
         params: dict[str, Any],
         on_text: Callable[[str], None],
+        render_kwargs: dict | None = None,
     ) -> TurnResult:
         raise NotImplementedError
 
@@ -303,8 +381,9 @@ class CausalTurnGenerator(TurnGenerator):
         conversation: list[dict],
         params: dict[str, Any],
         on_text: Callable[[str], None],
+        render_kwargs: dict | None = None,
     ) -> TurnResult:
-        ids = self.render(conversation)
+        ids = self.render(conversation, render_kwargs)
         reused = self._prepare_cache(ids)
         cache = self._cache
         assert cache is not None
@@ -366,6 +445,7 @@ class CausalTurnGenerator(TurnGenerator):
         while generated and generated[-1] in self.eos_token_ids:
             generated.pop()
         content = self.tokenizer.decode(generated, skip_special_tokens=False)
+        thinking_tokens, response_tokens = self.split_think_token_counts(generated)
 
         return TurnResult(
             content=content,
@@ -373,6 +453,8 @@ class CausalTurnGenerator(TurnGenerator):
             prompt_tokens=len(ids),
             reused_tokens=reused,
             new_tokens=len(generated),
+            thinking_tokens=thinking_tokens,
+            response_tokens=response_tokens,
             seconds=seconds,
         )
 
@@ -395,10 +477,11 @@ class DiffusionTurnGenerator(TurnGenerator):
         conversation: list[dict],
         params: dict[str, Any],
         on_text: Callable[[str], None],
+        render_kwargs: dict | None = None,
     ) -> TurnResult:
         from axolotl.integrations.diffusion import generate as diffusion_generate
 
-        ids = self.render(conversation)
+        ids = self.render(conversation, render_kwargs)
         if params["seed"] is not None:
             torch.manual_seed(params["seed"])
 
@@ -425,12 +508,127 @@ class DiffusionTurnGenerator(TurnGenerator):
                 break
         content = self.tokenizer.decode(generated, skip_special_tokens=False)
         on_text(content)
+        thinking_tokens, response_tokens = self.split_think_token_counts(generated)
 
         return TurnResult(
             content=content,
             prompt_tokens=len(ids),
             new_tokens=len(generated),
+            thinking_tokens=thinking_tokens,
+            response_tokens=response_tokens,
             seconds=seconds,
+        )
+
+
+class ThinkStreamRenderer:
+    """
+    Renders one streamed turn. When collapsing, thinking is shown as a rolling
+    dim tail in a live region (so it never enters scrollback) and replaced by a
+    one-line summary when the block closes; the reply streams normally. When
+    collapse is off, this is a plain passthrough print.
+    """
+
+    def __init__(
+        self,
+        console: Console,
+        collapse: bool,
+        markers: tuple[str, str] = DEFAULT_THINK_MARKERS,
+        tail_lines: int = 6,
+    ):
+        self.console = console
+        self.collapse = collapse
+        self.open_marker, self.close_marker = markers
+        self.tail_lines = tail_lines
+        self.think_text = ""
+        self._mode = "detect"
+        self._pending = ""
+        self._start = time.monotonic()
+        self._live: Live | None = None
+
+    def feed(self, text: str):
+        if not self.collapse:
+            print(text, end="", flush=True)
+            return
+        self._pending += text
+        self._process()
+
+    def finish(self, interrupted: bool = False):
+        if not self.collapse:
+            return
+        if self._mode == "think":
+            self.think_text += self._pending
+            self._pending = ""
+            reason = "interrupted" if interrupted else f"no {self.close_marker}"
+            self._end_think(f" ({escape(reason)})")
+        elif self._pending:
+            print(self._pending, end="", flush=True)
+            self._pending = ""
+
+    @staticmethod
+    def _partial_suffix_len(text: str, marker: str) -> int:
+        max_len = min(len(text), len(marker) - 1)
+        for k in range(max_len, 0, -1):
+            if text.endswith(marker[:k]):
+                return k
+        return 0
+
+    def _process(self):
+        while True:
+            if self._mode == "detect":
+                stripped = self._pending.lstrip()
+                if stripped.startswith(self.open_marker):
+                    idx = self._pending.find(self.open_marker)
+                    self._pending = self._pending[idx + len(self.open_marker) :]
+                    self._mode = "think"
+                    self._live = Live(
+                        Text(""),
+                        console=self.console,
+                        refresh_per_second=12,
+                        transient=True,
+                    )
+                    self._live.start()
+                    continue
+                if not stripped or self.open_marker.startswith(stripped):
+                    return  # could still be a marker prefix; wait for more text
+                self._mode = "reply"
+                continue
+
+            if self._mode == "think":
+                idx = self._pending.find(self.close_marker)
+                if idx >= 0:
+                    self.think_text += self._pending[:idx]
+                    self._pending = self._pending[
+                        idx + len(self.close_marker) :
+                    ].lstrip("\n")
+                    self._end_think()
+                    self._mode = "reply"
+                    continue
+                keep = self._partial_suffix_len(self._pending, self.close_marker)
+                emit_until = len(self._pending) - keep
+                self.think_text += self._pending[:emit_until]
+                self._pending = self._pending[emit_until:]
+                self._update_live()
+                return
+
+            # reply mode
+            if self._pending:
+                print(self._pending, end="", flush=True)
+                self._pending = ""
+            return
+
+    def _update_live(self):
+        if self._live is None:
+            return
+        lines = self.think_text.splitlines()[-self.tail_lines :]
+        self._live.update(Text("\n".join(lines), style="dim"))
+
+    def _end_think(self, note: str = ""):
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+        seconds = time.monotonic() - self._start
+        self.console.print(
+            f"[dim]▸ thought for {seconds:.1f}s{note} · /expand to view[/dim]"
         )
 
 
@@ -475,6 +673,19 @@ COMMANDS: tuple[Command, ...] = (
         "append conversation as a chat_template-format JSONL sample",
         usage="/save [path]",
     ),
+    Command(
+        "think",
+        "cmd_think",
+        "toggle template-level thinking, if the template supports it",
+        usage="/think [on|off|default]",
+    ),
+    Command(
+        "collapse",
+        "cmd_collapse",
+        "collapse thinking blocks in the display",
+        usage="/collapse [on|off]",
+    ),
+    Command("expand", "cmd_expand", "show the hidden thinking from the last reply"),
     Command("quit", "cmd_quit", "exit chat", ("exit", "q")),
 )
 
@@ -499,6 +710,8 @@ class ChatRepl:
         console: Console | None = None,
         banner: dict[str, str] | None = None,
         input_fn: Callable[[str], str] | None = None,
+        think_toggle_key: str | None = None,
+        collapse_thinking: bool = True,
     ):
         self.generator = generator
         self.session = session or ChatSession()
@@ -507,6 +720,10 @@ class ChatRepl:
         self.console = console or Console()
         self.banner = banner or {}
         self.input_fn = input_fn or input
+        self.think_toggle_key = think_toggle_key
+        self.collapse_thinking = collapse_thinking
+        self.render_kwargs: dict[str, Any] = {}
+        self.last_think_text: str | None = None
 
     def run(self):
         self._print_banner()
@@ -570,24 +787,39 @@ class ChatRepl:
         return None
 
     def _generate_turn(self):
-        def on_text(text: str):
-            print(text, end="", flush=True)
-
+        renderer = ThinkStreamRenderer(
+            self.console,
+            collapse=self.collapse_thinking,
+            markers=getattr(self.generator, "think_markers", DEFAULT_THINK_MARKERS),
+        )
         try:
             result = self.generator.generate_turn(
-                self.session.conversation(), self.params, on_text
+                self.session.conversation(),
+                self.params,
+                renderer.feed,
+                render_kwargs=self.render_kwargs or None,
             )
         except KeyboardInterrupt:
+            renderer.finish(interrupted=True)
             raise
         except Exception as err:  # pylint: disable=broad-exception-caught
+            renderer.finish(interrupted=True)
             self.console.print(f"\n[red]Generation failed: {escape(str(err))}[/red]")
             self.console.print("[dim]The last message is kept; /undo removes it.[/dim]")
             return
 
+        renderer.finish(interrupted=result.interrupted)
+        self.last_think_text = renderer.think_text.strip() or None
+
         print()
         self.session.add_assistant(result.content)
+        token_summary = f"{result.new_tokens} tokens"
+        if result.thinking_tokens:
+            token_summary += (
+                f" ({result.thinking_tokens} thinking · {result.response_tokens} reply)"
+            )
         stats = (
-            f"{result.new_tokens} tokens · {result.seconds:.1f}s · "
+            f"{token_summary} · {result.seconds:.1f}s · "
             f"{result.prompt_tokens} prompt ({result.reused_tokens} cached)"
         )
         if result.interrupted:
@@ -702,6 +934,55 @@ class ChatRepl:
         self.console.print(f"[dim]Saved conversation to {path}[/dim]")
         return None
 
+    def cmd_think(self, args: str) -> None:
+        if not args:
+            current = self.render_kwargs.get(self.think_toggle_key or "", "default")
+            self.console.print(f"[dim]template thinking: {current}[/dim]")
+            return None
+        if not self.think_toggle_key:
+            self.console.print(
+                "[dim]This chat template has no thinking toggle; thinking is"
+                " controlled by the model/template itself.[/dim]"
+            )
+            return None
+        value = args.lower()
+        if value in ("on", "true"):
+            self.render_kwargs[self.think_toggle_key] = True
+        elif value in ("off", "false"):
+            self.render_kwargs[self.think_toggle_key] = False
+        elif value == "default":
+            self.render_kwargs.pop(self.think_toggle_key, None)
+        else:
+            self.console.print("[red]Usage: /think [on|off|default][/red]")
+            return None
+        current = self.render_kwargs.get(self.think_toggle_key, "default")
+        self.console.print(
+            f"[dim]{self.think_toggle_key} = {current} (applies from next turn)[/dim]"
+        )
+        return None
+
+    def cmd_collapse(self, args: str) -> None:
+        value = args.lower()
+        if value in ("on", "true", ""):
+            self.collapse_thinking = True
+        elif value in ("off", "false"):
+            self.collapse_thinking = False
+        else:
+            self.console.print("[red]Usage: /collapse [on|off][/red]")
+            return None
+        state = "collapsed" if self.collapse_thinking else "shown raw"
+        self.console.print(f"[dim]Thinking blocks will be {state}.[/dim]")
+        return None
+
+    def cmd_expand(self, _args: str) -> None:
+        if self.last_think_text:
+            self.console.print(escape(self.last_think_text), style="dim")
+        else:
+            self.console.print(
+                "[dim]No hidden thinking recorded for the last reply.[/dim]"
+            )
+        return None
+
     def cmd_quit(self, _args: str) -> str:
         return "quit"
 
@@ -812,7 +1093,14 @@ def do_chat(
         generator = CausalTurnGenerator(model, tokenizer, chat_template_str, cfg.device)
         params = default_gen_params(param_specs)
 
+    think_toggle_key = detect_think_toggle_key(
+        chat_template_str or tokenizer.chat_template
+    )
     repl = ChatRepl(
-        generator=generator, params=params, param_specs=param_specs, banner=banner
+        generator=generator,
+        params=params,
+        param_specs=param_specs,
+        banner=banner,
+        think_toggle_key=think_toggle_key,
     )
     repl.run()
