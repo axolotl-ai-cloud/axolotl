@@ -392,7 +392,7 @@ class PatchManager:
         """Apply patches specific to model architectures."""
         self._warn_if_fused_attn_unsupported(self.cfg)
 
-        if self.cfg.use_kernels:
+        if getattr(self.cfg, "use_kernels", None):
             from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
 
             patch_kernelize_fixes()
