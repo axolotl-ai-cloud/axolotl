@@ -186,12 +186,14 @@ class CausalTurnGenerator:
         kwargs = {}
         if self.chat_template_str:
             kwargs["chat_template"] = self.chat_template_str
-        return self.tokenizer.apply_chat_template(
+        batch = self.tokenizer.apply_chat_template(
             conversation,
             add_generation_prompt=True,
             tokenize=True,
+            return_dict=True,
             **kwargs,
         )
+        return list(batch["input_ids"])
 
     def reset_cache(self):
         self._cache = None
