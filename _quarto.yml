@@ -196,7 +196,6 @@ quartodoc:
         - monkeypatch.loss.chunked
         - monkeypatch.loss.eaft
         - monkeypatch.models.apertus.activation
-        - monkeypatch.models.deepseek_v4.modeling
         - monkeypatch.models.falcon_h1.modeling
         - monkeypatch.models.gemma4_unified.fused_attn
         - monkeypatch.models.granitemoehybrid.modeling
