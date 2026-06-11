@@ -31,6 +31,7 @@ from .mx_weights import (
     _mx_qdata,
     _mx_scale,
     _torchao_mxtensor_cls,
+    _torchao_nvfp4tensor_cls,
 )
 
 
@@ -40,6 +41,12 @@ def is_mxfp4_param(param) -> bool:
     if MXTensor is None or not isinstance(param, MXTensor):
         return False
     return param.elem_dtype == torch.float4_e2m1fn_x2
+
+
+def is_nvfp4_param(param) -> bool:
+    """True iff ``param`` is a torchao NVFP4Tensor (FP4 E2M1, block-16 E4M3 scales)."""
+    NVFP4Tensor = _torchao_nvfp4tensor_cls()
+    return NVFP4Tensor is not None and isinstance(param, NVFP4Tensor)
 
 
 def get_active_experts(sorted_expert_idxs: torch.Tensor, E: int) -> torch.Tensor:

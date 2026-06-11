@@ -1,6 +1,7 @@
 """Tests for ``axolotl.processing_strategies`` using fake tokenizers (offline/CI-safe)."""
 
 import logging
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,14 +12,18 @@ from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
     Gemma4ProcessingStrategy,
+    Glm4vProcessingStrategy,
+    InternVLProcessingStrategy,
     Llama3_2VisionProcessingStrategy,
     Llama4ProcessingStrategy,
+    Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,
     Qwen3_5ProcessingStrategy,
     RoleBoundary,
+    VoxtralProcessingStrategy,
     _apply_role_boundaries,
     get_processing_strategy,
 )
@@ -663,6 +668,174 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
 
 
 # --------------------------------------------------------------------------- #
+# Voxtral / Mistral3 / InternVL / Glm4v
+#
+# These four strategies do NOT declare role boundaries (mistral-common or
+# template-variant uncertainty); they fall back to pad + media masking.
+# Coverage focuses on the media-token masking surface plus role-boundary
+# override as the supported opt-in path.
+# --------------------------------------------------------------------------- #
+
+
+def _make_voxtral_strategy(**kwargs):
+    """Voxtral stub: special_ids live at processor.tokenizer.tokenizer.instruct_tokenizer.audio_encoder."""
+    tok = _Tokenizer({}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    return VoxtralProcessingStrategy(_Processor(tok), **kwargs)
+
+
+def test_voxtral_masks_pad_and_audio_tokens():
+    """Default Voxtral: no role boundaries → keep content, mask pad + audio markers."""
+    strategy = _make_voxtral_strategy()
+    # 300 = audio, 301 = begin_audio, 0 = pad. Other ids are kept.
+    seq = [7, 0, 300, 8, 301, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_voxtral_train_on_inputs_true_still_masks_audio():
+    """Even with train_on_inputs, audio/pad tokens must be masked."""
+    strategy = _make_voxtral_strategy(train_on_inputs=True)
+    seq = [7, 0, 300, 8, 301, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_voxtral_role_boundaries_override_enables_role_masking():
+    """Override opt-in: role masking applies on top of pad/audio masking."""
+    tok = _Tokenizer({"BOA": [50], "EOT": [60]}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    strategy = VoxtralProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    # Pre-BOA + post-EOT masked; BOA(50) and EOT(60) included by default;
+    # audio token 300 inside the span still masked.
+    seq = [7, 50, 8, 300, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
+
+
+def _make_mistral3_strategy(**kwargs):
+    tok = _Tokenizer({}, pad_id=0)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    return Mistral3ProcessingStrategy(_Processor(tok), **kwargs)
+
+
+def test_mistral3_masks_pad_and_three_image_tokens():
+    strategy = _make_mistral3_strategy()
+    seq = [7, 0, 400, 8, 401, 9, 402, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_mistral3_train_on_inputs_true_still_masks_image_markers():
+    strategy = _make_mistral3_strategy(train_on_inputs=True)
+    seq = [7, 0, 400, 8, 401, 9, 402, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_internvl_masks_pad_and_image_id_list():
+    """InternVL stores a *list* of image ids on processor.image_ids."""
+    tok = _Tokenizer({}, pad_id=0)
+    proc = _Processor(tok)
+    proc.image_ids = [500, 501, 502]
+    strategy = InternVLProcessingStrategy(proc)
+    seq = [7, 0, 500, 8, 501, 9, 502, 10]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9, -100, 10]
+
+
+def test_internvl_raises_when_image_ids_missing():
+    """No image_ids on the processor → __init__ must surface a clear error."""
+    tok = _Tokenizer({}, pad_id=0)
+    with pytest.raises(ValueError, match="image_ids"):
+        InternVLProcessingStrategy(_Processor(tok))
+
+
+def test_internvl_image_ids_with_none_entries_skipped():
+    """None entries in image_ids must not be used as a mask value."""
+    tok = _Tokenizer({}, pad_id=0)
+    proc = _Processor(tok)
+    proc.image_ids = [500, None, 502]
+    strategy = InternVLProcessingStrategy(proc)
+    seq = [500, 7, 502, 8]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100, 7, -100, 8]
+
+
+def _glm4v_tokenizer():
+    vocab = {
+        "<|image|>": [600],
+        "<|begin_of_image|>": [601],
+        "<|end_of_image|>": [602],
+        "<|video|>": [610],
+        "<|begin_of_video|>": [611],
+        "<|end_of_video|>": [612],
+    }
+    return _Tokenizer(vocab, pad_id=0)
+
+
+def test_glm4v_masks_pad_image_and_video_markers():
+    strategy = Glm4vProcessingStrategy(_Processor(_glm4v_tokenizer()))
+    # All six markers + pad must be masked; surrounding text tokens kept.
+    seq = [7, 0, 600, 601, 602, 8, 610, 611, 612, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, -100, -100, 8, -100, -100, -100, 9]
+
+
+def test_glm4v_train_on_inputs_true_still_masks_media_markers():
+    strategy = Glm4vProcessingStrategy(
+        _Processor(_glm4v_tokenizer()), train_on_inputs=True
+    )
+    seq = [7, 0, 600, 8, 610, 9]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [7, -100, -100, 8, -100, 9]
+
+
+def test_glm4v_role_boundaries_override_enables_role_masking():
+    """Override opt-in masks non-assistant role spans on top of media masking."""
+    tok = _glm4v_tokenizer()
+    tok.vocab["BOA"] = [50]
+    tok.vocab["EOT"] = [60]
+    strategy = Glm4vProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    seq = [7, 50, 8, 600, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # Pre-BOA + post-EOT masked; image marker 600 inside the assistant span
+    # is still masked post-scan.
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
+
+
+def test_glm4v_batch_of_two_rows():
+    """Multiple rows independently masked; pad in trailing positions kept as -100."""
+    strategy = Glm4vProcessingStrategy(_Processor(_glm4v_tokenizer()))
+    row_a = [7, 600, 8, 610, 9]
+    row_b = [11, 601, 12, 0, 0]
+    out = strategy.process_labels(torch.tensor([row_a, row_b])).tolist()
+    assert out[0] == [7, -100, 8, -100, 9]
+    assert out[1] == [11, -100, 12, -100, -100]
+
+
+# --------------------------------------------------------------------------- #
 # Dispatcher routing
 # --------------------------------------------------------------------------- #
 
@@ -789,6 +962,85 @@ def test_dispatch_glm4v_via_Glm46VProcessor():
     )
     s = _dispatch(proc, None)
     assert isinstance(s, Glm4vProcessingStrategy)
+
+
+def test_dispatch_voxtral():
+    """VoxtralProcessor routes to VoxtralProcessingStrategy."""
+    pytest.importorskip("transformers.models.voxtral")
+    from transformers.models.voxtral import VoxtralProcessor
+
+    tok = _Tokenizer({}, pad_id=0)
+    audio_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(audio=300, begin_audio=301)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(audio_encoder=audio_encoder)
+    )
+    proc = MagicMock(spec=VoxtralProcessor)
+    proc.tokenizer = tok
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, VoxtralProcessingStrategy)
+
+
+def test_dispatch_mistral3():
+    """Mistral3Processor (axolotl's optional wrapper) routes to Mistral3ProcessingStrategy."""
+    pytest.importorskip("mistral_common")
+    Mistral3Processor = pytest.importorskip(
+        "axolotl.utils.mistral.mistral3_processor"
+    ).Mistral3Processor
+
+    tok = _Tokenizer({}, pad_id=0)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    proc = MagicMock(spec=Mistral3Processor)
+    proc.tokenizer = tok
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, Mistral3ProcessingStrategy)
+
+
+def test_dispatch_internvl():
+    """InternVLProcessor routes to InternVLProcessingStrategy."""
+    pytest.importorskip("transformers.models.internvl")
+    from transformers.models.internvl import InternVLProcessor
+
+    tok = _Tokenizer({}, pad_id=0)
+    proc = MagicMock(spec=InternVLProcessor)
+    proc.tokenizer = tok
+    proc.image_ids = [500, 501, 502]
+    if hasattr(proc, "image_token"):
+        del proc.image_token
+
+    s = _dispatch(proc, None)
+    assert isinstance(s, InternVLProcessingStrategy)
+
+
+def test_mistral3_role_boundaries_override_enables_role_masking():
+    """Mistral3 override opt-in: role masking applies on top of pad/image masking."""
+    tok = _Tokenizer({"BOA": [50], "EOT": [60]}, pad_id=0)
+    image_encoder = SimpleNamespace(
+        special_ids=SimpleNamespace(img=400, img_break=401, img_end=402)
+    )
+    tok.tokenizer = SimpleNamespace(
+        instruct_tokenizer=SimpleNamespace(image_encoder=image_encoder)
+    )
+    strategy = Mistral3ProcessingStrategy(
+        _Processor(tok),
+        role_boundaries_override=[{"role": "assistant", "start": "BOA", "end": "EOT"}],
+    )
+    seq = [7, 50, 8, 400, 9, 60, 1]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    # Pre-BOA + post-EOT masked; image marker 400 inside the span also masked.
+    assert out == [-100, -100, 8, -100, 9, 60, -100]
 
 
 # --------------------------------------------------------------------------- #

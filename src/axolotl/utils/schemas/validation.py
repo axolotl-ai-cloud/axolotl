@@ -1085,7 +1085,7 @@ class OptimizationValidationMixin:
         if fsdp_config := data.get("fsdp_config"):
             should_fix = False
             for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
+                if key.startswith("fsdp_") and key != "fsdp_version":
                     should_fix = True
                     LOG.warning_once(
                         "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
