@@ -128,7 +128,7 @@ class TestChatSession:
         session.clear()
         assert not session.drop_last_assistant()
 
-    def test_save_jsonl(self, tmp_path):
+    def test_save_jsonl_multimodal_parts_format(self, tmp_path):
         session = ChatSession()
         session.system = "sys"
         session.add_user("q")
@@ -144,6 +144,8 @@ class TestChatSession:
             "user",
             "assistant",
         ]
+        assert sample["messages"][1]["content"] == [{"type": "text", "text": "q"}]
+        assert sample["messages"][2]["content"] == [{"type": "text", "text": "a"}]
 
 
 class TestCachePlanning:
@@ -331,3 +333,16 @@ class TestDiffusionChat:
         assert result.new_tokens == 2
         assert result.prompt_tokens == 3
         assert chunks == ["7,8"]
+
+
+def test_unknown_command_suggests_alias():
+    buf = io.StringIO()
+    repl = ChatRepl(
+        generator=FakeGenerator(),
+        console=Console(file=buf, force_terminal=False, width=200),
+        input_fn=lambda _p: "/quit",
+    )
+    repl._dispatch("/clea")
+    assert "Did you mean /clear?" in buf.getvalue()
+    repl._dispatch("/tem")
+    assert "Did you mean /temp?" in buf.getvalue()

@@ -155,10 +155,17 @@ class ChatSession:
         return bool(self.messages) and self.messages[-1]["role"] == "user"
 
     def save_jsonl(self, path: str):
+        # content-parts format: text-only today, but matches the multimodal
+        # dataset format so saved sessions stay usable as training data
+        messages = [
+            {
+                "role": message["role"],
+                "content": [{"type": "text", "text": message["content"]}],
+            }
+            for message in self.conversation()
+        ]
         with open(path, "a", encoding="utf-8") as file:
-            file.write(
-                json.dumps({"messages": self.conversation()}, ensure_ascii=False) + "\n"
-            )
+            file.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
 
 
 @dataclass
@@ -554,7 +561,9 @@ class ChatRepl:
         if spec:
             return self.cmd_set(f"{spec.key} {args}" if args else spec.key)
 
-        candidates = [c.name for c in COMMANDS] + [s.key for s in self.param_specs]
+        candidates = [
+            alias for command in COMMANDS for alias in (command.name, *command.aliases)
+        ] + [alias for spec in self.param_specs for alias in (spec.key, *spec.aliases)]
         close = difflib.get_close_matches(name, candidates, n=1)
         hint = f" Did you mean /{close[0]}?" if close else ""
         self.console.print(f"[red]Unknown command /{name}.[/red]{hint}")
