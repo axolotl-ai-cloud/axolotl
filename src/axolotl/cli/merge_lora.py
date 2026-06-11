@@ -135,8 +135,10 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         ValueError: If target directory for LoRA merged model does not exist.
     """
 
-    # Pre-load config to detect original quantization settings before overrides
-    raw_cfg = load_cfg(config, **kwargs)
+    # Pre-load config to detect original quantization settings before
+    # overrides. Force merge_lora off so the normalizer mirrors the training
+    # quant into load_in_4bit instead of taking the merge path.
+    raw_cfg = load_cfg(config, **{**kwargs, "merge_lora": False})
     original_load_in_4bit = getattr(raw_cfg, "load_in_4bit", False)
     original_adapter = getattr(raw_cfg, "adapter", None)
     original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)

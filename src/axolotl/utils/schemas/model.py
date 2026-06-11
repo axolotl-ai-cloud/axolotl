@@ -1,8 +1,8 @@
 """Pydantic models for model input / output, etc. configuration"""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from axolotl.utils.logging import get_logger
 
@@ -12,12 +12,14 @@ LOG = get_logger(__name__)
 class BnbBaseQuantConfig(BaseModel):
     """bitsandbytes base-weight quantization for LoRA training.
 
-    Replaces the older ``adapter: qlora`` + ``load_in_4bit: true`` boilerplate
-    for the common case. ``nf4`` implies 4-bit QLoRA (auto-promotes
-    ``adapter: lora`` to ``qlora`` and sets ``load_in_4bit``); ``int8`` stays
-    as 8-bit LoRA (sets ``load_in_8bit``).
+    Replaces the older ``adapter: qlora`` + ``load_in_4bit: true`` boilerplate.
+    ``nf4`` is 4-bit QLoRA (mirrored into ``load_in_4bit`` for the loader);
+    ``int8`` is 8-bit LoRA (mirrored into ``load_in_8bit``).
     """
 
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["bnb"]
     weight_dtype: Literal["nf4", "int8"] = Field(
         json_schema_extra={
             "description": "bnb base-weight dtype. nf4 → QLoRA 4-bit; int8 → 8-bit LoRA."
@@ -28,19 +30,20 @@ class BnbBaseQuantConfig(BaseModel):
 class TorchAoBaseQuantConfig(BaseModel):
     """torchao base-weight quantization for LoRA training.
 
-    Compile- and FSDP2-friendly alternative to bitsandbytes. 4-bit dtypes
-    (``int4`` / ``nf4`` / ``nvfp4``) auto-promote the adapter to ``qlora``;
-    ``int8`` / ``fp8`` stay as weight-only LoRA. ``mxfp4`` is rejected here
-    because torchao has no weight-only flavour for arbitrary linears — for
-    MoE experts use ``quantize_moe_experts: true`` instead.
+    Compile- and FSDP2-friendly alternative to bitsandbytes. ``int4`` /
+    ``nf4`` / ``nvfp4`` are 4-bit QLoRA-style base quants; ``int8`` / ``fp8``
+    are weight-only LoRA. MXFP4 has no weight-only torchao config for
+    arbitrary linears — for MoE experts use ``quantize_moe_experts: true``.
     """
 
-    weight_dtype: Literal["int4", "nf4", "nvfp4", "int8", "fp8", "mxfp4"] = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["torchao"]
+    weight_dtype: Literal["int4", "nf4", "nvfp4", "int8", "fp8"] = Field(
         json_schema_extra={
             "description": (
                 "torchao base-weight dtype. int4/nf4/nvfp4 → QLoRA; int8/fp8 "
-                "→ weight-only LoRA; mxfp4 is unsupported as a base-quant "
-                "shorthand (use quantize_moe_experts for MoE MXFP4)."
+                "→ weight-only LoRA."
             )
         }
     )
@@ -61,6 +64,9 @@ class Mxfp4BaseQuantConfig(BaseModel):
     Pass-through ``config_kwargs`` go straight to ``transformers.Mxfp4Config``.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["mxfp4"]
     config_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={"description": "Forwarded to transformers.Mxfp4Config."},
@@ -70,6 +76,9 @@ class Mxfp4BaseQuantConfig(BaseModel):
 class FineGrainedFp8BaseQuantConfig(BaseModel):
     """Structured form of ``model_quantization_config: FineGrainedFP8Config``."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["fp8"]
     config_kwargs: dict[str, Any] | None = Field(
         default=None,
         json_schema_extra={
@@ -78,46 +87,50 @@ class FineGrainedFp8BaseQuantConfig(BaseModel):
     )
 
 
-class ModelQuantizationConfig(BaseModel):
-    """Structured discriminator for the base model's quantization scheme.
+# Discriminated on `backend` so exactly-one-backend and per-backend dtypes are
+# structurally guaranteed, with precise pydantic errors for invalid combos.
+ModelQuantizationConfig = Annotated[
+    BnbBaseQuantConfig
+    | TorchAoBaseQuantConfig
+    | Mxfp4BaseQuantConfig
+    | FineGrainedFp8BaseQuantConfig,
+    Field(discriminator="backend"),
+]
 
-    Exactly one of ``bnb`` / ``torchao`` / ``mxfp4`` / ``fp8`` must be set.
-    The legacy string form (``model_quantization_config: Mxfp4Config``) keeps
-    working via a normalizer in the top-level validator.
+LEGACY_MQC_STRING_TO_BACKEND = {"Mxfp4Config": "mxfp4", "FineGrainedFP8Config": "fp8"}
+
+
+def mqc_as_dict(mqc: Any, backend: str) -> dict | None:
+    """Return model_quantization_config as a dict when it selects the given
+    backend, tolerating both Pydantic-model and model_dump'd-dict forms.
+
+    ``validate_config`` runs ``model_dump(exclude_none=True)`` and wraps the
+    result in a ``DictDefault``, so downstream code sees dicts; tests and
+    library users may pass Pydantic instances directly. Probe both.
     """
+    if mqc is None or isinstance(mqc, str):
+        return None
+    if isinstance(mqc, dict):
+        return mqc if mqc.get("backend") == backend else None
+    if getattr(mqc, "backend", None) == backend:
+        return mqc.model_dump(exclude_none=True)
+    return None
 
-    bnb: BnbBaseQuantConfig | None = None
-    torchao: TorchAoBaseQuantConfig | None = None
-    mxfp4: Mxfp4BaseQuantConfig | None = None
-    fp8: FineGrainedFp8BaseQuantConfig | None = None
 
-    @model_validator(mode="after")
-    def exactly_one_backend(self):
-        chosen = [
-            name
-            for name, value in (
-                ("bnb", self.bnb),
-                ("torchao", self.torchao),
-                ("mxfp4", self.mxfp4),
-                ("fp8", self.fp8),
-            )
-            if value is not None
-        ]
-        if len(chosen) != 1:
-            raise ValueError(
-                "model_quantization_config must select exactly one of "
-                "bnb / torchao / mxfp4 / fp8 (got: "
-                f"{chosen or 'none'})."
-            )
-        return self
+def implies_bnb_4bit(data: dict) -> bool:
+    """Whether raw config data requests a bnb 4-bit base, in any spelling."""
+    bnb = mqc_as_dict(data.get("model_quantization_config"), "bnb") or {}
+    return bool(
+        data.get("load_in_4bit")
+        or data.get("adapter") == "qlora"
+        or bnb.get("weight_dtype") == "nf4"
+    )
 
-    @property
-    def backend(self) -> str:
-        """Name of the selected discriminator (one of bnb/torchao/mxfp4/fp8)."""
-        for name in ("bnb", "torchao", "mxfp4", "fp8"):
-            if getattr(self, name) is not None:
-                return name
-        raise RuntimeError("model_quantization_config has no backend set")
+
+def implies_bnb_8bit(data: dict) -> bool:
+    """Whether raw config data requests a bnb 8-bit base, in any spelling."""
+    bnb = mqc_as_dict(data.get("model_quantization_config"), "bnb") or {}
+    return bool(data.get("load_in_8bit") or bnb.get("weight_dtype") == "int8")
 
 
 class ModelInputConfig(BaseModel):
@@ -210,10 +223,10 @@ class ModelInputConfig(BaseModel):
         default=None,
         json_schema_extra={
             "description": (
-                "Base-model quantization. Accepts the legacy string form "
-                "(`Mxfp4Config` / `FineGrainedFP8Config`) or a structured "
-                "form selecting exactly one of `bnb` / `torchao` / `mxfp4` "
-                "/ `fp8` (see ModelQuantizationConfig)."
+                "Base-model quantization. Structured form discriminated on "
+                "`backend` (`bnb` / `torchao` / `mxfp4` / `fp8`), e.g. "
+                "`{backend: torchao, weight_dtype: int4}`. The legacy string "
+                "form (`Mxfp4Config` / `FineGrainedFP8Config`) is deprecated."
             )
         },
     )

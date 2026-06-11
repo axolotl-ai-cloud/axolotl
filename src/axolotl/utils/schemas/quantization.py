@@ -12,22 +12,7 @@ from axolotl.utils.schemas.enums import TorchAOQuantDType
 def validate_ao_dtype(v: Any) -> TorchAOQuantDType | None:
     if v is None:
         return None
-    if v == "int4":
-        return TorchAOQuantDType.int4
-    if v == "int8":
-        return TorchAOQuantDType.int8
-    if v == "nf4":
-        return TorchAOQuantDType.nf4
-    if v in ["float8_e4m3fn", "fp8", "float8"]:
-        return TorchAOQuantDType.float8_e4m3fn
-    if v == "nvfp4":
-        return TorchAOQuantDType.nvfp4
-    if v == "mxfp4":
-        return TorchAOQuantDType.mxfp4
-
-    raise ValueError(
-        f"Invalid dtype: '{v}'. Must be one of: {[e.name for e in TorchAOQuantDType] + ['fp8', 'float8']}"
-    )
+    return TorchAOQuantDType.from_string(v)
 
 
 class QATConfig(BaseModel):

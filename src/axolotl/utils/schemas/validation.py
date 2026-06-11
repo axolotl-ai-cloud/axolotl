@@ -17,6 +17,7 @@ from axolotl.utils.schemas.enums import (
     RingAttnFunc,
     RLType,
 )
+from axolotl.utils.schemas.model import implies_bnb_4bit
 
 LOG = get_logger(__name__)
 
@@ -626,17 +627,10 @@ class LoRAValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
-        # Trigger on both the legacy alias and the post-normalization
-        # canonical shape (adapter: lora + bnb 4-bit). The PEFT validator
-        # may already have demoted qlora → lora by the time this runs.
-        adapter = data.get("adapter")
-        mqc = data.get("model_quantization_config")
-        bnb_4bit = (
-            isinstance(mqc, dict)
-            and isinstance(mqc.get("bnb"), dict)
-            and mqc["bnb"].get("weight_dtype") == "nf4"
-        ) or bool(data.get("load_in_4bit"))
-        is_qlora_shape = adapter == "qlora" or (adapter == "lora" and bnb_4bit)
+        # Match both the legacy alias and the post-normalization shape.
+        is_qlora_shape = data.get("adapter") in ("lora", "qlora") and implies_bnb_4bit(
+            data
+        )
         if (
             is_qlora_shape
             and data.get("gradient_checkpointing_kwargs", {})
@@ -731,13 +725,17 @@ class RLValidationMixin:
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
 
+        # Match both the legacy qlora alias and the post-normalization shape
+        # (adapter: lora + bnb 4-bit base).
+        is_qlora_shape = data.get("adapter") in ("lora", "qlora") and implies_bnb_4bit(
+            data
+        )
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
             and data.get("gradient_checkpointing_kwargs")
             and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
-            and data.get("load_in_4bit")
-            and data.get("adapter") == "qlora"
+            and is_qlora_shape
             and data.get("capabilities")
             and data.get("capabilities").get("n_gpu", 1) > 1
         ):
@@ -1236,51 +1234,6 @@ class SystemValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_model_quantization_config_vs_bnb(cls, data):
-        mqc = data.get("model_quantization_config")
-        if not mqc:
-            return data
-        # The structured ``bnb`` form is *expected* to set load_in_4bit /
-        # load_in_8bit via auto_detect_qlora — exempt it from the legacy
-        # check, which only targets the older Mxfp4Config / FineGrainedFP8Config
-        # string form (and the mxfp4/fp8 branches of the structured form).
-        is_bnb_structured = isinstance(mqc, dict) and isinstance(mqc.get("bnb"), dict)
-        if is_bnb_structured:
-            return data
-        if data.get("load_in_8bit") or data.get("load_in_4bit"):
-            raise ValueError(
-                "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
-    def deprecate_legacy_model_quantization_config_string(cls, data):
-        """Warn when the legacy string form of model_quantization_config
-        (with model_quantization_config_kwargs) is used; point at the
-        structured form."""
-        mqc = data.get("model_quantization_config")
-        if isinstance(mqc, str):
-            from axolotl.utils.logging import get_logger
-
-            backend = "mxfp4" if mqc == "Mxfp4Config" else "fp8"
-            kwargs = data.get("model_quantization_config_kwargs")
-            kwargs_snippet = f"\n      config_kwargs: {kwargs}" if kwargs else ""
-            get_logger(__name__).warning(
-                "DEPRECATED: `model_quantization_config: %s` (string form) "
-                "with `model_quantization_config_kwargs` is being kept for "
-                "backward compatibility. Prefer the structured form:\n"
-                "  model_quantization_config:\n"
-                "    %s:%s\n"
-                "The string form will be removed in a future release.",
-                mqc,
-                backend,
-                kwargs_snippet or " {}",
-            )
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def check_torchao_backend_exclusivity(cls, data):
         """``model_quantization_config.torchao`` is a uniform base-quant
         shorthand. It cannot compose with the other axolotl quant mechanisms.
@@ -1292,7 +1245,7 @@ class SystemValidationMixin:
         a winner.
         """
         mqc = data.get("model_quantization_config")
-        if not isinstance(mqc, dict) or not mqc.get("torchao"):
+        if not isinstance(mqc, dict) or mqc.get("backend") != "torchao":
             return data
 
         conflicting = []
@@ -1300,6 +1253,16 @@ class SystemValidationMixin:
             conflicting.append("quantize_moe_experts: true")
         if data.get("gptq"):
             conflicting.append("gptq: true")
+        if data.get("qat"):
+            conflicting.append("qat")
+        if data.get("ptq"):
+            conflicting.append("ptq")
+        if data.get("fp8"):
+            conflicting.append("fp8")
+        # relora merges adapters into the base weights in-place, which torchao
+        # tensor subclasses don't support (no aten.add_).
+        if data.get("relora"):
+            conflicting.append("relora")
 
         if conflicting:
             raise ValueError(
@@ -1554,7 +1517,7 @@ class ModelCompatibilityValidationMixin:
     def check_gpt_oss_fsdp_loading(cls, data):
         mqc = data.get("model_quantization_config", "")
         is_mxfp4 = mqc == "Mxfp4Config" or (
-            isinstance(mqc, dict) and mqc.get("mxfp4") is not None
+            isinstance(mqc, dict) and mqc.get("backend") == "mxfp4"
         )
         if is_mxfp4:
             fsdp_config = data.get("fsdp_config") or {}
