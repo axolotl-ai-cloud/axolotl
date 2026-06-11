@@ -35,6 +35,54 @@ axolotl inference your_config.yml --base-model="./completed-model"
 
 :::
 
+### Interactive Chat {#sec-chat}
+
+For multi-turn testing of conversational models, use chat mode. The chat template
+is resolved exactly as it was during training and re-applied to the full
+conversation each turn:
+
+```{.bash}
+axolotl inference your_config.yml --chat
+```
+
+Type a message to chat. End a line with `\` to continue typing on the next line.
+Slash commands control the session:
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/help` | `/?` | Show all commands |
+| `/new` | `/clear`, `/reset` | Clear the conversation (keeps system prompt and parameters) |
+| `/system [text\|clear]` | | Show, set, or clear the system prompt |
+| `/set <param> <value>` | | Set a generation parameter |
+| `/status` | `/params` | Show model info and current settings |
+| `/history` | | Show the conversation so far |
+| `/retry` | `/regen` | Regenerate the last assistant reply |
+| `/undo` | | Remove the last exchange |
+| `/save [path]` | | Append the conversation as a `chat_template`-format JSONL sample |
+| `/quit` | `/exit`, `/q` | Exit |
+
+Generation parameters can also be set directly, e.g. `/temperature 0.7` (or
+`/temp 0.7`), `/top_p 0.9`, `/top_k 50`, `/max_tokens 512`, `/rep 1.05`,
+`/seed 42`. Setting `temperature` to `0` switches to greedy decoding.
+
+Press `Ctrl+C` during generation to stop the current reply; the partial response
+is kept in the conversation.
+
+::: {.callout-note}
+Model output, including any thinking blocks (e.g. `<think>...</think>`), is shown
+and stored verbatim. When the conversation is re-rendered each turn, the chat
+template decides how prior-turn reasoning is handled — matching what the model
+saw during training. The KV cache is re-used across turns whenever the rendered
+conversation extends the previous one, so long chats stay responsive.
+:::
+
+`/save` writes conversations in the `messages` format accepted by
+`type: chat_template` datasets, so a good interactive session can be turned
+directly into training data.
+
+Chat mode is not yet supported for diffusion models or with `--prompter`; use
+the default inference mode for those.
+
 ## Advanced Usage {#sec-advanced}
 
 ### Gradio Interface {#sec-gradio}
