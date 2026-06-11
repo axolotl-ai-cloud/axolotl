@@ -428,15 +428,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and getattr(self.model.config, "num_labels", None) != 1
         ):
             self.model.config.num_labels = 1
-        trainer = trainer_cls(
-            model=self.model,
-            train_dataset=self.train_dataset,
-            eval_dataset=self.eval_dataset,
-            args=training_args,
-            data_collator=self.build_collator(training_args, **data_collator_kwargs),
-            callbacks=self.get_callbacks(),
-            **trainer_kwargs,
-        )
+        with self.allow_quantized_base_training():
+            trainer = trainer_cls(
+                model=self.model,
+                train_dataset=self.train_dataset,
+                eval_dataset=self.eval_dataset,
+                args=training_args,
+                data_collator=self.build_collator(
+                    training_args, **data_collator_kwargs
+                ),
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
         trainer = self.hook_post_create_trainer(trainer)
         # if the trainer has the `axolotl_cfg` property, set it
         if hasattr(trainer, "axolotl_cfg"):

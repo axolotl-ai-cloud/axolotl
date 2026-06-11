@@ -19,7 +19,7 @@ import importlib
 import logging
 import sys
 from abc import abstractmethod
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +74,29 @@ class TrainerBuilderBase(abc.ABC):
             model.add_model_tags(["axolotl"])
 
         patch_trainer_get_lr()
+
+    @contextmanager
+    def allow_quantized_base_training(self):
+        """Let LoRA train on quantized bases (torchao 4-bit, FP8, ...) that
+        transformers' validate_quantization_for_training rejects because
+        hf_quantizer.is_trainable is False — LoRA only trains the adapters
+        (base weights stay frozen and quantized)."""
+        if not (
+            self.cfg.adapter
+            and hasattr(self.model, "is_quantized")
+            and self.model.is_quantized
+        ):
+            yield
+            return
+
+        import transformers.trainer as trainer_module
+
+        orig = trainer_module.validate_quantization_for_training
+        trainer_module.validate_quantization_for_training = lambda model: None
+        try:
+            yield
+        finally:
+            trainer_module.validate_quantization_for_training = orig
 
     @property
     def model_ref(self):
