@@ -63,12 +63,36 @@ GEN_PARAMS: tuple[GenParamSpec, ...] = (
 )
 
 
-def default_gen_params() -> dict[str, Any]:
-    return {spec.key: spec.default for spec in GEN_PARAMS}
+DIFFUSION_GEN_PARAMS: tuple[GenParamSpec, ...] = (
+    GenParamSpec(
+        "temperature", float, 0.0, 5.0, 0.0, ("temp",), help="0 = greedy denoising"
+    ),
+    GenParamSpec(
+        "max_new_tokens",
+        int,
+        1,
+        100_000,
+        256,
+        ("tokens", "max_tokens", "max"),
+        help="size of the denoised completion block",
+    ),
+    GenParamSpec("steps", int, 1, 10_000, 128, help="number of denoising steps"),
+    GenParamSpec(
+        "seed", int, 0, 2**32 - 1, None, nullable=True, help="`/set seed none` clears"
+    ),
+)
 
 
-def resolve_gen_param(name: str) -> GenParamSpec | None:
-    for spec in GEN_PARAMS:
+def default_gen_params(
+    specs: tuple[GenParamSpec, ...] = GEN_PARAMS,
+) -> dict[str, Any]:
+    return {spec.key: spec.default for spec in specs}
+
+
+def resolve_gen_param(
+    name: str, specs: tuple[GenParamSpec, ...] = GEN_PARAMS
+) -> GenParamSpec | None:
+    for spec in specs:
         if name == spec.key or name in spec.aliases:
             return spec
     return None
@@ -159,19 +183,14 @@ class _StopOnEvent(StoppingCriteria):
         return self.event.is_set()
 
 
-class CausalTurnGenerator:
-    """
-    Generates assistant turns with `model.generate`, re-using the KV cache across
-    turns when the rendered conversation extends the previously cached tokens.
-    """
+class TurnGenerator:
+    """Base for assistant-turn generators: template rendering and EOS handling."""
 
     def __init__(self, model, tokenizer, chat_template_str: str | None, device):
         self.model = model
         self.tokenizer = tokenizer
         self.chat_template_str = chat_template_str
         self.device = device
-        self._cache: DynamicCache | None = None
-        self._cached_ids: list[int] = []
 
         self.eos_token_ids: set[int] = set()
         if tokenizer.eos_token_id is not None:
@@ -194,6 +213,26 @@ class CausalTurnGenerator:
             **kwargs,
         )
         return list(batch["input_ids"])
+
+    def generate_turn(
+        self,
+        conversation: list[dict],
+        params: dict[str, Any],
+        on_text: Callable[[str], None],
+    ) -> TurnResult:
+        raise NotImplementedError
+
+
+class CausalTurnGenerator(TurnGenerator):
+    """
+    Generates assistant turns with `model.generate`, re-using the KV cache across
+    turns when the rendered conversation extends the previously cached tokens.
+    """
+
+    def __init__(self, model, tokenizer, chat_template_str: str | None, device):
+        super().__init__(model, tokenizer, chat_template_str, device)
+        self._cache: DynamicCache | None = None
+        self._cached_ids: list[int] = []
 
     def reset_cache(self):
         self._cache = None
@@ -331,6 +370,63 @@ class CausalTurnGenerator:
         )
 
 
+class DiffusionTurnGenerator(TurnGenerator):
+    """
+    Generates assistant turns for diffusion LMs by appending a masked completion
+    block to the rendered conversation and denoising it. The whole block resolves
+    at once, so the reply is emitted in one piece rather than streamed.
+    """
+
+    def __init__(
+        self, model, tokenizer, chat_template_str: str | None, device, mask_token_id
+    ):
+        super().__init__(model, tokenizer, chat_template_str, device)
+        self.mask_token_id = int(mask_token_id)
+
+    def generate_turn(
+        self,
+        conversation: list[dict],
+        params: dict[str, Any],
+        on_text: Callable[[str], None],
+    ) -> TurnResult:
+        from axolotl.integrations.diffusion import generate as diffusion_generate
+
+        ids = self.render(conversation)
+        if params["seed"] is not None:
+            torch.manual_seed(params["seed"])
+
+        sequence = torch.tensor([ids], dtype=torch.long, device=self.device)
+
+        start = time.monotonic()
+        with torch.no_grad():
+            result = diffusion_generate(
+                self.model,
+                self.tokenizer,
+                original_sequence=sequence,
+                num_diffusion_steps=params["steps"],
+                temperature=params["temperature"],
+                mask_token_id=self.mask_token_id,
+                mode="completion",
+                completion_tokens=params["max_new_tokens"],
+            )
+        seconds = time.monotonic() - start
+
+        generated = list(result["generated_ids"][len(ids) :])
+        for i, token_id in enumerate(generated):
+            if token_id in self.eos_token_ids:
+                generated = generated[:i]
+                break
+        content = self.tokenizer.decode(generated, skip_special_tokens=False)
+        on_text(content)
+
+        return TurnResult(
+            content=content,
+            prompt_tokens=len(ids),
+            new_tokens=len(generated),
+            seconds=seconds,
+        )
+
+
 @dataclass(frozen=True)
 class Command:
     """A slash command with its aliases and handler."""
@@ -389,16 +485,18 @@ class ChatRepl:
     def __init__(
         self,
         *,
-        generator: CausalTurnGenerator,
+        generator: TurnGenerator,
         session: ChatSession | None = None,
         params: dict[str, Any] | None = None,
+        param_specs: tuple[GenParamSpec, ...] = GEN_PARAMS,
         console: Console | None = None,
         banner: dict[str, str] | None = None,
         input_fn: Callable[[str], str] | None = None,
     ):
         self.generator = generator
         self.session = session or ChatSession()
-        self.params = params or default_gen_params()
+        self.param_specs = param_specs
+        self.params = params or default_gen_params(param_specs)
         self.console = console or Console()
         self.banner = banner or {}
         self.input_fn = input_fn or input
@@ -452,11 +550,11 @@ class ChatRepl:
             return getattr(self, command.handler)(args)
 
         # bare parameter shortcuts: /temp 0.7, /top_p 0.9, ...
-        spec = resolve_gen_param(name)
+        spec = resolve_gen_param(name, self.param_specs)
         if spec:
             return self.cmd_set(f"{spec.key} {args}" if args else spec.key)
 
-        candidates = [c.name for c in COMMANDS] + [s.key for s in GEN_PARAMS]
+        candidates = [c.name for c in COMMANDS] + [s.key for s in self.param_specs]
         close = difflib.get_close_matches(name, candidates, n=1)
         hint = f" Did you mean /{close[0]}?" if close else ""
         self.console.print(f"[red]Unknown command /{name}.[/red]{hint}")
@@ -506,7 +604,8 @@ class ChatRepl:
             usage = f" — {command.usage}" if command.usage else ""
             self.console.print(f"  [bold]{names}[/bold]: {command.help}{usage}")
         params = ", ".join(
-            "/" + s.key + ("".join(f" /{a}" for a in s.aliases)) for s in GEN_PARAMS
+            "/" + s.key + ("".join(f" /{a}" for a in s.aliases))
+            for s in self.param_specs
         )
         self.console.print(f"  parameter shortcuts: {params}")
         return None
@@ -536,9 +635,9 @@ class ChatRepl:
         if len(tokens) != 2:
             self.console.print("[red]Usage: /set <param> <value>[/red]")
             return None
-        spec = resolve_gen_param(tokens[0].lower())
+        spec = resolve_gen_param(tokens[0].lower(), self.param_specs)
         if not spec:
-            valid = ", ".join(s.key for s in GEN_PARAMS)
+            valid = ", ".join(s.key for s in self.param_specs)
             self.console.print(f"[red]Unknown parameter. Valid: {valid}[/red]")
             return None
         try:
@@ -552,7 +651,7 @@ class ChatRepl:
     def cmd_status(self, _args: str) -> None:
         for key, value in self.banner.items():
             self.console.print(f"[dim]{key}:[/dim] {escape(value)}")
-        for spec in GEN_PARAMS:
+        for spec in self.param_specs:
             self.console.print(f"[dim]{spec.key}:[/dim] {self.params[spec.key]}")
         n_messages = len(self.session.messages)
         self.console.print(f"[dim]messages:[/dim] {n_messages}")
@@ -617,7 +716,8 @@ def _build_banner(cfg: DictDefault) -> dict[str, str]:
         banner["quantization"] = ", ".join(quant)
 
     if cfg.chat_template:
-        banner["chat template"] = f"config ({cfg.chat_template})"
+        template_name = getattr(cfg.chat_template, "value", cfg.chat_template)
+        banner["chat template"] = f"config ({template_name})"
     elif cfg.datasets and cfg.datasets[0].type == "chat_template":
         banner["chat template"] = "dataset config"
     else:
@@ -652,11 +752,6 @@ def do_chat(
         plugin.__class__.__name__ == "DiffusionPlugin"
         for plugin in plugin_manager.plugins.values()
     )
-    if is_diffusion:
-        raise NotImplementedError(
-            "--chat does not support diffusion models yet."
-            " Use the default inference mode instead."
-        )
 
     if not sys.stdin.isatty():
         raise ValueError(
@@ -686,6 +781,29 @@ def do_chat(
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
     model.eval()
 
-    generator = CausalTurnGenerator(model, tokenizer, chat_template_str, cfg.device)
-    repl = ChatRepl(generator=generator, banner=_build_banner(cfg))
+    banner = _build_banner(cfg)
+    generator: TurnGenerator
+    param_specs = GEN_PARAMS
+
+    if is_diffusion:
+        from axolotl.integrations.diffusion import resolve_mask_token_id
+
+        mask_token_id = resolve_mask_token_id(tokenizer, cfg, allow_add=False)
+        generator = DiffusionTurnGenerator(
+            model, tokenizer, chat_template_str, cfg.device, mask_token_id
+        )
+        param_specs = DIFFUSION_GEN_PARAMS
+        params = default_gen_params(param_specs)
+        if cfg.diffusion.num_diffusion_steps:
+            params["steps"] = cfg.diffusion.num_diffusion_steps
+        if cfg.diffusion.generation_temperature is not None:
+            params["temperature"] = cfg.diffusion.generation_temperature
+        banner["mode"] = "diffusion (completion-block denoising)"
+    else:
+        generator = CausalTurnGenerator(model, tokenizer, chat_template_str, cfg.device)
+        params = default_gen_params(param_specs)
+
+    repl = ChatRepl(
+        generator=generator, params=params, param_specs=param_specs, banner=banner
+    )
     repl.run()

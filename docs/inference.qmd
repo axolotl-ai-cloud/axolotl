@@ -80,8 +80,17 @@ conversation extends the previous one, so long chats stay responsive.
 `type: chat_template` datasets, so a good interactive session can be turned
 directly into training data.
 
-Chat mode is not yet supported for diffusion models or with `--prompter`; use
-the default inference mode for those.
+#### Diffusion Models {#sec-chat-diffusion}
+
+With the diffusion plugin enabled, chat mode generates each reply by appending
+a masked block to the conversation and denoising it. Replies arrive in one
+piece (no token streaming), and the parameter set changes accordingly:
+`/tokens N` sets the completion block size, `/steps N` the number of denoising
+steps, and `/temperature` the denoising temperature. Defaults come from the
+`diffusion:` section of your config.
+
+Chat mode is not supported with `--prompter`; use the default inference mode
+for legacy prompters.
 
 ## Advanced Usage {#sec-advanced}
 

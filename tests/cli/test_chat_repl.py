@@ -263,3 +263,71 @@ def test_longest_common_prefix_len():
     assert longest_common_prefix_len([1, 2], [1, 2]) == 2
     assert longest_common_prefix_len([1, 2, 3], [1, 2]) == 2
     assert longest_common_prefix_len([1, 9], [1, 2, 3]) == 1
+
+
+class TestDiffusionChat:
+    def test_diffusion_param_specs(self):
+        from axolotl.cli.chat import DIFFUSION_GEN_PARAMS
+
+        lines = iter(["/steps 32", "/tokens 64", "/top_p 0.9", "/quit"])
+
+        def input_fn(_prompt):
+            try:
+                return next(lines)
+            except StopIteration as err:
+                raise EOFError from err
+
+        repl = ChatRepl(
+            generator=FakeGenerator(),
+            param_specs=DIFFUSION_GEN_PARAMS,
+            console=Console(file=io.StringIO(), force_terminal=False),
+            input_fn=input_fn,
+        )
+        repl.run()
+        assert repl.params["steps"] == 32
+        assert repl.params["max_new_tokens"] == 64
+        assert "top_p" not in repl.params
+
+    def test_diffusion_turn_cuts_at_eos(self, monkeypatch):
+        from types import SimpleNamespace
+
+        import axolotl.integrations.diffusion as diffusion_module
+        from axolotl.cli.chat import (
+            DIFFUSION_GEN_PARAMS,
+            DiffusionTurnGenerator,
+            default_gen_params,
+        )
+
+        class FakeTokenizer:
+            eos_token_id = 2
+
+            def apply_chat_template(self, conversation, **kwargs):
+                return {"input_ids": [1, 5, 6]}
+
+            def decode(self, ids, **kwargs):
+                return ",".join(str(i) for i in ids)
+
+        fake_model = SimpleNamespace(
+            generation_config=SimpleNamespace(eos_token_id=None)
+        )
+
+        def fake_generate(model, tokenizer, **kwargs):
+            assert kwargs["mode"] == "completion"
+            assert kwargs["completion_tokens"] == 256
+            return {"generated_ids": [1, 5, 6, 7, 8, 2, 4]}
+
+        monkeypatch.setattr(diffusion_module, "generate", fake_generate)
+
+        generator = DiffusionTurnGenerator(
+            fake_model, FakeTokenizer(), None, "cpu", mask_token_id=9
+        )
+        chunks = []
+        result = generator.generate_turn(
+            [{"role": "user", "content": "hi"}],
+            default_gen_params(DIFFUSION_GEN_PARAMS),
+            chunks.append,
+        )
+        assert result.content == "7,8"
+        assert result.new_tokens == 2
+        assert result.prompt_tokens == 3
+        assert chunks == ["7,8"]
