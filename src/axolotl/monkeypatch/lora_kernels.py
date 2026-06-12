@@ -318,9 +318,8 @@ def find_self_attn_in_layer(
             yield layer.self_attn
 
 
-# Routed through the fused kernel so peft's _cast_input_dtype doesn't round-trip the activation bf16 -> fp32 -> bf16 on every call.
+# Route through the fused kernel to avoid peft's bf16->fp32->bf16 dtype round-trip.
 LINEAR_ATTN_PROJS = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a", "out_proj")
-_LINEAR_ATTN_PATCH_LOGGED: list[bool] = []
 
 
 def find_linear_attn_in_layer(layer: nn.Module) -> Generator[nn.Module, None, None]:
@@ -471,6 +470,9 @@ def apply_lora_kernel_patches(
 
     layers = get_layers(model)
 
+    linear_attn_patched_layers = 0
+    linear_attn_patched_projs: list[str] = []
+
     # Patch each layer
     for layer in layers:
         # Add QKV, O fallback implementations to start
@@ -525,7 +527,6 @@ def apply_lora_kernel_patches(
                         "Cannot patch some attention output projection - requires LoRA adapters"
                     )
         if cfg.lora_qkv_kernel or cfg.lora_o_kernel:
-            # Fused per-projection helpers so peft's cast doesn't round-trip the activation bf16 -> fp32 -> bf16 per call.
             for linear_attn in find_linear_attn_in_layer(layer):
                 patched_projs = []
                 for proj_name in LINEAR_ATTN_PROJS:
@@ -541,12 +542,8 @@ def apply_lora_kernel_patches(
                     )
                     patched_projs.append(proj_name)
                 if patched_projs:
-                    if not _LINEAR_ATTN_PATCH_LOGGED:
-                        _LINEAR_ATTN_PATCH_LOGGED.append(True)
-                        LOG.info(
-                            "Patched linear-attention LoRA projections with "
-                            f"fused kernels: {patched_projs}"
-                        )
+                    linear_attn_patched_layers += 1
+                    linear_attn_patched_projs = patched_projs
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # Check is inside lora_mlp_kernel guard so models with an
@@ -570,6 +567,12 @@ def apply_lora_kernel_patches(
                     LOG.warning_once(
                         "Cannot patch some MLP layers - requires LoRA adapters"
                     )
+
+    if linear_attn_patched_layers:
+        LOG.info(
+            f"Patched linear-attention LoRA projections {linear_attn_patched_projs} "
+            f"with fused kernels on {linear_attn_patched_layers} layer(s)"
+        )
 
     # Patch embedding layers (model-level, not per-layer)
     if cfg.lora_embedding_kernel:

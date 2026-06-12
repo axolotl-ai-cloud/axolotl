@@ -111,7 +111,7 @@ def _patched_decoder_forward(
 
 
 def _la_proj_fwd(module, proj_name, x):
-    """Uses the fused kernel (when patched) so peft's _cast_input_dtype doesn't round-trip the activation bf16 -> fp32 -> bf16 per call."""
+    """Use the fused kernel when patched (avoids peft's bf16->fp32->bf16 round-trip), else plain peft."""
     apply_fn = getattr(module, f"apply_{proj_name}", None)
     if apply_fn is not None:
         return apply_fn(x)

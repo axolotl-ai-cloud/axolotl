@@ -1792,7 +1792,7 @@ def apply_lora_o(self, X: torch.Tensor) -> torch.Tensor:
 
 
 def apply_lora_linear(proj: nn.Module, X: torch.Tensor) -> torch.Tensor:
-    """Routed through ``LoRA_O`` so peft's ``_cast_input_dtype`` doesn't round-trip the activation bf16 -> fp32 -> bf16 on every call."""
+    """Routed through ``LoRA_O`` to avoid peft's bf16->fp32->bf16 dtype round-trip."""
     W, b, W_quant, A, B, s, lora_bias, dropout, magnitude = get_lora_parameters(proj)
     X_drop = _apply_dropout(dropout, X, proj.training)
     return LoRA_O.apply(X, X_drop, W, b, W_quant, A, B, s, lora_bias, magnitude)
