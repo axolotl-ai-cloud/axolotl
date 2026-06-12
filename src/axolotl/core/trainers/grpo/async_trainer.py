@@ -50,6 +50,8 @@ from trl.trainer.utils import (
     unsplit_pixel_values_by_grid,
 )
 
+from axolotl.core.trainers.grpo.advantages import compute_advantages
+
 try:
     from trl.data_utils import (
         apply_chat_template,
@@ -1898,32 +1900,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
             rewards = (
                 rewards_per_func * self.reward_weights.to(device).unsqueeze(0)
             ).nansum(dim=1)
-            mean_grouped = (
-                rewards.view(-1, num_generations)
-                .mean(dim=1)
-                .repeat_interleave(num_generations)
+            advantages, _, is_std_zero = compute_advantages(
+                rewards,
+                num_generations,
+                advantage_estimator=getattr(self.args, "advantage_estimator", None)
+                or "group_mean",
+                scale_rewards=self.scale_rewards,
             )
-            if self.scale_rewards in ("group", "none"):
-                if num_generations > 1:
-                    std_rewards = (
-                        rewards.view(-1, num_generations)
-                        .std(dim=1)
-                        .repeat_interleave(num_generations)
-                    )
-                else:
-                    std_rewards = torch.zeros_like(rewards)
-            elif self.scale_rewards == "batch":
-                std_rewards = (
-                    rewards.std().expand_as(rewards)
-                    if rewards.numel() > 1
-                    else torch.zeros_like(rewards)
-                )
-            else:
-                raise ValueError(f"Invalid scale_rewards: {self.scale_rewards}")
-            advantages = rewards - mean_grouped
-            if self.scale_rewards != "none":
-                advantages = advantages / (std_rewards + 1e-4)
-            is_std_zero = torch.isclose(std_rewards, torch.zeros_like(std_rewards))
 
         elif self.multi_objective_aggregation == "normalize_then_sum":
             grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
@@ -2296,23 +2279,13 @@ class AsyncGRPOTrainer(GRPOTrainer):
             rewards = (
                 rewards_per_func * self.reward_weights.to(device).unsqueeze(0)
             ).nansum(dim=1)
-            mean_g = (
-                rewards.view(-1, num_generations)
-                .mean(dim=1)
-                .repeat_interleave(num_generations)
+            advantages, _, is_std_zero = compute_advantages(
+                rewards,
+                num_generations,
+                advantage_estimator=getattr(self.args, "advantage_estimator", None)
+                or "group_mean",
+                scale_rewards=self.scale_rewards,
             )
-            if num_generations > 1:
-                std_r = (
-                    rewards.view(-1, num_generations)
-                    .std(dim=1)
-                    .repeat_interleave(num_generations)
-                )
-            else:
-                std_r = torch.zeros_like(rewards)
-            advantages = rewards - mean_g
-            if self.scale_rewards != "none":
-                advantages = advantages / (std_r + 1e-4)
-            is_std_zero = torch.isclose(std_r, torch.zeros_like(std_r))
 
         elif self.multi_objective_aggregation == "normalize_then_sum":
             grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))

@@ -15,6 +15,7 @@ class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
     """Axolotl GRPO Config for GRPO training"""
 
     context_parallel_size: int | None = None
+    advantage_estimator: str = "group_mean"
 
 
 @dataclass
@@ -22,3 +23,4 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, FastAsyncGRPOConfig):
     """Axolotl Async GRPO Config — adds async prefetch, streaming scoring, and IS correction."""
 
     context_parallel_size: int | None = None
+    advantage_estimator: str = "group_mean"
