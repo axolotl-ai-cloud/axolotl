@@ -13,7 +13,7 @@ pytest.importorskip("fla")
 
 @pytest.fixture
 def packing_patched():
-    """Apply the packing patch (torch_compile on) and restore globals after."""
+    """Apply the packing patch (torch_compile on) and restore globals after; op registrations can't be undone, so _OPS_BUILT stays True by design (re-registering raises)."""
     import fla.modules.fused_norm_gate  # noqa: F401  (ensure importable)
     from fla.modules import FusedRMSNormGated
     from transformers.models.qwen3_5 import modeling_qwen3_5 as hf
@@ -286,3 +286,173 @@ class TestDecoderLoopCompiles:
             assert torch.allclose(
                 grads_e[n].float(), grads_c[n].float(), rtol=5e-2, atol=1e-3
             ), f"grad {n}: {(grads_e[n].float() - grads_c[n].float()).abs().max()}"
+
+    def test_fa2_compiled_matches_eager_grads(self, packing_patched):
+        """FA2 + GC (the production path): compiled grads must match eager — guards the Inductor fusion hazard the non-GC dynamo.disable boundary exists for."""
+        from transformers.modeling_flash_attention_utils import (
+            prepare_fa_kwargs_from_position_ids,
+        )
+
+        torch._dynamo.reset()
+        model = _build_model(attn="flash_attention_2")
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        model.train()
+        state = {k: v.clone() for k, v in model.state_dict().items()}
+        input_ids, position_ids = _packed_inputs()
+        (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(
+            position_ids[0]
+        )
+        kwargs = dict(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            use_cache=False,
+            cu_seq_lens_q=cu_q,
+            cu_seq_lens_k=cu_k,
+            max_length_q=int(max_q),
+            max_length_k=int(max_k),
+        )
+
+        def fwd_bwd(fn):
+            out = fn(**kwargs).last_hidden_state
+            loss = out.float().pow(2).mean()
+            loss.backward()
+            torch.cuda.synchronize()
+            grads = {
+                n: p.grad.detach().clone()
+                for n, p in model.named_parameters()
+                if p.grad is not None
+            }
+            return loss.detach(), grads
+
+        loss_e, grads_e = fwd_bwd(model)
+        model.load_state_dict(state)
+        model.zero_grad(set_to_none=True)
+        loss_c, grads_c = fwd_bwd(torch.compile(model))
+
+        assert torch.allclose(loss_e, loss_c, rtol=1e-3, atol=1e-3)
+        assert set(grads_e) == set(grads_c)
+        for n in grads_e:
+            assert torch.allclose(
+                grads_e[n].float(), grads_c[n].float(), rtol=5e-2, atol=1e-3
+            ), f"grad {n}: {(grads_e[n].float() - grads_c[n].float()).abs().max()}"
+
+    def test_moe_loop_compiles(self, packing_patched):
+        """qwen3_5_moe (claimed scope): expert routing must trace with zero breaks."""
+        pytest.importorskip("transformers.models.qwen3_5_moe")
+        from transformers.models.qwen3_5_moe.configuration_qwen3_5_moe import (
+            Qwen3_5MoeTextConfig,
+        )
+        from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import (
+            Qwen3_5MoeTextModel,
+        )
+
+        from transformers.models.qwen3_5_moe import modeling_qwen3_5_moe as hf_moe
+
+        from axolotl.monkeypatch.models.qwen3_5.modeling import (
+            patch_qwen3_5_moe_modeling_packing,
+        )
+
+        saved_moe = {
+            "decoder_forward": hf_moe.Qwen3_5MoeDecoderLayer.forward,
+            "gdn_forward": hf_moe.Qwen3_5MoeGatedDeltaNet.forward,
+        }
+        patch_qwen3_5_moe_modeling_packing(torch_compile=True)
+        torch._dynamo.reset()
+        from torch._dynamo.utils import counters
+
+        counters.clear()
+        torch.manual_seed(0)
+        cfg = Qwen3_5MoeTextConfig(
+            vocab_size=128,
+            hidden_size=128,
+            intermediate_size=128,
+            moe_intermediate_size=64,
+            num_hidden_layers=4,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=32,
+            max_position_embeddings=512,
+            num_experts=4,
+            num_experts_per_tok=2,
+            shared_expert_intermediate_size=64,
+            decoder_sparse_step=1,
+            layer_types=[
+                "linear_attention",
+                "full_attention",
+                "linear_attention",
+                "full_attention",
+            ],
+            linear_conv_kernel_dim=4,
+            linear_key_head_dim=16,
+            linear_value_head_dim=16,
+            linear_num_key_heads=2,
+            linear_num_value_heads=4,
+        )
+        cfg._attn_implementation = "sdpa"
+        model = Qwen3_5MoeTextModel(cfg).cuda().to(torch.bfloat16)
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        model.train()
+        try:
+            _fwd_bwd(model, torch.compile(model))
+
+            breaks = dict(counters["graph_break"])
+            assert not breaks, f"MoE decoder loop graph-broke: {list(breaks)}"
+            assert counters["stats"]["unique_graphs"] >= 1
+        finally:
+            hf_moe.Qwen3_5MoeDecoderLayer.forward = saved_moe["decoder_forward"]
+            hf_moe.Qwen3_5MoeGatedDeltaNet.forward = saved_moe["gdn_forward"]
+
+    def test_batch_gt1_packed_raises(self, packing_patched):
+        """B>1 with packed position_ids must fail loudly on the op path (FLA's own inner assert is stripped under -O)."""
+        qm = packing_patched
+        assert qm._FLA_COMPILED_OPS
+        model = _build_model()
+        model.train()
+        torch.manual_seed(123)
+        T = 64
+        input_ids = torch.randint(0, 128, (2, T), device="cuda")
+        pos = torch.cat(
+            [torch.arange(40, device="cuda"), torch.arange(T - 40, device="cuda")]
+        )
+        position_ids = pos.view(1, T).expand(2, T).contiguous()
+
+        with pytest.raises(Exception, match="batch size is expected to be 1"):
+            model(input_ids=input_ids, position_ids=position_ids, use_cache=False)
+
+    def test_opcheck_custom_ops(self, packing_patched):
+        """opcheck the fakes' hardcoded fla 0.4.1 shapes/dtypes (chunk-64 A, f32 g_cum/rstd) so a silent FLA drift turns into a red CI, not a miscompile."""
+        torch.manual_seed(1)
+        B, T, H, K, V = 1, 64, 4, 16, 16
+        q = torch.randn(B, T, H, K, device="cuda", dtype=torch.bfloat16)
+        k = torch.randn(B, T, H, K, device="cuda", dtype=torch.bfloat16)
+        v = torch.randn(B, T, H, V, device="cuda", dtype=torch.bfloat16)
+        g = torch.randn(B, T, H, device="cuda", dtype=torch.float32).sigmoid().log()
+        beta = torch.rand(B, T, H, device="cuda", dtype=torch.bfloat16)
+        for t in (q, k, v, g, beta):
+            t.requires_grad_(True)
+        pos2d = torch.cat(
+            [torch.arange(40, device="cuda"), torch.arange(T - 40, device="cuda")]
+        ).view(1, T)
+        pos3d = pos2d[None].expand(4, 1, T).contiguous()  # MRoPE layout
+
+        for pos in (pos2d, pos3d, None):
+            torch.library.opcheck(
+                torch.ops.axolotl_qwen3_5.gdn_chunk,
+                (q, k, v, g, beta, K**-0.5, pos),
+            )
+
+        x = torch.randn(
+            1, T, 96, device="cuda", dtype=torch.bfloat16, requires_grad=True
+        )
+        w = torch.randn(96, 4, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        b = torch.randn(96, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        for pos in (pos2d, None):
+            for bias in (b, None):
+                torch.library.opcheck(
+                    torch.ops.axolotl_qwen3_5.gdn_conv,
+                    (x, w, bias, "silu", pos),
+                )
