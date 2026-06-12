@@ -590,9 +590,7 @@ def _gdn_layer(linear_attn=None, self_attn=False):
 
 
 class TestFindLinearAttnInLayer:
-    """``find_linear_attn_in_layer`` must select Qwen3.5 GatedDeltaNet layers and
-    leave every other layout alone — in particular qwen3_next, whose projections
-    are fused as ``in_proj_qkvz``/``in_proj_ba`` and must NOT be patched."""
+    """Selects Qwen3.5 GatedDeltaNet layers only; qwen3_next (fused in_proj_qkvz/in_proj_ba) must NOT be patched."""
 
     def test_qwen3_5_style_is_selected(self):
         layer = _gdn_layer(_gdn_module_with(LINEAR_ATTN_PROJS))
@@ -650,12 +648,7 @@ def _run_gdn_proj(proj, fused, in_features=256, seed=0):
 
 
 def test_apply_lora_linear_matches_peft_forward_and_grad():
-    """Fused path equals the peft module forward to bf16 float noise.
-
-    The activation round-trip peft removes is numerics-free, so the fused
-    forward is typically bit-identical; the adapter GEMM ordering leaves only
-    sub-ulp differences in the gradients.
-    """
+    """Fused path matches the peft module forward and grad to bf16 float noise."""
     proj = _wrapped_gdn_proj()
     out_ref, grad_ref = _run_gdn_proj(proj, fused=False)
     out_fused, grad_fused = _run_gdn_proj(proj, fused=True)
