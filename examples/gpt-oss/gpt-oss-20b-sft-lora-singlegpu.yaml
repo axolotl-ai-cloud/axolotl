@@ -1,5 +1,5 @@
 base_model: openai/gpt-oss-20b
-use_kernels: true
+use_kernels: false
 model_quantization_config: Mxfp4Config
 model_quantization_config_kwargs:
   dequantize: true
