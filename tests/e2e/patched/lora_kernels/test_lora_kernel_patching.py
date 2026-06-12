@@ -6,7 +6,8 @@ import pytest
 import torch
 import yaml
 from accelerate.state import PartialState
-from peft import PeftModelForCausalLM, get_peft_config
+from peft import LoraConfig, PeftModelForCausalLM, get_peft_config, get_peft_model
+from torch import nn
 from transformers import AutoModelForCausalLM, LlamaForCausalLM
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaAttention
@@ -14,6 +15,7 @@ from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeAttention
 
 from axolotl.cli.config import load_cfg
 from axolotl.kernels.lora import (
+    apply_lora_linear,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
     apply_lora_o,
@@ -22,7 +24,9 @@ from axolotl.kernels.lora import (
 from axolotl.loaders.model import ModelLoader
 from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.monkeypatch.lora_kernels import (
+    LINEAR_ATTN_PROJS,
     apply_lora_kernel_patches,
+    find_linear_attn_in_layer,
     find_self_attn_in_layer,
     get_attention_cls_from_config,
     get_layers,
@@ -562,3 +566,114 @@ def test_kernel_training_integration_dropout_non_zero(temp_dir):
         for self_attn in find_self_attn_in_layer(layer):
             assert hasattr(self_attn, "apply_qkv")
             assert hasattr(self_attn, "apply_o")
+
+
+# ============================================================
+# GatedDeltaNet (linear-attention) fused-LoRA routing
+# ============================================================
+
+
+def _gdn_module_with(proj_names, in_features=64, out_features=64):
+    module = nn.Module()
+    for name in proj_names:
+        setattr(module, name, nn.Linear(in_features, out_features, bias=False))
+    return module
+
+
+def _gdn_layer(linear_attn=None, self_attn=False):
+    layer = nn.Module()
+    if linear_attn is not None:
+        layer.linear_attn = linear_attn
+    if self_attn:
+        layer.self_attn = _gdn_module_with(["q_proj", "k_proj", "v_proj", "o_proj"])
+    return layer
+
+
+class TestFindLinearAttnInLayer:
+    """``find_linear_attn_in_layer`` must select Qwen3.5 GatedDeltaNet layers and
+    leave every other layout alone — in particular qwen3_next, whose projections
+    are fused as ``in_proj_qkvz``/``in_proj_ba`` and must NOT be patched."""
+
+    def test_qwen3_5_style_is_selected(self):
+        layer = _gdn_layer(_gdn_module_with(LINEAR_ATTN_PROJS))
+        assert list(find_linear_attn_in_layer(layer)) == [layer.linear_attn]
+
+    def test_qwen3_next_style_is_excluded(self):
+        layer = _gdn_layer(_gdn_module_with(["in_proj_qkvz", "in_proj_ba", "out_proj"]))
+        assert list(find_linear_attn_in_layer(layer)) == []
+
+    def test_non_gdn_layer_is_excluded(self):
+        assert list(find_linear_attn_in_layer(_gdn_layer(self_attn=True))) == []
+
+    def test_out_proj_only_is_excluded(self):
+        layer = _gdn_layer(_gdn_module_with(["out_proj"]))
+        assert list(find_linear_attn_in_layer(layer)) == []
+
+    def test_missing_linear_attn_attr_is_excluded(self):
+        assert list(find_linear_attn_in_layer(nn.Module())) == []
+
+
+def _gdn_rel_l2(actual, reference):
+    return (actual - reference).norm().item() / (reference.norm().item() + 1e-12)
+
+
+def _wrapped_gdn_proj(in_features=256, out_features=384, use_dora=False):
+    class _Holder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.in_proj_qkv = nn.Linear(in_features, out_features, bias=False)
+
+    config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=["in_proj_qkv"],
+        lora_dropout=0.0,
+        use_dora=use_dora,
+    )
+    peft_model = get_peft_model(_Holder().to("cuda").to(torch.bfloat16), config)
+    proj = peft_model.base_model.model.in_proj_qkv
+    proj.train()
+    return proj
+
+
+def _run_gdn_proj(proj, fused, in_features=256, seed=0):
+    torch.manual_seed(seed)
+    inputs = torch.randn(
+        2, 16, in_features, device="cuda", dtype=torch.bfloat16, requires_grad=True
+    )
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        out = apply_lora_linear(proj, inputs) if fused else proj(inputs)
+    out.float().pow(2).mean().backward()
+    grad = inputs.grad.detach().float().clone()
+    proj.zero_grad(set_to_none=True)
+    return out.detach().float(), grad
+
+
+def test_apply_lora_linear_matches_peft_forward_and_grad():
+    """Fused path equals the peft module forward to bf16 float noise.
+
+    The activation round-trip peft removes is numerics-free, so the fused
+    forward is typically bit-identical; the adapter GEMM ordering leaves only
+    sub-ulp differences in the gradients.
+    """
+    proj = _wrapped_gdn_proj()
+    out_ref, grad_ref = _run_gdn_proj(proj, fused=False)
+    out_fused, grad_fused = _run_gdn_proj(proj, fused=True)
+
+    assert _gdn_rel_l2(out_fused, out_ref) < 1e-3
+    assert _gdn_rel_l2(grad_fused, grad_ref) < 1e-3
+
+
+def test_apply_lora_linear_matches_peft_with_dora():
+    """The DoRA branch (magnitude scaling) routes correctly through LoRA_O."""
+    proj = _wrapped_gdn_proj(use_dora=True)
+    with torch.no_grad():
+        for name, param in proj.named_parameters():
+            if "lora_B" in name or "magnitude" in name:
+                param.add_(torch.randn_like(param) * 0.01)
+
+    out_ref, grad_ref = _run_gdn_proj(proj, fused=False)
+    out_fused, grad_fused = _run_gdn_proj(proj, fused=True)
+
+    assert _gdn_rel_l2(out_fused, out_ref) < 1e-2
+    assert _gdn_rel_l2(grad_fused, grad_ref) < 1e-2

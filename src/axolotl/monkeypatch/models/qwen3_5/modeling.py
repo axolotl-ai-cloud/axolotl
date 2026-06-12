@@ -110,6 +110,14 @@ def _patched_decoder_forward(
     return hidden_states
 
 
+def _la_proj_fwd(module, proj_name, x):
+    """Uses the fused kernel (when patched) so peft's _cast_input_dtype doesn't round-trip the activation bf16 -> fp32 -> bf16 per call."""
+    apply_fn = getattr(module, f"apply_{proj_name}", None)
+    if apply_fn is not None:
+        return apply_fn(x)
+    return getattr(module, proj_name)(x)
+
+
 def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
     """Factory for patched Qwen3_5/Qwen3_5Moe GatedDeltaNet forward with packing support."""
 
@@ -141,13 +149,13 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             recurrent_state = cache_params.recurrent_states[self.layer_idx]
 
         # mixed_qkv stays [B, T, D]; only transposed inside paths that require [B, D, T]
-        mixed_qkv = self.in_proj_qkv(hidden_states)  # [B, T, D]
+        mixed_qkv = _la_proj_fwd(self, "in_proj_qkv", hidden_states)  # [B, T, D]
 
-        z = self.in_proj_z(hidden_states)
+        z = _la_proj_fwd(self, "in_proj_z", hidden_states)
         z = z.reshape(batch_size, seq_len, -1, self.head_v_dim)
 
-        b = self.in_proj_b(hidden_states)
-        a = self.in_proj_a(hidden_states)
+        b = _la_proj_fwd(self, "in_proj_b", hidden_states)
+        a = _la_proj_fwd(self, "in_proj_a", hidden_states)
 
         if use_precomputed_states:
             mixed_qkv = self.causal_conv1d_update(
@@ -232,7 +240,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
         core_attn_out = self.norm(core_attn_out, z)
         core_attn_out = core_attn_out.reshape(batch_size, seq_len, -1)
 
-        return self.out_proj(core_attn_out)
+        return _la_proj_fwd(self, "out_proj", core_attn_out)
 
     return patched_forward
 
