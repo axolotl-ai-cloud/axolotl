@@ -23,7 +23,9 @@ def patch_tie_weights_for_quantized_experts():
     """Idempotently patch ``PreTrainedModel.get_parameter_or_buffer``."""
     from transformers.modeling_utils import PreTrainedModel
 
-    if getattr(PreTrainedModel.get_parameter_or_buffer, "_diffusion_gemma_patched", False):
+    if getattr(
+        PreTrainedModel.get_parameter_or_buffer, "_diffusion_gemma_patched", False
+    ):
         return
 
     original = PreTrainedModel.get_parameter_or_buffer
@@ -45,7 +47,9 @@ def patch_tie_weights_for_quantized_experts():
 
     _patched._diffusion_gemma_patched = True
     PreTrainedModel.get_parameter_or_buffer = _patched
-    LOG.info("DiffusionGemma: patched get_parameter_or_buffer for tied quantized experts")
+    LOG.info(
+        "DiffusionGemma: patched get_parameter_or_buffer for tied quantized experts"
+    )
 
 
 def _to_fp4(weight, fmt: str):
@@ -55,7 +59,9 @@ def _to_fp4(weight, fmt: str):
     if fmt == "nvfp4":
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
-        return NVFP4Tensor.to_nvfp4(weight.to(torch.bfloat16).contiguous(), block_size=16)
+        return NVFP4Tensor.to_nvfp4(
+            weight.to(torch.bfloat16).contiguous(), block_size=16
+        )
     if fmt == "mxfp4":
         from torchao.prototype.mx_formats.mx_tensor import MXTensor
 

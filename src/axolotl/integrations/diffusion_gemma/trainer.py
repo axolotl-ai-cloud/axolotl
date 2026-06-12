@@ -86,7 +86,9 @@ def block_diffusion_step(
             metrics["diffusion/accuracy"] = (
                 (preds == canvas_labels[corrupted_mask]).float().mean().item()
             )
-        metrics["diffusion/self_conditioned"] = float(self_conditioning_logits is not None)
+        metrics["diffusion/self_conditioned"] = float(
+            self_conditioning_logits is not None
+        )
     return loss, metrics, outputs
 
 
@@ -125,6 +127,7 @@ class BlockDiffusionTrainer(AxolotlTrainer):
         return_outputs: bool = False,
         num_items_in_batch: torch.Tensor | None = None,
     ):
+        assert self._obj_cfg is not None, "post_set_axolotl_cfg() not called"
         loss, metrics, outputs = block_diffusion_step(model, inputs, self._obj_cfg)
         train_eval: Literal["train", "eval"] = "train" if model.training else "eval"
         self.store_metrics(metrics, train_eval=train_eval)

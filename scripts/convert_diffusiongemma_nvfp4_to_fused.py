@@ -30,20 +30,28 @@ from collections import defaultdict
 from pathlib import Path
 
 import torch
-from huggingface_hub import snapshot_download
-from huggingface_hub import save_torch_state_dict
-from safetensors import safe_open
 from compressed_tensors.compressors import NVFP4PackedCompressor
 from compressed_tensors.quantization import QuantizationConfig
+from huggingface_hub import save_torch_state_dict, snapshot_download
+from safetensors import safe_open
 
 PACKED_SUFFIX = ".weight_packed"
-COMPRESSION_KEYS = ("weight_scale", "weight_global_scale", "input_global_scale", "weight_shape")
+COMPRESSION_KEYS = (
+    "weight_scale",
+    "weight_global_scale",
+    "input_global_scale",
+    "weight_shape",
+)
 
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--src", required=True, help="HF repo id or local dir of the NVFP4 checkpoint")
-    p.add_argument("--dst", required=True, help="output dir for the fused bf16 checkpoint")
+    p.add_argument(
+        "--src", required=True, help="HF repo id or local dir of the NVFP4 checkpoint"
+    )
+    p.add_argument(
+        "--dst", required=True, help="output dir for the fused bf16 checkpoint"
+    )
     return p.parse_args()
 
 
@@ -67,7 +75,9 @@ def main():
     dst.mkdir(parents=True, exist_ok=True)
 
     cfg = json.load(open(src_dir / "config.json"))
-    scheme = QuantizationConfig.model_validate(cfg["quantization_config"]).config_groups["group_0"]
+    scheme = QuantizationConfig.model_validate(
+        cfg["quantization_config"]
+    ).config_groups["group_0"]
 
     key2h = load_keymap(src_dir)
     keys = list(key2h.keys())
@@ -102,7 +112,9 @@ def main():
 
     # 3. Fuse per-expert experts into 3D tensors, per (encoder/decoder, layer).
     #    Collect decompressed experts.{e}.{gate,up,down}_proj.weight -> stack.
-    expert_re = re.compile(r"^(?P<pfx>.*\.experts)\.(?P<e>\d+)\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$")
+    expert_re = re.compile(
+        r"^(?P<pfx>.*\.experts)\.(?P<e>\d+)\.(?P<proj>gate_proj|up_proj|down_proj)\.weight$"
+    )
     grouped = defaultdict(lambda: defaultdict(dict))  # pfx -> e -> {proj: tensor}
     to_drop = []
     for k in list(out.keys()):
@@ -117,13 +129,15 @@ def main():
         E = max(experts) + 1
         gate_up, down = [], []
         for e in range(E):
-            g = experts[e]["gate_proj"]   # [I, H]
-            u = experts[e]["up_proj"]     # [I, H]
-            d = experts[e]["down_proj"]   # [H, I]
+            g = experts[e]["gate_proj"]  # [I, H]
+            u = experts[e]["up_proj"]  # [I, H]
+            d = experts[e]["down_proj"]  # [H, I]
             gate_up.append(torch.cat([g, u], dim=0))  # [2I, H]
             down.append(d)
-        out[f"{pfx}.gate_up_proj"] = torch.stack(gate_up, dim=0).contiguous()  # [E, 2I, H]
-        out[f"{pfx}.down_proj"] = torch.stack(down, dim=0).contiguous()        # [E, H, I]
+        out[f"{pfx}.gate_up_proj"] = torch.stack(
+            gate_up, dim=0
+        ).contiguous()  # [E, 2I, H]
+        out[f"{pfx}.down_proj"] = torch.stack(down, dim=0).contiguous()  # [E, H, I]
     print(f"fused {len(grouped)} expert blocks")
 
     # 4. Write config without quantization_config (now bf16) + sidecar files.
@@ -131,9 +145,14 @@ def main():
     cfg["dtype"] = "bfloat16"
     json.dump(cfg, open(dst / "config.json", "w"), indent=2)
     for fname in (
-        "generation_config.json", "tokenizer.json", "tokenizer_config.json",
-        "special_tokens_map.json", "preprocessor_config.json", "processor_config.json",
-        "chat_template.jinja", "tokenizer.model",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "preprocessor_config.json",
+        "processor_config.json",
+        "chat_template.jinja",
+        "tokenizer.model",
     ):
         sp = src_dir / fname
         if sp.exists():

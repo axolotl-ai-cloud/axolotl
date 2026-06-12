@@ -40,7 +40,9 @@ def test_corruption_replaces_only_marked_positions():
     cfg = DiffusionObjectiveConfig(vocab_size=100)
     x0 = torch.randint(0, 100, (8, 32))
     t = torch.full((8,), 0.5)
-    noised, mask = corrupt_canvas(x0, t, cfg, generator=torch.Generator().manual_seed(1))
+    noised, mask = corrupt_canvas(
+        x0, t, cfg, generator=torch.Generator().manual_seed(1)
+    )
     # Unmarked positions must be unchanged
     assert torch.equal(noised[~mask], x0[~mask])
 

@@ -40,7 +40,7 @@ class CanvasCollator:
         self.canvas_length = canvas_length
         self.block_selection = block_selection
         self.pad_to_multiple_of = pad_to_multiple_of
-        self._rng = random.Random(seed)
+        self._rng = random.Random(seed)  # nosec B311 - block selection, not crypto
         self.pad_token_id = (
             getattr(tokenizer, "pad_token_id", None)
             if getattr(tokenizer, "pad_token_id", None) is not None
@@ -60,7 +60,11 @@ class CanvasCollator:
         real_prefix = True
         if not answer_positions:
             # No masked prompt: treat the whole sequence as the answer with a BOS prefix.
-            prefix = [self.bos_token_id] if self.bos_token_id is not None else [self.pad_token_id]
+            prefix = (
+                [self.bos_token_id]
+                if self.bos_token_id is not None
+                else [self.pad_token_id]
+            )
             span_ids = list(input_ids)
             span_eligible = [True] * n
             real_prefix = False
@@ -71,7 +75,11 @@ class CanvasCollator:
             span_ids = list(input_ids[first : last + 1])
             span_eligible = [labels[i] != IGNORE_INDEX for i in range(first, last + 1)]
             if not prefix:
-                prefix = [self.bos_token_id] if self.bos_token_id is not None else [self.pad_token_id]
+                prefix = (
+                    [self.bos_token_id]
+                    if self.bos_token_id is not None
+                    else [self.pad_token_id]
+                )
                 real_prefix = False
 
         # Choose which canvas-length block of the answer span to train on.
@@ -80,7 +88,11 @@ class CanvasCollator:
             start = 0
         else:
             num_blocks = (len(span_ids) + L - 1) // L
-            block = self._rng.randrange(num_blocks) if self.block_selection == "random" else 0
+            block = (
+                self._rng.randrange(num_blocks)
+                if self.block_selection == "random"
+                else 0
+            )
             start = min(block * L, len(span_ids) - 1)
             # Preceding answer tokens become part of the prefix (growing context).
             # These carry mm_token_type_ids == 0 (images only appear in the prompt),
@@ -119,7 +131,9 @@ class CanvasCollator:
                 mm = list(f.get("mm_token_type_ids", [0] * len(input_ids)))
                 # Image tokens only occur in the prompt, so the prefix's mm ids are a
                 # straight slice; the synthetic-BOS prefix carries no image tokens.
-                prefix_mms.append(mm[: len(prefix)] if real_prefix else [0] * len(prefix))
+                prefix_mms.append(
+                    mm[: len(prefix)] if real_prefix else [0] * len(prefix)
+                )
             if "pixel_values" in f and f["pixel_values"] is not None:
                 pixel_values.append(_as_tensor(f["pixel_values"]))
             if "image_position_ids" in f and f["image_position_ids"] is not None:
@@ -127,10 +141,12 @@ class CanvasCollator:
 
         max_len = self._max_prefix_len(prefixes)
         input_ids = torch.tensor(
-            [p + [self.pad_token_id] * (max_len - len(p)) for p in prefixes], dtype=torch.long
+            [p + [self.pad_token_id] * (max_len - len(p)) for p in prefixes],
+            dtype=torch.long,
         )
         attention_mask = torch.tensor(
-            [[1] * len(p) + [0] * (max_len - len(p)) for p in prefixes], dtype=torch.long
+            [[1] * len(p) + [0] * (max_len - len(p)) for p in prefixes],
+            dtype=torch.long,
         )
 
         batch = {

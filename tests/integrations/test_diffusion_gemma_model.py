@@ -20,16 +20,33 @@ def _tiny_model():
 
     torch.manual_seed(0)
     text_cfg = DiffusionGemmaTextConfig(
-        vocab_size=128, hidden_size=32, intermediate_size=64, num_hidden_layers=2,
-        num_attention_heads=4, num_key_value_heads=2, head_dim=8, global_head_dim=8,
-        num_global_key_value_heads=2, sliding_window=8, max_position_embeddings=256,
-        num_experts=4, top_k_experts=2, moe_intermediate_size=32,
+        vocab_size=128,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+        global_head_dim=8,
+        num_global_key_value_heads=2,
+        sliding_window=8,
+        max_position_embeddings=256,
+        num_experts=4,
+        top_k_experts=2,
+        moe_intermediate_size=32,
     )
     vis_cfg = Gemma4VisionConfig(
-        hidden_size=16, intermediate_size=32, num_hidden_layers=1,
-        num_attention_heads=2, image_size=16, patch_size=16, num_channels=3,
+        hidden_size=16,
+        intermediate_size=32,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        image_size=16,
+        patch_size=16,
+        num_channels=3,
     )
-    cfg = DiffusionGemmaConfig(text_config=text_cfg, vision_config=vis_cfg, canvas_length=8)
+    cfg = DiffusionGemmaConfig(
+        text_config=text_cfg, vision_config=vis_cfg, canvas_length=8
+    )
     return DiffusionGemmaForBlockDiffusion(cfg).to(torch.float32)
 
 
@@ -41,9 +58,14 @@ class _Tok:
 def _batch(canvas_length=8):
     from axolotl.integrations.diffusion_gemma.collator import CanvasCollator
 
-    coll = CanvasCollator(_Tok(), canvas_length=canvas_length, seed=0, block_selection="first")
+    coll = CanvasCollator(
+        _Tok(), canvas_length=canvas_length, seed=0, block_selection="first"
+    )
     feats = [
-        {"input_ids": [1, 5, 6, 7, 20, 21, 22, 23], "labels": [-100, -100, -100, -100, 20, 21, 22, 23]},
+        {
+            "input_ids": [1, 5, 6, 7, 20, 21, 22, 23],
+            "labels": [-100, -100, -100, -100, 20, 21, 22, 23],
+        },
         {"input_ids": [1, 8, 9, 30, 31], "labels": [-100, -100, -100, 30, 31]},
     ]
     return coll(feats)
@@ -105,8 +127,8 @@ def test_multimodal_kwargs_forwarded_to_encoder():
     class _RecordingModel:
         def __call__(self, **kwargs):
             seen.update(kwargs)
-            b, l = kwargs["decoder_input_ids"].shape
-            return SimpleNamespace(logits=torch.randn(b, l, 16))
+            b, seq = kwargs["decoder_input_ids"].shape
+            return SimpleNamespace(logits=torch.randn(b, seq, 16))
 
     batch = {
         "input_ids": torch.tensor([[1, 99, 7, 5]]),
@@ -118,7 +140,9 @@ def test_multimodal_kwargs_forwarded_to_encoder():
         "image_position_ids": torch.zeros(1, 2, dtype=torch.long),
     }
     cfg = DiffusionObjectiveConfig(vocab_size=16, self_conditioning_prob=0.0)
-    block_diffusion_step(_RecordingModel(), batch, cfg, generator=torch.Generator().manual_seed(0))
+    block_diffusion_step(
+        _RecordingModel(), batch, cfg, generator=torch.Generator().manual_seed(0)
+    )
     assert "pixel_values" in seen and seen["pixel_values"].shape == (1, 3, 16, 16)
     assert "mm_token_type_ids" in seen and "image_position_ids" in seen
 
@@ -132,10 +156,14 @@ def test_padded_prefix_is_masked_from_decoder():
     model.eval()
     batch = _batch()
     # second example has a shorter prefix -> right padding in input_ids
-    assert (batch["attention_mask"].sum(dim=1) != batch["attention_mask"].shape[1]).any()
+    assert (
+        batch["attention_mask"].sum(dim=1) != batch["attention_mask"].shape[1]
+    ).any()
     cfg = DiffusionObjectiveConfig(
         vocab_size=model.config.get_text_config().vocab_size,
         self_conditioning_prob=0.0,
     )
-    loss, _, _ = block_diffusion_step(model, batch, cfg, generator=torch.Generator().manual_seed(2))
+    loss, _, _ = block_diffusion_step(
+        model, batch, cfg, generator=torch.Generator().manual_seed(2)
+    )
     assert torch.isfinite(loss)

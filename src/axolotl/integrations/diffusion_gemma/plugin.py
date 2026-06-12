@@ -72,14 +72,14 @@ class DiffusionGemmaPlugin(BasePlugin):
         block-diffusion generation mixin does not define. Training never uses it, so a
         stub is enough to let PEFT wrap the model."""
         if not hasattr(model, "prepare_inputs_for_generation"):
-            model.prepare_inputs_for_generation = (
-                lambda *args, **kwargs: {}
-            )
+            model.prepare_inputs_for_generation = lambda *args, **kwargs: {}
         # HF Trainer's align_special_tokens reads generation_config.bos_token_id, which
         # DiffusionGemma's custom generation config omits (it only defines a subset).
         gen_cfg = getattr(model, "generation_config", None)
         if gen_cfg is not None and not hasattr(gen_cfg, "bos_token_id"):
-            gen_cfg.bos_token_id = getattr(model.config.get_text_config(), "bos_token_id", None)
+            gen_cfg.bos_token_id = getattr(
+                model.config.get_text_config(), "bos_token_id", None
+            )
 
     def post_model_build(self, cfg: DictDefault, model: PreTrainedModel):
         """Quantize the fused experts to a frozen torchao FP4 format for ScatterMoE."""

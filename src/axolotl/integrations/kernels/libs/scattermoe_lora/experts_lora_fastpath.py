@@ -46,7 +46,9 @@ def patch_paramwrapper_fastpath() -> None:
         # The fused kernel applies exactly one adapter and a raw (un-merged) base. For
         # anything else (multiple active adapters — PEFT sums them; or a per-param
         # merge/disable), defer to PEFT's own forward, which is always correct.
-        if getattr(wrapper, "disable_adapters", False) or getattr(wrapper, "merged", False):
+        if getattr(wrapper, "disable_adapters", False) or getattr(
+            wrapper, "merged", False
+        ):
             return False
         return len(getattr(wrapper, "active_adapters", [])) == 1
 
@@ -64,7 +66,9 @@ def patch_paramwrapper_fastpath() -> None:
                 wrappers[name] = base
             base = base.base_layer
 
-        if not (_is_scattermoe_experts(base) and all(_fusable(w) for w in wrappers.values())):
+        if not (
+            _is_scattermoe_experts(base) and all(_fusable(w) for w in wrappers.values())
+        ):
             return _orig_forward(self, x, *args, **kwargs)
 
         num_experts = getattr(base, "num_experts", None)
@@ -78,7 +82,9 @@ def patch_paramwrapper_fastpath() -> None:
             # by default. Cast (autograd still routes grads back to the fp32 params).
             lora_A = lora_A.to(x.dtype)
             lora_B = lora_B.to(x.dtype)
-            sm_lora[name] = _convert_smoe_lora(lora_A, lora_B, num_experts, rank, scaling)
+            sm_lora[name] = _convert_smoe_lora(
+                lora_A, lora_B, num_experts, rank, scaling
+            )
 
         base._scattermoe_lora = sm_lora
         try:
@@ -86,5 +92,5 @@ def patch_paramwrapper_fastpath() -> None:
         finally:
             base._scattermoe_lora = None
 
-    forward._scattermoe_fastpath = True
+    forward._scattermoe_fastpath = True  # type: ignore[attr-defined]
     ParamWrapper.forward = forward

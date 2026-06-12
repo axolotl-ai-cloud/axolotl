@@ -34,11 +34,15 @@ class DiffusionObjectiveConfig:
 
     def __post_init__(self):
         if self.corruption not in ("uniform", "mask"):
-            raise ValueError(f"corruption must be 'uniform' or 'mask', got {self.corruption}")
+            raise ValueError(
+                f"corruption must be 'uniform' or 'mask', got {self.corruption}"
+            )
         if self.corruption == "mask" and self.mask_token_id is None:
             raise ValueError("corruption='mask' requires mask_token_id to be set")
         if self.loss_weighting not in ("elbo", "uniform"):
-            raise ValueError(f"loss_weighting must be 'elbo' or 'uniform', got {self.loss_weighting}")
+            raise ValueError(
+                f"loss_weighting must be 'elbo' or 'uniform', got {self.loss_weighting}"
+            )
         if not 0.0 <= self.self_conditioning_prob <= 1.0:
             raise ValueError("self_conditioning_prob must be in [0, 1]")
 
