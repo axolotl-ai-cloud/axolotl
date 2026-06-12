@@ -235,8 +235,24 @@ class TestAdvantageEstimatorConfig:
         }
         assert RLValidationMixin.check_grpo_advantage_estimator(data) is data
 
-    def test_validator_ignores_default(self):
-        """group_mean / unset estimators pass for any trainer type."""
-        for trl_cfg in ({}, {"advantage_estimator": "group_mean"}):
-            data = {"rl": "dpo", "trl": dict(trl_cfg)}
-            assert RLValidationMixin.check_grpo_advantage_estimator(data) is data
+    def test_validator_ignores_unset(self):
+        """An unset estimator passes for any trainer type."""
+        data = {"rl": "dpo", "trl": {}}
+        assert RLValidationMixin.check_grpo_advantage_estimator(data) is data
+
+    def test_validator_rejects_explicit_group_mean_non_grpo(self):
+        """Explicitly setting the estimator (even to the default) requires rl: grpo."""
+        data = {"rl": "dpo", "trl": {"advantage_estimator": "group_mean"}}
+        with pytest.raises(ValueError, match="only supported with `rl: grpo`"):
+            RLValidationMixin.check_grpo_advantage_estimator(data)
+
+    def test_validator_allows_group_mean_with_normalize_then_sum(self):
+        """group_mean is a no-op, so it stays valid with GDPO-style aggregation."""
+        data = {
+            "rl": "grpo",
+            "trl": {
+                "advantage_estimator": "group_mean",
+                "multi_objective_aggregation": "normalize_then_sum",
+            },
+        }
+        assert RLValidationMixin.check_grpo_advantage_estimator(data) is data

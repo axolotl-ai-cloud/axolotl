@@ -725,7 +725,7 @@ class RLValidationMixin:
         """
         trl_cfg = data.get("trl") or {}
         estimator = trl_cfg.get("advantage_estimator")
-        if estimator is None or estimator == "group_mean":
+        if estimator is None:
             return data
 
         if data.get("rl") != "grpo":
@@ -733,6 +733,10 @@ class RLValidationMixin:
                 f"`trl.advantage_estimator` is only supported with `rl: grpo`, "
                 f"but got rl: {data.get('rl')!r}"
             )
+
+        if estimator == "group_mean":
+            # The default estimator is a no-op, so any aggregation is fine
+            return data
 
         if trl_cfg.get("multi_objective_aggregation") == "normalize_then_sum":
             raise ValueError(
@@ -747,7 +751,7 @@ class RLValidationMixin:
                 "advantage_estimator: rloo is canonically used without reward "
                 "scaling; consider setting `trl.scale_rewards: none`."
             )
-        if estimator == "reinforce_plus_plus" and scale_rewards in (True, "group"):
+        if estimator == "reinforce_plus_plus" and scale_rewards != "batch":
             LOG.warning(
                 "advantage_estimator: reinforce_plus_plus normalizes advantages "
                 "with global batch statistics; consider setting "

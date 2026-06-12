@@ -677,7 +677,7 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             rewards,
             self.num_generations,
             advantage_estimator=self._advantage_estimator,
-            scale_rewards=self.args.scale_rewards,
+            scale_rewards=self.scale_rewards,
         )
 
         # Slice to keep only the local part of the data

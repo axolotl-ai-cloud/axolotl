@@ -1,25 +1,10 @@
-"""Advantage estimators for GRPO-style RL trainers.
+"""Selectable advantage estimators for GRPO-style RL trainers.
 
-Implements the selectable baseline/advantage computations requested in
-https://github.com/axolotl-ai-cloud/axolotl/issues/3676:
-
-- ``group_mean`` (default): the standard GRPO baseline — the mean reward of
-  the ``num_generations`` completions sampled for the same prompt.
-- ``rloo``: REINFORCE Leave-One-Out — each completion is baselined against
-  the mean reward of the *other* completions in its group, which keeps the
-  baseline unbiased w.r.t. the sample it is applied to. See `Back to Basics:
-  Revisiting REINFORCE-Style Optimization for Learning from Human Feedback
-  in LLMs <https://huggingface.co/papers/2402.14740>`_.
-- ``reinforce_plus_plus``: a global-batch baseline — every completion is
-  baselined against the mean reward of the entire (gathered) batch, ignoring
-  group structure. See `REINFORCE++: A Simple and Efficient Approach for
-  Aligning Large Language Models <https://huggingface.co/papers/2501.03262>`_.
-  The paper normalizes advantages with global batch statistics, so this
-  estimator pairs naturally with ``scale_rewards: batch``.
-
-The estimator only controls the *baseline*; reward scaling stays controlled
-by ``scale_rewards`` (``group`` / ``batch`` / ``none``) so the two remain
-orthogonal, mirroring TRL's GRPO semantics.
+The estimator only swaps the baseline (``group_mean`` = GRPO, ``rloo`` =
+leave-one-out per https://huggingface.co/papers/2402.14740,
+``reinforce_plus_plus`` = global batch per
+https://huggingface.co/papers/2501.03262); reward scaling stays governed by
+``scale_rewards`` so the two remain orthogonal, mirroring TRL's semantics.
 """
 
 import torch
