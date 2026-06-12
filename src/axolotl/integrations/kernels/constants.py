@@ -6,6 +6,7 @@ import importlib
 # Models where MoE is embedded in the decoder layer (no separate SparseMoeBlock).
 EXPERTS_ONLY_BLOCK = {
     "gemma4_text": "Gemma4TextExperts",
+    "diffusion_gemma_text": "DiffusionGemmaTextExperts",
 }
 
 

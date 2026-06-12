@@ -1,0 +1,82 @@
+# Block-diffusion SFT of DiffusionGemma (text), with LoRA + ScatterMoE expert kernels.
+#   axolotl train examples/diffusion-gemma/26b-a4b-lora.yaml
+#
+# DiffusionGemma is an encoder-decoder MoE block-diffusion model: the prompt prefix
+# is encoded into a KV cache, and a fixed-length `canvas` block of the response is
+# denoised by the bidirectional decoder. Requires transformers >= 5.11.0.
+
+base_model: google/diffusiongemma-26B-A4B-it
+# DiffusionGemmaForBlockDiffusion is not an AutoModelForCausalLM head. The plugin
+# sets this automatically; it is shown here for clarity.
+type_of_model: DiffusionGemmaForBlockDiffusion
+
+plugins:
+  - axolotl.integrations.diffusion_gemma.DiffusionGemmaPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+# Fused per-expert grouped GEMMs with LoRA (Triton). Works out of the box because
+# DiffusionGemma's experts use the transformers ExpertsInterface.
+use_kernels: true
+use_scattermoe: true
+# DiffusionGemma's attention classes aren't named {Model}Attention, so the LoRA
+# attention/MLP kernels can't patch them; the ScatterMoE expert kernel is separate.
+lora_qkv_kernel: false
+lora_o_kernel: false
+lora_mlp_kernel: false
+
+block_diffusion:
+  canvas_length: 256          # defaults to the model config's canvas_length
+  corruption: uniform         # matches DiffusionGemma's inference sampler
+  loss_weighting: elbo        # 1/t reweighting
+  self_conditioning_prob: 0.5
+
+chat_template: gemma
+datasets:
+  # Single-response (prompt -> completion) data is the natural fit: the prompt
+  # becomes the encoder prefix and the response is denoised in the canvas.
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    drop_system_message: true   # the gemma chat template has no system role
+    message_property_mappings:
+      role: from
+      content: value
+
+val_set_size: 0.0
+output_dir: ./outputs/diffusion-gemma-lora
+dataset_prepared_path: last_run_prepared
+
+sequence_len: 2048
+# The canvas collator builds prefix/canvas batches; sample packing is not used.
+sample_packing: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+# Routed experts are 3D nn.Parameter tensors (not nn.Linear); ScatterMoE fuses
+# their LoRA into the kernel.
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+
+bf16: auto
+gradient_checkpointing: false  # breaks the encoder KV cache the decoder reads during training
+flash_attention: false   # DiffusionGemma global attention uses head_dim 512 (> flash-attn 256 limit); use sdpa
+
+warmup_ratio: 0.03
+saves_per_epoch: 1
+weight_decay: 0.0

@@ -320,9 +320,15 @@ def scattermoe_experts_forward(
         top_k_index, num_experts=self.num_experts
     )
 
-    # Extract LoRA params if PEFT is active
+    # Extract LoRA params if PEFT is active. The fast-path patch (PEFT >= 0.19) attaches
+    # ScatterMoE-layout A/B directly, bypassing the parametrization merge; fall back to
+    # the legacy ParamWrapper walk otherwise.
     gup_lora, down_lora = None, None
-    if _has_peft_wrapper(self):
+    sm_lora = getattr(self, "_scattermoe_lora", None)
+    if sm_lora:
+        gup_lora = sm_lora.get("gate_up_proj")
+        down_lora = sm_lora.get("down_proj")
+    elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
     (
@@ -484,6 +490,24 @@ def register_scattermoe_experts():
     from transformers.modeling_utils import PreTrainedModel
 
     ALL_EXPERTS_FUNCTIONS.register("scattermoe", scattermoe_experts_forward)
+
+    # Route PEFT target_parameters expert LoRA to the fused kernel (bypassing the
+    # parametrization merge) for experts-interface MoEs (Gemma4, DiffusionGemma).
+    try:
+        from .experts_lora_fastpath import patch_paramwrapper_fastpath
+
+        patch_paramwrapper_fastpath()
+    except (ImportError, AttributeError):
+        pass
+
+    # Safety net for any path that still merges `base + delta` on a frozen FP4 base
+    # (e.g. merge_and_unload): make aten.add dequantize the FP4 tensor.
+    try:
+        from .torchao_fp4_add import patch_torchao_fp4_add
+
+        patch_torchao_fp4_add()
+    except (ImportError, AttributeError):  # torchao optional / API drift
+        pass
 
     if _SCATTERMOE_PATCHED:
         return

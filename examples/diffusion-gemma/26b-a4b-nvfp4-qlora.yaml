@@ -1,0 +1,84 @@
+# LoRA over the (frozen) RedHatAI NVFP4 DiffusionGemma checkpoint.
+#
+# The published RedHatAI/diffusiongemma-26B-A4B-it-NVFP4 checkpoint is compressed-tensors
+# `nvfp4-pack-quantized` in the PRE-FUSION (transformers 5.8 dev) layout, with per-expert
+# Linears. transformers >= 5.11 uses fused 3D experts, so the checkpoint does not load
+# directly. Convert it once to the fused layout (decompresses NVFP4 -> bf16 and fuses the
+# experts); the base then holds the NVFP4-derived weights and is frozen while LoRA trains:
+#
+#   python scripts/convert_diffusiongemma_nvfp4_to_fused.py \
+#       --src RedHatAI/diffusiongemma-26B-A4B-it-NVFP4 \
+#       --dst ./outputs/diffusiongemma-26B-A4B-it-fused-bf16
+#   axolotl train examples/diffusion-gemma/26b-a4b-nvfp4-qlora.yaml
+#
+# Requires transformers >= 5.11.0. Validated end-to-end on a single 96GB GPU.
+
+base_model: ./outputs/diffusiongemma-26B-A4B-it-fused-bf16
+type_of_model: DiffusionGemmaForBlockDiffusion
+
+plugins:
+  - axolotl.integrations.diffusion_gemma.DiffusionGemmaPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+use_kernels: true
+use_scattermoe: true              # fused per-expert grouped GEMMs over the (bf16) experts
+# DiffusionGemma's attention classes aren't named {Model}Attention, so the LoRA
+# attention/MLP kernels can't patch them; the ScatterMoE expert kernel is separate.
+lora_qkv_kernel: false
+lora_o_kernel: false
+lora_mlp_kernel: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:           # LoRA on the frozen 4-bit experts (fused in-kernel)
+  - experts.gate_up_proj
+  - experts.down_proj
+
+block_diffusion:
+  canvas_length: 256
+  corruption: uniform
+  loss_weighting: elbo
+  self_conditioning_prob: 0.5
+  # Quantize the fused experts to frozen torchao NVFP4 on load (the "frozen NVFP4" base).
+  # ScatterMoE fuses the expert LoRA over it via selective dequant — validated training
+  # the full 26B on a single GPU at ~38 GiB.
+  frozen_fp4_experts: nvfp4
+
+chat_template: gemma
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:20%]
+    field_messages: conversations
+    drop_system_message: true   # the gemma chat template has no system role
+    message_property_mappings:
+      role: from
+      content: value
+
+val_set_size: 0.0
+output_dir: ./outputs/diffusion-gemma-nvfp4-qlora
+dataset_prepared_path: last_run_prepared
+
+sequence_len: 2048
+sample_packing: false
+
+gradient_accumulation_steps: 1
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+
+bf16: auto
+gradient_checkpointing: false  # breaks the encoder KV cache the decoder reads during training
+flash_attention: false   # DiffusionGemma global attention uses head_dim 512 (> flash-attn 256 limit); use sdpa
+
+warmup_ratio: 0.03
+saves_per_epoch: 1
