@@ -327,7 +327,11 @@ class TurnGenerator:
         thinking, response = self._split_think_token_ids(generated)
         return len(thinking), len(response)
 
-    def build_assistant_message(self, generated: list[int]) -> dict:
+    def build_assistant_message(
+        self,
+        generated: list[int],
+        split: tuple[list[int], list[int]] | None = None,
+    ) -> dict:
         """
         Parses generated token ids into an assistant message dict. Prefers the
         tokenizer's own `parse_response` schema (transformers v5); otherwise splits
@@ -350,7 +354,9 @@ class TurnGenerator:
                     exc_info=True,
                 )
 
-        thinking_ids, response_ids = self._split_think_token_ids(generated)
+        thinking_ids, response_ids = (
+            split if split is not None else self._split_think_token_ids(generated)
+        )
         parsed: dict[str, Any] = {
             "role": "assistant",
             "content": self.tokenizer.decode(
@@ -560,18 +566,18 @@ class CausalTurnGenerator(TurnGenerator):
         generated = sequence[len(ids) :]
         while generated and generated[-1] in self.eos_token_ids:
             generated.pop()
-        content = self.tokenizer.decode(generated, skip_special_tokens=False)
-        thinking_tokens, response_tokens = self.split_think_token_counts(generated)
+        thinking_ids, response_ids = self._split_think_token_ids(generated)
+        message = self.build_assistant_message(generated, (thinking_ids, response_ids))
 
         return TurnResult(
-            content=content,
-            message=self.build_assistant_message(generated),
+            content=message.get("content") or "",
+            message=message,
             interrupted=interrupted,
             prompt_tokens=len(ids),
             reused_tokens=reused,
             new_tokens=len(generated),
-            thinking_tokens=thinking_tokens,
-            response_tokens=response_tokens,
+            thinking_tokens=len(thinking_ids),
+            response_tokens=len(response_ids),
             seconds=seconds,
         )
 
@@ -618,22 +624,24 @@ class DiffusionTurnGenerator(TurnGenerator):
             )
         seconds = time.monotonic() - start
 
-        generated = list(result["generated_ids"][len(ids) :])
+        generated = result["generated_ids"][len(ids) :]
         for i, token_id in enumerate(generated):
             if token_id in self.eos_token_ids:
                 generated = generated[:i]
                 break
         content = self.tokenizer.decode(generated, skip_special_tokens=False)
         on_text(content)
-        thinking_tokens, response_tokens = self.split_think_token_counts(generated)
+        thinking_ids, response_ids = self._split_think_token_ids(generated)
 
         return TurnResult(
             content=content,
-            message=self.build_assistant_message(generated),
+            message=self.build_assistant_message(
+                generated, (thinking_ids, response_ids)
+            ),
             prompt_tokens=len(ids),
             new_tokens=len(generated),
-            thinking_tokens=thinking_tokens,
-            response_tokens=response_tokens,
+            thinking_tokens=len(thinking_ids),
+            response_tokens=len(response_ids),
             seconds=seconds,
         )
 
@@ -662,6 +670,7 @@ class ThinkStreamRenderer:
         self._pending = ""
         self._start = time.monotonic()
         self._live: Live | None = None
+        self._last_live_update = 0.0
 
     def feed(self, text: str):
         if not self.collapse:
@@ -729,6 +738,11 @@ class ThinkStreamRenderer:
     def _update_live(self):
         if self._live is None:
             return
+        # Live repaints at 12 Hz; building renderables faster than that is wasted
+        now = time.monotonic()
+        if now - self._last_live_update < 1 / 12:
+            return
+        self._last_live_update = now
         lines = self.think_text.splitlines()[-self.tail_lines :]
         self._live.update(Text("\n".join(lines), style="dim"))
 
@@ -980,6 +994,9 @@ class ChatRepl:
 
     def cmd_new(self, _args: str) -> None:
         self.session.clear()
+        reset_cache = getattr(self.generator, "reset_cache", None)
+        if callable(reset_cache):
+            reset_cache()
         self.console.print("[dim]Conversation cleared.[/dim]")
         return None
 
