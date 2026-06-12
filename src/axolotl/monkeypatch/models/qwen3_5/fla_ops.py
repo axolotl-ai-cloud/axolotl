@@ -223,7 +223,7 @@ def _build_ops() -> None:
         )
 
     def _gdn_chunk_setup(ctx, inputs, output):
-        q, k, v, g, beta, scale, position_ids = inputs
+        _q, _k, v, _g, beta, scale, position_ids = inputs
         _, qn, q_rstd, kn, k_rstd, g_cum, A = output
         ctx.scale = scale
         ctx.save_for_backward(qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, position_ids)
