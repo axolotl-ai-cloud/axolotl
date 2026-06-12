@@ -50,7 +50,7 @@ def packing_patched():
     qm._FLA_COMPILED_OPS = saved["fla_ops_flag"]
 
 
-def _build_model(seed: int = 0):
+def _build_model(seed: int = 0, attn: str = "sdpa"):
     from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5TextModel
 
@@ -78,7 +78,7 @@ def _build_model(seed: int = 0):
         linear_num_key_heads=2,
         linear_num_value_heads=4,
     )
-    cfg._attn_implementation = "sdpa"
+    cfg._attn_implementation = attn
     return Qwen3_5TextModel(cfg).cuda().to(torch.bfloat16)
 
 
@@ -168,6 +168,41 @@ class TestDecoderLoopCompiles:
 
         breaks = dict(counters["graph_break"])
         assert not breaks, f"decoder loop graph-broke: {list(breaks)}"
+        assert counters["stats"]["unique_graphs"] >= 1
+
+    def test_fa2_loop_compiles_with_varlen_kwargs(self, packing_patched):
+        """FA2: collator-precomputed cu_seq_lens/max_length let the loop compile; without them transformers' per-layer varlen derivation graph-breaks it."""
+        from transformers.modeling_flash_attention_utils import (
+            prepare_fa_kwargs_from_position_ids,
+        )
+
+        torch._dynamo.reset()
+        from torch._dynamo.utils import counters
+
+        counters.clear()
+        model = _build_model(attn="flash_attention_2")
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        model.train()
+        input_ids, position_ids = _packed_inputs()
+        (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(
+            position_ids[0]
+        )
+        out = torch.compile(model)(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            use_cache=False,
+            cu_seq_lens_q=cu_q,
+            cu_seq_lens_k=cu_k,
+            max_length_q=int(max_q),
+            max_length_k=int(max_k),
+        ).last_hidden_state
+        out.float().pow(2).mean().backward()
+        torch.cuda.synchronize()
+
+        breaks = dict(counters["graph_break"])
+        assert not breaks, f"FA2 loop graph-broke even with varlen kwargs: {list(breaks)}"
         assert counters["stats"]["unique_graphs"] >= 1
 
     def test_no_graph_breaks_vl_conditional_generation(self, packing_patched):
