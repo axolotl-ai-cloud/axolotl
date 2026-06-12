@@ -265,8 +265,14 @@ def _scattermoe_gptoss_forward(
     gate_up_bias = _get_base_param(self.gate_up_proj_bias)  # [E, 2I]
     down_bias = _get_base_param(self.down_proj_bias)  # [E, H]
 
+    # Same precedence as the standard path: the fast-path patch attaches A/B via
+    # `_scattermoe_lora`; otherwise walk the legacy ParamWrapper.
     gup_lora, down_lora = None, None
-    if _has_peft_wrapper(self):
+    sm_lora = getattr(self, "_scattermoe_lora", None)
+    if sm_lora:
+        gup_lora = sm_lora.get("gate_up_proj")
+        down_lora = sm_lora.get("down_proj")
+    elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
     gate_up = _parallel_linear_maybe_lora(

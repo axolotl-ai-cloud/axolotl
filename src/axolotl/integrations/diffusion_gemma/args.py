@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class BlockDiffusionConfig(BaseModel):
@@ -63,6 +63,12 @@ class BlockDiffusionConfig(BaseModel):
             "NVFP4 checkpoints."
         ),
     )
+
+    @model_validator(mode="after")
+    def _check_mask_token_id(self):
+        if self.corruption == "mask" and self.mask_token_id is None:
+            raise ValueError("corruption: mask requires mask_token_id to be set.")
+        return self
 
 
 class DiffusionGemmaArgs(BaseModel):

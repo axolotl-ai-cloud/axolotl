@@ -37,7 +37,10 @@ def _make_add_handler():
             a = a.dequantize(dense_dtype)
         if _is_fp4(b):
             b = b.dequantize(dense_dtype)
-        return torch.ops.aten.add.Tensor(a, b)
+        # Forward kwargs (e.g. keyword-only `alpha`). A true in-place add_ is
+        # impossible once the FP4 operand is dequantized to a fresh tensor, so both
+        # the add and add_ overloads resolve to the out-of-place dequantized add.
+        return torch.ops.aten.add.Tensor(a, b, **kwargs)
 
     return _fp4_add
 

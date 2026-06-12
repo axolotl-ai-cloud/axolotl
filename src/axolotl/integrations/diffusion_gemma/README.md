@@ -26,7 +26,7 @@ token from the vocabulary (not an absorbing `[MASK]` — an absorbing variant is
 available via `corruption: mask`). The decoder is trained to recover the clean token
 at the corrupted positions with a reweighted cross-entropy:
 
-```
+```text
 loss_i = w(t_i) · (1 / N_i) · Σ_{j corrupted} CE(logits_ij, x0_ij)
 ```
 

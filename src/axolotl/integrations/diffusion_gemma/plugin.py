@@ -27,6 +27,7 @@ class DiffusionGemmaPlugin(BasePlugin):
     def __init__(self):
         super().__init__()
         self.cfg = None
+        self._model_canvas_length = None
 
     def get_input_args(self) -> str:
         return "axolotl.integrations.diffusion_gemma.DiffusionGemmaArgs"
@@ -97,6 +98,7 @@ class DiffusionGemmaPlugin(BasePlugin):
 
     def post_model_load(self, cfg: DictDefault, model: PreTrainedModel | PeftModel):
         self.cfg = cfg
+        self._model_canvas_length = getattr(model.config, "canvas_length", None)
 
     def get_trainer_cls(self, cfg: DictDefault):
         from .trainer import BlockDiffusionTrainer
@@ -106,7 +108,9 @@ class DiffusionGemmaPlugin(BasePlugin):
     def get_collator_cls_and_kwargs(self, cfg: DictDefault, is_eval: bool = False):
         from .collator import CanvasCollator
 
-        canvas_length = cfg.block_diffusion.canvas_length or 256
+        canvas_length = (
+            cfg.block_diffusion.canvas_length or self._model_canvas_length or 256
+        )
         return CanvasCollator, {"canvas_length": canvas_length}
 
     def post_trainer_create(self, cfg: DictDefault, trainer):

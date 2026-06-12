@@ -112,7 +112,9 @@ class CanvasCollator:
 
     def __call__(self, features: list[dict]) -> dict[str, torch.Tensor]:
         prefixes, canvases, eligibles = [], [], []
-        prefix_mms, has_mm = [], "mm_token_type_ids" in features[0]
+        # Scan all examples: a mixed batch may carry mm ids on only some rows.
+        has_mm = any("mm_token_type_ids" in f for f in features)
+        prefix_mms = []
         pixel_values, image_position_ids = [], []
         L = self.canvas_length
 
