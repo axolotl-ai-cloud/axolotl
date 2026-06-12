@@ -1,0 +1,257 @@
+"""Opaque custom ops wrapping the FLA GatedDeltaNet training kernels: they take
+``position_ids`` and derive ``cu_seqlens`` eagerly inside the opaque region so
+the data-dependent ``aten.nonzero`` never enters the compile graph.
+"""
+
+from __future__ import annotations
+
+import torch
+
+__all__ = ["fla_ops_available"]
+
+_OPS_BUILT = False
+_OPS_BUILD_ERROR: str | None = None
+
+
+def _cu_seqlens_from_position_ids(position_ids: torch.Tensor) -> torch.Tensor:
+    if position_ids.ndim == 3:  # MRoPE [axes, B, T]: all axes share temporal pos
+        position_ids = position_ids[0]
+    pos = position_ids.reshape(-1)
+    tensor_kwargs = {"dtype": torch.int32, "device": pos.device}
+    indices_q = (pos == 0).nonzero().view(-1)
+    return torch.cat(
+        (
+            indices_q.to(**tensor_kwargs),
+            torch.tensor(pos.size(), **tensor_kwargs),
+        )
+    )
+
+
+def _build_ops() -> None:
+    """Register the custom ops once. Raises if FLA is unavailable."""
+    global _OPS_BUILT
+    if _OPS_BUILT:
+        return
+
+    from fla.modules.convolution import causal_conv1d_bwd, causal_conv1d_fwd
+    from fla.modules.l2norm import l2norm_bwd, l2norm_fwd
+    from fla.ops.gated_delta_rule.chunk import (
+        chunk_gated_delta_rule_bwd,
+        chunk_gated_delta_rule_fwd,
+    )
+
+    def _cu(position_ids: torch.Tensor | None) -> torch.Tensor | None:
+        if position_ids is None:
+            return None
+        return _cu_seqlens_from_position_ids(position_ids)
+
+    @torch.library.custom_op("axolotl_qwen3_5::gdn_conv", mutates_args=())
+    def _gdn_conv(
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        activation: str | None,
+        position_ids: torch.Tensor | None,
+    ) -> torch.Tensor:
+        y, _ = causal_conv1d_fwd(
+            x=x.contiguous(),
+            weight=weight.contiguous(),
+            bias=bias.contiguous() if bias is not None else None,
+            residual=None,
+            initial_state=None,
+            output_final_state=False,
+            activation=activation,
+            cu_seqlens=_cu(position_ids),
+        )
+        return y
+
+    @_gdn_conv.register_fake
+    def _(x, weight, bias, activation, position_ids):
+        return torch.empty(x.shape, dtype=x.dtype, device=x.device)
+
+    @torch.library.custom_op("axolotl_qwen3_5::gdn_conv_bwd", mutates_args=())
+    def _gdn_conv_bwd(
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        dy: torch.Tensor,
+        activation: str | None,
+        position_ids: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        dx, dw, db, _, _ = causal_conv1d_bwd(
+            x=x.contiguous(),
+            dy=dy.contiguous(),
+            dht=None,
+            weight=weight.contiguous(),
+            bias=bias.contiguous() if bias is not None else None,
+            residual=None,
+            initial_state=None,
+            activation=activation,
+            cu_seqlens=_cu(position_ids),
+        )
+        if db is None:
+            db = weight.new_empty(0)
+        return dx, dw, db
+
+    @_gdn_conv_bwd.register_fake
+    def _(x, weight, bias, dy, activation, position_ids):
+        db_shape = bias.shape if bias is not None else (0,)
+        db_dtype = bias.dtype if bias is not None else weight.dtype
+        return (
+            torch.empty(x.shape, dtype=x.dtype, device=x.device),
+            torch.empty(weight.shape, dtype=weight.dtype, device=weight.device),
+            torch.empty(db_shape, dtype=db_dtype, device=weight.device),
+        )
+
+    def _gdn_conv_setup(ctx, inputs, output):
+        x, weight, bias, activation, position_ids = inputs
+        ctx.activation = activation
+        ctx.has_bias = bias is not None
+        ctx.save_for_backward(x, weight, bias, position_ids)
+
+    def _gdn_conv_backward(ctx, dy):
+        x, weight, bias, position_ids = ctx.saved_tensors
+        dx, dw, db = torch.ops.axolotl_qwen3_5.gdn_conv_bwd(
+            x, weight, bias, dy, ctx.activation, position_ids
+        )
+        return dx, dw, (db if ctx.has_bias else None), None, None
+
+    _gdn_conv.register_autograd(_gdn_conv_backward, setup_context=_gdn_conv_setup)
+
+    @torch.library.custom_op("axolotl_qwen3_5::gdn_chunk", mutates_args=())
+    def _gdn_chunk(
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        g: torch.Tensor,
+        beta: torch.Tensor,
+        scale: float,
+        position_ids: torch.Tensor | None,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
+        q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
+        # Cast g INSIDE the op (eager casts at the kernel call) so the op's g input stays f32, matching eager's grad flow bit-for-bit.
+        g, beta = g.contiguous().to(q.dtype), beta.contiguous()
+        qn, q_rstd = l2norm_fwd(q)
+        kn, k_rstd = l2norm_fwd(k)
+        g_cum, o, A, _ = chunk_gated_delta_rule_fwd(
+            q=qn,
+            k=kn,
+            v=v,
+            g=g,
+            beta=beta,
+            scale=scale,
+            initial_state=None,
+            output_final_state=False,
+            cu_seqlens=_cu(position_ids),
+        )
+        return o.to(q.dtype), qn, q_rstd, kn, k_rstd, g_cum, A
+
+    @_gdn_chunk.register_fake
+    def _(q, k, v, g, beta, scale, position_ids):
+        def emp(shape, dtype):
+            return torch.empty(shape, dtype=dtype, device=q.device)
+
+        return (
+            emp(v.shape, q.dtype),
+            emp(q.shape, q.dtype),
+            emp(q.shape[:-1], torch.float32),
+            emp(k.shape, k.dtype),
+            emp(k.shape[:-1], torch.float32),
+            emp(g.shape, torch.float32),  # g_cum (chunk_local_cumsum output_dtype)
+            emp((*k.shape[:-1], 64), k.dtype),  # A (chunk 64, solve_tril -> k dtype)
+        )
+
+    @torch.library.custom_op("axolotl_qwen3_5::gdn_chunk_bwd", mutates_args=())
+    def _gdn_chunk_bwd(
+        qn: torch.Tensor,
+        q_rstd: torch.Tensor,
+        kn: torch.Tensor,
+        k_rstd: torch.Tensor,
+        v: torch.Tensor,
+        g_cum: torch.Tensor,
+        beta: torch.Tensor,
+        A: torch.Tensor,
+        do: torch.Tensor,
+        scale: float,
+        position_ids: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Mirror FLA's input_guard: v arrives as a non-contiguous split/reshape view, and the stride-hardcoded kernels mis-specialize without contiguization.
+        qn, kn, v = qn.contiguous(), kn.contiguous(), v.contiguous()
+        g_cum, beta, A = g_cum.contiguous(), beta.contiguous(), A.contiguous()
+        dq, dk, dv, db, dg, _ = chunk_gated_delta_rule_bwd(
+            q=qn,
+            k=kn,
+            v=v,
+            g=g_cum,
+            beta=beta,
+            A=A,
+            scale=scale,
+            initial_state=None,
+            do=do.contiguous(),
+            dht=None,
+            cu_seqlens=_cu(position_ids),
+        )
+        dq = l2norm_bwd(qn, q_rstd, dq)
+        dk = l2norm_bwd(kn, k_rstd, dk)
+        return (
+            dq.to(qn.dtype),
+            dk.to(kn.dtype),
+            dv.to(v.dtype),
+            dg.to(g_cum.dtype),
+            db.to(beta.dtype),
+        )
+
+    @_gdn_chunk_bwd.register_fake
+    def _(qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, do, scale, position_ids):
+        def emp(shape, dtype):
+            return torch.empty(shape, dtype=dtype, device=qn.device)
+
+        return (
+            emp(qn.shape, qn.dtype),
+            emp(kn.shape, kn.dtype),
+            emp(v.shape, v.dtype),
+            emp(g_cum.shape, g_cum.dtype),
+            emp(beta.shape, beta.dtype),
+        )
+
+    def _gdn_chunk_setup(ctx, inputs, output):
+        q, k, v, g, beta, scale, position_ids = inputs
+        _, qn, q_rstd, kn, k_rstd, g_cum, A = output
+        ctx.scale = scale
+        ctx.save_for_backward(qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, position_ids)
+
+    def _gdn_chunk_backward(ctx, do, *unused_intermediate_grads):
+        qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, position_ids = ctx.saved_tensors
+        dq, dk, dv, dg, db = torch.ops.axolotl_qwen3_5.gdn_chunk_bwd(
+            qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, do, ctx.scale, position_ids
+        )
+        # Bit-exact with eager: eager's dg lands on the bf16 grid, so reproduce that f32 -> bf16 -> f32 round-trip.
+        dg = dg.to(qn.dtype).to(g_cum.dtype)
+        return dq, dk, dv, dg, db, None, None
+
+    _gdn_chunk.register_autograd(_gdn_chunk_backward, setup_context=_gdn_chunk_setup)
+
+    _OPS_BUILT = True
+
+
+def fla_ops_available() -> bool:
+    """Build the ops if needed; True when the FLA-backed custom ops exist."""
+    global _OPS_BUILD_ERROR
+    if _OPS_BUILT:
+        return True
+    if _OPS_BUILD_ERROR is not None:
+        return False
+    try:
+        _build_ops()
+    except Exception as exc:  # pragma: no cover - depends on fla install
+        _OPS_BUILD_ERROR = str(exc)
+        return False
+    return True
