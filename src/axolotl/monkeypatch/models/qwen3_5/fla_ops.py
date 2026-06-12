@@ -7,10 +7,19 @@ from __future__ import annotations
 
 import torch
 
-__all__ = ["fla_ops_available"]
+__all__ = ["fla_ops_available", "fla_ops_build_error"]
 
 _OPS_BUILT = False
 _OPS_BUILD_ERROR: str | None = None
+
+
+def _check_varlen_batch_size(x: torch.Tensor, position_ids: torch.Tensor | None):
+    # The wrapped raw FLA functions only guard this with an `assert` (stripped under -O), which would make B>1 silent garbage.
+    if position_ids is not None and x.shape[0] != 1:
+        raise ValueError(
+            f"The batch size is expected to be 1 rather than {x.shape[0]} when using "
+            "packed (varlen) inputs. Please flatten variable-length inputs before processing."
+        )
 
 
 def _cu_seqlens_from_position_ids(position_ids: torch.Tensor) -> torch.Tensor:
@@ -53,6 +62,7 @@ def _build_ops() -> None:
         activation: str | None,
         position_ids: torch.Tensor | None,
     ) -> torch.Tensor:
+        _check_varlen_batch_size(x, position_ids)
         y, _ = causal_conv1d_fwd(
             x=x.contiguous(),
             weight=weight.contiguous(),
@@ -136,6 +146,7 @@ def _build_ops() -> None:
         torch.Tensor,
         torch.Tensor,
     ]:
+        _check_varlen_batch_size(q, position_ids)
         q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
         # Cast g INSIDE the op (eager casts at the kernel call) so the op's g input stays f32, matching eager's grad flow bit-for-bit.
         g, beta = g.contiguous().to(q.dtype), beta.contiguous()
@@ -252,6 +263,11 @@ def fla_ops_available() -> bool:
     try:
         _build_ops()
     except Exception as exc:  # pragma: no cover - depends on fla install
-        _OPS_BUILD_ERROR = str(exc)
+        _OPS_BUILD_ERROR = f"{type(exc).__name__}: {exc}"
         return False
     return True
+
+
+def fla_ops_build_error() -> str | None:
+    """The cached exception from a failed op build, or None."""
+    return _OPS_BUILD_ERROR

@@ -104,7 +104,13 @@ def _build_fla_rmsnorm_gated_op():
 def _fla_rmsnorm_gated_compiled_forward(
     self, x, g, residual=None, prenorm=False, residual_in_fp32=False
 ):
-    if residual is None and not prenorm and self.bias is None:
+    # Class-level patch: non-qwen3_5 FLA models (residual/prenorm/bias/weight=None variants) must take the plain eager path.
+    if (
+        residual is None
+        and not prenorm
+        and self.bias is None
+        and self.weight is not None
+    ):
         return _FLA_RMSNORM_GATED_OP(x, g, self.weight, self.activation, self.eps)
     from fla.modules.fused_norm_gate import rms_norm_gated
 
@@ -159,6 +165,7 @@ def _inject_fla_kernels(module, *, compile_boundary: bool = False) -> None:
             FusedRMSNormGated, "_axolotl_compile_boundary", False
         ):
             # FLA's FusedRMSNormGated backward calls aten.as_strided in a way torch.compile can't meta-trace, so wrap it in a custom op (or fall back to an eager-disable boundary).
+            # Class-level and never reverted: assumes axolotl's one-model-per-process CLI.
             global _FLA_RMSNORM_GATED_OP
             try:
                 if _FLA_RMSNORM_GATED_OP is None:
@@ -222,7 +229,7 @@ def _patched_decoder_forward(
                 **kwargs,
             )
         else:
-            # Intentional dynamo.disable boundary (non-GC path): without it Inductor fuses the FA2 backward with the gated o_proj dgrad into a region that corrupts packed-sequence gradients.
+            # Intentional dynamo.disable boundary (non-GC path, incl. model.eval() under compile): without it Inductor fuses the FA2 backward with the gated o_proj dgrad into a region that corrupts packed-sequence gradients.
             hidden_states, _ = _call_self_attn_disabled(
                 self.self_attn,
                 hidden_states=hidden_states,
@@ -355,10 +362,11 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
         if not use_precomputed_states:
             if use_compiled_ops:
                 # Opaque op mirroring ChunkGatedDeltaRuleFunction: FLA's public entry is @torch.compiler.disable and would graph-break the loop. pos_for_varlen None = dense.
+                # Contiguize here: setup_context saves the op's inputs, so split views would re-pay this copy every backward.
                 core_attn_out = torch.ops.axolotl_qwen3_5.gdn_chunk(
-                    query,
-                    key,
-                    value,
+                    query.contiguous(),
+                    key.contiguous(),
+                    value.contiguous(),
                     g,
                     beta,
                     key.shape[-1] ** -0.5,  # FLA's default scale
@@ -421,6 +429,17 @@ def _apply_packing_patches(
     # Under torch_compile, route FusedRMSNormGated through its custom-op wrapper too: its eager entry is untraceable (un-meta-able as_strided backward) and would graph-break the loop.
     _inject_fla_kernels(module, compile_boundary=torch_compile)
     compiled_ops = _init_fla_compiled_ops(torch_compile)
+    if torch_compile and not compiled_ops:
+        from axolotl.monkeypatch.models.qwen3_5 import fla_ops
+
+        # On FA2 the broken-loop compile regime benches slower than plain eager, so this must be loud.
+        LOG.warning(
+            f"torch_compile is enabled but the FLA custom ops failed to build "
+            f"({fla_ops.fla_ops_build_error()}); the {cls_prefix} decoder loop "
+            f"will NOT compile and will fall back to the eager kernels. With "
+            f"flash_attention_2 this is typically slower than disabling "
+            f"torch_compile entirely."
+        )
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
