@@ -132,6 +132,12 @@ vllm = [
 llmcompressor = [
     "llmcompressor>=0.10.0",
 ]
+torchspec = [
+    # EAGLE-3 speculator training. Pulls in ray + mooncake-transfer-engine; the
+    # SGLang/vLLM inference backend has its own system requirements (install the
+    # matching torchspec extra, e.g. `torchspec[vllm]`).
+    "torchspec @ git+https://github.com/lightseekorg/TorchSpec.git",
+]
 fbgemm-gpu = ["fbgemm-gpu-genai>=1.3.0"]
 opentelemetry = [
     "opentelemetry-api",

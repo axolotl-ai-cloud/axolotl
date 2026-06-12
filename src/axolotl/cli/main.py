@@ -324,6 +324,35 @@ def vllm_serve(config: str, **cli_args: VllmServeCliArgs):
     do_vllm_serve(config, cli_args)
 
 
+@cli.command(
+    "train-speculator",
+    context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+)
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the translated TorchSpec config and exit (no Ray/GPUs).",
+)
+@filter_none_kwargs
+@click.pass_context
+def train_speculator(ctx: click.Context, config: str, dry_run: bool = False, **kwargs):
+    """Train an EAGLE-3 speculator (draft model) via TorchSpec.
+
+    TorchSpec drives the full disaggregated run (Ray + Mooncake + SGLang/vLLM
+    inference engines + FSDP training workers), so this launches in-process as
+    the Ray driver rather than under ``accelerate``/``torchrun``. Extra args of
+    the form ``training.num_train_steps=10`` are forwarded to TorchSpec as
+    OmegaConf dotlist overrides.
+    """
+    from axolotl.cli.train_speculator import do_train_speculator
+
+    do_train_speculator(
+        config, dry_run=dry_run, extra_overrides=ctx.args or None, **kwargs
+    )
+
+
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(QuantizeCliArgs)

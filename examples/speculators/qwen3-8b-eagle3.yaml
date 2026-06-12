@@ -1,0 +1,61 @@
+# Train an EAGLE-3 speculator (draft model) for Qwen3-8B via TorchSpec.
+#
+# TorchSpec drives the full disaggregated run: SGLang inference engines produce
+# the target model's hidden states, stream them through a Mooncake store, and
+# FSDP training workers train the draft model. Axolotl translates this config and
+# launches it.
+#
+# Requires: `pip install -e '.[torchspec]'` plus an SGLang backend, and a box
+# with >= 4 GPUs (2 inference + 2 training in the layout below).
+#
+# Run (NOT under accelerate/torchrun — it becomes the Ray driver):
+#   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml
+#   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml --dry-run
+#   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml training.num_train_steps=10
+
+plugins:
+  - axolotl.integrations.torchspec.TorchSpecPlugin
+
+base_model: Qwen/Qwen3-8B
+trust_remote_code: true
+
+# TorchSpec tokenizes the raw conversations itself (it does not use axolotl's
+# prompt strategies). `path` must point to a conversations-format JSONL/HF dataset
+# whose rows carry the `conversations` key; `type` is ignored by TorchSpec.
+datasets:
+  - path: ./examples/data/sample_conversations.jsonl
+    type: chat_template
+chat_template: qwen3            # mapped to TorchSpec's "qwen" template
+
+sequence_len: 16384
+micro_batch_size: 1
+gradient_accumulation_steps: 1  # satisfies axolotl validation; TorchSpec uses speculator.draft_accumulation_steps
+num_epochs: 1
+learning_rate: 1e-4
+warmup_ratio: 0.015
+max_grad_norm: 0.5
+seed: 42
+
+output_dir: ./outputs/qwen3-8b-eagle3
+
+speculator:
+  ttt_length: 7                 # speculative depth
+  attention_backend: flex_attention
+
+  # inference engine (target hidden-state producer)
+  inference_engine: sgl
+  inference_num_gpus: 2
+  inference_num_gpus_per_engine: 1
+  inference_batch_size: 8
+  inference_tp_size: 1
+  mem_fraction_static: 0.7
+
+  # training workers
+  training_num_gpus: 2          # per node
+  training_num_nodes: 1
+  draft_accumulation_steps: 1
+
+  # hidden-state transfer
+  mooncake_protocol: tcp
+  mooncake_global_segment_size: 16GB
+  mooncake_local_buffer_size: 4GB
