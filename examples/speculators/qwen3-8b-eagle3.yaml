@@ -12,6 +12,7 @@
 #   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml
 #   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml --dry-run
 #   axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml training.num_train_steps=10
+#   axolotl train --launcher python examples/speculators/qwen3-8b-eagle3.yaml   # standard verb (single-process)
 
 plugins:
   - axolotl.integrations.torchspec.TorchSpecPlugin
@@ -19,12 +20,13 @@ plugins:
 base_model: Qwen/Qwen3-8B
 trust_remote_code: true
 
-# TorchSpec tokenizes the raw conversations itself (it does not use axolotl's
-# prompt strategies). `path` must point to a conversations-format JSONL/HF dataset
-# whose rows carry the `conversations` key; `type` is ignored by TorchSpec.
+# axolotl loads + standardizes these into a conversations JSONL (see
+# speculator.prepare_dataset); TorchSpec then tokenizes + masks it. Any axolotl
+# dataset format works (ShareGPT from/value, OpenAI messages, multiple sources).
 datasets:
   - path: ./examples/data/sample_conversations.jsonl
     type: chat_template
+    field_messages: conversations
 chat_template: qwen3            # mapped to TorchSpec's "qwen" template
 
 sequence_len: 16384

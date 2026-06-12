@@ -68,6 +68,13 @@ class TorchSpecArgs(BaseModel):
     mooncake_master_server_address: str | None = None
     mooncake_metadata_server: str | None = None
 
+    # --- dataset ---
+    # Reuse axolotl's dataset loading to standardize `datasets:` into a
+    # conversations JSONL that TorchSpec tokenizes. When False, pass the first
+    # dataset path through to TorchSpec untouched (it must already be a
+    # conversations-format file/HF id).
+    prepare_dataset: bool = True
+
     # --- output ---
     output_dir: str | None = None  # defaults to axolotl output_dir
     cache_dir: str | None = None

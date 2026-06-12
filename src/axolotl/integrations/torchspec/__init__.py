@@ -15,6 +15,7 @@
 """TorchSpec integration: train EAGLE-3 speculative-decoding draft models."""
 
 from .args import TorchSpecArgs, TorchSpecArgsMixin
+from .dataset_bridge import prepare_datasets, standardize_datasets
 from .plugin import TorchSpecPlugin
 from .translate import build_torchspec_args
 
@@ -23,4 +24,6 @@ __all__ = [
     "TorchSpecArgsMixin",
     "TorchSpecPlugin",
     "build_torchspec_args",
+    "prepare_datasets",
+    "standardize_datasets",
 ]

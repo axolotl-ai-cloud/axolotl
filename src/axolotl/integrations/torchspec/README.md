@@ -36,7 +36,15 @@ axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml
 axolotl train-speculator examples/speculators/qwen3-8b-eagle3.yaml training.num_train_steps=10
 ```
 
-The Qwen3-8B example needs ≥4 GPUs (2 inference + 2 training).
+The standard `axolotl train` verb also works, as long as it runs **single
+process** (TorchSpec must be the sole Ray driver):
+
+```bash
+axolotl train --launcher python examples/speculators/qwen3-8b-eagle3.yaml
+```
+
+A multi-process `accelerate`/`torchrun` launch is rejected at train time. The
+Qwen3-8B example needs ≥4 GPUs (2 inference + 2 training).
 
 ## Config
 
@@ -68,10 +76,22 @@ Top-level axolotl keys (`base_model`, `sequence_len`, `learning_rate`,
 
 ### Dataset
 
-TorchSpec does its own tokenization from a conversations-format dataset (rows with
-a `conversations` key); axolotl's prompt strategies are not used here. The
-`chat_template` is mapped to TorchSpec's template name (`qwen3`/`chatml` → `qwen`,
-`llama3` → `llama3`); set `speculator.chat_template` to override.
+By default (`speculator.prepare_dataset: true`) axolotl's dataset **loading** is
+reused to standardize the `datasets:` list — any format axolotl supports
+(ShareGPT `from`/`value`, OpenAI `messages`, multiple sources/splits, merging) —
+into a normalized `conversations` JSONL under
+`<output_dir>/torchspec_data/train.jsonl`. TorchSpec then does the
+EAGLE-3-correct **tokenization** and assistant masking on that file (axolotl's
+tokenization is intentionally *not* reused — it would have to byte-match
+TorchSpec's chat-template masking).
+
+Set `speculator.prepare_dataset: false` to skip standardization and pass the
+first `datasets[].path` straight to TorchSpec (it must already be a
+conversations-format file/HF id). Run `axolotl preprocess <config>` to
+materialize the standardized JSONL without training.
+
+The `chat_template` is mapped to TorchSpec's template name (`qwen3`/`chatml` →
+`qwen`, `llama3` → `llama3`); set `speculator.chat_template` to override.
 
 ## Export
 
@@ -84,6 +104,6 @@ HF-loadable EAGLE-3 draft with TorchSpec's `tools/convert_to_hf.py`.
   config from the target model.
 - Optional dependency surface is large (Ray, Mooncake, SGLang/vLLM, `numpy<2.4`)
   and stays isolated in the `torchspec` extra; nothing is imported unless you run
-  `train-speculator`.
-- Phase 2 will add a `plugins:` + `axolotl train` dispatch path; today, use the
-  `train-speculator` command.
+  TorchSpec training.
+- Both entry points must run single-process — TorchSpec is the Ray driver. Use
+  `axolotl train-speculator <config>` or `axolotl train --launcher python <config>`.

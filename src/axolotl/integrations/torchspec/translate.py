@@ -149,16 +149,26 @@ def _prune_none(obj: Any) -> Any:
     return obj
 
 
-def build_overrides(cfg: DictDefault) -> dict[str, Any]:
-    """Build the nested override dict matching TorchSpec's ``Config`` sections."""
+def build_overrides(
+    cfg: DictDefault,
+    train_path: str | None = None,
+    eval_path: str | None = None,
+) -> dict[str, Any]:
+    """Build the nested override dict matching TorchSpec's ``Config`` sections.
+
+    ``train_path``/``eval_path`` override the dataset paths (set when the
+    standardization bridge has produced normalized JSONL); when omitted, the
+    first axolotl ``datasets``/``test_datasets`` path is used as-is. Kept pure
+    (no dataset I/O) so it is safe for ``--dry-run`` and tests.
+    """
     spec = _get_spec_args(cfg)
 
     backend = _BACKEND_MAP[spec.inference_engine]
     output_dir = spec.output_dir or cfg.get("output_dir") or "./outputs/speculator"
     cache_dir = spec.cache_dir or f"{output_dir.rstrip('/')}/cache"
 
-    eval_path = None
-    if cfg.get("test_datasets"):
+    train_data_path = train_path or _first_dataset_path(cfg.get("datasets"))
+    if eval_path is None and cfg.get("test_datasets"):
         eval_path = _first_dataset_path(cfg.get("test_datasets"))
 
     # axolotl stores these as float; TorchSpec's structured schema types them as
@@ -180,7 +190,7 @@ def build_overrides(cfg: DictDefault) -> dict[str, Any]:
             "draft_model_config": spec.draft_model_config,
         },
         "dataset": {
-            "train_data_path": _first_dataset_path(cfg.get("datasets")),
+            "train_data_path": train_data_path,
             "eval_data_path": eval_path,
             "chat_template": _resolve_chat_template(cfg, spec),
             "prompt_key": spec.prompt_key,
@@ -246,7 +256,15 @@ def build_torchspec_args(
     from omegaconf import OmegaConf
     from torchspec.config.train_config import config_to_flat_args, load_config
 
-    base = OmegaConf.create(build_overrides(cfg))
+    train_path = eval_path = None
+    if _get_spec_args(cfg).prepare_dataset:
+        from axolotl.integrations.torchspec.dataset_bridge import prepare_datasets
+
+        train_path, eval_path = prepare_datasets(cfg)
+
+    base = OmegaConf.create(
+        build_overrides(cfg, train_path=train_path, eval_path=eval_path)
+    )
     config = load_config(config_path=None, base_config=base, cli_args=extra_overrides)
 
     flat_args = config_to_flat_args(config)

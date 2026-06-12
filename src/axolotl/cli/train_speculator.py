@@ -63,20 +63,22 @@ def do_train_speculator(
     if dry_run:
         import json
 
+        # Stay side-effect-free: show the pure config mapping only. The dataset
+        # standardization bridge and full flat-args resolution run at real launch.
         LOG.info(
-            "TorchSpec config overrides (dry-run):\n%s",
+            "TorchSpec config overrides (dry-run, no dataset I/O):\n%s",
             json.dumps(build_overrides(cfg), indent=2, default=str),
         )
-        try:
-            from axolotl.integrations.torchspec.translate import build_torchspec_args
-
-            args = build_torchspec_args(cfg, extra_overrides=extra_overrides)
+        spec = cfg.get("speculator")
+        prepare = getattr(spec, "prepare_dataset", None)
+        if prepare is None and isinstance(spec, dict):
+            prepare = spec.get("prepare_dataset", True)
+        if prepare:
             LOG.info(
-                "Resolved TorchSpec flat args:\n%s",
-                json.dumps(vars(args), indent=2, default=str),
+                "speculator.prepare_dataset=true: at launch, `datasets` are "
+                "standardized to <output_dir>/torchspec_data/train.jsonl and "
+                "train_data_path is repointed there."
             )
-        except ImportError as exc:
-            LOG.warning("Skipping flat-args resolution: %s", exc)
         return
 
     from axolotl.integrations.torchspec.translate import build_torchspec_args

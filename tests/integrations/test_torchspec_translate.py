@@ -1,11 +1,13 @@
 """Tests for the TorchSpec speculator-training config translation."""
 
 import importlib.util
+import json
 
 import pytest
 from pydantic import ValidationError
 
 from axolotl.integrations.torchspec.args import TorchSpecArgs
+from axolotl.integrations.torchspec.dataset_bridge import standardize_datasets
 from axolotl.integrations.torchspec.translate import build_overrides
 from axolotl.utils.dict import DictDefault
 
@@ -100,12 +102,116 @@ class TestBuildOverrides:
         assert "mem_fraction_static" not in ov["inference"]["sglang"]
 
 
+class TestDatasetBridge:
+    def test_sharegpt_and_openai_normalization(self, tmp_path):
+        sharegpt = tmp_path / "sharegpt.jsonl"
+        sharegpt.write_text(
+            "\n".join(
+                json.dumps(r)
+                for r in [
+                    {
+                        "conversations": [
+                            {"from": "human", "value": "hi"},
+                            {"from": "gpt", "value": "hello"},
+                        ]
+                    },
+                ]
+            )
+        )
+        openai = tmp_path / "openai.jsonl"
+        openai.write_text(
+            json.dumps(
+                {
+                    "system": "sys",
+                    "messages": [
+                        {"role": "user", "content": "q"},
+                        {"role": "assistant", "content": "a"},
+                    ],
+                }
+            )
+        )
+        cfg = DictDefault(
+            {
+                "seed": 42,
+                "shuffle_merged_datasets": False,
+                "datasets": [
+                    {
+                        "path": str(sharegpt),
+                        "type": "chat_template",
+                        "field_messages": "conversations",
+                        "message_property_mappings": {
+                            "role": "from",
+                            "content": "value",
+                        },
+                    },
+                    {
+                        "path": str(openai),
+                        "type": "chat_template",
+                        "field_messages": "messages",
+                        "field_system": "system",
+                    },
+                ],
+            }
+        )
+        out = tmp_path / "train.jsonl"
+        path = standardize_datasets(cfg, "datasets", out)
+        rows = [json.loads(line) for line in open(path)]
+        assert len(rows) == 2
+        # ShareGPT role aliasing: human->user, gpt->assistant
+        assert rows[0]["conversations"] == [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ]
+        # top-level system field injected as first turn
+        assert rows[1]["conversations"][0] == {"role": "system", "content": "sys"}
+
+
+class TestPluginDispatch:
+    def test_get_input_args_path(self):
+        from axolotl.integrations.torchspec.plugin import TorchSpecPlugin
+
+        assert (
+            TorchSpecPlugin().get_input_args()
+            == "axolotl.integrations.torchspec.args.TorchSpecArgsMixin"
+        )
+
+    def test_get_trainer_cls(self):
+        from axolotl.integrations.torchspec.plugin import TorchSpecPlugin
+        from axolotl.integrations.torchspec.trainer import TorchSpecLauncherTrainer
+
+        assert (
+            TorchSpecPlugin().get_trainer_cls(DictDefault({}))
+            is TorchSpecLauncherTrainer
+        )
+
+    def test_load_datasets_returns_stub(self):
+        from axolotl.integrations.torchspec.plugin import TorchSpecPlugin
+
+        meta = TorchSpecPlugin().load_datasets(DictDefault({}), preprocess=False)
+        assert len(meta.train_dataset) == 1
+        assert set(meta.train_dataset.column_names) == {
+            "input_ids",
+            "attention_mask",
+            "labels",
+        }
+
+    def test_detected_world_size_env(self, monkeypatch):
+        from axolotl.integrations.torchspec.trainer import _detected_world_size
+
+        monkeypatch.delenv("WORLD_SIZE", raising=False)
+        monkeypatch.delenv("ACCELERATE_NUM_PROCESSES", raising=False)
+        assert _detected_world_size() == 1
+        monkeypatch.setenv("WORLD_SIZE", "4")
+        assert _detected_world_size() == 4
+
+
 @pytest.mark.skipif(not _HAS_TORCHSPEC, reason="torchspec not installed")
 class TestBuildTorchSpecArgs:
     def test_flat_args_resolved(self):
         from axolotl.integrations.torchspec.translate import build_torchspec_args
 
-        args = build_torchspec_args(_base_cfg())
+        # prepare_dataset=False: test the pure translate path without dataset I/O
+        args = build_torchspec_args(_base_cfg(prepare_dataset=False))
         assert args.target_model_path == "Qwen/Qwen3-8B"
         # load_config absolutizes local data paths
         assert args.train_data_path.endswith("conversations.jsonl")
@@ -121,6 +227,7 @@ class TestBuildTorchSpecArgs:
         from axolotl.integrations.torchspec.translate import build_torchspec_args
 
         args = build_torchspec_args(
-            _base_cfg(), extra_overrides=["training.num_train_steps=10"]
+            _base_cfg(prepare_dataset=False),
+            extra_overrides=["training.num_train_steps=10"],
         )
         assert args.num_train_steps == 10

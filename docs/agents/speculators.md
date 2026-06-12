@@ -33,7 +33,20 @@ launches `torchspec.train_entry.train_async_no_generation` in-process.
 axolotl train-speculator config.yaml --dry-run          # print translated config, no GPUs
 axolotl train-speculator config.yaml                    # launch (NOT under accelerate)
 axolotl train-speculator config.yaml training.num_train_steps=10   # dotlist override
+axolotl train --launcher python config.yaml             # standard verb, single-process only
+axolotl preprocess config.yaml                          # just materialize the standardized JSONL
 ```
+
+Both entry points must run single-process — TorchSpec is the sole Ray driver; a
+multi-process `accelerate`/`torchrun` launch is rejected at train time.
+
+## Dataset reuse
+
+With `speculator.prepare_dataset: true` (default), axolotl's dataset **loading**
+standardizes the `datasets:` list (ShareGPT/OpenAI/etc., multi-source, merged)
+into a `conversations` JSONL at `<output_dir>/torchspec_data/train.jsonl`;
+TorchSpec then tokenizes + masks it (EAGLE-3-correct). Set it to `false` to pass
+`datasets[0].path` through untouched.
 
 ## Config keys
 
