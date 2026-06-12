@@ -202,7 +202,9 @@ class TestDecoderLoopCompiles:
         torch.cuda.synchronize()
 
         breaks = dict(counters["graph_break"])
-        assert not breaks, f"FA2 loop graph-broke even with varlen kwargs: {list(breaks)}"
+        assert not breaks, (
+            f"FA2 loop graph-broke even with varlen kwargs: {list(breaks)}"
+        )
         assert counters["stats"]["unique_graphs"] >= 1
 
     def test_no_graph_breaks_vl_conditional_generation(self, packing_patched):

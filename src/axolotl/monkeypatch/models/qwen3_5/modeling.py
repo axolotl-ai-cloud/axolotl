@@ -171,8 +171,11 @@ def _inject_fla_kernels(module, *, compile_boundary: bool = False) -> None:
 
                     FusedRMSNormGated.forward = _dyn.disable(FusedRMSNormGated.forward)
                     FusedRMSNormGated._axolotl_compile_boundary = True
-                except Exception:
-                    pass
+                except Exception as exc:
+                    LOG.warning(
+                        f"Could not install a compile boundary for FusedRMSNormGated "
+                        f"({exc}); torch.compile may graph-break in the decoder loop"
+                    )
 
         module.FusedRMSNormGated = FusedRMSNormGated
         module.chunk_gated_delta_rule = chunk_gated_delta_rule

@@ -601,6 +601,11 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
 
         kwargs["return_tensors"] = "pt"
 
+        is_packed_mode = (
+            training_args.eval_sample_packing
+            if is_eval
+            else training_args.sample_packing
+        )
         if (
             collator
             in (
@@ -608,11 +613,10 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                 BatchSamplerDataCollatorForSeq2Seq,
             )
             and self.cfg.attn_implementation == "flash_attention_2"
-            and self.cfg.sample_packing
+            and is_packed_mode
             and self.cfg.model_config_type in ("qwen3_5", "qwen3_5_moe")
         ):
-            # Emit varlen kwargs from the collator so the FA2 packed-sequence path
-            # skips its per-layer data-dependent derivation and the decoder loop compiles.
+            # Skips transformers' per-layer varlen derivation, which graph-breaks the compiled decoder loop.
             kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(

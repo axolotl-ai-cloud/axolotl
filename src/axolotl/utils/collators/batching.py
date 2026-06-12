@@ -7,6 +7,10 @@ import numpy as np
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
 
 @dataclass
 class DataCollatorForSeq2Seq:
@@ -137,8 +141,13 @@ class DataCollatorForSeq2Seq:
                 features["cu_seq_lens_k"] = cu_k
                 features["max_length_q"] = int(max_q)
                 features["max_length_k"] = int(max_k)
-            except Exception:  # pragma: no cover - fall back to per-layer derivation
-                pass
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - fall back to per-layer derivation
+                LOG.warning_once(
+                    f"FA varlen kwargs precompute failed ({exc}); falling back to "
+                    "transformers' per-layer derivation (decoder loop will not compile)"
+                )
 
         return features
 
