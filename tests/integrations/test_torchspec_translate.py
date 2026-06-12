@@ -165,6 +165,28 @@ class TestDatasetBridge:
         # top-level system field injected as first turn
         assert rows[1]["conversations"][0] == {"role": "system", "content": "sys"}
 
+    def test_malformed_rows_dropped_not_crash(self, tmp_path):
+        src = tmp_path / "messy.jsonl"
+        src.write_text(
+            "\n".join(
+                json.dumps(r)
+                for r in [
+                    {"messages": ["not-a-dict"]},  # non-dict element
+                    {"messages": []},  # empty
+                    {"messages": [{"role": "user", "content": "ok"}]},  # valid
+                ]
+            )
+        )
+        cfg = DictDefault(
+            {
+                "shuffle_merged_datasets": False,
+                "datasets": [{"path": str(src), "field_messages": "messages"}],
+            }
+        )
+        path = standardize_datasets(cfg, "datasets", tmp_path / "out.jsonl")
+        rows = [json.loads(line) for line in open(path)]
+        assert rows == [{"conversations": [{"role": "user", "content": "ok"}]}]
+
 
 class TestPluginDispatch:
     def test_get_input_args_path(self):

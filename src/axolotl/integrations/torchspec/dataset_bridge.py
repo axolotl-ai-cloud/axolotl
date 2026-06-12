@@ -60,7 +60,6 @@ def _content_to_str(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        # OpenAI-style content parts: keep text segments
         parts = [
             p.get("text", "")
             for p in content
@@ -87,20 +86,20 @@ def _normalize_row(
             return None
     if not isinstance(messages, list) or not messages:
         return None
+    if not all(isinstance(m, dict) for m in messages):
+        return None
 
     role_key = property_mappings.get("role", "role")
     content_key = property_mappings.get("content", "content")
 
     turns: list[dict[str, str]] = []
 
-    # inject a top-level system field if the first message isn't a system turn
+    # inject a top-level system field if the conversation doesn't open with one
     first_role = role_map.get(messages[0].get(role_key), messages[0].get(role_key))
     if first_role != "system" and row.get(field_system):
         turns.append({"role": "system", "content": str(row[field_system])})
 
     for message in messages:
-        if not isinstance(message, dict):
-            return None
         raw_role = message.get(role_key)
         if raw_role is None:
             return None

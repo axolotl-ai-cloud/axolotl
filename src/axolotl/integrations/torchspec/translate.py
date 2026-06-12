@@ -44,7 +44,6 @@ _CHAT_TEMPLATE_MAP = {
     "chatml": "qwen",
 }
 
-# speculator.inference_engine -> model.target_model_backend
 _BACKEND_MAP = {"sgl": "sglang", "vllm": "vllm", "hf": "hf"}
 
 _TORCHSPEC_IMPORT_ERROR = (
@@ -106,7 +105,6 @@ def _get_spec_args(cfg: DictDefault) -> TorchSpecArgs:
         return spec
     if isinstance(spec, dict):
         return TorchSpecArgs(**spec)
-    # pydantic model instance from a different import path / DictDefault
     return TorchSpecArgs(**dict(spec))
 
 
@@ -162,6 +160,12 @@ def build_overrides(
     (no dataset I/O) so it is safe for ``--dry-run`` and tests.
     """
     spec = _get_spec_args(cfg)
+
+    if spec.inference_num_gpus is None or spec.training_num_gpus is None:
+        raise ValueError(
+            "speculator.inference_num_gpus and speculator.training_num_gpus must "
+            "both be set (the inference/training GPU split)."
+        )
 
     backend = _BACKEND_MAP[spec.inference_engine]
     output_dir = spec.output_dir or cfg.get("output_dir") or "./outputs/speculator"

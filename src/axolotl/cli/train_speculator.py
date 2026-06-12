@@ -63,8 +63,7 @@ def do_train_speculator(
     if dry_run:
         import json
 
-        # Stay side-effect-free: show the pure config mapping only. The dataset
-        # standardization bridge and full flat-args resolution run at real launch.
+        # dry-run must not touch datasets/Ray: show the pure config mapping only
         LOG.info(
             "TorchSpec config overrides (dry-run, no dataset I/O):\n%s",
             json.dumps(build_overrides(cfg), indent=2, default=str),
