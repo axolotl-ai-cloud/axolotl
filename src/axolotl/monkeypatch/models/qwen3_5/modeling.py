@@ -24,11 +24,11 @@ except ImportError:
 _FLA_COMPILED_OPS = False
 
 
-def _init_fla_compiled_ops() -> bool:
+def _init_fla_compiled_ops(enabled: bool = True) -> bool:
     global _FLA_COMPILED_OPS
     from axolotl.monkeypatch.models.qwen3_5 import fla_ops
 
-    _FLA_COMPILED_OPS = fla_ops.fla_ops_available()
+    _FLA_COMPILED_OPS = fla_ops.fla_ops_available() if enabled else False
     return _FLA_COMPILED_OPS
 
 
@@ -417,7 +417,7 @@ def _apply_packing_patches(
 
     # Under torch_compile, route FusedRMSNormGated through its custom-op wrapper too: its eager entry is untraceable (un-meta-able as_strided backward) and would graph-break the loop.
     _inject_fla_kernels(module, compile_boundary=torch_compile)
-    compiled_ops = _init_fla_compiled_ops()
+    compiled_ops = _init_fla_compiled_ops(torch_compile)
     getattr(module, f"{cls_prefix}DecoderLayer").forward = _patched_decoder_forward
     gated_cls = getattr(module, f"{cls_prefix}GatedDeltaNet")
     gated_cls.forward = forward_factory(module.apply_mask_to_padding_states)
