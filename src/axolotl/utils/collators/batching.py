@@ -51,6 +51,7 @@ class DataCollatorForSeq2Seq:
     label_pad_token_id: int = -100
     position_pad_token_id: int = 0
     return_tensors: str = "pt"
+    emit_fa_varlen_kwargs: bool = False
 
     def __call__(self, features, return_tensors=None):
         has_attn_mask = "attention_mask" in features[0].keys()
@@ -121,6 +122,23 @@ class DataCollatorForSeq2Seq:
                 labels=features["labels"]
             )
             features["decoder_input_ids"] = decoder_input_ids
+
+        if self.emit_fa_varlen_kwargs and "position_ids" in features:
+            # Precompute FA2 varlen metadata once so transformers' per-layer derivation (a data-dependent op that breaks the compiled decoder loop) is skipped; bit-identical to what it would compute itself.
+            try:
+                from transformers.modeling_flash_attention_utils import (
+                    prepare_fa_kwargs_from_position_ids,
+                )
+
+                (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(
+                    features["position_ids"]
+                )
+                features["cu_seq_lens_q"] = cu_q
+                features["cu_seq_lens_k"] = cu_k
+                features["max_length_q"] = int(max_q)
+                features["max_length_k"] = int(max_k)
+            except Exception:  # pragma: no cover - fall back to per-layer derivation
+                pass
 
         return features
 
