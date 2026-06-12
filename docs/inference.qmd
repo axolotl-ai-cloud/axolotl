@@ -66,7 +66,8 @@ Generation parameters can also be set directly, e.g. `/temperature 0.7` (or
 `/seed 42`. Setting `temperature` to `0` switches to greedy decoding.
 
 Press `Ctrl+C` during generation to stop the current reply; the partial response
-is kept in the conversation.
+is kept in the conversation (diffusion replies denoise in one piece, so an
+interrupted diffusion turn is discarded instead).
 
 #### Thinking Models {#sec-chat-thinking}
 
@@ -79,12 +80,13 @@ disables thinking entirely from the next turn; `/think default` restores the
 template default.
 
 ::: {.callout-note}
-Whatever is shown, the *stored* conversation always keeps the model output
-verbatim, thinking included. When the conversation is re-rendered each turn,
-the chat template decides how prior-turn reasoning is handled — matching what
-the model saw during training. The KV cache is re-used across turns whenever
-the rendered conversation extends the previous one, so long chats stay
-responsive.
+Assistant turns are stored the way `transformers` recommends: special tokens
+are stripped and thinking is kept on a separate `reasoning_content` key (via
+the tokenizer's `parse_response` schema when it ships one, marker-splitting
+otherwise), so the chat template decides how prior-turn reasoning is
+re-rendered — matching what the model saw during training. The KV cache is
+re-used across turns whenever the rendered conversation extends the previous
+one, so long chats stay responsive.
 :::
 
 `/save` writes conversations in the `messages` format accepted by

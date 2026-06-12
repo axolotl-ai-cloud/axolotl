@@ -38,8 +38,9 @@ class FakeCache:
 class FakeGenerator:
     """Records conversations passed in and returns canned replies."""
 
-    def __init__(self, replies=None):
+    def __init__(self, replies=None, messages=None):
         self.replies = replies or ["canned reply"]
+        self.messages = messages
         self.calls = []
         self.render_kwargs_seen = []
 
@@ -48,9 +49,13 @@ class FakeGenerator:
         self.render_kwargs_seen.append(
             dict(render_kwargs) if render_kwargs is not None else None
         )
-        content = self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
+        index = min(len(self.calls) - 1, len(self.replies) - 1)
+        content = self.replies[index]
+        message = dict(self.messages[index]) if self.messages else None
         on_text(content)
-        return TurnResult(content=content, prompt_tokens=10, new_tokens=3)
+        return TurnResult(
+            content=content, message=message, prompt_tokens=10, new_tokens=3
+        )
 
 
 def make_repl(inputs, generator=None, session=None):
@@ -131,6 +136,28 @@ class TestChatSession:
         assert session.messages[-1]["role"] == "user"
         session.clear()
         assert not session.drop_last_assistant()
+
+    def test_add_user_merges_consecutive_user_messages(self):
+        # a failed generation leaves a trailing user message; typing again must
+        # not create consecutive user turns (strict templates reject them)
+        session = ChatSession()
+        session.add_user("first try")
+        session.add_user("second try")
+        assert [m["role"] for m in session.messages] == ["user"]
+        assert session.messages[0]["content"] == "first try\nsecond try"
+
+    def test_save_jsonl_keeps_reasoning_content(self, tmp_path):
+        session = ChatSession()
+        session.add_user("q")
+        session.add_assistant_message(
+            {"role": "assistant", "content": "a", "reasoning_content": "hmm"}
+        )
+        path = tmp_path / "chat.jsonl"
+        session.save_jsonl(str(path))
+        sample = json.loads(path.read_text(encoding="utf-8"))
+        assistant = sample["messages"][1]
+        assert assistant["content"] == [{"type": "text", "text": "a"}]
+        assert assistant["reasoning_content"] == "hmm"
 
     def test_save_jsonl_multimodal_parts_format(self, tmp_path):
         session = ChatSession()
@@ -252,7 +279,23 @@ class TestChatRepl:
         repl.run()
         assert generator.calls[0][0][0]["content"] == "first line\nsecond line"
 
-    def test_thinking_block_kept_verbatim_in_history(self):
+    def test_generator_message_stored_in_history(self):
+        message = {
+            "role": "assistant",
+            "content": "The answer is 4.",
+            "reasoning_content": "step by step",
+        }
+        repl, _ = make_repl(
+            ["what is 2+2?", "/quit"],
+            generator=FakeGenerator(["The answer is 4."], messages=[message]),
+        )
+        repl.run()
+        assert repl.session.messages[-1] == message
+        # renderer saw no think markers, so /expand falls back to the message
+        assert repl.last_think_text == "step by step"
+
+    def test_legacy_content_fallback_kept_verbatim(self):
+        # generators that return no message dict store their content as-is
         reply = "<think>step by step</think>\nThe answer is 4."
         repl, _ = make_repl(["what is 2+2?", "/quit"], generator=FakeGenerator([reply]))
         repl.run()
@@ -262,6 +305,46 @@ class TestChatRepl:
         repl, generator = make_repl(["/bogus", "/quit"])
         repl.run()
         assert not generator.calls
+
+    def test_command_handler_error_does_not_crash_repl(self):
+        # unclosed quote makes shlex raise inside /save
+        repl, generator = make_repl(["hi", '/save "unclosed', "again", "/quit"])
+        repl.run()
+        assert len(generator.calls) == 2
+
+    def test_keyboard_interrupt_keeps_session_alive(self):
+        class InterruptingGenerator(FakeGenerator):
+            def generate_turn(self, conversation, params, on_text, render_kwargs=None):
+                if not self.calls:
+                    self.calls.append(None)
+                    raise KeyboardInterrupt
+                return super().generate_turn(
+                    conversation, params, on_text, render_kwargs
+                )
+
+        repl, generator = make_repl(
+            ["hi", "again", "/quit"], generator=InterruptingGenerator()
+        )
+        repl.run()
+        # interrupted turn keeps the user message; the next one merges into it
+        assert [m["role"] for m in repl.session.messages] == ["user", "assistant"]
+        assert repl.session.messages[0]["content"] == "hi\nagain"
+        assert len(generator.calls) == 2
+
+    def test_generation_failure_keeps_session_alive(self):
+        class FailingGenerator(FakeGenerator):
+            def generate_turn(self, conversation, params, on_text, render_kwargs=None):
+                if not self.calls:
+                    self.calls.append(None)
+                    raise RuntimeError("boom")
+                return super().generate_turn(
+                    conversation, params, on_text, render_kwargs
+                )
+
+        repl, _ = make_repl(["hi", "/retry", "/quit"], generator=FailingGenerator())
+        repl.run()
+        assert [m["role"] for m in repl.session.messages] == ["user", "assistant"]
+        assert repl.session.messages[-1]["content"] == "canned reply"
 
 
 def test_longest_common_prefix_len():
@@ -424,6 +507,120 @@ class TestThinkTokenSplit:
         assert generator.split_think_token_counts([100, 1, 2]) == (2, 0)
         assert generator.split_think_token_counts([5, 6]) == (0, 2)
         assert generator.split_think_token_counts([]) == (0, 0)
+
+
+class TestBuildAssistantMessage:
+    VOCAB = {
+        1: "step by step",
+        2: "The answer is 4.",
+        50: "<eos>",
+        100: "<think>",
+        101: "</think>",
+    }
+    SPECIAL = {50, 100, 101}
+
+    def make_generator(self, response_schema=None, parse_response=None):
+        from types import SimpleNamespace
+
+        from axolotl.cli.chat import TurnGenerator
+
+        vocab, special = self.VOCAB, self.SPECIAL
+
+        class FakeTokenizer:
+            eos_token_id = 50
+            chat_template = None
+
+            def encode(self, text, **kwargs):
+                return [token_id for token_id, t in vocab.items() if t == text]
+
+            def decode(self, ids, skip_special_tokens=False):
+                return "".join(
+                    vocab[i] for i in ids if not (skip_special_tokens and i in special)
+                )
+
+        tokenizer = FakeTokenizer()
+        if response_schema is not None:
+            tokenizer.response_schema = response_schema
+            tokenizer.parse_response = parse_response
+        model = SimpleNamespace(generation_config=SimpleNamespace(eos_token_id=None))
+        return TurnGenerator(model, tokenizer, None, "cpu")
+
+    def test_thinking_split_into_reasoning_content(self):
+        generator = self.make_generator()
+        message = generator.build_assistant_message([100, 1, 101, 2])
+        assert message == {
+            "role": "assistant",
+            "content": "The answer is 4.",
+            "reasoning_content": "step by step",
+        }
+
+    def test_no_thinking_omits_reasoning_key(self):
+        generator = self.make_generator()
+        message = generator.build_assistant_message([2])
+        assert message == {"role": "assistant", "content": "The answer is 4."}
+
+    def test_special_tokens_stripped_from_content(self):
+        generator = self.make_generator()
+        message = generator.build_assistant_message([2, 50])
+        assert message["content"] == "The answer is 4."
+
+    def test_parse_response_schema_preferred(self):
+        generator = self.make_generator(
+            response_schema={"x": "regex"},
+            parse_response=lambda text: {"content": "parsed", "thinking": "hmm"},
+        )
+        message = generator.build_assistant_message([2])
+        assert message == {
+            "role": "assistant",
+            "content": "parsed",
+            "thinking": "hmm",
+        }
+
+    def test_parse_response_failure_falls_back_to_markers(self):
+        def boom(text):
+            raise ValueError("bad schema")
+
+        generator = self.make_generator(
+            response_schema={"x": "regex"}, parse_response=boom
+        )
+        message = generator.build_assistant_message([100, 1, 101, 2])
+        assert message["content"] == "The answer is 4."
+        assert message["reasoning_content"] == "step by step"
+
+
+class TestEosTextTrimmer:
+    def make_trimmer(self, eos_strings=("<|im_end|>",)):
+        from axolotl.cli.chat import EosTextTrimmer
+
+        chunks = []
+        return EosTextTrimmer(eos_strings, chunks.append), chunks
+
+    def test_eos_marker_never_emitted(self):
+        trimmer, chunks = self.make_trimmer()
+        trimmer.feed("Hello")
+        trimmer.feed(" world<|im_end|>")
+        trimmer.finish()
+        assert "".join(chunks) == "Hello world"
+
+    def test_eos_split_across_chunks(self):
+        trimmer, chunks = self.make_trimmer()
+        trimmer.feed("Hi<|im_")
+        trimmer.feed("end|>")
+        trimmer.finish()
+        assert "".join(chunks) == "Hi"
+
+    def test_false_partial_released(self):
+        trimmer, chunks = self.make_trimmer()
+        trimmer.feed("a<")
+        trimmer.feed("b")
+        trimmer.finish()
+        assert "".join(chunks) == "a<b"
+
+    def test_plain_text_passthrough(self):
+        trimmer, chunks = self.make_trimmer()
+        trimmer.feed("no special tokens here")
+        trimmer.finish()
+        assert "".join(chunks) == "no special tokens here"
 
 
 class TestThinkCommands:

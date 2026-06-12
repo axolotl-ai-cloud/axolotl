@@ -161,6 +161,15 @@ def find_subsequence(haystack: list[int], needle: list[int], start: int = 0) -> 
     return -1
 
 
+def partial_suffix_len(text: str, marker: str) -> int:
+    """Length of the longest suffix of `text` that is a proper prefix of `marker`."""
+    max_len = min(len(text), len(marker) - 1)
+    for k in range(max_len, 0, -1):
+        if text.endswith(marker[:k]):
+            return k
+    return 0
+
+
 @dataclass
 class ChatSession:
     """Holds the conversation state for a chat session."""
@@ -173,10 +182,18 @@ class ChatSession:
         return prefix + self.messages
 
     def add_user(self, content: str):
+        # merge into a trailing unanswered user message (e.g. after a failed
+        # generation) so strict templates never see consecutive user turns
+        if self.messages and self.messages[-1]["role"] == "user":
+            self.messages[-1]["content"] += "\n" + content
+            return
         self.messages.append({"role": "user", "content": content})
 
     def add_assistant(self, content: str):
-        self.messages.append({"role": "assistant", "content": content})
+        self.add_assistant_message({"role": "assistant", "content": content})
+
+    def add_assistant_message(self, message: dict):
+        self.messages.append(message)
 
     def clear(self):
         self.messages = []
@@ -200,13 +217,16 @@ class ChatSession:
     def save_jsonl(self, path: str):
         # content-parts format: text-only today, but matches the multimodal
         # dataset format so saved sessions stay usable as training data
-        messages = [
-            {
+        messages = []
+        for message in self.conversation():
+            out = {
                 "role": message["role"],
-                "content": [{"type": "text", "text": message["content"]}],
+                "content": [{"type": "text", "text": message.get("content") or ""}],
             }
-            for message in self.conversation()
-        ]
+            for key in ("reasoning_content", "thinking", "tool_calls"):
+                if message.get(key):
+                    out[key] = message[key]
+            messages.append(out)
         with open(path, "a", encoding="utf-8") as file:
             file.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
 
@@ -216,6 +236,7 @@ class TurnResult:
     """Result of generating a single assistant turn."""
 
     content: str
+    message: dict | None = None
     interrupted: bool = False
     prompt_tokens: int = 0
     reused_tokens: int = 0
@@ -247,6 +268,7 @@ class TurnGenerator:
             chat_template_str or getattr(tokenizer, "chat_template", None)
         )
         self._think_marker_ids: tuple[list[int], list[int]] | None = None
+        self._eos_strings: tuple[str, ...] | None = None
 
         self.eos_token_ids: set[int] = set()
         if tokenizer.eos_token_id is not None:
@@ -272,8 +294,10 @@ class TurnGenerator:
         )
         return list(batch["input_ids"])
 
-    def split_think_token_counts(self, generated: list[int]) -> tuple[int, int]:
-        """Returns (thinking, response) token counts for a generated sequence."""
+    def _split_think_token_ids(
+        self, generated: list[int]
+    ) -> tuple[list[int], list[int]]:
+        """Splits a generated sequence into (thinking, response) token ids."""
         if self._think_marker_ids is None:
             try:
                 self._think_marker_ids = (
@@ -290,13 +314,63 @@ class TurnGenerator:
         open_ids, close_ids = self._think_marker_ids
         i = find_subsequence(generated, open_ids)
         if i < 0:
-            return 0, len(generated)
+            return [], generated
         j = find_subsequence(generated, close_ids, i + len(open_ids))
         if j < 0:
-            return len(generated) - i - len(open_ids), 0
-        thinking = j - i - len(open_ids)
-        response = len(generated) - j - len(close_ids)
+            return generated[i + len(open_ids) :], generated[:i]
+        thinking = generated[i + len(open_ids) : j]
+        response = generated[:i] + generated[j + len(close_ids) :]
         return thinking, response
+
+    def split_think_token_counts(self, generated: list[int]) -> tuple[int, int]:
+        """Returns (thinking, response) token counts for a generated sequence."""
+        thinking, response = self._split_think_token_ids(generated)
+        return len(thinking), len(response)
+
+    def build_assistant_message(self, generated: list[int]) -> dict:
+        """
+        Parses generated token ids into an assistant message dict. Prefers the
+        tokenizer's own `parse_response` schema (transformers v5); otherwise splits
+        thinking out of the content by marker and stores it under
+        `reasoning_content`, the key the bundled chat templates read. Special
+        tokens are kept out of the stored text either way — the template re-adds
+        them on render.
+        """
+        if getattr(self.tokenizer, "response_schema", None):
+            try:
+                text = self.tokenizer.decode(generated, skip_special_tokens=False)
+                message = self.tokenizer.parse_response(text)
+                if isinstance(message, dict):
+                    message.setdefault("role", "assistant")
+                    message.setdefault("content", "")
+                    return message
+            except Exception:  # pylint: disable=broad-exception-caught
+                LOG.warning(
+                    "tokenizer.parse_response failed; falling back to marker split",
+                    exc_info=True,
+                )
+
+        thinking_ids, response_ids = self._split_think_token_ids(generated)
+        parsed: dict[str, Any] = {
+            "role": "assistant",
+            "content": self.tokenizer.decode(
+                response_ids, skip_special_tokens=True
+            ).strip(),
+        }
+        if thinking_ids:
+            parsed["reasoning_content"] = self.tokenizer.decode(
+                thinking_ids, skip_special_tokens=True
+            ).strip()
+        return parsed
+
+    def eos_strings(self) -> tuple[str, ...]:
+        if self._eos_strings is None:
+            self._eos_strings = tuple(
+                text
+                for token_id in sorted(self.eos_token_ids)
+                if (text := self.tokenizer.decode([token_id]))
+            )
+        return self._eos_strings
 
     def generate_turn(
         self,
@@ -306,6 +380,46 @@ class TurnGenerator:
         render_kwargs: dict | None = None,
     ) -> TurnResult:
         raise NotImplementedError
+
+
+class EosTextTrimmer:
+    """
+    Filters streamed text so terminal EOS markers (e.g. `<|im_end|>`) never reach
+    the display. Text that could be the start of an EOS string is held back until
+    disambiguated by the next chunk.
+    """
+
+    def __init__(self, eos_strings: tuple[str, ...], emit: Callable[[str], None]):
+        self.eos_strings = tuple(s for s in eos_strings if s)
+        self.emit = emit
+        self.pending = ""
+        self.done = False
+
+    def feed(self, text: str):
+        if self.done or not text:
+            return
+        self.pending += text
+        positions = [
+            idx for s in self.eos_strings if (idx := self.pending.find(s)) >= 0
+        ]
+        if positions:
+            if min(positions) > 0:
+                self.emit(self.pending[: min(positions)])
+            self.pending = ""
+            self.done = True
+            return
+        hold = max(
+            (partial_suffix_len(self.pending, s) for s in self.eos_strings),
+            default=0,
+        )
+        if len(self.pending) > hold:
+            self.emit(self.pending[: len(self.pending) - hold])
+            self.pending = self.pending[len(self.pending) - hold :]
+
+    def finish(self):
+        if not self.done and self.pending:
+            self.emit(self.pending)
+        self.pending = ""
 
 
 class CausalTurnGenerator(TurnGenerator):
@@ -422,16 +536,18 @@ class CausalTurnGenerator(TurnGenerator):
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
 
+        trimmer = EosTextTrimmer(self.eos_strings(), on_text)
         interrupted = False
         try:
             for text in streamer:
-                on_text(text)
+                trimmer.feed(text)
         except KeyboardInterrupt:
             interrupted = True
             stop_event.set()
             for text in streamer:
-                on_text(text)
+                trimmer.feed(text)
         thread.join()
+        trimmer.finish()
         seconds = time.monotonic() - start
 
         if "error" in holder:
@@ -449,6 +565,7 @@ class CausalTurnGenerator(TurnGenerator):
 
         return TurnResult(
             content=content,
+            message=self.build_assistant_message(generated),
             interrupted=interrupted,
             prompt_tokens=len(ids),
             reused_tokens=reused,
@@ -512,6 +629,7 @@ class DiffusionTurnGenerator(TurnGenerator):
 
         return TurnResult(
             content=content,
+            message=self.build_assistant_message(generated),
             prompt_tokens=len(ids),
             new_tokens=len(generated),
             thinking_tokens=thinking_tokens,
@@ -564,14 +682,6 @@ class ThinkStreamRenderer:
             print(self._pending, end="", flush=True)
             self._pending = ""
 
-    @staticmethod
-    def _partial_suffix_len(text: str, marker: str) -> int:
-        max_len = min(len(text), len(marker) - 1)
-        for k in range(max_len, 0, -1):
-            if text.endswith(marker[:k]):
-                return k
-        return 0
-
     def _process(self):
         while True:
             if self._mode == "detect":
@@ -603,7 +713,7 @@ class ThinkStreamRenderer:
                     self._end_think()
                     self._mode = "reply"
                     continue
-                keep = self._partial_suffix_len(self._pending, self.close_marker)
+                keep = partial_suffix_len(self._pending, self.close_marker)
                 emit_until = len(self._pending) - keep
                 self.think_text += self._pending[:emit_until]
                 self._pending = self._pending[emit_until:]
@@ -741,7 +851,11 @@ class ChatRepl:
                 continue
 
             if line.startswith("/"):
-                action = self._dispatch(line)
+                try:
+                    action = self._dispatch(line)
+                except Exception as err:  # pylint: disable=broad-exception-caught
+                    self.console.print(f"[red]Command failed: {escape(str(err))}[/red]")
+                    continue
                 if action == "quit":
                     break
                 if action == "regenerate":
@@ -801,18 +915,31 @@ class ChatRepl:
             )
         except KeyboardInterrupt:
             renderer.finish(interrupted=True)
-            raise
+            print()
+            self.console.print(
+                "[dim]Interrupted; reply discarded. Your message is kept —"
+                " /retry regenerates, /undo removes it.[/dim]"
+            )
+            return
         except Exception as err:  # pylint: disable=broad-exception-caught
             renderer.finish(interrupted=True)
             self.console.print(f"\n[red]Generation failed: {escape(str(err))}[/red]")
-            self.console.print("[dim]The last message is kept; /undo removes it.[/dim]")
+            self.console.print(
+                "[dim]Your message is kept — /retry regenerates, /undo removes it.[/dim]"
+            )
             return
 
         renderer.finish(interrupted=result.interrupted)
-        self.last_think_text = renderer.think_text.strip() or None
+        message = result.message or {"role": "assistant", "content": result.content}
+        self.last_think_text = (
+            renderer.think_text.strip()
+            or message.get("reasoning_content")
+            or message.get("thinking")
+            or None
+        )
 
         print()
-        self.session.add_assistant(result.content)
+        self.session.add_assistant_message(message)
         token_summary = f"{result.new_tokens} tokens"
         if result.thinking_tokens:
             token_summary += (
@@ -905,7 +1032,10 @@ class ChatRepl:
             return None
         for message in conversation:
             self.console.print(f"[bold]{message['role']}:[/bold]")
-            self.console.print(escape(message["content"]))
+            reasoning = message.get("reasoning_content") or message.get("thinking")
+            if reasoning:
+                self.console.print(escape(reasoning), style="dim")
+            self.console.print(escape(message.get("content") or ""))
         return None
 
     def cmd_retry(self, _args: str) -> str | None:
