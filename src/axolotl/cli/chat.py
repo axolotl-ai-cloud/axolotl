@@ -654,6 +654,8 @@ class ThinkStreamRenderer:
     collapse is off, this is a plain passthrough print.
     """
 
+    LIVE_FPS = 12
+
     def __init__(
         self,
         console: Console,
@@ -702,7 +704,7 @@ class ThinkStreamRenderer:
                     self._live = Live(
                         Text(""),
                         console=self.console,
-                        refresh_per_second=12,
+                        refresh_per_second=self.LIVE_FPS,
                         transient=True,
                     )
                     self._live.start()
@@ -738,9 +740,9 @@ class ThinkStreamRenderer:
     def _update_live(self):
         if self._live is None:
             return
-        # Live repaints at 12 Hz; building renderables faster than that is wasted
+        # Live repaints at LIVE_FPS; building renderables faster than that is wasted
         now = time.monotonic()
-        if now - self._last_live_update < 1 / 12:
+        if now - self._last_live_update < 1 / self.LIVE_FPS:
             return
         self._last_live_update = now
         lines = self.think_text.splitlines()[-self.tail_lines :]
