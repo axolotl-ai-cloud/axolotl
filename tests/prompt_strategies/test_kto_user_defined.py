@@ -6,6 +6,7 @@ import pytest
 
 from axolotl.prompt_strategies.kto import load as load_kto
 from axolotl.prompt_strategies.kto.user_defined import default
+from axolotl.utils.config import validate_config
 from axolotl.utils.dict import DictDefault
 
 
@@ -94,8 +95,8 @@ class TestKTOUserDefined:
             default(cfg)
 
     def test_load_kto_user_defined_returns_callable(self):
-        """Regression: load_kto previously swallowed errors and returned None,
-        which crashed later with "TypeError: None is not a callable object"."""
+        """The loader path resolves user_defined.default to a callable
+        transform for the documented config."""
         cfg = make_cfg(
             {
                 "field_prompt": "prompt",
@@ -107,3 +108,33 @@ class TestKTOUserDefined:
         )
         transform_fn = load_kto("user_defined.default", cfg, dataset_idx=0)
         assert callable(transform_fn)
+
+    def test_documented_config_passes_validate_config(self):
+        """The documented config validates end-to-end: field_label is a column
+        name (str), which the schema previously rejected as a bool."""
+        cfg = DictDefault(
+            {
+                "base_model": "TinyLlama/TinyLlama-1.1B-Chat-v0.6",
+                "learning_rate": 0.000001,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "remove_unused_columns": False,
+                "rl": "kto",
+                "datasets": [
+                    {
+                        "path": "user/dataset",
+                        "split": "train",
+                        "type": {
+                            "field_prompt": "prompt",
+                            "field_system": "system",
+                            "field_completion": "completion",
+                            "field_label": "label",
+                            "prompt_format": "{prompt}",
+                            "completion_format": "{completion}",
+                        },
+                    }
+                ],
+            }
+        )
+        checked_cfg = validate_config(cfg)
+        assert checked_cfg["datasets"][0]["type"]["field_label"] == "label"
