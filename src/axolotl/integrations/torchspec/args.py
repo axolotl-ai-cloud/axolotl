@@ -31,8 +31,18 @@ EngineType = Literal["sgl", "vllm", "hf"]
 class TorchSpecArgs(BaseModel):
     """The ``speculator:`` config block for training EAGLE-3 draft models."""
 
-    # None => TorchSpec auto-generates a reduced-layer EAGLE-3 config from the target
+    # Explicit draft-config JSON path. Takes precedence over the draft_* knobs
+    # below; if both are unset, TorchSpec auto-generates a 1-layer config.
     draft_model_config: str | None = None
+    # Draft-architecture knobs: when any is set (and draft_model_config is unset),
+    # a config is generated from the target and these overrides are applied.
+    draft_num_hidden_layers: int | None = None
+    draft_hidden_size: int | None = None
+    draft_intermediate_size: int | None = None
+    draft_vocab_size: int | None = None  # prune draft vocab (None = full target vocab)
+    draft_architecture: str | None = None
+    draft_config_overrides: dict | None = None  # arbitrary extra config fields
+
     ttt_length: int = 7  # speculative depth
     ploss_weights: list[float] | None = None
     aux_hidden_states_layers: list[int] | None = None

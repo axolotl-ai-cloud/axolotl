@@ -93,10 +93,37 @@ materialize the standardized JSONL without training.
 The `chat_template` is mapped to TorchSpec's template name (`qwen3`/`chatml` →
 `qwen`, `llama3` → `llama3`); set `speculator.chat_template` to override.
 
+## Draft architecture
+
+By default TorchSpec auto-generates a 1-layer EAGLE-3 head from the target. To
+tune it without hand-writing JSON, set `draft_*` knobs in the `speculator:` block
+— a config is generated from the target and these are overlaid:
+
+```yaml
+speculator:
+  draft_num_hidden_layers: 3
+  draft_intermediate_size: 8192
+  draft_vocab_size: 32000          # prune the draft vocab
+  draft_config_overrides:          # arbitrary extra config fields
+    rope_theta: 5000000
+```
+
+An explicit `draft_model_config: path/to/config.json` takes precedence over the
+knobs.
+
 ## Export
 
-TorchSpec writes draft-model checkpoints under `output_dir`; convert to an
-HF-loadable EAGLE-3 draft with TorchSpec's `tools/convert_to_hf.py`.
+TorchSpec writes draft checkpoints under `output_dir`. Convert to an HF-loadable
+EAGLE-3 draft in one step:
+
+```bash
+axolotl export-speculator config.yaml                 # -> <output_dir>/checkpoints_hf
+axolotl export-speculator config.yaml --prune-vocab   # prune to draft_vocab_size using the dataset
+axolotl export-speculator config.yaml --input-dir <ckpt> --output-dir <hf> --dtype float16 --force
+```
+
+It wraps TorchSpec's `tools/convert_to_hf.py`, pulling `base_model`,
+`chat_template`, and the speculator settings from the config.
 
 ## Notes / limitations
 

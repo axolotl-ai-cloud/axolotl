@@ -353,6 +353,42 @@ def train_speculator(ctx: click.Context, config: str, dry_run: bool = False, **k
     )
 
 
+@cli.command("export-speculator")
+@click.argument("config", type=click.Path(exists=True, path_type=str))
+@click.option(
+    "--input-dir",
+    default=None,
+    help="FSDP checkpoint dir (default <output_dir>/checkpoints).",
+)
+@click.option(
+    "--output-dir", default=None, help="HF output dir (default <input-dir>_hf)."
+)
+@click.option(
+    "--dtype",
+    type=click.Choice(["float16", "bfloat16", "float32"]),
+    default=None,
+    help="Output dtype; use float16 for FP8 target models.",
+)
+@click.option(
+    "--prune-vocab",
+    is_flag=True,
+    default=False,
+    help="Prune draft vocab using the training dataset.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    default=False,
+    help="Overwrite the output dir if it exists.",
+)
+@filter_none_kwargs
+def export_speculator(config: str, **kwargs):
+    """Export a trained TorchSpec draft checkpoint to an HF-loadable EAGLE-3 model."""
+    from axolotl.cli.export_speculator import do_export_speculator
+
+    do_export_speculator(config, **kwargs)
+
+
 @cli.command()
 @click.argument("config", type=click.Path(exists=True, path_type=str))
 @add_options_from_dataclass(QuantizeCliArgs)

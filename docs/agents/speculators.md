@@ -35,6 +35,7 @@ axolotl train-speculator config.yaml                    # launch (NOT under acce
 axolotl train-speculator config.yaml training.num_train_steps=10   # dotlist override
 axolotl train --launcher python config.yaml             # standard verb, single-process only
 axolotl preprocess config.yaml                          # just materialize the standardized JSONL
+axolotl export-speculator config.yaml [--prune-vocab]   # FSDP draft checkpoint -> HF EAGLE-3 model
 ```
 
 Both entry points must run single-process — TorchSpec is the sole Ray driver; a
@@ -65,16 +66,25 @@ TorchSpec then tokenizes + masks it (EAGLE-3-correct). Set it to `false` to pass
 See `TorchSpecArgs` in `src/axolotl/integrations/torchspec/args.py` for the full
 `speculator:` schema.
 
+## Draft architecture
+
+`draft_model_config: null` + no `draft_*` knobs → TorchSpec auto-generates a
+1-layer EAGLE-3 head. Set `speculator.draft_num_hidden_layers` /
+`draft_hidden_size` / `draft_intermediate_size` / `draft_vocab_size` /
+`draft_config_overrides` to generate a tuned config from the target. An explicit
+`draft_model_config` JSON path overrides the knobs.
+
 ## Export
 
-Draft checkpoints land in `output_dir`; convert with TorchSpec's
-`tools/convert_to_hf.py` to get an HF-loadable EAGLE-3 draft.
+`axolotl export-speculator config.yaml` converts the FSDP draft checkpoint under
+`output_dir/checkpoints` into an HF-loadable EAGLE-3 model (wraps TorchSpec's
+`tools/convert_to_hf.py`). `--prune-vocab` prunes to `draft_vocab_size` using the
+training dataset.
 
 ## Gotchas
 
 - Run as a plain process — it becomes the Ray driver; do **not** wrap in
   `accelerate`/`torchrun`.
-- `draft_model_config: null` auto-generates a reduced-layer draft from the target.
 - `mooncake_protocol: rdma` requires `speculator.mooncake_device_name` (the NIC).
 - `inference_engine: vllm` needs vLLM ≥ 0.18.0 and is incompatible with
   `train_with_decode`.

@@ -188,6 +188,38 @@ class TestDatasetBridge:
         assert rows == [{"conversations": [{"role": "user", "content": "ok"}]}]
 
 
+class TestDraftConfig:
+    def test_has_draft_overrides(self):
+        from axolotl.integrations.torchspec.draft_config import has_draft_overrides
+
+        assert not has_draft_overrides(TorchSpecArgs())
+        assert has_draft_overrides(TorchSpecArgs(draft_num_hidden_layers=3))
+        assert has_draft_overrides(TorchSpecArgs(draft_vocab_size=32000))
+
+    def test_apply_draft_overrides(self):
+        from axolotl.integrations.torchspec.draft_config import apply_draft_overrides
+
+        base = {
+            "architectures": ["LlamaForCausalLMEagle3"],
+            "num_hidden_layers": 1,
+            "hidden_size": 4096,
+            "vocab_size": 151936,
+        }
+        spec = TorchSpecArgs(
+            draft_num_hidden_layers=3,
+            draft_intermediate_size=8192,
+            draft_vocab_size=32000,
+            draft_config_overrides={"rope_theta": 5_000_000},
+        )
+        out = apply_draft_overrides(base, spec)
+        assert out["num_hidden_layers"] == 3
+        assert out["intermediate_size"] == 8192
+        assert out["draft_vocab_size"] == 32000
+        assert out["rope_theta"] == 5_000_000
+        assert out["hidden_size"] == 4096  # untouched
+        assert base["num_hidden_layers"] == 1  # original not mutated
+
+
 class TestPluginDispatch:
     def test_get_input_args_path(self):
         from axolotl.integrations.torchspec.plugin import TorchSpecPlugin

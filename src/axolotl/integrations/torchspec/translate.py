@@ -151,13 +151,15 @@ def build_overrides(
     cfg: DictDefault,
     train_path: str | None = None,
     eval_path: str | None = None,
+    draft_config_path: str | None = None,
 ) -> dict[str, Any]:
     """Build the nested override dict matching TorchSpec's ``Config`` sections.
 
     ``train_path``/``eval_path`` override the dataset paths (set when the
-    standardization bridge has produced normalized JSONL); when omitted, the
-    first axolotl ``datasets``/``test_datasets`` path is used as-is. Kept pure
-    (no dataset I/O) so it is safe for ``--dry-run`` and tests.
+    standardization bridge has produced normalized JSONL); ``draft_config_path``
+    overrides the draft-config path (set when generated from ``draft_*`` knobs).
+    When omitted, the first axolotl dataset path and ``speculator.draft_model_config``
+    are used as-is. Kept pure (no I/O) so it is safe for ``--dry-run`` and tests.
     """
     spec = _get_spec_args(cfg)
 
@@ -191,7 +193,7 @@ def build_overrides(
             "target_model_path": cfg.get("base_model"),
             "target_model_backend": backend,
             "trust_remote_code": bool(cfg.get("trust_remote_code")),
-            "draft_model_config": spec.draft_model_config,
+            "draft_model_config": draft_config_path or spec.draft_model_config,
         },
         "dataset": {
             "train_data_path": train_data_path,
@@ -260,14 +262,26 @@ def build_torchspec_args(
     from omegaconf import OmegaConf
     from torchspec.config.train_config import config_to_flat_args, load_config
 
+    spec = _get_spec_args(cfg)
+
     train_path = eval_path = None
-    if _get_spec_args(cfg).prepare_dataset:
+    if spec.prepare_dataset:
         from axolotl.integrations.torchspec.dataset_bridge import prepare_datasets
 
         train_path, eval_path = prepare_datasets(cfg)
 
+    from axolotl.integrations.torchspec.draft_config import build_draft_model_config
+
+    output_dir = spec.output_dir or cfg.get("output_dir") or "./outputs/speculator"
+    draft_config_path = build_draft_model_config(cfg, spec, output_dir)
+
     base = OmegaConf.create(
-        build_overrides(cfg, train_path=train_path, eval_path=eval_path)
+        build_overrides(
+            cfg,
+            train_path=train_path,
+            eval_path=eval_path,
+            draft_config_path=draft_config_path,
+        )
     )
     config = load_config(config_path=None, base_config=base, cli_args=extra_overrides)
 

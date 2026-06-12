@@ -16,6 +16,7 @@
 
 from .args import TorchSpecArgs, TorchSpecArgsMixin
 from .dataset_bridge import prepare_datasets, standardize_datasets
+from .draft_config import apply_draft_overrides, build_draft_model_config
 from .plugin import TorchSpecPlugin
 from .translate import build_torchspec_args
 
@@ -23,6 +24,8 @@ __all__ = [
     "TorchSpecArgs",
     "TorchSpecArgsMixin",
     "TorchSpecPlugin",
+    "apply_draft_overrides",
+    "build_draft_model_config",
     "build_torchspec_args",
     "prepare_datasets",
     "standardize_datasets",
