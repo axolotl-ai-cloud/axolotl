@@ -229,7 +229,7 @@ def _patched_decoder_forward(
                 **kwargs,
             )
         else:
-            # Intentional dynamo.disable boundary (non-GC path, incl. model.eval() under compile): without it Inductor fuses the FA2 backward with the gated o_proj dgrad into a region that corrupts packed-sequence gradients.
+            # Intentional dynamo.disable boundary (non-GC path, incl. model.eval() under compile): on torch 2.11 + flash-attn, Inductor fused the FA2 backward with the gated o_proj dgrad and corrupted packed-sequence gradients; unreproduced on torch 2.9/2.10 + kernels-FA2 (toy and 0.8B real ckpt, boundary removed = noise floor), guarded by test_fa2_compiled_matches_eager_grads.
             hidden_states, _ = _call_self_attn_disabled(
                 self.self_attn,
                 hidden_states=hidden_states,
