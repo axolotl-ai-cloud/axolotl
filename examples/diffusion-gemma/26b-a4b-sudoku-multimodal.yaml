@@ -1,0 +1,80 @@
+# Multimodal block-diffusion SFT of DiffusionGemma: image prompt -> text answer canvas.
+#   axolotl train examples/diffusion-gemma/26b-a4b-sudoku-multimodal.yaml
+#
+# DiffusionGemma's encoder is multimodal (Gemma 4 vision block). The image lives in
+# the prompt, so its tokens are encoded into the KV-cache prefix; the text solution
+# is denoised in the decoder canvas. A "sudoku" task (picture of a puzzle -> solved
+# grid as text) is the canonical demo of this image-conditioned diffusion decoding.
+#
+# Requires transformers >= 5.11.0.
+
+base_model: google/diffusiongemma-26B-A4B-it
+type_of_model: DiffusionGemmaForBlockDiffusion
+processor_type: AutoProcessor
+
+plugins:
+  - axolotl.integrations.diffusion_gemma.DiffusionGemmaPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+use_kernels: true
+use_scattermoe: true
+# DiffusionGemma's attention classes aren't named {Model}Attention, so the LoRA
+# attention/MLP kernels can't patch them; the ScatterMoE expert kernel is separate.
+lora_qkv_kernel: false
+lora_o_kernel: false
+lora_mlp_kernel: false
+
+block_diffusion:
+  canvas_length: 256
+  corruption: uniform
+  loss_weighting: elbo
+  self_conditioning_prob: 0.5
+
+# Multimodal data path: images are processed at collation time. The canvas collator
+# keeps image tokens (and pixel_values / mm_token_type_ids) in the encoder prefix and
+# denoises only the assistant text answer.
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+chat_template: gemma
+datasets:
+  # Replace with your image->solution dataset. Each row is a chat turn with an image
+  # in the user prompt and the text solution as the assistant response.
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:100]
+
+val_set_size: 0.0
+output_dir: ./outputs/diffusion-gemma-sudoku
+dataset_prepared_path: last_run_prepared
+
+sequence_len: 4096
+pad_to_sequence_len: false
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 1e-4
+
+bf16: auto
+gradient_checkpointing: false  # breaks the encoder KV cache the decoder reads during training
+flash_attention: false   # DiffusionGemma global attention uses head_dim 512 (> flash-attn 256 limit); use sdpa
+
+warmup_ratio: 0.03
+saves_per_epoch: 1

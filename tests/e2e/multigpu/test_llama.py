@@ -318,6 +318,7 @@ class TestMultiGPULlama:
             "Train Loss (%s) is too high",
         )
 
+    @pytest.mark.skip(reason="FSDP1 is deprecated; tests retired")
     @pytest.mark.parametrize(
         "gradient_accumulation_steps",
         [1, 2],
@@ -389,6 +390,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.3, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip(reason="FSDP1 is deprecated; tests retired")
     @pytest.mark.parametrize(
         "fsdp_state_dict_type",
         [
@@ -547,6 +549,7 @@ class TestMultiGPULlama:
             temp_dir + "/runs", "train/train_loss", 2.1, "Train Loss (%s) is too high"
         )
 
+    @pytest.mark.skip(reason="FSDP1 is deprecated; tests retired")
     def test_fsdp_qlora_prequant_packed(self, temp_dir):
         cfg = DictDefault(
             {

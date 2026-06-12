@@ -13,6 +13,10 @@ from tests.e2e.utils import check_tensorboard_loss_decreased
 
 AXOLOTL_ROOT = Path(__file__).parent.parent.parent.parent
 
+# FSDP1 is deprecated upstream (transformers defaults the accelerate plugin to
+# FSDP2 as of v5.11 and removes FSDP1 in v5.20). We no longer test FSDP1.
+pytestmark = pytest.mark.skip(reason="FSDP1 is deprecated; tests retired")
+
 
 def verify_training_success(temp_dir):
     """Verify that training completed successfully — artifacts, no-NaN, loss

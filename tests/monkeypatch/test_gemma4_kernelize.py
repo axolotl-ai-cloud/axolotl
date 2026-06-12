@@ -67,8 +67,11 @@ def test_patch_strips_non_module_hidden_kernels(restore_gemma4_vision_attention)
     cfg = _vision_config()
 
     # Before the patch, the bare function is registered (the crash source).
+    # transformers >= 5.11 dropped the offending decorator, so the entry may be
+    # absent already; the patch is then a behavior-neutral no-op.
     attn_before = modeling_gemma4.Gemma4VisionAttention(cfg, layer_idx=0)
-    assert "apply_rotary_pos_emb" in getattr(attn_before, "_hidden_kernels", {})
+    if "apply_rotary_pos_emb" not in getattr(attn_before, "_hidden_kernels", {}):
+        pytest.skip("transformers already drops the non-Module _hidden_kernels entry")
 
     patch_gemma4_kernelize()
     attn_after = modeling_gemma4.Gemma4VisionAttention(cfg, layer_idx=0)
@@ -183,14 +186,21 @@ def test_full_model_kernelize_succeeds_with_patch(restore_gemma4_vision_attentio
         cfg = Gemma4Config(text_config=text, vision_config=vis, audio_config=aud)
         return modeling_gemma4.Gemma4ForConditionalGeneration(cfg)
 
-    # Without the patch, kernelize() crashes.
+    # Without the patch, kernelize() crashes on transformers that still register
+    # the bare function. transformers >= 5.11 fixed this upstream, so only assert
+    # the crash when it actually reproduces; the patch must succeed either way.
     model = build()
     model.train()
-    with pytest.raises((TypeError, AttributeError, ValueError)):
+    try:
         model.kernelize()
+        crashes_without_patch = False
+    except (TypeError, AttributeError, ValueError):
+        crashes_without_patch = True
 
-    # With the patch, it succeeds.
     patch_gemma4_kernelize()
     model = build()
     model.train()
     model.kernelize()
+
+    if not crashes_without_patch:
+        pytest.skip("transformers kernelize() no longer crashes; patch is a no-op")

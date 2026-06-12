@@ -142,6 +142,17 @@ def normalize_config(cfg):
             )
             cfg.batch_size = cfg.batch_size * effective_world_size
 
+    if cfg.fsdp_config:
+        # transformers >= 5.11 defaults the accelerate FSDP plugin to version 2 when
+        # the `version` key is absent. Pin the effective version explicitly so axolotl's
+        # FSDP2 patches (gated on cfg.fsdp_version) and the HF plugin agree, and legacy
+        # FSDP1 configs keep running as FSDP1 instead of silently upgrading.
+        resolved_fsdp_version = (
+            cfg.fsdp_version or cfg.fsdp_config.get("fsdp_version") or 1
+        )
+        cfg.fsdp_version = resolved_fsdp_version
+        cfg.fsdp_config["version"] = resolved_fsdp_version
+
     if not cfg.use_ray:
         # delay resolving dtype until on worker node when launching with ray
         resolve_dtype(cfg)
