@@ -341,14 +341,13 @@ class TestDecoderLoopCompiles:
     def test_moe_loop_compiles(self, packing_patched):
         """qwen3_5_moe (claimed scope): expert routing must trace with zero breaks."""
         pytest.importorskip("transformers.models.qwen3_5_moe")
+        from transformers.models.qwen3_5_moe import modeling_qwen3_5_moe as hf_moe
         from transformers.models.qwen3_5_moe.configuration_qwen3_5_moe import (
             Qwen3_5MoeTextConfig,
         )
         from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import (
             Qwen3_5MoeTextModel,
         )
-
-        from transformers.models.qwen3_5_moe import modeling_qwen3_5_moe as hf_moe
 
         from axolotl.monkeypatch.models.qwen3_5.modeling import (
             patch_qwen3_5_moe_modeling_packing,
