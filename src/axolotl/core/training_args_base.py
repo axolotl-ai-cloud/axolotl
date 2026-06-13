@@ -235,9 +235,12 @@ class AxolotlTrainingMixins:
         },
     )
 
-    activation_offloading: bool | None = field(
+    activation_offloading: bool | str | None = field(
         default=None,
-        metadata={"help": "Use activation offloading with CUDA streams for training."},
+        metadata={
+            "help": "Activation offloading mode: True (stream-overlapped), "
+            "'legacy' (synchronous), 'disk', or False."
+        },
     )
 
     layer_offloading: bool | None = field(
