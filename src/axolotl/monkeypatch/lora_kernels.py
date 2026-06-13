@@ -13,6 +13,7 @@ from transformers import AutoConfig
 
 from axolotl.kernels.lora import (
     apply_lora_embedding,
+    apply_lora_gdn_in_proj,
     apply_lora_linear,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
@@ -318,16 +319,23 @@ def find_self_attn_in_layer(
             yield layer.self_attn
 
 
-# Route through the fused kernel to avoid peft's bf16->fp32->bf16 dtype round-trip.
-LINEAR_ATTN_PROJS = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a", "out_proj")
+# GatedDeltaNet projections routed through the fused kernels to avoid peft's
+# bf16->fp32->bf16 dtype round-trip. The in-projections share a single input
+# (post-norm hidden states) and are fused into one autograd node; out_proj has a
+# different input and is routed through the single-projection kernel.
+LINEAR_ATTN_IN_PROJS = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
+LINEAR_ATTN_OUT_PROJ = "out_proj"
+LINEAR_ATTN_PROJS = LINEAR_ATTN_IN_PROJS + (LINEAR_ATTN_OUT_PROJ,)
 
 
 def find_linear_attn_in_layer(layer: nn.Module) -> Generator[nn.Module, None, None]:
-    # Qwen3.5 / Qwen3.5-MoE hybrid layers (GatedDeltaNet)
+    # Qwen3.5 / Qwen3.5-MoE hybrid layers (GatedDeltaNet). qwen3_next fuses its
+    # projections (in_proj_qkvz / in_proj_ba) under different names and must not
+    # match here.
     if hasattr(layer, "linear_attn"):
         linear_attn = layer.linear_attn
-        if hasattr(linear_attn, "out_proj") and any(
-            hasattr(linear_attn, proj) for proj in LINEAR_ATTN_PROJS[:-1]
+        if hasattr(linear_attn, LINEAR_ATTN_OUT_PROJ) and any(
+            hasattr(linear_attn, proj) for proj in LINEAR_ATTN_IN_PROJS
         ):
             yield linear_attn
 
@@ -338,6 +346,13 @@ def _make_apply_lora_linear(proj_name: str):
 
     apply_linear.__name__ = f"apply_{proj_name}"
     return apply_linear
+
+
+def _make_apply_lora_gdn_in_proj(proj_names: tuple[str, ...]):
+    def apply_in_proj(self, X: torch.Tensor) -> dict:
+        return apply_lora_gdn_in_proj(self, X, proj_names)
+
+    return apply_in_proj
 
 
 def find_mlp_in_layer(
@@ -529,18 +544,27 @@ def apply_lora_kernel_patches(
         if cfg.lora_qkv_kernel or cfg.lora_o_kernel:
             for linear_attn in find_linear_attn_in_layer(layer):
                 patched_projs = []
-                for proj_name in LINEAR_ATTN_PROJS:
-                    proj = getattr(linear_attn, proj_name, None)
-                    if proj is None or not hasattr(proj, "lora_A"):
-                        continue
-                    setattr(
-                        linear_attn,
-                        f"apply_{proj_name}",
-                        types.MethodType(
-                            _make_apply_lora_linear(proj_name), linear_attn
-                        ),
+                # Fuse the shared-input in-projections into one autograd node.
+                # Base-only projections are folded in too (no adapter), so only
+                # patch when at least one in-projection carries a LoRA adapter.
+                in_projs = tuple(
+                    name
+                    for name in LINEAR_ATTN_IN_PROJS
+                    if getattr(linear_attn, name, None) is not None
+                )
+                if any(
+                    hasattr(getattr(linear_attn, name), "lora_A") for name in in_projs
+                ):
+                    linear_attn.apply_in_proj_fused = types.MethodType(
+                        _make_apply_lora_gdn_in_proj(in_projs), linear_attn
                     )
-                    patched_projs.append(proj_name)
+                    patched_projs.extend(in_projs)
+                out_proj = getattr(linear_attn, LINEAR_ATTN_OUT_PROJ, None)
+                if out_proj is not None and hasattr(out_proj, "lora_A"):
+                    linear_attn.apply_out_proj = types.MethodType(
+                        _make_apply_lora_linear(LINEAR_ATTN_OUT_PROJ), linear_attn
+                    )
+                    patched_projs.append(LINEAR_ATTN_OUT_PROJ)
                 if patched_projs:
                     linear_attn_patched_layers += 1
                     linear_attn_patched_projs = patched_projs

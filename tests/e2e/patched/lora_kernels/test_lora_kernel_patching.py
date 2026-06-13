@@ -15,6 +15,7 @@ from transformers.models.qwen3_moe.modeling_qwen3_moe import Qwen3MoeAttention
 
 from axolotl.cli.config import load_cfg
 from axolotl.kernels.lora import (
+    apply_lora_gdn_in_proj,
     apply_lora_linear,
     apply_lora_mlp_geglu,
     apply_lora_mlp_swiglu,
@@ -24,6 +25,7 @@ from axolotl.kernels.lora import (
 from axolotl.loaders.model import ModelLoader
 from axolotl.loaders.tokenizer import load_tokenizer
 from axolotl.monkeypatch.lora_kernels import (
+    LINEAR_ATTN_IN_PROJS,
     LINEAR_ATTN_PROJS,
     apply_lora_kernel_patches,
     find_linear_attn_in_layer,
@@ -670,3 +672,195 @@ def test_apply_lora_linear_matches_peft_with_dora():
 
     assert _gdn_rel_l2(out_fused, out_ref) < 1e-2
     assert _gdn_rel_l2(grad_fused, grad_ref) < 1e-2
+
+
+# ------------------------------------------------------------
+# Fused shared-input in-projection kernel (apply_lora_gdn_in_proj)
+# ------------------------------------------------------------
+
+_GDN_IN_SIZES = {
+    "in_proj_qkv": 384,
+    "in_proj_z": 256,
+    "in_proj_b": 16,  # starved: out == num_v_heads
+    "in_proj_a": 16,
+}
+
+
+def _wrapped_gdn_block(targets, in_features=256, use_dora=False):
+    """A peft-wrapped module holding the four GDN input projections."""
+
+    class _Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            for name, out_features in _GDN_IN_SIZES.items():
+                setattr(self, name, nn.Linear(in_features, out_features, bias=False))
+
+    config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=list(targets),
+        lora_dropout=0.0,
+        use_dora=use_dora,
+    )
+    block = get_peft_model(
+        _Block().to("cuda").to(torch.bfloat16), config
+    ).base_model.model
+    block.train()
+    # Perturb lora_B / magnitude so adapters (and DoRA scaling) are non-trivial.
+    with torch.no_grad():
+        for name, param in block.named_parameters():
+            if "lora_B" in name or "magnitude" in name:
+                param.add_(torch.randn_like(param) * 0.02)
+    return block
+
+
+def _run_gdn_block(block, fused, targets, in_features=256, seed=0):
+    names = tuple(_GDN_IN_SIZES)
+    torch.manual_seed(seed)
+    inputs = torch.randn(
+        2, 16, in_features, device="cuda", dtype=torch.bfloat16, requires_grad=True
+    )
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        if fused:
+            outs = apply_lora_gdn_in_proj(block, inputs, names)
+        else:
+            outs = {name: getattr(block, name)(inputs) for name in names}
+    sum(o.float().pow(2).mean() for o in outs.values()).backward()
+    grad_x = inputs.grad.detach().float().clone()
+    grad_a = {
+        name: getattr(block, name)
+        .lora_A["default"]
+        .weight.grad.detach()
+        .float()
+        .clone()
+        for name in targets
+    }
+    block.zero_grad(set_to_none=True)
+    return {k: v.detach().float() for k, v in outs.items()}, grad_x, grad_a
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a"),  # all adapted
+        ("in_proj_qkv", "in_proj_z"),  # subset: large only
+        ("in_proj_b", "in_proj_a"),  # subset: starved only
+        ("in_proj_qkv",),  # subset: single
+    ],
+)
+def test_apply_lora_gdn_in_proj_matches_peft(targets):
+    """Fused shared-input path matches independent peft forwards + grads, including
+    when only a subset of the projections carry a LoRA adapter (the rest base-only)."""
+    block = _wrapped_gdn_block(targets)
+    out_ref, gx_ref, ga_ref = _run_gdn_block(block, fused=False, targets=targets)
+    out_fused, gx_fused, ga_fused = _run_gdn_block(block, fused=True, targets=targets)
+
+    for name in _GDN_IN_SIZES:
+        assert _gdn_rel_l2(out_fused[name], out_ref[name]) < 5e-3
+    assert _gdn_rel_l2(gx_fused, gx_ref) < 1e-2  # 4-way bf16 grad accumulation
+    for name in targets:
+        assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 5e-3
+
+
+def test_apply_lora_gdn_in_proj_matches_peft_with_dora():
+    """DoRA magnitude scaling routes correctly through the fused in-projection."""
+    targets = ("in_proj_qkv", "in_proj_b")
+    block = _wrapped_gdn_block(targets, use_dora=True)
+    out_ref, gx_ref, ga_ref = _run_gdn_block(block, fused=False, targets=targets)
+    out_fused, gx_fused, ga_fused = _run_gdn_block(block, fused=True, targets=targets)
+
+    for name in _GDN_IN_SIZES:
+        assert _gdn_rel_l2(out_fused[name], out_ref[name]) < 2e-2
+    assert _gdn_rel_l2(gx_fused, gx_ref) < 2e-2
+    for name in targets:
+        assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 2e-2
+
+
+# ------------------------------------------------------------
+# End-to-end: apply_lora_kernel_patches wires the methods onto a real GDN layer
+# ------------------------------------------------------------
+
+
+def _build_qwen3_5_gdn_peft_model(target_modules):
+    pytest.importorskip("transformers.models.qwen3_5")
+    from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
+    from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForCausalLM
+
+    torch.manual_seed(0)
+    config = Qwen3_5TextConfig(
+        vocab_size=128,
+        hidden_size=128,
+        intermediate_size=128,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=32,
+        max_position_embeddings=128,
+        rms_norm_eps=1e-6,
+        linear_key_head_dim=32,
+        linear_value_head_dim=32,
+        linear_num_key_heads=4,
+        linear_num_value_heads=8,
+        linear_conv_kernel_dim=4,
+        layer_types=["linear_attention"],
+    )
+    model = Qwen3_5ForCausalLM(config)
+    peft_config = get_peft_config(
+        {
+            "peft_type": "LORA",
+            "task_type": "CAUSAL_LM",
+            "r": 8,
+            "lora_alpha": 16,
+            "target_modules": list(target_modules),
+            "lora_dropout": 0,
+            "bias": "none",
+        }
+    )
+    return PeftModelForCausalLM(model, peft_config).to("cuda")
+
+
+def test_apply_lora_kernel_patches_wires_gdn_layer():
+    """apply_lora_kernel_patches attaches the fused in-proj + out_proj methods onto a
+    peft-wrapped GatedDeltaNet layer, and they match the unpatched peft projections."""
+    model = _build_qwen3_5_gdn_peft_model(LINEAR_ATTN_PROJS)
+    cfg = DictDefault({"lora_qkv_kernel": True, "lora_o_kernel": True})
+
+    linear_attn = get_layers(model)[0].linear_attn
+    ref = {
+        name: getattr(linear_attn, name) for name in (*LINEAR_ATTN_IN_PROJS, "out_proj")
+    }
+
+    apply_lora_kernel_patches(model, cfg)
+
+    assert hasattr(linear_attn, "apply_in_proj_fused")
+    assert hasattr(linear_attn, "apply_out_proj")
+
+    # in-projections share the hidden-size input; out_proj consumes value_dim.
+    x_in = torch.randn(
+        2, 8, model.config.hidden_size, device="cuda", dtype=torch.float32
+    )
+    x_out = torch.randn(
+        2, 8, ref["out_proj"].in_features, device="cuda", dtype=torch.float32
+    )
+    with torch.no_grad():
+        fused = linear_attn.apply_in_proj_fused(x_in)
+        for name in LINEAR_ATTN_IN_PROJS:
+            assert torch.allclose(fused[name], ref[name](x_in), rtol=1e-4, atol=1e-4)
+        assert torch.allclose(
+            linear_attn.apply_out_proj(x_out),
+            ref["out_proj"](x_out),
+            rtol=1e-4,
+            atol=1e-4,
+        )
+
+
+def test_apply_lora_kernel_patches_skips_gdn_without_adapters():
+    """No in-projection adapter -> no fused method attached (model left untouched)."""
+    model = _build_qwen3_5_gdn_peft_model(["out_proj"])
+    cfg = DictDefault({"lora_qkv_kernel": True, "lora_o_kernel": True})
+
+    apply_lora_kernel_patches(model, cfg)
+
+    linear_attn = get_layers(model)[0].linear_attn
+    assert not hasattr(linear_attn, "apply_in_proj_fused")
+    assert hasattr(linear_attn, "apply_out_proj")  # out_proj still routed

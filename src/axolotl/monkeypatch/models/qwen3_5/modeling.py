@@ -110,12 +110,23 @@ def _patched_decoder_forward(
     return hidden_states
 
 
+_GDN_IN_PROJ_NAMES = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
+
+
 def _la_proj_fwd(module, proj_name, x):
     """Use the fused kernel when patched (avoids peft's bf16->fp32->bf16 round-trip), else plain peft."""
     apply_fn = getattr(module, f"apply_{proj_name}", None)
     if apply_fn is not None:
         return apply_fn(x)
     return getattr(module, proj_name)(x)
+
+
+def _la_in_proj_fwd(module, x):
+    """Fused shared-input GDN in-projections when patched, else plain per-proj peft."""
+    fused = getattr(module, "apply_in_proj_fused", None)
+    if fused is not None:
+        return fused(x)
+    return {name: getattr(module, name)(x) for name in _GDN_IN_PROJ_NAMES}
 
 
 def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
@@ -148,14 +159,16 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             conv_state = cache_params.conv_states[self.layer_idx]
             recurrent_state = cache_params.recurrent_states[self.layer_idx]
 
+        # All in-projections share hidden_states; fuse into one autograd node.
         # mixed_qkv stays [B, T, D]; only transposed inside paths that require [B, D, T]
-        mixed_qkv = _la_proj_fwd(self, "in_proj_qkv", hidden_states)  # [B, T, D]
+        in_proj = _la_in_proj_fwd(self, hidden_states)
+        mixed_qkv = in_proj["in_proj_qkv"]  # [B, T, D]
 
-        z = _la_proj_fwd(self, "in_proj_z", hidden_states)
+        z = in_proj["in_proj_z"]
         z = z.reshape(batch_size, seq_len, -1, self.head_v_dim)
 
-        b = _la_proj_fwd(self, "in_proj_b", hidden_states)
-        a = _la_proj_fwd(self, "in_proj_a", hidden_states)
+        b = in_proj["in_proj_b"]
+        a = in_proj["in_proj_a"]
 
         if use_precomputed_states:
             mixed_qkv = self.causal_conv1d_update(
