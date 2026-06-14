@@ -26,7 +26,7 @@ _FLA_COMPILED_OPS = False
 
 def _init_fla_compiled_ops(enabled: bool = True) -> bool:
     global _FLA_COMPILED_OPS
-    from axolotl.monkeypatch.models.qwen3_5 import fla_ops
+    from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
 
     _FLA_COMPILED_OPS = fla_ops.fla_ops_available() if enabled else False
     return _FLA_COMPILED_OPS
@@ -42,89 +42,6 @@ try:
     _call_self_attn_disabled = _dynamo.disable(_call_self_attn)
 except Exception:  # pragma: no cover
     _call_self_attn_disabled = _call_self_attn
-
-
-# Custom-op wrapper for FLA's FusedRMSNormGated: its backward calls aten.as_strided in a way torch.compile can't meta-trace, so it's hidden behind an opaque op (recompute backward runs eager, untraced).
-_FLA_RMSNORM_GATED_OP = None
-
-
-def _build_fla_rmsnorm_gated_op():
-    # Backward is its own opaque op: AOT-autograd traces the backward graph too, so the FLA Triton recompute must also be hidden or it hits FakeTensors.
-    @torch.library.custom_op("axolotl_fla::rmsnorm_gated_bwd", mutates_args=())
-    def _bwd_op(
-        grad: torch.Tensor,
-        x: torch.Tensor,
-        g: torch.Tensor,
-        weight: torch.Tensor,
-        activation: str,
-        eps: float,
-    ) -> list[torch.Tensor]:
-        from fla.modules.fused_norm_gate import rms_norm_gated
-
-        with torch.enable_grad():
-            xd, gd, wd = (t.detach().requires_grad_(True) for t in (x, g, weight))
-            y = rms_norm_gated(xd, gd, wd, None, activation, eps=eps)
-            dx, dg, dw = torch.autograd.grad(y, (xd, gd, wd), grad)
-        return [dx, dg, dw]
-
-    @_bwd_op.register_fake
-    def _(grad, x, g, weight, activation, eps):
-        return [torch.empty_like(x), torch.empty_like(g), torch.empty_like(weight)]
-
-    @torch.library.custom_op("axolotl_fla::rmsnorm_gated", mutates_args=())
-    def _op(
-        x: torch.Tensor,
-        g: torch.Tensor,
-        weight: torch.Tensor,
-        activation: str,
-        eps: float,
-    ) -> torch.Tensor:
-        from fla.modules.fused_norm_gate import rms_norm_gated
-
-        return rms_norm_gated(x, g, weight, None, activation, eps=eps).contiguous()
-
-    @_op.register_fake
-    def _(x, g, weight, activation, eps):
-        return torch.empty_like(x, memory_format=torch.contiguous_format)
-
-    def _setup(ctx, inputs, output):
-        x, g, weight, activation, eps = inputs
-        ctx.save_for_backward(x, g, weight)
-        ctx.activation, ctx.eps = activation, eps
-
-    def _bwd(ctx, grad):
-        x, g, weight = ctx.saved_tensors
-        dx, dg, dw = _bwd_op(grad.contiguous(), x, g, weight, ctx.activation, ctx.eps)
-        return dx, dg, dw, None, None
-
-    _op.register_autograd(_bwd, setup_context=_setup)
-    return _op
-
-
-def _fla_rmsnorm_gated_compiled_forward(
-    self, x, g, residual=None, prenorm=False, residual_in_fp32=False
-):
-    # Class-level patch: non-qwen3_5 FLA models (residual/prenorm/bias/weight=None variants) must take the plain eager path.
-    if (
-        residual is None
-        and not prenorm
-        and self.bias is None
-        and self.weight is not None
-    ):
-        return _FLA_RMSNORM_GATED_OP(x, g, self.weight, self.activation, self.eps)
-    from fla.modules.fused_norm_gate import rms_norm_gated
-
-    return rms_norm_gated(
-        x,
-        g,
-        self.weight,
-        self.bias,
-        self.activation,
-        residual=residual,
-        eps=self.eps,
-        prenorm=prenorm,
-        residual_in_fp32=residual_in_fp32,
-    )
 
 
 def get_cu_seqlens(position_ids):
@@ -161,28 +78,12 @@ def _inject_fla_kernels(module, *, compile_boundary: bool = False) -> None:
             fused_recurrent_gated_delta_rule,
         )
 
-        if compile_boundary and not getattr(
-            FusedRMSNormGated, "_axolotl_compile_boundary", False
-        ):
-            # FLA's FusedRMSNormGated backward calls aten.as_strided in a way torch.compile can't meta-trace, so wrap it in a custom op (or fall back to an eager-disable boundary).
-            # Class-level and never reverted: assumes axolotl's one-model-per-process CLI.
-            global _FLA_RMSNORM_GATED_OP
-            try:
-                if _FLA_RMSNORM_GATED_OP is None:
-                    _FLA_RMSNORM_GATED_OP = _build_fla_rmsnorm_gated_op()
-                FusedRMSNormGated.forward = _fla_rmsnorm_gated_compiled_forward
-                FusedRMSNormGated._axolotl_compile_boundary = True
-            except Exception:  # pragma: no cover
-                try:
-                    import torch._dynamo as _dyn
+        if compile_boundary:
+            from axolotl.monkeypatch.models import gated_delta_net_ops
 
-                    FusedRMSNormGated.forward = _dyn.disable(FusedRMSNormGated.forward)
-                    FusedRMSNormGated._axolotl_compile_boundary = True
-                except Exception as exc:
-                    LOG.warning(
-                        f"Could not install a compile boundary for FusedRMSNormGated "
-                        f"({exc}); torch.compile may graph-break in the decoder loop"
-                    )
+            gated_delta_net_ops.install_rmsnorm_gated_compile_boundary(
+                FusedRMSNormGated, logger=LOG
+            )
 
         module.FusedRMSNormGated = FusedRMSNormGated
         module.chunk_gated_delta_rule = chunk_gated_delta_rule
@@ -318,7 +219,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
 
             if fla_causal_conv1d is not None and pos_for_varlen is not None:
                 # Opaque op (same FLA varlen kernels): traceable, unlike the raw entry whose data-dependent .item() graph-breaks the loop.
-                mixed_qkv = torch.ops.axolotl_qwen3_5.gdn_conv(
+                mixed_qkv = torch.ops.axolotl_gdn.gdn_conv(
                     mixed_qkv,
                     self.conv1d.weight.squeeze(1),
                     self.conv1d.bias,
@@ -363,7 +264,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
             if use_compiled_ops:
                 # Opaque op mirroring ChunkGatedDeltaRuleFunction: FLA's public entry is @torch.compiler.disable and would graph-break the loop. pos_for_varlen None = dense.
                 # Contiguize here: setup_context saves the op's inputs, so split views would re-pay this copy every backward.
-                core_attn_out = torch.ops.axolotl_qwen3_5.gdn_chunk(
+                core_attn_out = torch.ops.axolotl_gdn.gdn_chunk(
                     query.contiguous(),
                     key.contiguous(),
                     value.contiguous(),
@@ -371,6 +272,7 @@ def _make_qwen3_5_gated_delta_forward(apply_mask_fn):
                     beta,
                     key.shape[-1] ** -0.5,  # FLA's default scale
                     pos_for_varlen,
+                    True,  # qwen3_5 eager casts g to the input dtype
                 )[0]
                 last_recurrent_state = None
             else:
@@ -430,7 +332,7 @@ def _apply_packing_patches(
     _inject_fla_kernels(module, compile_boundary=torch_compile)
     compiled_ops = _init_fla_compiled_ops(torch_compile)
     if torch_compile and not compiled_ops:
-        from axolotl.monkeypatch.models.qwen3_5 import fla_ops
+        from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
 
         # On FA2 the broken-loop compile regime benches slower than plain eager, so this must be loud.
         LOG.warning(

@@ -439,10 +439,11 @@ class TestDecoderLoopCompiles:
         pos3d = pos2d[None].expand(4, 1, T).contiguous()  # MRoPE layout
 
         for pos in (pos2d, pos3d, None):
-            torch.library.opcheck(
-                torch.ops.axolotl_qwen3_5.gdn_chunk,
-                (q, k, v, g, beta, K**-0.5, pos),
-            )
+            for cast_g in (True, False):  # qwen3_5 casts g, qwen3_next doesn't
+                torch.library.opcheck(
+                    torch.ops.axolotl_gdn.gdn_chunk,
+                    (q, k, v, g, beta, K**-0.5, pos, cast_g),
+                )
 
         x = torch.randn(
             1, T, 96, device="cuda", dtype=torch.bfloat16, requires_grad=True
@@ -452,6 +453,6 @@ class TestDecoderLoopCompiles:
         for pos in (pos2d, None):
             for bias in (b, None):
                 torch.library.opcheck(
-                    torch.ops.axolotl_qwen3_5.gdn_conv,
+                    torch.ops.axolotl_gdn.gdn_conv,
                     (x, w, bias, "silu", pos),
                 )

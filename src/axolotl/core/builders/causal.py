@@ -614,9 +614,12 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             )
             and self.cfg.attn_implementation == "flash_attention_2"
             and is_packed_mode
-            and self.cfg.model_config_type in ("qwen3_5", "qwen3_5_moe")
+            and self.cfg.torch_compile
+            and self.cfg.model_config_type in SUPPORTED_MULTIPACK_MODEL_TYPES
         ):
-            # Skips transformers' per-layer varlen derivation, which graph-breaks the compiled decoder loop.
+            # Model-agnostic: transformers consumes these FlashAttentionKwargs for any model, skipping its
+            # per-layer varlen derivation — a data-dependent op (aten.nonzero) that graph-breaks under compile.
+            # Gated on torch_compile so non-compiled runs keep the existing per-layer derivation behavior.
             kwargs["emit_fa_varlen_kwargs"] = True
 
         return collator(
