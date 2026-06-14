@@ -1445,6 +1445,15 @@ class ModelCompatibilityValidationMixin:
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self
+        # Forcing reentrant (below) on a partially frozen model is the broken combo
+        # check_use_reentrant_mismatch guards — but that before-validator ran before
+        # we forced it, so catch it here. https://github.com/huggingface/transformers/issues/21381
+        if self.unfrozen_parameters:
+            raise ValueError(
+                "activation_offloading: hidden_states forces reentrant checkpointing, "
+                "which is incompatible with `unfrozen_parameters` (partially frozen "
+                "model)."
+            )
         # ALST-style offloading replaces torch's reentrant CheckpointFunction, so it
         # needs use_reentrant=True. Force it on (warn if the user asked otherwise).
         gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})

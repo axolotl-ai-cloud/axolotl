@@ -83,7 +83,7 @@ class TestActivationOffloading:
 
     @pytest.mark.parametrize(
         "offload_mode,expect_streams",
-        [(True, True), ("legacy", False)],
+        [(True, True), ("legacy", False), ("disk", True)],
     )
     def test_offload_mode_wiring(
         self, temp_dir, monkeypatch, offload_mode, expect_streams
