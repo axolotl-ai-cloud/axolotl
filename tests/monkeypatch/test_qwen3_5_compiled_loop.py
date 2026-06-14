@@ -24,7 +24,8 @@ def packing_patched():
         "decoder_forward": hf.Qwen3_5DecoderLayer.forward,
         "gdn_forward": hf.Qwen3_5GatedDeltaNet.forward,
         "norm_forward": FusedRMSNormGated.forward,
-        "norm_flag": getattr(FusedRMSNormGated, "_axolotl_compile_boundary", False),
+        "norm_present": hasattr(FusedRMSNormGated, "_axolotl_compile_boundary"),
+        "norm_flag": getattr(FusedRMSNormGated, "_axolotl_compile_boundary", None),
         "chunk": getattr(hf, "chunk_gated_delta_rule", None),
         "recurrent": getattr(hf, "fused_recurrent_gated_delta_rule", None),
         "norm_cls": getattr(hf, "FusedRMSNormGated", None),
@@ -36,7 +37,7 @@ def packing_patched():
     hf.Qwen3_5DecoderLayer.forward = saved["decoder_forward"]
     hf.Qwen3_5GatedDeltaNet.forward = saved["gdn_forward"]
     FusedRMSNormGated.forward = saved["norm_forward"]
-    if saved["norm_flag"]:
+    if saved["norm_present"]:
         FusedRMSNormGated._axolotl_compile_boundary = saved["norm_flag"]
     else:
         try:
@@ -419,7 +420,7 @@ class TestDecoderLoopCompiles:
         )
         position_ids = pos.view(1, T).expand(2, T).contiguous()
 
-        with pytest.raises(Exception, match="batch size is expected to be 1"):
+        with pytest.raises(ValueError, match="batch size is expected to be 1"):
             model(input_ids=input_ids, position_ids=position_ids, use_cache=False)
 
     def test_opcheck_custom_ops(self, packing_patched):

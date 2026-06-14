@@ -59,7 +59,7 @@ def get_cu_seqlens(position_ids):
     return cu_seq_lens_q
 
 
-def patch_qwen3_next_decoder_layer(*, torch_compile: bool = False):
+def patch_qwen3_next_decoder_layer():
     """Patch Qwen3NextDecoderLayer to pass position_ids to linear attention."""
     try:
         from transformers.models.qwen3_next.modeling_qwen3_next import (
@@ -106,16 +106,14 @@ def patch_qwen3_next_decoder_layer(*, torch_compile: bool = False):
                 position_embeddings=position_embeddings,
                 **kwargs,
             )
-            if torch_compile and not (
-                getattr(self, "gradient_checkpointing", False) and self.training
-            ):
-                # Mirror qwen3_5: outside gradient checkpointing, keep self-attn behind a dynamo.disable
-                # boundary so an Inductor FA2-backward fusion can't corrupt packed-sequence gradients.
+            if getattr(self, "gradient_checkpointing", False) and self.training:
+                hidden_states, _ = self.self_attn(**attn_kwargs)
+            else:
+                # Match qwen3_5: keep non-GC self-attn behind a dynamo.disable boundary (a no-op when not
+                # compiling) so an Inductor FA2-backward fusion can't corrupt packed-sequence gradients.
                 hidden_states, _ = _call_self_attn_disabled(
                     self.self_attn, **attn_kwargs
                 )
-            else:
-                hidden_states, _ = self.self_attn(**attn_kwargs)
 
         hidden_states = residual + hidden_states
 
@@ -412,7 +410,7 @@ def patch_qwen3_next_imports(*, torch_compile: bool = False):
 def patch_qwen3_next_modeling_packing(*, torch_compile: bool = False):
     """Apply all Qwen3Next model patches."""
     patch_qwen3_next_imports(torch_compile=torch_compile)
-    patch_qwen3_next_decoder_layer(torch_compile=torch_compile)
+    patch_qwen3_next_decoder_layer()
     patch_qwen3_next_gateddelta_layer(torch_compile=torch_compile)
     compiled_ops = _init_fla_compiled_ops(torch_compile)
     if torch_compile and not compiled_ops:
