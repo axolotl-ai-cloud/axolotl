@@ -142,7 +142,12 @@ class DataCollatorForSeq2Seq:
                 features["max_length_q"] = int(max_q)
                 features["max_length_k"] = int(max_k)
             except (
-                Exception
+                ImportError,
+                AttributeError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+                IndexError,
             ) as exc:  # pragma: no cover - fall back to per-layer derivation
                 LOG.warning_once(
                     f"FA varlen kwargs precompute failed ({exc}); falling back to "

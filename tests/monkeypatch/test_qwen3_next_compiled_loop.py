@@ -23,7 +23,8 @@ def packing_patched():
         "decoder_forward": hf.Qwen3NextDecoderLayer.forward,
         "gdn_forward": hf.Qwen3NextGatedDeltaNet.forward,
         "norm_forward": FusedRMSNormGated.forward,
-        "norm_flag": getattr(FusedRMSNormGated, "_axolotl_compile_boundary", False),
+        "norm_present": hasattr(FusedRMSNormGated, "_axolotl_compile_boundary"),
+        "norm_flag": getattr(FusedRMSNormGated, "_axolotl_compile_boundary", None),
         "chunk": getattr(hf, "chunk_gated_delta_rule", None),
         "recurrent": getattr(hf, "fused_recurrent_gated_delta_rule", None),
         "norm_cls": getattr(hf, "FusedRMSNormGated", None),
@@ -35,7 +36,7 @@ def packing_patched():
     hf.Qwen3NextDecoderLayer.forward = saved["decoder_forward"]
     hf.Qwen3NextGatedDeltaNet.forward = saved["gdn_forward"]
     FusedRMSNormGated.forward = saved["norm_forward"]
-    if saved["norm_flag"]:
+    if saved["norm_present"]:
         FusedRMSNormGated._axolotl_compile_boundary = saved["norm_flag"]
     else:
         try:
