@@ -54,7 +54,7 @@ def _build_ops() -> None:
             return None
         return _cu_seqlens_from_position_ids(position_ids)
 
-    @torch.library.custom_op("axolotl_qwen3_5::gdn_conv", mutates_args=())
+    @torch.library.custom_op("axolotl_gdn::gdn_conv", mutates_args=())
     def _gdn_conv(
         x: torch.Tensor,
         weight: torch.Tensor,
@@ -79,7 +79,7 @@ def _build_ops() -> None:
     def _(x, weight, bias, activation, position_ids):
         return torch.empty(x.shape, dtype=x.dtype, device=x.device)
 
-    @torch.library.custom_op("axolotl_qwen3_5::gdn_conv_bwd", mutates_args=())
+    @torch.library.custom_op("axolotl_gdn::gdn_conv_bwd", mutates_args=())
     def _gdn_conv_bwd(
         x: torch.Tensor,
         weight: torch.Tensor,
@@ -121,14 +121,14 @@ def _build_ops() -> None:
 
     def _gdn_conv_backward(ctx, dy):
         x, weight, bias, position_ids = ctx.saved_tensors
-        dx, dw, db = torch.ops.axolotl_qwen3_5.gdn_conv_bwd(
+        dx, dw, db = torch.ops.axolotl_gdn.gdn_conv_bwd(
             x, weight, bias, dy, ctx.activation, position_ids
         )
         return dx, dw, (db if ctx.has_bias else None), None, None
 
     _gdn_conv.register_autograd(_gdn_conv_backward, setup_context=_gdn_conv_setup)
 
-    @torch.library.custom_op("axolotl_qwen3_5::gdn_chunk", mutates_args=())
+    @torch.library.custom_op("axolotl_gdn::gdn_chunk", mutates_args=())
     def _gdn_chunk(
         q: torch.Tensor,
         k: torch.Tensor,
@@ -137,6 +137,7 @@ def _build_ops() -> None:
         beta: torch.Tensor,
         scale: float,
         position_ids: torch.Tensor | None,
+        cast_g: bool,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -148,8 +149,12 @@ def _build_ops() -> None:
     ]:
         _check_varlen_batch_size(q, position_ids)
         q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
-        # Cast g INSIDE the op (eager casts at the kernel call) so the op's g input stays f32, matching eager's grad flow bit-for-bit.
-        g, beta = g.contiguous().to(q.dtype), beta.contiguous()
+        # cast_g mirrors each architecture's eager kernel call: qwen3_5 casts g to the
+        # input dtype before chunk_gated_delta_rule; qwen3_next passes g (f32) unchanged.
+        # The op's g input stays f32 either way, so the returned dg is f32 — matching eager grad flow.
+        g, beta = g.contiguous(), beta.contiguous()
+        if cast_g:
+            g = g.to(q.dtype)
         qn, q_rstd = l2norm_fwd(q)
         kn, k_rstd = l2norm_fwd(k)
         g_cum, o, A, _ = chunk_gated_delta_rule_fwd(
@@ -166,7 +171,7 @@ def _build_ops() -> None:
         return o.to(q.dtype), qn, q_rstd, kn, k_rstd, g_cum, A
 
     @_gdn_chunk.register_fake
-    def _(q, k, v, g, beta, scale, position_ids):
+    def _(q, k, v, g, beta, scale, position_ids, cast_g):
         def emp(shape, dtype):
             return torch.empty(shape, dtype=dtype, device=q.device)
 
@@ -180,7 +185,7 @@ def _build_ops() -> None:
             emp((*k.shape[:-1], 64), k.dtype),  # A (chunk 64, solve_tril -> k dtype)
         )
 
-    @torch.library.custom_op("axolotl_qwen3_5::gdn_chunk_bwd", mutates_args=())
+    @torch.library.custom_op("axolotl_gdn::gdn_chunk_bwd", mutates_args=())
     def _gdn_chunk_bwd(
         qn: torch.Tensor,
         q_rstd: torch.Tensor,
@@ -234,19 +239,22 @@ def _build_ops() -> None:
         )
 
     def _gdn_chunk_setup(ctx, inputs, output):
-        _q, _k, v, _g, beta, scale, position_ids = inputs
+        _q, _k, v, _g, beta, scale, position_ids, cast_g = inputs
         _, qn, q_rstd, kn, k_rstd, g_cum, A = output
         ctx.scale = scale
+        ctx.cast_g = cast_g
         ctx.save_for_backward(qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, position_ids)
 
     def _gdn_chunk_backward(ctx, do, *unused_intermediate_grads):
         qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, position_ids = ctx.saved_tensors
-        dq, dk, dv, dg, db = torch.ops.axolotl_qwen3_5.gdn_chunk_bwd(
+        dq, dk, dv, dg, db = torch.ops.axolotl_gdn.gdn_chunk_bwd(
             qn, q_rstd, kn, k_rstd, v, g_cum, beta, A, do, ctx.scale, position_ids
         )
-        # Bit-exact with eager: eager's dg lands on the bf16 grid, so reproduce that f32 -> bf16 -> f32 round-trip.
-        dg = dg.to(qn.dtype).to(g_cum.dtype)
-        return dq, dk, dv, dg, db, None, None
+        dg = dg.to(g_cum.dtype)
+        if ctx.cast_g:
+            # qwen3_5: eager casts g to bf16, so its dg lands on the bf16 grid — reproduce that f32->bf16->f32 round-trip.
+            dg = dg.to(qn.dtype).to(g_cum.dtype)
+        return dq, dk, dv, dg, db, None, None, None
 
     _gdn_chunk.register_autograd(_gdn_chunk_backward, setup_context=_gdn_chunk_setup)
 
@@ -271,3 +279,115 @@ def fla_ops_available() -> bool:
 def fla_ops_build_error() -> str | None:
     """The cached exception from a failed op build, or None."""
     return _OPS_BUILD_ERROR
+
+
+# Shared FusedRMSNormGated compile boundary (used by every GatedDeltaNet model, qwen3_5 + qwen3_next).
+# FLA's eager FusedRMSNormGated backward calls aten.as_strided in a way torch.compile can't meta-trace.
+_FLA_RMSNORM_GATED_OP = None
+
+
+def _build_fla_rmsnorm_gated_op():
+    # Backward is its own opaque op: AOT-autograd traces the backward graph too, so the FLA Triton recompute must also be hidden or it hits FakeTensors.
+    @torch.library.custom_op("axolotl_fla::rmsnorm_gated_bwd", mutates_args=())
+    def _bwd_op(
+        grad: torch.Tensor,
+        x: torch.Tensor,
+        g: torch.Tensor,
+        weight: torch.Tensor,
+        activation: str,
+        eps: float,
+    ) -> list[torch.Tensor]:
+        from fla.modules.fused_norm_gate import rms_norm_gated
+
+        with torch.enable_grad():
+            xd, gd, wd = (t.detach().requires_grad_(True) for t in (x, g, weight))
+            y = rms_norm_gated(xd, gd, wd, None, activation, eps=eps)
+            dx, dg, dw = torch.autograd.grad(y, (xd, gd, wd), grad)
+        return [dx, dg, dw]
+
+    @_bwd_op.register_fake
+    def _(grad, x, g, weight, activation, eps):
+        return [torch.empty_like(x), torch.empty_like(g), torch.empty_like(weight)]
+
+    @torch.library.custom_op("axolotl_fla::rmsnorm_gated", mutates_args=())
+    def _op(
+        x: torch.Tensor,
+        g: torch.Tensor,
+        weight: torch.Tensor,
+        activation: str,
+        eps: float,
+    ) -> torch.Tensor:
+        from fla.modules.fused_norm_gate import rms_norm_gated
+
+        return rms_norm_gated(x, g, weight, None, activation, eps=eps).contiguous()
+
+    @_op.register_fake
+    def _(x, g, weight, activation, eps):
+        return torch.empty_like(x, memory_format=torch.contiguous_format)
+
+    def _setup(ctx, inputs, output):
+        x, g, weight, activation, eps = inputs
+        ctx.save_for_backward(x, g, weight)
+        ctx.activation, ctx.eps = activation, eps
+
+    def _bwd(ctx, grad):
+        x, g, weight = ctx.saved_tensors
+        dx, dg, dw = _bwd_op(grad.contiguous(), x, g, weight, ctx.activation, ctx.eps)
+        return dx, dg, dw, None, None
+
+    _op.register_autograd(_bwd, setup_context=_setup)
+    return _op
+
+
+def _fla_rmsnorm_gated_compiled_forward(
+    self, x, g, residual=None, prenorm=False, residual_in_fp32=False
+):
+    # Class-level patch: non-GatedDeltaNet FLA models (residual/prenorm/bias/weight=None variants) must take the plain eager path.
+    if (
+        residual is None
+        and not prenorm
+        and self.bias is None
+        and self.weight is not None
+    ):
+        return _FLA_RMSNORM_GATED_OP(x, g, self.weight, self.activation, self.eps)
+    from fla.modules.fused_norm_gate import rms_norm_gated
+
+    return rms_norm_gated(
+        x,
+        g,
+        self.weight,
+        self.bias,
+        self.activation,
+        residual=residual,
+        eps=self.eps,
+        prenorm=prenorm,
+        residual_in_fp32=residual_in_fp32,
+    )
+
+
+def install_rmsnorm_gated_compile_boundary(
+    fused_rms_norm_gated_cls, logger=None
+) -> None:
+    """Wrap FusedRMSNormGated.forward in an opaque op once (class-level, never reverted; assumes one-model-per-process)."""
+    if getattr(fused_rms_norm_gated_cls, "_axolotl_compile_boundary", False):
+        return
+    global _FLA_RMSNORM_GATED_OP
+    try:
+        if _FLA_RMSNORM_GATED_OP is None:
+            _FLA_RMSNORM_GATED_OP = _build_fla_rmsnorm_gated_op()
+        fused_rms_norm_gated_cls.forward = _fla_rmsnorm_gated_compiled_forward
+        fused_rms_norm_gated_cls._axolotl_compile_boundary = True
+    except Exception:  # pragma: no cover
+        try:
+            import torch._dynamo as _dyn
+
+            fused_rms_norm_gated_cls.forward = _dyn.disable(
+                fused_rms_norm_gated_cls.forward
+            )
+            fused_rms_norm_gated_cls._axolotl_compile_boundary = True
+        except Exception as exc:
+            if logger is not None:
+                logger.warning(
+                    f"Could not install a compile boundary for FusedRMSNormGated "
+                    f"({exc}); torch.compile may graph-break in the decoder loop"
+                )

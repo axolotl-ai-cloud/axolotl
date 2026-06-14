@@ -94,7 +94,7 @@ class PatchManager:
 
     def _maybe_disable_qwen3_5_compile_lora_kernels(self):
         if (
-            self.cfg.model_config_type in ("qwen3_5", "qwen3_5_moe")
+            self.cfg.model_config_type in ("qwen3_5", "qwen3_5_moe", "qwen3_next")
             and self.cfg.sample_packing
             and self.cfg.torch_compile
             and self.cfg.adapter
@@ -517,7 +517,9 @@ class PatchManager:
                     patch_qwen3_next_modeling_packing,
                 )
 
-                patch_qwen3_next_modeling_packing()
+                patch_qwen3_next_modeling_packing(
+                    torch_compile=bool(self.cfg.torch_compile),
+                )
 
             if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
