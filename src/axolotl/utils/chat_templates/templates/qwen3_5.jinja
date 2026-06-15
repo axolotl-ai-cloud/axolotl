@@ -81,12 +81,13 @@
         {%- if message['content'] is string %}
             {%- set content = message.content %}
         {%- else %}
-            {%- set content = '' %}
+            {%- set content_ns = namespace(text='') %}
             {%- for item in message['content'] %}
                 {%- if 'text' in item %}
-                    {%- set content = content + item['text'] %}
+                    {%- set content_ns.text = content_ns.text + item['text'] %}
                 {%- endif %}
             {%- endfor %}
+            {%- set content = content_ns.text %}
         {%- endif %}
         {%- set reasoning_content = '' %}
         {%- if message.reasoning_content is defined and message.reasoning_content is not none %}
