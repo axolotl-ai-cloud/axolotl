@@ -11,6 +11,7 @@ from axolotl.cli.utils.lora_merge import (
     _build_peft_layer_and_get_delta,
     _find_param_wrapper_lora,
     _merge_tensor_with_lora,
+    _resolve_lora_alpha_for_key,
     find_lora_weights,
     merge_lora_sharded_efficient,
 )
@@ -330,6 +331,125 @@ class TestEfficientMerge:
             merged["model.embed_tokens.weight"],
             base_weights["model.embed_tokens.weight"],
         )
+
+    def test_resolve_alpha_for_key_returns_none_without_pattern(self):
+        assert (
+            _resolve_lora_alpha_for_key("model.layers.0.self_attn.q_proj.weight", {})
+            is None
+        )
+        assert (
+            _resolve_lora_alpha_for_key(
+                "model.layers.0.self_attn.q_proj.weight",
+                {"alpha_pattern": {}},
+            )
+            is None
+        )
+
+    def test_resolve_alpha_for_key_matches_peft_suffix_semantics(self):
+        cfg = {"alpha_pattern": {"layers.0.self_attn.q_proj": 64}}
+        assert (
+            _resolve_lora_alpha_for_key("model.layers.0.self_attn.q_proj.weight", cfg)
+            == 64
+        )
+        # No match falls back to None so the caller keeps the global alpha.
+        assert (
+            _resolve_lora_alpha_for_key("model.layers.0.self_attn.v_proj.weight", cfg)
+            is None
+        )
+
+    def test_resolve_alpha_for_key_follows_weight_renamings(self):
+        # Pattern keyed against the runtime name; merge sees the checkpoint name.
+        cfg = {"alpha_pattern": {"model.new.layers.0.q_proj": 64}}
+        renamings = {r"^model\.old\.": "model.new."}
+        assert (
+            _resolve_lora_alpha_for_key(
+                "model.old.layers.0.q_proj.weight", cfg, renamings
+            )
+            == 64
+        )
+        # Without the renamings, the same lookup misses and falls back to global.
+        assert (
+            _resolve_lora_alpha_for_key("model.old.layers.0.q_proj.weight", cfg) is None
+        )
+
+    def test_pattern_no_longer_rejected_as_adalora(self, tmp_path):
+        """Memory-efficient merge accepts rank_pattern/alpha_pattern (plain LoRA, not AdaLoRA)."""
+        hidden = 32
+        r = 8
+        alpha = 16
+
+        model_dir, _ = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, config = self._make_adapter(tmp_path, r=r, alpha=alpha)
+        config["rank_pattern"] = {"layers.0.self_attn.q_proj": r}
+        config["alpha_pattern"] = {"layers.0.self_attn.q_proj": alpha}
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": torch.randn(
+                r, hidden
+            ),
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": torch.randn(
+                hidden, r
+            ),
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=tmp_path / "output",
+            device="cpu",
+        )
+
+    def test_merge_applies_alpha_pattern_per_module(self, tmp_path):
+        """End-to-end: q_proj uses alpha_pattern=64, v_proj uses global lora_alpha=16."""
+        hidden = 32
+        r = 8
+        global_alpha = 16
+        q_alpha = 64
+
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, config = self._make_adapter(tmp_path, r=r, alpha=global_alpha)
+        config["alpha_pattern"] = {"layers.0.self_attn.q_proj": q_alpha}
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+        q_a = torch.randn(r, hidden)
+        q_b = torch.randn(hidden, r)
+        v_a = torch.randn(r, hidden)
+        v_b = torch.randn(hidden, r)
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": q_a,
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": q_b,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": v_a,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": v_b,
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        v_key = "model.layers.0.self_attn.v_proj.weight"
+        expected_q = base_weights[q_key] + (q_alpha / r) * (q_b @ q_a)
+        expected_v = base_weights[v_key] + (global_alpha / r) * (v_b @ v_a)
+        assert torch.allclose(merged[q_key], expected_q, atol=1e-5)
+        assert torch.allclose(merged[v_key], expected_v, atol=1e-5)
 
     def test_dora_merge(self):
         """DoRA merge applies magnitude normalization via PEFT."""
@@ -773,6 +893,80 @@ class TestEfficientMerge:
         assert torch.equal(merged[v_key], base_weights[v_key]), (
             "v_proj should be unchanged (no LoRA weights for it)"
         )
+
+    def test_dora_merge_honors_alpha_pattern(self, tmp_path):
+        """DoRA + alpha_pattern: q_proj uses overridden alpha, v_proj uses global."""
+        hidden = 16
+        r = 4
+        global_alpha = 8
+        q_alpha = 32
+
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, config = self._make_adapter(
+            tmp_path, r=r, alpha=global_alpha, use_dora=True
+        )
+        config["alpha_pattern"] = {"layers.0.self_attn.q_proj": q_alpha}
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+        q_a = torch.randn(r, hidden)
+        q_b = torch.randn(hidden, r)
+        q_mag = torch.randn(hidden).abs() + 0.1
+        v_a = torch.randn(r, hidden)
+        v_b = torch.randn(hidden, r)
+        v_mag = torch.randn(hidden).abs() + 0.1
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": q_a,
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": q_b,
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_magnitude_vector": q_mag,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": v_a,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": v_b,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_magnitude_vector": v_mag,
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        v_key = "model.layers.0.self_attn.v_proj.weight"
+        expected_q_delta = _build_peft_layer_and_get_delta(
+            q_a,
+            q_b,
+            {"r": r, "lora_alpha": global_alpha, "use_dora": True},
+            base_weights[q_key],
+            magnitude=q_mag,
+            lora_alpha_override=q_alpha,
+        )
+        expected_v_delta = _build_peft_layer_and_get_delta(
+            v_a,
+            v_b,
+            {"r": r, "lora_alpha": global_alpha, "use_dora": True},
+            base_weights[v_key],
+            magnitude=v_mag,
+        )
+        assert torch.allclose(
+            merged[q_key], base_weights[q_key] + expected_q_delta, atol=1e-5
+        )
+        assert torch.allclose(
+            merged[v_key], base_weights[v_key] + expected_v_delta, atol=1e-5
+        )
+        # Sanity: q_proj delta must differ from a non-overridden alpha computation.
+        wrong_q_delta = _build_peft_layer_and_get_delta(
+            q_a,
+            q_b,
+            {"r": r, "lora_alpha": global_alpha, "use_dora": True},
+            base_weights[q_key],
+            magnitude=q_mag,
+        )
+        assert not torch.allclose(expected_q_delta, wrong_q_delta, atol=1e-3)
 
     def test_dora_missing_magnitude_raises(self):
         """DoRA with missing magnitude vector raises an explicit error."""
