@@ -292,6 +292,60 @@ class LigerPlugin(BasePlugin):
                 f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
                 f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
             )
+        elif cfg.model_config_type in ("gemma4_unified", "gemma4_unified_text"):
+            # gemma4_unified mirrors gemma4's Liger compatibility: offset=0,
+            # in_place=False (gradient-checkpoint safe), RoPE incompatible
+            # (separate q/k application). Classes live in the unified namespace.
+            from liger_kernel.transformers.geglu import LigerGEGLUMLP
+            from transformers.models.gemma4_unified import modeling_gemma4_unified
+
+            if cfg.liger_rms_norm:
+                _OrigGemma4UnifiedRMSNorm = modeling_gemma4_unified.Gemma4UnifiedRMSNorm
+
+                class _LigerGemma4UnifiedRMSNorm(LigerRMSNorm):
+                    """LigerRMSNorm for Gemma4Unified (in_place=False, with_scale)."""
+
+                    def __new__(cls, dim, eps=1e-6, with_scale=True):
+                        if not with_scale:
+                            return _OrigGemma4UnifiedRMSNorm(dim, eps, with_scale=False)
+                        return super().__new__(cls)
+
+                    def __init__(self, dim, eps=1e-6, with_scale=True):
+                        if not with_scale:
+                            return
+                        super().__init__(
+                            dim, eps, offset=0.0, casting_mode="llama", in_place=False
+                        )
+
+                modeling_gemma4_unified.Gemma4UnifiedRMSNorm = (
+                    _LigerGemma4UnifiedRMSNorm
+                )
+            if cfg.liger_glu_activation:
+
+                class _LigerGemma4UnifiedMLP(LigerGEGLUMLP):
+                    def __init__(self, config, layer_idx=None):
+                        super().__init__(config)
+
+                modeling_gemma4_unified.Gemma4UnifiedTextMLP = _LigerGemma4UnifiedMLP
+            if cfg.liger_rope:
+                LOG.warning(
+                    "Liger RoPE is not compatible with Gemma4Unified (separate "
+                    "q/k application). Skipping."
+                )
+            if cfg.liger_layer_norm:
+                modeling_gemma4_unified.nn.LayerNorm = LigerLayerNorm
+            if cfg.liger_cross_entropy:
+                modeling_gemma4_unified.nn.CrossEntropyLoss = LigerCrossEntropyLoss
+            if cfg.liger_fused_linear_cross_entropy:
+                LOG.warning(
+                    "Liger fused linear cross entropy is not compatible with "
+                    "Gemma4Unified. Skipping."
+                )
+            LOG.info(
+                f"Applied Liger kernels for gemma4_unified: "
+                f"rms_norm={cfg.liger_rms_norm}, glu={cfg.liger_glu_activation}, "
+                f"rope=False (incompatible), layer_norm={cfg.liger_layer_norm}"
+            )
         elif cfg.liger_fused_linear_cross_entropy:
             try:
                 from .models.base import patch_lce_forward

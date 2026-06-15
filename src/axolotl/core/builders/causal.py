@@ -49,6 +49,23 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
+_MM_NUM_WORKERS_WARNED: set = set()
+
+
+def _warn_if_num_workers_zero_for_mm(cfg, log) -> None:
+    if not getattr(cfg, "processor_type", None):
+        return
+    if getattr(cfg, "dataloader_num_workers", None) not in (None, 0):
+        return
+    if getattr(cfg, "train_on_inputs", False):
+        return
+    if "mm_num_workers_zero" in _MM_NUM_WORKERS_WARNED:
+        return
+    _MM_NUM_WORKERS_WARNED.add("mm_num_workers_zero")
+    log.warning(
+        "Increase dataloader_num_workers to speed up multimodal training with assistant-only loss masking (currently dataloader_num_workers=0)."
+    )
+
 
 class HFCausalTrainerBuilder(TrainerBuilderBase):
     """
@@ -560,6 +577,7 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
                         train_on_eos,
                         "set" if role_boundaries_override else "none",
                     )
+                    _warn_if_num_workers_zero_for_mm(self.cfg, LOG)
 
                 kwargs["processing_strategy"] = get_processing_strategy(
                     self.processor,
