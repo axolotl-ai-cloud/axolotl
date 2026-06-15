@@ -194,6 +194,17 @@ class SFTDataset(BaseModel):
             "description": "The specific revision of the dataset to use when loading from the Hugging Face Hub. This can be a commit hash, tag, or branch name. If not specified, the latest version will be used. This parameter is ignored for local datasets."
         },
     )
+    weight: float | None = Field(
+        default=None,
+        gt=0.0,
+        le=1.0,
+        json_schema_extra={
+            "description": "Sampling weight for dataset mixing. A float between 0 (exclusive) and 1 (inclusive). "
+            "When set, the dataset is shuffled and subsampled to (weight * dataset_size) examples before "
+            "merging with other datasets. For example, weight=0.5 uses 50% of the dataset. "
+            "If not set, the entire dataset is used (equivalent to weight=1.0)."
+        },
+    )
 
     @model_validator(mode="before")
     @classmethod
