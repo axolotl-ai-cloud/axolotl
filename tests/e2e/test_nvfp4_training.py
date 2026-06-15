@@ -156,9 +156,14 @@ class TestNVFP4Training:
         assert torch.equal(new_mod.bias.grad, b_old.grad)
 
     def test_weight_quant_cached_per_version(self):
-        """Weight is quantized twice (fprop+dgrad layout) per optimizer step, not
-        per micro-step: across N passes with no update the count stays at 2, and an
-        in-place weight update (bumping ``_version``) re-quantizes once."""
+        """For a FROZEN weight, the b-operands are quantized twice (fprop+dgrad
+        layout) and then cached: across N passes with no update the count stays at
+        2, and an in-place weight update (bumping ``_version``) re-quantizes once.
+
+        The cache is keyed on ``weight._version`` and only safely helps frozen
+        weights — a TRAINABLE master is covered by
+        ``test_trainable_weight_not_stale_under_fused_optimizer`` (it must rebuild
+        every forward because fused optimizers don't bump ``_version``)."""
         import axolotl.utils.nvfp4_training as nvmod
         from axolotl.utils.nvfp4_training import NVFP4Linear, NVFP4Recipe
 
@@ -166,6 +171,7 @@ class TestNVFP4Training:
         torch.manual_seed(0)
         w = torch.randn(1024, 1024, device="cuda", dtype=torch.bfloat16)
         mod = NVFP4Linear(nn.Parameter(w.clone()), None, recipe)
+        mod.weight.requires_grad_(False)  # frozen: the version-keyed cache applies
 
         calls = {"n": 0}
         real = nvmod._quantize
@@ -174,9 +180,9 @@ class TestNVFP4Training:
             calls["n"] += 1
             return real(t, policy)
 
-        # Per fwd+bwd the non-weight quant calls: fprop activation (1), dgrad
-        # gradient (1), wgrad inputs gt+xp via _fp4_mm (2) = 4.
-        non_weight = 4
+        # Per fwd+bwd the non-weight quant calls for a FROZEN weight (no wgrad):
+        # fprop activation (1) + dgrad gradient (1) = 2.
+        non_weight = 2
         n_passes = 4
         nvmod._quantize = counting
         try:
@@ -205,6 +211,7 @@ class TestNVFP4Training:
         torch.manual_seed(0)
         w2 = torch.randn(512, 512, device="cuda", dtype=torch.bfloat16)
         m2 = NVFP4Linear(nn.Parameter(w2.clone()), None, recipe)
+        m2.weight.requires_grad_(False)  # exercise the version-keyed cache path
         xt = torch.randn(64, 512, device="cuda", dtype=torch.bfloat16)
         out_a = m2(xt).detach().clone()
         with torch.no_grad():
@@ -213,6 +220,78 @@ class TestNVFP4Training:
         ref = NVFP4Linear(nn.Parameter((w2 * 2.0).clone()), None, recipe)
         assert not torch.equal(out_a, out_b)
         assert torch.equal(out_b, ref(xt))
+
+    def test_trainable_weight_not_stale_under_fused_optimizer(self):
+        """Full-FT NVFP4Linear must serve FRESH weights every step under a fused
+        optimizer.
+
+        Regression: ``torch._fused_adamw_`` mutates params WITHOUT bumping
+        ``param._version`` (torch 2.12; foreach/single-tensor DO bump). Keying
+        the weight-quant cache on ``_version`` froze it at the step-0 quant, so a
+        TRAINABLE master under ``adamw_torch_fused`` served stale forward weights
+        while wgrad flowed to the live weight -> fprop/bwd mismatch -> divergence.
+        A single step passes even when broken (the cache only goes stale on the
+        SECOND fused step, since the first step's mutation is what fails to bump),
+        so this must run N>1 steps. The fix rebuilds the cache whenever the weight
+        is trainable; this asserts the module forward stays bitwise-identical to a
+        fresh-built NVFP4Linear over the live weight after each fused step.
+        """
+        from axolotl.utils.nvfp4_training import NVFP4Linear, NVFP4Recipe
+
+        recipe = NVFP4Recipe(stochastic_rounding=False, hadamard=False)
+        torch.manual_seed(0)
+        w = torch.randn(512, 512, device="cuda", dtype=torch.bfloat16) * 0.05
+        mod = NVFP4Linear(nn.Parameter(w.clone()), None, recipe)
+        assert mod.weight.requires_grad  # full-FT: trainable master
+        opt = torch.optim.AdamW(mod.parameters(), lr=1e-2, fused=True)
+
+        # fused mutation must NOT bump _version (otherwise this test can't catch
+        # the bug); guards against a torch version that starts bumping.
+        x = torch.randn(64, 512, device="cuda", dtype=torch.bfloat16)
+        mod(x).sum().backward()
+        v_before = mod.weight._version
+        opt.step()
+        assert mod.weight._version == v_before, (
+            "fused AdamW bumped _version; this torch no longer exposes the bug"
+        )
+        opt.zero_grad()
+
+        for step in range(4):
+            xx = torch.randn(64, 512, device="cuda", dtype=torch.bfloat16)
+            out = mod(xx).detach().clone()
+            # fresh module built from the CURRENT live weight = ground truth
+            fresh = NVFP4Linear(
+                nn.Parameter(mod.weight.detach().clone()), None, recipe
+            )
+            ref = fresh(xx).detach().clone()
+            assert torch.equal(out, ref), (
+                f"stale forward at step {step}: cache not rebuilt for trainable "
+                "weight under fused optimizer"
+            )
+            mod(xx).sum().backward()
+            opt.step()
+            opt.zero_grad()
+
+    def test_frozen_weight_cache_preserved(self):
+        """A FROZEN weight (LoRA base / frozen FFT layer) must keep caching across
+        passes: the rebuild-if-trainable fix must NOT regress the frozen fast
+        path. The cached b-operand objects must be identical across passes (no
+        re-quant), and they must match a one-shot quant of the frozen weight."""
+        from axolotl.utils.nvfp4_training import NVFP4Linear, NVFP4Recipe
+
+        recipe = NVFP4Recipe(stochastic_rounding=False, hadamard=False)
+        torch.manual_seed(0)
+        w = torch.randn(1024, 1024, device="cuda", dtype=torch.bfloat16)
+        mod = NVFP4Linear(nn.Parameter(w.clone()), None, recipe)
+        mod.weight.requires_grad_(False)
+
+        wf0, wd0 = mod._quantized_weights()
+        for _ in range(4):
+            x = torch.randn(128, 1024, device="cuda", dtype=torch.bfloat16)
+            mod(x).sum()
+            wf, wd = mod._quantized_weights()
+            # identity (not just equality): the cache was reused, not rebuilt
+            assert wf is wf0 and wd is wd0
 
     def test_convert_excludes_sensitive_and_odd_dims(self):
         """Swap eligible linears; keep lm_head/embeddings high-precision."""

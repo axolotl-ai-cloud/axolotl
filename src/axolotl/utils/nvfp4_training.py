@@ -419,9 +419,18 @@ class NVFP4Linear(nn.Module):
         live master weight, refreshed when weight._version changes (one optimizer
         step). detach() so no autograd tracks through the cached FP4 operands —
         the differentiable path to the master weight is the wgrad in backward.
+
+        ``weight._version`` is only a reliable cache key for FROZEN weights and
+        within-step grad-accum. A TRAINABLE master under a fused optimizer
+        (``torch._fused_adamw_`` etc.) is mutated WITHOUT bumping ``_version``
+        (unlike the foreach/single-tensor paths), so the cache would freeze at
+        the step-0 quant while wgrad keeps flowing to the live weight —
+        fprop/dgrad would serve stale operands and the run diverges. Rebuild
+        every forward when the weight is trainable; only frozen weights (LoRA
+        base, frozen FFT layers) keep the cache.
         """
         version = self.weight._version
-        if self._wq_version != version:
+        if self.weight.requires_grad or self._wq_version != version:
             w = self.weight.detach()
             # fprop b-operand represents W.T ([K,N]): quantize W then transpose.
             self._wq_fprop = _quantize(w, QuantPolicy()).t()
