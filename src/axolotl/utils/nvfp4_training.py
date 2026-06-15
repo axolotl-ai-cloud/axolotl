@@ -1104,9 +1104,7 @@ def _recipe_fusion_available(t: torch.Tensor) -> bool:
     ):
         return False
     cap = torch.cuda.get_device_capability(t.device)
-    return cap[0] == 10 or (
-        tuple(cap) == (12, 0) and _sm120f_recipe_codegen_verified()
-    )
+    return cap[0] == 10 or (tuple(cap) == (12, 0) and _sm120f_recipe_codegen_verified())
 
 
 def _swizzled_scale_shape(m: int, k: int) -> tuple[int, int]:

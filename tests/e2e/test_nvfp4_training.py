@@ -260,9 +260,7 @@ class TestNVFP4Training:
             xx = torch.randn(64, 512, device="cuda", dtype=torch.bfloat16)
             out = mod(xx).detach().clone()
             # fresh module built from the CURRENT live weight = ground truth
-            fresh = NVFP4Linear(
-                nn.Parameter(mod.weight.detach().clone()), None, recipe
-            )
+            fresh = NVFP4Linear(nn.Parameter(mod.weight.detach().clone()), None, recipe)
             ref = fresh(xx).detach().clone()
             assert torch.equal(out, ref), (
                 f"stale forward at step {step}: cache not rebuilt for trainable "
@@ -1491,14 +1489,19 @@ class TestNVFP4Sm120Gate:
     def test_gate_default_safe_on_non_blackwell(self, monkeypatch):
         """A spoofed sm_90 device must keep the gate closed regardless of probe."""
         nvmod = self._reset_probe_cache()
-        monkeypatch.setattr(
-            torch.cuda, "get_device_capability", lambda *a, **k: (9, 0)
-        )
+        monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a, **k: (9, 0))
         monkeypatch.setattr(nvmod, "_mslk_available", lambda: True)
 
         t = torch.empty(16, 16)
         t_cuda = type(
-            "FakeT", (), {"is_cuda": True, "dim": lambda self: 2, "shape": (16, 16), "device": "cuda:0"}
+            "FakeT",
+            (),
+            {
+                "is_cuda": True,
+                "dim": lambda self: 2,
+                "shape": (16, 16),
+                "device": "cuda:0",
+            },
         )()
         # _recipe_fusion_available reads .is_cuda/.dim()/.shape/.device only.
         assert nvmod._recipe_fusion_available(t_cuda) is False
@@ -1512,7 +1515,14 @@ class TestNVFP4Sm120Gate:
         )
         monkeypatch.setattr(nvmod, "_mslk_available", lambda: True)
         t_cuda = type(
-            "FakeT", (), {"is_cuda": True, "dim": lambda self: 2, "shape": (16, 16), "device": "cuda:0"}
+            "FakeT",
+            (),
+            {
+                "is_cuda": True,
+                "dim": lambda self: 2,
+                "shape": (16, 16),
+                "device": "cuda:0",
+            },
         )()
 
         monkeypatch.setattr(nvmod, "_sm120f_recipe_codegen_verified", lambda: False)
@@ -1526,8 +1536,8 @@ class TestNVFP4Sm120Gate:
     def test_probe_verifies_and_gate_opens_on_real_sm120(self):
         """On real sm_120 the probe must verify and the gate must open."""
         from axolotl.utils.nvfp4_training import (
-            _abs_amax,
             _BLOCK_SIZE,
+            _abs_amax,
             _mslk_available,
             _mslk_quantize_recipe_op,
             _recipe_fusion_available,
@@ -1540,9 +1550,12 @@ class TestNVFP4Sm120Gate:
         self._reset_probe_cache()
         assert _sm120f_recipe_codegen_verified() is True
 
-        assert _recipe_fusion_available(
-            torch.randn(256, 256, device="cuda", dtype=torch.bfloat16)
-        ) is True
+        assert (
+            _recipe_fusion_available(
+                torch.randn(256, 256, device="cuda", dtype=torch.bfloat16)
+            )
+            is True
+        )
 
         # Independent bit-exact re-check of the RTN cvt against torchao on the
         # SAME seeded tile the probe uses. Bit-exactness is the gross-miscompile
