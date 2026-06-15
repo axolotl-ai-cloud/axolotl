@@ -280,7 +280,7 @@ class UserDefinedKTOType(BaseModel):
     field_system: str | None = None
     field_prompt: str | None = None
     field_completion: str | None = None
-    field_label: bool | None = None
+    field_label: str | None = None
     prompt_format: str | None = None
     completion_format: str | None = None
 
