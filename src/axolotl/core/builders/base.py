@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import os
 import sys
 from abc import abstractmethod
@@ -46,9 +45,10 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo
@@ -188,6 +188,8 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
                 "gemma4",
                 "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
             ):
                 from axolotl.kernels.autotune_telemetry import (
                     FusedRopeAutotuneReportCallback,

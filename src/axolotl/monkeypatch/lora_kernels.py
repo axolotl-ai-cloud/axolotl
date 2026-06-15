@@ -208,6 +208,13 @@ def get_attention_cls_from_config(cfg: DictDefault) -> Type[nn.Module]:
 
         return Gemma4TextAttention
 
+    if model_type in ("gemma4_unified", "gemma4_unified_text"):
+        from transformers.models.gemma4_unified.modeling_gemma4_unified import (
+            Gemma4UnifiedTextAttention,
+        )
+
+        return Gemma4UnifiedTextAttention
+
     try:
         # Dynamically import the module and attention class
         module_path = f"transformers.models.{model_type}.modeling_{model_type}"
@@ -262,6 +269,32 @@ def patch_self_attn_lora(cfg: DictDefault):
             return
     except ImportError:
         pass
+
+    # gemma4_unified's attention forward can't be source-rewritten (KV sharing); skip.
+    try:
+        from transformers.models.gemma4_unified.modeling_gemma4_unified import (
+            Gemma4UnifiedTextAttention,
+        )
+    except ImportError:
+        Gemma4UnifiedTextAttention = None
+
+    if (
+        Gemma4UnifiedTextAttention is not None
+        and attention_cls is Gemma4UnifiedTextAttention
+    ):
+        if cfg.fused_attn_kernel:
+            LOG.info(
+                "Gemma4UnifiedTextAttention uses the fused attention path "
+                "(apply_qkv/apply_o) - skipping LoRA source rewrite"
+            )
+        else:
+            LOG.warning(
+                "lora_qkv_kernel/lora_o_kernel cannot attach to gemma4_unified "
+                "without fused_attn_kernel: true - skipping QKV/O rewrite "
+                "(MLP/embedding kernels still apply). Set fused_attn_kernel: true "
+                "to enable them."
+            )
+        return
 
     self_attn_forward = inspect.getsource(attention_cls.forward)
     attention_cls._original_forward = self_attn_forward
