@@ -1340,7 +1340,10 @@ def _recipe_norm_lane(
     yn = y * (global_scale / scales.to(tl.float32))
     if STOCHASTIC:
         ax = tl.abs(yn)
-        step = tl.where(ax < 2.0, 1.0, tl.where(ax < 4.0, 2.0, 4.0))
+        # Dither width = local e2m1 grid spacing so dither-then-RTN is unbiased:
+        # spacing is 0.5 on (0,2], 1.0 on (2,4], 2.0 on (4,6]. A value on a band
+        # boundary uses the lower cell's width so the window stays in one cell.
+        step = tl.where(ax <= 2.0, 0.5, tl.where(ax <= 4.0, 1.0, 2.0))
         yn = yn + (tl.rand(seed, base_off + lane_off) - 0.5) * step
     return tl.clamp(yn, -6.0, 6.0)
 
