@@ -170,6 +170,15 @@ def partial_suffix_len(text: str, marker: str) -> int:
     return 0
 
 
+def content_as_text(content: Any) -> str:
+    # parse_response may return content as a list of parts rather than a string
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") for part in content if isinstance(part, dict)
+        )
+    return content or ""
+
+
 @dataclass
 class ChatSession:
     """Holds the conversation state for a chat session."""
@@ -219,9 +228,15 @@ class ChatSession:
         # dataset format so saved sessions stay usable as training data
         messages = []
         for message in self.conversation():
+            content = message.get("content")
+            parts = (
+                content
+                if isinstance(content, list)
+                else [{"type": "text", "text": content or ""}]
+            )
             out = {
                 "role": message["role"],
-                "content": [{"type": "text", "text": message.get("content") or ""}],
+                "content": parts,
             }
             for key in ("reasoning_content", "thinking", "tool_calls"):
                 if message.get(key):
@@ -552,8 +567,11 @@ class CausalTurnGenerator(TurnGenerator):
             stop_event.set()
             for text in streamer:
                 trimmer.feed(text)
-        thread.join()
-        trimmer.finish()
+        finally:
+            # a 2nd Ctrl+C can escape the drain; join so the worker stops writing the cache
+            stop_event.set()
+            thread.join()
+            trimmer.finish()
         seconds = time.monotonic() - start
 
         if "error" in holder:
@@ -930,6 +948,10 @@ class ChatRepl:
                 render_kwargs=self.render_kwargs or None,
             )
         except KeyboardInterrupt:
+            # an escaped interrupt leaves the cache out of sync with _cached_ids
+            reset_cache = getattr(self.generator, "reset_cache", None)
+            if callable(reset_cache):
+                reset_cache()
             renderer.finish(interrupted=True)
             print()
             self.console.print(
@@ -996,6 +1018,7 @@ class ChatRepl:
 
     def cmd_new(self, _args: str) -> None:
         self.session.clear()
+        self.last_think_text = None
         reset_cache = getattr(self.generator, "reset_cache", None)
         if callable(reset_cache):
             reset_cache()
@@ -1053,8 +1076,8 @@ class ChatRepl:
             self.console.print(f"[bold]{message['role']}:[/bold]")
             reasoning = message.get("reasoning_content") or message.get("thinking")
             if reasoning:
-                self.console.print(escape(reasoning), style="dim")
-            self.console.print(escape(message.get("content") or ""))
+                self.console.print(escape(content_as_text(reasoning)), style="dim")
+            self.console.print(escape(content_as_text(message.get("content"))))
         return None
 
     def cmd_retry(self, _args: str) -> str | None:
@@ -1065,6 +1088,7 @@ class ChatRepl:
 
     def cmd_undo(self, _args: str) -> None:
         if self.session.undo():
+            self.last_think_text = None
             self.console.print("[dim]Removed last exchange.[/dim]")
         else:
             self.console.print("[dim]Nothing to undo.[/dim]")
