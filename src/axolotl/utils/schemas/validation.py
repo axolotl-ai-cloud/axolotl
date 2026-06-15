@@ -715,6 +715,52 @@ class RLValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
+    def check_grpo_advantage_estimator(cls, data):
+        """Validate `trl.advantage_estimator` and warn about unusual pairings.
+
+        The estimator swaps the GRPO baseline (group mean) for RLOO's
+        leave-one-out baseline or REINFORCE++'s global-batch baseline. It only
+        applies to `rl: grpo` and is implemented for the default
+        `sum_then_normalize` reward aggregation.
+        """
+        trl_cfg = data.get("trl") or {}
+        estimator = trl_cfg.get("advantage_estimator")
+        if estimator is None:
+            return data
+
+        if data.get("rl") != "grpo":
+            raise ValueError(
+                f"`trl.advantage_estimator` is only supported with `rl: grpo`, "
+                f"but got rl: {data.get('rl')!r}"
+            )
+
+        if estimator == "group_mean":
+            # The default estimator is a no-op, so any aggregation is fine
+            return data
+
+        if trl_cfg.get("multi_objective_aggregation") == "normalize_then_sum":
+            raise ValueError(
+                "`trl.advantage_estimator` is not supported with "
+                "`multi_objective_aggregation: normalize_then_sum` (the GDPO "
+                "aggregation already defines its own normalization)."
+            )
+
+        scale_rewards = trl_cfg.get("scale_rewards", True)
+        if estimator == "rloo" and scale_rewards not in (False, "none"):
+            LOG.warning(
+                "advantage_estimator: rloo is canonically used without reward "
+                "scaling; consider setting `trl.scale_rewards: none`."
+            )
+        if estimator == "reinforce_plus_plus" and scale_rewards != "batch":
+            LOG.warning(
+                "advantage_estimator: reinforce_plus_plus normalizes advantages "
+                "with global batch statistics; consider setting "
+                "`trl.scale_rewards: batch`."
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def check_rl_config_gradient_checkpointing(cls, data):
         # TODO: SalmanMohammadi
         # Distributed RL with QLoRA + gradient checkpointing

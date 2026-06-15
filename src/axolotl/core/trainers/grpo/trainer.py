@@ -40,6 +40,7 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.advantages import compute_advantages
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
@@ -65,6 +66,74 @@ class AxolotlGRPOTrainer(
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
+
+    @property
+    def _advantage_estimator(self) -> str:
+        """Configured advantage estimator, defaulting to GRPO's group mean."""
+        return getattr(self.args, "advantage_estimator", None) or "group_mean"
+
+    def _calculate_rewards(self, inputs, prompts, completions, completion_ids_list):
+        """Stash the gathered per-function rewards so the advantage estimator
+        override can recompute advantages without re-running reward functions."""
+        rewards_per_func = super()._calculate_rewards(
+            inputs, prompts, completions, completion_ids_list
+        )
+        self._axolotl_rewards_per_func = rewards_per_func
+        return rewards_per_func
+
+    def _generate_and_score_completions(
+        self, inputs: list[dict[str, torch.Tensor | Any]]
+    ) -> dict[str, torch.Tensor | Any]:
+        """Generate/score as usual, then swap in the configured advantage estimator.
+
+        TRL inlines the group-mean advantage computation inside its (large)
+        ``_generate_and_score_completions``, so instead of copying that whole
+        method we recompute advantages from the rewards captured in
+        ``_calculate_rewards`` and replace them in the returned batch.
+        """
+        output = super()._generate_and_score_completions(inputs)
+        if self._advantage_estimator == "group_mean":
+            return output
+
+        if self.multi_objective_aggregation != "sum_then_normalize":
+            raise ValueError(
+                "advantage_estimator is only supported with "
+                "multi_objective_aggregation='sum_then_normalize', got "
+                f"{self.multi_objective_aggregation!r}."
+            )
+
+        rewards_per_func = self._axolotl_rewards_per_func
+        device = rewards_per_func.device
+        rewards = (
+            rewards_per_func * self.reward_weights.to(device).unsqueeze(0)
+        ).nansum(dim=1)
+        mode = "train" if self.model.training else "eval"
+        num_generations = (
+            self.num_generations if mode == "train" else self.num_generations_eval
+        )
+        advantages, _, _ = compute_advantages(
+            rewards,
+            num_generations,
+            advantage_estimator=self._advantage_estimator,
+            scale_rewards=self.scale_rewards,
+        )
+
+        process_slice = slice(
+            self.accelerator.process_index * len(inputs),
+            (self.accelerator.process_index + 1) * len(inputs),
+        )
+        output["advantages"] = advantages[process_slice]
+
+        # Keep the logged advantages consistent with what is trained on: the
+        # parent method already appended its group-mean advantages, so replace
+        # the entries it just added.
+        logged = self._logs.get("advantages")
+        if logged is not None:
+            for _ in range(min(advantages.numel(), len(logged))):
+                logged.pop()
+            logged.extend(advantages.tolist())
+
+        return output
 
 
 class AxolotlAsyncGRPOTrainer(
@@ -593,20 +662,23 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
             rewards_per_func * self.reward_weights.to(device).unsqueeze(0)
         ).nansum(dim=1)
 
-        # Compute grouped-wise rewards
+        # Compute grouped-wise rewards (for logging)
         mean_grouped_rewards = rewards.view(-1, self.num_generations).mean(dim=1)
         std_grouped_rewards = rewards.view(-1, self.num_generations).std(dim=1)
-
-        # Normalize the rewards to compute the advantages
         mean_grouped_rewards = mean_grouped_rewards.repeat_interleave(
             self.num_generations, dim=0
         )
         std_grouped_rewards = std_grouped_rewards.repeat_interleave(
             self.num_generations, dim=0
         )
-        advantages = rewards - mean_grouped_rewards
-        if self.args.scale_rewards:
-            advantages = advantages / (std_grouped_rewards + 1e-4)
+
+        # Compute the advantages with the configured estimator and scaling
+        advantages, _, _ = compute_advantages(
+            rewards,
+            self.num_generations,
+            advantage_estimator=self._advantage_estimator,
+            scale_rewards=self.scale_rewards,
+        )
 
         # Slice to keep only the local part of the data
         if self.args.context_parallel_size > 1:

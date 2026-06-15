@@ -106,11 +106,24 @@ class TRLConfig(BaseModel):
         default=64,
         json_schema_extra={"description": "Sync steps for the reference model."},
     )
-    scale_rewards: bool = Field(
+    scale_rewards: bool | Literal["group", "batch", "none"] = Field(
         default=True,
         json_schema_extra={
-            "description": "Whether to scale rewards by their standard deviation."
+            "description": "Reward scaling strategy. 'group' (or True) scales by the "
+            "per-group std, 'batch' by the std of the whole batch, 'none' (or False) "
+            "disables scaling."
         },
+    )
+    advantage_estimator: Literal["group_mean", "rloo", "reinforce_plus_plus"] | None = (
+        Field(
+            default=None,
+            json_schema_extra={
+                "description": "Advantage estimator for GRPO. 'group_mean' (default) is "
+                "the standard GRPO group-mean baseline, 'rloo' uses a leave-one-out "
+                "baseline over the group, and 'reinforce_plus_plus' uses a global-batch "
+                "baseline (pair with `scale_rewards: batch`)."
+            },
+        )
     )
 
     temperature: float | None = Field(

@@ -534,8 +534,31 @@ All GRPO-specific options live under the `trl:` key in your config. Standard tra
 | `epsilon` | float | `null` | PPO clipping lower bound |
 | `epsilon_high` | float | `null` | PPO clipping upper bound |
 | `loss_type` | str | `null` | Loss formulation: `grpo`, `bnpo`, or `dr_grpo` |
-| `scale_rewards` | bool | `true` | Normalize rewards by standard deviation |
+| `scale_rewards` | bool or str | `true` | Reward scaling: `group` (or `true`), `batch`, or `none` (or `false`) |
+| `advantage_estimator` | str | `group_mean` | Baseline for advantages: `group_mean` (GRPO), `rloo`, or `reinforce_plus_plus` |
 | `mask_truncated_completions` | bool | `false` | Exclude truncated completions from loss |
+
+#### Advantage estimators
+
+GRPO, RLOO, and REINFORCE++ share the same rollout-and-reward structure and differ
+only in how the baseline is subtracted from rewards. `advantage_estimator` selects
+the baseline while `scale_rewards` independently controls normalization:
+
+- `group_mean` (default): each completion is baselined against the mean reward of
+  its prompt group — standard GRPO.
+- `rloo`: each completion is baselined against the mean reward of the *other*
+  completions in its group ([RLOO](https://huggingface.co/papers/2402.14740)).
+  Canonically used with `scale_rewards: none`.
+- `reinforce_plus_plus`: completions are baselined against the mean reward of the
+  whole batch ([REINFORCE++](https://huggingface.co/papers/2501.03262)).
+  Pair with `scale_rewards: batch` for the normalization used in the paper.
+
+```yaml
+rl: grpo
+trl:
+  advantage_estimator: rloo
+  scale_rewards: none
+```
 
 ### Reward functions
 

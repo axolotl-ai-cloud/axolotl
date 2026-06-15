@@ -118,6 +118,9 @@ class GRPOStrategy:
         if trl.scale_rewards is not None:
             grpo_args_kwargs["scale_rewards"] = trl.scale_rewards
 
+        if trl.advantage_estimator is not None:
+            grpo_args_kwargs["advantage_estimator"] = trl.advantage_estimator
+
         if trl.loss_type is not None:
             grpo_args_kwargs["loss_type"] = trl.loss_type
         if trl.mask_truncated_completions is not None:
