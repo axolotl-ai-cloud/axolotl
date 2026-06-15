@@ -65,6 +65,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
@@ -156,6 +157,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]

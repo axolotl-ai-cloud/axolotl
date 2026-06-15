@@ -24,7 +24,6 @@ _pre_produce_hook) defined in the base classes.
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from dataclasses import dataclass, field
 
@@ -38,8 +37,9 @@ from axolotl.core.trainers.grpo.async_trainer import (
     GRPODataProducer,
 )
 from axolotl.core.trainers.grpo.replay_buffer import ReplayBuffer
+from axolotl.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
