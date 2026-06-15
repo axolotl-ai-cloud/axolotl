@@ -83,6 +83,48 @@ class LossWatchDogCallback(TrainerCallback):
         return control
 
 
+class NVFP4ResumeIntegrityCallback(TrainerCallback):
+    """Fail loud if a resumed checkpoint loaded non-finite trainable weights.
+
+    Sustained NVFP4 load can trigger a GPU Xid that NaNs the live model; the next
+    auto-saved checkpoint then captures those NaNs, and resuming from it silently
+    trains a dead forward (the H1 failure: loss collapses / saturates while the step
+    counter keeps advancing). HF's adapter load is non-strict, so a truncated or
+    NaN'd checkpoint is accepted without complaint. This turns that into an immediate,
+    actionable error at the start of the resumed run instead of a wasted run.
+    """
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+    def on_train_begin(
+        self,
+        args: TrainingArguments,
+        state: TrainerState,
+        control: TrainerControl,
+        model=None,
+        **_kwargs,
+    ) -> TrainerControl:
+        if not self.cfg.resume_from_checkpoint or model is None:
+            return control
+        bad = []
+        for name, param in model.named_parameters():
+            if not param.requires_grad or param.is_meta:
+                continue
+            if not torch.isfinite(param).all():
+                bad.append(name)
+                if len(bad) >= 5:
+                    break
+        if bad:
+            raise RuntimeError(
+                f"NVFP4 resume integrity: trainable weights contain NaN/Inf after loading "
+                f"checkpoint '{self.cfg.resume_from_checkpoint}' (e.g. {bad}). The checkpoint "
+                "is likely corrupt — a common cause is an auto-save that captured the model "
+                "after a GPU Xid NaN'd training. Resume from an earlier good checkpoint."
+            )
+        return control
+
+
 class SaveModelOnFirstStepCallback(TrainerCallback):
     """Callback to save the model on the first step of training if enabled"""
 

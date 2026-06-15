@@ -157,6 +157,40 @@ class TestNVFP4Resume:
 
         self._assert_resume_loss_sane(rcfg, pre_losses, resume_dir)
 
+    def test_nvfp4_resume_corrupt_checkpoint_raises(self, temp_dir):
+        """A NaN'd checkpoint must fail loud on resume, not train a dead forward.
+
+        HF's adapter load is non-strict, so a checkpoint that captured NaN weights
+        (the realistic Xid mechanism: an auto-save right after a GPU fault NaN'd
+        training) loads silently and collapses the forward. The
+        ``NVFP4ResumeIntegrityCallback`` must raise at ``on_train_begin`` instead.
+        """
+        import pytest
+        import torch
+        from safetensors.torch import load_file, save_file
+
+        from axolotl.common.datasets import load_datasets
+        from axolotl.train import train
+
+        cfg = self._base_cfg(temp_dir, {})
+        train(cfg=cfg, dataset_meta=load_datasets(cfg=cfg))
+        ckpt = os.path.join(temp_dir, "checkpoint-4")
+        adapter = os.path.join(ckpt, "adapter_model.safetensors")
+
+        sd = load_file(adapter)
+        injected = False
+        for key in list(sd):
+            if "lora_B" in key:
+                sd[key] = torch.full_like(sd[key], float("nan"))
+                injected = True
+        assert injected, "no lora_B tensors found to corrupt"
+        save_file(sd, adapter)
+
+        resume_dir = os.path.join(temp_dir, "resume")
+        rcfg = self._base_cfg(resume_dir, {"resume_from_checkpoint": ckpt})
+        with pytest.raises(RuntimeError, match="resume integrity"):
+            train(cfg=rcfg, dataset_meta=load_datasets(cfg=rcfg))
+
     def _assert_resume_loss_sane(self, rcfg, pre_losses, resume_dir):
         """First post-resume loss must look like training, not a dead forward.
 
@@ -176,6 +210,10 @@ class TestNVFP4Resume:
         ref = min(pre_losses)
         vocab_ln = self._vocab_ln(rcfg)
 
+        assert math.isfinite(first_post) and first_post > 1e-4, (
+            f"post-resume loss {first_post} collapsed to ~0/NaN — a dead forward "
+            f"(e.g. NaN'd weights loaded from a corrupt checkpoint), not training"
+        )
         assert first_post < 0.5 * vocab_ln, (
             f"post-resume loss {first_post:.4f} is near ln(vocab)={vocab_ln:.4f} "
             f"(dead/uniform logits — H1 checkpoint-resume corruption)"
