@@ -80,9 +80,10 @@ class TestValidation(BaseValidation):
 
         with self._caplog.at_level("WARNING"):
             validate_config(test_cfg)
-            assert (
+            assert any(
                 "qlora + zero3 with use_reentrant: false may result in a CheckpointError about recomputed values"
-                in self._caplog.records[0].message
+                in record.message
+                for record in self._caplog.records
             )
 
     def test_deepspeed_empty(self, minimal_cfg):

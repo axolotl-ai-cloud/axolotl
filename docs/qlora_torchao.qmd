@@ -1,0 +1,225 @@
+---
+title: "QLoRA with torchao"
+description: "Quantize the base model with torchao instead of bitsandbytes for compile-friendly, FSDP2-native LoRA/QLoRA."
+format:
+  html:
+    toc: true
+---
+
+## Background
+
+`bitsandbytes` is the historical backend for QLoRA in Axolotl. It works well in
+single-GPU and FSDP1 setups, but its 4-bit kernels graph-break under
+`torch.compile` and its `Params4bit` storage needs custom patches to cooperate
+with FSDP2.
+
+[torchao](https://github.com/pytorch/ao) provides tensor-subclass quantization
+(`AffineQuantizedTensor`, `NF4Tensor`) that:
+
+- compiles cleanly with `torch.compile` (no graph breaks for INT4/INT8
+  weight-only quant);
+- ships native FSDP2 support via DTensor;
+- shares its codebase with QAT / PTQ.
+
+Axolotl exposes both backends via the structured `model_quantization_config`
+field, a flat union discriminated on its `backend` key.
+
+## Usage
+
+`model_quantization_config` is a discriminated union: `backend` is one of
+`bnb` / `torchao` / `mxfp4` / `fp8`. QLoRA is not a separate adapter type —
+it is `adapter: lora` plus a 4-bit base quant. The bnb / torchao backends
+require `adapter: lora`; without an adapter the config is rejected.
+
+```yaml
+# torchao QLoRA
+adapter: lora
+model_quantization_config:
+  backend: torchao
+  weight_dtype: int4     # one of: int4, nf4, nvfp4, int8, fp8
+  # group_size: 128      # defaults: int4/int8 → 128, nf4 → 64, nvfp4 → 16
+
+# int4 only: required for training (see note below)
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+```
+
+```yaml
+# bnb QLoRA (replaces `adapter: qlora` + `load_in_4bit: true`)
+adapter: lora
+model_quantization_config:
+  backend: bnb
+  weight_dtype: nf4      # mirrored into load_in_4bit for the loader
+```
+
+```yaml
+# bnb 8-bit LoRA (replaces `load_in_8bit: true`)
+adapter: lora
+model_quantization_config:
+  backend: bnb
+  weight_dtype: int8     # mirrored into load_in_8bit for the loader
+```
+
+| `backend` | `weight_dtype`     | Training style    | Quant config installed       |
+|-----------|--------------------|-------------------|------------------------------|
+| `bnb`     | `nf4`              | QLoRA (4-bit)     | `BitsAndBytesConfig(load_in_4bit=True)` |
+| `bnb`     | `int8`             | 8-bit LoRA        | `BitsAndBytesConfig(load_in_8bit=True)` |
+| `torchao` | `int4`             | QLoRA (4-bit)     | `Int4WeightOnlyConfig` (tile-packed tinygemm layout, CUDA cc >= 8.0) |
+| `torchao` | `nf4`              | QLoRA (4-bit)     | `NF4WeightOnlyConfig`        |
+| `torchao` | `nvfp4`            | QLoRA (4-bit)     | `NVFP4WeightOnlyConfig` (torch ≥ 2.8; `group_size` must be 16 or unset) |
+| `torchao` | `int8`             | weight-only LoRA  | `Int8WeightOnlyConfig`       |
+| `torchao` | `fp8`              | weight-only LoRA  | `Float8WeightOnlyConfig`     |
+
+::: {.callout-important}
+`weight_dtype: int4` requires `lora_mlp_kernel`, `lora_qkv_kernel`, and
+`lora_o_kernel` for training. torchao's int4 tensors implement linear as a
+bare quantized matmul with no autograd support, so input gradients can only
+flow through axolotl's LoRA kernels, which dequantize explicitly in their own
+forward/backward. `nf4` / `nvfp4` / `fp8` dequantize (or ship a backward) in
+torchao itself and train without the kernels; the validator enforces this for
+int4.
+:::
+
+### Deprecations
+
+There is only one canonical shape for base-quant LoRA training:
+
+```yaml
+adapter: lora
+model_quantization_config:
+  backend: bnb                  # or torchao / mxfp4 / fp8
+  weight_dtype: nf4
+```
+
+The following legacy shapes keep working — they are translated to the
+canonical form at config load and emit a `DEPRECATED:` warning. They will
+be removed in a future release:
+
+- `adapter: qlora` (with or without `load_in_4bit: true`) → `adapter: lora`
+  + `model_quantization_config: {backend: bnb, weight_dtype: nf4}`. QLoRA is
+  just "LoRA with a 4-bit base quant"; there is no separate adapter type.
+- `load_in_4bit: true` (alone) → `model_quantization_config:
+  {backend: bnb, weight_dtype: nf4}`.
+- `load_in_8bit: true` (alone) → `model_quantization_config:
+  {backend: bnb, weight_dtype: int8}`.
+- `model_quantization_config: Mxfp4Config` (string) with
+  `model_quantization_config_kwargs: …` — keeps working as-is; the warning
+  points at `model_quantization_config: {backend: mxfp4, config_kwargs: …}`.
+- `model_quantization_config: FineGrainedFP8Config` (string) — same, with
+  `model_quantization_config: {backend: fp8, config_kwargs: …}`.
+
+## Mxfp4Config / FineGrainedFP8Config
+
+Pre-quantized checkpoints typically encode their quant scheme in the
+checkpoint's own `quantization_config`; you don't need to set
+`model_quantization_config` in that case. For the cases where you do want to
+override at load time, the legacy string form keeps working:
+
+```yaml
+# Legacy string form (still works)
+model_quantization_config: Mxfp4Config
+model_quantization_config_kwargs: {}
+```
+
+…and has a parallel structured form:
+
+```yaml
+model_quantization_config:
+  backend: mxfp4
+  config_kwargs: {}
+```
+
+```yaml
+model_quantization_config:
+  backend: fp8
+  config_kwargs: {}
+```
+
+## MXFP4 (MoE only)
+
+MXFP4 has no weight-only torchao config for arbitrary linear layers, so
+`weight_dtype: mxfp4` under `backend: torchao` is rejected at schema
+validation. For Mixture-of-Experts models, the MXFP4 LoRA path lives behind
+`quantize_moe_experts: true` with `lora_target_parameters` matching the fused
+3D expert tensors (`gate_up_proj` / `down_proj`). See
+[Expert Quantization](expert_quantization.qmd) for that flow.
+
+## Mixed-quant models
+
+`backend: torchao` is a single-knob shorthand that installs *one*
+`TorchAoConfig` covering every linear layer in the model. It does *not*
+compose with other quantization mechanisms — combining them would produce
+silent overrides or fights over the same tensors. The validator and loader
+reject the conflicts explicitly:
+
+| Combination                                                       | Outcome |
+|-------------------------------------------------------------------|---------|
+| `backend: torchao` + `quantize_moe_experts: true`                 | rejected at validation |
+| `backend: torchao` + `gptq: true`                                 | rejected at validation |
+| `backend: torchao` + `qat` / `ptq` / `fp8` training               | rejected at validation |
+| `backend: torchao` + contradicting `load_in_4bit` / `load_in_8bit`| rejected at validation |
+| `backend: torchao` + checkpoint with embedded quant               | rejected at load time |
+
+Modern quantized checkpoints encode the mix via a per-module **exclusion
+list** in their own `quantization_config`. For example,
+[`amd/Kimi-K2.6-MXFP4`](https://huggingface.co/amd/Kimi-K2.6-MXFP4) ships
+with `quant_method: quark`, MXFP4 weights, and ~305 excluded modules
+(every attention projection, `lm_head`, the vision tower, the
+mm_projector). Loading that checkpoint just lets transformers honor the
+checkpoint's own scheme — attention layers stay in their native dtype,
+only the listed modules get quantized.
+
+If you want **experts in MXFP4 + attention in bf16**, drop
+`model_quantization_config` entirely and pick one of:
+
+- Load a checkpoint that already carries the right `quantization_config`
+  (gpt-oss MXFP4, AMD Quark MXFP4, AWQ/GPTQ, …). Axolotl forwards the
+  checkpoint's config to transformers unchanged, exclusion list and all.
+- For a bf16 MoE checkpoint where you want MXFP4 experts at load time,
+  set `quantize_moe_experts: true`. Attention stays in its checkpoint
+  dtype; the expert tensors get quantized via the path landed in #3663.
+
+Attention-only LoRA on a MoE model with quantized experts is the natural
+training-time recipe; see [Expert Quantization](expert_quantization.qmd).
+
+## Constraints
+
+- **DoRA** works with torchao `int4` / `int8` / `fp8` / `nvfp4`, but **not**
+  `nf4`: PEFT's `dora_init` calls `weight.dequantize()`, and
+  `NF4Tensor.dequantize` is a 2-arg staticmethod, so init raises a
+  `TypeError`. Other PEFT extras follow standard LoRA rules.
+- **Merging adapters** with `axolotl merge-lora` requires
+  `merge_method: legacy`. The memory-efficient merger simulates bnb's NF4
+  quantization and does not yet understand torchao tensor subclasses.
+- **PEFT's `TorchaoLoraLinear`** only supports INT8. Axolotl patches
+  `dispatch_torchao` so INT4 / NF4 weights fall back to standard `Linear` LoRA
+  layers (the kernels dequantize the base weight on access).
+- `load_in_4bit` and `load_in_8bit` are bnb-only. They cannot be combined with
+  `backend: torchao` — the validator rejects the config. (The structured `bnb`
+  form mirrors itself into these flags for the loader; don't set them by hand.)
+
+## Example config
+
+See [`examples/llama-3/qlora-torchao.yaml`](https://github.com/axolotl-ai-cloud/axolotl/blob/main/examples/llama-3/qlora-torchao.yaml).
+
+## FSDP2
+
+torchao tensor subclasses are first-class DTensor citizens, so the bnb-specific
+FSDP2 patches (sharded-init shims, `Linear8bitLt` save patch) are skipped
+automatically when the torchao backend is in use.
+
+```yaml
+adapter: lora
+model_quantization_config:
+  backend: torchao
+  weight_dtype: nf4
+
+fsdp_version: 2
+fsdp_config:
+  fsdp_offload_params: false
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+```

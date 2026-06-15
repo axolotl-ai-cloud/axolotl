@@ -1,12 +1,136 @@
 """Pydantic models for model input / output, etc. configuration"""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+class BnbBaseQuantConfig(BaseModel):
+    """bitsandbytes base-weight quantization for LoRA training.
+
+    Replaces the older ``adapter: qlora`` + ``load_in_4bit: true`` boilerplate.
+    ``nf4`` is 4-bit QLoRA (mirrored into ``load_in_4bit`` for the loader);
+    ``int8`` is 8-bit LoRA (mirrored into ``load_in_8bit``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["bnb"]
+    weight_dtype: Literal["nf4", "int8"] = Field(
+        json_schema_extra={
+            "description": "bnb base-weight dtype. nf4 → QLoRA 4-bit; int8 → 8-bit LoRA."
+        }
+    )
+
+
+class TorchAoBaseQuantConfig(BaseModel):
+    """torchao base-weight quantization for LoRA training.
+
+    Compile- and FSDP2-friendly alternative to bitsandbytes. ``int4`` /
+    ``nf4`` / ``nvfp4`` are 4-bit QLoRA-style base quants; ``int8`` / ``fp8``
+    are weight-only LoRA. MXFP4 has no weight-only torchao config for
+    arbitrary linears — for MoE experts use ``quantize_moe_experts: true``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["torchao"]
+    weight_dtype: Literal["int4", "nf4", "nvfp4", "int8", "fp8"] = Field(
+        json_schema_extra={
+            "description": (
+                "torchao base-weight dtype. int4/nf4/nvfp4 → QLoRA; int8/fp8 "
+                "→ weight-only LoRA."
+            )
+        }
+    )
+    group_size: int | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Quant group size. Defaults: int4/int8 → 128, nf4 → 64, "
+                "nvfp4 → 16. Ignored for fp8."
+            )
+        },
+    )
+
+
+class Mxfp4BaseQuantConfig(BaseModel):
+    """Structured form of ``model_quantization_config: Mxfp4Config``.
+
+    Pass-through ``config_kwargs`` go straight to ``transformers.Mxfp4Config``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["mxfp4"]
+    config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={"description": "Forwarded to transformers.Mxfp4Config."},
+    )
+
+
+class FineGrainedFp8BaseQuantConfig(BaseModel):
+    """Structured form of ``model_quantization_config: FineGrainedFP8Config``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["fp8"]
+    config_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Forwarded to transformers.FineGrainedFP8Config."
+        },
+    )
+
+
+# Discriminated on `backend` so exactly-one-backend and per-backend dtypes are
+# structurally guaranteed, with precise pydantic errors for invalid combos.
+ModelQuantizationConfig = Annotated[
+    BnbBaseQuantConfig
+    | TorchAoBaseQuantConfig
+    | Mxfp4BaseQuantConfig
+    | FineGrainedFp8BaseQuantConfig,
+    Field(discriminator="backend"),
+]
+
+LEGACY_MQC_STRING_TO_BACKEND = {"Mxfp4Config": "mxfp4", "FineGrainedFP8Config": "fp8"}
+
+
+def mqc_as_dict(mqc: Any, backend: str) -> dict | None:
+    """Return model_quantization_config as a dict when it selects the given
+    backend, tolerating both Pydantic-model and model_dump'd-dict forms.
+
+    ``validate_config`` runs ``model_dump(exclude_none=True)`` and wraps the
+    result in a ``DictDefault``, so downstream code sees dicts; tests and
+    library users may pass Pydantic instances directly. Probe both.
+    """
+    if mqc is None or isinstance(mqc, str):
+        return None
+    if isinstance(mqc, dict):
+        return mqc if mqc.get("backend") == backend else None
+    if getattr(mqc, "backend", None) == backend:
+        return mqc.model_dump(exclude_none=True)
+    return None
+
+
+def implies_bnb_4bit(data: dict) -> bool:
+    """Whether raw config data requests a bnb 4-bit base, in any spelling."""
+    bnb = mqc_as_dict(data.get("model_quantization_config"), "bnb") or {}
+    return bool(
+        data.get("load_in_4bit")
+        or data.get("adapter") == "qlora"
+        or bnb.get("weight_dtype") == "nf4"
+    )
+
+
+def implies_bnb_8bit(data: dict) -> bool:
+    """Whether raw config data requests a bnb 8-bit base, in any spelling."""
+    bnb = mqc_as_dict(data.get("model_quantization_config"), "bnb") or {}
+    return bool(data.get("load_in_8bit") or bnb.get("weight_dtype") == "int8")
 
 
 class ModelInputConfig(BaseModel):
@@ -93,15 +217,28 @@ class ModelInputConfig(BaseModel):
         json_schema_extra={"description": "Use custom kernels, e.g. MegaBlocks."},
     )
 
-    model_quantization_config: Literal["Mxfp4Config", "FineGrainedFP8Config"] | None = (
-        Field(
-            default=None,
-            json_schema_extra={"description": "Model loading quantization config"},
-        )
+    model_quantization_config: (
+        Literal["Mxfp4Config", "FineGrainedFP8Config"] | ModelQuantizationConfig | None
+    ) = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Base-model quantization. Structured form discriminated on "
+                "`backend` (`bnb` / `torchao` / `mxfp4` / `fp8`), e.g. "
+                "`{backend: torchao, weight_dtype: int4}`. The legacy string "
+                "form (`Mxfp4Config` / `FineGrainedFP8Config`) is deprecated."
+            )
+        },
     )
     model_quantization_config_kwargs: dict[str, Any] | None = Field(
         default=None,
-        json_schema_extra={"description": "kwargs for model quantization config"},
+        json_schema_extra={
+            "description": (
+                "kwargs forwarded to the model quantization config (only "
+                "with the legacy string form of model_quantization_config; "
+                "the structured form carries kwargs inline)."
+            )
+        },
     )
     use_onebitllms: bool | None = Field(
         default=None,

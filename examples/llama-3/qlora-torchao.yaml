@@ -1,0 +1,57 @@
+base_model: NousResearch/Meta-Llama-3-8B
+model_type: AutoModelForCausalLM
+tokenizer_type: AutoTokenizer
+
+# torchao QLoRA. Compile-friendly alternative to bitsandbytes; works with FSDP2.
+# QLoRA is `adapter: lora` with a 4-bit base quant — there is no separate
+# qlora adapter type.
+adapter: lora
+model_quantization_config:
+  backend: torchao
+  weight_dtype: int4   # one of: int4, nf4, nvfp4 | int8, fp8
+  # group_size: 128    # defaults: int4/int8 → 128, nf4 → 64, nvfp4 → 16
+
+datasets:
+  - path: aaditya/alpaca_subset_1
+    type: alpaca
+dataset_prepared_path:
+val_set_size: 0
+output_dir: ./outputs/qlora-torchao-out
+
+lora_model_dir:
+
+sequence_len: 4096
+sample_packing: true
+
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.05
+lora_target_linear: true
+
+# Required for int4: torchao int4 tensors have no autograd support, so input
+# gradients only flow through the LoRA kernels' explicit dequant fwd/bwd.
+# nf4/nvfp4/int8/fp8 train without these (but still benefit from them).
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 2
+num_epochs: 4
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: false
+
+gradient_checkpointing: true
+logging_steps: 1
+attn_implementation: flash_attention_2
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
+  pad_token: "<|end_of_text|>"

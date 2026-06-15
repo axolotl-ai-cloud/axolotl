@@ -84,12 +84,12 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
 
     # Detect NF4 quantization from config to simulate QLoRA training dynamics.
     # Check both current and original (pre-override) config values since do_cli
-    # forces load_in_4bit=False for the legacy path.
+    # forces load_in_4bit=False for the legacy path. ``adapter: qlora`` is
+    # demoted to ``adapter: lora`` + ``load_in_4bit: True`` upstream, so
+    # the load_in_4bit checks cover the full surface.
     simulate_nf4 = bool(
         getattr(cfg, "load_in_4bit", False)
         or getattr(cfg, "_original_load_in_4bit", False)
-        or getattr(cfg, "adapter", None) == "qlora"
-        or getattr(cfg, "_original_adapter", None) == "qlora"
     )
 
     bnb_config_kwargs = getattr(cfg, "bnb_config_kwargs", None) or {}
@@ -135,8 +135,10 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
         ValueError: If target directory for LoRA merged model does not exist.
     """
 
-    # Pre-load config to detect original quantization settings before overrides
-    raw_cfg = load_cfg(config, **kwargs)
+    # Pre-load config to detect original quantization settings before
+    # overrides. Force merge_lora off so the normalizer mirrors the training
+    # quant into load_in_4bit instead of taking the merge path.
+    raw_cfg = load_cfg(config, **{**kwargs, "merge_lora": False})
     original_load_in_4bit = getattr(raw_cfg, "load_in_4bit", False)
     original_adapter = getattr(raw_cfg, "adapter", None)
     original_quantize_moe_experts = getattr(raw_cfg, "quantize_moe_experts", False)

@@ -99,6 +99,17 @@ def _(W, absmax, code2, absmax2, offset, blocksize, blocksize2, shape, dtype):
     return out
 
 
+def is_quant_tensor_subclass(W: torch.Tensor) -> bool:
+    """True for torchao quant tensor subclasses (NF4Tensor,
+    AffineQuantizedTensor, etc.) — anything that is not plain
+    ``torch.Tensor`` or ``torch.nn.Parameter``. ``type(W) is not
+    torch.Tensor`` alone is unsafe: ``Parameter`` is a *subclass* of
+    Tensor, not the same type, so the bare check misclassifies every
+    unquantized PEFT base weight.
+    """
+    return type(W) is not torch.Tensor and type(W) is not torch.nn.Parameter
+
+
 def dequantize_fp8(
     W: torch.Tensor,
     scale_inv: torch.Tensor,
@@ -178,3 +189,43 @@ def dequantize(
         quant_state.shape,
         quant_state.dtype,
     )
+
+
+def dequantize_weight(
+    W: torch.Tensor,
+    quant_state: QuantState | list | None = None,
+    transpose: bool = False,
+) -> torch.Tensor:
+    """Unified dequantization for both torchao and bnb quantized weights.
+
+    For torchao tensor subclasses (AffineQuantizedTensor, NF4Tensor), dequantizes
+    using the appropriate instance method. For bnb Params4bit, delegates to the
+    optimized CUDA kernel in ``dequantize``.
+
+    Args:
+        W: Quantized weight tensor ``[out_features, in_features]``.
+        quant_state: bnb ``QuantState`` (None for torchao / unquantized).
+        transpose: If True, return ``[in_features, out_features]``.
+
+    Returns:
+        Dequantized float tensor, optionally transposed.
+    """
+    # torchao path: tensor subclass with embedded quantization state
+    if quant_state is None and is_quant_tensor_subclass(W):
+        result = None
+        # NF4Tensor (check first — NF4Tensor.dequantize is a static method)
+        if hasattr(W, "get_original_weight"):
+            result = W.get_original_weight()
+        else:
+            # AffineQuantizedTensor (INT4, etc.)
+            try:
+                result = W.dequantize()
+            except (TypeError, RuntimeError):
+                pass
+        if result is not None:
+            return result.t() if transpose else result
+
+    # bnb path: transpose input before the CUDA kernel (existing convention)
+    if transpose:
+        return dequantize(W.t(), quant_state)
+    return dequantize(W, quant_state)

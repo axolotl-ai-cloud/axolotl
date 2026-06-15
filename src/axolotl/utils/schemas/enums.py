@@ -12,17 +12,30 @@ class TorchAOQuantDType(Enum):
     nvfp4 = "nvfp4"
     mxfp4 = "mxfp4"
 
-    def from_string(str):
-        if str == "int4":
+    @staticmethod
+    def from_string(value):
+        if isinstance(value, TorchAOQuantDType):
+            return value
+        if value == "int4":
             return TorchAOQuantDType.int4
-        if str == "int8":
+        if value == "int8":
             return TorchAOQuantDType.int8
-        if str in ["float8_e4m3fn", "fp8", "float8"]:
+        if value in ["float8_e4m3fn", "fp8", "float8"]:
             return TorchAOQuantDType.float8_e4m3fn
-        if str == "nvfp4":
+        if value == "nvfp4":
             return TorchAOQuantDType.nvfp4
-        if str == "mxfp4":
+        if value == "mxfp4":
             return TorchAOQuantDType.mxfp4
+        hint = ""
+        if value == "nf4":
+            hint = (
+                " nf4 is only supported as a base-model quant via "
+                "model_quantization_config: {backend: torchao, weight_dtype: nf4}."
+            )
+        raise ValueError(
+            f"Invalid torchao dtype: '{value}'. Must be one of: "
+            f"{[e.name for e in TorchAOQuantDType] + ['fp8', 'float8']}.{hint}"
+        )
 
 
 class RLType(str, Enum):
