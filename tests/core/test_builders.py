@@ -1,9 +1,14 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
+from unittest.mock import MagicMock
+
 import pytest
+import torch._inductor.config as _inductor_cfg
 
 from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+from axolotl.core.builders.base import TrainerBuilderBase
+from axolotl.utils.schemas.enums import INDUCTOR_COMPILE_OPTIONS_ALLOWLIST
 
 
 class TestHFCausalTrainerBuilder:
@@ -105,3 +110,85 @@ class TestTrainerClsPlugin:
         except Exception:
             # Another error happens, so we passed trainer_cls to builder
             pass
+
+
+@pytest.fixture(name="inductor_config_snapshot")
+def fixture_inductor_config_snapshot():
+    keys = sorted(INDUCTOR_COMPILE_OPTIONS_ALLOWLIST)
+    saved = {k: getattr(_inductor_cfg, k) for k in keys}
+    try:
+        yield saved
+    finally:
+        for k, v in saved.items():
+            setattr(_inductor_cfg, k, v)
+
+
+class TestApplyTorchCompileOptions:
+    # Runtime apply path; schema-layer validation is tested in TestTorchCompileValidation.
+
+    def test_allowlisted_flag_is_applied(self, inductor_config_snapshot):
+        assert _inductor_cfg.coordinate_descent_tuning is False
+        TrainerBuilderBase._apply_torch_compile_options(
+            {"coordinate_descent_tuning": True}
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+
+    def test_all_allowlisted_flags_are_attributes_on_inductor_config(
+        self, inductor_config_snapshot
+    ):
+        for key in INDUCTOR_COMPILE_OPTIONS_ALLOWLIST:
+            assert hasattr(_inductor_cfg, key), (
+                f"torch._inductor.config has no attribute {key!r}; "
+                f"INDUCTOR_COMPILE_OPTIONS_ALLOWLIST needs updating."
+            )
+
+    def test_dotted_flag_is_applied(self, inductor_config_snapshot):
+        # ConfigModule supports dotted setattr natively (no path-walk needed).
+        assert _inductor_cfg.triton.cudagraphs is False
+        TrainerBuilderBase._apply_torch_compile_options({"triton.cudagraphs": True})
+        assert _inductor_cfg.triton.cudagraphs is True
+
+    def test_multiple_flags_are_applied(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options(
+            {
+                "coordinate_descent_tuning": True,
+                "shape_padding": False,
+                "epilogue_fusion": False,
+            }
+        )
+        assert _inductor_cfg.coordinate_descent_tuning is True
+        assert _inductor_cfg.shape_padding is False
+        assert _inductor_cfg.epilogue_fusion is False
+
+    def test_empty_dict_does_not_mutate_state(self, inductor_config_snapshot):
+        TrainerBuilderBase._apply_torch_compile_options({})
+        for k, v in inductor_config_snapshot.items():
+            assert getattr(_inductor_cfg, k) == v
+
+    def test_configure_torch_compile_invokes_apply_when_options_set(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = {"coordinate_descent_tuning": True}
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_called_once_with(
+            {"coordinate_descent_tuning": True}
+        )
+
+    def test_configure_torch_compile_skips_apply_when_options_unset(self):
+        builder = MagicMock(spec=TrainerBuilderBase)
+        builder.cfg = MagicMock()
+        builder.cfg.torch_compile = True
+        builder.cfg.torch_compile_backend = None
+        builder.cfg.torch_compile_mode = None
+        builder.cfg.torch_compile_options = None
+        training_args_kwargs: dict = {}
+
+        TrainerBuilderBase._configure_torch_compile(builder, training_args_kwargs)
+
+        builder._apply_torch_compile_options.assert_not_called()

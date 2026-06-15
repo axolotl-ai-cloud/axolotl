@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
@@ -31,6 +32,20 @@ from tests.hf_offline_utils import (
 )
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
+
+
+@contextmanager
+def capture_axolotl_warnings(caplog):
+    """Re-enable propagation on the `axolotl` logger so caplog captures records."""
+    ax_logger = logging.getLogger("axolotl")
+    old_propagate = ax_logger.propagate
+    ax_logger.propagate = True
+    try:
+        with caplog.at_level(logging.WARNING, logger="axolotl"):
+            yield
+    finally:
+        ax_logger.propagate = old_propagate
+
 
 # Shim for deepseek v3
 if not hasattr(_import_utils, "is_torch_fx_available"):
