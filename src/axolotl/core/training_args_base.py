@@ -3,7 +3,7 @@ Base Axolotl Training Mixins shared across various trainer configs
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
 
 from PIL.Image import Resampling
 
@@ -235,7 +235,9 @@ class AxolotlTrainingMixins:
         },
     )
 
-    activation_offloading: bool | str | None = field(
+    # "hidden_states" never reaches the trainer (it's handled via the checkpoint
+    # monkeypatch in the model loader), so the trainer only sees these values.
+    activation_offloading: Literal["legacy", "disk"] | bool | None = field(
         default=None,
         metadata={
             "help": "Activation offloading mode: True (stream-overlapped), "

@@ -247,6 +247,63 @@ class TestActivationOffloading:
         finally:
             unpatch_hidden_states_offload()
 
+    def test_hidden_states_offload_numerical_parity(self):
+        """The offloaded checkpoint only round-trips the layer input through CPU,
+        so loss and grads must match plain reentrant checkpointing. Same model
+        instance for both runs => identical weights; the only difference is the
+        d2h/h2d of the per-layer input."""
+        import torch
+        import torch.utils.checkpoint as ckpt
+        from transformers import AutoModelForCausalLM
+
+        from axolotl.monkeypatch.activation_offload_checkpoint import (
+            HiddenStatesOffloadCheckpoint,
+            patch_hidden_states_offload,
+            unpatch_hidden_states_offload,
+        )
+
+        if not torch.cuda.is_available():
+            pytest.skip("hidden_states offload requires CUDA")
+
+        torch.manual_seed(0)
+        model = AutoModelForCausalLM.from_pretrained(
+            "HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16
+        ).to("cuda")
+        model.train()
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": True}
+        )
+
+        torch.manual_seed(1)
+        input_ids = torch.randint(0, 1000, (1, 512), device="cuda")
+        batch = {"input_ids": input_ids, "labels": input_ids.clone()}
+
+        def run():
+            model.zero_grad(set_to_none=True)
+            loss = model(**batch).loss
+            loss.backward()
+            grad = model.model.layers[0].mlp.down_proj.weight.grad
+            return loss.detach().clone(), grad.detach().clone()
+
+        assert ckpt.CheckpointFunction is not HiddenStatesOffloadCheckpoint
+        loss_ref, grad_ref = run()
+
+        patch_hidden_states_offload()
+        try:
+            assert ckpt.CheckpointFunction is HiddenStatesOffloadCheckpoint
+            loss_off, grad_off = run()
+        finally:
+            unpatch_hidden_states_offload()
+
+        # Forward output is identical; backward recompute introduces only bf16
+        # float noise, so grads match within a loose tolerance.
+        assert torch.allclose(loss_ref, loss_off, rtol=0, atol=1e-3), (
+            f"loss diverged: ref={loss_ref.item()} offload={loss_off.item()}"
+        )
+        assert torch.allclose(grad_ref, grad_off, rtol=1e-2, atol=1e-2), (
+            f"grad diverged: max|d|={(grad_ref - grad_off).abs().max().item()}"
+        )
+
     def test_no_vram_leak_regression(self, temp_dir, monkeypatch):
         """#3638 regression — fail on linear VRAM growth across training steps.
 

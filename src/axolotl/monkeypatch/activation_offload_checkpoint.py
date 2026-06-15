@@ -103,7 +103,12 @@ class _StreamOffloadManager:
         )  # next input needed (reverse order) — prefetch to overlap recompute
         if nxt >= 0 and nxt in self.cpu and nxt not in self.prefetched:
             self.prefetched[nxt] = self._bring_back(nxt)
-        torch.cuda.current_stream().wait_event(ev)
+        s0 = torch.cuda.current_stream()
+        s0.wait_event(ev)
+        # gpu_t was allocated on the side stream; tell the allocator it's now used
+        # on the compute stream so its storage isn't reused before the recompute
+        # consumes it (use-after-free guard, as in TRL's offloader).
+        gpu_t.record_stream(s0)
         _, _, requires_grad = self.cpu[tid]
         out = gpu_t.detach().requires_grad_(requires_grad)
         del self.cpu[tid]
