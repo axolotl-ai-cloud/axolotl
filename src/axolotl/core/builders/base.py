@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -45,9 +44,10 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo
@@ -122,8 +122,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
+        gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
+        if gc_collect_steps:
+            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -180,6 +181,20 @@ class TrainerBuilderBase(abc.ABC):
         telemetry_manager = TelemetryManager.get_instance()
         if telemetry_manager.enabled:
             callbacks.append(TelemetryCallback())
+
+            # Report the fused RMSNorm+RoPE autotune selection + GPU identity so
+            # per-hardware tuning can be aggregated (mirrors scattermoe-lora).
+            if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
+                from axolotl.kernels.autotune_telemetry import (
+                    FusedRopeAutotuneReportCallback,
+                )
+
+                callbacks.append(FusedRopeAutotuneReportCallback())
 
         return callbacks
 

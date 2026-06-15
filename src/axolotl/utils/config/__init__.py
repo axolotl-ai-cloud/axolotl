@@ -269,11 +269,12 @@ def normalize_config(cfg):
     ):
         cfg.gradient_checkpointing_kwargs = {"use_reentrant": True}
 
-    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms cause
-    # "marked ready twice" errors with reentrant checkpointing) and
-    # ddp_find_unused_parameters=True (per_layer_projection LoRA params may not
-    # receive gradients on every step).
-    if cfg.model_config_type == "gemma4":
+    # Gemma4 requires use_reentrant=False for DDP (shared per-layer norms /
+    # cross-layer shared KV cause "marked ready twice" errors with reentrant
+    # checkpointing) and ddp_find_unused_parameters=True (per_layer_projection
+    # LoRA / frozen mm params may not receive gradients on every step). The
+    # unified variant shares the same constraints.
+    if cfg.model_config_type in ("gemma4", "gemma4_unified"):
         if cfg.gradient_checkpointing:
             if cfg.gradient_checkpointing_kwargs is None:
                 cfg.gradient_checkpointing_kwargs = {}

@@ -196,7 +196,14 @@ class ADOPT(Optimizer):
             closure (Callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
-        self._cuda_graph_capture_health_check()
+        # torch 2.11 renamed _cuda_graph_capture_health_check ->
+        # _accelerator_graph_capture_health_check (the 2.11-only name); 2.12
+        # re-added the old name as an alias. Prefer the new name, fall back.
+        health_check = getattr(
+            self, "_accelerator_graph_capture_health_check", None
+        ) or getattr(self, "_cuda_graph_capture_health_check", None)
+        if health_check is not None:
+            health_check()
 
         loss = None
         if closure is not None:
@@ -282,7 +289,7 @@ def _single_tensor_adopt(
         step_t = state_steps[i]
 
         # If compiling, the compiler will handle cudagraph checks, see note [torch.compile x capturable]
-        if not torch._utils.is_compiling() and capturable:
+        if not torch.compiler.is_compiling() and capturable:
             capturable_supported_devices = _get_capturable_supported_devices()
             assert (
                 param.device.type == step_t.device.type
@@ -358,7 +365,7 @@ def _multi_tensor_adopt(
         )
 
     # If compiling, the compiler will handle cudagraph checks, see note [torch.compile x capturable]
-    if not torch._utils.is_compiling() and capturable:
+    if not torch.compiler.is_compiling() and capturable:
         capturable_supported_devices = _get_capturable_supported_devices(
             supports_xla=False
         )
@@ -415,7 +422,7 @@ def _multi_tensor_adopt(
             # If steps are on CPU, foreach will fall back to the slow path, which is a for-loop calling t.add(1) over
             # and over. 1 will then be wrapped into a Tensor over and over again, which is slower than if we just
             # wrapped it once now. The alpha is required to assure we go to the right overload.
-            if not torch._utils.is_compiling() and device_state_steps[0].is_cpu:
+            if not torch.compiler.is_compiling() and device_state_steps[0].is_cpu:
                 torch._foreach_add_(
                     device_state_steps, torch.tensor(1.0, device="cpu"), alpha=1.0
                 )
@@ -448,7 +455,7 @@ def _multi_tensor_adopt(
         # If steps are on CPU, foreach will fall back to the slow path, which is a for-loop calling t.add(1) over
         # and over. 1 will then be wrapped into a Tensor over and over again, which is slower than if we just
         # wrapped it once now. The alpha is required to assure we go to the right overload.
-        if not torch._utils.is_compiling() and device_state_steps[0].is_cpu:
+        if not torch.compiler.is_compiling() and device_state_steps[0].is_cpu:
             torch._foreach_add_(
                 device_state_steps, torch.tensor(1.0, device="cpu"), alpha=1.0
             )
@@ -501,7 +508,7 @@ def adopt(
 
     # this check is slow during compilation, so we skip it
     # if it's strictly needed we can add this check back in dynamo
-    if not torch._utils.is_compiling() and not all(
+    if not torch.compiler.is_compiling() and not all(
         isinstance(t, torch.Tensor) for t in state_steps
     ):
         raise RuntimeError(

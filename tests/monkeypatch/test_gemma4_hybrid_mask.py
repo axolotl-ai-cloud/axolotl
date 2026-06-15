@@ -341,3 +341,40 @@ def test_patched_create_causal_mask_returns_4d_for_real_config(
 
     # Caller's config must be untouched — other code paths still read it.
     assert cfg._attn_implementation == "flash_attention_2"
+
+
+@pytest.fixture
+def restore_gemma4_hybrid_mask_both():
+    """Snapshot ``create_causal_mask`` in BOTH the gemma4 and gemma4_unified
+    namespaces (``patch_gemma4_hybrid_mask`` wraps each independently) and reset
+    the module flag so the patch re-installs cleanly."""
+    modeling_unified = pytest.importorskip(
+        "transformers.models.gemma4_unified.modeling_gemma4_unified",
+        reason="unified namespace coverage requires gemma4_unified",
+    )
+    from transformers.models.gemma4 import modeling_gemma4
+
+    from axolotl.monkeypatch import gemma4_hybrid_mask
+
+    saved_gemma4 = modeling_gemma4.create_causal_mask
+    saved_unified = modeling_unified.create_causal_mask
+    gemma4_hybrid_mask._PATCH_APPLIED = False
+    try:
+        yield modeling_unified
+    finally:
+        modeling_gemma4.create_causal_mask = saved_gemma4
+        modeling_unified.create_causal_mask = saved_unified
+        gemma4_hybrid_mask._PATCH_APPLIED = False
+
+
+def test_patch_covers_unified_namespace(restore_gemma4_hybrid_mask_both):
+    """The unified backbone redefines ``create_causal_mask`` in its own module,
+    so the patch must wrap it too — not just ``modeling_gemma4``."""
+    modeling_unified = restore_gemma4_hybrid_mask_both
+    from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+
+    original = modeling_unified.create_causal_mask
+    assert patch_gemma4_hybrid_mask() is True
+
+    assert modeling_unified.create_causal_mask is not original
+    assert modeling_unified.create_causal_mask._axolotl_original is original
