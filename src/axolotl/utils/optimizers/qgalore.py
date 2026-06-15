@@ -1,4 +1,14 @@
-"""Helpers for the Q-GaLore optimizer integration."""
+"""Helpers for the Q-GaLore optimizer integration.
+
+Q-GaLore (arxiv 2407.08296) projects gradients into a low-rank subspace using a
+periodically-refreshed projection matrix P. The upstream wheel
+(``q-galore-torch``) exposes ``QGaLoreAdamW8bit``; it discovers which parameters
+to project by reading a ``rank`` key on each ``param_group``. This module
+builds those param-groups from an Axolotl config.
+
+The companion INT8-weight-wrapping recipe from the paper is not yet wired up
+(see ``check_qgalore`` in :mod:`axolotl.utils.schemas.validation`).
+"""
 
 from __future__ import annotations
 
@@ -55,19 +65,31 @@ def build_qgalore_param_groups(
     gamma_proj: int,
     queue_size: int,
 ) -> list[dict]:
-    """Two param-groups: 2D weights matching ``target_modules`` get the Q-GaLore
-    projection keys; everything else (norms, biases, embeddings) is plain AdamW."""
+    """Split ``model``'s trainable parameters into two groups for Q-GaLore.
+
+    The first group carries the Q-GaLore projection settings (``rank``,
+    ``update_proj_gap`` etc.). The second is a plain AdamW group for everything
+    that wasn't matched by ``target_modules`` (norms, biases, embeddings, …).
+
+    ``target_modules`` is a list of substring patterns matched against
+    parameter names — identical semantics to ``optim_target_modules`` for the
+    upstream HuggingFace GaLore integration.
+    """
     galore, plain = [], []
     for name, p in model.named_parameters():
         if not p.requires_grad:
             continue
+        # Only 2D weight matrices benefit from the low-rank projection; 1D
+        # tensors (norms, biases) go to the plain AdamW group.
         if p.dim() == 2 and any(t in name for t in target_modules):
             galore.append(p)
         else:
             plain.append(p)
     if not galore:
         raise ValueError(
-            f"Q-GaLore: no parameters matched optim_target_modules={target_modules!r}"
+            "Q-GaLore: no parameters matched optim_target_modules="
+            f"{target_modules!r}. Check the pattern list against the model's "
+            "parameter names."
         )
     LOG.info("Q-GaLore param groups: %d projected, %d plain", len(galore), len(plain))
     return [
