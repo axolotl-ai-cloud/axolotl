@@ -120,6 +120,8 @@ class GRPOStrategy:
 
         if trl.loss_type is not None:
             grpo_args_kwargs["loss_type"] = trl.loss_type
+        if trl.advantage_estimator is not None:
+            grpo_args_kwargs["advantage_estimator"] = trl.advantage_estimator
         if trl.mask_truncated_completions is not None:
             grpo_args_kwargs["mask_truncated_completions"] = (
                 trl.mask_truncated_completions

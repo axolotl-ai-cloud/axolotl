@@ -21,11 +21,13 @@ from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from typing import Any
 
-from trl.scripts.vllm_serve import (
-    ScriptArguments,
-    chunk_list,
-    extract_logprobs,
-)
+from trl.scripts.vllm_serve import ScriptArguments, chunk_list
+
+try:
+    from trl.scripts.vllm_serve import extract_logprobs  # trl < 1.1
+except ImportError:
+    from trl.generation.vllm_generation import extract_logprobs  # trl >= 1.1
+
 
 try:
     from trl.scripts.vllm_serve import get_open_port

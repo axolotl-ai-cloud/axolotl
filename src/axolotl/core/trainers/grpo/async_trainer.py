@@ -741,6 +741,47 @@ class GRPODataProducer(BaseDataProducer):
         return RolloutDataset(output)
 
 
+def compute_advantages_with_estimator(
+    estimator: str,
+    rewards: torch.Tensor,
+    num_generations: int,
+    eps: float = 1e-4,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pluggable advantage baseline over per-group rewards.
+
+    Operates on the per-sample scalar ``rewards`` (already reward-weighted /
+    aggregated) and overrides the default group-normalized advantage. Returns
+    ``(advantages, is_std_zero)``, both flattened to match ``rewards``.
+
+    ``rloo`` uses a leave-one-out baseline (reward_j - mean(rewards_{-j}));
+    ``reinforce_plus_plus`` uses group mean/std normalization without
+    importance-sampling correction. RLOO with a single generation has no
+    leave-one-out baseline, so it degrades to mean-centering.
+    """
+    grouped = rewards.view(-1, num_generations)
+    std = (
+        grouped.std(dim=1, keepdim=True)
+        if num_generations > 1
+        else torch.zeros_like(grouped)
+    )
+    is_std_zero = torch.isclose(
+        std.expand(-1, num_generations).reshape(-1),
+        torch.zeros_like(rewards),
+    )
+
+    if estimator == "rloo" and num_generations > 1:
+        group_sum = grouped.sum(dim=1, keepdim=True)
+        baseline = (group_sum - grouped) / (num_generations - 1)
+        advantages = (grouped - baseline).reshape(-1)
+    elif estimator == "reinforce_plus_plus":
+        mean = grouped.mean(dim=1, keepdim=True)
+        advantages = ((grouped - mean) / (std + eps)).reshape(-1)
+    else:
+        mean = grouped.mean(dim=1, keepdim=True)
+        advantages = (grouped - mean).reshape(-1)
+    return advantages, is_std_zero
+
+
 # ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
@@ -823,6 +864,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             ),
             ("vllm_importance_sampling_cap", "vllm_importance_sampling_cap", 3.0),
             ("off_policy_mask_threshold", "off_policy_mask_threshold", None),
+            ("advantage_estimator", "advantage_estimator", "grpo"),
         ]:
             if not hasattr(self, attr):
                 setattr(self, attr, getattr(self.args, cfg_key, default))
@@ -1948,6 +1990,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
             )
 
+        if self.advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, is_std_zero = compute_advantages_with_estimator(
+                self.advantage_estimator, rewards, num_generations
+            )
+
         # Slice for local process
         # In rank0_only mode, all ranks already have identical data from broadcast,
         # so no slicing needed. Otherwise, each rank takes its portion.
@@ -2341,6 +2388,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
         else:
             raise ValueError(
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
+            )
+
+        if self.advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, is_std_zero = compute_advantages_with_estimator(
+                self.advantage_estimator, rewards, num_generations
             )
 
         if rank0_only:
