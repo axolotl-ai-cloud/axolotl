@@ -100,6 +100,7 @@ class PatchManager:
         # self._apply_flex_attention_patches()
         self._apply_flash_attention_patches()
         self._apply_chunked_cross_entropy_patch()
+        self._apply_memft_patch()
         self._apply_sageattn_patches()
         self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
@@ -292,6 +293,32 @@ class PatchManager:
                 patch_chunked_ce_loss_fn(self.cfg.chunked_cross_entropy_num_chunks)
             else:
                 patch_chunked_ce_loss_fn()
+
+    def _apply_memft_patch(self):
+        if self.cfg.memft:
+            import math
+
+            from axolotl.monkeypatch.loss.memft import patch_memft
+
+            memft = self.cfg.memft
+            critical_loss = memft.critical_loss
+            if critical_loss is None:
+                critical_loss = math.log(2.0)
+            patch_memft(
+                self.cfg.model_config_type,
+                {
+                    "fused": bool(memft.fused),
+                    "variant": memft.variant,
+                    "critical_loss": critical_loss,
+                    "epsilon": memft.epsilon,
+                    "kappa": memft.sw.kappa,
+                    "tau": memft.sw.tau,
+                    "window": memft.sw.window,
+                    "floor": memft.sw.floor,
+                    "chunk_tokens": memft.fused_chunk_tokens,
+                    "ignore_index": -100,
+                },
+            )
 
     def _apply_fsdp_patches(self):
         """Apply patches for FSDP configurations."""
