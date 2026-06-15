@@ -2,7 +2,6 @@
 
 import atexit
 import importlib
-import logging
 import os
 import platform
 import uuid
@@ -14,7 +13,9 @@ import psutil
 import torch
 import yaml
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 POSTHOG_HOST = "https://app.posthog.com"
 POSTHOG_WRITE_KEY = "phc_1kUR0o04oJKKTTeSsIz2Mfm5mpiVsQEf2WOlzljMD7y"

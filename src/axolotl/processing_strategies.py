@@ -1027,6 +1027,18 @@ class Gemma4ProcessingStrategy(ProcessingStrategy):
         return labels
 
 
+class Gemma4UnifiedProcessingStrategy(Gemma4ProcessingStrategy):
+    """Processing Strategy for Gemma 4 Unified (encoder-free image/audio/video).
+
+    The unified checkpoint shares Gemma 4's turn format and the same media
+    placeholder/delimiter token set (image/audio/video, boi/eoi/boa/eoa), so
+    boundary detection and label masking are inherited unchanged — both resolve
+    ids dynamically from the processor/tokenizer rather than hard-coding them.
+    The encoder-free raw pixel/waveform projection is handled entirely by the HF
+    processor, so the strategy itself needs no audio/vision-specific logic.
+    """
+
+
 class Llama3_2VisionProcessingStrategy(ProcessingStrategy):
     """Processing Strategy class for Llama-3.2 Vision (``<|start_header_id|>{role}<|end_header_id|>\\n\\n ... <|eot_id|>``)."""
 
@@ -1456,6 +1468,8 @@ def get_processing_strategy(
         return Gemma3nProcessingStrategy(**processing_kwargs)
     if chat_template_type == "gemma4":
         return Gemma4ProcessingStrategy(**processing_kwargs)
+    if chat_template_type == "gemma4_unified":
+        return Gemma4UnifiedProcessingStrategy(**processing_kwargs)
     if chat_template_type == "llama3_2_vision":
         return Llama3_2VisionProcessingStrategy(**processing_kwargs)
     if chat_template_type == "llama4":

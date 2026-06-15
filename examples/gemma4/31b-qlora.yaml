@@ -3,7 +3,6 @@ base_model: google/gemma-4-31B
 plugins:
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.liger.LigerPlugin
-torch_compile: false
 liger_layer_norm: true
 liger_rope: true
 liger_rms_norm: true
@@ -59,8 +58,8 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA not supported
-attn_implementation: sdpa
+gemma4_hybrid_attn_impl: true
+attn_implementation: flash_attention_2
 
 warmup_ratio: 0.1
 evals_per_epoch: 4
