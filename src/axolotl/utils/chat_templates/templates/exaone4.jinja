@@ -110,7 +110,7 @@
         {%- else %}
             {{- "\n" }}
         {%- endif %}
-    {%- else %}
+    {%- elif not (i == 0 and role == 'system') %}
         {{- role_indicators[role] }}
         {{- msg.content }}
         {{- end_of_turn -}}
