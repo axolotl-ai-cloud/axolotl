@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>monkeypatch.trainer_fsdp_optim – Axolotl</title>
+<title>integrations.expert_parallel.shard – Axolotl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -77,7 +77,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../../site_libs/quarto-html/quarto-syntax-highlighting-dark-0a6b7249c26820e032cb0bd839ff02b1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../../site_libs/bootstrap/bootstrap-fe607db34b4b2387a424a79a0b68ca6e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
+<link href="../../site_libs/bootstrap/bootstrap-38e438262e49c04e0d6134760b85b11b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="dark">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -792,11 +792,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.monkeypatch.trainer_fsdp_optim" id="toc-axolotl.monkeypatch.trainer_fsdp_optim" class="nav-link active" data-scroll-target="#axolotl.monkeypatch.trainer_fsdp_optim">monkeypatch.trainer_fsdp_optim</a>
+  <li><a href="#axolotl.integrations.expert_parallel.shard" id="toc-axolotl.integrations.expert_parallel.shard" class="nav-link active" data-scroll-target="#axolotl.integrations.expert_parallel.shard">integrations.expert_parallel.shard</a>
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
-  <li><a href="#axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp" id="toc-axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp" class="nav-link" data-scroll-target="#axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp">patch_training_loop_for_fsdp</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.shard.shard_expert_weights" id="toc-axolotl.integrations.expert_parallel.shard.shard_expert_weights" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.shard.shard_expert_weights">shard_expert_weights</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -808,10 +808,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 
 
 
-<section id="axolotl.monkeypatch.trainer_fsdp_optim" class="level1">
-<h1>monkeypatch.trainer_fsdp_optim</h1>
-<p><code>monkeypatch.trainer_fsdp_optim</code></p>
-<p>fix for FSDP optimizer save in trainer w 4.47.0</p>
+<section id="axolotl.integrations.expert_parallel.shard" class="level1">
+<h1>integrations.expert_parallel.shard</h1>
+<p><code>integrations.expert_parallel.shard</code></p>
+<p>Generic expert-weight sharding for <code>@use_experts_implementation</code> modules.</p>
+<p>After this runs (in <code>post_model_build</code>, before FSDP wraps), each rank’s Experts
+modules hold only their local slice of the experts dim. The registered
+<code>deep_ep_*</code> forward function then handles dispatch -&gt; local compute -&gt; combine.</p>
 <section id="functions" class="level2">
 <h2 class="anchored" data-anchor-id="functions">Functions</h2>
 <table class="caption-top table">
@@ -823,17 +826,102 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </thead>
 <tbody>
 <tr class="odd">
-<td><a href="#axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp">patch_training_loop_for_fsdp</a></td>
-<td>monkeypatch for fixing the training loop for fsdp with optimizer save</td>
+<td><a href="#axolotl.integrations.expert_parallel.shard.shard_expert_weights">shard_expert_weights</a></td>
+<td>Slice expert weights along dim 0 per the EP rank.</td>
 </tr>
 </tbody>
 </table>
-<section id="axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp" class="level3">
-<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp">patch_training_loop_for_fsdp</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.trainer_fsdp_optim.patch_training_loop_for_fsdp()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>monkeypatch for fixing the training loop for fsdp with optimizer save</p>
+<section id="axolotl.integrations.expert_parallel.shard.shard_expert_weights" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.shard.shard_expert_weights">shard_expert_weights</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.shard.shard_expert_weights(model, ep_group)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Slice expert weights along dim 0 per the EP rank.</p>
+<section id="parameters" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 7%">
+<col style="width: 71%">
+<col style="width: 11%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>model</td>
+<td></td>
+<td>A built (but not yet FSDP-wrapped) HuggingFace model.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>ep_group</td>
+<td></td>
+<td><code>torch.distributed.ProcessGroup</code> for EP, or <code>None</code> for single-rank (no-op).</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns">Returns</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 81%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>int</td>
+<td>Number of Experts modules sharded (0 if EP disabled or none found).</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="raises" class="level4 doc-section doc-section-raises">
+<h4 class="doc-section doc-section-raises anchored" data-anchor-id="raises">Raises</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 8%">
+<col style="width: 12%">
+<col style="width: 79%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>ValueError</td>
+<td>if any Experts module’s <code>num_experts</code> is not divisible by the EP world size.</td>
+</tr>
+</tbody>
+</table>
+<p>DDP composition: the sharded params hold DIFFERENT content per rank, so we
+add their fully-qualified names to <code>model._ddp_params_and_buffers_to_ignore</code>
+to prevent the startup broadcast from copying rank 0’s slice everywhere.
+FSDP composition is handled in <code>ExpertParallelPlugin.fully_shard_experts</code>.</p>
 
 
+</section>
 </section>
 </section>
 </section>
