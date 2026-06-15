@@ -1024,6 +1024,68 @@ def _mslk_available() -> bool:
     return _MSLK_AVAILABLE
 
 
+_SM120F_RECIPE_VERIFIED: bool | None = None
+
+
+def _sm120f_recipe_codegen_verified() -> bool:
+    """Whether the fused recipe e2m1 cvt assembles correctly on sm_120 (cached).
+
+    De-risks opening the recipe-fusion gate on consumer Blackwell (sm_120):
+    CUTLASS #3096 reported ``cvt.rn.satfinite.e2m1x2.f32`` mis-assembling under a
+    plain ``sm_120`` codegen target. This compiles+runs the recipe RTN quant on a
+    single tile and bit-compares the packed FP4 codes against the torchao
+    reference (same per-tensor scale) — a match can only hold if the cvt
+    assembled correctly. RTN-only because that path does no random Hadamard / SR
+    dither, so the cvt ops are the only nontrivial numerics and bit-exact is the
+    tight, achievable bar (the stochastic/hadamard paths use different RNG /
+    factorization and are non-bit-exact even on a correct device).
+
+    Default-safe: returns False on any error. ``AXOLOTL_NVFP4_SKIP_SM120F_PROBE=1``
+    force-disables.
+    """
+    global _SM120F_RECIPE_VERIFIED
+    import os
+
+    if os.environ.get("AXOLOTL_NVFP4_SKIP_SM120F_PROBE") == "1":
+        return False
+    if _SM120F_RECIPE_VERIFIED is not None:
+        return _SM120F_RECIPE_VERIFIED
+
+    verified = False
+    try:
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            NVFP4Tensor,
+            per_tensor_amax_to_scale,
+        )
+
+        # The recipe dispatcher falls back to the MSLK path when the recipe is
+        # inapplicable, so the gate must not open without MSLK present.
+        if torch.cuda.is_available() and _mslk_available():
+            dev = torch.device("cuda")
+            if torch.cuda.get_device_capability(dev)[0] >= 10:
+                # 256x256: K multiple of _BLOCK_SIZE (16) and of the 64 N-tile,
+                # M a full 128-row block — hits the common kernel path, no mask.
+                gen = torch.Generator(device="cuda").manual_seed(0)
+                t = torch.randn(
+                    256, 256, device=dev, dtype=torch.bfloat16, generator=gen
+                )
+                # Pure RTN (no RHT, no SR) isolates the e4m3/e2m1 cvt ops.
+                q, _s, _inv_gs = _mslk_quantize_recipe_op(t, False, False)
+                pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+                ref = NVFP4Tensor.to_nvfp4(
+                    t.contiguous(), block_size=_BLOCK_SIZE, per_tensor_scale=pts
+                )
+                qa = q.view(torch.uint8)
+                qb = ref.qdata.view(torch.uint8)
+                if qa.shape == qb.shape:
+                    verified = bool(torch.equal(qa.cpu(), qb.cpu()))
+    except Exception:  # noqa: BLE001 — any failure must default the gate closed
+        verified = False
+
+    _SM120F_RECIPE_VERIFIED = verified
+    return _SM120F_RECIPE_VERIFIED
+
+
 def _recipe_fusion_available(t: torch.Tensor) -> bool:
     if (
         not t.is_cuda
@@ -1033,7 +1095,9 @@ def _recipe_fusion_available(t: torch.Tensor) -> bool:
     ):
         return False
     cap = torch.cuda.get_device_capability(t.device)
-    return cap[0] == 10
+    return cap[0] == 10 or (
+        tuple(cap) == (12, 0) and _sm120f_recipe_codegen_verified()
+    )
 
 
 def _swizzled_scale_shape(m: int, k: int) -> tuple[int, int]:

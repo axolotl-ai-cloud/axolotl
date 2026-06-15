@@ -1370,3 +1370,117 @@ class TestNVFP4Adapters:
         assert packed and drop
         sd = model.state_dict()
         assert drop <= set(sd)  # every dropped key really exists in the state_dict
+
+
+def _is_sm_120():
+    return (
+        torch.cuda.is_available()
+        and bool(torch.version.cuda)
+        and torch.cuda.get_device_capability() == (12, 0)
+    )
+
+
+class TestNVFP4Sm120Gate:
+    """C2: the recipe-fusion gate opens on sm_120 only if the codegen probe verifies.
+
+    The probe / monkeypatched-capability parts run anywhere (no Blackwell
+    needed); the real bit-exact assertion is guarded behind an sm_120 skip.
+    """
+
+    def _reset_probe_cache(self):
+        import axolotl.utils.nvfp4_training as nvmod
+
+        nvmod._SM120F_RECIPE_VERIFIED = None
+        return nvmod
+
+    def test_probe_returns_bool_and_is_cached(self):
+        nvmod = self._reset_probe_cache()
+
+        first = nvmod._sm120f_recipe_codegen_verified()
+        assert isinstance(first, bool)
+        # Second call must return the cached value without recomputing.
+        assert nvmod._SM120F_RECIPE_VERIFIED is first
+        assert nvmod._sm120f_recipe_codegen_verified() is first
+
+    def test_probe_env_kill_switch(self, monkeypatch):
+        nvmod = self._reset_probe_cache()
+        monkeypatch.setenv("AXOLOTL_NVFP4_SKIP_SM120F_PROBE", "1")
+        assert nvmod._sm120f_recipe_codegen_verified() is False
+        # Kill-switch must not poison the cache for a later (unset) run.
+        assert nvmod._SM120F_RECIPE_VERIFIED is None
+
+    def test_gate_default_safe_on_non_blackwell(self, monkeypatch):
+        """A spoofed sm_90 device must keep the gate closed regardless of probe."""
+        nvmod = self._reset_probe_cache()
+        monkeypatch.setattr(
+            torch.cuda, "get_device_capability", lambda *a, **k: (9, 0)
+        )
+        monkeypatch.setattr(nvmod, "_mslk_available", lambda: True)
+
+        t = torch.empty(16, 16)
+        t_cuda = type(
+            "FakeT", (), {"is_cuda": True, "dim": lambda self: 2, "shape": (16, 16), "device": "cuda:0"}
+        )()
+        # _recipe_fusion_available reads .is_cuda/.dim()/.shape/.device only.
+        assert nvmod._recipe_fusion_available(t_cuda) is False
+        del t
+
+    def test_gate_sm120_requires_probe(self, monkeypatch):
+        """With a spoofed sm_120 cap, the gate tracks the probe result exactly."""
+        nvmod = self._reset_probe_cache()
+        monkeypatch.setattr(
+            torch.cuda, "get_device_capability", lambda *a, **k: (12, 0)
+        )
+        monkeypatch.setattr(nvmod, "_mslk_available", lambda: True)
+        t_cuda = type(
+            "FakeT", (), {"is_cuda": True, "dim": lambda self: 2, "shape": (16, 16), "device": "cuda:0"}
+        )()
+
+        monkeypatch.setattr(nvmod, "_sm120f_recipe_codegen_verified", lambda: False)
+        assert nvmod._recipe_fusion_available(t_cuda) is False
+
+        monkeypatch.setattr(nvmod, "_sm120f_recipe_codegen_verified", lambda: True)
+        assert nvmod._recipe_fusion_available(t_cuda) is True
+
+    @pytest.mark.skipif(not _is_sm_120(), reason="requires sm_120 (consumer Blackwell)")
+    @require_torch_2_8_0
+    def test_probe_verifies_and_gate_opens_on_real_sm120(self):
+        """On real sm_120 the probe must verify and the gate must open."""
+        from axolotl.utils.nvfp4_training import (
+            _abs_amax,
+            _BLOCK_SIZE,
+            _mslk_available,
+            _mslk_quantize_recipe_op,
+            _recipe_fusion_available,
+            _sm120f_recipe_codegen_verified,
+        )
+
+        if not _mslk_available():
+            pytest.skip("MSLK not importable; gate intentionally stays closed")
+
+        self._reset_probe_cache()
+        assert _sm120f_recipe_codegen_verified() is True
+
+        assert _recipe_fusion_available(
+            torch.randn(256, 256, device="cuda", dtype=torch.bfloat16)
+        ) is True
+
+        # Independent bit-exact re-check of the RTN cvt against torchao on the
+        # SAME seeded tile the probe uses. Bit-exactness is the gross-miscompile
+        # bar (a #3096-style mis-assembled cvt corrupts even this tile); it is
+        # deliberately NOT a universal-input claim — adjacent-level scale-rounding
+        # ties between the hw cvt and torchao's reference make a tiny fraction of
+        # bytes differ on other random inputs, which is expected and benign.
+        from torchao.prototype.mx_formats.nvfp4_tensor import (
+            NVFP4Tensor,
+            per_tensor_amax_to_scale,
+        )
+
+        gen = torch.Generator(device="cuda").manual_seed(0)
+        t = torch.randn(256, 256, device="cuda", dtype=torch.bfloat16, generator=gen)
+        q, _s, _g = _mslk_quantize_recipe_op(t, False, False)
+        pts = per_tensor_amax_to_scale(_abs_amax(t).clamp(min=1e-12))
+        ref = NVFP4Tensor.to_nvfp4(
+            t.contiguous(), block_size=_BLOCK_SIZE, per_tensor_scale=pts
+        )
+        assert torch.equal(q.view(torch.uint8).cpu(), ref.qdata.view(torch.uint8).cpu())
