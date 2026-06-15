@@ -794,6 +794,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul>
   <li><a href="#enabling-gradient-checkpointing" id="toc-enabling-gradient-checkpointing" class="nav-link active" data-scroll-target="#enabling-gradient-checkpointing">Enabling Gradient Checkpointing</a></li>
   <li><a href="#enabling-activation-offloading" id="toc-enabling-activation-offloading" class="nav-link" data-scroll-target="#enabling-activation-offloading">Enabling Activation Offloading</a></li>
+  <li><a href="#choosing-a-mode" id="toc-choosing-a-mode" class="nav-link" data-scroll-target="#choosing-a-mode">Choosing a mode</a></li>
   <li><a href="#enabling-layer-offloading" id="toc-enabling-layer-offloading" class="nav-link" data-scroll-target="#enabling-layer-offloading">Enabling Layer Offloading</a></li>
   </ul>
 </nav>
@@ -836,6 +837,52 @@ to overlap the communications and computations when offloading.</p>
 <p>The <code>activation_offloading: legacy</code> naively offloads activations to CPU and without additional optimizations.</p>
 <p>For resource constrained environments with limited CPU memory, <code>activation_offloading: disk</code> offloads
 activations to disk instead of CPU RAM so that much larger context lengths can be trained with minimal memory.</p>
+<p>The <code>activation_offloading: hidden_states</code> mode (ALST-style) is gradient checkpointing that offloads only
+the per-layer input (the checkpoint’s <code>hidden_states</code>) to CPU — one tensor per layer rather than every
+activation — overlapped with compute on a side CUDA stream. It replaces torch’s reentrant checkpoint
+(so <code>gradient_checkpointing_kwargs.use_reentrant</code> is forced to <code>true</code>) and is framework-agnostic
+(works under FSDP2, DTensor-aware for sequence/context parallelism).</p>
+</section>
+<section id="choosing-a-mode" class="level3">
+<h3 class="anchored" data-anchor-id="choosing-a-mode">Choosing a mode</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 22%">
+<col style="width: 40%">
+<col style="width: 37%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Mode</th>
+<th>What moves</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>true</code></td>
+<td>All activations → CPU, stream-overlapped</td>
+<td>General use; LoRA/QLoRA (offloads instead of recomputing)</td>
+</tr>
+<tr class="even">
+<td><code>legacy</code></td>
+<td>All activations → CPU, synchronous</td>
+<td>Lowest resident GPU memory; when the streamed path’s in-flight buffering inflates peak</td>
+</tr>
+<tr class="odd">
+<td><code>disk</code></td>
+<td>Activations → disk</td>
+<td>Severely CPU-RAM-constrained hosts</td>
+</tr>
+<tr class="even">
+<td><code>hidden_states</code></td>
+<td>Per-layer input only → CPU, stream-overlapped</td>
+<td>Long-context <strong>full-parameter</strong> finetuning; reaches contexts where plain gradient checkpointing OOMs</td>
+</tr>
+</tbody>
+</table>
+<p><code>hidden_states</code> is designed for full-parameter training. With LoRA/QLoRA the frozen base can break reentrant
+checkpointing, so prefer <code>activation_offloading: true</code> for adapters.</p>
 </section>
 <section id="enabling-layer-offloading" class="level3">
 <h3 class="anchored" data-anchor-id="enabling-layer-offloading">Enabling Layer Offloading</h3>
