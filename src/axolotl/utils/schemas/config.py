@@ -604,11 +604,18 @@ class AxolotlInputConfig(
             "description": "Additional kwargs to pass to the trainer for gradient checkpointing"
         },
     )
-    activation_offloading: Literal["legacy", "disk"] | bool | None = Field(
-        default=False,
-        json_schema_extra={
-            "description": "Whether to offload activations. Available options are: true, false, 'legacy', 'disk'."
-        },
+    activation_offloading: Literal["legacy", "disk", "hidden_states"] | bool | None = (
+        Field(
+            default=False,
+            json_schema_extra={
+                "description": (
+                    "Whether to offload activations. Options: true/false, 'legacy', "
+                    "'disk' (TRL offloader), or 'hidden_states' (ALST-style: gradient "
+                    "checkpointing that offloads only the per-layer input to CPU, "
+                    "overlapped with compute; best for long-context full finetuning)."
+                )
+            },
+        )
     )
     layer_offloading: bool | None = Field(
         default=False,
