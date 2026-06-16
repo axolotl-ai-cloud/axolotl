@@ -328,6 +328,13 @@ def _load_split(cfg: DictDefault, split: Literal["train", "test"]) -> Dataset:
             else:
                 ds_transform_fn = load_dpo(_type, cfg, dataset_idx=i)
 
+            if ds_transform_fn is None:
+                raise ValueError(
+                    f"Failed to load dataset transform function for type {_type!r} "
+                    f"(rl: {cfg.rl}). See the warning logged above for the underlying "
+                    "error."
+                )
+
             map_kwargs: dict[str, Any] = {}
             if isinstance(ds_transform_fn, tuple):
                 ds_transform_fn, map_kwargs = ds_transform_fn

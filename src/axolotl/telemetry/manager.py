@@ -174,15 +174,19 @@ class TelemetryManager:
 
     def _load_whitelist(self) -> dict:
         """Load HuggingFace Hub organization whitelist"""
-        with open(WHITELIST_PATH, encoding="utf-8") as f:
-            whitelist = yaml.safe_load(f)
+        try:
+            with open(WHITELIST_PATH, encoding="utf-8") as f:
+                whitelist = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            # A missing/unreadable whitelist must never break `import axolotl`.
+            # Empty whitelist => nothing is whitelisted => all orgs get redacted.
+            LOG.warning(f"Could not load telemetry whitelist ({e}); redacting all orgs")
+            return {"organizations": set()}
 
-            # Send org strings to lowercase since model names are case insensitive
-            whitelist["organizations"] = {
-                org.lower() for org in whitelist["organizations"]
-            }
+        # Send org strings to lowercase since model names are case insensitive
+        whitelist["organizations"] = {org.lower() for org in whitelist["organizations"]}
 
-            return whitelist
+        return whitelist
 
     def _is_whitelisted(self, value: str) -> bool:
         """

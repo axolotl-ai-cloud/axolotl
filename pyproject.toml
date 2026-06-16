@@ -173,6 +173,9 @@ Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+axolotl = ["**/*.yaml", "**/*.jinja"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
