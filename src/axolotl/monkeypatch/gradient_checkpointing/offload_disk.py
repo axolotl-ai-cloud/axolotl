@@ -49,13 +49,18 @@ class DiskOffloadManager:
     def __init__(
         self,
         prefetch_size: int = 3,
-        prefetch_to_gpu: bool = True,
+        prefetch_to_gpu: bool = False,
         save_workers: int = 4,
     ):
         """
         Args:
             prefetch_size: Maximum number of tensors to prefetch in the background.
             prefetch_to_gpu: Whether to prefetch tensors directly to GPU memory.
+                Default False: prefetching to GPU does the host->device copy on a
+                background thread (torch.load map_location="cuda"), allocating off
+                the main stream and fragmenting the caching allocator (inflates
+                reserved memory by several GB). With False the background thread
+                loads to CPU and load_tensor moves it to GPU on the main thread.
             save_workers: Maximum number of concurrent save operations.
         """
         self.temp_dir = tempfile.mkdtemp(prefix="disco_")
@@ -435,7 +440,7 @@ class Disco(torch.autograd.Function):
     _manager = None
 
     @staticmethod
-    def get_instance(prefetch_size=1, prefetch_to_gpu=True, save_workers=4):
+    def get_instance(prefetch_size=1, prefetch_to_gpu=False, save_workers=4):
         """Get or create the offload manager"""
         if Disco._manager is None:
             Disco._manager = DiskOffloadManager(
@@ -453,7 +458,7 @@ class Disco(torch.autograd.Function):
         hidden_states,
         *args,
         prefetch_size=1,
-        prefetch_to_gpu=True,
+        prefetch_to_gpu=False,
         save_workers=4,
     ):
         """Forward pass that offloads activations to disk asynchronously"""
