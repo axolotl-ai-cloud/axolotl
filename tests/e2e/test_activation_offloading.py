@@ -81,6 +81,229 @@ class TestActivationOffloading:
         train(cfg=cfg, dataset_meta=dataset_meta)
         check_model_output_exists(temp_dir, cfg)
 
+    @pytest.mark.parametrize(
+        "offload_mode,expect_streams",
+        [(True, True), ("legacy", False), ("disk", True)],
+    )
+    def test_offload_mode_wiring(
+        self, temp_dir, monkeypatch, offload_mode, expect_streams
+    ):
+        """`activation_offloading` must reach the trainer as a live offload
+        context: True => stream-overlapped, 'legacy' => synchronous. Guards the
+        regression where string modes fell through to plain gradient
+        checkpointing (no offload at all)."""
+        from trl.models.activation_offloading import OffloadActivations
+
+        captured = {}
+        original_step = ActivationOffloadingMixin.training_step
+
+        def capture_step(self, *args, **kwargs):
+            captured["ctx"] = self.activation_offload_context
+            return original_step(self, *args, **kwargs)
+
+        monkeypatch.setattr(ActivationOffloadingMixin, "training_step", capture_step)
+
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 1024,
+                "val_set_size": 0.0,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
+                "datasets": [
+                    {"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"},
+                ],
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 1e-5,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": "auto",
+                "gradient_checkpointing": True,
+                "activation_offloading": offload_mode,
+                "adapter": "lora",
+                "lora_r": 8,
+                "lora_alpha": 16,
+                "lora_target_linear": True,
+                "save_first_step": False,
+            }
+        )
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+        train(cfg=cfg, dataset_meta=dataset_meta)
+
+        ctx = captured.get("ctx")
+        assert isinstance(ctx, OffloadActivations), (
+            f"activation_offloading={offload_mode!r} did not produce an offload "
+            f"context (got {type(ctx).__name__}) — string modes likely fell "
+            f"through to plain gradient checkpointing"
+        )
+        assert ctx.use_streams is expect_streams
+
+    @pytest.mark.parametrize(
+        "adapter,expect_recompute_wrap",
+        [("lora", False), (None, True)],
+    )
+    def test_offload_is_adapter_aware(
+        self, temp_dir, monkeypatch, adapter, expect_recompute_wrap
+    ):
+        """activation_offloading is adapter-aware: LoRA offloads *instead of*
+        recomputing (no checkpoint wrap — pure offload is leaner/faster), while
+        full finetune keeps recompute and offloads the checkpoint boundaries
+        (the combo — pure offload is PCIe-bound and OOMs at full-param scale)."""
+        captured = {}
+        original_step = ActivationOffloadingMixin.training_step
+
+        def capture_step(self, *args, **kwargs):
+            captured["wrapped"] = any(
+                "_checkpoint_wrapped_module" in n for n, _ in self.model.named_modules()
+            )
+            return original_step(self, *args, **kwargs)
+
+        monkeypatch.setattr(ActivationOffloadingMixin, "training_step", capture_step)
+
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 1024,
+                "val_set_size": 0.0,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
+                "datasets": [
+                    {"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"},
+                ],
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 1e-5,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": "auto",
+                "gradient_checkpointing": True,
+                "activation_offloading": True,
+                "save_first_step": False,
+            }
+        )
+        if adapter:
+            cfg["adapter"] = adapter
+            cfg["lora_r"] = 8
+            cfg["lora_alpha"] = 16
+            cfg["lora_target_linear"] = True
+
+        cfg = validate_config(cfg)
+        normalize_config(cfg)
+        dataset_meta = load_datasets(cfg=cfg)
+        train(cfg=cfg, dataset_meta=dataset_meta)
+
+        assert captured.get("wrapped") is expect_recompute_wrap
+
+    def test_hidden_states_offload_full_param(self, temp_dir):
+        """activation_offloading: hidden_states (ALST-style) patches the reentrant
+        checkpoint to offload the per-layer input, for full-parameter training."""
+        import torch.utils.checkpoint as ckpt
+
+        from axolotl.monkeypatch.activation_offload_checkpoint import (
+            HiddenStatesOffloadCheckpoint,
+            unpatch_hidden_states_offload,
+        )
+
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 1024,
+                "val_set_size": 0.0,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
+                "datasets": [{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 1e-5,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": "auto",
+                "gradient_checkpointing": True,
+                "activation_offloading": "hidden_states",
+                "save_first_step": False,
+            }
+        )
+        try:
+            cfg = validate_config(cfg)
+            # validator forces reentrant for hidden_states
+            assert cfg.gradient_checkpointing_kwargs["use_reentrant"] is True
+            normalize_config(cfg)
+            dataset_meta = load_datasets(cfg=cfg)
+            train(cfg=cfg, dataset_meta=dataset_meta)
+            assert ckpt.CheckpointFunction is HiddenStatesOffloadCheckpoint
+            check_model_output_exists(temp_dir, cfg)
+        finally:
+            unpatch_hidden_states_offload()
+
+    def test_hidden_states_offload_numerical_parity(self):
+        """The offloaded checkpoint only round-trips the layer input through CPU,
+        so loss and grads must match plain reentrant checkpointing. Same model
+        instance for both runs => identical weights; the only difference is the
+        d2h/h2d of the per-layer input."""
+        import torch
+        import torch.utils.checkpoint as ckpt
+        from transformers import AutoModelForCausalLM
+
+        from axolotl.monkeypatch.activation_offload_checkpoint import (
+            HiddenStatesOffloadCheckpoint,
+            patch_hidden_states_offload,
+            unpatch_hidden_states_offload,
+        )
+
+        if not torch.cuda.is_available():
+            pytest.skip("hidden_states offload requires CUDA")
+
+        torch.manual_seed(0)
+        model = AutoModelForCausalLM.from_pretrained(
+            "HuggingFaceTB/SmolLM2-135M", dtype=torch.bfloat16
+        ).to("cuda")
+        model.train()
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": True}
+        )
+
+        torch.manual_seed(1)
+        input_ids = torch.randint(0, 1000, (1, 512), device="cuda")
+        batch = {"input_ids": input_ids, "labels": input_ids.clone()}
+
+        def run():
+            model.zero_grad(set_to_none=True)
+            loss = model(**batch).loss
+            loss.backward()
+            grad = model.model.layers[0].mlp.down_proj.weight.grad
+            return loss.detach().clone(), grad.detach().clone()
+
+        assert ckpt.CheckpointFunction is not HiddenStatesOffloadCheckpoint
+        loss_ref, grad_ref = run()
+
+        patch_hidden_states_offload()
+        try:
+            assert ckpt.CheckpointFunction is HiddenStatesOffloadCheckpoint
+            loss_off, grad_off = run()
+        finally:
+            unpatch_hidden_states_offload()
+
+        # Forward output is identical; backward recompute introduces only bf16
+        # float noise, so grads match within a loose tolerance.
+        assert torch.allclose(loss_ref, loss_off, rtol=0, atol=1e-3), (
+            f"loss diverged: ref={loss_ref.item()} offload={loss_off.item()}"
+        )
+        assert torch.allclose(grad_ref, grad_off, rtol=1e-2, atol=1e-2), (
+            f"grad diverged: max|d|={(grad_ref - grad_off).abs().max().item()}"
+        )
+
     def test_no_vram_leak_regression(self, temp_dir, monkeypatch):
         """#3638 regression — fail on linear VRAM growth across training steps.
 

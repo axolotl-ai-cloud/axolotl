@@ -19,11 +19,14 @@ quartodoc:
         - datasets
         - convert
         - prompt_tokenizers
+        - prompters
+        - processing_strategies
         - logging_config
         - core.builders.base
         - core.builders.causal
         - core.builders.rl
         - core.training_args
+        - core.training_args_base
         - core.chat.messages
         - core.chat.format.chatml
         - core.chat.format.llama3x
@@ -47,22 +50,40 @@ quartodoc:
         - cli.preprocess
         - cli.quantize
         - cli.vllm_serve
+        - cli.agent_docs
+        - cli.cloud
         - cli.cloud.base
+        - cli.cloud.baseten
         - cli.cloud.modal_
         - cli.utils
         - cli.utils.args
+        - cli.utils.diffusion
         - cli.utils.fetch
         - cli.utils.load
+        - cli.utils.lora_merge
         - cli.utils.sweeps
         - cli.utils.train
     - title: Trainers
       desc: Training implementations
       contents:
         - core.trainers.base
+        - core.trainers.constants
         - core.trainers.trl
         - core.trainers.mamba
+        - core.trainers.dpo.args
         - core.trainers.dpo.trainer
+        - core.trainers.ebft
+        - core.trainers.ebft.args
+        - core.trainers.ebft.kernels
+        - core.trainers.ebft.rewards
+        - core.trainers.ebft.strided
+        - core.trainers.ebft.trainer
+        - core.trainers.grpo
+        - core.trainers.grpo.args
         - core.trainers.grpo.trainer
+        - core.trainers.grpo.async_trainer
+        - core.trainers.grpo.fast_async_trainer
+        - core.trainers.grpo.replay_buffer
         - core.trainers.grpo.sampler
         - core.trainers.utils
     - title: Model Loading
@@ -74,10 +95,16 @@ quartodoc:
         - loaders.adapter
         - loaders.patch_manager
         - loaders.constants
+        - loaders.utils
     - title: Mixins
       desc: Mixin classes for augmenting trainers
       contents:
+        - core.trainers.mixins.activation_checkpointing
+        - core.trainers.mixins.checkpoints
+        - core.trainers.mixins.distributed_parallel
+        - core.trainers.mixins.layer_offloading
         - core.trainers.mixins.optimizer
+        - core.trainers.mixins.packing
         - core.trainers.mixins.rng_state_loader
         - core.trainers.mixins.scheduler
     - title: Context Managers
@@ -95,12 +122,20 @@ quartodoc:
         - prompt_strategies.user_defined
         - prompt_strategies.llama2_chat
         - prompt_strategies.completion
+        - prompt_strategies.context_qa
+        - prompt_strategies.creative_acr
         - prompt_strategies.input_output
+        - prompt_strategies.pretrain
         - prompt_strategies.stepwise_supervised
         - prompt_strategies.metharme
         - prompt_strategies.orcamini
         - prompt_strategies.pygmalion
         - prompt_strategies.messages.chat
+        - prompt_strategies.ebft.ebft_chat_multiturn
+        - prompt_strategies.ebft.ebft_opencode
+        - prompt_strategies.ebft.ebft_reasoning
+        - prompt_strategies.ebft.ebft_strided_chat
+        - prompt_strategies.ebft.ebft_strided_structured
         - prompt_strategies.dpo.chat_template
         - prompt_strategies.dpo.llama3
         - prompt_strategies.dpo.chatml
@@ -111,14 +146,19 @@ quartodoc:
         - prompt_strategies.kto.chatml
         - prompt_strategies.kto.user_defined
         - prompt_strategies.orpo.chat_template
+        - prompt_strategies.bradley_terry.chat_template
         - prompt_strategies.bradley_terry.llama3
     - title: Kernels
       desc: Low-level performance optimizations
       contents:
         - kernels.lora
+        - kernels.dora
         - kernels.geglu
         - kernels.swiglu
         - kernels.quantize
+        - kernels.autotune_telemetry
+        - kernels.gemma4_fused_rope
+        - kernels.rms_norm_gated
         - kernels.utils
     - title: Monkey Patches
       desc: Runtime patches for model optimizations
@@ -132,28 +172,97 @@ quartodoc:
         - monkeypatch.utils
         - monkeypatch.btlm_attn_hijack_flash
         - monkeypatch.stablelm_attn_hijack_flash
-        - monkeypatch.trainer_fsdp_optim
         - monkeypatch.transformers_fa_utils
         - monkeypatch.data.batch_dataset_fetcher
         - monkeypatch.mixtral
         - monkeypatch.gradient_checkpointing.offload_cpu
         - monkeypatch.gradient_checkpointing.offload_disk
+        - monkeypatch.deepspeed_utils
+        - monkeypatch.fsdp2_qlora
+        - monkeypatch.gemma4_hybrid_mask
+        - monkeypatch.gemma4_loss_kwargs
+        - monkeypatch.kernelize_fixes
+        - monkeypatch.moe_quant
+        - monkeypatch.scaled_softmax_attn
+        - monkeypatch.torchao_optim
+        - monkeypatch.trainer_accelerator_args
+        - monkeypatch.accelerate.fsdp2
+        - monkeypatch.accelerate.parallelism_config
+        - monkeypatch.attention.flash_attn_4
+        - monkeypatch.attention.flex_attn
+        - monkeypatch.attention.fp8_attn
+        - monkeypatch.attention.sage_attn
+        - monkeypatch.attention.xformers
+        - monkeypatch.loss.chunked
+        - monkeypatch.loss.eaft
+        - monkeypatch.models.apertus.activation
+        - monkeypatch.models.falcon_h1.modeling
+        - monkeypatch.models.gemma4_unified.fused_attn
+        - monkeypatch.models.granitemoehybrid.modeling
+        - monkeypatch.models.kimi_linear.patch_kimi_linear
+        - monkeypatch.models.llama4.modeling
+        - monkeypatch.models.mamba_utils
+        - monkeypatch.models.mistral3.mistral_common_tokenizer
+        - monkeypatch.models.nemotron_h.modeling
+        - monkeypatch.models.pixtral.modeling_flash_attention_utils
+        - monkeypatch.models.qwen3.fused_attn
+        - monkeypatch.models.qwen3_5.fused_attn
+        - monkeypatch.models.qwen3_5.modeling
+        - monkeypatch.models.qwen3_5_moe.fused_attn
+        - monkeypatch.models.qwen3_moe.fused_attn
+        - monkeypatch.models.qwen3_next.modeling
+        - monkeypatch.models.qwen3_vl.fused_attn
+        - monkeypatch.models.voxtral.modeling
+        - monkeypatch.peft.utils
+        - monkeypatch.ring_attn.adapters.batch
+        - monkeypatch.ring_attn.patch
+        - monkeypatch.tiled_mlp.base
+        - monkeypatch.tiled_mlp.patch
+        - monkeypatch.trainer.lr
+        - monkeypatch.trainer.trl
+        - monkeypatch.trainer.trl_vllm
+        - monkeypatch.trainer.utils
+        - monkeypatch.transformers.trainer_loss_calc
+        - monkeypatch.xformers_
     - title: Utils
       desc: Utility functions
       contents:
         - utils.tokenization
         - utils.chat_templates
+        - utils.chat_templates.base
         - utils.lora
         - utils.model_shard_quant
         - utils.bench
+        - utils.comet_
+        - utils.config
+        - utils.cuda13
+        - utils.datasets
+        - utils.environment
+        - utils.fp32_norms
         - utils.freeze
+        - utils.import_helper
+        - utils.logging
+        - utils.mlflow_
+        - utils.tee
+        - utils.trackio_
+        - utils.train
         - utils.trainer
+        - utils.wandb_
+        - utils.weight_serde
         - utils.schedulers
         - utils.distributed
         - utils.dict
+        - utils.generation.sft
+        - utils.mistral.mistral3_processor
+        - utils.mistral.mistral_tokenizer
         - utils.optimizers.adopt
+        - utils.optimizers.qgalore
         - utils.data.streaming
         - utils.data.sft
+        - utils.data.rl
+        - utils.data.lock
+        - utils.data.utils
+        - utils.data.wrappers
         - utils.quantization
     - title: Schemas
       desc: Pydantic data models for Axolotl config
@@ -166,18 +275,88 @@ quartodoc:
         - utils.schemas.trl
         - utils.schemas.multimodal
         - utils.schemas.integrations
+        - utils.schemas.deprecated
+        - utils.schemas.dynamic_checkpoint
+        - utils.schemas.fsdp
+        - utils.schemas.quantization
+        - utils.schemas.validation
+        - utils.schemas.vllm
         - utils.schemas.enums
         - utils.schemas.utils
     - title: Integrations
       desc: Third-party integrations and extensions
       contents:
         - integrations.base
+        - integrations.config
+        - integrations.cut_cross_entropy
         - integrations.cut_cross_entropy.args
+        - integrations.densemixer.args
+        - integrations.densemixer.plugin
+        - integrations.diffusion.args
+        - integrations.diffusion.callbacks
+        - integrations.diffusion.generation
+        - integrations.diffusion.plugin
+        - integrations.diffusion.trainer
+        - integrations.diffusion.utils
+        - integrations.expert_parallel.args
+        - integrations.expert_parallel.buffer
+        - integrations.expert_parallel.experts_fn
+        - integrations.expert_parallel.plugin
+        - integrations.expert_parallel.shard
+        - integrations.grokfast.args
         - integrations.grokfast.optimizer
+        - integrations.hatchery.args
+        - integrations.hatchery.data
+        - integrations.hatchery.plugin
+        - integrations.hatchery.rewards.math_reward
+        - integrations.hatchery.rl_trainer
+        - integrations.hatchery.trainer
+        - integrations.kd
+        - integrations.kd.args
+        - integrations.kd.callbacks
+        - integrations.kd.chat_template
+        - integrations.kd.collator
+        - integrations.kd.collator_online_teacher
+        - integrations.kd.kernels.liger
+        - integrations.kd.topk_logprob.forward_kl
         - integrations.kd.trainer
+        - integrations.kd.utils
+        - integrations.kernels.args
+        - integrations.kernels.autotune_callback
+        - integrations.kernels.autotune_collector
+        - integrations.kernels.constants
+        - integrations.kernels.plugin
         - integrations.liger.args
+        - integrations.liger.plugin
+        - integrations.liger.utils
+        - integrations.liger.models.base
+        - integrations.liger.models.deepseekv2
+        - integrations.liger.models.jamba
+        - integrations.liger.models.llama4
+        - integrations.liger.models.qwen3
+        - integrations.liger.models.qwen3_5
+        - integrations.liger.models.qwen3_5_moe
+        - integrations.liger.models.qwen3_moe
+        - integrations.llm_compressor.args
+        - integrations.llm_compressor.plugin
+        - integrations.llm_compressor.utils
         - integrations.lm_eval.args
+        - integrations.lm_eval.cli
+        - integrations.mora.args
+        - integrations.mora.plugin
+        - integrations.nemo_gym.args
+        - integrations.nemo_gym.data_producer
+        - integrations.nemo_gym.dataset
+        - integrations.nemo_gym.multi_turn
+        - integrations.nemo_gym.plugin
+        - integrations.nemo_gym.rewards
+        - integrations.nemo_gym.server
+        - integrations.spectrum
         - integrations.spectrum.args
+        - integrations.swanlab.args
+        - integrations.swanlab.callbacks
+        - integrations.swanlab.completion_logger
+        - integrations.swanlab.plugins
     - title: Common
       desc: Common utilities and shared functionality
       contents:
@@ -187,24 +366,48 @@ quartodoc:
     - title: Models
       desc: Custom model implementations
       contents:
+        - models.mamba.configuration_mamba
         - models.mamba.modeling_mamba
     - title: Data Processing
       desc: Data processing utilities
       contents:
         - utils.collators.core
         - utils.collators.batching
+        - utils.collators.dpo
         - utils.collators.mamba
         - utils.collators.mm_chat
         - utils.samplers.multipack
+        - utils.samplers.utils
     - title: Callbacks
       desc: Training callbacks
       contents:
+        - utils.callbacks
         - utils.callbacks.perplexity
         - utils.callbacks.profiler
         - utils.callbacks.lisa
         - utils.callbacks.mlflow_
         - utils.callbacks.comet_
         - utils.callbacks.qat
+        - utils.callbacks.dynamic_checkpoint
+        - utils.callbacks.generation
+        - utils.callbacks.models
+        - utils.callbacks.opentelemetry
+        - utils.callbacks.swanlab
+        - utils.callbacks.tokens_per_second
+        - utils.callbacks.trackio_
+    - title: Scripts
+      desc: Standalone helper scripts
+      contents:
+        - scripts.process_cleanup
+        - scripts.vllm_serve_lora
+        - scripts.vllm_worker_ext
+    - title: Telemetry
+      desc: Usage telemetry
+      contents:
+        - telemetry.callbacks
+        - telemetry.errors
+        - telemetry.manager
+        - telemetry.runtime_metrics
 website:
   title: "Axolotl"
   description: "We make fine-tuning accessible, scalable, and fun"
