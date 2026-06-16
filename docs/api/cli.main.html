@@ -997,7 +997,7 @@ axolotl config-schema –field adapter # single field</p>
 </section>
 <section id="axolotl.cli.main.inference" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.main.inference">inference</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.main.inference(ctx, config, launcher, gradio, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cli.main.inference(ctx, config, launcher, gradio, chat, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Run inference with a trained model.</p>
 <section id="parameters-2" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-2">Parameters</h4>
@@ -1042,6 +1042,12 @@ axolotl config-schema –field adapter # single field</p>
 <td><em>required</em></td>
 </tr>
 <tr class="odd">
+<td>chat</td>
+<td>bool</td>
+<td>Whether to use the interactive multi-turn chat interface.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
 <td>kwargs</td>
 <td></td>
 <td>Additional keyword arguments which correspond to CLI args or <code>axolotl</code> config options.</td>

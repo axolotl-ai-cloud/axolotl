@@ -797,6 +797,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.cli.utils.load.load_model_and_tokenizer" id="toc-axolotl.cli.utils.load.load_model_and_tokenizer" class="nav-link" data-scroll-target="#axolotl.cli.utils.load.load_model_and_tokenizer">load_model_and_tokenizer</a></li>
+  <li><a href="#axolotl.cli.utils.load.resolve_chat_template_str" id="toc-axolotl.cli.utils.load.resolve_chat_template_str" class="nav-link" data-scroll-target="#axolotl.cli.utils.load.resolve_chat_template_str">resolve_chat_template_str</a></li>
   </ul></li>
   </ul></li>
   </ul>
@@ -825,6 +826,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tr class="odd">
 <td><a href="#axolotl.cli.utils.load.load_model_and_tokenizer">load_model_and_tokenizer</a></td>
 <td>Helper function for loading a model, tokenizer, and processor specified in the</td>
+</tr>
+<tr class="even">
+<td><a href="#axolotl.cli.utils.load.resolve_chat_template_str">resolve_chat_template_str</a></td>
+<td>Resolves the chat template string for inference from the <code>axolotl</code> config,</td>
 </tr>
 </tbody>
 </table>
@@ -886,6 +891,71 @@ given <code>axolotl</code> config.</p>
 <td></td>
 <td>tuple[PreTrainedModel, PreTrainedTokenizer | PreTrainedTokenizerFast | Any, ProcessorMixin | None]</td>
 <td>Tuple of (PreTrainedModel, PreTrainedTokenizer, ProcessorMixin).</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="axolotl.cli.utils.load.resolve_chat_template_str" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.cli.utils.load.resolve_chat_template_str">resolve_chat_template_str</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>cli.utils.load.resolve_chat_template_str(cfg, tokenizer)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Resolves the chat template string for inference from the <code>axolotl</code> config,
+mirroring how it would be resolved at training time: an explicit
+<code>chat_template</code> config takes precedence, then the first dataset’s
+<code>chat_template</code> if that dataset is of type <code>chat_template</code>.</p>
+<section id="parameters-1" class="level4 doc-section doc-section-parameters">
+<h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters-1">Parameters</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 39%">
+<col style="width: 43%">
+<col style="width: 8%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>cfg</td>
+<td>DictDefault</td>
+<td>Dictionary mapping <code>axolotl</code> config keys to values.</td>
+<td><em>required</em></td>
+</tr>
+<tr class="even">
+<td>tokenizer</td>
+<td>PreTrainedTokenizer | PreTrainedTokenizerFast | Any</td>
+<td>Tokenizer to fall back to for tokenizer-default templates.</td>
+<td><em>required</em></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="returns-1" class="level4 doc-section doc-section-returns">
+<h4 class="doc-section doc-section-returns anchored" data-anchor-id="returns-1">Returns</h4>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 14%">
+<col style="width: 76%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td></td>
+<td>str | None</td>
+<td>Chat template string, or None if the config does not specify one.</td>
 </tr>
 </tbody>
 </table>

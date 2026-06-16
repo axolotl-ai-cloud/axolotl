@@ -827,7 +827,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.cli.inference.do_cli">do_cli</a></td>
-<td>Parses axolotl config, CLI args, and calls <code>do_inference</code> or <code>do_inference_gradio</code>.</td>
+<td>Parses axolotl config, CLI args, and calls <code>do_inference</code>, <code>do_inference_gradio</code>,</td>
 </tr>
 <tr class="even">
 <td><a href="#axolotl.cli.inference.do_inference">do_inference</a></td>
@@ -845,8 +845,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 </table>
 <section id="axolotl.cli.inference.do_cli" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.cli.inference.do_cli">do_cli</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.inference.do_cli(config<span class="op">=</span>Path(<span class="st">'examples/'</span>), gradio<span class="op">=</span><span class="va">False</span>, <span class="op">**</span>kwargs)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Parses axolotl config, CLI args, and calls <code>do_inference</code> or <code>do_inference_gradio</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>cli.inference.do_cli(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    config<span class="op">=</span>Path(<span class="st">'examples/'</span>),</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    gradio<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    chat<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">**</span>kwargs,</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Parses axolotl config, CLI args, and calls <code>do_inference</code>, <code>do_inference_gradio</code>,
+or <code>do_chat</code>.</p>
 <section id="parameters" class="level4 doc-section doc-section-parameters">
 <h4 class="doc-section doc-section-parameters anchored" data-anchor-id="parameters">Parameters</h4>
 <table class="caption-top table">
@@ -870,6 +876,18 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td>Union[Path, str]</td>
 <td>Path to <code>axolotl</code> config YAML file.</td>
 <td><code>Path('examples/')</code></td>
+</tr>
+<tr class="even">
+<td>gradio</td>
+<td>bool</td>
+<td>Whether to launch the Gradio browser interface.</td>
+<td><code>False</code></td>
+</tr>
+<tr class="odd">
+<td>chat</td>
+<td>bool</td>
+<td>Whether to launch the interactive multi-turn chat interface.</td>
+<td><code>False</code></td>
 </tr>
 <tr class="even">
 <td>kwargs</td>

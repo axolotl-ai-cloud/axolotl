@@ -799,6 +799,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#axolotl.logging_config.AxolotlLogger" id="toc-axolotl.logging_config.AxolotlLogger" class="nav-link" data-scroll-target="#axolotl.logging_config.AxolotlLogger">AxolotlLogger</a></li>
   <li><a href="#axolotl.logging_config.AxolotlOrWarnErrorFilter" id="toc-axolotl.logging_config.AxolotlOrWarnErrorFilter" class="nav-link" data-scroll-target="#axolotl.logging_config.AxolotlOrWarnErrorFilter">AxolotlOrWarnErrorFilter</a></li>
   <li><a href="#axolotl.logging_config.ColorfulFormatter" id="toc-axolotl.logging_config.ColorfulFormatter" class="nav-link" data-scroll-target="#axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</a></li>
+  <li><a href="#axolotl.logging_config.HubUnauthenticatedNagFilter" id="toc-axolotl.logging_config.HubUnauthenticatedNagFilter" class="nav-link" data-scroll-target="#axolotl.logging_config.HubUnauthenticatedNagFilter">HubUnauthenticatedNagFilter</a></li>
   </ul></li>
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
@@ -840,6 +841,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</a></td>
 <td>Formatter to add coloring to log messages by log type</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.logging_config.HubUnauthenticatedNagFilter">HubUnauthenticatedNagFilter</a></td>
+<td>Drops the server-sent “sending unauthenticated requests” nag (an X-HF-Warning</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.logging_config.AxolotlLogger" class="level3">
@@ -858,6 +863,13 @@ INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL). Drops all other records
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.ColorfulFormatter">ColorfulFormatter</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>logging_config.ColorfulFormatter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Formatter to add coloring to log messages by log type</p>
+</section>
+<section id="axolotl.logging_config.HubUnauthenticatedNagFilter" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.logging_config.HubUnauthenticatedNagFilter">HubUnauthenticatedNagFilter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>logging_config.HubUnauthenticatedNagFilter()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Drops the server-sent “sending unauthenticated requests” nag (an X-HF-Warning
+response header that huggingface_hub logs with no env var to disable it).
+Other hub warnings (retries, rate limits) pass through.</p>
 </section>
 </section>
 <section id="functions" class="level2">
@@ -878,7 +890,7 @@ INFO or higher (unless overridden by AXOLOTL_LOG_LEVEL). Drops all other records
 </table>
 <section id="axolotl.logging_config.configure_logging" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.logging_config.configure_logging">configure_logging</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>logging_config.configure_logging()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>logging_config.configure_logging()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Configure with default logging</p>
 
 
