@@ -68,7 +68,9 @@
             {{- '<|im_end|>' + '\n' }}
         {%- endif %}
     {%- elif message.role == "assistant" %}
-        {%- if message.content is string %}
+        {%- if message.content is none %}
+            {%- set content = '' %}
+        {%- elif message.content is string %}
             {%- set content = message.content %}
         {%- else %}
             {%- set content_ns = namespace(text='') %}

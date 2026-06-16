@@ -40,11 +40,11 @@
         {{- '<｜tool▁calls▁end｜><｜end▁of▁sentence｜>' -}}
     {%- endif %}
     {%- if message['role'] == 'assistant' and 'tool_calls' not in message %}
+        {%- set content = message['content'] if message['content'] is not none else '' %}
         {%- if ns.is_tool %}
-            {{- '<｜tool▁outputs▁end｜>' + message['content'] + '<｜end▁of▁sentence｜>' -}}
+            {{- '<｜tool▁outputs▁end｜>' + content + '<｜end▁of▁sentence｜>' -}}
             {%- set ns.is_tool = false -%}
         {%- else %}
-            {%- set content = message['content'] if message['content'] is not none else '' %}
             {%- if '</think>' in content %}
                 {%- set content = content.split('</think>')[-1] %}
             {%- endif %}
