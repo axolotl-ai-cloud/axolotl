@@ -140,7 +140,8 @@ class NormalizeConfigTestCase(unittest.TestCase):
 
         cfg_without_version = validate_config(cfg_without_version)
 
-        self.assertNotIn("fsdp_version", cfg_without_version)
+        self.assertEqual(cfg_without_version.fsdp_version, 1)
+        self.assertEqual(cfg_without_version.fsdp_config.fsdp_version, 1)
         self.assertEqual(
             cfg_without_version.fsdp_config.auto_wrap_policy, "SIZE_BASED_WRAP"
         )

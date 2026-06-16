@@ -57,7 +57,7 @@ def _make_fused_forward(original_forward):
         hidden_states: torch.Tensor,
         position_embeddings: torch.Tensor,
         attention_mask: torch.Tensor | None,
-        shared_kv_states: dict[int, tuple[torch.Tensor, torch.Tensor]] | None = None,
+        shared_kv_states: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None,
         past_key_values=None,
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor | None]:

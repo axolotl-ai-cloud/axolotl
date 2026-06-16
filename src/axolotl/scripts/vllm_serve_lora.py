@@ -13,7 +13,6 @@ Benefits over merge-sync:
     - No NCCL communicator needed for weight sync
 """
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -43,8 +42,9 @@ from axolotl.scripts.process_cleanup import (
     is_fatal_worker_error,
     safe_recv,
 )
+from axolotl.utils.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

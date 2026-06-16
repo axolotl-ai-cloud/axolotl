@@ -137,7 +137,8 @@ lora_alpha:
 
 ### inference
 
-Runs inference using your trained model in either CLI or Gradio interface mode.
+Runs inference using your trained model in CLI, interactive chat, or Gradio
+interface mode.
 
 ```bash
 # CLI inference with LoRA
@@ -145,6 +146,10 @@ axolotl inference config.yml --lora-model-dir="./outputs/lora-out"
 
 # CLI inference with full model
 axolotl inference config.yml --base-model="./completed-model"
+
+# Interactive multi-turn chat (see the inference guide for commands)
+axolotl inference config.yml --chat \
+    --lora-model-dir="./outputs/lora-out"
 
 # Gradio web interface
 axolotl inference config.yml --gradio \

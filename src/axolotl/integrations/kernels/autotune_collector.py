@@ -6,12 +6,13 @@ configurations.  It has **no** telemetry dependency — callers decide what to
 do with the data.
 """
 
-import logging
 import sys
 from types import ModuleType
 from typing import Any
 
-LOG = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
 
 # (human-readable name, attribute on the lora_ops module)
 _KERNEL_REGISTRY: list[tuple[str, str]] = [
