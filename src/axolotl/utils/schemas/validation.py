@@ -1038,11 +1038,12 @@ class OptimizationValidationMixin:
     def check_fsdp_version(cls, data):
         fsdp_config = data.get("fsdp_config", {})
         if fsdp_config and str(data.get("fsdp_version")) != "2":
-            LOG.info(
-                "FSDP1 will be deprecated in an upcoming release of Axolotl."
-                "We recommend that you use FSDP version 2 for better performance and compatibility. "
-                "Please see this link for more details: https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp "
-                "For more details on migrating your config. "
+            LOG.warning(
+                "FSDP1 is deprecated and will be removed in an upcoming release of "
+                "Axolotl (transformers plans to in v5.20). We recommend migrating "
+                "to fsdp_version: 2 for better performance and compatibility. "
+                "See https://docs.axolotl.ai/docs/multi-gpu.html#sec-fsdp for "
+                "details on migrating your config."
             )
         return data
 
@@ -1085,7 +1086,7 @@ class OptimizationValidationMixin:
         if fsdp_config := data.get("fsdp_config"):
             should_fix = False
             for key, _ in fsdp_config.items():
-                if key.startswith("fsdp_"):
+                if key.startswith("fsdp_") and key != "fsdp_version":
                     should_fix = True
                     LOG.warning_once(
                         "Configuring FSDP fields with the `fsdp_` prefix is deprecated. "
@@ -1114,6 +1115,12 @@ class OptimizationValidationMixin:
             data["fsdp_version"] = fsdp_config.get("fsdp_version")
         if fsdp_version and fsdp_config and not fsdp_config.get("fsdp_version"):
             data["fsdp_config"]["fsdp_version"] = fsdp_version
+        if fsdp_config and not data.get("fsdp_version"):
+            # transformers >= 5.10 defaults a missing version to FSDP2; pin
+            # axolotl's FSDP1 default explicitly so unversioned configs keep
+            # their behavior
+            data["fsdp_version"] = 1
+            data["fsdp_config"]["fsdp_version"] = 1
         return data
 
     @model_validator(mode="after")
@@ -1439,6 +1446,37 @@ class ModelCompatibilityValidationMixin:
     def check_activation_offloading_wo_gc(self):
         if self.activation_offloading and not self.gradient_checkpointing:
             raise ValueError("activation_offloading requires gradient_checkpointing")
+        return self
+
+    @model_validator(mode="after")
+    def check_hidden_states_offloading(self):
+        if self.activation_offloading != "hidden_states":
+            return self
+        # Forcing reentrant (below) on a partially frozen model is the broken combo
+        # check_use_reentrant_mismatch guards — but that before-validator ran before
+        # we forced it, so catch it here. https://github.com/huggingface/transformers/issues/21381
+        if self.unfrozen_parameters:
+            raise ValueError(
+                "activation_offloading: hidden_states forces reentrant checkpointing, "
+                "which is incompatible with `unfrozen_parameters` (partially frozen "
+                "model)."
+            )
+        # ALST-style offloading replaces torch's reentrant CheckpointFunction, so it
+        # needs use_reentrant=True. Force it on (warn if the user asked otherwise).
+        gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
+        if gc_kwargs.get("use_reentrant") is False:
+            LOG.warning(
+                "activation_offloading: hidden_states requires reentrant checkpointing; "
+                "overriding gradient_checkpointing_kwargs.use_reentrant to true."
+            )
+        gc_kwargs["use_reentrant"] = True
+        self.gradient_checkpointing_kwargs = gc_kwargs
+        if self.adapter:
+            LOG.warning(
+                "activation_offloading: hidden_states is designed for full-parameter "
+                "training; with LoRA/QLoRA the frozen base may break reentrant "
+                "checkpointing. Prefer activation_offloading: true for adapters."
+            )
         return self
 
     @model_validator(mode="after")

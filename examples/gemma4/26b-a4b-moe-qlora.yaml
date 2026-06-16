@@ -1,13 +1,3 @@
-# Gemma 4 26B-A4B MoE QLoRA with ScatterMoE kernels
-#
-# Validated: 50 steps on FineTome-100k, loss 8.8 -> 1.8, single RTX 5090 (32GB)
-# torch_compile=true: 21 GiB peak VRAM, ~230 tok/s, 336s total
-#
-# Key notes:
-# - Max sequence length on 32GB GPU: 2048 (micro_batch_size=1, SDP attention).
-#   4096 seq_len OOMs due to head_dim=512 math SDP materializing full score matrix.
-#   Use 48GB+ GPUs for longer sequences or multi-GPU with FSDP.
-
 base_model: google/gemma-4-26B-A4B
 
 plugins:
@@ -89,8 +79,8 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA2 not supported
-attn_implementation: sdpa
+# FA2 not supported (head_dim=512); flex is varlen-capable, required for sample_packing
+attn_implementation: flex_attention
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

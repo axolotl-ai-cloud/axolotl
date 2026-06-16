@@ -28,8 +28,8 @@ from typing import Optional, Union
 import torch
 
 from .kernels import ops as base_ops
+from .kernels.grouped_gram import grouped_lora_weight_grads
 from .kernels.lora_ops import (
-    group_bwd_lora,
     group_bwd_lora_fused,
     scatter2scatter_lora,
     scatter2scatter_lora_dX,
@@ -237,6 +237,7 @@ class ScatterMoELoRA(torch.autograd.Function):
                 or _needs_int64_indices(grad_out, x)
             )
 
+            yb = None  # dY @ B, computed by the non-fused dA/dB path; reused by dX_lora
             if can_fuse_gather:
                 # ------------------------------------------------------------------
                 # Fused path: skip group(x) entirely
@@ -291,15 +292,45 @@ class ScatterMoELoRA(torch.autograd.Function):
                     grouped_x = base_ops.group(x, sorted_scattered_idxs, fan_out=k)
                     d_expanded_input = grouped_x  # Will be overwritten; reuse buffer
 
-                d_lora_A, d_lora_B = group_bwd_lora(
-                    DY=grouped_grad_out,
-                    X=grouped_x,
-                    lora_A=lora_A,
-                    lora_B=lora_B,
-                    expert_offsets=expert_offsets,
-                    E=E,
-                    scaling=scaling,
+                # dA/dB via grouped-Gram over precomputed XA/YB (rank-sized) instead
+                # of the split kernel's per-output-block recompute -- a large win as
+                # the expert count grows (modern MoEs, E >= 128). YB is also reused by
+                # the non-fused dX path below.
+                rank = lora_A.size(0) // E
+                k_dim = lora_A.size(1)
+                n_dim = lora_B.size(0)
+                w_yb = lora_B.reshape(n_dim, E, rank).permute(1, 0, 2).contiguous()
+                yb = base_ops.scatter2scatter(
+                    X=grouped_grad_out,
+                    W=w_yb,
+                    k=1,
+                    sorted_expert_idxs=sorted_expert_idxs,
+                    sorted_scattered_idxs=sorted_scattered_idxs,
+                    x_grouped=True,
+                    y_grouped=True,
                     int64_indices=needs_int64_bwd,
+                )
+                w_xa = lora_A.reshape(E, rank, k_dim).permute(0, 2, 1).contiguous()
+                xa = base_ops.scatter2scatter(
+                    X=grouped_x,
+                    W=w_xa,
+                    k=1,
+                    sorted_expert_idxs=sorted_expert_idxs,
+                    sorted_scattered_idxs=sorted_scattered_idxs,
+                    x_grouped=True,
+                    y_grouped=True,
+                    int64_indices=needs_int64_bwd,
+                )
+                d_lora_A, d_lora_B = grouped_lora_weight_grads(
+                    grouped_grad_out,
+                    grouped_x,
+                    yb,
+                    xa,
+                    lora_A,
+                    lora_B,
+                    expert_offsets,
+                    E,
+                    scaling,
                 )
 
             # ------------------------------------------------------------------
@@ -385,7 +416,8 @@ class ScatterMoELoRA(torch.autograd.Function):
                     int64_indices=needs_int64_bwd,
                 )
 
-                # LoRA part: dX_lora = scaling * (dY @ B) @ A
+                # LoRA part: dX_lora = scaling * (dY @ B) @ A (sync-free grouped GEMMs;
+                # reuses YB from the dA/dB path when it was computed there)
                 if scaling != 0.0:
                     d_input_lora_grouped = _compute_lora_input_grad(
                         grouped_grad_out,
@@ -394,6 +426,10 @@ class ScatterMoELoRA(torch.autograd.Function):
                         expert_offsets,
                         E,
                         scaling,
+                        sorted_expert_idxs=sorted_expert_idxs,
+                        sorted_scattered_idxs=sorted_scattered_idxs,
+                        int64_indices=needs_int64_bwd,
+                        yb=yb,
                     )
                     if grouped_in:
                         d_expanded_input.add_(d_input_lora_grouped)
@@ -448,39 +484,68 @@ def _compute_lora_input_grad(
     expert_offsets: torch.Tensor,
     E: int,
     scaling: float,
+    sorted_expert_idxs: Optional[torch.Tensor] = None,
+    sorted_scattered_idxs: Optional[torch.Tensor] = None,
+    int64_indices: bool = False,
+    yb: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """
-    Compute the LoRA contribution to the input gradient:
-      dX_lora = scaling * (dY @ B) @ A
+    """LoRA contribution to the input gradient: ``dX_lora = scaling * (dY @ B) @ A``,
+    on expert-grouped data.
 
-    Uses PyTorch ops on expert-grouped data.
-    Each expert e: dX_e = scaling * (dY_e @ B_e) @ A_e
+    With routing ids it runs as two grouped GEMMs (``scatter2scatter``) -- sync-free
+    and a single launch each, instead of a Python per-expert loop with an
+    ``expert_offsets[e].item()`` device sync per expert (O(E) syncs, which dominate
+    at the high expert counts of modern MoEs). ``yb = dY @ B`` may be passed in to
+    reuse the value already computed for the dA/dB grads. The per-expert loop is kept
+    as a fallback for callers without the routing ids.
     """
     R = lora_A.size(0) // E
     K = lora_A.size(1)
-    M_total = grouped_grad_out.size(0)
+    N = lora_B.size(0)
 
-    d_input_lora = torch.zeros(
-        (M_total, K), device=grouped_grad_out.device, dtype=grouped_grad_out.dtype
-    )
+    if sorted_expert_idxs is not None:
+        if yb is None:
+            w_yb = lora_B.reshape(N, E, R).permute(1, 0, 2).contiguous()  # [E, N, R]
+            yb = base_ops.scatter2scatter(
+                X=grouped_grad_out,
+                W=w_yb,
+                k=1,
+                sorted_expert_idxs=sorted_expert_idxs,
+                sorted_scattered_idxs=sorted_scattered_idxs,
+                x_grouped=True,
+                y_grouped=True,
+                int64_indices=int64_indices,
+            )
+        w_a = lora_A.reshape(E, R, K).contiguous()  # [E, R, K]
+        dx = base_ops.scatter2scatter(
+            X=yb,
+            W=w_a,
+            k=1,
+            sorted_expert_idxs=sorted_expert_idxs,
+            sorted_scattered_idxs=sorted_scattered_idxs,
+            x_grouped=True,
+            y_grouped=True,
+            int64_indices=int64_indices,
+        )
+        return dx.mul_(scaling)
 
+    # fallback (no routing ids): one host sync for the whole offset array, not per expert
+    offsets = expert_offsets.tolist()
     compute_dtype = grouped_grad_out.dtype
-
+    d_input_lora = torch.zeros(
+        (grouped_grad_out.size(0), K),
+        device=grouped_grad_out.device,
+        dtype=compute_dtype,
+    )
     prev_offset = 0
     for e in range(E):
-        curr_offset = expert_offsets[e].item()
+        curr_offset = offsets[e]
         if curr_offset > prev_offset:
-            dy_e = grouped_grad_out[prev_offset:curr_offset]  # [M_e, N]
-            a_e = lora_A[e * R : (e + 1) * R, :].to(compute_dtype)  # [r, K]
-            b_e = lora_B[:, e * R : (e + 1) * R].to(compute_dtype)  # [N, r]
-
-            # dX_e = scaling * (dY_e @ B_e) @ A_e
-            dy_b = dy_e @ b_e  # [M_e, r]
-            dx_e = scaling * (dy_b @ a_e)  # [M_e, K]
-            d_input_lora[prev_offset:curr_offset] = dx_e
-
+            dy_e = grouped_grad_out[prev_offset:curr_offset]
+            a_e = lora_A[e * R : (e + 1) * R, :].to(compute_dtype)
+            b_e = lora_B[:, e * R : (e + 1) * R].to(compute_dtype)
+            d_input_lora[prev_offset:curr_offset] = scaling * ((dy_e @ b_e) @ a_e)
         prev_offset = curr_offset
-
     return d_input_lora
 
 
