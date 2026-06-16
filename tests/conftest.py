@@ -73,13 +73,13 @@ def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
             _cuda_context_poisoned = True
 
 
-def pytest_runtest_setup(item):  # pylint: disable=unused-argument
+def pytest_runtest_setup(item):
     if _cuda_context_poisoned:
-        pytest.exit(
-            "CUDA context corrupted by an earlier test (device-side assert); "
-            "aborting to avoid cascading setup errors. Re-run the job.",
-            returncode=1,
+        item.session.shouldstop = (
+            "CUDA context corrupted by an earlier test; aborting to avoid "
+            "cascading setup errors. Re-run the job."
         )
+        pytest.skip("CUDA context corrupted by an earlier test; aborting suite.")
 
 
 def retry_on_request_exceptions(max_retries=3, delay=1):
