@@ -342,7 +342,7 @@ def compute_supports_fp8() -> bool:
     try:
         compute_capability = torch.cuda.get_device_capability()
         return compute_capability >= (9, 0)
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         return False
 
 
