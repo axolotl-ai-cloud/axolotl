@@ -83,15 +83,16 @@ class TestActivationOffloading:
 
     @pytest.mark.parametrize(
         "offload_mode,expect_streams",
-        [(True, True), ("legacy", False), ("disk", True)],
+        [(True, True), ("legacy", False)],
     )
     def test_offload_mode_wiring(
         self, temp_dir, monkeypatch, offload_mode, expect_streams
     ):
-        """`activation_offloading` must reach the trainer as a live offload
+        """`activation_offloading` must reach the trainer as a live TRL offload
         context: True => stream-overlapped, 'legacy' => synchronous. Guards the
         regression where string modes fell through to plain gradient
-        checkpointing (no offload at all)."""
+        checkpointing (no offload at all). ('disk' uses a different mechanism —
+        see test_disk_offload_wiring.)"""
         from trl.models.activation_offloading import OffloadActivations
 
         captured = {}
@@ -143,6 +144,71 @@ class TestActivationOffloading:
             f"through to plain gradient checkpointing"
         )
         assert ctx.use_streams is expect_streams
+
+    def test_disk_offload_wiring(self, temp_dir, monkeypatch):
+        """activation_offloading: disk installs the Disco disk-offload checkpoint
+        patch and trains with HF gradient checkpointing enabled — NOT the TRL
+        offloader. Guards the regression where 'disk' silently fell through to the
+        TRL CPU offloader (behaving like true): the patch checked a stale
+        'offload_disk' string and the builder disabled gradient checkpointing."""
+        import transformers
+        from trl.models.activation_offloading import OffloadActivations
+
+        from axolotl.monkeypatch.gradient_checkpointing import (
+            hf_grad_checkpoint_disk_offload_wrapper,
+        )
+
+        captured = {}
+        original_step = ActivationOffloadingMixin.training_step
+        original_ckpt = transformers.modeling_utils.checkpoint
+
+        def capture_step(self, *args, **kwargs):
+            captured["ctx"] = self.activation_offload_context
+            captured["ckpt"] = transformers.modeling_utils.checkpoint
+            return original_step(self, *args, **kwargs)
+
+        monkeypatch.setattr(ActivationOffloadingMixin, "training_step", capture_step)
+
+        cfg = DictDefault(
+            {
+                "base_model": "HuggingFaceTB/SmolLM2-135M",
+                "sequence_len": 1024,
+                "val_set_size": 0.0,
+                "special_tokens": {"pad_token": "<|endoftext|>"},
+                "datasets": [
+                    {"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"},
+                ],
+                "max_steps": 2,
+                "micro_batch_size": 1,
+                "gradient_accumulation_steps": 1,
+                "output_dir": temp_dir,
+                "learning_rate": 1e-5,
+                "optimizer": "adamw_torch",
+                "lr_scheduler": "cosine",
+                "flash_attention": True,
+                "sample_packing": True,
+                "bf16": "auto",
+                "gradient_checkpointing": True,
+                "activation_offloading": "disk",
+                "save_first_step": False,
+            }
+        )
+        try:
+            cfg = validate_config(cfg)
+            normalize_config(cfg)
+            dataset_meta = load_datasets(cfg=cfg)
+            train(cfg=cfg, dataset_meta=dataset_meta)
+        finally:
+            transformers.modeling_utils.checkpoint = original_ckpt
+
+        # disk uses the Disco checkpoint patch, not the TRL offloader
+        assert not isinstance(captured.get("ctx"), OffloadActivations), (
+            "disk should not engage the TRL OffloadActivations context"
+        )
+        assert captured.get("ckpt") is hf_grad_checkpoint_disk_offload_wrapper, (
+            "disk did not install the Disco disk-offload checkpoint patch"
+        )
+        check_model_output_exists(temp_dir, cfg)
 
     @pytest.mark.parametrize(
         "adapter,expect_recompute_wrap",
