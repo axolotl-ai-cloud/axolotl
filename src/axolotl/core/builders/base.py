@@ -578,6 +578,16 @@ class TrainerBuilderBase(abc.ABC):
                 training_args_kwargs["activation_offloading"] = (
                     self.cfg.activation_offloading
                 )
+        elif self.cfg.activation_offloading == "disk":
+            # Disk offload uses the Disco checkpoint patch (installed by the patch
+            # manager); it needs HF gradient checkpointing enabled and is NOT the TRL
+            # offloader, so leave the trainer's activation_offloading arg unset.
+            training_args_kwargs["gradient_checkpointing"] = True
+            training_args_kwargs["gradient_checkpointing_kwargs"] = (
+                self.cfg.gradient_checkpointing_kwargs
+                if self.cfg.gradient_checkpointing_kwargs is not None
+                else {"use_reentrant": False}
+            )
         elif self.cfg.activation_offloading:
             # TRL offloader replaces HF recompute (re-added for full finetune in the
             # model loader), so disable HF checkpointing and pass the mode through.

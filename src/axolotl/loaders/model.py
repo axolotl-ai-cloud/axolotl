@@ -353,6 +353,10 @@ class ModelLoader:
 
             patch_hidden_states_offload()
             return
+        # "disk" uses the Disco checkpoint patch driven by HF gradient checkpointing
+        # (enabled in the trainer), so it must NOT get the manual TRL recompute wrap.
+        if ao == "disk":
+            return
         # TRL offloader is adapter-aware:
         #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
         #     recompute would pin the offloaded tensors and balloon memory). No wrap.
