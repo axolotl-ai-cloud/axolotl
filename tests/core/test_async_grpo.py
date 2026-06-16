@@ -113,15 +113,18 @@ class TestAdvantageEstimator(unittest.TestCase):
         self.assertTrue(torch.allclose(adv, expected))
         self.assertFalse(is_std_zero.any())
 
-    def test_reinforce_plus_plus_group_norm(self):
+    def test_reinforce_plus_plus_global_batch_norm(self):
         f = self._f()
         rewards = torch.tensor([1.0, 2.0, 3.0, 0.0, 0.0, 6.0])
         adv, _ = f("reinforce_plus_plus", rewards, num_generations=3)
+        # REINFORCE++ normalizes over the whole batch, not per group.
+        expected = (rewards - rewards.mean()) / (rewards.std() + 1e-4)
+        self.assertTrue(torch.allclose(adv, expected))
         g = rewards.view(-1, 3)
-        expected = (
+        group_norm = (
             (g - g.mean(dim=1, keepdim=True)) / (g.std(dim=1, keepdim=True) + 1e-4)
         ).reshape(-1)
-        self.assertTrue(torch.allclose(adv, expected))
+        self.assertFalse(torch.allclose(adv, group_norm))
 
     def test_equal_rewards_flag_std_zero_and_zero_advantage(self):
         f = self._f()
@@ -145,6 +148,56 @@ class TestAdvantageEstimator(unittest.TestCase):
             adv, is_std_zero = f(est, rewards, num_generations=4)
             self.assertEqual(adv.shape, rewards.shape)
             self.assertEqual(is_std_zero.shape, rewards.shape)
+
+
+class TestBaseTrainerAggregateRewards(unittest.TestCase):
+    """Covers the standard (non-SP, non-async) trainer's reward reconstruction.
+
+    The base ``AxolotlGRPOTrainer`` re-derives per-sample rewards from the
+    cached per-function rewards to apply non-default estimators, so this must
+    match TRL's own aggregation.
+    """
+
+    def _stub(self, *, weights, aggregation, num_reward_funcs):
+        from axolotl.core.trainers.grpo.trainer import AxolotlGRPOTrainer
+
+        trainer = object.__new__(AxolotlGRPOTrainer)
+        trainer.reward_weights = torch.tensor(weights, dtype=torch.float32)
+        trainer.multi_objective_aggregation = aggregation
+        trainer.reward_funcs = [None] * num_reward_funcs
+        return trainer
+
+    def test_sum_then_normalize_matches_weighted_sum(self):
+        trainer = self._stub(
+            weights=[1.0, 0.5], aggregation="sum_then_normalize", num_reward_funcs=2
+        )
+        rewards_per_func = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [0.0, 6.0], [5.0, 1.0]]
+        )
+        out = trainer._aggregate_rewards(rewards_per_func, num_generations=2)
+        expected = rewards_per_func[:, 0] * 1.0 + rewards_per_func[:, 1] * 0.5
+        self.assertTrue(torch.allclose(out, expected))
+
+    def test_normalize_then_sum_matches_per_group_func_norm(self):
+        trainer = self._stub(
+            weights=[1.0, 1.0], aggregation="normalize_then_sum", num_reward_funcs=2
+        )
+        rewards_per_func = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [0.0, 6.0], [5.0, 1.0]]
+        )
+        out = trainer._aggregate_rewards(rewards_per_func, num_generations=2)
+
+        grouped = rewards_per_func.view(-1, 2, 2)
+        mean_k = grouped.mean(dim=1, keepdim=True)
+        std_k = grouped.std(dim=1, keepdim=True)
+        reward_k = ((grouped - mean_k) / (std_k + 1e-4)).view(-1, 2)
+        expected = reward_k.sum(dim=1)
+        self.assertTrue(torch.allclose(out, expected))
+
+    def test_invalid_aggregation_raises(self):
+        trainer = self._stub(weights=[1.0], aggregation="bogus", num_reward_funcs=1)
+        with self.assertRaises(ValueError):
+            trainer._aggregate_rewards(torch.tensor([[1.0], [2.0]]), num_generations=2)
 
 
 class TestAdvantageEstimatorSchema(unittest.TestCase):

@@ -747,16 +747,21 @@ def compute_advantages_with_estimator(
     num_generations: int,
     eps: float = 1e-4,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Pluggable advantage baseline over per-group rewards.
+    """Pluggable advantage baseline over the gathered per-sample rewards.
 
-    Operates on the per-sample scalar ``rewards`` (already reward-weighted /
-    aggregated) and overrides the default group-normalized advantage. Returns
-    ``(advantages, is_std_zero)``, both flattened to match ``rewards``.
+    Operates on the global, already reward-weighted/aggregated ``rewards`` and
+    overrides the default group-normalized advantage. Returns
+    ``(advantages, is_std_zero)``, both flattened to match ``rewards``. ``rewards``
+    must be the full generation batch (gathered across processes), not a local
+    slice — ``reinforce_plus_plus`` normalizes over the whole batch.
 
-    ``rloo`` uses a leave-one-out baseline (reward_j - mean(rewards_{-j}));
-    ``reinforce_plus_plus`` uses group mean/std normalization without
-    importance-sampling correction. RLOO with a single generation has no
-    leave-one-out baseline, so it degrades to mean-centering.
+    ``rloo`` uses a per-group leave-one-out baseline
+    (reward_j - mean(rewards_{-j})), with no std scaling. RLOO with a single
+    generation has no leave-one-out baseline, so it degrades to mean-centering.
+
+    ``reinforce_plus_plus`` uses global batch-level advantage normalization
+    ((reward - batch_mean) / (batch_std + eps)), following REINFORCE++. Any KL
+    penalty is expected to be folded into the reward upstream, not here.
     """
     grouped = rewards.view(-1, num_generations)
     std = (
@@ -774,8 +779,12 @@ def compute_advantages_with_estimator(
         baseline = (group_sum - grouped) / (num_generations - 1)
         advantages = (grouped - baseline).reshape(-1)
     elif estimator == "reinforce_plus_plus":
-        mean = grouped.mean(dim=1, keepdim=True)
-        advantages = ((grouped - mean) / (std + eps)).reshape(-1)
+        batch_std = (
+            rewards.std()
+            if rewards.numel() > 1
+            else torch.zeros((), device=rewards.device)
+        )
+        advantages = (rewards - rewards.mean()) / (batch_std + eps)
     else:
         mean = grouped.mean(dim=1, keepdim=True)
         advantages = (grouped - mean).reshape(-1)
