@@ -16,11 +16,9 @@ RUN apt-get update && \
     rm -rf /var/cache/apt/archives && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace
-
-RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
-
 WORKDIR /workspace/axolotl
+
+COPY . .
 
 # If AXOLOTL_EXTRAS is set, append it in brackets; don't install deepspeed with arm64
 RUN uv pip uninstall causal_conv1d
