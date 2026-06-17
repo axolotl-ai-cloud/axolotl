@@ -99,6 +99,8 @@ jobs:
             AXOLOTL_EXTRAS=${{ matrix.axolotl_extras}}
           file: ./docker/Dockerfile-uv
           push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=registry,ref=axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+          cache-to: type=inline
           tags: |
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
@@ -189,6 +191,8 @@ jobs:
             CUDA=${{ matrix.cuda }}
           file: ./docker/Dockerfile-cloud-uv
           push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=registry,ref=axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+          cache-to: type=inline
           tags: |
              axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-uv:{0}-latest', steps.metadata.outputs.version) || '' }}
@@ -246,6 +250,8 @@ jobs:
             CUDA=${{ matrix.cuda }}
           file: ./docker/Dockerfile-cloud-no-tmux-uv
           push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=registry,ref=axolotlai/axolotl-cloud-term:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+          cache-to: type=inline
           tags: |
              axolotlai/axolotl-cloud-term:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-term:{0}-latest', steps.metadata.outputs.version) || '' }}

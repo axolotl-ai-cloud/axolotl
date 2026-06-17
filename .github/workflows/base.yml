@@ -135,6 +135,8 @@ jobs:
           file: ./docker/${{ matrix.dockerfile }}
           platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=registry,ref=axolotlai/axolotl-base-uv:${{ steps.metadata.outputs.version }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
+          cache-to: type=inline
           tags: |
             axolotlai/axolotl-base-uv:${{ steps.metadata.outputs.version }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl-base:${{ steps.metadata.outputs.version }}-base-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
