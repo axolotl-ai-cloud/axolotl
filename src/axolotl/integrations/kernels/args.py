@@ -28,6 +28,8 @@ _VALID_EXPERTS_IMPLS = (
 class KernelsArgs(BaseModel):
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
+    # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
+    use_dsv4_kernels: bool | None = None
 
     @model_validator(mode="before")
     @classmethod

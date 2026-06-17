@@ -23,12 +23,18 @@ The FP4 E2M1 codebook is the standard OCP-MX one (16 values:
 from __future__ import annotations
 
 import enum
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 import torch
 
 MX_BLOCK_SIZE = 32
+
+# Benchmark/debug escape hatch: force the old advanced-index gather-copy of active
+# experts even under dense routing (so before/after of the zero-copy fast path can be
+# measured). Off by default.
+_FORCE_GATHER = os.environ.get("DSV4_FORCE_GATHER", "0") == "1"
 
 # Standard OCP-MX fp4 e2m1 codebook (sign bit | 2-bit exp | 1-bit mantissa).
 # Index by the raw 4-bit nibble. Cached fp32 tensor for kernel lookups.
@@ -209,8 +215,12 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     assert mx_param.elem_dtype == torch.float4_e2m1fn_x2, (
         "only MXFP4 (float4_e2m1fn_x2) is supported"
     )
-    sub_qdata = _mx_qdata(mx_param)[active_experts].contiguous()
-    sub_scale = _mx_scale(mx_param)[active_experts].contiguous()
+    # Dense routing: reference the resident param directly instead of gathering a copy
+    # (see selective_nvfp4_weights_fwd for rationale); fall back to the gather when sparse.
+    qd, sc = _mx_qdata(mx_param), _mx_scale(mx_param)
+    all_active = active_experts.numel() == qd.size(0) and not _FORCE_GATHER
+    sub_qdata = qd if all_active else qd[active_experts].contiguous()
+    sub_scale = sc if all_active else sc[active_experts].contiguous()
     # Logical dims (kernel's K, N): the contraction axis is K, the OCP block
     # axis is the LAST storage axis (= K). N is the leading non-expert axis.
     N = sub_qdata.size(1)
@@ -257,11 +267,24 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
     assert nv_param.block_size == 16, (
         f"NVFP4 block_size must be 16, got {nv_param.block_size}"
     )
-    sub_qdata = nv_param.qdata[active_experts].contiguous()  # [a, N, K/2] uint8
-    block_scale = nv_param.scale[active_experts].to(torch.float32)  # [a, N, K/16]
+    # Dense routing (all experts active — the common training case at non-trivial
+    # batch*seq): the advanced-index gather would copy ~the whole packed weight every
+    # layer. Since unique(sorted_idxs) of size E is exactly [0..E-1], remap is identity
+    # and the resident param lines up directly — reference it (zero-copy). Falls back to
+    # the selective gather when routing is sparse. Speeds forward AND the backward
+    # recompute (the recipe rebuild becomes copy-free too).
+    all_active = active_experts.numel() == nv_param.qdata.size(0) and not _FORCE_GATHER
+    sub_qdata = nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
+    raw_scale = nv_param.scale if all_active else nv_param.scale[active_experts]
+    block_scale = raw_scale.to(torch.float32)  # [a, N, K/16]
     per_tensor = getattr(nv_param, "per_tensor_scale", None)
     if per_tensor is not None:
-        block_scale = block_scale * per_tensor.to(torch.float32)
+        per_tensor = per_tensor.to(torch.float32)
+        # A per-expert per-tensor scale ([E,1,1]) must be sliced to the active set too;
+        # a shared scalar just broadcasts.
+        if not all_active and per_tensor.dim() >= 1 and per_tensor.size(0) == nv_param.qdata.size(0):
+            per_tensor = per_tensor[active_experts]
+        block_scale = block_scale * per_tensor
     N = sub_qdata.size(1)
     K = sub_qdata.size(2) * 2
     return MXWeights(

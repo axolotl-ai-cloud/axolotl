@@ -149,7 +149,13 @@ class ScatterMoELoRA(torch.autograd.Function):
             # 2. Pinning all-gathered parameters via saved_tensors hooks
             # 3. Interfering with activation offloading pack/unpack hooks
             # Safe because expert_weights are frozen (requires_grad=False).
-            ctx.expert_weights = expert_weights
+            # If the caller attached a recompute recipe (selective MX/NVFP4 gather, which
+            # is a per-layer copy reconstructible from the resident param), store the
+            # lightweight recipe and DROP the heavy copy so it's freed when forward
+            # returns — backward rebuilds it. Otherwise keep the reference (the bf16 path
+            # passes a param view, which is cheap to hold).
+            ctx.weight_recipe = getattr(expert_weights, "recipe", None)
+            ctx.expert_weights = None if ctx.weight_recipe is not None else expert_weights
             ctx.expert_biases = expert_biases
             ctx.grouped_in = grouped_in
             ctx.grouped_out = grouped_out
@@ -177,7 +183,13 @@ class ScatterMoELoRA(torch.autograd.Function):
                 gates,
                 output_expanded,
             ) = ctx.saved_tensors
-            expert_weights = ctx.expert_weights
+            # Rebuild the selective MX/NVFP4 weights from the recipe (frozen, resident
+            # param) instead of a copy pinned since forward — see forward for rationale.
+            expert_weights = (
+                ctx.expert_weights
+                if ctx.expert_weights is not None
+                else ctx.weight_recipe()
+            )
 
             k = ctx.k
             scaling = ctx.scaling

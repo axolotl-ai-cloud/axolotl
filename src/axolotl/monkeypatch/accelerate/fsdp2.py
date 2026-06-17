@@ -435,6 +435,72 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             fully_shard_kwargs=fsdp2_kwargs,
         )
 
+    # Pre-quantized checkpoints (e.g. nvidia/DeepSeek-V4-Flash-NVFP4) load expert weights
+    # as PLAIN uint8 packed Parameters (+ separate scales), frozen. FSDP2's sharded
+    # `nn.Parameter()` defaults requires_grad=True, which errors on non-float (uint8) data
+    # *before* it copies the original flag. Freeze every non-float param and make non-float
+    # Parameter construction default to requires_grad=False for the duration of sharding.
+    import torch.nn as _nn
+
+    _frozen = 0
+    for _p in model.parameters():
+        if not torch.is_floating_point(_p) and _p.requires_grad:
+            _p.requires_grad_(False)
+            _frozen += 1
+    _orig_param_new = _nn.Parameter.__new__
+
+    def _nonfloat_safe_param_new(cls, data=None, requires_grad=True):
+        if data is not None and not torch.is_floating_point(data):
+            requires_grad = False
+        return _orig_param_new(cls, data, requires_grad)
+
+    _nn.Parameter.__new__ = _nonfloat_safe_param_new
+    if _frozen:
+        LOG.info("[dsv4-fsdp] froze %d non-float (quantized) params before FSDP shard", _frozen)
+
+    # FSDP2 requires a uniform original dtype per shard group, but a wrapped decoder layer
+    # mixes bf16 (base) with fp32 params kept out of the bf16 conversion: the mHC params
+    # (`_keep_in_fp32_modules`) and PEFT LoRA adapters. Keep the sensitive mHC params in
+    # fp32 by sharding the HyperConnection/HyperHead modules SEPARATELY (their own fp32
+    # group, like shard_norms_fp32) before the layer wrap; then cast only the residual fp32
+    # (LoRA) to bf16. The layer wrap skips already-sharded (FSDPModule) submodules.
+    from torch.distributed.fsdp import (
+        FSDPModule as _FSDPModule,
+        MixedPrecisionPolicy as _MPP,
+    )
+    from torch.distributed.fsdp import fully_shard as _fully_shard
+
+    # Compute mHC in fp32 (cast inputs up) but emit bf16 outputs so the fp32 mHC doesn't
+    # feed fp32 activations into downstream bf16 layers (matches the eager mHC's bf16 cast).
+    _fp32_mp = _MPP(
+        param_dtype=torch.float32,
+        reduce_dtype=torch.float32,
+        output_dtype=torch.bfloat16,
+        cast_forward_inputs=True,
+    )
+    _mhc_kwargs = {**fsdp2_kwargs, "mp_policy": _fp32_mp}
+    _mhc = 0
+    for _m in model.modules():
+        if type(_m).__name__ in ("DeepseekV4HyperConnection", "DeepseekV4HyperHead") and not isinstance(
+            _m, _FSDPModule
+        ):
+            _fully_shard(_m, **_mhc_kwargs)
+            _mhc += 1
+    if _mhc:
+        LOG.info("[dsv4-fsdp] fp32-sharded %d mHC modules separately (kept fp32)", _mhc)
+
+    # Cast the remaining plain fp32 float params (PEFT LoRA) to bf16. fp32 norms + the mHC
+    # modules above are already isolated in their own DTensor shard groups, so skip DTensors.
+    from torch.distributed.tensor import DTensor as _DTensor
+
+    _cast = 0
+    for _p in model.parameters():
+        if _p.dtype == torch.float32 and not isinstance(_p.data, _DTensor):
+            _p.data = _p.data.to(torch.bfloat16)
+            _cast += 1
+    if _cast:
+        LOG.info("[dsv4-fsdp] cast %d residual fp32 params to bf16 for uniform FSDP dtype", _cast)
+
     if auto_wrap_policy is not None:
         for module in get_module_children_bottom_up(model)[:-1]:
             if is_peft_model and isinstance(module, LoraLayer):
@@ -446,6 +512,7 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
                 fully_shard(module, **fsdp2_kwargs)
 
     fully_shard(model, **fsdp2_kwargs)
+    _nn.Parameter.__new__ = _orig_param_new  # restore
 
     if log_bias_dtype_mismatch:
         LOG.warning(
