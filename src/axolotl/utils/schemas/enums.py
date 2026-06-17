@@ -73,6 +73,7 @@ class ChatTemplate(str, Enum):
     gemma3 = "gemma3"
     gemma3n = "gemma3n"
     gemma4 = "gemma4"
+    gemma4_unified = "gemma4_unified"
     command_a = "command_a"
     command_a_tool_use = "command_a_tool_use"
     command_a_rag = "command_a_rag"

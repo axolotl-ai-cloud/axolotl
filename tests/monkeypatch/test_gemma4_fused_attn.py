@@ -170,6 +170,77 @@ class TestGemma4FusedAttnLoRACompose:
                 pass
 
 
+def _build_kv_shared_config():
+    """Hybrid Gemma 4 with ``num_kv_shared_layers > 0`` so the fused shared-KV branch runs."""
+    from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
+
+    cfg = Gemma4TextConfig(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=4,
+        num_kv_shared_layers=2,
+        num_attention_heads=2,
+        num_key_value_heads=2,
+        head_dim=32,
+        global_head_dim=64,
+        layer_types=[
+            "sliding_attention",
+            "full_attention",
+            "sliding_attention",
+            "full_attention",
+        ],
+        sliding_window=64,
+        max_position_embeddings=2048,
+        hidden_size_per_layer_input=16,
+        vocab_size_per_layer_input=128,
+        rope_parameters={
+            "sliding_attention": {"rope_type": "default", "rope_theta": 10000.0},
+            "full_attention": {
+                "rope_type": "proportional",
+                "rope_theta": 1000000.0,
+                "partial_rotary_factor": 0.25,
+            },
+        },
+    )
+    cfg._attn_implementation = "sdpa"
+    return cfg
+
+
+class TestFusedAttnSharedKV:
+    """Regression: ``num_kv_shared_layers > 0`` hit the ``kv_shared_layer_index`` key removed in transformers>=5.8."""
+
+    def test_shared_kv_forward_backward(self, restore_gemma4_attention):
+        from transformers.models.gemma4.modeling_gemma4 import Gemma4TextModel
+
+        from axolotl.monkeypatch.models.gemma4.fused_attn import (
+            patch_gemma4_fused_attn,
+        )
+
+        torch.manual_seed(4)
+        m = Gemma4TextModel(_build_kv_shared_config()).cuda().to(torch.bfloat16).train()
+        assert any(layer.self_attn.is_kv_shared_layer for layer in m.layers), (
+            "test config must exercise at least one kv-shared layer"
+        )
+
+        ids = torch.randint(0, 128, (2, 16), device="cuda")
+        mask = torch.ones(2, 16, dtype=torch.long, device="cuda")
+
+        with torch.no_grad():
+            ref = m(input_ids=ids, attention_mask=mask).last_hidden_state.clone()
+
+        patch_gemma4_fused_attn()
+        out = m(input_ids=ids, attention_mask=mask).last_hidden_state
+        out.sum().backward()
+
+        assert out.shape == ref.shape
+        assert torch.isfinite(out).all()
+        cos_sim = torch.nn.functional.cosine_similarity(
+            ref.flatten().float(), out.detach().flatten().float(), dim=0
+        )
+        assert cos_sim > 0.999, f"shared-kv fused vs stock cosine_sim={cos_sim:.6f}"
+
+
 class TestFusedAttnSignature:
     """Pin the fused forward against the live ``Gemma4TextDecoderLayer.forward`` call shape."""
 

@@ -16,7 +16,6 @@
 
 import abc
 import importlib
-import logging
 import sys
 from abc import abstractmethod
 from contextlib import suppress
@@ -45,9 +44,10 @@ from axolotl.utils.callbacks import (
 )
 from axolotl.utils.callbacks.profiler import PytorchProfilerCallback
 from axolotl.utils.distributed import build_parallelism_config
+from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.enums import CustomSupportedOptimizers
 
-LOG = logging.getLogger(__name__)
+LOG = get_logger(__name__)
 
 with suppress(ImportError):
     import torch._dynamo
@@ -122,8 +122,9 @@ class TrainerBuilderBase(abc.ABC):
         if self.cfg.resume_from_checkpoint:
             callbacks.append(SkipEvalOnResumeCallback())
 
-        if self.cfg.gc_steps:
-            callbacks.append(GCCallback(gc_steps=self.cfg.gc_steps))
+        gc_collect_steps = self.cfg.gc_collect_steps or self.cfg.gc_steps
+        if gc_collect_steps:
+            callbacks.append(GCCallback(gc_collect_steps=gc_collect_steps))
 
         if self.cfg.dynamic_checkpoint and self.cfg.dynamic_checkpoint.enabled:
             from axolotl.utils.callbacks.dynamic_checkpoint import (
@@ -186,6 +187,8 @@ class TrainerBuilderBase(abc.ABC):
             if self.cfg.fused_attn_kernel or self.cfg.model_config_type in (
                 "gemma4",
                 "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
             ):
                 from axolotl.kernels.autotune_telemetry import (
                     FusedRopeAutotuneReportCallback,
@@ -552,10 +555,20 @@ class TrainerBuilderBase(abc.ABC):
     def _configure_gradient_checkpointing(self, training_args_kwargs: dict):
         if self.cfg.layer_offloading:
             training_args_kwargs["layer_offloading"] = True
-        if self.cfg.activation_offloading is True:
-            # don't use the HF gradient checkpointing, manually wrap
+        if self.cfg.activation_offloading == "hidden_states":
+            # The checkpoint monkeypatch offloads the per-layer input, so HF
+            # checkpointing stays on and must be reentrant for the patch to apply.
+            training_args_kwargs["gradient_checkpointing"] = True
+            gc_kwargs = dict(self.cfg.gradient_checkpointing_kwargs or {})
+            gc_kwargs["use_reentrant"] = True
+            training_args_kwargs["gradient_checkpointing_kwargs"] = gc_kwargs
+        elif self.cfg.activation_offloading:
+            # TRL offloader replaces HF recompute (re-added for full finetune in the
+            # model loader), so disable HF checkpointing and pass the mode through.
             training_args_kwargs["gradient_checkpointing"] = False
-            training_args_kwargs["activation_offloading"] = True
+            training_args_kwargs["activation_offloading"] = (
+                self.cfg.activation_offloading
+            )
         elif self.cfg.gradient_checkpointing is not None:
             training_args_kwargs["gradient_checkpointing"] = (
                 self.cfg.gradient_checkpointing

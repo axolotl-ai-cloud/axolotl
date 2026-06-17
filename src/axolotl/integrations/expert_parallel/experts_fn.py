@@ -51,23 +51,58 @@ def _maybe_install_decorator_attrs(experts):
         experts.is_transposed = False
 
 
+def _mask_sentinels(recv_topk_idx, recv_topk_weights):
+    """Map ``-1`` remote sentinels to expert 0 / weight 0 for kernels that index by
+    expert id and don't filter (grouped_mm). The zero weight nulls their contribution."""
+    safe_idx = torch.where(
+        recv_topk_idx >= 0, recv_topk_idx, torch.zeros_like(recv_topk_idx)
+    )
+    valid = (recv_topk_idx >= 0).to(recv_topk_weights.dtype)
+    return safe_idx, recv_topk_weights * valid
+
+
 def _grouped_mm_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
     from transformers.integrations.moe import grouped_mm_experts_forward
 
     _maybe_install_decorator_attrs(experts)
-    return grouped_mm_experts_forward(experts, recv_x, recv_topk_idx, recv_topk_weights)
+    safe_idx, safe_w = _mask_sentinels(recv_topk_idx, recv_topk_weights)
+    return grouped_mm_experts_forward(experts, recv_x, safe_idx, safe_w)
 
 
 def _scattermoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
+    # scattermoe skips sentinel rows natively (only valid rows hit the grouped GEMM
+    # + per-row LoRA) -- pass the raw -1-tagged routing, not the masked version.
     from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
-        scattermoe_experts_forward,
+        scattermoe_experts_forward_ep,
     )
 
-    return scattermoe_experts_forward(experts, recv_x, recv_topk_idx, recv_topk_weights)
+    return scattermoe_experts_forward_ep(
+        experts, recv_x, recv_topk_idx, recv_topk_weights
+    )
 
 
 def _sonicmoe_local(experts, recv_x, recv_topk_idx, recv_topk_weights):
-    raise NotImplementedError("Sonicmoe + EP is not yet properly implemented.")
+    # The sonic-moe CUTLASS kernel can't run on sm_120 (Blackwell); for standard-layout
+    # experts there, use the vendored scattermoe EP path (sentinel-skip + fused MXFP4),
+    # which runs on sm_120 and gives sonicmoe + LoRA + EP. Elsewhere sonicmoe+EP is not
+    # yet wired (needs the upstream EP-sentinel kernel).
+    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+        scattermoe_experts_forward_ep,
+        scattermoe_supports_layout,
+    )
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        _sonicmoe_kernel_supported,
+    )
+
+    if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(experts):
+        return scattermoe_experts_forward_ep(
+            experts, recv_x, recv_topk_idx, recv_topk_weights
+        )
+    raise NotImplementedError(
+        "Sonicmoe + EP is not yet implemented on this device/layout. On sm_120 with a "
+        "standard expert layout it falls back to the scattermoe EP path automatically; "
+        "otherwise use use_scattermoe."
+    )
 
 
 _LOCAL_KERNELS = {
@@ -160,9 +195,10 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
     """Shared dispatch -> local-experts -> combine pipeline.
 
     Inputs come in with **global** routing indices (we do not run
-    `transformers.RouterParallel`; see DEEP_EP.md §2.4 for why). Sentinels are
-    `-1` for slots routed to remote experts; we mask them to a valid local id
-    with weight=0 so the local kernel can index safely.
+    `transformers.RouterParallel`; see DEEP_EP.md §2.4 for why). Dispatch returns
+    local expert ids in `[0, E_local)` with `-1` for slots routed to remote experts;
+    the `-1` sentinels are passed through to the local kernel, which decides whether
+    to skip them (eager/scattermoe) or mask them (grouped_mm).
     """
     if hidden_states.dtype != torch.bfloat16:
         original_dtype = hidden_states.dtype
@@ -191,14 +227,11 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
         is_in_rank,
     )
 
-    # Mask -1 sentinels for kernels that don't filter.
-    safe_idx = torch.where(
-        recv_topk_idx >= 0, recv_topk_idx, torch.zeros_like(recv_topk_idx)
+    # Pass the raw -1-tagged routing through; each local kernel handles sentinels
+    # its own way (eager/scattermoe skip them, grouped_mm masks internally).
+    local_out = _LOCAL_KERNELS[kernel_name](
+        self, recv_x, recv_topk_idx, recv_topk_weights
     )
-    valid_mask = (recv_topk_idx >= 0).to(recv_topk_weights.dtype)
-    safe_w = recv_topk_weights * valid_mask
-
-    local_out = _LOCAL_KERNELS[kernel_name](self, recv_x, safe_idx, safe_w)
 
     combined = _DeepEPCombine.apply(local_out, handle_holder)
 

@@ -65,6 +65,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
@@ -72,6 +73,12 @@ jobs:
         exclude:
           - python_version: "3.14"
             pytorch_version: "2.9.1"
+          - python_version: "3.14"
+            pytorch_version: "2.10.0"
+          - python_version: "3.12"
+            pytorch_version: "2.11.0"
+          - python_version: "3.12"
+            pytorch_version: "2.12.0"
     timeout-minutes: 30
 
     steps:
@@ -126,14 +133,12 @@ jobs:
 
       - name: Run tests
         run: |
-          df -h
-          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
-          df -h
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          df -h
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
-          df -h
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -152,6 +157,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     needs: [prime-cdn-s3-cache]
     strategy:
+      max-parallel: 2
       fail-fast: false
       matrix:
         python_version: ["3.12", "3.14"]
@@ -159,6 +165,12 @@ jobs:
         exclude:
           - python_version: "3.14"
             pytorch_version: "2.9.1"
+          - python_version: "3.14"
+            pytorch_version: "2.10.0"
+          - python_version: "3.12"
+            pytorch_version: "2.11.0"
+          - python_version: "3.12"
+            pytorch_version: "2.12.0"
     timeout-minutes: 30
 
     steps:
@@ -221,9 +233,12 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
+          pytest -v --durations=10 -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/ --cov=axolotl --cov-report=xml
           pytest -v --durations=10 tests/monkeypatch/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/cli/
+          pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
