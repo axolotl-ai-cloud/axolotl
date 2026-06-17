@@ -33,8 +33,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     else \
         uv pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
     fi && \
-    python scripts/cutcrossentropy_install.py --uv | sh && \
-    uv pip install pytest
+    python scripts/cutcrossentropy_install.py --uv | sh
 
 # fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \
