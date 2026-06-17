@@ -1,6 +1,6 @@
 
 base_model: axolotl-ai-co/DeepSeek-V3-11M
-trust_remote_code: true
+trust_remote_code: false
 
 datasets:
   - path: mlabonne/FineTome-100k

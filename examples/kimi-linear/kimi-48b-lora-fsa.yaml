@@ -37,14 +37,10 @@ lora_r: 16
 lora_alpha: 32
 lora_dropout: 0.05
 lora_fan_in_fan_out:
-lora_target_modules:
-  - gate_proj
-  - down_proj
-  - up_proj
-  - q_proj
-  - v_proj
-  - k_proj
-  - o_proj
+# fsa swaps the MLA block for a FlashSparseAttention module whose projections
+# are named proj_q/proj_k/proj_v/proj_o (not q_proj/...). Auto-discover linear
+# targets so LoRA lands on the swapped attention as well as the MoE/MLP layers.
+lora_target_linear: true
 
 gradient_accumulation_steps: 2
 micro_batch_size: 2

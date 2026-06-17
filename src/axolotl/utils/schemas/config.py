@@ -868,42 +868,49 @@ class AxolotlInputConfig(
     # when attn_implementation is a sparse backend; ignored otherwise.
     nsa_block_size: int | None = Field(
         default=64,
+        gt=0,
         json_schema_extra={
             "description": "Sparse-attention KV block granularity (nsa/fsa)."
         },
     )
     nsa_topk: int | None = Field(
         default=16,
+        gt=0,
         json_schema_extra={
             "description": "Number of KV blocks each query attends to (nsa/fsa)."
         },
     )
     nsa_kernel_size: int | None = Field(
         default=32,
+        gt=0,
         json_schema_extra={
             "description": "Compression kernel size for the NSA cmp branch."
         },
     )
     nsa_kernel_stride: int | None = Field(
         default=16,
+        gt=0,
         json_schema_extra={
             "description": "Compression kernel stride for the NSA cmp branch."
         },
     )
     nsa_window_size: int | None = Field(
         default=512,
+        gt=0,
         json_schema_extra={
             "description": "Sliding-window size for the NSA local branch."
         },
     )
     nsa_init_blocks: int | None = Field(
         default=1,
+        ge=0,
         json_schema_extra={
             "description": "Leading KV blocks always selected (nsa/fsa)."
         },
     )
     nsa_local_blocks: int | None = Field(
         default=2,
+        ge=0,
         json_schema_extra={
             "description": "Trailing local KV blocks always selected (nsa/fsa)."
         },

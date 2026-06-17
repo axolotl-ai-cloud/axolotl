@@ -284,6 +284,110 @@ class TestSparseAttentionBackends:
         assert validated.attn_implementation == "fsa"
         assert validated.attn_supports_packing is True
 
+    def test_build_cu_seqlens_varlen_tensor(self):
+        """A multi-element cu_seqlens tensor in kwargs must pass through; the
+        old ``a or b`` form raised on bool() of a >1-element tensor."""
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        cu = torch.tensor([0, 3, 7], dtype=torch.int64)
+        out = _build_cu_seqlens(
+            1, 7, None, {"cu_seq_lens_q": cu}, torch.device("cpu")
+        )
+        assert out.dtype == torch.int32
+        assert out.tolist() == [0, 3, 7]
+
+    def test_build_cu_seqlens_tuple_pair(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        cu_q = torch.tensor([0, 4, 8], dtype=torch.int32)
+        out = _build_cu_seqlens(
+            1, 8, None, {"cu_seq_lens_q": (cu_q, cu_q)}, torch.device("cpu")
+        )
+        assert out.tolist() == [0, 4, 8]
+
+    def test_build_cu_seqlens_from_position_ids(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        # two packed sequences of length 3 and 2 in one row
+        position_ids = torch.tensor([[0, 1, 2, 0, 1]])
+        out = _build_cu_seqlens(1, 5, position_ids, {}, torch.device("cpu"))
+        assert out.tolist() == [0, 3, 5]
+
+    def test_build_cu_seqlens_fallback_per_row(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        out = _build_cu_seqlens(2, 4, None, {}, torch.device("cpu"))
+        assert out.tolist() == [0, 4, 8]
+
+    def test_build_cu_seqlens_batched_broadcast_position_ids(self):
+        """Non-packing: transformers shares position_ids as (1, q_len) across the
+        batch, but the FSA stream is bsz*q_len. Each row must be its own sequence
+        (regression for cu=[0, q_len] undercount that crashed the kernel)."""
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        position_ids = torch.arange(3).view(1, 3)  # shared across 4 rows
+        out = _build_cu_seqlens(4, 3, position_ids, {}, torch.device("cpu"))
+        assert out.tolist() == [0, 3, 6, 9, 12]
+
+    def test_build_cu_seqlens_batched_with_inner_packing(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        # bsz=2, q_len=5, each row packs a len-3 and a len-2 sub-sequence
+        position_ids = torch.tensor([[0, 1, 2, 0, 1], [0, 1, 2, 0, 1]])
+        out = _build_cu_seqlens(2, 5, position_ids, {}, torch.device("cpu"))
+        assert out.tolist() == [0, 3, 5, 8, 10]
+
+    def test_enforce_min_segment_merges_short_tail(self):
+        """A packed remainder shorter than kernel_size must merge into the
+        previous segment (regression for the FSA compression NaN)."""
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _enforce_min_segment
+
+        # segments 748, 252, 10 with kernel_size 32 -> the 10 tail merges back
+        cu = torch.tensor([0, 748, 1000, 1010], dtype=torch.int32)
+        assert _enforce_min_segment(cu, 32).tolist() == [0, 748, 1010]
+
+    def test_enforce_min_segment_merges_interior_short(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _enforce_min_segment
+
+        # an interior 8-token segment is absorbed into its predecessor
+        cu = torch.tensor([0, 100, 108, 400], dtype=torch.int32)
+        assert _enforce_min_segment(cu, 32).tolist() == [0, 100, 400]
+
+    def test_enforce_min_segment_noop_when_all_long(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _enforce_min_segment
+
+        cu = torch.tensor([0, 100, 200, 300], dtype=torch.int32)
+        assert _enforce_min_segment(cu, 32).tolist() == [0, 100, 200, 300]
+
+    def test_build_cu_seqlens_min_seg_merges_packed_tail(self):
+        import torch
+
+        from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
+
+        # one row of 50 packed as [0..39] + [0..9]; kernel_size 32 drops the
+        # 10-token tail so no segment is shorter than the compression kernel.
+        position_ids = torch.tensor([list(range(40)) + list(range(10))])
+        out = _build_cu_seqlens(1, 50, position_ids, {}, torch.device("cpu"), min_seg=32)
+        assert out.tolist() == [0, 50]
+
 
 class TestLegacyFlagDeprecation:
     """Legacy boolean flags (flash_attention, sdp_attention, ...) map to a

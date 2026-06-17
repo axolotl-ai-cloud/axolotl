@@ -61,22 +61,65 @@ def sparse_attention_stub(*args, **kwargs):  # pylint: disable=unused-argument
     )
 
 
-def _build_cu_seqlens(bsz, q_len, position_ids, kwargs, device):
+def _enforce_min_segment(cu, min_len):
+    """Drop boundaries that would create a segment shorter than ``min_len``.
+
+    FSA's compression branch needs every sequence to be at least ``kernel_size``
+    long; a packed remainder or padding tail can be much shorter, which makes the
+    compressed-attention softmax degenerate and produces NaN gradients. Merging a
+    short segment into its predecessor is safe under causal attention (a trailing
+    pad/short tail only attends backward, and pad positions are loss-masked).
+    """
+    if min_len <= 1 or cu.numel() <= 2:
+        return cu
+    bounds = cu.tolist()
+    total = bounds[-1]
+    kept = [bounds[0]]
+    for b in bounds[1:-1]:
+        if b - kept[-1] >= min_len:
+            kept.append(b)
+    if total - kept[-1] < min_len and len(kept) > 1:
+        kept.pop()  # merge the short tail into the previous segment
+    kept.append(total)
+    return cu.new_tensor(kept)
+
+
+def _build_cu_seqlens(bsz, q_len, position_ids, kwargs, device, min_seg=1):
     """Cumulative sequence lengths over the flattened ``(bsz * q_len)`` stream.
 
     Prefers varlen boundaries already computed for packing; otherwise derives
     them from ``position_ids`` resets (each ``0`` marks a sequence start), and
-    finally falls back to one sequence per batch row.
+    finally falls back to one sequence per batch row. Segments shorter than
+    ``min_seg`` (the FSA compression kernel size) are merged into their neighbour.
     """
-    cu = kwargs.get("cu_seq_lens_q") or kwargs.get("cu_seqlens_q")
+    total = bsz * q_len
+    cu = kwargs.get("cu_seq_lens_q")
+    if cu is None:
+        cu = kwargs.get("cu_seqlens_q")
     if cu is not None:
-        return cu.to(device=device, dtype=torch.int32)
-    if position_ids is not None:
-        flat = position_ids.reshape(-1)
-        starts = (flat == 0).nonzero(as_tuple=True)[0]
-        total = torch.tensor([flat.numel()], device=flat.device)
-        return torch.cat([starts, total]).to(device=device, dtype=torch.int32)
-    return torch.arange(0, (bsz + 1) * q_len, q_len, device=device, dtype=torch.int32)
+        # `x or y` is unsafe here: bool() on a multi-element tensor raises. Some
+        # transformers paths also hand back a (cu_q, cu_k) pair; q suffices.
+        if isinstance(cu, (tuple, list)):
+            cu = cu[0]
+        cu = cu.to(device=device, dtype=torch.int32)
+    elif position_ids is not None:
+        # The FSA input is hidden_states flattened as bsz contiguous rows of
+        # q_len, so the stream length is bsz*q_len. position_ids is shaped
+        # (bsz, q_len) or broadcast as (1, q_len); each row is its own sequence
+        # and a ``0`` marks an inner (packed) sub-sequence start. Building from
+        # position_ids.numel() alone undercounts the stream when bsz > 1.
+        pos = position_ids.view(1, -1) if position_ids.dim() == 1 else position_ids
+        if pos.shape[0] == 1 and bsz > 1:
+            pos = pos.expand(bsz, -1)
+        resets = pos == 0
+        resets[:, 0] = True  # every row begins a new sequence
+        rows, cols = resets.nonzero(as_tuple=True)
+        starts = (rows * q_len + cols).to(torch.int64).sort().values
+        total_t = torch.tensor([total], device=starts.device, dtype=starts.dtype)
+        cu = torch.cat([starts, total_t]).to(device=device, dtype=torch.int32)
+    else:
+        cu = torch.arange(0, total + 1, q_len, device=device, dtype=torch.int32)
+    return _enforce_min_segment(cu, min_seg)
 
 
 class SparseAttentionAdapter(nn.Module):
@@ -94,7 +137,12 @@ class SparseAttentionAdapter(nn.Module):
     def forward(self, hidden_states, *args, position_ids=None, **kwargs):  # noqa: D102
         bsz, q_len, _ = hidden_states.shape
         cu_seqlens = _build_cu_seqlens(
-            bsz, q_len, position_ids, kwargs, hidden_states.device
+            bsz,
+            q_len,
+            position_ids,
+            kwargs,
+            hidden_states.device,
+            min_seg=getattr(self.fsa, "kernel_size", 1),
         )
         out = self.fsa(hidden_states.reshape(-1, hidden_states.shape[-1]), cu_seqlens)
         out = out.view(bsz, q_len, -1)
@@ -162,8 +210,10 @@ def patch_sparse_attention(model, cfg, model_config):
         cfg.attn_implementation,
     )
     if swapped == 0:
-        LOG.warning(
-            "attn_implementation=%s but no %s layers were found to swap.",
-            cfg.attn_implementation,
-            full_attn_classes,
+        # The stub registered for transformers' loader raises if ever called, so a
+        # no-op swap would only surface as a confusing error at the first forward.
+        raise RuntimeError(
+            f"attn_implementation={cfg.attn_implementation!r} but no "
+            f"{full_attn_classes} layers were found to swap. The sparse-attention "
+            "patch did not apply; refusing to train with the unusable stub."
         )
