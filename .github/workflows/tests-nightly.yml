@@ -8,6 +8,10 @@ on:
     paths:
       - ".github/workflows/tests-nightly.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
