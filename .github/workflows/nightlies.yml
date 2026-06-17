@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-axolotl:
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.head_commit.message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,7 +62,7 @@ jobs:
 
   build-axolotl-cloud:
     needs: build-axolotl
-    if: ${{ ! contains(github.event.commits[0].message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
+    if: ${{ ! contains(github.event.head_commit.message, '[skip docker]') && github.repository_owner == 'axolotl-ai-cloud' }}
     # this job needs to be run on self-hosted GPU runners...
     strategy:
       matrix:
