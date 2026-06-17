@@ -12,6 +12,7 @@ from axolotl.processing_strategies import (
     Gemma3nProcessingStrategy,
     Gemma3ProcessingStrategy,
     Gemma4ProcessingStrategy,
+    Gemma4UnifiedProcessingStrategy,
     Glm4vProcessingStrategy,
     InternVLProcessingStrategy,
     Llama3_2VisionProcessingStrategy,
@@ -871,6 +872,11 @@ def test_dispatch_gemma3n():
 def test_dispatch_gemma4():
     s = _dispatch(_FakeGemma4Processor(), "gemma4")
     assert isinstance(s, Gemma4ProcessingStrategy)
+
+
+def test_dispatch_gemma4_unified():
+    s = _dispatch(_FakeGemma4Processor(), "gemma4_unified")
+    assert isinstance(s, Gemma4UnifiedProcessingStrategy)
 
 
 def test_dispatch_llama3_2_vision():

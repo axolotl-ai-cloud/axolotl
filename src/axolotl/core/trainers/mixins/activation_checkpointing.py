@@ -30,13 +30,18 @@ class ActivationOffloadingMixin(Trainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.args.activation_offloading:
+            # "legacy" uses the previous synchronous implementation (no CUDA
+            # streams), which keeps far fewer activations resident on-GPU than
+            # the stream-overlapped path (True/"disk"); the streams path stashes
+            # several activations to overlap copies, inflating peak reserved.
+            use_streams = self.args.activation_offloading != "legacy"
             if isinstance(self.model, PeftModel):
                 self.activation_offload_context = get_lora_act_offloading_ctx_manager(
-                    self.model, use_streams=True
+                    self.model, use_streams=use_streams
                 )
             else:
                 self.activation_offload_context = get_act_offloading_ctx_manager(
-                    self.model, use_streams=True
+                    self.model, use_streams=use_streams
                 )
         else:
             self.activation_offload_context = contextlib.nullcontext()
