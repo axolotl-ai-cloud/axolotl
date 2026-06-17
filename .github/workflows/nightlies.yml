@@ -49,10 +49,11 @@ jobs:
             CUDA=${{ matrix.cuda }}
             PYTORCH_VERSION=${{ matrix.pytorch }}
             AXOLOTL_ARGS=${{ matrix.axolotl_args }}
-          file: ./docker/Dockerfile
+          file: ./docker/Dockerfile-uv
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            axolotlai/axolotl:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+            axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud:
@@ -93,8 +94,9 @@ jobs:
           build-args: |
             BASE_TAG=${{ github.ref_name }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             CUDA=${{ matrix.cuda }}
-          file: ./docker/Dockerfile-cloud
+          file: ./docker/Dockerfile-cloud-uv
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-             ${{ steps.metadata.outputs.tags }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+             axolotlai/axolotl-cloud:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
+             axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
           labels: ${{ steps.metadata.outputs.labels }}
