@@ -292,9 +292,7 @@ class TestSparseAttentionBackends:
         from axolotl.monkeypatch.attention.sparse_attn import _build_cu_seqlens
 
         cu = torch.tensor([0, 3, 7], dtype=torch.int64)
-        out = _build_cu_seqlens(
-            1, 7, None, {"cu_seq_lens_q": cu}, torch.device("cpu")
-        )
+        out = _build_cu_seqlens(1, 7, None, {"cu_seq_lens_q": cu}, torch.device("cpu"))
         assert out.dtype == torch.int32
         assert out.tolist() == [0, 3, 7]
 
@@ -385,7 +383,9 @@ class TestSparseAttentionBackends:
         # one row of 50 packed as [0..39] + [0..9]; kernel_size 32 drops the
         # 10-token tail so no segment is shorter than the compression kernel.
         position_ids = torch.tensor([list(range(40)) + list(range(10))])
-        out = _build_cu_seqlens(1, 50, position_ids, {}, torch.device("cpu"), min_seg=32)
+        out = _build_cu_seqlens(
+            1, 50, position_ids, {}, torch.device("cpu"), min_seg=32
+        )
         assert out.tolist() == [0, 50]
 
 
