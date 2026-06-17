@@ -4,7 +4,7 @@ FROM axolotlai/axolotl:$BASE_TAG
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HF_HUB_CACHE="/workspace/data/huggingface-cache/hub"
 ENV HF_HOME="/workspace/data/huggingface-cache/hub"
-ENV HF_HUB_ENABLE_HF_TRANSFER="1"
+ENV HF_XET_HIGH_PERFORMANCE="1"
 
 EXPOSE 8888
 EXPOSE 22

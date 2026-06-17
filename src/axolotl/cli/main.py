@@ -191,11 +191,16 @@ def evaluate(ctx: click.Context, config: str, launcher: str, **kwargs):
     help="Launcher to use for multi-GPU inference",
 )
 @click.option("--gradio", is_flag=True, help="Launch Gradio interface")
+@click.option(
+    "--chat", is_flag=True, help="Launch interactive multi-turn chat interface"
+)
 @add_options_from_dataclass(TrainerCliArgs)
 @add_options_from_config(AxolotlInputConfig)
 @filter_none_kwargs
 @click.pass_context
-def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kwargs):
+def inference(
+    ctx: click.Context, config: str, launcher: str, gradio: bool, chat: bool, **kwargs
+):
     """
     Run inference with a trained model.
 
@@ -204,9 +209,13 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
         config: Path to `axolotl` config YAML file.
         launcher: Launcher to use for multi-GPU inference ("accelerate", "torchrun", or "python").
         gradio: Whether to use Gradio browser interface or command line for inference.
+        chat: Whether to use the interactive multi-turn chat interface.
         kwargs: Additional keyword arguments which correspond to CLI args or `axolotl`
             config options.
     """
+    if gradio and chat:
+        raise click.UsageError("--gradio and --chat are mutually exclusive.")
+
     # Extract launcher args from extra args (after --)
     launcher_args = ctx.args if ctx.args else []
 
@@ -220,12 +229,14 @@ def inference(ctx: click.Context, config: str, launcher: str, gradio: bool, **kw
             base_cmd.append(config)
         if gradio:
             base_cmd.append("--gradio")
+        if chat:
+            base_cmd.append("--chat")
         cmd = build_command(base_cmd, kwargs)
         subprocess.run(cmd, check=True)  # nosec B603
     else:
         from axolotl.cli.inference import do_cli
 
-        do_cli(config=config, gradio=gradio, **kwargs)
+        do_cli(config=config, gradio=gradio, chat=chat, **kwargs)
 
 
 @cli.command(

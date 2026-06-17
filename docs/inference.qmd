@@ -35,6 +35,76 @@ axolotl inference your_config.yml --base-model="./completed-model"
 
 :::
 
+### Interactive Chat {#sec-chat}
+
+For multi-turn testing of conversational models, use chat mode. The chat template
+is resolved exactly as it was during training and re-applied to the full
+conversation each turn:
+
+```{.bash}
+axolotl inference your_config.yml --chat
+```
+
+Type a message to chat. End a line with `\` to continue typing on the next line.
+Slash commands control the session:
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/help` | `/?` | Show all commands |
+| `/new` | `/clear`, `/reset` | Clear the conversation (keeps system prompt and parameters) |
+| `/system [text\|clear]` | | Show, set, or clear the system prompt |
+| `/set <param> <value>` | | Set a generation parameter |
+| `/status` | `/params` | Show model info and current settings |
+| `/history` | | Show the conversation so far |
+| `/retry` | `/regen` | Regenerate the last assistant reply |
+| `/undo` | | Remove the last exchange |
+| `/save [path]` | | Append the conversation as a `chat_template`-format JSONL sample |
+| `/quit` | `/exit`, `/q` | Exit |
+
+Generation parameters can also be set directly, e.g. `/temperature 0.7` (or
+`/temp 0.7`), `/top_p 0.9`, `/top_k 50`, `/max_tokens 512`, `/rep 1.05`,
+`/seed 42`. Setting `temperature` to `0` switches to greedy decoding.
+
+Press `Ctrl+C` during generation to stop the current reply; the partial response
+is kept in the conversation (diffusion replies denoise in one piece, so an
+interrupted diffusion turn is discarded instead).
+
+#### Thinking Models {#sec-chat-thinking}
+
+Thinking blocks (e.g. `<think>...</think>`) stream live in a small dim window,
+then collapse to a one-line summary — `/expand` shows the full reasoning of the
+last reply, and `/collapse off` switches to raw verbatim output. The per-turn
+stats split thinking from reply tokens. If the chat template supports a
+render-time thinking toggle (e.g. Qwen's `enable_thinking`), `/think off`
+disables thinking entirely from the next turn; `/think default` restores the
+template default.
+
+::: {.callout-note}
+Assistant turns are stored the way `transformers` recommends: special tokens
+are stripped and thinking is kept on a separate `reasoning_content` key (via
+the tokenizer's `parse_response` schema when it ships one, marker-splitting
+otherwise), so the chat template decides how prior-turn reasoning is
+re-rendered — matching what the model saw during training. The KV cache is
+re-used across turns whenever the rendered conversation extends the previous
+one, so long chats stay responsive.
+:::
+
+`/save` writes conversations in the `messages` format accepted by
+`type: chat_template` datasets, so a good interactive session can be turned
+directly into training data.
+
+#### Diffusion Models {#sec-chat-diffusion}
+
+With the diffusion plugin enabled, chat mode generates each reply by appending
+a masked block to the conversation and denoising it. Replies arrive in one
+piece (no token streaming), and the parameter set changes accordingly:
+`/tokens N` sets the completion block size, `/steps N` the number of denoising
+steps, and `/temperature` the denoising temperature. Defaults come from the
+`diffusion:` section of your config.
+
+Chat mode is not supported with `--prompter`; use the default inference mode
+for legacy prompters.
+
 ## Advanced Usage {#sec-advanced}
 
 ### Gradio Interface {#sec-gradio}
