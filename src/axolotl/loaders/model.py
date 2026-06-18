@@ -320,12 +320,28 @@ class ModelLoader:
         self.model.set_experts_implementation(impl)
 
     def _apply_activation_checkpointing(self):
-        if self.cfg.activation_offloading is True:
+        ao = self.cfg.activation_offloading
+        # "hidden_states" (ALST-style): HF reentrant gradient checkpointing already
+        # wraps the layers; a checkpoint monkeypatch offloads only the per-layer
+        # input (hidden_states). No manual recompute wrap needed.
+        if ao == "hidden_states":
+            from axolotl.monkeypatch.activation_offload_checkpoint import (
+                patch_hidden_states_offload,
+            )
+
+            patch_hidden_states_offload()
+            return
+        # TRL offloader is adapter-aware:
+        #   - LoRA/QLoRA: offload *replaces* recompute (pure offload is leaner/faster;
+        #     recompute would pin the offloaded tensors and balloon memory). No wrap.
+        #   - Full finetune: pure offload of every activation exceeds PCIe bandwidth
+        #     (backlogs on-GPU, OOMs at long seq), so keep recompute and offload only
+        #     the checkpoint boundaries — apply the manual wrap.
+        if ao and not self.cfg.adapter:
             from axolotl.core.trainers.mixins.activation_checkpointing import (
                 ac_wrap_hf_model,
             )
 
-            # ^^ importing this at the module level breaks plugins
             ac_wrap_hf_model(self.model)
 
     def _resize_token_embeddings(self):

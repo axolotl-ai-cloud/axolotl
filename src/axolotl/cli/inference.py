@@ -13,16 +13,13 @@ from transformers import GenerationConfig, TextIteratorStreamer, TextStreamer
 
 from axolotl.cli.args import InferenceCliArgs
 from axolotl.cli.config import load_cfg
-from axolotl.cli.utils import load_model_and_tokenizer
+from axolotl.cli.utils import load_model_and_tokenizer, resolve_chat_template_str
 from axolotl.cli.utils.diffusion import (
     diffusion_inference,
     launch_diffusion_gradio_ui,
 )
 from axolotl.integrations.base import PluginManager
 from axolotl.telemetry.errors import send_errors
-from axolotl.utils.chat_templates import (
-    get_chat_template_from_config,
-)
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
@@ -70,14 +67,8 @@ def do_inference(
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
         )
-    elif cfg.chat_template:
-        chat_template_str = get_chat_template_from_config(
-            cfg, ds_cfg=None, tokenizer=tokenizer
-        )
-    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
-        chat_template_str = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
-        )
+    else:
+        chat_template_str = resolve_chat_template_str(cfg, tokenizer)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -190,14 +181,8 @@ def do_inference_gradio(
         prompter_module = getattr(
             importlib.import_module("axolotl.prompters"), prompter
         )
-    elif cfg.chat_template:
-        chat_template_str = get_chat_template_from_config(
-            cfg, ds_cfg=None, tokenizer=tokenizer
-        )
-    elif cfg.datasets and cfg.datasets[0].type == "chat_template":
-        chat_template_str = get_chat_template_from_config(
-            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
-        )
+    else:
+        chat_template_str = resolve_chat_template_str(cfg, tokenizer)
 
     model = model.to(cfg.device, dtype=cfg.torch_dtype)
 
@@ -297,13 +282,19 @@ def do_inference_gradio(
 
 
 def do_cli(
-    config: Union[Path, str] = Path("examples/"), gradio: bool = False, **kwargs
+    config: Union[Path, str] = Path("examples/"),
+    gradio: bool = False,
+    chat: bool = False,
+    **kwargs,
 ) -> None:
     """
-    Parses axolotl config, CLI args, and calls `do_inference` or `do_inference_gradio`.
+    Parses axolotl config, CLI args, and calls `do_inference`, `do_inference_gradio`,
+    or `do_chat`.
 
     Args:
         config: Path to `axolotl` config YAML file.
+        gradio: Whether to launch the Gradio browser interface.
+        chat: Whether to launch the interactive multi-turn chat interface.
         kwargs: Additional keyword arguments to override config file values.
     """
 
@@ -316,7 +307,14 @@ def do_cli(
         return_remaining_strings=True
     )
 
-    if gradio:
+    if gradio and chat:
+        raise ValueError("--gradio and --chat are mutually exclusive.")
+
+    if chat:
+        from axolotl.cli.chat import do_chat
+
+        do_chat(cfg=parsed_cfg, cli_args=parsed_cli_args)
+    elif gradio:
         do_inference_gradio(cfg=parsed_cfg, cli_args=parsed_cli_args)
     else:
         do_inference(cfg=parsed_cfg, cli_args=parsed_cli_args)
