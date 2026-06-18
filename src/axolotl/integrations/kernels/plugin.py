@@ -115,17 +115,11 @@ class KernelsPlugin(BasePlugin):
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
 
         if cfg.use_dsv4_kernels:
-            # Debug: skip the fused attention/rope/mHC/indexer forward patches (keeps the
-            # NVFP4 loading + scattermoe experts) to isolate fused-kernel correctness from
-            # loading/FSDP. Eager forward becomes the reference.
-            if os.environ.get("DSV4_DISABLE_FUSED_FORWARD") == "1":
-                LOG.warning("DSV4_DISABLE_FUSED_FORWARD=1: using EAGER attention/rope/mHC (no fused kernels)")
-            else:
-                from axolotl.integrations.kernels.libs.dsv4 import (
-                    patch_deepseek_v4_kernels,
-                )
+            from axolotl.integrations.kernels.libs.dsv4 import (
+                patch_deepseek_v4_kernels,
+            )
 
-                patch_deepseek_v4_kernels()
+            patch_deepseek_v4_kernels()
 
     def pre_lora_load(self, cfg, model):
         """Before PEFT wraps the experts: fix NVFP4 MoE-expert loading. transformers'
@@ -134,39 +128,6 @@ class KernelsPlugin(BasePlugin):
         the checkpoint so scattermoe dequantizes correctly."""
         if not (cfg.use_scattermoe and cfg.use_dsv4_kernels):
             return
-
-        # Debug-only: truncate the decoder stack to the first N layers (before PEFT) so the
-        # full model fits a single GPU without FSDP — isolates kernel/scattermoe-lora
-        # correctness. The first layers span all 3 types (sliding/CSA/HCA). Done here (not
-        # post_model_load) so it runs pre-PEFT (correct trainable count) and on the unwrapped
-        # model. Find the decoder ModuleList by content (robust to model nesting).
-        trunc = os.environ.get("DSV4_TRUNCATE_LAYERS")
-        if trunc:
-            n = int(trunc)
-            import torch.nn as nn
-
-            for mod in model.modules():
-                layers = getattr(mod, "layers", None)
-                if isinstance(layers, nn.ModuleList) and len(layers) > n and "DecoderLayer" in type(layers[0]).__name__:
-                    orig = len(layers)
-                    mod.layers = layers[:n]
-                    for cfg_obj in (model.config, getattr(mod, "config", None)):
-                        if cfg_obj is None:
-                            continue
-                        if hasattr(cfg_obj, "num_hidden_layers"):
-                            cfg_obj.num_hidden_layers = n
-                        # Truncate per-layer config lists (layer_types, compress_ratios, ...)
-                        # to keep HF's `len(layer_types) == num_hidden_layers` validators happy.
-                        # Lists of length `orig` -> n; length `orig+1` (e.g. compress_ratios) -> n+1.
-                        for k, v in list(vars(cfg_obj).items()):
-                            if isinstance(v, list) and len(v) in (orig, orig + 1):
-                                setattr(cfg_obj, k, v[: n + (len(v) - orig)])
-                    import gc
-
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    LOG.info("Truncated decoder stack to first %d layers (single-GPU debug)", n)
-                    break
 
         has_packed_experts = any(
             isinstance(getattr(m, "gate_up_proj", None), torch.Tensor)

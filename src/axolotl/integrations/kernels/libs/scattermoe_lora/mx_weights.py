@@ -23,18 +23,12 @@ The FP4 E2M1 codebook is the standard OCP-MX one (16 values:
 from __future__ import annotations
 
 import enum
-import os
 from dataclasses import dataclass
 from typing import Optional
 
 import torch
 
 MX_BLOCK_SIZE = 32
-
-# Benchmark/debug escape hatch: force the old advanced-index gather-copy of active
-# experts even under dense routing (so before/after of the zero-copy fast path can be
-# measured). Off by default.
-_FORCE_GATHER = os.environ.get("DSV4_FORCE_GATHER", "0") == "1"
 
 # Standard OCP-MX fp4 e2m1 codebook (sign bit | 2-bit exp | 1-bit mantissa).
 # Index by the raw 4-bit nibble. Cached fp32 tensor for kernel lookups.
@@ -218,7 +212,7 @@ def selective_mx_weights_fwd(mx_param, active_experts: torch.Tensor) -> MXWeight
     # Dense routing: reference the resident param directly instead of gathering a copy
     # (see selective_nvfp4_weights_fwd for rationale); fall back to the gather when sparse.
     qd, sc = _mx_qdata(mx_param), _mx_scale(mx_param)
-    all_active = active_experts.numel() == qd.size(0) and not _FORCE_GATHER
+    all_active = active_experts.numel() == qd.size(0)
     sub_qdata = qd if all_active else qd[active_experts].contiguous()
     sub_scale = sc if all_active else sc[active_experts].contiguous()
     # Logical dims (kernel's K, N): the contraction axis is K, the OCP block
@@ -273,7 +267,7 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
     # and the resident param lines up directly — reference it (zero-copy). Falls back to
     # the selective gather when routing is sparse. Speeds forward AND the backward
     # recompute (the recipe rebuild becomes copy-free too).
-    all_active = active_experts.numel() == nv_param.qdata.size(0) and not _FORCE_GATHER
+    all_active = active_experts.numel() == nv_param.qdata.size(0)
     sub_qdata = nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
     raw_scale = nv_param.scale if all_active else nv_param.scale[active_experts]
     block_scale = raw_scale.to(torch.float32)  # [a, N, K/16]
