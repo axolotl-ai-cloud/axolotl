@@ -234,14 +234,14 @@ Negative checks from the cross-entropy sweep:
 
 - Cut Cross Entropy and Liger fused-linear CE are not valid with this NVFP4
   training setup today: b5 warmups loss-collapsed to zero after the first step
-  and logged non-finite grad norms. The opt-in `bf16_lm_head_cross_entropy` path
+  and logged non-finite grad norms. The `lm_head_cross_entropy: bf16` path
   (below) avoids that collapse — it never filters gradient mass and keeps the
   logsumexp and `grad_hidden` accumulation in fp32 — but it is a memory win, not a
   throughput win (the tile GEMMs are bf16 with the same FLOPs as the materialized
   lm_head, so it trades ~2.5% speed for ~13 GiB).
-- `fp8_lm_head_cross_entropy` converges but is **dominated** — in apples-to-apples it
+- `lm_head_cross_entropy: fp8` converges but is **dominated** — in apples-to-apples it
   is the slowest *and* most memory-hungry CE option (8k 31.4 GiB, 32k 71.6 GiB; both
-  worse than `fused_fp4`/`bf16_lm_head` on speed and memory). Not recommended, and not
+  worse than the `fp4`/`bf16` kernels on speed and memory). Not recommended, and not
   fully deterministic: one run loss-collapsed with `grad_norm: nan`.
 - fp16 is rejected: torchao's NVFP4 quantizer requires bf16/fp32, and diagnostic
   runs showed fp16 LoRA gradients NaN after AMP unscale at global step 0 even with
@@ -262,7 +262,7 @@ graph-break fix), no NaN (alpaca-cleaned, seed 42, 300 steps):
 | Qwen3.5-9B | yes | 0.9042 | 0.932 | **tracks bf16** |
 | Qwen3.5-9B | no  | 0.8443 | 0.8685 | **tracks bf16** |
 | Qwen3-VL-8B | yes | 1.01 | 1.094 | **tracks bf16** |
-| Qwen3.5-9B, 8k (NVFP4 = `fused_fp4_cross_entropy`) | yes | 0.8913 | 0.934 | **tracks bf16** |
+| Qwen3.5-9B, 8k (NVFP4 = `lm_head_cross_entropy: fp4`) | yes | 0.8913 | 0.934 | **tracks bf16** |
 
 An earlier shape-check A/B (Qwen2.5-0.5B, 120 steps, full fine-tune) showed the same
 pattern at small scale — NVFP4 tracked bf16 with a small upward loss offset and no
@@ -450,55 +450,43 @@ Two safety guards apply:
   **trainable** tied weight raises a clear error (an FP4 store has no bf16 master to take
   the gradient) — untie the model or leave `quantize_lm_head: false`. (Many small models
   tie; larger Qwen3 variants do not.)
-- **Cut Cross-Entropy is rejected.** `cut_cross_entropy` fuses the output projection
-  into the loss and reads the `lm_head` weight directly, bypassing the NVFP4 forward.
-  The combination is refused at config validation. Disable one of the two.
+- **Cut Cross-Entropy is rejected (unless the FP4 CE supersedes it).**
+  `cut_cross_entropy` fuses the output projection into the loss and reads the `lm_head`
+  weight directly, bypassing the NVFP4 forward, so `quantize_lm_head` + `cut_cross_entropy`
+  is refused at config validation. The exception is `lm_head_cross_entropy: fp4` (or
+  `auto`), which reads the NVFP4-packed head directly and takes over the loss — that
+  combination is allowed. Otherwise, disable one of the two.
 
 If the `lm_head` dimensions are not FP4-eligible (`%32`), it is left in high
 precision with a warning rather than crashing.
 
-### FP8 lm_head cross-entropy (opt-in)
+### One flag: `lm_head_cross_entropy`
 
-`fp8_lm_head_cross_entropy: true` patches a frozen, bias-free plain `nn.Linear`
-`lm_head` training forward to stream vocab tiles through FP8 scaled matmul and
-cross-entropy without materializing the full `[batch*seq, vocab]` logits tensor.
-It returns `dL/dhidden` only; the `lm_head` stays frozen and backward uses FP8
-scaled matmul against a prepacked dgrad weight layout. It is incompatible with
-`quantize_lm_head`, `fused_fp4_cross_entropy`, and the other CE optimization
-patches.
+The NVFP4 fused-CE kernels are selected by a single option that tiles the loss over
+the vocab so the `[batch*seq, vocab]` logit tensor is never materialized, picking the
+kernel from the `lm_head` dtype:
 
-Experimental and **not recommended** — it converges but is **dominated**. In an
-apples-to-apples comparison (Qwen3.5-9B, same recipe, varying only the CE) FP8 CE is
-the **slowest and most memory-hungry** of the CE options: it measured **8k 2,620 tok/s
-· 31.4 GiB · 0.958** and **32k 2,656 tok/s · 71.6 GiB · 0.892** (loss tracks
-`bf16_lm_head_cross_entropy`), where at 32k `fused_fp4_cross_entropy` uses 26.9 GiB and
-`bf16_lm_head_cross_entropy` uses 45.1 GiB — both faster *and* lighter at every context.
-It streamed (no fallback to materialized), so the high peak is a current
-kernel-efficiency limitation, not a config issue. (An earlier short-seq batch-scaling
-probe — seq 2048, no gradient checkpointing — ran batch 5/6, but one run loss-collapsed
-after the first step with non-finite grad norms.) Prefer `fused_fp4_cross_entropy`
-(minimum memory, fits 64k) or `bf16_lm_head_cross_entropy` (best speed + convergence).
+```yaml
+nvfp4_training:
+  lm_head_cross_entropy: auto   # off | auto | fp4 | bf16 | fp8
+```
 
-### Chunked bf16 lm_head cross-entropy (opt-in)
+- **`auto`** (recommended) — FP4 head (`quantize_lm_head: true`) → **fp4** kernel;
+  plain frozen bias-free `nn.Linear` → **bf16** kernel; else materialized. FP8 is
+  never auto-selected (parity caveats), so set `fp8` explicitly to use it.
+- **`fp4` / `bf16` / `fp8`** — force a kernel (errors if the head can't match, e.g.
+  `fp4` without `quantize_lm_head`).
+- **`off`** (default) — materialized CE.
 
-`bf16_lm_head_cross_entropy: true` is a **memory** option for a frozen, bias-free
-plain `nn.Linear` `lm_head`. It computes the loss and `dL/dhidden` by streaming the
-vocabulary in tiles (`_VOCAB_BLOCK = 4096`) with online softmax, so the
-`[tokens, vocab]` logits tensor and its gradient are never materialized. Unlike the
-fused CCE/Liger kernels — which loss-collapse in this NVFP4 setup — it does **no**
-gradient filtering, keeps the logsumexp and `grad_hidden` accumulation in fp32, and
-downcasts to bf16 once at the end, matching `F.cross_entropy` to ~1e-7 (loss) /
-~3.5e-3 (grad, pure bf16-GEMM noise) at the Qwen3.5 vocab scale.
+All are a **memory/backward-traffic** win (not a throughput win) on a **frozen** head
+(`dL/dhidden` only). The deprecated `fused_fp4_cross_entropy` /
+`bf16_lm_head_cross_entropy` / `fp8_lm_head_cross_entropy` booleans still map onto this
+flag with a `DeprecationWarning`.
 
-It is a memory/batch-size unlock, **not** a throughput win: the tile GEMMs are bf16
-with the same FLOPs as the materialized lm_head (which is already frozen, so there is
-no weight gradient to save), so it trades speed for memory. On Qwen3.5-9B LoRA
-(seq 2048, b4, RTX PRO 6000) it measured **1.2178 s/step at 56.48 GiB active** versus
-the materialized lm_head path's ~1.19 s/step at 69.63 GiB — ~2.5% slower for ~13 GiB
-headroom. Use it when memory-bound (to fit a larger batch); otherwise leave it off.
-It engages only for a frozen bias-free `nn.Linear` lm_head in training (it falls back
-to materialized CE otherwise) and is mutually exclusive with `quantize_lm_head`,
-`fused_fp4_cross_entropy`, and `fp8_lm_head_cross_entropy`.
+The **bf16** kernel is the convergence-safe drop-in where CCE/Liger collapse under
+NVFP4 SR grads (no gradient filtering; fp32 logsumexp/`grad_hidden`), trading ~2.5%
+throughput for ~13 GiB. The **fp8** kernel converges but is **dominated** (slowest and
+highest-memory of the three) — not recommended.
 
 ::: {.callout-note}
 At the time of writing, `skip_first_n_blocks` / `skip_last_n_blocks` may be applied
@@ -516,11 +504,11 @@ at 64k and OOMs a single card at 32k+. So **the CE must switch with context leng
 
 - **Short (≤4k):** `liger_cross_entropy` — the logit tensor is small, so it is the
   fastest option.
-- **Long (≥8k):** `fused_fp4_cross_entropy` (logit-free; requires
+- **Long (≥8k):** `lm_head_cross_entropy: fp4` (logit-free; requires
   `quantize_lm_head: true`) — **required at 32k+**, where a logits-materializing CE
   OOMs.
 
-**64k on one card.** `fused_fp4_cross_entropy` trains a **9B model at 64k context in
+**64k on one card.** `lm_head_cross_entropy: fp4` trains a **9B model at 64k context in
 41.6 GiB on a single 96 GiB card** — the only recipe that fits 64k. It also fits a
 **Qwen3.5-27B at 32k** (1,252 tok/s · 64.0 GiB) where bf16 OOMs.
 
@@ -532,7 +520,7 @@ The honest baseline is *also logit-free*: bf16 with Liger `fused_linear_cross_en
 memory** and is **~20–26% faster** at every length. Qwen3.5-9B (mbs 1, gc on, packing,
 compiled; tok/s · peak GiB):
 
-| seq | bf16 + FLCE (logit-free, fair baseline) | NVFP4 + `fused_fp4_cross_entropy` | NVFP4 mem ratio |
+| seq | bf16 + FLCE (logit-free, fair baseline) | NVFP4 + `lm_head_cross_entropy: fp4` | NVFP4 mem ratio |
 |-----|----------------------------------------:|----------------------------------:|----------------:|
 | 8k  | 2,722 · 31.4 | 3,232 · 15.9 | **0.51×** |
 | 16k | 2,603 · 44.8 | 3,227 · 19.6 | **0.44×** |
@@ -549,45 +537,44 @@ context." The honest claim is that NVFP4 uses ~⅓ the memory at every length an
 Three NVFP4 CE options differ only in the lm_head precision they run the loss against
 (everything else held fixed; tok/s · peak GiB at 64k):
 
-| Option | lm_head | 64k | Trade-off |
+| `lm_head_cross_entropy` | lm_head | 64k | Trade-off |
 |--------|---------|-----|-----------|
-| `fused_fp4_cross_entropy` | FP4 (needs `quantize_lm_head: true`) | 1,846 · **41.6** | **Minimum memory** (fits 64k); ~15% slower; slight convergence cost. |
-| `bf16_lm_head_cross_entropy` | bf16 (needs `quantize_lm_head: false`) | 2,040 · 76.6 | **Best convergence + faster**, but ~2× the memory (near the 96 GiB limit at 64k). |
+| `fp4` | FP4 (needs `quantize_lm_head: true`) | 1,846 · **41.6** | **Minimum memory** (fits 64k); ~15% slower; slight convergence cost. |
+| `bf16` | bf16 (needs `quantize_lm_head: false`) | 2,040 · 76.6 | **Best convergence + faster**, but ~2× the memory (near the 96 GiB limit at 64k). |
 | standard `liger_cross_entropy` | FP4 | OOM | Fastest at short context; **OOMs at 32k+**. |
 
-`fused_fp4_cross_entropy` and `bf16_lm_head_cross_entropy` are mutually exclusive and
-have opposite `quantize_lm_head` requirements (`True` vs `False`).
+The `fp4` and `bf16` kernels have opposite `quantize_lm_head` requirements (`True` vs
+`False`); `lm_head_cross_entropy: auto` picks the right one for you from the head dtype.
 
-### What is actually new in `fused_fp4_cross_entropy`
+### What is actually new in `lm_head_cross_entropy: fp4`
 
 The *fusion technique* — stream the vocabulary in tiles, keep a running online-softmax
 tally, and never materialize the full `[tokens × vocab]` logit tensor — is **not** new.
 It is the established **Cut-Cross-Entropy (CCE) / Liger `fused_linear_cross_entropy`**
-approach (and `bf16_lm_head_cross_entropy` is essentially that technique on a plain
+approach (and `lm_head_cross_entropy: bf16` is essentially that technique on a plain
 bf16 head). What is new is making that fusion work **when the lm_head is *stored* in
 4-bit (NVFP4)** — packed 4-bit (e2m1) values plus separate per-group (e4m3) scales. The
 off-the-shelf fused-CE kernels stream tiles out of a dense bf16 weight and an NVFP4 head
 has none, so they would have to rebuild a full dense bf16 copy of the head first, undoing
 the compression (which is exactly why `cut_cross_entropy` and
 `liger_fused_linear_cross_entropy` are rejected under `quantize_lm_head` — and why they
-loss-collapse under NVFP4 SR grads, see the negative checks above).
-`fused_fp4_cross_entropy` instead reads **row-slices of the packed 4-bit head and
-dequantizes each tile to bf16 just-in-time** (bit-identical to dequantizing the whole
-table), then runs the per-tile matmul — so neither the full logits **nor** a dense bf16
-copy of the head ever exists, only one `[tokens × V_BLOCK]` tile at a time. This is a
-**memory** win, not an FP4-tensor-core throughput win: the per-tile matmul runs in
-**bf16** by default (an experimental `fused_fp4_cross_entropy_fp4_matmul` flag routes it
-through FP4 `torch._scaled_mm`, but it is off by default and currently slower). The
-contribution is narrow and engineering-level — a memory technique, not a new CE algorithm
-or an FP4 GEMM.
+loss-collapse under NVFP4 SR grads, see the negative checks above). The `fp4` kernel
+instead reads **row-slices of the packed 4-bit head and dequantizes each tile to bf16
+just-in-time** (bit-identical to dequantizing the whole table), then runs the per-tile
+matmul — so neither the full logits **nor** a dense bf16 copy of the head ever exists,
+only one `[tokens × V_BLOCK]` tile at a time. This is a **memory** win, not an
+FP4-tensor-core throughput win: the per-tile matmul runs in **bf16** by default (an
+experimental `fused_ce_fp4_matmul` flag routes it through FP4 `torch._scaled_mm`, but it
+is off by default and currently slower). The contribution is narrow and
+engineering-level — a memory technique, not a new CE algorithm or an FP4 GEMM.
 
 ### Tuning the fused-CE vocab tile (`fused_ce_vocab_block`)
 
-`fused_fp4_cross_entropy` streams the vocabulary in `[tokens, fused_ce_vocab_block]`
-tiles. The tile width is a pure **speed ↔ VRAM** dial and is **loss-invariant** — the
-tile loop is a reduction split, so loss and gradients are bit-stable across block
-widths. A sweep (gc-on, Qwen3-1.7B, full-NVFP4, `fp4_matmul` on, 8k seq) put the speed
-knee at **8192**:
+`lm_head_cross_entropy` streams the vocabulary in `[tokens, fused_ce_vocab_block]`
+tiles (all three kernels). The tile width is a pure **speed ↔ VRAM** dial and is
+**loss-invariant** — the tile loop is a reduction split, so loss and gradients are
+bit-stable across block widths. A sweep (gc-on, Qwen3-1.7B, full-NVFP4, `fp4_matmul` on,
+8k seq) put the speed knee at **8192**:
 
 - **`4096` (default)** — balanced. Already ~**+9%** faster than a bf16 head, and its
   transient logit tile is **lighter than the bf16 head's** (−0.5 GiB) — so there is no
@@ -624,15 +611,17 @@ The `nvfp4_training:` block (schema: `src/axolotl/utils/schemas/nvfp4.py`,
 | `quantize_lm_head` | `bool` | `false` | Opt-in. Remove `lm_head` from the high-precision exclusion and quantize the output projection to NVFP4 (memory + GEMM win on a large tensor, small convergence cost). A **frozen** tied embedding is quantized once and shared with both roles; a **trainable** tied weight raises, as does `cut_cross_entropy`. `embed_tokens` stays excluded. |
 | `quantize_embeddings` | `bool` | `false` | Store the input embedding (`embed_tokens`) packed in FP4, dequantized on lookup (W4A16). **Frozen only** (a trainable embedding is skipped with a warning); hidden dim must be %16. |
 | `quantize_vision_tower` | `bool` | `false` | Multimodal only. Swap the **frozen** `nn.Linear`s under the vision encoder (attn qkv/proj, mlp fc1/fc2) to NVFP4; the merger and patch-embed projection are left untouched. Warns if no vision tower is found. |
-| `fused_fp4_cross_entropy` | `bool` | `false` | Opt-in. Requires `quantize_lm_head`. Tiles CE over the FP4 lm_head with online softmax — each tile is dequantized FP4→bf16 just-in-time (per-tile matmul in **bf16** by default) so neither logits nor a dense head are materialized. A **memory** win, not an FP4-GEMM win. The long-context recipe (fits 9B at 64k in 41.6 GiB). See [Long context](#long-context). |
-| `fused_fp4_cross_entropy_fp4_matmul` | `bool` | `false` | **Experimental.** Route the fused-CE per-tile matmul through FP4 `torch._scaled_mm` (hits FP4 tensor cores) instead of bf16. Faster than the memory-only FP4-CE path but slower than materialized bf16/Liger CE — keep off unless benchmarking the next CE-epilogue design. |
-| `fused_ce_vocab_block` | `int` | `4096` | Vocab-tile width for `fused_fp4_cross_entropy`. A pure speed↔VRAM dial, **loss-invariant**. `4096` (default) ≈ a bf16 head's VRAM but faster (~+9%); `8192` is max throughput (~+0.4% for ~+2 GiB at long seq); wider buys nothing. Overridable via `AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK` (env wins over config). |
-| `fp8_lm_head_cross_entropy` | `bool` | `false` | Opt-in. Requires a frozen bias-free plain `nn.Linear` lm_head. Streams FP8 lm_head vocab tiles into CE without full logits materialization; FP8 scaled matmul for `dL/dhidden`; no lm_head weight grad. **Converges but dominated** — slowest and highest-memory CE (8k 31.4 GiB, 32k 71.6 GiB; worse than `fused_fp4`/`bf16_lm_head` on both). Not recommended. |
+| `lm_head_cross_entropy` | `"off" \| "auto" \| "fp4" \| "bf16" \| "fp8"` | `"off"` | **Head-aware fused CE** — one flag that skips materializing the `[tokens, vocab]` logits by tiling the loss over the vocab, picking the kernel from the (already-swapped) lm_head dtype. `auto`: FP4 store → FP4 kernel (needs `quantize_lm_head`), else a plain frozen bias-free `nn.Linear` → bf16 kernel, else materialized. `fp4`/`bf16`/`fp8` force a kernel. FP8 is never auto-selected (shares the plain-Linear head with bf16 but has fp8 parity caveats). All are a **memory** win, not an FP4-GEMM win, and frozen-head only. Supersedes the three deprecated booleans below. See [Long context](#long-context). |
+| `fused_ce_fp4_matmul` | `bool \| null` | `null` | **Experimental.** Only when the resolved kernel is `fp4`: route the per-tile matmul through FP4 `torch._scaled_mm` (hits FP4 tensor cores) instead of bf16. Faster than the memory-only FP4-CE path but slower than materialized bf16/Liger CE — keep off unless benchmarking the next CE-epilogue design. |
+| `fused_ce_vocab_block` | `int` | `4096` | Vocab-tile width for `lm_head_cross_entropy` (all kernels). A pure speed↔VRAM dial, **loss-invariant**. `4096` (default) ≈ a bf16 head's VRAM but faster (~+9%); `8192` is max throughput (~+0.4% for ~+2 GiB at long seq); wider buys nothing. Overridable via `AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK` (env wins over config). |
+| `fused_fp4_cross_entropy` | `bool` | `false` | **Deprecated** — use `lm_head_cross_entropy: fp4` (or `auto`). Maps automatically with a warning. |
+| `fused_fp4_cross_entropy_fp4_matmul` | `bool` | `false` | **Deprecated** — use `fused_ce_fp4_matmul`. |
+| `fp8_lm_head_cross_entropy` | `bool` | `false` | **Deprecated** — use `lm_head_cross_entropy: fp8`. (Converges but dominated — slowest/highest-memory CE; not recommended.) |
 | `shared_lora_base_fprop` | `bool \| null` | `null` (env fallback; off) | Experimental LoRA/QLoRA native-backend option. For fused LoRA QKV/QK projections with pre-quantized NVFP4 frozen bases, pack the shared activation once and reuse it across base fprops. YAML `true`/`false` wins; omitted/null falls back to `AXOLOTL_NVFP4_SHARED_BASE_FPROP`. Leave off unless an end-to-end bench on a many-attention-layer model shows a win. |
 | `skip_first_n_blocks` | `int` | `0` | Keep the first N transformer blocks in high precision (see the ~15% high-precision policy below). |
 | `skip_last_n_blocks` | `int` | `0` | Keep the last N transformer blocks in high precision (the tail blocks matter most). |
 | `save_nvfp4` | `bool` | `false` | Opt-in. Store eligible weights NVFP4-packed (qdata + scales) in a `torch.save` sidecar for ~3.5× smaller weight files. See [FP4-packed save](#fp4-packed-save-save_nvfp4) below. **Lossy for FFT resume** (no bf16 master kept); bit-exact for frozen weights. Off by default (bf16 save, unchanged). |
-| `bf16_lm_head_cross_entropy` | `bool` | `false` | Opt-in **memory** path. Requires a frozen bias-free plain `nn.Linear` lm_head. Chunked online-softmax CE over bf16 vocab tiles — no `[tokens, vocab]` logits materialization, fp32 logsumexp/`grad_hidden`, no gradient filtering (avoids the CCE/Liger collapse). Trades ~2.5% throughput for ~13 GiB. Mutually exclusive with `quantize_lm_head` / `fused_fp4_cross_entropy` / `fp8_lm_head_cross_entropy`. |
+| `bf16_lm_head_cross_entropy` | `bool` | `false` | **Deprecated** — use `lm_head_cross_entropy: bf16` (or `auto` with a bf16 head). Chunked online-softmax CE over bf16 vocab tiles (no `[tokens, vocab]` logits, fp32 logsumexp/`grad_hidden`, no gradient filtering — avoids the CCE/Liger collapse). Trades ~2.5% throughput for ~13 GiB. |
 | `fp8_lm_head` | `bool` | `false` | Eval/no-grad-only FP8 scaled-matmul lm_head patch for eval/scoring/logprob throughput. Training forwards stay high-precision. |
 | `fla_causal_conv_compile_boundary` | `bool` | `false` | Qwen3.5/MoE sample-packing only. Runs FLA varlen `causal_conv1d` behind a compile boundary so variable packed `cu_seqlens` lengths do not repeatedly trigger Dynamo/Inductor recompiles. |
 

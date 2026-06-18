@@ -1682,25 +1682,22 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 f"got adapter={self.adapter!r}."
             )
 
-        if self.nvfp4_training.fp8_lm_head_cross_entropy and (
-            self.nvfp4_training.quantize_lm_head
-            or self.nvfp4_training.fused_fp4_cross_entropy
-        ):
+        # `lm_head_cross_entropy` is already resolved (deprecated booleans folded in);
+        # check the head/kernel match against it.
+        ce_mode = self.nvfp4_training.lm_head_cross_entropy
+        if ce_mode in ("bf16", "fp8") and self.nvfp4_training.quantize_lm_head:
             raise ValueError(
-                "nvfp4_training.fp8_lm_head_cross_entropy requires the lm_head to "
-                "remain a frozen plain nn.Linear. Disable quantize_lm_head/"
-                "fused_fp4_cross_entropy, or use fused_fp4_cross_entropy for an "
-                "NVFP4-quantized lm_head."
+                f"nvfp4_training.lm_head_cross_entropy: {ce_mode} requires the "
+                "lm_head to remain a plain frozen nn.Linear, but quantize_lm_head "
+                "makes it NVFP4. Use lm_head_cross_entropy: fp4 (or auto), or set "
+                "quantize_lm_head: false."
             )
-        if self.nvfp4_training.bf16_lm_head_cross_entropy and (
-            self.nvfp4_training.quantize_lm_head
-            or self.nvfp4_training.fused_fp4_cross_entropy
-            or self.nvfp4_training.fp8_lm_head_cross_entropy
-        ):
+        if ce_mode == "fp4" and not self.nvfp4_training.quantize_lm_head:
             raise ValueError(
-                "nvfp4_training.bf16_lm_head_cross_entropy requires the lm_head to "
-                "remain a frozen plain nn.Linear. Disable quantize_lm_head/"
-                "fused_fp4_cross_entropy/fp8_lm_head_cross_entropy."
+                "nvfp4_training.lm_head_cross_entropy: fp4 requires "
+                "quantize_lm_head: true (the fused FP4 CE reads the NVFP4-packed "
+                "lm_head). Use lm_head_cross_entropy: bf16 for a bf16 head, or auto "
+                "to select the kernel from the head dtype."
             )
         # The fused LoRA kernels now route the base GEMM through the native NVFP4
         # modules (detected via is_nvfp4_base in kernels/lora.py), so the native
@@ -1753,14 +1750,14 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if (
             self.nvfp4_training.quantize_lm_head
             and getattr(self, "cut_cross_entropy", None)
-            and not self.nvfp4_training.fused_fp4_cross_entropy
+            and not self.nvfp4_training.fp4_cross_entropy_active
         ):
             raise ValueError(
                 "nvfp4_training.quantize_lm_head is incompatible with "
                 "cut_cross_entropy: the fused linear cross-entropy kernel consumes "
                 "the lm_head weight directly and bypasses the NVFP4 lm_head forward. "
-                "Disable one, or set nvfp4_training.fused_fp4_cross_entropy: true "
-                "to use the FP4-aware fused CE path."
+                "Disable one, or set nvfp4_training.lm_head_cross_entropy: fp4 (or "
+                "auto) to use the FP4-aware fused CE path."
             )
 
         if self.deepspeed:

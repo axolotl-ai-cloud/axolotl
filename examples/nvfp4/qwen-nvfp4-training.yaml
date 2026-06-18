@@ -1,8 +1,6 @@
 # NVFP4 training is a THROUGHPUT play that only pays off for large GEMM dims.
-# Measured on RTX 5090 (sm_120), compiled end-to-end vs compiled bf16:
-#   ~0.5B (hidden 896): ~0.1-0.65x (SLOWER) · ~3B (hidden 2048): ~1.4x ·
-#   7B (hidden 3584): ~1.9x. The per-GEMM quant prologue dominates below
-#   ~hidden 1024, so do NOT use this on sub-3B models. 3B+ is the target.
+# The per-GEMM quant prologue dominates below ~hidden 1024, so do NOT use this on
+# sub-3B models — 3B+ is the target, and the speedup only materializes compiled.
 base_model: Qwen/Qwen2.5-3B
 
 load_in_8bit: false

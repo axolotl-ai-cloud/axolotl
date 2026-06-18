@@ -136,7 +136,7 @@ class TestNVFP4Resume:
                 "backend": "native",
                 "base_mode": "compute",
                 "quantize_lm_head": True,
-                "fused_fp4_cross_entropy": True,
+                "lm_head_cross_entropy": "fp4",
             },
         }
         cfg = self._base_cfg(temp_dir, extra)

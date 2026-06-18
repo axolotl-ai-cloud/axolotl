@@ -1,13 +1,14 @@
-# Fastest NVFP4 Qwen3.5-9B LoRA path + chunked bf16 lm_head cross-entropy.
+# NVFP4 Qwen3.5-9B LoRA + the chunked bf16 lm_head cross-entropy kernel,
+# pinned explicitly via nvfp4_training.lm_head_cross_entropy: bf16.
 #
-# Identical to qwen35-9b-lora-fastest.yaml but with
-# nvfp4_training.bf16_lm_head_cross_entropy: true. The lm_head stays excluded
-# from FP4 (bf16) and frozen under LoRA, so the chunked bf16 CE tiles the
-# projection over the vocab instead of materializing the full [tokens, vocab]
-# logits (and its gradient GEMM). This is a memory / backward-traffic win, not an
-# FP4 tensor-core throughput win, and it is the convergence-safe alternative to
-# cut_cross_entropy / Liger fused-linear CE, which loss-collapsed in this setup.
-# Loss & dL/dhidden are bit-close to F.cross_entropy over full logits.
+# Identical to qwen35-9b-lora-fastest.yaml (which uses `auto`), but forces the
+# bf16 kernel to show how to pin one. The lm_head stays excluded from FP4 (bf16)
+# and frozen under LoRA, so the chunked bf16 CE tiles the projection over the
+# vocab instead of materializing the full [tokens, vocab] logits (and its
+# gradient GEMM). This is a memory / backward-traffic win, not an FP4 tensor-core
+# throughput win, and it is the convergence-safe alternative to cut_cross_entropy
+# / Liger fused-linear CE, which loss-collapse under NVFP4 SR grads. Loss &
+# dL/dhidden are bit-close to F.cross_entropy over full logits.
 #
 
 # Target shape: text-only SFT, sequence_len 2048, sample packing, no gradient
@@ -110,7 +111,8 @@ nvfp4_training:
   fuse_rmsnorm: false
 
   # Chunked bf16 lm_head CE: skip materializing the [tokens, vocab] logits.
-  bf16_lm_head_cross_entropy: true
+  # quantize_lm_head stays false (bf16 head); pin the bf16 kernel explicitly.
+  lm_head_cross_entropy: bf16
 
 warmup_steps: 10
 logging_steps: 1

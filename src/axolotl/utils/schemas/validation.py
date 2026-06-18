@@ -1023,18 +1023,30 @@ class OptimizationValidationMixin:
             ),
         }
         nvfp4 = data.get("nvfp4_training") or {}
-        if isinstance(nvfp4, dict):
-            nvfp4_enabled = nvfp4.get("enabled")
-            fp8_lm_head_ce = nvfp4.get("fp8_lm_head_cross_entropy")
-            bf16_lm_head_ce = nvfp4.get("bf16_lm_head_cross_entropy")
-        else:
-            nvfp4_enabled = getattr(nvfp4, "enabled", None)
-            fp8_lm_head_ce = getattr(nvfp4, "fp8_lm_head_cross_entropy", None)
-            bf16_lm_head_ce = getattr(nvfp4, "bf16_lm_head_cross_entropy", None)
-        if nvfp4_enabled and fp8_lm_head_ce:
-            ce_options["nvfp4_training.fp8_lm_head_cross_entropy"] = True
-        if nvfp4_enabled and bf16_lm_head_ce:
-            ce_options["nvfp4_training.bf16_lm_head_cross_entropy"] = True
+
+        def _nvfp4_get(key):
+            if isinstance(nvfp4, dict):
+                return nvfp4.get(key)
+            return getattr(nvfp4, key, None)
+
+        nvfp4_enabled = _nvfp4_get("enabled")
+        # Resolve the unified flag (the nested validator hasn't run at mode="before",
+        # so honor the deprecated booleans here too).
+        ce_mode = _nvfp4_get("lm_head_cross_entropy") or "off"
+        if ce_mode == "off":
+            if _nvfp4_get("fused_fp4_cross_entropy"):
+                ce_mode = "fp4"
+            elif _nvfp4_get("bf16_lm_head_cross_entropy"):
+                ce_mode = "bf16"
+            elif _nvfp4_get("fp8_lm_head_cross_entropy"):
+                ce_mode = "fp8"
+        # The fp4 kernel reads the NVFP4-packed head and supersedes cut_cross_entropy,
+        # so it doesn't collide; bf16/fp8 patch a plain-Linear loss and do.
+        fp4_like = ce_mode == "fp4" or (
+            ce_mode == "auto" and _nvfp4_get("quantize_lm_head")
+        )
+        if nvfp4_enabled and ce_mode != "off" and not fp4_like:
+            ce_options["nvfp4_training.lm_head_cross_entropy"] = True
 
         enabled_options = [k for k, v in ce_options.items() if v]
 

@@ -45,7 +45,7 @@ nvfp4_training:
   enabled: true
   quantize_base: true            # FP4 storage on the frozen LoRA base
   quantize_lm_head: true         # FP4-quantize the output projection
-  fused_fp4_cross_entropy: true  # fuse it with CE — skip materializing logits
+  lm_head_cross_entropy: auto    # head-aware fused CE -> fp4 kernel here (skips logits)
   stochastic_rounding: true
   hadamard: true
   exclude_modules: [embed_tokens]

@@ -120,7 +120,8 @@ def test_disabled_fp8_lm_head_ce_does_not_conflict(monkeypatch):
 
 def test_gate_refuses_fp8_lm_head_ce_with_quantized_lm_head(monkeypatch):
     _supported(monkeypatch, True)
-    with pytest.raises(ValueError, match="fp8_lm_head_cross_entropy"):
+    # deprecated fp8_lm_head_cross_entropy maps to lm_head_cross_entropy: fp8
+    with pytest.raises(ValueError, match="lm_head_cross_entropy"):
         AxolotlConfigWCapabilities(
             **BASE,
             **CAPS,
@@ -153,7 +154,8 @@ def test_schema_refuses_bf16_lm_head_ce_with_other_ce(monkeypatch):
 
 def test_gate_refuses_bf16_lm_head_ce_with_quantized_lm_head(monkeypatch):
     _supported(monkeypatch, True)
-    with pytest.raises(ValueError, match="bf16_lm_head_cross_entropy"):
+    # deprecated bf16_lm_head_cross_entropy maps to lm_head_cross_entropy: bf16
+    with pytest.raises(ValueError, match="lm_head_cross_entropy"):
         AxolotlConfigWCapabilities(
             **BASE,
             **CAPS,
@@ -532,3 +534,161 @@ def test_fsdp_nvfp4_class_is_picklable():
     assert cls.__module__ == "axolotl.utils.nvfp4_training"
     # the exact operation that failed during the FSDP checkpoint save:
     assert pickle.loads(pickle.dumps(cls)) is cls
+
+
+# --- unified lm_head_cross_entropy flag (head-aware autoselect) ---------------
+
+
+def test_lm_head_ce_default_off(monkeypatch):
+    _supported(monkeypatch, True)
+    cfg = AxolotlInputConfig(**BASE, nvfp4_training={"enabled": True})
+    assert cfg.nvfp4_training.lm_head_cross_entropy == "off"
+    assert cfg.nvfp4_training.fp4_cross_entropy_active is False
+
+
+@pytest.mark.parametrize(
+    "legacy,mode",
+    [
+        ("fused_fp4_cross_entropy", "fp4"),
+        ("bf16_lm_head_cross_entropy", "bf16"),
+        ("fp8_lm_head_cross_entropy", "fp8"),
+    ],
+)
+def test_lm_head_ce_deprecated_bools_map(monkeypatch, legacy, mode):
+    _supported(monkeypatch, True)
+    extra = {"quantize_lm_head": True} if mode == "fp4" else {}
+    with pytest.warns(DeprecationWarning, match=legacy):
+        cfg = AxolotlInputConfig(
+            **BASE, nvfp4_training={"enabled": True, legacy: True, **extra}
+        )
+    assert cfg.nvfp4_training.lm_head_cross_entropy == mode
+
+
+def test_lm_head_ce_two_deprecated_bools_raise(monkeypatch):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="only one"):
+        AxolotlInputConfig(
+            **BASE,
+            nvfp4_training={
+                "enabled": True,
+                "bf16_lm_head_cross_entropy": True,
+                "fp8_lm_head_cross_entropy": True,
+            },
+        )
+
+
+def test_lm_head_ce_new_and_old_conflict_raises(monkeypatch):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="conflict"):
+        AxolotlInputConfig(
+            **BASE,
+            nvfp4_training={
+                "enabled": True,
+                "quantize_lm_head": True,
+                "lm_head_cross_entropy": "bf16",
+                "fused_fp4_cross_entropy": True,
+            },
+        )
+
+
+def test_lm_head_ce_fp4_requires_quantize(monkeypatch):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="lm_head_cross_entropy: fp4 requires"):
+        AxolotlConfigWCapabilities(
+            **BASE,
+            **CAPS,
+            nvfp4_training={"enabled": True, "lm_head_cross_entropy": "fp4"},
+        )
+
+
+@pytest.mark.parametrize("mode", ["bf16", "fp8"])
+def test_lm_head_ce_plain_modes_refuse_quantized_head(monkeypatch, mode):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="plain frozen nn.Linear"):
+        AxolotlConfigWCapabilities(
+            **BASE,
+            **CAPS,
+            nvfp4_training={
+                "enabled": True,
+                "quantize_lm_head": True,
+                "lm_head_cross_entropy": mode,
+            },
+        )
+
+
+def test_lm_head_ce_auto_is_always_valid(monkeypatch):
+    _supported(monkeypatch, True)
+    # auto with a quantized head -> fp4-active; without -> resolves bf16 at patch time
+    a = AxolotlConfigWCapabilities(
+        **BASE,
+        **CAPS,
+        nvfp4_training={
+            "enabled": True,
+            "quantize_lm_head": True,
+            "lm_head_cross_entropy": "auto",
+        },
+    )
+    assert a.nvfp4_training.fp4_cross_entropy_active is True
+    b = AxolotlConfigWCapabilities(
+        **BASE,
+        **CAPS,
+        nvfp4_training={"enabled": True, "lm_head_cross_entropy": "auto"},
+    )
+    assert b.nvfp4_training.fp4_cross_entropy_active is False
+
+
+def test_lm_head_ce_fp4_coexists_with_cut_cross_entropy(monkeypatch):
+    _supported(monkeypatch, True)
+    # the FP4 kernel supersedes a global cut_cross_entropy (not mutually exclusive)
+    cfg = AxolotlConfigWCapabilities(
+        **BASE,
+        **CAPS,
+        cut_cross_entropy=True,
+        nvfp4_training={
+            "enabled": True,
+            "quantize_lm_head": True,
+            "lm_head_cross_entropy": "fp4",
+        },
+    )
+    assert cfg.nvfp4_training.fp4_cross_entropy_active is True
+
+
+@pytest.mark.parametrize("mode", ["bf16", "fp8"])
+def test_lm_head_ce_plain_modes_conflict_with_cut_cross_entropy(monkeypatch, mode):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="Only one cross entropy optimization"):
+        AxolotlInputConfig(
+            **BASE,
+            cut_cross_entropy=True,
+            nvfp4_training={"enabled": True, "lm_head_cross_entropy": mode},
+        )
+
+
+def test_lm_head_ce_fp4_matmul_alias(monkeypatch):
+    _supported(monkeypatch, True)
+    with pytest.warns(DeprecationWarning, match="fused_fp4_cross_entropy_fp4_matmul"):
+        cfg = AxolotlInputConfig(
+            **BASE,
+            nvfp4_training={
+                "enabled": True,
+                "quantize_lm_head": True,
+                "lm_head_cross_entropy": "fp4",
+                "fused_fp4_cross_entropy_fp4_matmul": True,
+            },
+        )
+    assert cfg.nvfp4_training.fused_ce_fp4_matmul is True
+
+
+def test_lm_head_ce_fp4_matmul_conflict_raises(monkeypatch):
+    _supported(monkeypatch, True)
+    with pytest.raises(ValueError, match="fused_ce_fp4_matmul"):
+        AxolotlInputConfig(
+            **BASE,
+            nvfp4_training={
+                "enabled": True,
+                "quantize_lm_head": True,
+                "lm_head_cross_entropy": "fp4",
+                "fused_ce_fp4_matmul": False,
+                "fused_fp4_cross_entropy_fp4_matmul": True,
+            },
+        )

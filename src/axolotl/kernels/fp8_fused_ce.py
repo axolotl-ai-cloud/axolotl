@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import os
 from dataclasses import dataclass
 
 import torch
@@ -22,8 +23,18 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-_VOCAB_BLOCK = 4096
+_VOCAB_BLOCK = int(os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK", "4096"))
 _PATCHED_FORWARDS: set[type] = set()
+
+
+def _set_vocab_block(vocab_block: int | None) -> None:
+    """Effective vocab tile width: env var (if set) > ``vocab_block`` arg > 4096."""
+    global _VOCAB_BLOCK
+    env = os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK")
+    if env is not None:
+        _VOCAB_BLOCK = int(env)
+    elif vocab_block is not None:
+        _VOCAB_BLOCK = int(vocab_block)
 
 
 @dataclass(frozen=True)
@@ -282,7 +293,9 @@ def patch_model_fp8_lm_head_cross_entropy(
     model: nn.Module,
     *,
     granularity: FP8Granularity = "rowwise",
+    vocab_block: int | None = None,
 ) -> bool:
+    _set_vocab_block(vocab_block)
     causal = model
     if hasattr(model, "get_base_model"):
         try:

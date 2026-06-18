@@ -6,7 +6,7 @@
 #
 # Like full-FT NVFP4 this is a THROUGHPUT play that only pays off on large GEMMs:
 # use >=3B models (the per-GEMM quant prologue dominates below ~hidden 1024) and
-# keep torch.compile on (the 2.9-3.6x speedup only materializes compiled).
+# keep torch.compile on (the speedup only materializes compiled).
 base_model: Qwen/Qwen2.5-3B
 
 # NVFP4 owns the base-weight quantization here; bnb must stay off.

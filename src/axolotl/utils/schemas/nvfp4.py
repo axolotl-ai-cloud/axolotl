@@ -4,9 +4,10 @@ Real low-precision COMPUTE (FP4 forward/backward GEMMs on Blackwell), distinct
 from the fake-quant QAT/PTQ `quantization:` block.
 """
 
+import warnings
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class NVFP4TrainingConfig(BaseModel):
@@ -94,55 +95,40 @@ class NVFP4TrainingConfig(BaseModel):
             "still RAISES (FP4-storing it would corrupt training)."
         },
     )
+    lm_head_cross_entropy: Literal["off", "auto", "fp4", "bf16", "fp8"] = Field(
+        default="off",
+        json_schema_extra={
+            "description": "Head-aware fused lm_head + cross-entropy: tile the loss "
+            "over the vocab so the [batch*seq, vocab] logit tensor is never "
+            "materialized (memory win, frozen head only). 'auto' picks fp4 for an "
+            "FP4 head (quantize_lm_head), bf16 for a plain frozen nn.Linear head, "
+            "else the materialized path; 'fp4'/'bf16'/'fp8' force a kernel (fp8 is "
+            "never auto-selected). Supersedes the deprecated "
+            "fused_fp4_cross_entropy / bf16_lm_head_cross_entropy / "
+            "fp8_lm_head_cross_entropy booleans."
+        },
+    )
     fused_fp4_cross_entropy: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Requires quantize_lm_head. Fuse the FP4 lm_head "
-            "projection with the cross-entropy loss so the full [batch*seq, vocab] "
-            "logit tensor is never materialized (~1 GiB at vocab 152k / seq 8k): "
-            "the loss is computed by tiling over the vocab, dequantizing each FP4 "
-            "weight tile on read, and accumulating logsumexp in fp32 (like "
-            "cut_cross_entropy, but reading the NVFP4-packed weight directly). "
-            "This is a MEMORY win (no logit materialization), not an FP4-GEMM "
-            "throughput win — the per-tile matmul runs in bf16/fp32, so the lm_head "
-            "does not hit FP4 tensor cores. Frozen lm_head only (returns dL/dhidden, "
-            "no weight grad). Falls back to the materialized path if the lm_head "
-            "store isn't row-sliceable (MSLK-swizzled scales) or carries a bias. "
-            "OFF by default."
+            "description": "DEPRECATED: use `lm_head_cross_entropy: fp4` (or 'auto')."
         },
     )
     fused_ce_vocab_block: int = Field(
         default=4096,
         gt=0,
         json_schema_extra={
-            "description": "Vocab-tile width for fused_fp4_cross_entropy. The fused "
-            "CE streams the vocabulary in [tokens, fused_ce_vocab_block] tiles; this "
-            "is a pure speed<->VRAM dial and is loss-invariant (the tile loop is a "
-            "reduction split, so loss/grad are bit-stable across block widths). "
-            "4096 (default) is balanced — lighter than a bf16 head's transient logit "
-            "tile while still faster. 8192 is max throughput (~+0.4% speed for ~+2 "
-            "GiB peak at long seq); wider buys nothing. Overridable at runtime via "
-            "the AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK env var (env wins over this "
-            "config). Only affects fused_fp4_cross_entropy."
+            "description": "Vocab-tile width for lm_head_cross_entropy (all kernels). "
+            "A pure speed<->VRAM dial, loss-invariant. 4096 (default) is balanced; "
+            "8192 is max throughput. Overridable via the "
+            "AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK env var (env wins)."
         },
     )
     bf16_lm_head_cross_entropy: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Patch a plain frozen bias-free nn.Linear lm_head "
-            "training forward to compute cross-entropy by tiling over the vocab in "
-            "bf16, avoiding full [batch*seq, vocab] logits materialization (~1 GiB "
-            "at vocab 152k / seq 8k) and the matching logits-gradient GEMM. The "
-            "per-tile lm_head matmul runs in plain bf16 (bit-for-bit the same "
-            "arithmetic as the materialized hidden @ W.t()); logsumexp/softmax and "
-            "the dL/dhidden accumulation are kept in fp32. This is the exact tiled "
-            "CE gradient (no low-probability vocab filtering), so it is "
-            "convergence-safe under NVFP4 stochastic-rounding grads where the fused "
-            "cut_cross_entropy / Liger paths collapsed. Returns dL/dhidden only (no "
-            "lm_head weight grad). Incompatible with quantize_lm_head, "
-            "fused_fp4_cross_entropy, and the FP8 cross-entropy patch. This is a "
-            "MEMORY/backward-traffic win, not an FP4 tensor-core throughput win. "
-            "OFF by default."
+            "description": "DEPRECATED: use `lm_head_cross_entropy: bf16` (or 'auto' "
+            "with a bf16 head)."
         },
     )
     fp8_lm_head: bool = Field(
@@ -158,14 +144,7 @@ class NVFP4TrainingConfig(BaseModel):
     fp8_lm_head_cross_entropy: bool = Field(
         default=False,
         json_schema_extra={
-            "description": "Patch a plain frozen bias-free nn.Linear lm_head "
-            "training forward to compute cross-entropy with FP8 scaled-matmul vocab "
-            "tiles, avoiding full [batch*seq, vocab] logits materialization. "
-            "Returns dL/dhidden only (no lm_head weight grad); backward uses FP8 "
-            "scaled matmul against a prepacked dgrad weight layout. Incompatible "
-            "with quantize_lm_head, "
-            "fused_fp4_cross_entropy, and other cross-entropy optimization patches. "
-            "OFF by default."
+            "description": "DEPRECATED: use `lm_head_cross_entropy: fp8`."
         },
     )
     fp8_lm_head_granularity: Literal["tensorwise", "rowwise"] = Field(
@@ -177,19 +156,81 @@ class NVFP4TrainingConfig(BaseModel):
             "training default."
         },
     )
-    fused_fp4_cross_entropy_fp4_matmul: bool = Field(
-        default=False,
+    fused_ce_fp4_matmul: bool | None = Field(
+        default=None,
         json_schema_extra={
-            "description": "Experimental. When fused_fp4_cross_entropy is enabled, "
-            "use per-tile FP4 torch._scaled_mm for lm_head logits before the tiled "
-            "online logsumexp. This hits Blackwell FP4 tensor cores for the matmul, "
-            "but still materializes each [tokens, vocab_block] tile and still uses "
-            "a dequantized weight tile for dhidden in backward. Early microbenchmarks "
-            "show it is faster than the memory-only FP4 CE path but slower than "
-            "materialized bf16/Liger CE; keep this off unless benchmarking the "
-            "next native CE-epilogue design."
+            "description": "Experimental, fp4 kernel only. Run the per-tile logit "
+            "matmul through FP4 torch._scaled_mm (Blackwell FP4 tensor cores). "
+            "Faster than the memory-only fp4 CE path but slower than materialized "
+            "bf16/Liger CE; keep off."
         },
     )
+    fused_fp4_cross_entropy_fp4_matmul: bool = Field(
+        default=False,
+        json_schema_extra={"description": "DEPRECATED: use `fused_ce_fp4_matmul`."},
+    )
+
+    @model_validator(mode="after")
+    def _resolve_fused_cross_entropy(self):
+        """Map the deprecated per-kernel CE booleans onto ``lm_head_cross_entropy``;
+        raise if an old flag conflicts with an explicit new value or another old flag.
+        """
+        legacy_map = {
+            "fused_fp4_cross_entropy": "fp4",
+            "bf16_lm_head_cross_entropy": "bf16",
+            "fp8_lm_head_cross_entropy": "fp8",
+        }
+        set_legacy = [name for name in legacy_map if getattr(self, name)]
+        if len(set_legacy) > 1:
+            raise ValueError(
+                "nvfp4_training: only one fused cross-entropy kernel may be enabled; "
+                f"got deprecated {sorted(set_legacy)}. Set a single "
+                "`lm_head_cross_entropy: auto|fp4|bf16|fp8`."
+            )
+        if set_legacy:
+            mapped = legacy_map[set_legacy[0]]
+            explicit = "lm_head_cross_entropy" in self.model_fields_set
+            if explicit and self.lm_head_cross_entropy != mapped:
+                raise ValueError(
+                    f"nvfp4_training: `lm_head_cross_entropy: "
+                    f"{self.lm_head_cross_entropy}` conflicts with deprecated "
+                    f"`{set_legacy[0]}: true` (maps to '{mapped}'). Set only "
+                    "`lm_head_cross_entropy`."
+                )
+            warnings.warn(
+                f"nvfp4_training.{set_legacy[0]} is deprecated; use "
+                f"`lm_head_cross_entropy: {mapped}`.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.lm_head_cross_entropy = mapped
+
+        if self.fused_fp4_cross_entropy_fp4_matmul:
+            if self.fused_ce_fp4_matmul is None:
+                warnings.warn(
+                    "nvfp4_training.fused_fp4_cross_entropy_fp4_matmul is deprecated; "
+                    "use `fused_ce_fp4_matmul`.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                self.fused_ce_fp4_matmul = True
+            elif not self.fused_ce_fp4_matmul:
+                raise ValueError(
+                    "nvfp4_training: `fused_ce_fp4_matmul: false` conflicts with "
+                    "deprecated `fused_fp4_cross_entropy_fp4_matmul: true`. Set only "
+                    "`fused_ce_fp4_matmul`."
+                )
+        return self
+
+    @property
+    def fp4_cross_entropy_active(self) -> bool:
+        """True when the resolved CE kernel reads the NVFP4-packed lm_head."""
+        if self.lm_head_cross_entropy == "fp4":
+            return True
+        if self.lm_head_cross_entropy == "auto":
+            return bool(self.quantize_lm_head)
+        return False
+
     quantize_embeddings: bool = Field(
         default=False,
         json_schema_extra={

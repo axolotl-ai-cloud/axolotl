@@ -26,6 +26,7 @@ GEMM is bf16. Frozen, bias-free lm_head only (returns dL/dhidden, no weight grad
 from __future__ import annotations
 
 import functools
+import os
 
 import torch
 from torch import nn
@@ -35,8 +36,20 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 # Vocab tile width. The transient fp32 logit tile is [M, _VOCAB_BLOCK]; 4096 keeps
-# it small (16 MiB at M=4096) while the bf16 tile GEMM stays efficient. Tunable.
-_VOCAB_BLOCK = 4096
+# it small (16 MiB at M=4096) while the bf16 tile GEMM stays efficient. Tunable
+# via the AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK env var (env wins) or the patch fn.
+_VOCAB_BLOCK = int(os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK", "4096"))
+
+
+def _set_vocab_block(vocab_block: int | None) -> None:
+    """Effective vocab tile width: env var (if set) > ``vocab_block`` arg > 4096."""
+    global _VOCAB_BLOCK
+    env = os.environ.get("AXOLOTL_NVFP4_FUSED_CE_VOCAB_BLOCK")
+    if env is not None:
+        _VOCAB_BLOCK = int(env)
+    elif vocab_block is not None:
+        _VOCAB_BLOCK = int(vocab_block)
+
 
 _PATCHED_FORWARDS: set[type] = set()
 
@@ -225,7 +238,9 @@ def _make_fused_forward(orig_forward):
     return forward
 
 
-def patch_model_bf16_lm_head_cross_entropy(model: nn.Module) -> bool:
+def patch_model_bf16_lm_head_cross_entropy(
+    model: nn.Module, vocab_block: int | None = None
+) -> bool:
     """Patch ``model``'s ForCausalLM forward to use the chunked bf16 CE.
 
     Returns True if a patch was installed (frozen bias-free nn.Linear lm_head),
@@ -233,6 +248,7 @@ def patch_model_bf16_lm_head_cross_entropy(model: nn.Module) -> bool:
     its forward to the base model, so patching the underlying ForCausalLM class is
     enough whether or not LoRA is in use.
     """
+    _set_vocab_block(vocab_block)
     causal = model
     if hasattr(model, "get_base_model"):
         try:

@@ -26,6 +26,31 @@ LOG = get_logger(__name__)
 PLUGIN_MANAGER = PluginManager.get_instance()
 
 
+def _resolve_nvfp4_ce_mode(nvfp4) -> str:
+    """Effective lm_head CE kernel. Honors the deprecated booleans so it works on a
+    raw DictDefault (tests), not just the post-validator pydantic config.
+    """
+    mode = getattr(nvfp4, "lm_head_cross_entropy", None) or "off"
+    if mode == "off":
+        if getattr(nvfp4, "fused_fp4_cross_entropy", False):
+            return "fp4"
+        if getattr(nvfp4, "bf16_lm_head_cross_entropy", False):
+            return "bf16"
+        if getattr(nvfp4, "fp8_lm_head_cross_entropy", False):
+            return "fp8"
+    return mode
+
+
+def _nvfp4_fp4_ce_active(nvfp4) -> bool:
+    """True when the resolved CE kernel reads the NVFP4-packed lm_head."""
+    mode = _resolve_nvfp4_ce_mode(nvfp4)
+    if mode == "fp4":
+        return True
+    if mode == "auto":
+        return bool(getattr(nvfp4, "quantize_lm_head", False))
+    return False
+
+
 class PatchManager:
     """Manages the application of patches during the model loading process."""
 
@@ -455,22 +480,26 @@ class PatchManager:
 
         self._nvfp4_load_packed_sidecar(model)
 
-        # Fused FP4 lm_head + cross-entropy: skip materializing the [M, vocab]
-        # logits (memory win). Opt-in and only when the lm_head became an FP4
-        # store above; falls back to the materialized CE path otherwise.
-        if getattr(nvfp4, "fused_fp4_cross_entropy", False) and getattr(
-            nvfp4, "quantize_lm_head", False
-        ):
-            from axolotl.kernels.nvfp4_fused_ce import patch_model_fused_fp4_ce
+        # Head-aware fused lm_head + cross-entropy: one kernel (fp4/bf16/fp8) picked
+        # from the lm_head dtype; skips materializing the [M, vocab] logits.
+        ce_mode = _resolve_nvfp4_ce_mode(nvfp4)
+        if ce_mode != "off":
+            from axolotl.kernels.lm_head_ce import patch_lm_head_cross_entropy
 
-            patch_model_fused_fp4_ce(
+            fp4_matmul = getattr(nvfp4, "fused_ce_fp4_matmul", None)
+            if fp4_matmul is None and getattr(
+                nvfp4, "fused_fp4_cross_entropy_fp4_matmul", False
+            ):
+                fp4_matmul = True
+            patch_lm_head_cross_entropy(
                 model,
-                fp4_matmul=True
-                if getattr(nvfp4, "fused_fp4_cross_entropy_fp4_matmul", False)
-                else None,
+                mode=ce_mode,
                 vocab_block=getattr(nvfp4, "fused_ce_vocab_block", None),
+                fp4_matmul=fp4_matmul,
+                granularity=getattr(nvfp4, "fp8_lm_head_granularity", "rowwise"),
             )
 
+        # Eval-only FP8 lm_head (orthogonal to the training CE above).
         if getattr(nvfp4, "fp8_lm_head", False):
             from axolotl.kernels.fp8_lm_head import patch_model_fp8_lm_head
 
@@ -478,23 +507,6 @@ class PatchManager:
                 model,
                 granularity=getattr(nvfp4, "fp8_lm_head_granularity", "rowwise"),
             )
-
-        if getattr(nvfp4, "fp8_lm_head_cross_entropy", False):
-            from axolotl.kernels.fp8_fused_ce import (
-                patch_model_fp8_lm_head_cross_entropy,
-            )
-
-            patch_model_fp8_lm_head_cross_entropy(
-                model,
-                granularity=getattr(nvfp4, "fp8_lm_head_granularity", "rowwise"),
-            )
-
-        if getattr(nvfp4, "bf16_lm_head_cross_entropy", False):
-            from axolotl.kernels.bf16_fused_ce import (
-                patch_model_bf16_lm_head_cross_entropy,
-            )
-
-            patch_model_bf16_lm_head_cross_entropy(model)
 
     def _mark_nvfp4_ddp_ignore(self, model: PreTrainedModel):
         """Exclude NVFP4 frozen-base buffers from DDP's param/buffer sync.
@@ -611,7 +623,7 @@ class PatchManager:
             return exclude_modules
 
         nvfp4_cfg = self.cfg.nvfp4_training
-        want_fused_ce = bool(getattr(nvfp4_cfg, "fused_fp4_cross_entropy", False))
+        want_fused_ce = _nvfp4_fp4_ce_active(nvfp4_cfg)
         if self.cfg.cut_cross_entropy and not want_fused_ce:
             raise RuntimeError(
                 "nvfp4_training.quantize_lm_head is incompatible with "
@@ -621,8 +633,9 @@ class PatchManager:
                 "or the kernel would fail on the NVFP4 module's missing .weight). "
                 "Disable one of them (cut_cross_entropy: false or "
                 "quantize_lm_head: false), or set "
-                "nvfp4_training.fused_fp4_cross_entropy: true to use the FP4-aware "
-                "fused cross-entropy (reads the NVFP4-packed lm_head directly)."
+                "nvfp4_training.lm_head_cross_entropy: fp4 (or auto) to use the "
+                "FP4-aware fused cross-entropy (reads the NVFP4-packed lm_head "
+                "directly)."
             )
 
         out_emb = model.get_output_embeddings()
@@ -746,7 +759,7 @@ class PatchManager:
             # The fused FP4 cross-entropy needs a row-sliceable (non-swizzled)
             # lm_head store; force the torchao storage class for it. Otherwise use
             # the requested base mode (compute/storage/hp).
-            if bool(getattr(nvfp4, "fused_fp4_cross_entropy", False)):
+            if _nvfp4_fp4_ce_active(nvfp4):
                 import torch.nn as _nn
 
                 from axolotl.utils.nvfp4_training import swap_frozen_lm_head_tileable
