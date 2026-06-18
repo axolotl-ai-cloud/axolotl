@@ -14,12 +14,12 @@ Run the following command to install `cut_cross_entropy[transformers]` if you do
 
 - If you are in dev environment
 ```bash
-python scripts/cutcrossentropy_install.py | sh
+python scripts/cutcrossentropy_install.py --uv | sh
 ```
 
 - If you are installing from pip
 ```bash
-pip3 uninstall -y cut-cross-entropy && pip3 install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@0c1a942"
+uv pip uninstall -y cut-cross-entropy && uv pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@0c1a942"
 ```
 
 ## Usage
