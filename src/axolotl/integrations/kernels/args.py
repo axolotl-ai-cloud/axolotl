@@ -30,6 +30,25 @@ class KernelsArgs(BaseModel):
     use_sonicmoe: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
     use_dsv4_kernels: bool | None = None
+    # DeepSeek-V4 FP8 non-expert weight storage: "float8tensor" (default, 1-byte torchao
+    # Float8Tensor base) or "bf16" (dequantize to bf16 at load).
+    dsv4_fp8_nonexpert_mode: str | None = None
+    # Native blockwise-fp8 fused LoRA kernel for the large attention projections (q_b/o_b).
+    # Off by default — the e2e gain is small for this expert-dominated model.
+    dsv4_fp8_lora_kernel: bool | None = None
+    # Fallback: cast ALL residual fp32 params (incl. keep_in_fp32 mHC/norms) to the compute
+    # dtype for the fused kernels, instead of preserving keep_in_fp32 in fp32.
+    dsv4_bf16_all: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_dsv4_fp8_nonexpert_mode(cls, data):
+        mode = data.get("dsv4_fp8_nonexpert_mode")
+        if mode is not None and str(mode).lower() not in ("float8tensor", "bf16"):
+            raise ValueError(
+                f"dsv4_fp8_nonexpert_mode must be 'float8tensor' or 'bf16', got {mode!r}"
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod

@@ -34,8 +34,6 @@ re-read. Installed by swapping it into ``AUTO_QUANTIZER_MAPPING["fp8"]`` before
 
 from __future__ import annotations
 
-import os
-
 import torch
 import torch.nn as nn
 
@@ -45,19 +43,24 @@ LOG = get_logger(__name__)
 
 _GROUP_SIZE = 16
 
-# How to store the blockwise-FP8 *non-expert* linears after load:
+# How to store the blockwise-FP8 *non-expert* linears after load (set from the
+# `dsv4_fp8_nonexpert_mode` config via `configure_nonexpert_mode`):
 #   "float8tensor" (default) — wrap each plain FP8Linear's weight as a torchao Float8Tensor
 #       (1-byte qdata + block scale, ~50% less than bf16). Forward dispatches through the
 #       subclass (its logical dtype is bf16, so transformers' FP8Linear.forward takes the
 #       plain F.linear branch); backward dX + PEFT LoRA work via subclass autograd; the
 #       fused LoRA kernels dequant it through `axolotl.kernels.quantize.dequantize`.
 #   "bf16" — dequantize to bf16 in place (the original safe path; 2 bytes/param). This also
-#       sidesteps transformers' `@triton_op` FP8 matmul (no autograd formula; slow kernel
-#       discovery). Forced by the legacy `DSV4_FP8_NONEXPERT_BF16=1`.
+#       sidesteps transformers' `@triton_op` FP8 matmul (no autograd formula; slow discovery).
 # Grouped linears (o_a_proj) always go to bf16: their view+bmm forward isn't subclass-safe.
-_FP8_NONEXPERT_MODE = os.environ.get("DSV4_FP8_NONEXPERT_MODE", "float8tensor").lower()
-if os.environ.get("DSV4_FP8_NONEXPERT_BF16") == "1":
-    _FP8_NONEXPERT_MODE = "bf16"
+_FP8_NONEXPERT_MODE = "float8tensor"
+
+
+def configure_nonexpert_mode(mode: str | None) -> None:
+    """Set the FP8 non-expert storage mode from cfg before the model loads (the quantizer
+    reads the module global in ``_process_model_after_weight_loading``)."""
+    global _FP8_NONEXPERT_MODE
+    _FP8_NONEXPERT_MODE = (mode or "float8tensor").lower()
 
 # The only per-expert keys left unmatched once weight + weight_scale fuse in place: the 0-D
 # per-tensor `weight_scale_2` (folded after load) and the unused dynamic `input_scale`.
@@ -203,6 +206,39 @@ def _wrap_fp8_linears_as_float8tensor(model: nn.Module, quantizer) -> int:
     return wrapped + bf16ed
 
 
+def _enable_torchao_lora_dispatch(quantizer) -> None:
+    """Let PEFT attach LoRA to the Float8Tensor non-expert bases.
+
+    PEFT's ``dispatch_torchao`` fires because the base weights are torchao ``Float8Tensor``
+    and routes to ``TorchaoLoraLinear``, which needs
+    ``model.hf_quantizer.quantization_config.get_apply_tensor_subclass``. PEFT sources it via
+    ``operator.attrgetter`` and silently skips on ``AttributeError`` (we ship a FineGrained-FP8
+    config, not a ``TorchAoConfig``), but the dispatcher then errors on the missing kwarg.
+    It's used ONLY by merge/unmerge (re-quantize the merged weight) — never in training (frozen
+    base, LoRA kept separate) — so provide a callable that unblocks training and fails loudly
+    on merge (blockwise-FP8 merge isn't supported yet)."""
+    cfg = getattr(quantizer, "quantization_config", None)
+    if cfg is None:
+        return
+    cls = type(cfg)
+    if hasattr(cls, "get_apply_tensor_subclass"):
+        return
+
+    def _no_merge():
+        raise NotImplementedError(
+            "merge-lora on a blockwise-FP8 (Float8Tensor) base is not supported; train/serve "
+            "with the adapter kept separate, or set `dsv4_fp8_nonexpert_mode: bf16` to merge."
+        )
+
+    # Attach to the CLASS as a staticmethod (not the instance): PEFT's attrgetter still resolves
+    # it via attribute lookup, but it stays out of the instance __dict__ so `config.to_json`
+    # (model.config save) doesn't try to serialize a function object.
+    try:
+        cls.get_apply_tensor_subclass = staticmethod(_no_merge)
+    except Exception:  # pragma: no cover - some configs are frozen/slotted
+        LOG.warning("Could not attach get_apply_tensor_subclass; non-expert LoRA may fail to inject")
+
+
 def make_nvfp4_fp8_quantizer():
     """Build the ``FineGrainedFP8HfQuantizer`` subclass (deferred import)."""
     from transformers.core_model_loading import WeightConverter
@@ -287,7 +323,9 @@ def make_nvfp4_fp8_quantizer():
                 if n:
                     LOG.info("Dequantized %d non-expert FP8Linear modules to bf16", n)
             else:
-                _wrap_fp8_linears_as_float8tensor(model, self)
+                n = _wrap_fp8_linears_as_float8tensor(model, self)
+                if n:
+                    _enable_torchao_lora_dispatch(self)
             NVFP4Tensor = _nvfp4_cls()
             if NVFP4Tensor is None:
                 LOG.warning("torchao NVFP4Tensor unavailable; skipping expert wrap")

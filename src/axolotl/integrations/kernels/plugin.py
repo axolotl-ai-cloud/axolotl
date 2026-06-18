@@ -96,9 +96,11 @@ class KernelsPlugin(BasePlugin):
             # MISSING warning) and become NVFP4Tensor for the scattermoe fused path.
             if cfg.use_dsv4_kernels:
                 from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fp8_quantizer import (
+                    configure_nonexpert_mode,
                     install_nvfp4_fp8_quantizer,
                 )
 
+                configure_nonexpert_mode(cfg.get("dsv4_fp8_nonexpert_mode"))
                 install_nvfp4_fp8_quantizer()
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
@@ -193,10 +195,10 @@ class KernelsPlugin(BasePlugin):
         # at their input boundary (each wrapper demotes fp32 activations to the compute dtype),
         # so we keep the strict-fp32 modules in fp32 (precise storage) and only cast the
         # *other* fp32 params (PEFT-upcast LoRA) to the compute dtype for one consistent path.
-        # DSV4_BF16_ALL=1 reverts to the old blanket cast (incl. keep_in_fp32) as a fallback.
+        # `dsv4_bf16_all: true` reverts to the old blanket cast (incl. keep_in_fp32) as a fallback.
         if cfg.use_dsv4_kernels:
             dt = cfg.torch_dtype or torch.bfloat16
-            keep_all = os.environ.get("DSV4_BF16_ALL") == "1"
+            keep_all = bool(cfg.get("dsv4_bf16_all"))
             keep_patterns = []
             if not keep_all:
                 seen = set()
@@ -228,6 +230,15 @@ class KernelsPlugin(BasePlugin):
 
             n = patch_dsv4_shared_mlp_lora(model)
             LOG.info(f"Patched {n} DeepSeek-V4 shared-expert MLPs with fused clamped-SwiGLU LoRA")
+
+        if cfg.use_dsv4_kernels and cfg.get("adapter") == "lora":
+            # Native blockwise-fp8 fused LoRA for the large attention projections (q_b/o_b);
+            # no-op unless `dsv4_fp8_lora_kernel`. DeepGEMM on B200, Triton fallback elsewhere.
+            from axolotl.integrations.kernels.libs.dsv4.lora_fp8 import (
+                patch_dsv4_attn_fp8_lora,
+            )
+
+            patch_dsv4_attn_fp8_lora(model, enabled=bool(cfg.get("dsv4_fp8_lora_kernel")))
 
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []
