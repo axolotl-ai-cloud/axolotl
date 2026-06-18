@@ -1,0 +1,63 @@
+# Text-only LoRA SFT for Step-3.7-Flash (stepfun-ai/Step-3.7-Flash).
+#
+# Step-3.7-Flash is a remote-code multimodal MoE model
+# (Step3p7ForConditionalGeneration). A few model-specific constraints apply:
+#   - Cut Cross Entropy is required: the Hub model's forward does not return a
+#     loss, and the CCE fork supplies the loss-from-hidden-states path.
+#   - micro_batch_size must be 1: the model's input-embedding merge assumes a
+#     batch size of 1 (it squeezes/unsqueezes the batch dim).
+#   - Packing uses flex_attention: it is the varlen-capable backend the model
+#     supports (_supports_flash_attn is False), so axolotl drops the attention
+#     mask and builds per-document masks from position_ids. sdpa would fall back
+#     to padded multi-row batches, which break the batch==1 embedding merge.
+base_model: stepfun-ai/Step-3.7-Flash
+trust_remote_code: true
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+
+chat_template: tokenizer_default
+datasets:
+  - path: fozziethebeat/alpaca_messages_2k_test
+    type: chat_template
+    split: train
+
+dataset_prepared_path: last_run_prepared
+val_set_size: 0.05
+output_dir: ./outputs/step3p7-lora-out
+
+adapter: lora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.0
+# Restrict LoRA to the language-model attention; avoids the MoE expert
+# (MoELinear) parameters and the vision tower, which PEFT can't target here.
+lora_target_modules: 'model.language_model.layers.[\d]+.self_attn.(q|k|v|o)_proj'
+
+sequence_len: 4096
+sample_packing: true
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+bf16: true
+tf32: false
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+attn_implementation: flex_attention
+
+warmup_ratio: 0.1
+evals_per_epoch: 1
+saves_per_epoch: 1
+weight_decay: 0.0

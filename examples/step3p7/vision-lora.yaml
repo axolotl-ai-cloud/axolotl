@@ -1,0 +1,66 @@
+# Vision (multimodal) LoRA SFT for Step-3.7-Flash (stepfun-ai/Step-3.7-Flash).
+#
+# EXPERIMENTAL: validate on GPU before relying on it. The image pipeline routes
+# through the remote Step3VLProcessor and axolotl's base multimodal collator;
+# the processor emits non-standard fields (num_patches, patch_pixel_values) that
+# are passed straight to the model's forward.
+#
+# Constraints (same as the text-only example):
+#   - Cut Cross Entropy is required for a usable loss (see lora.yaml).
+#   - micro_batch_size must be 1 (the input-embedding merge assumes batch == 1).
+#   - sample_packing must be off for the multimodal collator.
+#   - attn_implementation: sdpa (the model sets _supports_flash_attn = False).
+base_model: stepfun-ai/Step-3.7-Flash
+trust_remote_code: true
+
+# Load the remote Step3VLProcessor (resolved from the model's auto_map).
+processor_type: AutoProcessor
+
+# Required for image chat templates: keep raw rows for the multimodal collator.
+skip_prepare_dataset: true
+remove_unused_columns: false
+sample_packing: false
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+cut_cross_entropy: true
+
+chat_template: tokenizer_default
+datasets:
+  - path: HuggingFaceH4/llava-instruct-mix-vsft
+    type: chat_template
+    split: train[:1%]
+
+dataset_prepared_path: last_run_prepared
+output_dir: ./outputs/step3p7-vision-lora-out
+
+adapter: lora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.0
+# Train the language model only; leave the vision tower and MoE experts frozen.
+lora_target_modules: 'model.language_model.layers.[\d]+.self_attn.(q|k|v|o)_proj'
+
+sequence_len: 4096
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+train_on_inputs: false
+bf16: true
+tf32: false
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+attn_implementation: sdpa
+
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
