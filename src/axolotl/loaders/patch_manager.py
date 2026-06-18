@@ -151,6 +151,9 @@ class PatchManager:
             # which would clobber any earlier fix.
             self._fix_nemotron_h_conversion_mapping()
 
+        if self.cfg.model_config_type == "step3p7":
+            self._fix_step3p7_input_embeddings(model)
+
         # Gemma 4 hybrid attention runs here in post-build (NOT post-load):
         # the per-layer ``self_attn.config._attn_implementation="sdpa"``
         # override needs to walk the raw model tree, which is broken by
@@ -596,6 +599,53 @@ class PatchManager:
                 "Removed embedding→embeddings WeightRenaming from nemotron_h "
                 "checkpoint conversion mapping"
             )
+
+    @staticmethod
+    def _fix_step3p7_input_embeddings(model: PreTrainedModel):
+        """Make Step3p7's input-embedding accessors honor the no-arg convention.
+
+        The Hub model overrides ``get_input_embeddings`` on every PreTrainedModel
+        level (the wrapper, ``Step3p7Model``, ``Step3p7TextModel``) with a
+        vLLM-style signature that computes embeddings from ``input_ids``.
+        transformers calls these with no arguments during token-embedding resize
+        and in ``enable_input_require_grads`` (which walks every submodule and
+        only catches ``NotImplementedError``), so the bare calls raise
+        ``TypeError``. Rebind each level to return the ``embed_tokens`` module
+        when called without ``input_ids`` while still delegating to the original
+        behavior the model's own ``forward`` relies on when ``input_ids`` is
+        passed.
+        """
+        from types import MethodType
+
+        inner = model.model  # Step3p7Model
+        text_model = inner.language_model  # Step3p7TextModel
+
+        def top_get(self):
+            return self.model.language_model.embed_tokens
+
+        def top_set(self, value):
+            self.model.language_model.embed_tokens = value
+
+        model.get_input_embeddings = MethodType(top_get, model)
+        model.set_input_embeddings = MethodType(top_set, model)
+
+        inner_orig = inner.get_input_embeddings
+
+        def inner_get(self, input_ids=None, multimodal_embeddings=None):
+            if input_ids is None:
+                return self.language_model.embed_tokens
+            return inner_orig(input_ids, multimodal_embeddings)
+
+        inner.get_input_embeddings = MethodType(inner_get, inner)
+
+        text_orig = text_model.get_input_embeddings
+
+        def text_get(self, input_ids=None):
+            if input_ids is None:
+                return self.embed_tokens
+            return text_orig(input_ids)
+
+        text_model.get_input_embeddings = MethodType(text_get, text_model)
 
     def _apply_fp8_patches(self):
         """Apply patches for FP8 support."""
