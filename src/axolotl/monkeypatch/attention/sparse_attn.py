@@ -15,6 +15,8 @@ weights are discarded. This is a "train sparse attention" path, not a
 weight-preserving one.
 """
 
+import weakref
+
 import torch
 from torch import nn
 
@@ -72,6 +74,12 @@ def _enforce_min_segment(cu, min_len):
     """
     if min_len <= 1 or cu.numel() <= 2:
         return cu
+    # skip the host scan entirely. greedy merge below is sequential
+    # (each kept boundary depends on the previous), so it cannot be expressed as a
+    # pure mask; we only pay the `tolist()` host sync when a short segment exists.
+    seg = cu[1:] - cu[:-1]
+    if bool((seg >= min_len).all()):
+        return cu
     bounds = cu.tolist()
     total = bounds[-1]
     kept = [bounds[0]]
@@ -122,6 +130,35 @@ def _build_cu_seqlens(bsz, q_len, position_ids, kwargs, device, min_seg=1):
     return _enforce_min_segment(cu, min_seg)
 
 
+class _CuSeqlensCache:
+    """One ``cu_seqlens`` build per forward step, shared by every swapped layer.
+
+    transformers computes ``position_ids`` / ``cu_seq_lens`` once and threads the
+    same tensor through all decoder layers, so without sharing each adapter would
+    rebuild (and host-sync) identical boundaries N times per step. We key on the
+    identity of that shared tensor; a ``weakref`` guards against ``id()`` reuse
+    once it is freed, so a stale hit can never be returned across steps.
+    """
+
+    def __init__(self):
+        self._key_id = None
+        self._key_ref = None
+        self._value = None
+
+    def get(self, key_obj, build):
+        if key_obj is None:
+            return build()
+        key_id = id(key_obj)
+        ref = self._key_ref
+        if key_id == self._key_id and ref is not None and ref() is key_obj:
+            return self._value
+        value = build()
+        self._key_id = key_id
+        self._key_ref = weakref.ref(key_obj)
+        self._value = value
+        return value
+
+
 class SparseAttentionAdapter(nn.Module):
     """Adapt :class:`FlashSparseAttention` to a transformers attention module.
 
@@ -129,20 +166,31 @@ class SparseAttentionAdapter(nn.Module):
     projected output (``hidden_size``), so we flatten in and reshape out.
     """
 
-    def __init__(self, fsa: nn.Module, returns_tuple: bool):
+    def __init__(self, fsa: nn.Module, returns_tuple: bool, cu_cache: _CuSeqlensCache):
         super().__init__()
         self.fsa = fsa
         self.returns_tuple = returns_tuple
+        self.cu_cache = cu_cache
 
     def forward(self, hidden_states, *args, position_ids=None, **kwargs):  # noqa: D102
         bsz, q_len, _ = hidden_states.shape
-        cu_seqlens = _build_cu_seqlens(
-            bsz,
-            q_len,
-            position_ids,
-            kwargs,
-            hidden_states.device,
-            min_seg=getattr(self.fsa, "kernel_size", 1),
+        # The shared tensor that determines the boundaries is identical across all
+        # layers within a forward; key the per-step cache on it.
+        key_obj = kwargs.get("cu_seq_lens_q")
+        if key_obj is None:
+            key_obj = kwargs.get("cu_seqlens_q")
+        if key_obj is None:
+            key_obj = position_ids
+        cu_seqlens = self.cu_cache.get(
+            key_obj,
+            lambda: _build_cu_seqlens(
+                bsz,
+                q_len,
+                position_ids,
+                kwargs,
+                hidden_states.device,
+                min_seg=getattr(self.fsa, "kernel_size", 1),
+            ),
         )
         out = self.fsa(hidden_states.reshape(-1, hidden_states.shape[-1]), cu_seqlens)
         out = out.view(bsz, q_len, -1)
@@ -190,6 +238,8 @@ def patch_sparse_attention(model, cfg, model_config):
     # DeepSeek layers unpack ``(attn_output, attn_weights)``.
     returns_tuple = cfg.model_config_type != "kimi_linear"
 
+    # Shared so cu_seqlens is built once per forward and reused by every layer.
+    cu_cache = _CuSeqlensCache()
     swapped = 0
     for module in model.modules():
         attn = getattr(module, "self_attn", None)
@@ -197,7 +247,7 @@ def patch_sparse_attention(model, cfg, model_config):
             continue
         ref = next(attn.parameters(), None)
         adapter = SparseAttentionAdapter(
-            _build_fsa_module(model_config, cfg), returns_tuple
+            _build_fsa_module(model_config, cfg), returns_tuple, cu_cache
         )
         if ref is not None:
             adapter = adapter.to(device=ref.device, dtype=ref.dtype)

@@ -33,7 +33,12 @@ from transformers.utils import (
     can_return_tuple,
     logging,
 )
-from transformers.utils.generic import OutputRecorder
+
+try:
+    from transformers.utils.generic import OutputRecorder
+except ImportError:
+    # transformers>=5 moved OutputRecorder to transformers.utils.output_capturing
+    from transformers.utils.output_capturing import OutputRecorder
 
 try:
     from fla.layers.utils import get_unpad_data, index_first_axis, pad_input

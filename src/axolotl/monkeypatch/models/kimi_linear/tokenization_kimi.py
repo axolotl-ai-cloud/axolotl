@@ -23,8 +23,14 @@ from typing import (
 import tiktoken
 from tiktoken.load import load_tiktoken_bpe
 from tokenizers import AddedToken
-from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode
 from transformers.tokenization_utils import PreTrainedTokenizer
+
+try:
+    from transformers.models.gpt2.tokenization_gpt2 import bytes_to_unicode
+except ImportError:
+    # transformers>=5 moved bytes_to_unicode out of the gpt2 tokenizer module
+    # (the slow tokenizer was rewritten on the tokenizers backend).
+    from transformers.convert_slow_tokenizer import bytes_to_unicode
 
 logger = getLogger(__name__)
 VOCAB_FILES_NAMES = {"vocab_file": "tiktoken.model"}
