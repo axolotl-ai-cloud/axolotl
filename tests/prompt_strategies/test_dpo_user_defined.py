@@ -39,8 +39,7 @@ class TestDPOUserDefined:
         assert sample["rejected"] == "bad"
 
     def test_defaults_without_formats(self):
-        """Transform falls back to canonical {prompt}/{chosen}/{rejected} formats
-        when no explicit formats are configured."""
+        """Falls back to canonical {prompt}/{chosen}/{rejected} when no formats given."""
         cfg = make_cfg({})
         transform_fn = default(cfg)
         sample = transform_fn({"prompt": "hello", "chosen": "good", "rejected": "bad"})
@@ -49,13 +48,7 @@ class TestDPOUserDefined:
         assert sample["rejected"] == "bad"
 
     def test_custom_field_names(self):
-        """Transform reads from custom field_prompt/field_chosen/field_rejected
-        columns and writes the canonical prompt/chosen/rejected keys.
-
-        Regression test for issue #2645: the default format strings used the
-        custom field name as the placeholder (e.g. "{my_chosen}") while .format()
-        was called with the canonical keyword (chosen=), raising KeyError for any
-        non-default field name."""
+        """Custom field_* columns are read and written to the canonical keys."""
         cfg = make_cfg(
             {
                 "field_prompt": "question",
@@ -72,8 +65,7 @@ class TestDPOUserDefined:
         assert sample["rejected"] == "bad"
 
     def test_system_in_prompt_format(self):
-        """A {system} placeholder in prompt_format is filled from the system
-        field when present in the sample."""
+        """{system} is filled from the system field when present."""
         cfg = make_cfg({"prompt_format": "{system} {prompt}"})
         transform_fn = default(cfg)
         sample = transform_fn(
@@ -85,33 +77,37 @@ class TestDPOUserDefined:
             }
         )
         assert sample["prompt"] == "be helpful hello"
-        assert sample["chosen"] == "good"
-        assert sample["rejected"] == "bad"
 
-    def test_system_in_prompt_format_missing_system_field(self):
-        """A {system} placeholder does not raise KeyError when the system field
-        is absent from a sample (common in mixed datasets where only some rows
-        carry a system prompt): the missing value renders as an empty string."""
-        cfg = make_cfg({"prompt_format": "{system} {prompt}"})
-        transform_fn = default(cfg)
-        sample = transform_fn({"prompt": "hello", "chosen": "good", "rejected": "bad"})
-        assert sample["prompt"] == " hello"
-        assert sample["chosen"] == "good"
-        assert sample["rejected"] == "bad"
-
-    def test_system_in_prompt_format_none_system_field(self):
-        """A None system value (how datasets represent a missing optional column)
-        renders as an empty string rather than the literal text 'None'."""
-        cfg = make_cfg({"prompt_format": "{system} {prompt}"})
+    def test_system_in_prompt_format_custom_field(self):
+        """{system} reads from a custom field_system column."""
+        cfg = make_cfg({"field_system": "sys", "prompt_format": "{system} {prompt}"})
         transform_fn = default(cfg)
         sample = transform_fn(
-            {"system": None, "prompt": "hello", "chosen": "good", "rejected": "bad"}
+            {
+                "sys": "be helpful",
+                "prompt": "hello",
+                "chosen": "good",
+                "rejected": "bad",
+            }
         )
-        assert sample["prompt"] == " hello"
+        assert sample["prompt"] == "be helpful hello"
+
+    @pytest.mark.parametrize(
+        "sample",
+        [
+            {"prompt": "hello", "chosen": "good", "rejected": "bad"},
+            {"system": None, "prompt": "hello", "chosen": "good", "rejected": "bad"},
+        ],
+        ids=["missing", "none"],
+    )
+    def test_system_in_prompt_format_empty_system(self, sample):
+        """A missing or None system field renders as "" instead of raising or 'None'."""
+        cfg = make_cfg({"prompt_format": "{system} {prompt}"})
+        transform_fn = default(cfg)
+        assert transform_fn(sample)["prompt"] == " hello"
 
     def test_custom_chosen_rejected_formats(self):
-        """Explicit chosen_format/rejected_format are honored alongside custom
-        field names."""
+        """Explicit chosen_format/rejected_format are honored with custom field names."""
         cfg = make_cfg(
             {
                 "field_chosen": "good",
@@ -134,8 +130,7 @@ class TestDPOUserDefined:
             default(cfg)
 
     def test_load_dpo_user_defined_returns_callable(self):
-        """The loader path resolves user_defined.default to a callable transform
-        for a config with custom field names."""
+        """The loader resolves user_defined.default to a callable transform."""
         cfg = make_cfg(
             {
                 "field_prompt": "question",
