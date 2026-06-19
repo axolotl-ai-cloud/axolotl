@@ -284,3 +284,97 @@ def dequant_nvfp4_full_triton(nv_param, dtype: torch.dtype = torch.bfloat16) -> 
         BLOCK=BLOCK,
     )
     return out.reshape(*lead, C)
+
+
+# --- NVFP4 -> fp8 (e4m3) fast dequant for the fp8-READ grouped GEMM --------------------------
+# Same one-pass kernel, fp8 output: read the frozen NVFP4 weight as fp8 (half the bf16 bytes),
+# upcast to bf16 in-register, bf16 MMA -- a weight-bandwidth win on the bandwidth-bound expert
+# GEMM (W8-read / A16, no fp8 activations -> no activation-quality risk). e4m3 (3 mantissa, ~6%
+# step) is finer than the 4-bit NVFP4 source, so the re-quant is near-free quality-wise PROVIDED
+# the dequantized values land in e4m3's normal range. A per-expert POWER-OF-TWO scale shifts
+# small weights off the subnormal floor (min normal 2^-6); being pow2 it is an exact exponent
+# shift (1/S exact), so the only error is e4m3 mantissa rounding -- and the GEMM undoes it with a
+# single per-expert multiply of the base accumulator.
+
+
+def _nvfp4_per_expert_amax_ub(nv_param) -> torch.Tensor:
+    """Cheap per-expert amax UPPER BOUND from the scale tensor (no bf16 dequant pass).
+
+    The largest dequantized magnitude in expert ``e`` is at most ``6.0`` (max |E2M1|) times that
+    expert's max block scale (times the per_tensor_scale). Reducing over ``scale`` (16x smaller
+    than ``qdata``) gives a safe bound -> the derived pow2 scale never overflows e4m3.
+    """
+    sc = nv_param.scale  # [E, rows, C/16] e4m3 (or [rows, C/16] for a single expert)
+    e = sc.shape[0]
+    per_e = sc.reshape(e, -1).to(torch.float32).abs().amax(dim=1) * 6.0
+    pts = getattr(nv_param, "per_tensor_scale", None)
+    if pts is not None:
+        pf = pts.reshape(-1).to(torch.float32)
+        per_e = per_e * (pf if pf.numel() == e else pf.expand(e))
+    return per_e.clamp_min(1e-12)
+
+
+def dequant_nvfp4_fp8_triton(nv_param, scale_mode: str = "perexpert"):
+    """Dequantize a full NVFP4Tensor expert weight ``[E, N, K]`` to fp8 (e4m3) in one pass.
+
+    Returns ``(w_fp8, inv_scale)`` where ``w_fp8`` is ``torch.float8_e4m3fn`` of the same shape
+    and ``inv_scale`` is the per-expert reciprocal scale to undo in the GEMM (``None`` for
+    ``scale_mode="none"``). ``scale_mode="perexpert"`` applies an exact per-expert pow2 scale so
+    the weights use e4m3's normal range; the grouped kernel multiplies the base accumulator by
+    ``inv_scale[e]`` once per expert.
+    """
+    qd, sc = nv_param.qdata, nv_param.scale
+    lead = qd.shape[:-1]
+    C2 = qd.shape[-1]
+    C = C2 * 2
+    assert C & (C - 1) == 0, f"NVFP4 fp8 dequant needs power-of-2 last dim, got {C}"
+    rows = 1
+    for d in lead:
+        rows *= d
+    total = rows * C
+    lut = torch.tensor(_NVFP4_E2M1_LUT, device=qd.device, dtype=torch.float32)
+
+    pts = getattr(nv_param, "per_tensor_scale", None)
+    n_experts = lead[0] if len(lead) > 1 else 1
+
+    if scale_mode == "none":
+        return dequant_nvfp4_full_triton(nv_param, torch.float8_e4m3fn), None
+
+    if scale_mode != "perexpert":
+        raise ValueError(f"unknown scale_mode {scale_mode!r}")
+
+    # Per-expert pow2 scale mapping amax -> ~256 (mid e4m3, headroom to 448).
+    amax = _nvfp4_per_expert_amax_ub(nv_param)              # [n_experts] fp32
+    s_exp = torch.floor(torch.log2(256.0 / amax))           # S = 2^s_exp (exact)
+    S = torch.exp2(s_exp)                                    # [n_experts]
+    inv_S = torch.exp2(-s_exp).contiguous()                 # exact reciprocal
+
+    # Fold (per_tensor_scale * S) as a single per-expert multiplier via the kernel's PTS_MODE=2.
+    if pts is None:
+        mult = S
+    elif pts.numel() == 1:
+        mult = pts.reshape(1).to(torch.float32) * S
+    else:
+        mult = pts.reshape(n_experts).to(torch.float32) * S
+    mult = mult.to(torch.float32).contiguous()
+    assert rows % n_experts == 0
+    rows_per_e = rows // n_experts
+
+    out = torch.empty(total, device=qd.device, dtype=torch.float8_e4m3fn)
+    BLOCK = 8192
+    grid = (triton.cdiv(total, BLOCK),)
+    _nvfp4_dequant_kernel[grid](
+        qd.reshape(-1).contiguous(),
+        sc.reshape(-1).contiguous(),
+        lut,
+        out,
+        mult,
+        total,
+        C=C,
+        C2=C2,
+        C16=C // 16,
+        ROWS_PER_E=rows_per_e,
+        PTS_MODE=2,
+        BLOCK=BLOCK,
+    )
+    return out.reshape(*lead, C), inv_S

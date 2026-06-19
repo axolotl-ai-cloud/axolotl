@@ -23,9 +23,20 @@ _NVFP4_LORA_DEQUANT_BF16 = os.environ.get("AXOLOTL_NVFP4_LORA_FUSED", "0") != "1
 # the non-fused backward (fallback + A/B measurement). dA/dB are unaffected (the fused-gather
 # threshold leaves the grouped-Gram path, which is already optimal at high expert counts).
 _NVFP4_LORA_FUSED_BWD = os.environ.get("AXOLOTL_NVFP4_LORA_NONFUSED_BWD", "0") != "1"
+# fp8-READ variant of the NVFP4+LoRA fast path (workstation Blackwell / sm_120). Materialize the
+# frozen NVFP4 weight as fp8 (e4m3) instead of bf16 and read it in the grouped GEMM, upcasting to
+# bf16 in-register (bf16 MMA, bf16 activations) — half the weight bytes on the bandwidth-bound
+# expert GEMM (~1.3x fwd+bwd on sm_120). Routed through the split/non-fused kernels (the fused
+# LoRA kernel serializes the fp8 upcast and loses). Default OFF: the datacenter gain is small and
+# the split overhead regresses there, and it adds ~2.5% to the (already accepted) NVFP4 weight
+# error. AXOLOTL_NVFP4_LORA_FP8_READ=1 enables (NVFP4 + LoRA only). See selective_dequant_kernel.
+_NVFP4_LORA_FP8_READ = os.environ.get("AXOLOTL_NVFP4_LORA_FP8_READ", "0") == "1"
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
-from .selective_dequant_kernel import dequant_nvfp4_full_triton
+from .selective_dequant_kernel import (
+    dequant_nvfp4_fp8_triton,
+    dequant_nvfp4_full_triton,
+)
 from .selective_dequant import (
     get_active_experts,
     is_mxfp4_param,
@@ -103,6 +114,22 @@ def _get_base_param(param):
     except ImportError:
         pass
     return param
+
+
+def _fp8_read_arch_ok(device=None) -> bool:
+    """Whether the fp8-read path should activate on this GPU.
+
+    fp8-read wins only in the weight-bandwidth-bound regime: workstation Blackwell (sm_120,
+    GDDR7). On datacenter Blackwell (sm_100 / sm_103, HBM) the expert GEMM is compute/MMA-bound,
+    fp8 ≈ bf16, and the split structure is slower than the fused kernel -> a regression. So gate
+    fp8-read to the validated sm_120; everywhere else falls back to the universal bf16-read path.
+    """
+    if not torch.cuda.is_available():
+        return False
+    try:
+        return torch.cuda.get_device_capability(device) == (12, 0)
+    except Exception:
+        return False
 
 
 def _parallel_linear_maybe_lora(
@@ -185,6 +212,40 @@ def _prepare_weights_and_lora(
     is_mx, is_nv = is_mxfp4_param(gu_param), is_nvfp4_param(gu_param)
     use_fused_bwd = False
     if (
+        is_nv
+        and _NVFP4_LORA_DEQUANT_BF16
+        and _NVFP4_LORA_FP8_READ
+        and _fp8_read_arch_ok(_get_base_param(gu_param).device)
+        and gup_lora is not None
+        and down_lora is not None
+    ):
+        # NVFP4 + LoRA fp8-READ PATH (sm_120 / workstation): dequant the frozen NVFP4 experts to
+        # fp8 (e4m3) once; the base scatter2scatter reads fp8 and upcasts to bf16 in-register
+        # (half the bf16 weight bytes -> ~1.3x fwd+bwd on the bandwidth-bound expert GEMM). Forced
+        # onto the SPLIT / NON-fused path (use_fused_bwd=False): the FUSED LoRA kernel serializes
+        # the fp8->bf16 upcast (~0.7x) while the base scatter pipelines it cleanly (~1.7x), so
+        # split (base fp8 + bf16 LoRA fwd, base fp8 dX + bf16 LoRA dX) wins. No per-expert scale
+        # (it does not improve output quality; b19). `scatter2scatter_lora` routes fp8 W -> split,
+        # and `ScatterMoELoRA.forward` skips the host bf16 upcast for fp8. A .recipe rebuilds the
+        # fp8 weight in backward (transient, like the bf16 path).
+        gate_up_weight = dequant_nvfp4_fp8_triton(gu_param, scale_mode="none")[0].transpose(2, 1)
+        down_weight = dequant_nvfp4_fp8_triton(dn_param, scale_mode="none")[0].transpose(2, 1)
+        use_fused_bwd = False  # split/non-fused: fp8 wins only off the fused kernel
+        if module is not None:
+            gate_up_weight.recipe = lambda m=module: dequant_nvfp4_fp8_triton(
+                _get_base_param(m.gate_up_proj), scale_mode="none"
+            )[0].transpose(2, 1)
+            down_weight.recipe = lambda m=module: dequant_nvfp4_fp8_triton(
+                _get_base_param(m.down_proj), scale_mode="none"
+            )[0].transpose(2, 1)
+        else:
+            gate_up_weight.recipe = lambda p=gu_param: dequant_nvfp4_fp8_triton(
+                p, scale_mode="none"
+            )[0].transpose(2, 1)
+            down_weight.recipe = lambda p=dn_param: dequant_nvfp4_fp8_triton(
+                p, scale_mode="none"
+            )[0].transpose(2, 1)
+    elif (
         is_nv
         and _NVFP4_LORA_DEQUANT_BF16
         and gup_lora is not None

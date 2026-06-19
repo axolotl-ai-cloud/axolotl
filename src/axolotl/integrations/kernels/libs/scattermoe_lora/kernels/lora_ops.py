@@ -737,6 +737,27 @@ def scatter2scatter_lora(
     K = W.size(1)
     N = W.size(2)
 
+    # fp8-read weight: always route through the SPLIT path (base fp8 grouped GEMM + bf16 LoRA).
+    # The FUSED LoRA kernel serializes the in-register fp8->bf16 upcast (its two dots + extra
+    # A-tile load break the pipeline -> ~0.7x vs bf16); the base scatter2scatter reads fp8
+    # cleanly (~1.7x), so split wins for fp8 regardless of expert count.
+    if W.dtype == torch.float8_e4m3fn:
+        return _scatter2scatter_lora_split(
+            X,
+            W,
+            sorted_expert_idxs,
+            sorted_scattered_idxs,
+            k,
+            lora_A,
+            lora_B,
+            scaling,
+            b,
+            x_grouped,
+            y_grouped,
+            out,
+            int64_indices=int64_indices,
+        )
+
     # Dispatch: split for few large experts, fused for many small experts
     if E <= _SPLIT_LORA_FWD_MAX_EXPERTS and K * N >= _SPLIT_LORA_FWD_THRESHOLD:
         return _scatter2scatter_lora_split(

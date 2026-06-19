@@ -75,8 +75,14 @@ class ScatterMoELoRA(torch.autograd.Function):
             )
             is_mx = True
         else:
-            # Cast weights to match input dtype (e.g. 8-bit LoRA)
-            if expert_weights.dtype != x.dtype:
+            # Cast weights to match input dtype (e.g. 8-bit LoRA) — but NOT an fp8 (e4m3)
+            # fp8-read weight, which the grouped kernel upcasts to bf16 in-register; host-casting
+            # it here would materialize the full bf16 weight and discard the fp8-read bandwidth
+            # win. The fp8 path is routed to the split/non-fused kernels (which read fp8 directly).
+            if (
+                expert_weights.dtype != x.dtype
+                and expert_weights.dtype != torch.float8_e4m3fn
+            ):
                 expert_weights = expert_weights.to(x.dtype)
             is_mx = False
         if expert_biases is not None and expert_biases.dtype != x.dtype:

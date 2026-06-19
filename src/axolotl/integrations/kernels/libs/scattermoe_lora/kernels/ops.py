@@ -55,7 +55,10 @@ def _compute_expert_block(
 
         X_blk_ptrs += BLOCK_K * stride_xk
         W_blk_ptrs += BLOCK_K * stride_wk
-        acc = tl.dot(x, w, acc, allow_tf32=allow_tf32)
+        # Upcast the weight tile to the activation dtype in-register. A no-op when W is already
+        # bf16/fp16; for an fp8 (e4m3) fp8-read weight it is the half-bandwidth upcast that lets
+        # the base grouped GEMM read fp8 and run a bf16 MMA (NVFP4+LoRA fp8-read fast path).
+        acc = tl.dot(x, w.to(x.dtype), acc, allow_tf32=allow_tf32)
     return acc
 
 
