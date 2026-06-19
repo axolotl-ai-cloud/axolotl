@@ -4,11 +4,28 @@ PEFT LoRA on ``gate_up_proj`` / ``down_proj`` is fused into the
 ScatterMoE Triton call via ``parallel_linear_lora``.
 """
 
+import os
+
 import torch
 
 from .mx_weights import selective_mx_weights_fwd, selective_nvfp4_weights_fwd
+
+# NVFP4 + LoRA fast path: dequantize the frozen FP4 experts to bf16 ONCE and run the plain
+# bf16 LoRA grouped GEMM (fwd+bwd), instead of the fused kernel that re-dequantizes FP4
+# inside the GEMM K-loop. The fused FP4 dequant starves the tensor cores; routing through
+# the bf16 grouped GEMM is far faster (~15x fwd+bwd at the expert layer on B200/B300) at the
+# cost of a transient bf16 weight (~2x the packed-FP4 bytes), kept transient via the same
+# recompute-in-backward recipe. Set AXOLOTL_NVFP4_LORA_FUSED=1 to fall back to the fused path.
+_NVFP4_LORA_DEQUANT_BF16 = os.environ.get("AXOLOTL_NVFP4_LORA_FUSED", "0") != "1"
+# Within that bf16 fast path, also run the fused dX backward kernel (scatter2scatter_lora_dX)
+# instead of the non-fused base scatter2scatter + Python LoRA dX — the same backward fusion the
+# MXFP4 fused path forces internally. Default on; AXOLOTL_NVFP4_LORA_NONFUSED_BWD=1 reverts to
+# the non-fused backward (fallback + A/B measurement). dA/dB are unaffected (the fused-gather
+# threshold leaves the grouped-Gram path, which is already optimal at high expert counts).
+_NVFP4_LORA_FUSED_BWD = os.environ.get("AXOLOTL_NVFP4_LORA_NONFUSED_BWD", "0") != "1"
 from .parallel_experts import flatten_sort_count, parallel_linear
 from .parallel_linear_lora import get_lora_params_from_wrapper, parallel_linear_lora
+from .selective_dequant_kernel import dequant_nvfp4_full_triton
 from .selective_dequant import (
     get_active_experts,
     is_mxfp4_param,
@@ -100,8 +117,13 @@ def _parallel_linear_maybe_lora(
     grouped_out,
     gates=None,
     expert_biases=None,
+    use_fused_bwd=False,
 ):
-    """Call parallel_linear or parallel_linear_lora depending on whether LoRA is active."""
+    """Call parallel_linear or parallel_linear_lora depending on whether LoRA is active.
+
+    ``use_fused_bwd`` selects the fused dX / gather backward kernels (the NVFP4->bf16
+    fast path opts in, matching what the fused MXFP4 path forces internally).
+    """
     if lora_tuple is not None:
         lora_A, lora_B, scaling = lora_tuple
         return parallel_linear_lora(
@@ -118,6 +140,8 @@ def _parallel_linear_maybe_lora(
             grouped_in=grouped_in,
             grouped_out=grouped_out,
             gates=gates,
+            use_fused_dX=use_fused_bwd,
+            use_fused_gather=use_fused_bwd,
         )
     return parallel_linear(
         x,
@@ -154,10 +178,49 @@ def _prepare_weights_and_lora(
     fused kernel is LoRA-only and the FP4 tensors have no transpose).
 
     Returns ``(gate_up_weight, down_weight, sorted_expert_idxs, expert_offsets,
-    gup_lora, down_lora)``.
+    gup_lora, down_lora, use_fused_bwd)``. ``use_fused_bwd`` is True only for the
+    NVFP4->bf16 fast path, where the fused dX / gather backward kernels apply (as the
+    fused MXFP4 path forces internally); the bf16 base/no-LoRA paths leave it False.
     """
     is_mx, is_nv = is_mxfp4_param(gu_param), is_nvfp4_param(gu_param)
-    if (is_mx or is_nv) and gup_lora is not None and down_lora is not None:
+    use_fused_bwd = False
+    if (
+        is_nv
+        and _NVFP4_LORA_DEQUANT_BF16
+        and gup_lora is not None
+        and down_lora is not None
+    ):
+        # NVFP4 + LoRA FAST PATH: dequant->bf16 once, then the plain bf16 LoRA grouped GEMM.
+        # Returning bf16 [E, in, out] (not an MXWeights) flips ScatterMoELoRA to is_mx=False,
+        # selecting the bf16 fwd/bwd kernels. A .recipe that rebuilds bf16 keeps the (larger)
+        # transient weight recomputed in backward rather than pinned across depth. Routing and
+        # LoRA tuples are passed through unchanged (no active-expert compaction needed: the
+        # bf16 grouped GEMM indexes the full [E,...] set, and training routing is dense).
+        gate_up_weight = dequant_nvfp4_full_triton(gu_param, dtype).transpose(2, 1)
+        down_weight = dequant_nvfp4_full_triton(dn_param, dtype).transpose(2, 1)
+        # is_mx=False here (plain bf16 Tensor), so ScatterMoELoRA won't auto-force the
+        # fused backward the way the MXFP4 path does — opt in explicitly so the bf16 dX
+        # runs the fused scatter2scatter_lora_dX kernel instead of base + Python LoRA.
+        use_fused_bwd = _NVFP4_LORA_FUSED_BWD
+        if module is not None:
+            gate_up_weight.recipe = (
+                lambda m=module, d=dtype: dequant_nvfp4_full_triton(
+                    _get_base_param(m.gate_up_proj), d
+                ).transpose(2, 1)
+            )
+            down_weight.recipe = (
+                lambda m=module, d=dtype: dequant_nvfp4_full_triton(
+                    _get_base_param(m.down_proj), d
+                ).transpose(2, 1)
+            )
+        else:
+            gate_up_weight.recipe = (
+                lambda p=gu_param, d=dtype: dequant_nvfp4_full_triton(p, d).transpose(2, 1)
+            )
+            down_weight.recipe = (
+                lambda p=dn_param, d=dtype: dequant_nvfp4_full_triton(p, d).transpose(2, 1)
+            )
+    elif (is_mx or is_nv) and gup_lora is not None and down_lora is not None:
         select = selective_mx_weights_fwd if is_mx else selective_nvfp4_weights_fwd
         active = get_active_experts(sorted_expert_idxs, num_experts)
         sorted_expert_idxs, expert_offsets = remap_expert_indices(
@@ -210,6 +273,7 @@ def _prepare_weights_and_lora(
         expert_offsets,
         gup_lora,
         down_lora,
+        use_fused_bwd,
     )
 
 
@@ -363,6 +427,7 @@ def scattermoe_experts_forward(
         expert_offsets,
         gup_lora,
         down_lora,
+        use_fused_bwd,
     ) = _prepare_weights_and_lora(
         _get_base_param(self.gate_up_proj),
         _get_base_param(self.down_proj),
@@ -386,6 +451,7 @@ def scattermoe_experts_forward(
         gup_lora,
         grouped_in=False,
         grouped_out=True,
+        use_fused_bwd=use_fused_bwd,
     )
     gates, h = gates_h.chunk(2, dim=-1)
     # Clamped SwiGLU when the model defines a swiglu_limit (e.g. DeepSeek-V4: limit=10) —
@@ -409,6 +475,7 @@ def scattermoe_experts_forward(
         grouped_in=True,
         grouped_out=False,
         gates=routing_weights,
+        use_fused_bwd=use_fused_bwd,
     )
 
     return output
@@ -465,7 +532,7 @@ def scattermoe_experts_forward_ep(
     elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
-    gate_up_weight, down_weight, se, expert_offsets, gup_lora, down_lora = (
+    gate_up_weight, down_weight, se, expert_offsets, gup_lora, down_lora, use_fused_bwd = (
         _prepare_weights_and_lora(
             _get_base_param(self.gate_up_proj),
             _get_base_param(self.down_proj),
@@ -491,6 +558,7 @@ def scattermoe_experts_forward_ep(
         gup_lora,
         grouped_in=True,
         grouped_out=True,
+        use_fused_bwd=use_fused_bwd,
     )
     gates, h = gates_h.chunk(2, dim=-1)
     _limit = getattr(self, "limit", None)
@@ -509,6 +577,7 @@ def scattermoe_experts_forward_ep(
         down_lora,
         grouped_in=True,
         grouped_out=True,
+        use_fused_bwd=use_fused_bwd,
     )
     down_out = down_out * w_sorted.unsqueeze(-1)
 

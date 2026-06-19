@@ -177,3 +177,110 @@ def selective_dequant_nf4_triton(
     )
 
     return out.reshape(num_active, *expert_shape)
+
+
+# --- NVFP4 (E2M1 + E4M3 block-16) fast dequant -----------------------------------------
+# torchao's eager ``NVFP4Tensor.dequantize()`` materializes large unfused fp32 intermediates
+# (~145 GB / ~164 ms at E=256) and torch.compile miscompiles its subclass dispatch, so the
+# NVFP4+LoRA fast path needs a dedicated kernel. One memory-bound pass: unpack the E2M1
+# nibble, gather the codebook, multiply the linear E4M3 block-16 scale. Validated bit-exact
+# vs torchao at E up to 256. (per_tensor_scale is folded outside the kernel.)
+#
+# OCP E2M1 codebook (low nibble first); ``scale`` is the un-swizzled linear E4M3 block scale.
+_NVFP4_E2M1_LUT = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
+                   -0.0, -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0]
+
+
+@triton.jit
+def _nvfp4_dequant_kernel(
+    QDATA,  # [R, C/2] uint8 packed E2M1 (2 nibbles/byte, low=col 2j, high=col 2j+1)
+    SCALE,  # [R, C/16] E4M3 linear block scale
+    LUT,    # [16] fp32 E2M1 codebook
+    OUT,    # [R*C] output, dtype = OUT.dtype.element_ty
+    PTS,    # fp32 per_tensor_scale: [1] (scalar) or [E] (per-expert); dummy ptr if unused
+    total,
+    C: tl.constexpr,    # last (contracted) dim; power-of-2 so //C,%C,>>1,>>4 are shifts
+    C2: tl.constexpr,   # C // 2
+    C16: tl.constexpr,  # C // 16
+    ROWS_PER_E: tl.constexpr,  # rows per expert (R // E); for per-expert pts indexing
+    PTS_MODE: tl.constexpr,    # 0 none, 1 scalar, 2 per-expert
+    BLOCK: tl.constexpr,
+):
+    # flat 1D over output elements; int64 offsets (r*C2 reaches ~4e9, int32 overflows).
+    g = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK).to(tl.int64)
+    m = g < total
+    r = g // C
+    c = (g % C).to(tl.int32)
+    q = tl.load(QDATA + r * C2 + (c >> 1), mask=m, other=0)
+    nib = tl.where((c & 1) == 1, (q >> 4) & 0xF, q & 0xF).to(tl.int32)
+    val = tl.load(LUT + nib)
+    sc = tl.load(SCALE + r * C16 + (c >> 4), mask=m, other=0.0).to(tl.float32)
+    # Fold per_tensor_scale onto the block scale in fp32, then a single bf16 round at the
+    # store. Folding onto `sc` (not the product) reproduces the validated path's exact
+    # `block_scale * per_tensor` order (mx_weights.py) -> bit-identical, single-rounding.
+    # (A post-store bf16 multiply double-rounds, ~2x the error.)
+    if PTS_MODE == 1:
+        sc = sc * tl.load(PTS).to(tl.float32)
+    elif PTS_MODE == 2:
+        e = r // ROWS_PER_E
+        sc = sc * tl.load(PTS + e, mask=m, other=0.0).to(tl.float32)
+    tl.store(OUT + g, (val * sc).to(OUT.dtype.element_ty), mask=m)
+
+
+def dequant_nvfp4_full_triton(nv_param, dtype: torch.dtype = torch.bfloat16) -> torch.Tensor:
+    """Dequantize a full NVFP4Tensor expert weight ``[E, N, K]`` to ``dtype`` (one pass).
+
+    Drop-in fast replacement for ``nv_param.dequantize(dtype)`` for the un-swizzled linear
+    E4M3-block-16 layout the axolotl loader produces (see ``selective_nvfp4_weights_fwd``),
+    folding the optional ``per_tensor_scale`` in-kernel in fp32 (single rounding, torchao
+    parity). Accepts a scalar pts (the loader's shape) or a per-expert ``[E]`` / ``[E,1,1]``
+    (the FSDP carry shape).
+    """
+    qd, sc = nv_param.qdata, nv_param.scale
+    lead = qd.shape[:-1]
+    C2 = qd.shape[-1]
+    C = C2 * 2
+    assert C & (C - 1) == 0, f"NVFP4 fast dequant needs power-of-2 last dim, got {C}"
+    rows = 1
+    for d in lead:
+        rows *= d
+    total = rows * C
+    lut = torch.tensor(_NVFP4_E2M1_LUT, device=qd.device, dtype=torch.float32)
+
+    # Resolve the per_tensor_scale into a flat fp32 buffer + a mode the kernel folds in fp32.
+    pts = getattr(nv_param, "per_tensor_scale", None)
+    rows_per_e = 1
+    if pts is None:
+        pts_buf = lut  # unused dummy pointer (PTS_MODE=0 never loads it)
+        pts_mode = 0
+    elif pts.numel() == 1:
+        pts_buf = pts.reshape(1).to(torch.float32).contiguous()
+        pts_mode = 1
+    else:
+        # per-expert: leading dim of pts is the expert axis ([E] or [E,1,1]); index by r // (R/E)
+        n_experts = pts.shape[0]
+        assert rows % n_experts == 0, (
+            f"per-expert per_tensor_scale [{n_experts}] does not divide rows {rows}"
+        )
+        rows_per_e = rows // n_experts
+        pts_buf = pts.reshape(n_experts).to(torch.float32).contiguous()
+        pts_mode = 2
+
+    out = torch.empty(total, device=qd.device, dtype=dtype)
+    BLOCK = 8192
+    grid = (triton.cdiv(total, BLOCK),)
+    _nvfp4_dequant_kernel[grid](
+        qd.reshape(-1).contiguous(),
+        sc.reshape(-1).contiguous(),
+        lut,
+        out,
+        pts_buf,
+        total,
+        C=C,
+        C2=C2,
+        C16=C // 16,
+        ROWS_PER_E=rows_per_e,
+        PTS_MODE=pts_mode,
+        BLOCK=BLOCK,
+    )
+    return out.reshape(*lead, C)
