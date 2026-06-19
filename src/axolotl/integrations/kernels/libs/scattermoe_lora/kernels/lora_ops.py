@@ -2404,6 +2404,8 @@ def _compute_expert_block_lora_mxfp4(
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
     SCALE_LINEAR: tl.constexpr,
+    Wpt_ptr,
+    HAS_PER_TENSOR: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
 ):
@@ -2454,6 +2456,11 @@ def _compute_expert_block_lora_mxfp4(
     iters = tl.cdiv(K, BLOCK_K)
     xa_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
 
+    # NVFP4 per-expert per-tensor scalar: fold into this expert's block scale in-kernel
+    # (so it scales only the current expert's base, not the cross-expert accumulator).
+    if HAS_PER_TENSOR:
+        pt = tl.load(Wpt_ptr + E_idx).to(tl.float32)
+
     for i in range(iters):
         if no_k_mask:
             K_mask_iter = K_block >= 0  # all-true [BLOCK_K]
@@ -2471,8 +2478,10 @@ def _compute_expert_block_lora_mxfp4(
         nibble = tl.where(K_is_high[None, :], (packed >> 4) & 0xF, packed & 0xF)
         codebook_val = tl.load(Codebook_ptr + nibble)  # [BLOCK_N, BLOCK_K] fp32
         if SCALE_LINEAR:
-            # NVFP4: scale is a linear fp multiplier (E4M3 block scale * per-tensor)
+            # NVFP4: 1-byte E4M3 block scale, decoded to fp32 in-kernel (tl.load casts).
             scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+            if HAS_PER_TENSOR:
+                scale_fp = scale_fp * pt
         else:
             # MXFP4: E8M0 scale, decode as 2^(byte-127)
             scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
@@ -2651,6 +2660,8 @@ def _scatter2scatter_lora_mx(
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
     SCALE_LINEAR: tl.constexpr,
+    Wpt_ptr,
+    HAS_PER_TENSOR: tl.constexpr,
     ACC_TYPE: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
@@ -2725,6 +2736,8 @@ def _scatter2scatter_lora_mx(
             BLOCK_R,
             MX_BLOCK_SIZE,
             SCALE_LINEAR,
+            Wpt_ptr,
+            HAS_PER_TENSOR,
             scaling,
             allow_tf32=allow_tf32,
         )
@@ -2839,6 +2852,8 @@ def scatter2scatter_lora_mx(
         BLOCK_R=BLOCK_R,
         MX_BLOCK_SIZE=W_mx.block_size,
         SCALE_LINEAR=W_mx.scale_is_linear,
+        Wpt_ptr=(W_mx.per_tensor_scale if W_mx.per_tensor_scale is not None else W_mx.scales),
+        HAS_PER_TENSOR=(W_mx.per_tensor_scale is not None),
         ACC_TYPE=tl.float32,
         scaling=scaling,
         allow_tf32=ALLOW_TF32,
@@ -2889,6 +2904,8 @@ def _compute_expert_block_lora_dX_mxfp4(
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
     SCALE_LINEAR: tl.constexpr,
+    Wpt_ptr,
+    HAS_PER_TENSOR: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
 ):
@@ -2945,6 +2962,10 @@ def _compute_expert_block_lora_dX_mxfp4(
     iters = tl.cdiv(N, BLOCK_N)
     dy_b_acc = tl.zeros((BLOCK_M, BLOCK_R), dtype=tl.float32)
 
+    # NVFP4 per-expert per-tensor scalar: fold into this expert's block scale in-kernel.
+    if HAS_PER_TENSOR:
+        pt = tl.load(Wpt_ptr + E_idx).to(tl.float32)
+
     for i in range(iters):
         if no_n_mask:
             N_mask_iter = N_block >= 0  # all-true [BLOCK_N]
@@ -2962,6 +2983,8 @@ def _compute_expert_block_lora_dX_mxfp4(
         codebook_val = tl.load(Codebook_ptr + nibble)
         if SCALE_LINEAR:
             scale_fp = tl.load(Ws_blk_ptrs, mask=w_mask, other=0.0).to(tl.float32)
+            if HAS_PER_TENSOR:
+                scale_fp = scale_fp * pt
         else:
             scale_byte = tl.load(Ws_blk_ptrs, mask=w_mask, other=0).to(tl.int32)
             scale_fp = tl.exp2((scale_byte - 127).to(tl.float32))
@@ -3121,6 +3144,8 @@ def _scatter2scatter_lora_dX_mx(
     BLOCK_R: tl.constexpr,
     MX_BLOCK_SIZE: tl.constexpr,
     SCALE_LINEAR: tl.constexpr,
+    Wpt_ptr,
+    HAS_PER_TENSOR: tl.constexpr,
     ACC_TYPE: tl.constexpr,
     scaling,
     allow_tf32: tl.constexpr,
@@ -3194,6 +3219,8 @@ def _scatter2scatter_lora_dX_mx(
             BLOCK_R,
             MX_BLOCK_SIZE,
             SCALE_LINEAR,
+            Wpt_ptr,
+            HAS_PER_TENSOR,
             scaling,
             allow_tf32=allow_tf32,
         )
@@ -3302,6 +3329,8 @@ def scatter2scatter_lora_dX_mx(
         BLOCK_R=BLOCK_R,
         MX_BLOCK_SIZE=W_mx.block_size,
         SCALE_LINEAR=W_mx.scale_is_linear,
+        Wpt_ptr=(W_mx.per_tensor_scale if W_mx.per_tensor_scale is not None else W_mx.scales),
+        HAS_PER_TENSOR=(W_mx.per_tensor_scale is not None),
         ACC_TYPE=tl.float32,
         scaling=scaling,
         allow_tf32=ALLOW_TF32,

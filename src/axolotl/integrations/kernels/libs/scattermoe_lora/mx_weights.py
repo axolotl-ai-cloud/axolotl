@@ -107,6 +107,9 @@ class MXWeights:
     num_experts: Optional[int] = None  # E_active; convenience field
     orig_dtype: torch.dtype = torch.bfloat16
     scale_is_linear: bool = False
+    # NVFP4: per-expert per-tensor scalar [E_active] (fp32), applied to the base matmul
+    # accumulator in-kernel (kept off the block-scale tensor so it stays 1-byte E4M3).
+    per_tensor_scale: Optional[torch.Tensor] = None
 
     def __post_init__(self) -> None:
         assert self.block_size in (16, 32), (
@@ -270,20 +273,25 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
     all_active = active_experts.numel() == nv_param.qdata.size(0)
     sub_qdata = nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
     raw_scale = nv_param.scale if all_active else nv_param.scale[active_experts]
-    block_scale = raw_scale.to(torch.float32)  # [a, N, K/16]
+    # Keep the E4M3 block scale 1-byte and decode it in-kernel (tl.load casts fp8->fp32 for
+    # free) instead of fp32-expanding [a,N,K/16] every forward. The per-expert per-tensor
+    # scalar is applied as a post-matmul multiply on the base accumulator (since
+    # X @ (W·pt) == (X @ W)·pt), so it never touches the block-scale tensor.
+    block_scale = raw_scale.contiguous()  # E4M3 [a, N, K/16], 1-byte
     per_tensor = getattr(nv_param, "per_tensor_scale", None)
     if per_tensor is not None:
-        per_tensor = per_tensor.to(torch.float32)
-        # A per-expert per-tensor scale ([E,1,1]) must be sliced to the active set too;
-        # a shared scalar just broadcasts.
-        if not all_active and per_tensor.dim() >= 1 and per_tensor.size(0) == nv_param.qdata.size(0):
+        per_tensor = per_tensor.to(torch.float32).reshape(-1)
+        if per_tensor.numel() == 1:
+            # a shared scalar broadcasts to every expert; the kernel indexes [a] by E_idx
+            per_tensor = per_tensor.expand(sub_qdata.size(0))
+        elif not all_active and per_tensor.numel() == nv_param.qdata.size(0):
             per_tensor = per_tensor[active_experts]
-        block_scale = block_scale * per_tensor
+        per_tensor = per_tensor.contiguous()
     N = sub_qdata.size(1)
     K = sub_qdata.size(2) * 2
     return MXWeights(
         packed=sub_qdata,
-        scales=block_scale.contiguous(),
+        scales=block_scale,
         K=K,
         N=N,
         layout=MXLayout.FWD,
@@ -291,4 +299,5 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
         num_experts=sub_qdata.size(0),
         orig_dtype=nv_param.orig_dtype,
         scale_is_linear=True,
+        per_tensor_scale=per_tensor,
     )
