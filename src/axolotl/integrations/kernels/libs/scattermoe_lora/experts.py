@@ -4,7 +4,10 @@ PEFT LoRA on ``gate_up_proj`` / ``down_proj`` is fused into the
 ScatterMoE Triton call via ``parallel_linear_lora``.
 """
 
+import functools
+
 import torch
+import torch.nn.functional as F
 
 from .mx_weights import selective_mx_weights_fwd, selective_nvfp4_weights_fwd
 from .parallel_experts import flatten_sort_count, parallel_linear
@@ -213,6 +216,36 @@ def _prepare_weights_and_lora(
     )
 
 
+def _detect_act_type(module) -> str:
+    """Detect gated-activation type from an experts module's act_fn.
+
+    Returns 'gelu_tanh' for Gemma4-style GeGLU (gelu_pytorch_tanh * up),
+    'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
+    Falls back to 'silu' for any unrecognized activation.
+    """
+    act_fn = getattr(module, 'act_fn', None)
+    if act_fn is None:
+        return "silu"
+    fn_name = getattr(act_fn, '__name__', '') or getattr(type(act_fn), '__name__', '') or ''
+    if 'gelu' in fn_name.lower():
+        return "gelu_tanh"
+    try:
+        if isinstance(act_fn, functools.partial) and act_fn.func is F.gelu:
+            return "gelu_tanh"
+    except Exception:
+        pass
+    # Probe numerically: run act_fn on a test tensor, compare to gelu_pytorch_tanh
+    try:
+        x = torch.tensor([0.5], dtype=torch.float32, device='cpu')
+        ref = F.gelu(x, approximate='tanh')
+        got = act_fn(x.clone())
+        if torch.allclose(ref, got, atol=1e-5):
+            return "gelu_tanh"
+    except Exception:
+        pass
+    return "silu"
+
+
 def scattermoe_supports_layout(self) -> bool:
     """True iff this experts module uses the standard layout scattermoe handles:
     gate_up concatenated as [E, 2I, H], gated SwiGLU, no expert bias. gpt_oss-style
@@ -396,6 +429,7 @@ def scattermoe_experts_forward(
                 return grouped_fp4_moe_train(
                     hidden_states, top_k_index, routing_weights, gu_base, dn_base,
                     gup_lora, down_lora, getattr(self, "limit", None), _FP4_GROUPED_MODE,
+                    act_type=_detect_act_type(self),
                     weight_recipe=_recipe, mxfp4_cache=cache, prefer_fp8_dx=_FP4_DX_PREFER_FP8,
                 )
 

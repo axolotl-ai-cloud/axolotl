@@ -22,6 +22,9 @@ from .prep import marlin_make_workspace_new, marlin_moe_gemm, prepare_nvfp4_weig
 MARLIN_TILE = 64
 _BSM = 64
 
+# Marlin base tile (N_t=64, K_t=16) scatter LUT — built once per process (immutable).
+_BASE_SCATTER_LUT: dict[torch.device, torch.Tensor] = {}
+
 
 def _pt(nv, E, dev):
     p = getattr(nv, "per_tensor_scale", None)
@@ -31,18 +34,55 @@ def _pt(nv, E, dev):
     return p.expand(E) if p.numel() == 1 else p
 
 
+def _build_base_scatter(dev: torch.device) -> torch.Tensor:
+    """Build and cache the 1024-entry scatter LUT: qdata flat nibble pos -> marlin flat nibble pos.
+    Probes the base tile (N_t=64, K_t=16) using gptq_marlin_repack; result is device-resident."""
+    if dev in _BASE_SCATTER_LUT:
+        return _BASE_SCATTER_LUT[dev]
+    ext = load_ext()
+    perm = torch.empty(0, dtype=torch.int, device=dev)
+    N_t, K_t = 64, 16
+    scatter = torch.full((N_t * K_t,), -1, dtype=torch.int32, device="cpu")
+    for n_b in range(N_t):
+        for k_b in range(K_t):
+            qd = torch.zeros(N_t, K_t // 2, dtype=torch.uint8, device=dev)
+            byte_idx = k_b // 2
+            qd[n_b, byte_idx] = 0x0F if k_b % 2 == 0 else 0xF0
+            qw_i = qd.view(torch.int32).T.contiguous()
+            qw_m = ext.gptq_marlin_repack(qw_i, perm, K_t, N_t, 4, False)
+            flat = qw_m.reshape(-1).cpu().tolist()
+            for wi, word in enumerate(flat):
+                if word == 0:
+                    continue
+                for bit in range(8):
+                    if (word >> (bit * 4)) & 0xF == 0xF:
+                        scatter[n_b * K_t + k_b] = wi * 8 + bit
+                        break
+                else:
+                    continue
+                break
+    lut = scatter.to(dev)
+    _BASE_SCATTER_LUT[dev] = lut
+    return lut
+
+
 def _cached_prep(nv, size_n, size_k, ext, cache, key):
     """Prep one NVFP4 weight -> Marlin layout, cached (experts are frozen). Prefer a persistent
     module-level ``cache`` dict keyed by ``key`` — under FSDP2 the gathered param is a fresh tensor
     each step, so a module cache (not a per-tensor attr) avoids re-repacking 256 experts/forward.
-    Falls back to a per-tensor attribute, then a one-shot compute."""
+    Falls back to a per-tensor attribute, then a one-shot compute.
+
+    On the first build (single-GPU only), saves original scales + per-tensor scale in cache under
+    key+"_bwd" for the fused backward dequant, then frees nv.qdata to drop the duplicate 4-bit copy.
+    Under FSDP the gathered param is fresh each step so weight_recipe() re-gathers it anyway; skips
+    the free when distributed is active."""
+    bwd_key = key + "_bwd"
     if cache is not None and key in cache:
         return cache[key]
-    # Marlin's repack consumes raw row-major NVFP4 scales (block-16 along K); a swizzled-scale
-    # NVFP4Tensor would be silently mis-decoded. Fail loudly, matching the chunked-dequant path.
     assert not getattr(nv, "is_swizzled_scales", False), (
         "marlin_w4a16 needs raw (non-swizzled) NVFP4 scales; got is_swizzled_scales=True")
     cached = getattr(nv, "_marlin_w4a16", None)
+    qdata_fresh = cached is None
     if cached is None:
         E, dev = nv.qdata.size(0), nv.qdata.device
         cached = prepare_nvfp4_weight_for_marlin(
@@ -53,7 +93,44 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             pass
     if cache is not None:
         cache[key] = cached
+        if qdata_fresh and bwd_key not in cache:
+            import torch.distributed as dist
+            _is_distributed = dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+            if not _is_distributed:
+                E, dev = nv.qdata.size(0), nv.qdata.device
+                # Save a clone of the original scales (clone = independent storage, not a view).
+                # The fused backward dequant reads marlin qw from cache[key][0] + these original scales.
+                # nvfp4_marlin_process_scales applies [:, 1::2] subsampling so marlin scales are lossy.
+                # _pt may return .expand() with stride(0); Triton needs stride(1) for correct indexing.
+                pt_bwd = _pt(nv, E, dev)
+                if pt_bwd.stride(0) == 0:
+                    pt_bwd = pt_bwd.contiguous()
+                cache[bwd_key] = (nv.scale.clone(), pt_bwd, E, size_n, size_k)
+                # Free qdata: .data = empty(0) releases the storage when nv.qdata is the sole reference.
+                try:
+                    nv.qdata.data = torch.empty(0, dtype=nv.qdata.dtype, device=dev)
+                except (AttributeError, RuntimeError):
+                    pass
     return cached
+
+
+def _qdata_sizes(nv, cache_key, cache):
+    """Return (size_n, size_k_packed, device) for the NVFP4 weight.
+    Falls back to bwd cache when nv.qdata has been freed (single-GPU memory-free path)."""
+    qdata = nv.qdata
+    if qdata.numel() > 0:
+        return qdata.size(1), qdata.size(2), torch.device(qdata.device)
+    if cache is not None:
+        bwd = cache.get(cache_key + "_bwd")
+        if bwd is not None:
+            # bwd = (scale, pt, E, size_n, size_k) — size_k_packed = size_k // 2
+            size_n, size_k = bwd[3], bwd[4]
+            dev = bwd[0].device
+            return size_n, size_k // 2, dev
+    raise RuntimeError(
+        f"marlin_w4a16: nv.qdata has been freed but no backward cache found for '{cache_key}'. "
+        "Pass a module-level mxfp4_cache to grouped_fp4_moe_train."
+    )
 
 
 def build_marlin_forward_base(gate_up_nv, down_nv, cache=None):
@@ -61,16 +138,18 @@ def build_marlin_forward_base(gate_up_nv, down_nv, cache=None):
 
     gate_up_nv: NVFP4Tensor [E, 2I, H]; down_nv: NVFP4Tensor [E, H, I]. ``cache`` is the optional
     persistent dict (the same ``mxfp4_cache`` threaded through ``grouped_fp4_moe_train``).
-    Returns the base tuple ``('marlin', (gu_w, dn_w), (twoI, H, I), workspace)`` consumed by
-    ``marlin_base_forward`` and dispatched in ``grouped_train._base_forward``."""
+    Returns the base tuple ``('marlin', (gu_w, dn_w), (twoI, H, I), workspace, cache)`` consumed by
+    ``marlin_base_forward`` and dispatched in ``grouped_train._base_forward``. The cache is threaded
+    through so the backward can retrieve the (scale, pt, E, N, K) bwd tuple from cache[key+"_bwd"]."""
     ext = load_ext()
-    twoI = gate_up_nv.qdata.size(1)
-    H = gate_up_nv.qdata.size(2) * 2  # gate_up K = H (packed /2)
-    I = down_nv.qdata.size(2) * 2     # down K = I (packed /2)
+    twoI, H_packed, dev = _qdata_sizes(gate_up_nv, "marlin_gate_up", cache)
+    H = H_packed * 2
+    _, I_packed, _ = _qdata_sizes(down_nv, "marlin_down", cache)
+    I = I_packed * 2
     gu_w = _cached_prep(gate_up_nv, twoI, H, ext, cache, "marlin_gate_up")
     dn_w = _cached_prep(down_nv, H, I, ext, cache, "marlin_down")
-    ws = marlin_make_workspace_new(torch.device(gate_up_nv.qdata.device), 4)
-    return ("marlin", (gu_w, dn_w), (twoI, H, I), ws)
+    ws = marlin_make_workspace_new(dev, 4)
+    return ("marlin", (gu_w, dn_w), (twoI, H, I), ws, cache)
 
 
 def marlin_route(m_indices, Mt, dev):
@@ -90,9 +169,27 @@ def marlin_base_forward(base, which, x, m_indices):
     which=1 down (x[Mt,I] -> [Mt,H]). ``m_indices`` is the per-TILE expert id from the routing.
     Returns bf16."""
     ext = load_ext()
-    _, (gu_w, dn_w), (twoI, H, I), ws = base
+    _, (gu_w, dn_w), (twoI, H, I), ws = base[0], base[1], base[2], base[3]
     Mt = x.size(0)
     si, ei, ntpp, tw = marlin_route(m_indices, Mt, x.device)
     if which == 0:
         return marlin_moe_gemm(ext, x, gu_w[0], gu_w[1], gu_w[2], ws, si, ei, ntpp, tw, _BSM, 1, False, Mt, twoI, H)
     return marlin_moe_gemm(ext, x, dn_w[0], dn_w[1], dn_w[2], ws, si, ei, ntpp, tw, _BSM, 1, False, Mt, H, I)
+
+
+def marlin_bwd_data(base):
+    """Return (gu_bwd, dn_bwd) tuples from the cache, or None if not available.
+    Each bwd tuple is (original_scale, pt, E, size_n, size_k); marlin qw is at cache[fwd_key][0]."""
+    cache = base[4] if len(base) > 4 else None
+    if cache is None:
+        return None
+    gu_bwd = cache.get("marlin_gate_up_bwd")
+    dn_bwd = cache.get("marlin_down_bwd")
+    if gu_bwd is None or dn_bwd is None:
+        return None
+    # Also need the marlin qw tensors for the fused dequant
+    gu_qw = cache.get("marlin_gate_up")
+    dn_qw = cache.get("marlin_down")
+    if gu_qw is None or dn_qw is None:
+        return None
+    return (gu_qw[0], gu_bwd), (dn_qw[0], dn_bwd)

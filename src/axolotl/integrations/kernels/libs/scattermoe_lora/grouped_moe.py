@@ -98,10 +98,12 @@ def _quant_weight(W_nv, mode):
 
 
 @torch.no_grad()
-def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, backend=None):
+def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, backend=None,
+                             act_type="silu"):
     """Forward-only grouped NVFP4 MoE. hidden[N,H], idx/wts[N,topk], experts NVFP4Tensor.
 
     Returns [N,H]. backend auto-selected if None. TRAINING NOT YET (forward-only engines).
+    act_type: 'silu' (DSV4 clamped SwiGLU, default) or 'gelu_tanh' (Gemma4 GeGLU, no clamp).
     """
     N, H = hidden.shape
     E = gate_up_nv.qdata.size(0)
@@ -146,7 +148,10 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
         gu = torch._grouped_mm(A, Wb.transpose(1, 2), offs=offs).float()
 
     g, u = gu.chunk(2, dim=-1)
-    h = (F.silu(g.clamp(max=limit)) * u.clamp(min=-limit, max=limit)).to(hidden.dtype)
+    if act_type == "gelu_tanh":
+        h = (F.gelu(g, approximate='tanh') * u).to(hidden.dtype)
+    else:
+        h = (F.silu(g.clamp(max=limit)) * u.clamp(min=-limit, max=limit)).to(hidden.dtype)
 
     if backend == "marlin":
         dn = marlin_base_forward(marlin_base, 1, h.contiguous(), m_indices)

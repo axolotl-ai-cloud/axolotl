@@ -203,13 +203,17 @@ def _grouped_dx_fp8_kernel(GRAD, W, MIDX, OUT, M, N, K, sg0, sg1, sw0, sw1, sw2,
     e = tl.load(MIDX + pid_m).to(tl.int64)
     rm = pid_m * BM + tl.arange(0, BM)
     rk = pid_k * BK + tl.arange(0, BK)
+    mk = rk < K
     acc = tl.zeros((BM, BK), tl.float32)
     for n0 in range(0, N, BN):
         rn = n0 + tl.arange(0, BN)
         a = tl.load(GRAD + rm[:, None] * sg0 + rn[None, :] * sg1, mask=rm[:, None] < M, other=0.0)
-        w = tl.load(W + e * sw0 + rn[:, None] * sw1 + rk[None, :] * sw2).to(tl.bfloat16)  # fp8->bf16 in-reg
+        # mask K dim to handle non-BK-aligned K (e.g. I=704 which is not a multiple of 128)
+        w = tl.load(W + e * sw0 + rn[:, None] * sw1 + rk[None, :] * sw2,
+                    mask=mk[None, :], other=0.0).to(tl.bfloat16)
         acc += tl.dot(a, w)
-    tl.store(OUT + rm[:, None] * so0 + rk[None, :] * so1, acc.to(tl.bfloat16), mask=rm[:, None] < M)
+    tl.store(OUT + rm[:, None] * so0 + rk[None, :] * so1, acc.to(tl.bfloat16),
+             mask=(rm[:, None] < M) & mk[None, :])
 
 
 def grouped_dx_fp8(grad: torch.Tensor, w_fp8: torch.Tensor, m_indices: torch.Tensor,
