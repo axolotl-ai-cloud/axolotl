@@ -9,6 +9,29 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _is_gemma4_nvfp4_modelopt(cfg) -> bool:
+    """Return True iff the model is a Gemma-4 NVFP4-modelopt checkpoint.
+
+    Reads the HF config's ``quantization_config`` to detect ``quant_method:
+    modelopt`` + ``quant_algo: NVFP4`` and confirms ``model_type`` is ``gemma4``.
+    Any failure is swallowed and returns False so other models are unaffected.
+    """
+    try:
+        from transformers import AutoConfig as _AutoConfig
+
+        hf_cfg = _AutoConfig.from_pretrained(cfg.base_model, trust_remote_code=True)
+    except Exception:
+        return False
+    if not hf_cfg.model_type.startswith("gemma4"):
+        return False
+    qcfg = getattr(hf_cfg, "quantization_config", None)
+    if qcfg is None:
+        return False
+    if isinstance(qcfg, dict):
+        return qcfg.get("quant_method") == "modelopt" and qcfg.get("quant_algo") == "NVFP4"
+    return getattr(qcfg, "quant_method", None) == "modelopt" and getattr(qcfg, "quant_algo", None) == "NVFP4"
+
+
 def _check_sonicmoe_gpu_compat():
     """Validate GPU compute capability for SonicMoE and configure env.
 
@@ -102,6 +125,17 @@ class KernelsPlugin(BasePlugin):
 
                 configure_nonexpert_mode(cfg.get("dsv4_fp8_nonexpert_mode"))
                 install_nvfp4_fp8_quantizer()
+
+            # Gemma-4 NVFP4-modelopt: register native WeightConverters so the per-expert
+            # NVFP4 tensors load as NVFP4Tensor (packed 4-bit) instead of being dropped
+            # as UNEXPECTED with the fused params staying random BF16.
+            if _is_gemma4_nvfp4_modelopt(cfg):
+                from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
+                    register_gemma4_nvfp4_converters,
+                )
+
+                register_gemma4_nvfp4_converters()
+                LOG.info("Registered gemma4 NVFP4 expert WeightConverters (modelopt NVFP4 checkpoint)")
 
             # Config-gated grouped fp4 MoE path (off by default -> no regression).
             if cfg.get("dsv4_fp4_grouped_mode"):

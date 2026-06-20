@@ -51,21 +51,42 @@ def _shard_open(repo_id: str, shard: str):
     return safe_open(hf_hub_download(repo_id, shard), framework="pt")
 
 
-def _build_expert_nvfp4(repo_id, wmap, layer, projs, n_experts, device):
+# Per-architecture checkpoint naming for the unfused per-expert NVFP4 tensors.
+# ``base_fmt`` formats with (layer, e, proj); ``gate_up``/``down`` are the proj names fused
+# (gate_up = cat on the N/row axis in this order; down is single).
+_NVFP4_MOE_SCHEMES = {
+    # DeepSeek-V4-Flash-NVFP4: w1=gate, w3=up, w2=down under ``layers.N.ffn.experts.M``
+    "dsv4": {"base_fmt": "layers.{layer}.ffn.experts.{e}.{proj}", "gate_up": ("w1", "w3"), "down": ("w2",)},
+    # Gemma-4-A4B-NVFP4: separate gate/up/down under ``model.language_model.layers.N.experts.M``
+    "gemma4": {"base_fmt": "model.language_model.layers.{layer}.experts.{e}.{proj}",
+               "gate_up": ("gate_proj", "up_proj"), "down": ("down_proj",)},
+}
+
+
+def _detect_scheme(wmap):
+    """Pick the checkpoint naming scheme whose layer-0 expert-0 weight key is present."""
+    for name, sch in _NVFP4_MOE_SCHEMES.items():
+        probe = sch["base_fmt"].format(layer=0, e=0, proj=sch["gate_up"][0]) + ".weight"
+        if probe in wmap:
+            return name, sch
+    return None, None
+
+
+def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device):
     """Rebuild fused qdata + E4M3 block scale + per-tensor scale for all experts of one
     fused projection straight from the raw checkpoint (no dependence on transformers' own
-    fusion). `projs` is ("w1","w3") for gate_up or ("w2",) for down; fused on the N (row)
-    axis: qdata [E, sumN, K/2] uint8, scale [E, sumN, K/16] E4M3, per_tensor scalar."""
+    fusion). Fused on the N (row) axis: qdata [E, sumN, K/2] uint8, scale [E, sumN, K/16]
+    E4M3, per_tensor scalar."""
     qd_proj, sc_proj, pts = [[] for _ in projs], [[] for _ in projs], None
     opened: dict[str, object] = {}
     for e in range(n_experts):
         for pi, proj in enumerate(projs):
-            base = f"layers.{layer}.ffn.experts.{e}.{proj}"
+            base = base_fmt.format(layer=layer, e=e, proj=proj)
             shard = wmap[f"{base}.weight"]
             f = opened.get(shard) or opened.setdefault(shard, _shard_open(repo_id, shard))
             qd_proj[pi].append(f.get_tensor(f"{base}.weight"))
             sc_proj[pi].append(f.get_tensor(f"{base}.weight_scale"))
-            if pts is None:  # w1/w3 share weight_scale_2; capture once
+            if pts is None:  # gate/up share weight_scale_2; capture once
                 pts = f.get_tensor(f"{base}.weight_scale_2").to(torch.float32)
     qdata = torch.cat([torch.stack(q, 0) for q in qd_proj], dim=1).to(device)
     scale = torch.cat([torch.stack(s, 0) for s in sc_proj], dim=1).to(device)
@@ -73,34 +94,43 @@ def _build_expert_nvfp4(repo_id, wmap, layer, projs, n_experts, device):
 
 
 def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
-    """Wrap each DeepseekV4Experts gate_up_proj/down_proj (uint8 qdata loaded by
-    transformers) as an NVFP4Tensor with the checkpoint's fused E4M3 scales. Returns the
-    number of expert modules fixed."""
+    """Wrap each MoE experts module's fused gate_up_proj/down_proj as an NVFP4Tensor rebuilt from
+    the checkpoint's per-expert E4M3 scales. Handles both checkpoint layouts (DeepSeek-V4 ``ffn.
+    experts``/w1-w3-w2 with uint8 fused params from the FP8 quantizer, and Gemma-4 ``language_model.
+    layers.N.experts.M``/gate-up-down where transformers leaves the fused param a random bf16
+    placeholder). Returns the number of expert modules fixed."""
     NVFP4Tensor = _nvfp4_cls()
     if NVFP4Tensor is None:
         return 0
     wmap = _load_index(repo_id)
+    scheme_name, scheme = _detect_scheme(wmap)
+    if scheme is None:
+        LOG.warning("attach_nvfp4_expert_scales: no known NVFP4 MoE naming scheme in %s", repo_id)
+        return 0
+    base_fmt, projs_gu, projs_dn = scheme["base_fmt"], scheme["gate_up"], scheme["down"]
     fixed = 0
     for name, mod in model.named_modules():
-        # The FP8 quantizer replaces DeepseekV4Experts with FP8Experts; match by the
-        # packed uint8 fused expert params rather than the class name.
+        # Match the fused experts param by shape (3D stacked experts), not dtype/class: DSV4's
+        # FP8 quantizer leaves it uint8, gemma4 leaves it a random bf16 placeholder.
         gup = getattr(mod, "gate_up_proj", None)
         dn = getattr(mod, "down_proj", None)
         if not (
             isinstance(gup, torch.Tensor)
             and isinstance(dn, torch.Tensor)
-            and gup.dtype == torch.uint8
-            and dn.dtype == torch.uint8
             and gup.ndim == 3
+            and dn.ndim == 3
         ):
             continue
         m = re.search(r"layers\.(\d+)\.", name)
         if not m:
             continue
         layer = int(m.group(1))
+        # Skip layers whose experts aren't in the checkpoint under this scheme (e.g. dense layers).
+        if base_fmt.format(layer=layer, e=0, proj=projs_gu[0]) + ".weight" not in wmap:
+            continue
         E = gup.shape[0]
-        gqd, gscale, gpts = _build_expert_nvfp4(repo_id, wmap, layer, ("w1", "w3"), E, gup.device)
-        dqd, dscale, dpts = _build_expert_nvfp4(repo_id, wmap, layer, ("w2",), E, dn.device)
+        gqd, gscale, gpts = _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs_gu, E, gup.device)
+        dqd, dscale, dpts = _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs_dn, E, dn.device)
         mod.gate_up_proj = nn.Parameter(
             NVFP4Tensor(gqd, gscale, 16, torch.bfloat16, per_tensor_scale=gpts),
             requires_grad=False,
@@ -125,7 +155,7 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
         del gup, dn
         fixed += 1
     if fixed:
-        LOG.info("Attached NVFP4 expert scales (rebuilt %d DeepseekV4Experts as NVFP4Tensor)", fixed)
+        LOG.info("Attached NVFP4 expert scales (rebuilt %d %s experts as NVFP4Tensor)", fixed, scheme_name)
     return fixed
 
 
@@ -133,9 +163,11 @@ if __name__ == "__main__":  # local self-consistency test on real layer-0 data
     REPO = "nvidia/DeepSeek-V4-Flash-NVFP4"
     NVFP4Tensor = _nvfp4_cls()
     wmap = _load_index(REPO)
+    _, _scheme = _detect_scheme(wmap)
+    _base_fmt = _scheme["base_fmt"]
     dev = "cuda"
     # fused gate_up qdata+scale from w1+w3 (expert 0 only via n_experts=1 slice below)
-    gqd, gscale, gpts = _build_expert_nvfp4(REPO, wmap, 0, ("w1", "w3"), 4, dev)
+    gqd, gscale, gpts = _build_expert_nvfp4(REPO, wmap, _base_fmt, 0, ("w1", "w3"), 4, dev)
     print("fused gate_up qdata", gqd.shape, "scale", gscale.shape, "per_tensor", gpts.item())
     # self-consistency: NVFP4 of fused must dequant to cat(dequant(w1), dequant(w3))
     f = _shard_open(REPO, wmap["layers.0.ffn.experts.0.w1.weight"])
