@@ -29,6 +29,12 @@ def grouped_fp4_available(mode: str) -> bool:
     if mode != "nvfp4":
         return False
     try:
+        from .marlin_w4a16 import marlin_w4a16_available
+        if marlin_w4a16_available():
+            return True
+    except Exception:
+        pass
+    try:
         from .cutlass_fp4 import cutlass_fp4_available
         if cutlass_fp4_available():
             return True
@@ -42,9 +48,17 @@ def grouped_fp4_available(mode: str) -> bool:
 
 
 def _train_backend(mode: str) -> str | None:
-    """Base-GEMM backend for the training forward: 'cutlass' (sm120) | 'deepgemm' (sm90/100)."""
+    """Base-GEMM backend for the training forward: 'marlin' (sm120, W4A16 bf16-act — preferred) |
+    'cutlass' (sm120, W4A4 fp4-act) | 'deepgemm' (sm90/100). On sm120 the Marlin W4A16 forward is
+    ~1.79x faster than CUTLASS AND bit-correct (no activation quantization), so it is preferred."""
     if mode != "nvfp4":
         return None
+    try:
+        from .marlin_w4a16 import marlin_w4a16_available
+        if marlin_w4a16_available():
+            return "marlin"
+    except Exception:
+        pass
     try:
         from .cutlass_fp4 import cutlass_fp4_available
         if cutlass_fp4_available():
@@ -80,7 +94,10 @@ def _swiglu_bwd(dh, gu, limit):
 
 def _base_forward(base, which, x, m_indices, mode):
     """Frozen-expert base GEMM for gate_up (which=0) or down (which=1). `base` is
-    ('cutlass', gu_eng, dn_eng) or ('deepgemm', (guq,gus), (dnq,dns))."""
+    ('marlin', (gu_w, dn_w), dims, ws) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', (guq,gus), (dnq,dns))."""
+    if base[0] == "marlin":
+        from .marlin_w4a16.backend import marlin_base_forward
+        return marlin_base_forward(base, which, x, m_indices)
     backend, gw, dw = base
     if backend == "cutlass":
         from .cutlass_fp4.grouped import quant_act
@@ -110,14 +127,16 @@ def _fp8_read_dx_ok():
     return torch.cuda.get_device_capability()[0] == 12
 
 
-def _base_dx(w_nv, pt, g, out_k, offs, m_indices):
+def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True):
     """Chunked base-weight contraction g @ W (frozen NVFP4 experts). bf16 path: dequant CHUNK_E
     experts to bf16 + cuBLAS grouped_mm. fp8-read path (sm120): dequant to fp8 (half bytes) + a
     Triton grouped GEMM that reads fp8 and upcasts in-register (~1.5x faster, half the transient).
-    g[Mt,N], W[E,N,out_k] -> [Mt,out_k]; m_indices is the per-TILE expert id (for the fp8 GEMM)."""
+    g[Mt,N], W[E,N,out_k] -> [Mt,out_k]; m_indices is the per-TILE expert id (for the fp8 GEMM).
+    prefer_fp8=False forces the (TILE-agnostic) bf16 path — used by the marlin forward backend,
+    whose pad-64 layout is incompatible with the fp8 dX kernel's BM=128 tiling."""
     from .dequant_grouped import nvfp4_dequant_bf16
 
-    fp8 = _fp8_read_dx_ok()
+    fp8 = _fp8_read_dx_ok() and prefer_fp8
     if fp8:
         from .dequant_grouped import grouped_dx_fp8, nvfp4_dequant_fp8
     E = w_nv.qdata.size(0)
@@ -164,6 +183,7 @@ class _GroupedExperts(torch.autograd.Function):
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
+        ctx.backend = base[0]  # 'marlin' forces the bf16-dequant base_dx (pad-64 vs fp8's BM=128)
         return dn
 
     @staticmethod
@@ -173,17 +193,18 @@ class _GroupedExperts(torch.autograd.Function):
         gu_nv, dn_nv = ctx.weight_recipe()
         E, dev = gu_nv.qdata.size(0), x.device
         ptg, ptd = _pt(gu_nv, E, dev), _pt(dn_nv, E, dev)
+        pf8 = ctx.backend != "marlin"  # marlin pad-64 -> bf16-dequant base_dx (fp8 kernel needs TILE=128)
         d_dn = d_dn.contiguous().to(x.dtype)
         # Only the base dX contractions need the dequanted bf16 weight -> chunk those (bounds the
         # bf16-weight transient). All LoRA grads are dequant-free -> one full-E grouped_mm each
         # (avoids ~6 tiny grouped_mm per chunk; the small launches dominated the profile).
-        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices)            # chunked: d_dn @ Wdn
+        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices, pf8)       # chunked: d_dn @ Wdn
         d_hAd = s * _gmm(d_dn, Bdn, offs)
         dh = dh + _gmm(d_hAd, Adn, offs)
         dBdn = s * _gmm_w(d_dn, hAd, offs)
         dAdn = _gmm_w(d_hAd, h, offs)
         dgu = _swiglu_bwd(dh, gu, lim).to(x.dtype); del dh
-        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices)             # chunked: dgu @ Wgu
+        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8)        # chunked: dgu @ Wgu
         d_xAg = s * _gmm(dgu, Bgu, offs)
         dx = dx + _gmm(d_xAg, Agu, offs)
         dBgu = s * _gmm_w(dgu, xAg, offs)
@@ -216,22 +237,32 @@ def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_
     twoI = gate_up_nv.qdata.size(1)          # gate_up N dim = 2I
     I = down_nv.qdata.size(2) * 2            # down K dim = I (packed /2)
     dev = hidden.device
+    backend = _train_backend(mode)
+    # Marlin (sm120 W4A16) pads to 64 — half CUTLASS's 128 at thin-M (each expert weight is read
+    # once either way, so the padding is the cost) — and its bf16-act kernel is bit-correct + faster.
+    if backend == "marlin":
+        from .marlin_w4a16.backend import MARLIN_TILE
+        tile = MARLIN_TILE
+    else:
+        tile = TILE
     flat = idx.reshape(-1)
     order = flat.argsort()
     rep = torch.arange(N, device=dev).repeat_interleave(idx.size(1))[order]
     wflat = wts.reshape(-1)[order]
     exp_sorted = flat[order]
     counts = torch.bincount(flat, minlength=E)
-    ptiles = (counts + TILE - 1) // TILE
-    roff = torch.cat([ptiles.new_zeros(1), ptiles.cumsum(0)]) * TILE
+    ptiles = (counts + tile - 1) // tile
+    roff = torch.cat([ptiles.new_zeros(1), ptiles.cumsum(0)]) * tile
     coff = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
     padded_row = roff[exp_sorted] + (torch.arange(exp_sorted.numel(), device=dev) - coff[exp_sorted])
     m_indices = torch.repeat_interleave(torch.arange(E, dtype=torch.int32, device=dev), ptiles)
-    offs = (ptiles * TILE).cumsum(0).to(torch.int32)
-    Mt = int(ptiles.sum()) * TILE
+    offs = (ptiles * tile).cumsum(0).to(torch.int32)
+    Mt = int(ptiles.sum()) * tile
 
-    backend = _train_backend(mode)
-    if backend == "deepgemm":
+    if backend == "marlin":
+        from .marlin_w4a16.backend import build_marlin_forward_base
+        base = build_marlin_forward_base(gate_up_nv, down_nv, mxfp4_cache)
+    elif backend == "deepgemm":
         from .dequant_grouped import _cached_mxfp4
         base = ("deepgemm",
                 _cached_mxfp4(gate_up_nv, _pt(gate_up_nv, E, dev), mxfp4_cache, "gate_up"),
