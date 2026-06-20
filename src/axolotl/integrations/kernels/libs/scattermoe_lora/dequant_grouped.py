@@ -157,6 +157,73 @@ def _cached_mxfp4(w_nv, per_tensor, cache=None, key=None):
     return cached
 
 
+@triton.jit
+def _nvfp4_deq_fp8_kernel(Qp, Sc, Pt, Out, Kd, ROWS_PER_E, CB,
+                          sq0, sq1, ss0, ss1, so0, so1, BK: tl.constexpr):
+    rid = tl.program_id(0).to(tl.int64)
+    kk = tl.program_id(1) * BK + tl.arange(0, BK)
+    km = kk < Kd
+    pt = tl.load(Pt + rid // ROWS_PER_E).to(tl.float32)
+    packed = tl.load(Qp + rid * sq0 + (kk // 2) * sq1, mask=km, other=0).to(tl.int32)
+    nib = tl.where((kk % 2) == 1, (packed >> 4) & 0xF, packed & 0xF)
+    sc = tl.load(Sc + rid * ss0 + (kk // 16) * ss1, mask=km, other=0.0).to(tl.float32)
+    tl.store(Out + rid * so0 + kk * so1, (tl.load(CB + nib) * sc * pt).to(tl.float8e4nv), mask=km)
+
+
+def nvfp4_dequant_fp8(qdata: torch.Tensor, scale: torch.Tensor, per_tensor: torch.Tensor) -> torch.Tensor:
+    """NVFP4 -> fp8 (e4m3) — half the bytes of the bf16 dequant. For the fp8-read backward dX
+    (#3744): the grouped GEMM reads fp8 and upcasts to bf16 in-register, halving the weight's
+    write+read bandwidth (a win on bandwidth-bound sm120; ~neutral speed but still half-memory
+    on sm100)."""
+    c, nrows, kh = qdata.shape
+    kd = kh * 2
+    out = torch.empty(c, nrows, kd, device=qdata.device, dtype=torch.float8_e4m3fn)
+    q2, s2, o2 = qdata.reshape(c * nrows, kh), scale.reshape(c * nrows, kd // 16), out.reshape(c * nrows, kd)
+    BK = 1024
+    _nvfp4_deq_fp8_kernel[(c * nrows, triton.cdiv(kd, BK))](
+        q2, s2, per_tensor.contiguous(), o2, kd, nrows, fp4_codebook(qdata.device),
+        q2.stride(0), q2.stride(1), s2.stride(0), s2.stride(1), o2.stride(0), o2.stride(1), BK=BK,
+    )
+    return out
+
+
+@triton.autotune(
+    configs=[triton.Config({"BM": 128, "BN": bn, "BK": bk}, num_warps=w, num_stages=st)
+             for bn in (64, 128) for bk in (128, 256) for w in (4, 8) for st in (3, 4)],
+    key=["N", "K"],
+)
+@triton.jit
+def _grouped_dx_fp8_kernel(GRAD, W, MIDX, OUT, M, N, K, sg0, sg1, sw0, sw1, sw2, so0, so1,
+                           BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_k = tl.program_id(1)
+    e = tl.load(MIDX + pid_m).to(tl.int64)
+    rm = pid_m * BM + tl.arange(0, BM)
+    rk = pid_k * BK + tl.arange(0, BK)
+    acc = tl.zeros((BM, BK), tl.float32)
+    for n0 in range(0, N, BN):
+        rn = n0 + tl.arange(0, BN)
+        a = tl.load(GRAD + rm[:, None] * sg0 + rn[None, :] * sg1, mask=rm[:, None] < M, other=0.0)
+        w = tl.load(W + e * sw0 + rn[:, None] * sw1 + rk[None, :] * sw2).to(tl.bfloat16)  # fp8->bf16 in-reg
+        acc += tl.dot(a, w)
+    tl.store(OUT + rm[:, None] * so0 + rk[None, :] * so1, acc.to(tl.bfloat16), mask=rm[:, None] < M)
+
+
+def grouped_dx_fp8(grad: torch.Tensor, w_fp8: torch.Tensor, m_indices: torch.Tensor) -> torch.Tensor:
+    """dX = grad @ W (contract N) for contiguous-grouped experts, reading the fp8 weight and
+    upcasting in-register. grad[Mt,N] bf16, w_fp8[E,N,K] e4m3, m_indices[Mt/BM] (per BM=128 tile)
+    -> [Mt,K] bf16."""
+    Mt, N = grad.shape
+    K = w_fp8.size(2)
+    out = torch.empty(Mt, K, device=grad.device, dtype=torch.bfloat16)
+    grid = lambda meta: (Mt // meta["BM"], triton.cdiv(K, meta["BK"]))  # noqa: E731
+    _grouped_dx_fp8_kernel[grid](
+        grad, w_fp8, m_indices, out, Mt, N, K, grad.stride(0), grad.stride(1),
+        w_fp8.stride(0), w_fp8.stride(1), w_fp8.stride(2), out.stride(0), out.stride(1),
+    )
+    return out
+
+
 class _GroupedMM(torch.autograd.Function):
     """``torch._grouped_mm`` with a manual backward (its autograd is stride-broken). Frozen
     weight ``bT`` (the dequantized experts) → only the input grad ``dX`` is returned."""

@@ -102,11 +102,24 @@ def _engine(Mt, N, K, E, mode):
     return eng
 
 
-def _base_dx(w_nv, pt, g, out_k, offs):
-    """Chunked base-weight contraction g @ W (frozen NVFP4 experts): dequant CHUNK_E experts to
-    bf16 at a time (bounds the transient) and grouped_mm. g[Mt,N], W[E,N,out_k] -> [Mt,out_k]."""
+def _fp8_read_dx_ok():
+    """fp8-read backward dX (#3744) wins on sm120 (bandwidth-bound: half weight bytes -> ~1.5x +
+    half memory). On sm100 it's speed-neutral (cuBLAS bf16 is fast) so keep the bf16 path there."""
+    if not torch.cuda.is_available():
+        return False
+    return torch.cuda.get_device_capability()[0] == 12
+
+
+def _base_dx(w_nv, pt, g, out_k, offs, m_indices):
+    """Chunked base-weight contraction g @ W (frozen NVFP4 experts). bf16 path: dequant CHUNK_E
+    experts to bf16 + cuBLAS grouped_mm. fp8-read path (sm120): dequant to fp8 (half bytes) + a
+    Triton grouped GEMM that reads fp8 and upcasts in-register (~1.5x faster, half the transient).
+    g[Mt,N], W[E,N,out_k] -> [Mt,out_k]; m_indices is the per-TILE expert id (for the fp8 GEMM)."""
     from .dequant_grouped import nvfp4_dequant_bf16
 
+    fp8 = _fp8_read_dx_ok()
+    if fp8:
+        from .dequant_grouped import grouped_dx_fp8, nvfp4_dequant_fp8
     E = w_nv.qdata.size(0)
     starts = torch.cat([offs.new_zeros(1), offs]).tolist()  # one sync, not per-iter
     out = g.new_empty(g.size(0), out_k)
@@ -115,9 +128,14 @@ def _base_dx(w_nv, pt, g, out_k, offs):
         t0, t1 = starts[c0], starts[c1]
         if t1 == t0:
             continue
-        loc = (offs[c0:c1] - t0).to(torch.int32)
-        Wc = nvfp4_dequant_bf16(w_nv.qdata[c0:c1], w_nv.scale[c0:c1], pt[c0:c1])
-        out[t0:t1] = _gmm(g[t0:t1], Wc, loc)
+        if fp8:
+            Wc = nvfp4_dequant_fp8(w_nv.qdata[c0:c1], w_nv.scale[c0:c1], pt[c0:c1])
+            mi = (m_indices[t0 // TILE:t1 // TILE] - c0).to(torch.int32)
+            out[t0:t1] = grouped_dx_fp8(g[t0:t1], Wc, mi)
+        else:
+            loc = (offs[c0:c1] - t0).to(torch.int32)
+            Wc = nvfp4_dequant_bf16(w_nv.qdata[c0:c1], w_nv.scale[c0:c1], pt[c0:c1])
+            out[t0:t1] = _gmm(g[t0:t1], Wc, loc)
     return out
 
 
@@ -143,14 +161,14 @@ class _GroupedExperts(torch.autograd.Function):
         dn = _base_forward(base, 1, h, m_indices, mode)
         hAd = _gmm(h, Adn.transpose(1, 2), offs)
         dn = dn + scaling * _gmm(hAd, Bdn.transpose(1, 2), offs)
-        ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd)
+        ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
         return dn
 
     @staticmethod
     def backward(ctx, d_dn):
-        x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd = ctx.saved_tensors
+        x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices = ctx.saved_tensors
         s, lim = ctx.scaling, ctx.limit
         gu_nv, dn_nv = ctx.weight_recipe()
         E, dev = gu_nv.qdata.size(0), x.device
@@ -159,13 +177,13 @@ class _GroupedExperts(torch.autograd.Function):
         # Only the base dX contractions need the dequanted bf16 weight -> chunk those (bounds the
         # bf16-weight transient). All LoRA grads are dequant-free -> one full-E grouped_mm each
         # (avoids ~6 tiny grouped_mm per chunk; the small launches dominated the profile).
-        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs)            # chunked: d_dn @ Wdn
+        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices)            # chunked: d_dn @ Wdn
         d_hAd = s * _gmm(d_dn, Bdn, offs)
         dh = dh + _gmm(d_hAd, Adn, offs)
         dBdn = s * _gmm_w(d_dn, hAd, offs)
         dAdn = _gmm_w(d_hAd, h, offs)
         dgu = _swiglu_bwd(dh, gu, lim).to(x.dtype); del dh
-        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs)             # chunked: dgu @ Wgu
+        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices)             # chunked: dgu @ Wgu
         d_xAg = s * _gmm(dgu, Bgu, offs)
         dx = dx + _gmm(d_xAg, Agu, offs)
         dBgu = s * _gmm_w(dgu, xAg, offs)
