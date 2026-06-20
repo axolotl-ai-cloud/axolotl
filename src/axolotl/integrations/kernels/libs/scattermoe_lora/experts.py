@@ -326,6 +326,16 @@ def _scattermoe_gptoss_forward(
     return output
 
 
+# Config-gated grouped fp4 MoE path (cfg.dsv4_fp4_grouped_mode). Set by the plugin pre_model_load;
+# None = off (existing fused/eager paths unchanged -> no regression).
+_FP4_GROUPED_MODE = None
+
+
+def set_fp4_grouped_mode(mode):
+    global _FP4_GROUPED_MODE
+    _FP4_GROUPED_MODE = mode
+
+
 def scattermoe_experts_forward(
     self,
     hidden_states: torch.Tensor,
@@ -355,6 +365,31 @@ def scattermoe_experts_forward(
         down_lora = sm_lora.get("down_proj")
     elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
+
+    # Config-gated grouped fp4 path: NVFP4 experts + LoRA + an available fp4 backend (sm120 CUTLASS).
+    # Faster + lower-memory fwd+bwd than the fused-Triton path at scale (E=256: 2.24x / 0.87x mem).
+    # Falls through to the existing path when off / unavailable -> no regression.
+    if _FP4_GROUPED_MODE is not None and gup_lora is not None and down_lora is not None:
+        gu_base = _get_base_param(self.gate_up_proj)
+        dn_base = _get_base_param(self.down_proj)
+        if is_nvfp4_param(gu_base):
+            from .grouped_train import grouped_fp4_available, grouped_fp4_moe_train
+
+            if grouped_fp4_available(_FP4_GROUPED_MODE):
+                # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
+                _recipe = lambda: (  # noqa: E731
+                    _get_base_param(self.gate_up_proj),
+                    _get_base_param(self.down_proj),
+                )
+                # persistent per-module cache so the DeepGEMM backend requantizes the frozen
+                # weight to mxfp4 once, surviving FSDP re-gathers (the gathered param is fresh
+                # each step, so a per-tensor cache would miss and re-requant every forward)
+                cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+                return grouped_fp4_moe_train(
+                    hidden_states, top_k_index, routing_weights, gu_base, dn_base,
+                    gup_lora, down_lora, getattr(self, "limit", None), _FP4_GROUPED_MODE,
+                    weight_recipe=_recipe, mxfp4_cache=cache,
+                )
 
     (
         gate_up_weight,

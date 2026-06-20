@@ -102,6 +102,18 @@ class KernelsPlugin(BasePlugin):
 
                 configure_nonexpert_mode(cfg.get("dsv4_fp8_nonexpert_mode"))
                 install_nvfp4_fp8_quantizer()
+
+            # Config-gated grouped fp4 MoE path (off by default -> no regression).
+            if cfg.get("dsv4_fp4_grouped_mode"):
+                from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+                    set_fp4_grouped_mode,
+                )
+
+                set_fp4_grouped_mode(cfg.get("dsv4_fp4_grouped_mode"))
+                LOG.info(
+                    "Enabled grouped fp4 MoE path: dsv4_fp4_grouped_mode=%s",
+                    cfg.get("dsv4_fp4_grouped_mode"),
+                )
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
 

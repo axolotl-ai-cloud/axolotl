@@ -29,6 +29,20 @@ from torch.utils.checkpoint import checkpoint
 from .mx_weights import fp4_codebook
 
 
+_DG = None
+
+
+def _dg():
+    """Cached DeepGEMM kernel module. ``get_kernel`` is not idempotent — calling it twice
+    re-runs the build's ``register_fake`` and raises, so resolve it once and reuse."""
+    global _DG
+    if _DG is None:
+        from kernels import get_kernel
+
+        _DG = get_kernel("kernels-community/deep-gemm")
+    return _DG
+
+
 def deepgemm_grouped_available() -> bool:
     """True iff DeepGEMM's grouped fp8/fp4 MoE kernel can run here (SM90/SM100 + CUDA
     runtime new enough + the ``kernels`` package resolves the build)."""
@@ -38,10 +52,7 @@ def deepgemm_grouped_available() -> bool:
     if major not in (9, 10):
         return False
     try:
-        from kernels import get_kernel
-
-        dg = get_kernel("kernels-community/deep-gemm")
-        return getattr(dg, "m_grouped_fp8_fp4_gemm_nt_contiguous", None) is not None
+        return getattr(_dg(), "m_grouped_fp8_fp4_gemm_nt_contiguous", None) is not None
     except Exception:
         return False
 
@@ -49,7 +60,7 @@ def deepgemm_grouped_available() -> bool:
 @triton.jit
 def _nvfp4_deq_kernel(Qp, Sc, Pt, Out, Kd, ROWS_PER_E, CB,
                       sq0, sq1, ss0, ss1, so0, so1, BK: tl.constexpr):
-    rid = tl.program_id(0)
+    rid = tl.program_id(0).to(tl.int64)  # int64 row base: c*nrows*stride overflows int32 at E=256
     kk = tl.program_id(1) * BK + tl.arange(0, BK)
     km = kk < Kd
     pt = tl.load(Pt + rid // ROWS_PER_E).to(tl.float32)
@@ -66,11 +77,84 @@ def nvfp4_dequant_bf16(qdata: torch.Tensor, scale: torch.Tensor, per_tensor: tor
     kd = kh * 2
     out = torch.empty(c, nrows, kd, device=qdata.device, dtype=torch.bfloat16)
     q2, s2, o2 = qdata.reshape(c * nrows, kh), scale.reshape(c * nrows, kd // 16), out.reshape(c * nrows, kd)
-    _nvfp4_deq_kernel[(c * nrows, triton.cdiv(kd, 256))](
+    BK = 1024  # 2.5x over BK=256: fewer/larger blocks lift HBM utilization (was ~13% of peak)
+    _nvfp4_deq_kernel[(c * nrows, triton.cdiv(kd, BK))](
         q2, s2, per_tensor.contiguous(), o2, kd, nrows, fp4_codebook(qdata.device),
-        q2.stride(0), q2.stride(1), s2.stride(0), s2.stride(1), o2.stride(0), o2.stride(1), BK=256,
+        q2.stride(0), q2.stride(1), s2.stride(0), s2.stride(1), o2.stride(0), o2.stride(1), BK=BK,
     )
     return out
+
+
+@triton.jit
+def _fp8_e8m0_q_kernel(X, O, SF, sx0, sx1, so0, so1, ss0, ss1, G: tl.constexpr):
+    row = tl.program_id(0)
+    kb = tl.program_id(1)
+    offs = kb * G + tl.arange(0, G)
+    x = tl.load(X + row * sx0 + offs * sx1).to(tl.float32)
+    amax = tl.maximum(tl.max(tl.abs(x)), 1e-4)
+    sf = tl.exp2(tl.ceil(tl.log2(amax / 448.0)))  # amax/448 rounded up to E8M0 (power of 2)
+    q = (x / sf).to(tl.float8e4nv)
+    tl.store(O + row * so0 + offs * so1, q)
+    tl.store(SF + row * ss0 + kb * ss1, sf)
+
+
+def fp8_e8m0_cast_128(x: torch.Tensor):
+    """Fast Triton replica of DeepGEMM's ``per_token_cast_to_fp8(x, use_ue8m0=True, gran_k=128)``
+    (exact bit-match, ~4x faster). x[M,K] bf16 -> (fp8_e4m3 [M,K], scale fp32 [M,K/128])."""
+    M, K = x.shape
+    assert K % 128 == 0
+    o = torch.empty(M, K, device=x.device, dtype=torch.float8_e4m3fn)
+    sf = torch.empty(M, K // 128, device=x.device, dtype=torch.float32)
+    _fp8_e8m0_q_kernel[(M, K // 128)](
+        x, o, sf, x.stride(0), x.stride(1), o.stride(0), o.stride(1), sf.stride(0), sf.stride(1), G=128,
+    )
+    return o, sf
+
+
+def nvfp4_to_mxfp4_weight(qdata: torch.Tensor, scale: torch.Tensor, per_tensor: torch.Tensor):
+    """One-time per-expert weight requant NVFP4 (E4M3/16) -> MXFP4 (E8M0/128) for DeepGEMM's
+    grouped fp8xfp4 kernel (which only accepts E8M0/128). qdata [E,N,K/2], scale [E,N,K/16],
+    per_tensor [E] -> (wq [E,N,K/2] uint8, ws [E,N,K/128] fp32). Experts are frozen → cache it."""
+    cast = _dg().utils.per_token_cast_to_fp4
+    Wb = nvfp4_dequant_bf16(qdata, scale, per_tensor)  # [E,N,K] bf16
+    E = Wb.size(0)
+    qs = [cast(Wb[e].contiguous(), True, 128) for e in range(E)]
+    return torch.stack([q for q, _ in qs]), torch.stack([s for _, s in qs])
+
+
+def deepgemm_grouped_fp8_fp4(a_bf16: torch.Tensor, wq: torch.Tensor, ws: torch.Tensor,
+                             m_indices: torch.Tensor) -> torch.Tensor:
+    """Contiguous-grouped fp8(act) x mxfp4(weight) base GEMM via DeepGEMM (SM90/SM100).
+    a_bf16 [Mt,K], wq [E,N,K/2] uint8, ws [E,N,K/128] fp32, m_indices [Mt] int32 -> [Mt,N] bf16.
+    Acts quantized to fp8 (E8M0/128) here; the kernel transforms the raw scales internally."""
+    dg = _dg()
+    a = fp8_e8m0_cast_128(a_bf16)
+    d = torch.empty(a_bf16.size(0), wq.size(1), device=a_bf16.device, dtype=torch.bfloat16)
+    dg.m_grouped_fp8_fp4_gemm_nt_contiguous(
+        a, (wq, ws), d, m_indices, recipe=None, recipe_a=(1, 128), recipe_b=(1, 128),
+        disable_ue8m0_cast=False,
+    )
+    return d
+
+
+def _cached_mxfp4(w_nv, per_tensor, cache=None, key=None):
+    """Return (wq, ws) MXFP4 weight for a (frozen) NVFP4Tensor, requantized once and cached.
+    Prefer a persistent ``cache`` dict (e.g. on the owning module) keyed by ``key`` — under
+    FSDP2 the gathered param is a fresh tensor each step, so a module-level cache (not a
+    per-tensor attribute) is what avoids recomputing the requant every forward. Falls back to a
+    per-tensor attribute, then to a one-shot recompute."""
+    if cache is not None and key is not None and key in cache:
+        return cache[key]
+    cached = getattr(w_nv, "_dg_mxfp4", None)
+    if cached is None:
+        cached = nvfp4_to_mxfp4_weight(w_nv.qdata, w_nv.scale, per_tensor)
+        try:
+            w_nv._dg_mxfp4 = cached
+        except (AttributeError, RuntimeError):
+            pass
+    if cache is not None and key is not None:
+        cache[key] = cached
+    return cached
 
 
 class _GroupedMM(torch.autograd.Function):

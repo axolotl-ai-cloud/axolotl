@@ -39,6 +39,21 @@ class KernelsArgs(BaseModel):
     # Fallback: cast ALL residual fp32 params (incl. keep_in_fp32 mHC/norms) to the compute
     # dtype for the fused kernels, instead of preserving keep_in_fp32 in fp32.
     dsv4_bf16_all: bool | None = None
+    # Grouped fp4 MoE experts path (variable-M contiguous-grouped, base-fp4 GEMM + LoRA): off by
+    # default (existing fused/chunked paths unchanged). "nvfp4" = fp4 act x fp4 weight (fastest,
+    # lossy acts); "fp8" = fp8 act x mxfp4 weight (accurate). Auto-dispatches the base GEMM:
+    # DeepGEMM (sm90/sm100) -> CUTLASS grouped (sm120) -> chunked-dequant fallback.
+    dsv4_fp4_grouped_mode: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_dsv4_fp4_grouped_mode(cls, data):
+        mode = data.get("dsv4_fp4_grouped_mode")
+        if mode is not None and str(mode).lower() not in ("nvfp4", "fp8"):
+            raise ValueError(
+                f"dsv4_fp4_grouped_mode must be 'nvfp4' or 'fp8', got {mode!r}"
+            )
+        return data
 
     @model_validator(mode="before")
     @classmethod
