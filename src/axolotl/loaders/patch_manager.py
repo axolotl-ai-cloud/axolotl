@@ -104,6 +104,9 @@ class PatchManager:
         self._apply_flash_attn_4_patches()
         self._apply_fsdp_patches()
         self._apply_adapter_patches()
+        # Must precede fused-RoPE patches: re-parses ``Attention.forward``
+        # via ``inspect.getsource``; the QKV regex misses on a patched body.
+        self._apply_self_attention_lora_patch()
         self._apply_model_specific_patches()
         self._apply_fp8_patches()
         self._apply_flash_attention_peft_patches()
@@ -113,7 +116,6 @@ class PatchManager:
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
-        self._apply_self_attention_lora_patch()
         self._apply_fsdp2_bnb_patches()
         self._apply_patch_deepspeed_zero3()
         self._apply_voxtral_patches()
@@ -158,6 +160,7 @@ class PatchManager:
         # cleanly in the same call even though one is instance-scoped
         # and the other is module-scoped.
         self._apply_gemma_hybrid_attention(model)
+        self._apply_gemma4_loss_kwargs()
         self._finalize_moe_expert_quantization(model)
 
     def apply_post_model_load_patches(self, model: PreTrainedModel):
@@ -166,6 +169,18 @@ class PatchManager:
         self._apply_lora_kernel_patch(model)
         self._apply_scaling_softmax_patch(model)
         self._apply_fp8_attention_patches(model)
+        self._apply_tiled_mlp_post_load(model)
+
+    def _apply_gemma4_loss_kwargs(self):
+        # Flip accepts_loss_kwargs True so the Trainer normalizes loss by
+        # num_items_in_batch under grad accumulation (must run before trainer init).
+        if self.cfg.model_config_type not in ("gemma4", "gemma4_unified"):
+            return
+        from axolotl.monkeypatch.gemma4_loss_kwargs import (
+            patch_gemma4_accepts_loss_kwargs,
+        )
+
+        patch_gemma4_accepts_loss_kwargs()
 
     def _apply_gemma_hybrid_attention(self, model: PreTrainedModel):
         """Apply hybrid attention: FA2 for sliding window layers, SDPA for global layers.
@@ -309,14 +324,6 @@ class PatchManager:
 
                 patch_trl_prepare_fsdp2()
 
-        # if self.cfg.fsdp_config:
-        #     # see transformers#39152
-        #     from axolotl.monkeypatch.trainer_fsdp_optim import (
-        #         patch_training_loop_for_fsdp,
-        #     )
-        #
-        #     patch_training_loop_for_fsdp()
-
     def _apply_adapter_patches(self):
         """Apply patches for adapter configurations."""
         if self.cfg.adapter and self.cfg.embeddings_skip_upcast:
@@ -350,8 +357,46 @@ class PatchManager:
 
         patch_flash_attn_4(self.model_config)
 
+    _FUSED_ATTN_KERNEL_SUPPORTED = (
+        "qwen3",
+        "qwen3_moe",
+        "qwen3_vl",
+        "qwen3_vl_text",
+        "qwen3_5",
+        "qwen3_5_text",
+        "qwen3_5_moe",
+        "qwen3_5_moe_text",
+        "gemma4",
+        "gemma4_text",
+        "gemma4_unified",
+        "gemma4_unified_text",
+    )
+
+    @staticmethod
+    def _warn_if_fused_attn_unsupported(cfg):
+        """Warn when ``fused_attn_kernel`` targets an unsupported
+        ``model_config_type`` (derived post-schema by ``normalize_config()``)."""
+        if not getattr(cfg, "fused_attn_kernel", False):
+            return
+        mct = getattr(cfg, "model_config_type", None)
+        if mct and mct not in PatchManager._FUSED_ATTN_KERNEL_SUPPORTED:
+            LOG.warning(
+                "`fused_attn_kernel: true` is set but model_config_type=%r is not "
+                "in the supported set %s. The flag is a silent no-op for this "
+                "model. Remove the flag or use one of the supported model families.",
+                mct,
+                sorted(PatchManager._FUSED_ATTN_KERNEL_SUPPORTED),
+            )
+
     def _apply_model_specific_patches(self):
         """Apply patches specific to model architectures."""
+        self._warn_if_fused_attn_unsupported(self.cfg)
+
+        if getattr(self.cfg, "use_kernels", None):
+            from axolotl.monkeypatch.kernelize_fixes import patch_kernelize_fixes
+
+            patch_kernelize_fixes()
+
         if (
             self.cfg.model_config_type == "llama4"
             and self.cfg.llama4_linearized_experts
@@ -437,19 +482,12 @@ class PatchManager:
 
                 patch_qwen3_5_vlm_flash_attention()
 
-            if self.cfg.model_config_type in ("gemma4", "gemma4_text"):
-                # The fused attn path is now compatible with
-                # ``gemma4_hybrid_attn_impl``: the kernel handles partial
-                # rotary (cos.shape[-1] < head_dim) and the fused forward
-                # mirrors the current ``Gemma4TextAttention.forward`` API
-                # for shared kv (read from / write to
-                # ``past_key_values.shared_layers``). See
-                # ``src/axolotl/kernels/GEMMA4_FUSED_ROPE_HYBRID_ATTN_BUG.md``
-                # for the history.
-                from axolotl.monkeypatch.models.gemma4.fused_attn import (
-                    patch_gemma4_fused_attn,
-                )
-
+            if self.cfg.model_config_type in (
+                "gemma4",
+                "gemma4_text",
+                "gemma4_unified",
+                "gemma4_unified_text",
+            ):
                 # Shared-KV side channel when activation checkpointing (PR #3611).
                 fsdp_cfg = self.cfg.fsdp_config
                 needs_shared_kv_workaround = (not self.inference) and bool(
@@ -457,9 +495,64 @@ class PatchManager:
                     or self.cfg.activation_offloading
                     or (fsdp_cfg is not None and fsdp_cfg.activation_checkpointing)
                 )
-                patch_gemma4_fused_attn(
+                if self.cfg.model_config_type in (
+                    "gemma4_unified",
+                    "gemma4_unified_text",
+                ):
+                    from axolotl.monkeypatch.models.gemma4_unified.fused_attn import (
+                        patch_gemma4_unified_fused_attn as patch_fused_attn,
+                    )
+                else:
+                    from axolotl.monkeypatch.models.gemma4.fused_attn import (
+                        patch_gemma4_fused_attn as patch_fused_attn,
+                    )
+                patch_fused_attn(
                     install_shared_kv_workaround=needs_shared_kv_workaround
                 )
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3":
+                from axolotl.monkeypatch.models.qwen3.fused_attn import (
+                    patch_qwen3_fused_attn,
+                )
+
+                patch_qwen3_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type == "qwen3_moe":
+                from axolotl.monkeypatch.models.qwen3_moe.fused_attn import (
+                    patch_qwen3_moe_fused_attn,
+                )
+
+                patch_qwen3_moe_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_vl",
+                "qwen3_vl_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_vl.fused_attn import (
+                    patch_qwen3_vl_fused_attn,
+                )
+
+                patch_qwen3_vl_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5",
+                "qwen3_5_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5.fused_attn import (
+                    patch_qwen3_5_fused_attn,
+                )
+
+                patch_qwen3_5_fused_attn()
+
+            if self.cfg.fused_attn_kernel and self.cfg.model_config_type in (
+                "qwen3_5_moe",
+                "qwen3_5_moe_text",
+            ):
+                from axolotl.monkeypatch.models.qwen3_5_moe.fused_attn import (
+                    patch_qwen3_5_moe_fused_attn,
+                )
+
+                patch_qwen3_5_moe_fused_attn()
 
     @staticmethod
     def _fix_nemotron_h_conversion_mapping():
@@ -689,7 +782,26 @@ class PatchManager:
                 model_type,
                 use_original_mlp=self.cfg.tiled_mlp_use_original_mlp,
                 cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+                use_scattermoe=bool(self.cfg.use_scattermoe),
             )
+
+    def _apply_tiled_mlp_post_load(self, model):
+        """Re-wrap MoE block instances after kernels have installed their forward.
+
+        Needed only when scattermoe-lora is active — ``model.kernelize()``
+        binds ``HFScatterMoEGatedMLP.forward`` per instance, which shadows
+        the class-level tiled patch. See
+        :func:`axolotl.monkeypatch.tiled_mlp.patch_tiled_mlp_moe_instances`.
+        """
+        if not (self.cfg.tiled_mlp and self.cfg.use_scattermoe):
+            return
+        from axolotl.monkeypatch.tiled_mlp import patch_tiled_mlp_moe_instances
+
+        patch_tiled_mlp_moe_instances(
+            model,
+            self.cfg.model_config_type,
+            cfg_num_shards=self.cfg.tiled_mlp_num_shards,
+        )
 
     def _apply_voxtral_patches(self):
         """Apply patches for Voxtral model."""
@@ -764,6 +876,7 @@ class PatchManager:
 
     def _apply_llama_flash_attn_patches(self, model):
         """Apply LLaMA-specific flash attention patches."""
+
         if (
             self.model_config.model_type
             in ["llama", "llama4", "ernie4_5", "ernie4_5_moe"]
@@ -773,15 +886,18 @@ class PatchManager:
             and is_flash_attn_available()
             and not self.inference
         ):
-            # TODO(MengqingCao): split these patches separately
-            from axolotl.monkeypatch.llama_attn_hijack_flash import (
-                is_xformers_swiglu_available,
-                replace_llama_mlp_with_swiglu,
-            )
+            try:
+                # TODO(MengqingCao): split these patches separately
+                from axolotl.monkeypatch.llama_attn_hijack_flash import (
+                    is_xformers_swiglu_available,
+                    replace_llama_mlp_with_swiglu,
+                )
 
-            if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
-                LOG.info("Patching with SwiGLU...")
-                replace_llama_mlp_with_swiglu(model)
+                if self.cfg.flash_attn_fuse_mlp and is_xformers_swiglu_available():
+                    LOG.info("Patching with SwiGLU...")
+                    replace_llama_mlp_with_swiglu(model)
+            except ImportError as e:
+                LOG.warning(f"Flash Attention patches not applied: {e}")
 
     def _apply_lora_kernel_patch(self, model):
         """Apply LoRA kernel patches."""

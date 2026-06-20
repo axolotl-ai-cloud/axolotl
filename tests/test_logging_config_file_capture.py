@@ -101,3 +101,28 @@ def test_prepare_debug_log_idempotent_and_no_duplicate(monkeypatch):
         # Ensure the marker appears once (not duplicated via propagation)
         assert data.count(marker) == 1
         tee.close_debug_log()
+
+
+def test_hub_unauthenticated_nag_suppressed(monkeypatch):
+    from axolotl.logging_config import configure_logging
+    from axolotl.utils import tee
+
+    with tempfile.TemporaryDirectory() as td:
+        monkeypatch.setenv("AXOLOTL_TEE_STDOUT", "0")
+        configure_logging()
+        path = tee.prepare_debug_log(
+            type("Cfg", (), {"output_dir": td, "get": lambda *_: False})
+        )
+
+        hub_http = logging.getLogger("huggingface_hub.utils._http")
+        hub_http.warning(
+            "Warning: You are sending unauthenticated requests to the HF Hub."
+            " Please set a HF_TOKEN to enable higher rate limits and faster downloads."
+        )
+        hub_http.warning("Retrying in 2s [Retry 1/5].")
+        tee.file_only_stream.flush()
+
+        data = read(path)
+        assert "unauthenticated requests" not in data
+        assert "Retrying in 2s" in data
+        tee.close_debug_log()

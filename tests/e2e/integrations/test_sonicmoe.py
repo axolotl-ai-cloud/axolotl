@@ -1,13 +1,17 @@
-"""
-End-to-end gradient and convergence tests for SonicMoE integration.
+"""End-to-end gradient and convergence tests for SonicMoE integration.
+
+Flow:
+
+    register_sonicmoe_experts()                # plug into ALL_EXPERTS_FUNCTIONS
+    config._experts_implementation = "sonicmoe"
+    model = AutoModelForCausalLM.from_config(config)   # transformers dispatches
+
+No weight interleaving needed (``concat_layout=True``).
 
 Requires:
-    - H100/H200 GPU (SonicMoE CUTLASS kernels target sm_90)
-    - sonicmoe package installed
-    - transformers with Qwen3MoE support
-
-Usage:
-    pytest tests/e2e/integrations/test_sonicmoe.py -v -s
+    - Hopper (sm_90) or Blackwell (sm_100+) GPU
+    - sonic-moe >= 0.1.2 installed from source
+    - transformers >= 5.8 with Qwen3MoE Experts class
 """
 
 import importlib.util
@@ -16,20 +20,29 @@ import math
 import pytest
 import torch
 
-_sonicmoe_available = importlib.util.find_spec("sonicmoe") is not None
-_is_hopper = torch.cuda.is_available() and torch.cuda.get_device_capability() == (9, 0)
+
+def _is_hopper_or_newer() -> bool:
+    if not torch.cuda.is_available():
+        return False
+    major, _ = torch.cuda.get_device_capability()
+    return major >= 9
+
 
 pytestmark = [
     pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires CUDA GPU"),
     pytest.mark.skipif(
-        not _is_hopper, reason="SonicMoE CUTLASS kernels require Hopper (sm_90)"
+        not _is_hopper_or_newer(),
+        reason="SonicMoE requires Hopper (sm_90) or Blackwell (sm_100+)",
     ),
-    pytest.mark.skipif(not _sonicmoe_available, reason="SonicMoE not installed"),
+    pytest.mark.skipif(
+        importlib.util.find_spec("kernels") is None,
+        reason="HF `kernels` package not installed",
+    ),
 ]
 
 
-def _create_tiny_qwen3_config():
-    """Create a minimal Qwen3MoE config for fast testing."""
+def _create_tiny_qwen3_config(experts_implementation: str):
+    """Create a minimal Qwen3MoE config bound to the requested experts impl."""
     from transformers import AutoConfig
 
     config = AutoConfig.for_model("qwen3_moe")
@@ -46,137 +59,85 @@ def _create_tiny_qwen3_config():
     config.max_position_embeddings = 128
     config.norm_topk_prob = True
     config.torch_dtype = torch.bfloat16
+    config._experts_implementation = experts_implementation
     return config
 
 
-def _interleave_gate_up_weights(model):
-    """Interleave all gate_up_proj parameters in-place for SonicMoE."""
-    from axolotl.integrations.kernels.libs.sonicmoe.weight_converter import (
-        interleave_gate_up,
+def _build_model(experts_implementation: str):
+    from transformers import AutoModelForCausalLM
+
+    from axolotl.integrations.kernels.libs.sonicmoe.experts import (
+        register_sonicmoe_experts,
     )
 
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if "gate_up_proj" in name:
-                param.copy_(interleave_gate_up(param))
-
-
-def _unpatch_sonicmoe():
-    """Restore original forward on the MoE block class if it was patched."""
-    from axolotl.integrations.kernels.constants import resolve_moe_block_classes
-
-    for moe_cls in resolve_moe_block_classes("qwen3_moe"):
-        if hasattr(moe_cls, "_original_forward"):
-            moe_cls.forward = moe_cls._original_forward
-            del moe_cls._original_forward
+    register_sonicmoe_experts()
+    config = _create_tiny_qwen3_config(experts_implementation)
+    return AutoModelForCausalLM.from_config(config).cuda().bfloat16(), config
 
 
 class TestSonicMoEForwardCorrectness:
-    """Verify SonicMoE-patched model produces same output as original."""
+    """SonicMoE-dispatched model produces output close to eager baseline."""
 
-    def teardown_method(self):
-        _unpatch_sonicmoe()
+    def test_forward_output_matches_eager(self):
+        input_ids = torch.randint(0, 1000, (1, 16), device="cuda")
 
-    def test_forward_output_matches(self):
-        from transformers import AutoModelForCausalLM
+        eager_model, _ = _build_model("eager")
+        with torch.no_grad():
+            out_eager = eager_model(input_ids).logits
 
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        # Original model
-        model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
+        sonic_model, _ = _build_model("sonicmoe")
+        sonic_model.load_state_dict(eager_model.state_dict())
 
         with torch.no_grad():
-            out_orig = model_orig(input_ids)
+            out_sonic = sonic_model(input_ids).logits
 
-        # Patched model (same weights, interleaved for SonicMoE)
-        model_patched = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        model_patched.load_state_dict(model_orig.state_dict())
-
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model_patched)
-
-        with torch.no_grad():
-            out_patched = model_patched(input_ids)
-
-        max_diff = (out_orig.logits - out_patched.logits).abs().max().item()
-        assert torch.allclose(
-            out_orig.logits, out_patched.logits, atol=1e-1, rtol=1e-1
-        ), f"Output mismatch: max diff={max_diff:.6f}"
+        max_diff = (out_eager - out_sonic).abs().max().item()
+        assert torch.allclose(out_eager, out_sonic, atol=1e-1, rtol=1e-1), (
+            f"Output mismatch: max diff={max_diff:.6f}"
+        )
 
 
 class TestSonicMoEGradientCorrectness:
-    """Compare gradients between original HuggingFace and SonicMoE-patched forward."""
-
-    def teardown_method(self):
-        _unpatch_sonicmoe()
+    """Compare gradients between eager and SonicMoE-dispatched forward."""
 
     def test_gradients_match(self):
-        """Verify all parameter gradients match between original and patched."""
-        from transformers import AutoModelForCausalLM
+        input_ids = torch.randint(0, 1000, (1, 16), device="cuda")
 
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-        from axolotl.integrations.kernels.libs.sonicmoe.weight_converter import (
-            deinterleave_gate_up,
-        )
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        # ---------- Original model ----------
-        model_orig = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        out_orig = model_orig(input_ids, labels=input_ids)
-        out_orig.loss.backward()
-        grads_orig = {
+        eager_model, _ = _build_model("eager")
+        out_eager = eager_model(input_ids, labels=input_ids)
+        out_eager.loss.backward()
+        grads_eager = {
             n: p.grad.float().clone()
-            for n, p in model_orig.named_parameters()
+            for n, p in eager_model.named_parameters()
             if p.grad is not None
         }
-        loss_orig = out_orig.loss.item()
+        loss_eager = out_eager.loss.item()
 
-        # ---------- SonicMoE-patched model (same weights, interleaved) ----------
-        model_patched = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        model_patched.load_state_dict(model_orig.state_dict())
+        sonic_model, _ = _build_model("sonicmoe")
+        sonic_model.load_state_dict(eager_model.state_dict())
+        out_sonic = sonic_model(input_ids, labels=input_ids)
+        out_sonic.loss.backward()
+        grads_sonic = {
+            n: p.grad.float().clone()
+            for n, p in sonic_model.named_parameters()
+            if p.grad is not None
+        }
+        loss_sonic = out_sonic.loss.item()
 
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model_patched)
-
-        out_patched = model_patched(input_ids, labels=input_ids)
-        out_patched.loss.backward()
-        grads_patched = {}
-        for n, p in model_patched.named_parameters():
-            if p.grad is None:
-                continue
-            g = p.grad.float().clone()
-            # gate_up_proj grads are in interleaved layout, de-interleave to match orig
-            if "gate_up_proj" in n:
-                g = deinterleave_gate_up(g)
-            grads_patched[n] = g
-        loss_patched = out_patched.loss.item()
-
-        # ---------- Compare ----------
-        assert abs(loss_orig - loss_patched) < 0.5, (
-            f"Loss mismatch: orig={loss_orig:.4f}, patched={loss_patched:.4f}"
+        assert abs(loss_eager - loss_sonic) < 0.5, (
+            f"Loss mismatch: eager={loss_eager:.4f}, sonic={loss_sonic:.4f}"
         )
 
-        # All parameters with gradients in original should have them in patched
-        missing = set(grads_orig.keys()) - set(grads_patched.keys())
-        assert not missing, f"Missing gradients in patched model: {missing}"
+        missing = set(grads_eager.keys()) - set(grads_sonic.keys())
+        assert not missing, f"Missing gradients in sonicmoe model: {missing}"
 
-        # Compare gradient values
-        # bf16 with different GEMM impls (cuBLAS vs CUTLASS) can diverge,
-        # so use generous tolerance: flag only if both rel >10% AND abs >1e-2
+        # bf16 + different GEMM backends can diverge; tolerate both rel >10% AND
+        # abs >1e-2 together.
         mismatches = []
-        for name in grads_orig:
-            if name not in grads_patched:
-                continue
-            g_orig = grads_orig[name]
-            g_patched = grads_patched[name]
-            max_diff = (g_orig - g_patched).abs().max().item()
-            rel_diff = max_diff / (g_orig.abs().max().item() + 1e-8)
-
+        for name, g_eager in grads_eager.items():
+            g_sonic = grads_sonic[name]
+            max_diff = (g_eager - g_sonic).abs().max().item()
+            rel_diff = max_diff / (g_eager.abs().max().item() + 1e-8)
             if rel_diff > 0.1 and max_diff > 1e-2:
                 mismatches.append(
                     f"  {name}: max_abs_diff={max_diff:.6f}, rel_diff={rel_diff:.4f}"
@@ -188,18 +149,8 @@ class TestSonicMoEGradientCorrectness:
         )
 
     def test_router_weights_receive_gradients(self):
-        """Verify that router (gate) weights get non-zero gradients."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (1, 16), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
-
+        input_ids = torch.randint(0, 1000, (1, 16), device="cuda")
+        model, _ = _build_model("sonicmoe")
         out = model(input_ids, labels=input_ids)
         out.loss.backward()
 
@@ -216,21 +167,9 @@ class TestSonicMoEGradientCorrectness:
 class TestSonicMoETrainingConvergence:
     """Verify loss decreases during training with SonicMoE."""
 
-    def teardown_method(self):
-        _unpatch_sonicmoe()
-
     def test_loss_decreases(self):
-        """Run 30 training steps, verify loss decreases and no NaN/Inf."""
-        from transformers import AutoModelForCausalLM
-
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model, _ = _build_model("sonicmoe")
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
         losses = []
@@ -251,24 +190,14 @@ class TestSonicMoETrainingConvergence:
         )
 
     def test_expert_weights_update(self):
-        """Verify expert weights change during training (not frozen)."""
-        from transformers import AutoModelForCausalLM
+        input_ids = torch.randint(0, 1000, (2, 32), device="cuda")
+        model, _ = _build_model("sonicmoe")
 
-        from axolotl.integrations.kernels.libs.sonicmoe.patch import patch_sonicmoe
-
-        config = _create_tiny_qwen3_config()
-        input_ids = torch.randint(0, config.vocab_size, (2, 32), device="cuda")
-
-        model = AutoModelForCausalLM.from_config(config).cuda().bfloat16()
-        patch_sonicmoe("qwen3_moe")
-        _interleave_gate_up_weights(model)
-
-        # Snapshot expert weights before training
-        expert_weights_before = {}
-        for name, param in model.named_parameters():
-            if "experts" in name:
-                expert_weights_before[name] = param.data.clone()
-
+        expert_weights_before = {
+            name: param.data.clone()
+            for name, param in model.named_parameters()
+            if "experts" in name
+        }
         assert expert_weights_before, "No expert parameters found"
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
@@ -278,11 +207,10 @@ class TestSonicMoETrainingConvergence:
             optimizer.step()
             optimizer.zero_grad()
 
-        # Check that expert weights changed
-        changed = 0
-        for name, param in model.named_parameters():
-            if name in expert_weights_before:
-                if not torch.equal(param.data, expert_weights_before[name]):
-                    changed += 1
-
+        changed = sum(
+            1
+            for name, param in model.named_parameters()
+            if name in expert_weights_before
+            and not torch.equal(param.data, expert_weights_before[name])
+        )
         assert changed > 0, "No expert weights changed after 5 training steps"

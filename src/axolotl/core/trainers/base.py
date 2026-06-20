@@ -7,6 +7,7 @@ import gc
 import json
 import math
 import os
+import time
 from collections import defaultdict
 from functools import partial, wraps
 from typing import Any, Callable, Literal, Optional
@@ -45,11 +46,16 @@ from axolotl.core.trainers.mixins import (
 from axolotl.core.trainers.utils import (
     sanitize_kwargs_for_ds_tagging,
     sanitize_kwargs_for_tagging,
+    trainable_tokens_per_sec_per_gpu,
 )
 from axolotl.utils import get_not_null
 from axolotl.utils.bench import get_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
-from axolotl.utils.distributed import is_distributed, is_main_process
+from axolotl.utils.distributed import (
+    get_world_size,
+    is_distributed,
+    is_main_process,
+)
 from axolotl.utils.logging import get_logger
 from axolotl.utils.samplers import MultipackBatchSampler, get_dataset_lengths
 
@@ -124,6 +130,8 @@ class AxolotlTrainer(
                     self.model_accepts_loss_kwargs = False
 
         self.train_data_collator = self.data_collator
+        self._tkps_prev_trainable: float | None = None
+        self._tkps_prev_time: float | None = None
         self._stored_metrics = defaultdict(
             lambda: defaultdict(lambda: {"values": [], "reduction": "mean"})
         )
@@ -401,8 +409,6 @@ class AxolotlTrainer(
                 self.state.tokens["trainable"] + trainable_tokens.detach().cpu()
             )
             self.state.tokens["total"] = self.state.tokens["total"] + total_tokens.cpu()
-            # Store per-step trainable tokens for throughput calculation
-            self.state.tokens["trainable_tokens"] = trainable_tokens.detach().cpu()
 
         # Gemma4 requires mm_token_type_ids during training (even for text-only).
         # Inject zeros (= text token type) when not provided by the data collator.
@@ -412,7 +418,7 @@ class AxolotlTrainer(
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and _model_type == "gemma4"
+            and _model_type in ("gemma4", "gemma4_unified")
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
 
@@ -423,7 +429,7 @@ class AxolotlTrainer(
         # per-sequence causal masks.
         if (
             self.args.sample_packing
-            and _model_type in ("gemma4", "gemma3")
+            and _model_type in ("gemma4", "gemma3", "gemma4_unified")
             and "attention_mask" in inputs
             and "position_ids" in inputs
         ):
@@ -436,23 +442,6 @@ class AxolotlTrainer(
                 return_outputs=return_outputs,
                 num_items_in_batch=num_items_in_batch,
             )
-
-        # Gemma4ForConditionalGeneration computes loss with a manual
-        # nn.CrossEntropyLoss() that bypasses proper num_items_in_batch
-        # normalization and does redundant attention_mask filtering.
-        # Compute loss externally using the standard loss_function instead.
-        if _model_type == "gemma4" and "labels" in inputs:
-            labels = inputs.pop("labels")
-            outputs = model(**inputs)
-            logits = outputs.logits
-            unwrapped = self.accelerator.unwrap_model(model)
-            vocab_size = unwrapped.config.get_text_config().vocab_size
-            loss = unwrapped.loss_function(
-                logits, labels, vocab_size, num_items_in_batch=num_items_in_batch
-            )
-            if return_outputs:
-                return loss, outputs
-            return loss
 
         return super().compute_loss(
             model,
@@ -483,7 +472,7 @@ class AxolotlTrainer(
         if (
             "mm_token_type_ids" not in inputs
             and "input_ids" in inputs
-            and _model_type == "gemma4"
+            and _model_type in ("gemma4", "gemma4_unified")
         ):
             inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
         return super().prediction_step(
@@ -602,9 +591,15 @@ class AxolotlTrainer(
             "attention_mask": concat_inputs["attention_mask"],
             "labels": concat_inputs["labels"],
         }
-        # Gemma4 requires mm_token_type_ids during training (even for text-only)
+        # Gemma4 requires mm_token_type_ids during training (even for text-only).
+        # Unwrap to read .config (DDP/DeepSpeed wrappers don't proxy it).
+        _orpo_model_type = getattr(
+            getattr(self.accelerator.unwrap_model(model), "config", None),
+            "model_type",
+            None,
+        )
         if (
-            getattr(getattr(model, "config", None), "model_type", None) == "gemma4"
+            _orpo_model_type in ("gemma4", "gemma4_unified")
             and "mm_token_type_ids" not in concat_inputs
         ):
             forward_kwargs["mm_token_type_ids"] = torch.zeros_like(
@@ -755,15 +750,27 @@ class AxolotlTrainer(
             and train_eval == "train"
             and hasattr(self.state, "tokens")
         ):
-            # each rank will log its own tokens per second
-            # for logging_steps > 1 we obtain a moving average of this metric
-            logs["tokens/train_per_sec_per_gpu"] = round(
-                self.state.last_tokens_per_second.item() / self.args.logging_steps, 2
-            )
+            if "trainable" in self.state.tokens:
+                now = time.perf_counter()
+                curr_trainable = float(self.state.tokens["trainable"].item())
+                elapsed = (
+                    now - self._tkps_prev_time
+                    if self._tkps_prev_time is not None
+                    else 0.0
+                )
+                rate = trainable_tokens_per_sec_per_gpu(
+                    self._tkps_prev_trainable,
+                    curr_trainable,
+                    get_world_size(),
+                    elapsed,
+                )
+                if rate is not None:
+                    logs["tokens/train_per_sec_per_gpu"] = round(rate, 2)
+                self._tkps_prev_trainable = curr_trainable
+                self._tkps_prev_time = now
+                logs["tokens/trainable"] = int(curr_trainable)
             if "total" in self.state.tokens:
                 logs["tokens/total"] = int(self.state.tokens["total"].item())
-            if "trainable" in self.state.tokens:
-                logs["tokens/trainable"] = int(self.state.tokens["trainable"].item())
 
         del self._stored_metrics[train_eval]
 
