@@ -217,6 +217,7 @@ docstring-code-format = false
 addopts = "-m 'not slow'"
 markers = [
     "slow: marks tests as slow",
+    "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
 ]
 
 # UV specific configuration
