@@ -329,11 +329,19 @@ def _scattermoe_gptoss_forward(
 # Config-gated grouped fp4 MoE path (cfg.dsv4_fp4_grouped_mode). Set by the plugin pre_model_load;
 # None = off (existing fused/eager paths unchanged -> no regression).
 _FP4_GROUPED_MODE = None
+# Base dX backward precision (sm120): True = fp8-read (fast, ~2% grad error, default) | False =
+# bf16-dequant (slower, ~0.5%, max gradient fidelity). Wire to a cfg flag in the plugin if desired.
+_FP4_DX_PREFER_FP8 = True
 
 
 def set_fp4_grouped_mode(mode):
     global _FP4_GROUPED_MODE
     _FP4_GROUPED_MODE = mode
+
+
+def set_fp4_dx_prefer_fp8(flag):
+    global _FP4_DX_PREFER_FP8
+    _FP4_DX_PREFER_FP8 = bool(flag)
 
 
 def scattermoe_experts_forward(
@@ -388,7 +396,7 @@ def scattermoe_experts_forward(
                 return grouped_fp4_moe_train(
                     hidden_states, top_k_index, routing_weights, gu_base, dn_base,
                     gup_lora, down_lora, getattr(self, "limit", None), _FP4_GROUPED_MODE,
-                    weight_recipe=_recipe, mxfp4_cache=cache,
+                    weight_recipe=_recipe, mxfp4_cache=cache, prefer_fp8_dx=_FP4_DX_PREFER_FP8,
                 )
 
     (

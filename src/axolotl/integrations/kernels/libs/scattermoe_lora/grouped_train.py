@@ -172,8 +172,9 @@ class _GroupedExperts(torch.autograd.Function):
     Frozen NVFP4 experts; trainable LoRA A/B (stacked [E,r,K]/[E,N,r])."""
 
     @staticmethod
-    def forward(ctx, x, base, weight_recipe, Agu, Bgu, Adn, Bdn, m_indices, offs, scaling, limit, mode):
-        # base: ('cutlass', gu_eng, dn_eng) | ('deepgemm', (guq,gus), (dnq,dns)) — frozen experts
+    def forward(ctx, x, base, weight_recipe, Agu, Bgu, Adn, Bdn, m_indices, offs, scaling, limit, mode,
+                prefer_fp8_dx=True):
+        # base: ('marlin', ...) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', ...) — frozen experts
         gu = _base_forward(base, 0, x, m_indices, mode)
         xAg = _gmm(x, Agu.transpose(1, 2), offs)
         gu = gu + scaling * _gmm(xAg, Bgu.transpose(1, 2), offs)
@@ -184,6 +185,7 @@ class _GroupedExperts(torch.autograd.Function):
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
+        ctx.prefer_fp8_dx = prefer_fp8_dx  # base dX: fp8-read (fast, ~2% grad) vs bf16-dequant (~0.5%)
         return dn
 
     @staticmethod
@@ -193,8 +195,9 @@ class _GroupedExperts(torch.autograd.Function):
         gu_nv, dn_nv = ctx.weight_recipe()
         E, dev = gu_nv.qdata.size(0), x.device
         ptg, ptd = _pt(gu_nv, E, dev), _pt(dn_nv, E, dev)
-        # fp8-read dX now works for both pad-128 (cutlass) and pad-64 (marlin) via the BM=tile kernel.
-        pf8 = _fp8_read_dx_ok()
+        # fp8-read dX works for both pad-128 (cutlass) and pad-64 (marlin) via the BM=tile kernel;
+        # prefer_fp8_dx=False opts into the bf16-dequant dX (more accurate grad, ~0.5% vs ~2%).
+        pf8 = _fp8_read_dx_ok() and ctx.prefer_fp8_dx
         tile = x.size(0) // m_indices.numel()  # routing pad granularity (128 cutlass, 64 marlin)
         d_dn = d_dn.contiguous().to(x.dtype)
         # Only the base dX contractions need the dequanted bf16 weight -> chunk those (bounds the
@@ -212,8 +215,8 @@ class _GroupedExperts(torch.autograd.Function):
         dBgu = s * _gmm_w(dgu, xAg, offs)
         dAgu = _gmm_w(d_xAg, x, offs)
         # grads align to forward args: x, base, weight_recipe, Agu, Bgu, Adn, Bdn,
-        # m_indices, offs, scaling, limit, mode
-        return (dx, None, None, dAgu, dBgu, dAdn, dBdn, None, None, None, None, None)
+        # m_indices, offs, scaling, limit, mode, prefer_fp8_dx
+        return (dx, None, None, dAgu, dBgu, dAdn, dBdn, None, None, None, None, None, None)
 
 
 def _lora_stack(lora, E, K, out):
@@ -226,12 +229,14 @@ def _lora_stack(lora, E, K, out):
 
 
 def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_lora, limit, mode,
-                          weight_recipe=None, mxfp4_cache=None):
+                          weight_recipe=None, mxfp4_cache=None, prefer_fp8_dx=True):
     """Training-capable grouped NVFP4 MoE forward. hidden[N,H], idx/wts[N,topk]; experts NVFP4Tensor;
     *_lora = (A,B,scaling) scattermoe layout. Returns [N,H]; differentiable to hidden + LoRA A/B.
     weight_recipe: optional callable -> (gate_up_nv, down_nv) re-read for the FSDP-safe backward
     (defaults to the forward tensors). mxfp4_cache: optional persistent dict (e.g. on the owning
-    module) so the DeepGEMM backend requantizes the frozen weight once across FSDP re-gathers."""
+    module) so the DeepGEMM backend requantizes the frozen weight once across FSDP re-gathers.
+    prefer_fp8_dx: base dX backward — True = fp8-read (fast, ~2% grad error, sm120 default);
+    False = bf16-dequant (slower, ~0.5%, max gradient fidelity)."""
     if weight_recipe is None:
         weight_recipe = lambda: (gate_up_nv, down_nv)  # noqa: E731
     N, H = hidden.shape
@@ -280,6 +285,6 @@ def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_
     lim = float(limit) if limit is not None else 1e30  # no clamp when the model has no swiglu_limit
     A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
     dn = _GroupedExperts.apply(A, base, weight_recipe, Agu, Bgu, Adn, Bdn,
-                               m_indices, offs, sgu, lim, mode)
+                               m_indices, offs, sgu, lim, mode, prefer_fp8_dx)
     out = hidden.new_zeros(N, H)
     return out.index_add(0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype))
