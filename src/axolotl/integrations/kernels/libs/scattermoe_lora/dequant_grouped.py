@@ -187,10 +187,13 @@ def nvfp4_dequant_fp8(qdata: torch.Tensor, scale: torch.Tensor, per_tensor: torc
     return out
 
 
+# BM is the per-expert tile (= the routing pad TILE); passed by the caller (128 for the cutlass
+# path, 64 for the marlin path) rather than fixed, so one expert weight maps to each BM-row block.
+# It is a constexpr (and an autotune key) so BN/BK/warps/stages still autotune per (N, K, BM).
 @triton.autotune(
-    configs=[triton.Config({"BM": 128, "BN": bn, "BK": bk}, num_warps=w, num_stages=st)
+    configs=[triton.Config({"BN": bn, "BK": bk}, num_warps=w, num_stages=st)
              for bn in (64, 128) for bk in (128, 256) for w in (4, 8) for st in (3, 4)],
-    key=["N", "K"],
+    key=["N", "K", "BM"],
 )
 @triton.jit
 def _grouped_dx_fp8_kernel(GRAD, W, MIDX, OUT, M, N, K, sg0, sg1, sw0, sw1, sw2, so0, so1,
@@ -209,17 +212,19 @@ def _grouped_dx_fp8_kernel(GRAD, W, MIDX, OUT, M, N, K, sg0, sg1, sw0, sw1, sw2,
     tl.store(OUT + rm[:, None] * so0 + rk[None, :] * so1, acc.to(tl.bfloat16), mask=rm[:, None] < M)
 
 
-def grouped_dx_fp8(grad: torch.Tensor, w_fp8: torch.Tensor, m_indices: torch.Tensor) -> torch.Tensor:
+def grouped_dx_fp8(grad: torch.Tensor, w_fp8: torch.Tensor, m_indices: torch.Tensor,
+                   block_m: int = 128) -> torch.Tensor:
     """dX = grad @ W (contract N) for contiguous-grouped experts, reading the fp8 weight and
-    upcasting in-register. grad[Mt,N] bf16, w_fp8[E,N,K] e4m3, m_indices[Mt/BM] (per BM=128 tile)
-    -> [Mt,K] bf16."""
+    upcasting in-register. grad[Mt,N] bf16, w_fp8[E,N,K] e4m3, m_indices[Mt/block_m] (one expert id
+    per block_m-row tile; block_m = the routing pad TILE: 128 cutlass, 64 marlin) -> [Mt,K] bf16."""
     Mt, N = grad.shape
     K = w_fp8.size(2)
     out = torch.empty(Mt, K, device=grad.device, dtype=torch.bfloat16)
-    grid = lambda meta: (Mt // meta["BM"], triton.cdiv(K, meta["BK"]))  # noqa: E731
+    grid = lambda meta: (Mt // block_m, triton.cdiv(K, meta["BK"]))  # noqa: E731
     _grouped_dx_fp8_kernel[grid](
         grad, w_fp8, m_indices, out, Mt, N, K, grad.stride(0), grad.stride(1),
         w_fp8.stride(0), w_fp8.stride(1), w_fp8.stride(2), out.stride(0), out.stride(1),
+        BM=block_m,
     )
     return out
 

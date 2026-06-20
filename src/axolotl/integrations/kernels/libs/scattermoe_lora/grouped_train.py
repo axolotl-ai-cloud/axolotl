@@ -127,13 +127,14 @@ def _fp8_read_dx_ok():
     return torch.cuda.get_device_capability()[0] == 12
 
 
-def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True):
+def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE):
     """Chunked base-weight contraction g @ W (frozen NVFP4 experts). bf16 path: dequant CHUNK_E
     experts to bf16 + cuBLAS grouped_mm. fp8-read path (sm120): dequant to fp8 (half bytes) + a
     Triton grouped GEMM that reads fp8 and upcasts in-register (~1.5x faster, half the transient).
-    g[Mt,N], W[E,N,out_k] -> [Mt,out_k]; m_indices is the per-TILE expert id (for the fp8 GEMM).
-    prefer_fp8=False forces the (TILE-agnostic) bf16 path — used by the marlin forward backend,
-    whose pad-64 layout is incompatible with the fp8 dX kernel's BM=128 tiling."""
+    g[Mt,N], W[E,N,out_k] -> [Mt,out_k]; m_indices is the per-`tile` expert id (for the fp8 GEMM).
+    `tile` is the routing pad granularity (128 cutlass, 64 marlin) and is passed to the fp8 dX
+    kernel as its row-block (BM) so one expert maps to each block. Both fp8-read and bf16-dequant
+    are gradient-consistent (they dequant the FORWARD weight); fp8-read is the faster default."""
     from .dequant_grouped import nvfp4_dequant_bf16
 
     fp8 = _fp8_read_dx_ok() and prefer_fp8
@@ -149,8 +150,8 @@ def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True):
             continue
         if fp8:
             Wc = nvfp4_dequant_fp8(w_nv.qdata[c0:c1], w_nv.scale[c0:c1], pt[c0:c1])
-            mi = (m_indices[t0 // TILE:t1 // TILE] - c0).to(torch.int32)
-            out[t0:t1] = grouped_dx_fp8(g[t0:t1], Wc, mi)
+            mi = (m_indices[t0 // tile:t1 // tile] - c0).to(torch.int32)
+            out[t0:t1] = grouped_dx_fp8(g[t0:t1], Wc, mi, tile)
         else:
             loc = (offs[c0:c1] - t0).to(torch.int32)
             Wc = nvfp4_dequant_bf16(w_nv.qdata[c0:c1], w_nv.scale[c0:c1], pt[c0:c1])
@@ -183,7 +184,6 @@ class _GroupedExperts(torch.autograd.Function):
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
-        ctx.backend = base[0]  # 'marlin' forces the bf16-dequant base_dx (pad-64 vs fp8's BM=128)
         return dn
 
     @staticmethod
@@ -193,18 +193,20 @@ class _GroupedExperts(torch.autograd.Function):
         gu_nv, dn_nv = ctx.weight_recipe()
         E, dev = gu_nv.qdata.size(0), x.device
         ptg, ptd = _pt(gu_nv, E, dev), _pt(dn_nv, E, dev)
-        pf8 = ctx.backend != "marlin"  # marlin pad-64 -> bf16-dequant base_dx (fp8 kernel needs TILE=128)
+        # fp8-read dX now works for both pad-128 (cutlass) and pad-64 (marlin) via the BM=tile kernel.
+        pf8 = _fp8_read_dx_ok()
+        tile = x.size(0) // m_indices.numel()  # routing pad granularity (128 cutlass, 64 marlin)
         d_dn = d_dn.contiguous().to(x.dtype)
         # Only the base dX contractions need the dequanted bf16 weight -> chunk those (bounds the
         # bf16-weight transient). All LoRA grads are dequant-free -> one full-E grouped_mm each
         # (avoids ~6 tiny grouped_mm per chunk; the small launches dominated the profile).
-        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices, pf8)       # chunked: d_dn @ Wdn
+        dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices, pf8, tile)  # chunked: d_dn @ Wdn
         d_hAd = s * _gmm(d_dn, Bdn, offs)
         dh = dh + _gmm(d_hAd, Adn, offs)
         dBdn = s * _gmm_w(d_dn, hAd, offs)
         dAdn = _gmm_w(d_hAd, h, offs)
         dgu = _swiglu_bwd(dh, gu, lim).to(x.dtype); del dh
-        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8)        # chunked: dgu @ Wgu
+        dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8, tile)   # chunked: dgu @ Wgu
         d_xAg = s * _gmm(dgu, Bgu, offs)
         dx = dx + _gmm(d_xAg, Agu, offs)
         dBgu = s * _gmm_w(dgu, xAg, offs)
