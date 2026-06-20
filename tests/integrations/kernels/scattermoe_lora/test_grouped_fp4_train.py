@@ -224,6 +224,46 @@ def test_grouped_fp4_fwd_matches_oracle(cfg):
 
 
 # ===========================================================================
+# Test 1b: marlin qdata-free experts survive clone/state_dict (adapter save)
+# ===========================================================================
+
+@pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
+def test_grouped_fp4_save_after_qdata_free(cfg):
+    """Regression: the marlin memory fix frees nv.qdata after repack. The freed NVFP4Tensor must
+    still clone/serialize (PEFT save_pretrained -> state_dict -> NVFP4Tensor clone -> __new__ ->
+    qdata.stride(-2)); a flat empty(0) qdata crashed with IndexError(dim -2). Freeing to a 3-D
+    [E, N, 0] placeholder keeps clone/save working."""
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_moe_train, grouped_fp4_available, _train_backend,
+    )
+    if not grouped_fp4_available("nvfp4"):
+        pytest.skip("no grouped fp4 backend available")
+    if _train_backend("nvfp4") != "marlin":
+        pytest.skip("qdata-free only on the marlin backend")
+
+    hidden, idx, wts, gu_nv, dn_nv, _Wgu, _Wdn, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
+    s = cfg["scaling"]
+    # one forward triggers the marlin repack + qdata free
+    grouped_fp4_moe_train(
+        hidden.clone(), idx, wts, gu_nv, dn_nv,
+        (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
+        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache={},
+    )
+    # qdata was freed to a 3-D zero-element placeholder (not flat empty(0))
+    assert gu_nv.qdata.numel() == 0 and gu_nv.qdata.ndim == 3, "qdata not freed to 3-D placeholder"
+    # The freed NVFP4Tensor must CLONE / round-trip through state_dict without raising — this is the
+    # save path (PEFT save_pretrained -> state_dict -> NVFP4Tensor clone). A flat empty(0) qdata
+    # crashed here with IndexError(dim -2). We don't assert the frozen expert's clone *shape* (it's
+    # degenerate by design and filtered out of the LoRA adapter); only that save doesn't crash.
+    import torch.nn as nn
+    for nv in (gu_nv, dn_nv):
+        nv.clone()  # would IndexError(dim -2) on a flat empty(0) qdata
+        m = nn.Module(); m.w = nn.Parameter(nv, requires_grad=False)
+        sd = m.state_dict()  # invokes _save_to_state_dict -> clone on the NVFP4Tensor
+        assert "w" in sd
+
+
+# ===========================================================================
 # Test 2: backward grads match oracle
 # ===========================================================================
 

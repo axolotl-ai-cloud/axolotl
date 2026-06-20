@@ -106,9 +106,13 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
                 if pt_bwd.stride(0) == 0:
                     pt_bwd = pt_bwd.contiguous()
                 cache[bwd_key] = (nv.scale.clone(), pt_bwd, E, size_n, size_k)
-                # Free qdata: .data = empty(0) releases the storage when nv.qdata is the sole reference.
+                # Free qdata's storage but keep a 3-D [E, N, 0] placeholder (zero elements -> ~0
+                # bytes) rather than a flat empty(0): NVFP4Tensor clone/save (_clone_detach ->
+                # __new__ -> qdata.stride(-2)) needs ndim==3, and numel()==0 still routes the
+                # forward/backward through the marlin qdata-free paths.
                 try:
-                    nv.qdata.data = torch.empty(0, dtype=nv.qdata.dtype, device=dev)
+                    _N = nv.qdata.size(1)
+                    nv.qdata.data = torch.empty((E, _N, 0), dtype=nv.qdata.dtype, device=dev)
                 except (AttributeError, RuntimeError):
                     pass
     return cached
