@@ -38,6 +38,10 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
     Falls back to a per-tensor attribute, then a one-shot compute."""
     if cache is not None and key in cache:
         return cache[key]
+    # Marlin's repack consumes raw row-major NVFP4 scales (block-16 along K); a swizzled-scale
+    # NVFP4Tensor would be silently mis-decoded. Fail loudly, matching the chunked-dequant path.
+    assert not getattr(nv, "is_swizzled_scales", False), (
+        "marlin_w4a16 needs raw (non-swizzled) NVFP4 scales; got is_swizzled_scales=True")
     cached = getattr(nv, "_marlin_w4a16", None)
     if cached is None:
         E, dev = nv.qdata.size(0), nv.qdata.device
