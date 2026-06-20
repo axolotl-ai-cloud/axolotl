@@ -7,10 +7,13 @@ is ~1.79x faster AND removes the ~9.3% activation-quant error of the W4A4 path. 
 ``torch::Tensor`` ABI, bit-exact to vLLM) so there is NO vLLM runtime dependency. JIT-built once via
 ``torch.utils.cpp_extension.load`` and cached.
 
-Forward-only: the backward stays the existing gradient-consistent ``_base_dx`` (fp8-read on sm120,
-now enabled for the pad-64 layout via the BM=tile dX kernel; bf16-dequant elsewhere). A Marlin NVFP4
-transpose-repack backward would inject ~18% gradient noise — re-quantizing W^T is an independent
-4-bit quantization, which the maintainer's "bf16 grad required" bar rejects.
+This backend provides the FORWARD only; the backward keeps the existing gradient-consistent
+``_base_dx`` (fp8-read on sm120, now enabled for the pad-64 layout via the BM=tile dX kernel;
+bf16-dequant elsewhere). A Marlin NVFP4 transpose-repack backward was evaluated and rejected: the
+backward contracts the other axis, so reusing the weight needs an independent 4-bit re-quantization
+of W^T that disagrees with the forward weight by ~18% — measured to land ~13% in the LoRA gradients
+(it is a structured weight mismatch, not noise the low-rank projection averages out). fp8-read keeps
+the backward gradient-consistent at 1 byte/wt, which is the floor for block-scaled 4-bit.
 
 Lazy build/import keeps non-sm120 / no-nvcc environments (incl. CI) clean; ``marlin_w4a16_available``
 returns False there and the dsv4 MoE forward falls back to CUTLASS (sm120) / DeepGEMM (sm90/100).
