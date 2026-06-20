@@ -1,9 +1,12 @@
 """Unified grouped NVFP4 MoE forward for DeepSeek-V4 experts (config-gated, dsv4_fp4_grouped_mode).
 
-Contiguous-grouped: tokens sorted by expert, padded per-expert to TILE(128); ONE grouped gate_up
-GEMM -> clamped-SwiGLU -> ONE grouped down GEMM, with GPU-vectorized routing/pack/scatter (no
-per-expert Python loop). The base GEMM auto-dispatches to the best fp4 path:
-    DeepGEMM (sm90/sm100)  ->  CUTLASS grouped (sm120)  ->  chunked-dequant (any GPU, fallback).
+Contiguous-grouped: tokens sorted by expert, padded per-expert to TILE; ONE grouped gate_up GEMM
+-> clamped-SwiGLU -> ONE grouped down GEMM, with GPU-vectorized routing/pack/scatter (no per-expert
+Python loop). The base GEMM auto-dispatches to the best fp4 path:
+    Marlin W4A16 (sm120, pad-64)  ->  DeepGEMM (sm90/sm100)  ->  CUTLASS grouped (sm120, pad-128)
+    ->  chunked-dequant (any GPU, fallback).
+Marlin W4A16 (bf16 activations, bit-correct) is preferred on sm120: ~1.79x faster than CUTLASS and
+no activation-quant error. See marlin_w4a16/.
 
 OFF unless cfg.dsv4_fp4_grouped_mode is set; existing fused-Triton/eager paths untouched.
 Bench (RTX PRO 6000, H=4096 I=2048 top6, FORWARD): vs chunked-dequant E=32 1.6-1.9x, E=256
@@ -25,7 +28,16 @@ _ENGINE_CACHE: dict = {}
 
 
 def grouped_fp4_backend(mode: str) -> str | None:
-    """Best available base-GEMM backend: 'cutlass' (sm120) | 'deepgemm' (sm90/100) | 'chunked'."""
+    """Best available base-GEMM backend: 'marlin' (sm120 W4A16, preferred) | 'cutlass' (sm120) |
+    'deepgemm' (sm90/100) | 'chunked'. On sm120 Marlin W4A16 is ~1.79x faster than CUTLASS and
+    bit-correct (bf16 activations, no activation quantization)."""
+    try:
+        from .marlin_w4a16 import marlin_w4a16_available
+
+        if mode == "nvfp4" and marlin_w4a16_available():
+            return "marlin"
+    except Exception:
+        pass
     try:
         from .cutlass_fp4 import cutlass_fp4_available
 
@@ -43,19 +55,19 @@ def grouped_fp4_backend(mode: str) -> str | None:
     return "chunked" if torch.cuda.is_available() else None
 
 
-def _route(idx, E, dev):
+def _route(idx, E, dev, tile=TILE):
     flat = idx.reshape(-1)
     order = flat.argsort()
     rep = torch.arange(idx.size(0), device=dev).repeat_interleave(idx.size(1))[order]
     exp_sorted = flat[order]
     counts = torch.bincount(flat, minlength=E)
-    ptiles = (counts + TILE - 1) // TILE
-    roff = torch.cat([ptiles.new_zeros(1), ptiles.cumsum(0)]) * TILE
+    ptiles = (counts + tile - 1) // tile
+    roff = torch.cat([ptiles.new_zeros(1), ptiles.cumsum(0)]) * tile
     coff = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
     local = torch.arange(exp_sorted.numel(), device=dev) - coff[exp_sorted]
     padded_row = roff[exp_sorted] + local
     m_indices = torch.repeat_interleave(torch.arange(E, dtype=torch.int32, device=dev), ptiles)
-    Mt = int(ptiles.sum()) * TILE
+    Mt = int(ptiles.sum()) * tile
     return rep, padded_row, m_indices, counts, Mt
 
 
@@ -96,13 +108,24 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
     Idim = down_nv.qdata.size(2) * 2  # down K = I (packed K/2)
     dev = hidden.device
     backend = backend or grouped_fp4_backend(mode)
-    rep, padded_row, m_indices, counts, Mt = _route(idx, E, dev)
+    if backend == "marlin":
+        from .marlin_w4a16.backend import MARLIN_TILE
+        tile = MARLIN_TILE
+    else:
+        tile = TILE
+    rep, padded_row, m_indices, counts, Mt = _route(idx, E, dev, tile)
     wflat = wts.reshape(-1)[idx.reshape(-1).argsort()]
 
     A = hidden.new_zeros(Mt, H)
     A[padded_row] = hidden[rep]
 
-    if backend == "cutlass":
+    marlin_base = None
+    if backend == "marlin":
+        from .marlin_w4a16.backend import build_marlin_forward_base, marlin_base_forward
+
+        marlin_base = build_marlin_forward_base(gate_up_nv, down_nv)
+        gu = marlin_base_forward(marlin_base, 0, A, m_indices).float()
+    elif backend == "cutlass":
         from .cutlass_fp4.grouped import quant_act
 
         gu_eng = _engine(Mt, 2 * (down_nv.qdata.size(2) * 2), H, E, mode)  # N = 2I
@@ -125,7 +148,9 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
     g, u = gu.chunk(2, dim=-1)
     h = (F.silu(g.clamp(max=limit)) * u.clamp(min=-limit, max=limit)).to(hidden.dtype)
 
-    if backend == "cutlass":
+    if backend == "marlin":
+        dn = marlin_base_forward(marlin_base, 1, h.contiguous(), m_indices)
+    elif backend == "cutlass":
         from .cutlass_fp4.grouped import quant_act
 
         dn_eng = _engine(Mt, H, down_nv.qdata.size(2) * 2, E, mode)  # K = I
