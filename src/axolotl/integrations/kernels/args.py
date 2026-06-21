@@ -33,6 +33,9 @@ class KernelsArgs(BaseModel):
     # Non-expert linear quantization policy (replaces the per-model gemma4_*_nonexpert flags):
     # none | bf16 | fp8_blockwise | nf4. Resolved per-model by the adapters.
     nonexpert_quantization: str | None = None
+    # Grouped NVFP4 MoE base-GEMM backend selection: auto (capability-select; default) | marlin |
+    # cutlass | deepgemm | dequant (chunked fallback). An unavailable choice warns + falls back.
+    moe_grouped_backend: str | None = None
 
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
@@ -111,6 +114,18 @@ class KernelsArgs(BaseModel):
             data["use_scattermoe"] = True
         elif eb == "sonicmoe":
             data["use_sonicmoe"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_moe_grouped_backend(cls, data):
+        backend = data.get("moe_grouped_backend")
+        if backend is not None:
+            valid = {"auto", "marlin", "cutlass", "deepgemm", "dequant"}
+            if str(backend).lower() not in valid:
+                raise ValueError(
+                    f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
+                )
         return data
 
     @model_validator(mode="before")

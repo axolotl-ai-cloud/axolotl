@@ -105,6 +105,16 @@ class KernelsPlugin(BasePlugin):
                     "Enabled grouped fp4 MoE path: dsv4_fp4_grouped_mode=%s",
                     cfg.get("dsv4_fp4_grouped_mode"),
                 )
+                if cfg.get("moe_grouped_backend"):
+                    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+                        set_grouped_backend_override,
+                    )
+
+                    set_grouped_backend_override(cfg.get("moe_grouped_backend"))
+                    LOG.info(
+                        "Grouped MoE base-GEMM backend override: %s",
+                        cfg.get("moe_grouped_backend"),
+                    )
         elif cfg.use_sonicmoe:
             _check_sonicmoe_gpu_compat()
 

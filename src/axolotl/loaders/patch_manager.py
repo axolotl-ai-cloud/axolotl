@@ -114,6 +114,7 @@ class PatchManager:
         self._patch_attention()
         self._apply_multipack_patches()
         self._apply_sdpa_varlen_patch()
+        self._apply_large_head_attention_patch()
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
@@ -203,14 +204,19 @@ class PatchManager:
 
         import copy
 
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_policy,
+        )
         from axolotl.monkeypatch.gemma4_hybrid_mask import (
             GLOBAL_PACKED_SDPA,
             patch_gemma4_hybrid_mask,
-            set_flash_d512,
         )
 
         patch_gemma4_hybrid_mask()
-        set_flash_d512(bool(self.cfg.flash_attn_d512))
+        # Gemma-4 global layers reuse the generic large-head router. Default policy 'sdpa' (flash is
+        # opt-in via large_head_attention / the deprecated flash_attn_d512), preserving prior default.
+        set_large_head_policy(resolve_large_head_policy(self.cfg))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -681,6 +687,18 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
+
+    def _apply_large_head_attention_patch(self):
+        """Generic head_dim>256 capability for plain SDPA models. Gemma-4's hybrid path routes its
+        globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
+        from axolotl.monkeypatch.attention.large_head import resolve_large_head_policy
+
+        policy = resolve_large_head_policy(self.cfg)
+        if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
+            return
+        from axolotl.monkeypatch.attention.large_head import patch_sdpa_large_head
+
+        patch_sdpa_large_head(policy)
 
     def _apply_sdpa_varlen_patch(self):
         """Route packed-row SDPA through cu_seqlens varlen_attn when ``sdpa_varlen`` is set."""

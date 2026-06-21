@@ -54,14 +54,15 @@ _PATCH_APPLIED = False
 # position_ids so the globals respect doc boundaries, on the memory-efficient SDPA backend.
 GLOBAL_PACKED_SDPA = "sdpa_global_packed"
 
+
 # When set, the head_dim=512 global layers use the Triton flash_d512 kernel (fwd+bwd, varlen) instead
 # of the SDPA efficient backend (~2x faster at head_dim 512). Set from cfg.flash_attn_d512.
-_USE_FLASH_D512 = False
-
-
 def set_flash_d512(enabled: bool) -> None:
-    global _USE_FLASH_D512
-    _USE_FLASH_D512 = bool(enabled)
+    """Backwards-compat shim: the head_dim>256 routing is now the generic large_head_attention
+    capability. True -> 'auto' (flash only on packed rows, the proven win)."""
+    from axolotl.monkeypatch.attention.large_head import set_large_head_policy
+
+    set_large_head_policy("auto" if enabled else "sdpa")
 
 
 def _packing_block_causal_mask(position_ids, dtype, device):
@@ -93,34 +94,25 @@ def _register_global_packed_sdpa() -> None:
         # The top-level FA2 path leaves these layers maskless and carries packing only via cu_seqlens
         # (consumed by FA2, not SDPA). Rebuild the block-diagonal mask from position_ids so the global
         # layers don't cross document boundaries. Single-document rows stay maskless (is_causal).
+        from axolotl.monkeypatch.attention.large_head import flash_d512_route
+
         position_ids = kwargs.get("position_ids")
+        # The generic large-head router takes head_dim>256 packed rows through the Triton flash
+        # kernel (per the large_head_attention policy); ~2.7x the 4D-mask SDPA, ~3x less memory than
+        # nested-tensor SDPA. It declines (returns None) for single-doc/policy=sdpa -> SDPA below.
+        if attention_mask is None:
+            routed = flash_d512_route(
+                module, query, key, value, kwargs.get("scaling"), position_ids
+            )
+            if routed is not None:
+                return routed
         # Detect genuine (multi-document) packing: more doc-starts than batch rows.
         pid = None
         if attention_mask is None and position_ids is not None:
             p = position_ids if position_ids.dim() > 1 else position_ids[None]
             if int((p == 0).sum()) > p.shape[0]:
                 pid = p
-        # flash_d512 is the packed-only fast path: on real packed data it is ~2.7x the 4D-mask SDPA
-        # at head_dim 512 and ~3x less memory than nested-tensor SDPA. For single-document rows it
-        # LOSES to SDPA is_causal, so only take it when packing is present.
-        if _USE_FLASH_D512 and pid is not None and query.shape[-1] > 256:
-            scale = kwargs.get("scaling")
-            if (
-                scale is None or abs(scale - query.shape[-1] ** -0.5) < 1e-9
-            ):  # flash uses 1/sqrt(d)
-                try:
-                    from axolotl.monkeypatch.attention.flash_attn_d512 import flash_d512
-
-                    ng = getattr(
-                        module, "num_key_value_groups", query.shape[1] // key.shape[1]
-                    )
-                    k = key.repeat_interleave(ng, dim=1) if ng > 1 else key
-                    v = value.repeat_interleave(ng, dim=1) if ng > 1 else value
-                    out = flash_d512(query, k, v, True, position_ids=pid)
-                    return out.transpose(1, 2).contiguous(), None
-                except Exception:  # pylint: disable=broad-except
-                    pass  # any issue -> safe SDPA fallback below
-        # Packed without flash -> block-diagonal mask so globals respect doc boundaries.
+        # Packed without the kernel -> block-diagonal mask so globals respect doc boundaries.
         # Single-document -> mask stays None (SDPA is_causal, the fast path).
         if pid is not None:
             attention_mask = _packing_block_causal_mask(pid, query.dtype, query.device)

@@ -18,7 +18,49 @@ from __future__ import annotations
 
 import torch
 
+from axolotl.utils.logging import get_logger
+
 from .grouped_lora import grouped_lora_bwd, grouped_lora_fwd
+
+LOG = get_logger(__name__)
+
+# Optional override of the grouped base-GEMM backend (from cfg.moe_grouped_backend): None/"auto" =
+# capability auto-select; "marlin"|"cutlass"|"deepgemm" = force if available (else warn + auto);
+# "dequant" = force the chunked-dequant fallback (the path used when no fused backend is selected).
+_BACKEND_OVERRIDE: str | None = None
+
+
+def set_grouped_backend_override(backend) -> None:
+    global _BACKEND_OVERRIDE
+    _BACKEND_OVERRIDE = str(backend).lower() if backend else None
+
+
+def _backend_available(name: str) -> bool:
+    try:
+        if name == "marlin":
+            from .marlin_w4a16 import marlin_w4a16_available
+
+            return marlin_w4a16_available()
+        if name == "cutlass":
+            from .cutlass_fp4 import cutlass_fp4_available
+
+            return cutlass_fp4_available()
+        if name == "deepgemm":
+            from .dequant_grouped import deepgemm_grouped_available
+
+            return deepgemm_grouped_available()
+    except Exception:
+        return False
+    return False
+
+
+def _auto_backend() -> str | None:
+    # sm120 Marlin W4A16 is ~1.79x CUTLASS and bit-correct (no act quant), so it is preferred.
+    for name in ("marlin", "cutlass", "deepgemm"):
+        if _backend_available(name):
+            return name
+    return None
+
 
 TILE = 128
 # backward base-dX dequant chunk: bounds the bf16-weight transient.
@@ -57,32 +99,23 @@ def grouped_fp4_available(mode: str) -> bool:
 
 def _train_backend(mode: str) -> str | None:
     """Base-GEMM backend for the training forward: 'marlin' (sm120, W4A16 bf16-act — preferred) |
-    'cutlass' (sm120, W4A4 fp4-act) | 'deepgemm' (sm90/100). On sm120 the Marlin W4A16 forward is
-    ~1.79x faster than CUTLASS AND bit-correct (no activation quantization), so it is preferred."""
+    'cutlass' (sm120, W4A4 fp4-act) | 'deepgemm' (sm90/100), or None for the chunked-dequant
+    fallback. Auto-selects by capability unless cfg.moe_grouped_backend forced one (see
+    set_grouped_backend_override): an unavailable forced backend warns and falls back to auto;
+    'dequant' forces the fallback (None)."""
     if mode != "nvfp4":
         return None
-    try:
-        from .marlin_w4a16 import marlin_w4a16_available
-
-        if marlin_w4a16_available():
-            return "marlin"
-    except Exception:
-        pass
-    try:
-        from .cutlass_fp4 import cutlass_fp4_available
-
-        if cutlass_fp4_available():
-            return "cutlass"
-    except Exception:
-        pass
-    try:
-        from .dequant_grouped import deepgemm_grouped_available
-
-        if deepgemm_grouped_available():
-            return "deepgemm"
-    except Exception:
-        pass
-    return None
+    override = _BACKEND_OVERRIDE
+    if override and override != "auto":
+        if override == "dequant":
+            return None  # force the chunked-dequant fallback path
+        if _backend_available(override):
+            return override
+        LOG.warning(
+            "moe_grouped_backend=%r is not available on this GPU; falling back to auto-select.",
+            override,
+        )
+    return _auto_backend()
 
 
 def _gmm(a, b, offs):

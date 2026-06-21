@@ -102,3 +102,13 @@ def test_nonexpert_quantization_valid_values():
 def test_nonexpert_quantization_invalid_rejected():
     with pytest.raises(pydantic.ValidationError):
         KernelsArgs.model_validate({"nonexpert_quantization": "int4"})
+
+
+def test_moe_grouped_backend_valid_and_invalid():
+    for b in ("auto", "marlin", "cutlass", "deepgemm", "dequant"):
+        assert (
+            KernelsArgs.model_validate({"moe_grouped_backend": b}).moe_grouped_backend
+            == b
+        )
+    with pytest.raises(pydantic.ValidationError):
+        KernelsArgs.model_validate({"moe_grouped_backend": "triton"})

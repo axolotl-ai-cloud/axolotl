@@ -841,14 +841,24 @@ class AxolotlInputConfig(
         },
     )
 
+    large_head_attention: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Generic capability for attention layers with head_dim > 256 (which flash/cuDNN "
+                "SDPA can't serve): 'sdpa' (stock SDPA, default) | 'auto' (Triton flash kernel on "
+                "packed rows, SDPA otherwise) | 'triton_flash' (prefer the Triton kernel). Applies "
+                "to any SDPA model; Gemma-4's head_dim=512 global layers use it automatically."
+            )
+        },
+    )
+    # Deprecated alias for `large_head_attention` (True -> 'auto'); kept for backwards compatibility.
     flash_attn_d512: bool | None = Field(
         default=None,
         json_schema_extra={
             "description": (
-                "Use the Triton head_dim=512 flash-attention kernel (fwd+bwd, varlen packing) for "
-                "Gemma-4's global (full_attention) layers instead of the SDPA efficient backend "
-                "(~2x faster at head_dim 512). Requires gemma4_hybrid_attn_impl. Falls back to SDPA "
-                "if the kernel is unavailable."
+                "Deprecated: use `large_head_attention: auto`. Routes head_dim>256 attention "
+                "through the Triton flash kernel."
             )
         },
     )
