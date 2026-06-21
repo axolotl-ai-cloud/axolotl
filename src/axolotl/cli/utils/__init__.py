@@ -6,7 +6,7 @@ from .args import (
     filter_none_kwargs,
 )
 from .fetch import fetch_from_github
-from .load import load_model_and_tokenizer
+from .load import load_model_and_tokenizer, resolve_chat_template_str
 from .sweeps import generate_sweep_configs
 from .train import build_command, generate_config_files, launch_training
 
@@ -18,6 +18,7 @@ __all__ = [
     "generate_config_files",
     "generate_sweep_configs",
     "load_model_and_tokenizer",
+    "resolve_chat_template_str",
     "launch_training",
     "fetch_from_github",
 ]
