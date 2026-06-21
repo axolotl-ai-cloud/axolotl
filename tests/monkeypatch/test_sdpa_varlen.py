@@ -107,6 +107,37 @@ def _assert_defers_to_stock(mod, q, k, v, pos):
     assert torch.equal(out_w, out_o)
 
 
+def test_varlen_matches_flash_attention_2_e2e():
+    """The varlen path matches FA2 (the canonical varlen-packing impl) on a real packed forward."""
+    from transformers import LlamaConfig, LlamaModel
+
+    def build(impl):
+        cfg = LlamaConfig(
+            hidden_size=512, num_hidden_layers=2, num_attention_heads=8,
+            num_key_value_heads=2, intermediate_size=1024, vocab_size=256,
+            head_dim=64, _attn_implementation=impl,
+        )
+        torch.manual_seed(1)
+        return LlamaModel(cfg).to(DEV).to(torch.bfloat16).eval()
+
+    docs = [20, 30, 14]
+    ids = torch.cat([torch.randint(0, 256, (1, d), device=DEV) for d in docs], 1)
+    pos = torch.cat([torch.arange(d) for d in docs]).to(DEV)[None]
+    try:
+        with torch.no_grad():
+            fa2 = build("flash_attention_2")(input_ids=ids, position_ids=pos).last_hidden_state
+    except Exception:  # pylint: disable=broad-except
+        pytest.skip("flash_attention_2 unavailable")
+
+    assert patch_sdpa_varlen()
+    try:
+        with torch.no_grad():
+            varlen = build("sdpa")(input_ids=ids, position_ids=pos).last_hidden_state
+    finally:
+        unpatch_sdpa_varlen()
+    assert F.cosine_similarity(varlen.float().flatten(), fa2.float().flatten(), 0) > 0.999
+
+
 def test_falls_back_when_not_packed(patched):
     """Single-document rows must defer to stock SDPA (no varlen path)."""
     S, Hq, Hkv, D = 512, 16, 4, 256
