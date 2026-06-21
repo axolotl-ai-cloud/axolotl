@@ -841,6 +841,18 @@ class AxolotlInputConfig(
         },
     )
 
+    flash_attn_d512: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Use the Triton head_dim=512 flash-attention kernel (fwd+bwd, varlen packing) for "
+                "Gemma-4's global (full_attention) layers instead of the SDPA efficient backend "
+                "(~2x faster at head_dim 512). Requires gemma4_hybrid_attn_impl. Falls back to SDPA "
+                "if the kernel is unavailable."
+            )
+        },
+    )
+
     sdpa_varlen: bool | None = Field(
         default=None,
         json_schema_extra={

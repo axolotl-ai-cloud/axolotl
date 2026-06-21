@@ -54,6 +54,15 @@ _PATCH_APPLIED = False
 # position_ids so the globals respect doc boundaries, on the memory-efficient SDPA backend.
 GLOBAL_PACKED_SDPA = "sdpa_global_packed"
 
+# When set, the head_dim=512 global layers use the Triton flash_d512 kernel (fwd+bwd, varlen) instead
+# of the SDPA efficient backend (~2x faster at head_dim 512). Set from cfg.flash_attn_d512.
+_USE_FLASH_D512 = False
+
+
+def set_flash_d512(enabled: bool) -> None:
+    global _USE_FLASH_D512
+    _USE_FLASH_D512 = bool(enabled)
+
 
 def _packing_block_causal_mask(position_ids, dtype, device):
     """Block-diagonal causal additive mask [B,1,S,S] from packed position_ids (which reset to 0 at
@@ -85,13 +94,35 @@ def _register_global_packed_sdpa() -> None:
         # The top-level FA2 path leaves these layers maskless and carries packing only via cu_seqlens
         # (consumed by FA2, not SDPA). Rebuild the block-diagonal mask from position_ids so the global
         # layers don't cross document boundaries. Single-document rows stay maskless (is_causal).
-        if attention_mask is None:
-            position_ids = kwargs.get("position_ids")
-            if position_ids is not None:
-                pid = position_ids if position_ids.dim() > 1 else position_ids[None]
-                # >1 doc-start per row => genuine packing; otherwise pure causal is already correct.
-                if int((pid == 0).sum()) > pid.shape[0]:
-                    attention_mask = _packing_block_causal_mask(pid, query.dtype, query.device)
+        position_ids = kwargs.get("position_ids")
+        if _USE_FLASH_D512 and attention_mask is None and query.shape[-1] > 256:
+            try:
+                from axolotl.monkeypatch.attention.flash_attn_d512 import flash_d512
+
+                pid = None
+                if position_ids is not None:
+                    p = position_ids if position_ids.dim() > 1 else position_ids[None]
+                    if int((p == 0).sum()) > p.shape[0]:  # genuine packing
+                        pid = p
+                ng = getattr(module, "num_key_value_groups", query.shape[1] // key.shape[1])
+                k = key.repeat_interleave(ng, dim=1) if ng > 1 else key
+                v = value.repeat_interleave(ng, dim=1) if ng > 1 else value
+                scale = kwargs.get("scaling")
+                out = flash_d512(query, k, v, True, position_ids=pid)
+                if scale is not None:  # flash_d512 uses 1/sqrt(d); rescale if a custom scale was given
+                    import math
+
+                    if abs(scale - query.shape[-1] ** -0.5) > 1e-9:
+                        out = None  # custom scale unsupported -> fall through to SDPA
+                if out is not None:
+                    return out.transpose(1, 2).contiguous(), None
+            except Exception:  # pylint: disable=broad-except
+                pass  # any issue -> safe SDPA fallback below
+        if attention_mask is None and position_ids is not None:
+            pid = position_ids if position_ids.dim() > 1 else position_ids[None]
+            # >1 doc-start per row => genuine packing; otherwise pure causal is already correct.
+            if int((pid == 0).sum()) > pid.shape[0]:
+                attention_mask = _packing_block_causal_mask(pid, query.dtype, query.device)
         return sdpa_attention_forward(module, query, key, value, attention_mask, **kwargs)
 
     ALL_ATTENTION_FUNCTIONS.register(GLOBAL_PACKED_SDPA, sdpa_global_packed_forward)

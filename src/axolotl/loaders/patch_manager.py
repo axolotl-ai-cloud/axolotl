@@ -206,9 +206,11 @@ class PatchManager:
         from axolotl.monkeypatch.gemma4_hybrid_mask import (
             GLOBAL_PACKED_SDPA,
             patch_gemma4_hybrid_mask,
+            set_flash_d512,
         )
 
         patch_gemma4_hybrid_mask()
+        set_flash_d512(bool(self.cfg.flash_attn_d512))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
