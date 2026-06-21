@@ -47,6 +47,9 @@ class KernelsArgs(BaseModel):
     # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place after loading (per-channel
     # e4m3, dequant-in-forward).  Experts remain NVFP4Tensor.  ~2 GB resident savings.
     gemma4_fp8_nonexpert: bool | None = None
+    # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit, double-quant) after loading — the same
+    # non-expert compute path unsloth uses, for apples-to-apples experts-only LoRA comparison.
+    gemma4_nf4_nonexpert: bool | None = None
 
     @model_validator(mode="before")
     @classmethod

@@ -198,6 +198,16 @@ class KernelsPlugin(BasePlugin):
             n = quantize_gemma4_nonexpert_linears(model)
             LOG.info("Gemma4 frankenstein: quantized %d non-expert linears to fp8", n)
 
+        # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit) — same non-expert compute as
+        # unsloth QLoRA, for apples-to-apples experts-only LoRA benchmarking.
+        if cfg.use_scattermoe and _is_gemma4_nvfp4_modelopt(cfg) and cfg.get("gemma4_nf4_nonexpert"):
+            from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_nf4_nonexpert import (
+                quantize_gemma4_nonexpert_nf4,
+            )
+
+            n = quantize_gemma4_nonexpert_nf4(model)
+            LOG.info("Gemma4 frankenstein: quantized %d non-expert linears to NF4", n)
+
     def post_model_load(self, cfg, model):
         """After PEFT wraps the projections, swap V4 shared-expert MLPs for the fused
         clamped-SwiGLU LoRA kernel (the routed experts already go through scattermoe)."""
