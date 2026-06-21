@@ -26,6 +26,15 @@ _VALID_EXPERTS_IMPLS = (
 
 
 class KernelsArgs(BaseModel):
+    # --- intent-based capability surface (preferred) ----------------------------------------
+    # MoE expert backend, an alias for use_scattermoe/use_sonicmoe so new models opt into a
+    # capability by name rather than a vendor flag: scattermoe | sonicmoe | eager | builtin.
+    expert_backend: str | None = None
+    # Non-expert linear quantization policy (replaces the per-model gemma4_*_nonexpert flags):
+    # none | bf16 | fp8_blockwise | nf4. Resolved per-model by the adapters.
+    nonexpert_quantization: str | None = None
+
+    # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
     # Fused Triton training kernels for DeepSeek-V4 (attention / RoPE / mHC).
@@ -36,6 +45,10 @@ class KernelsArgs(BaseModel):
     # Native blockwise-fp8 fused LoRA kernel for the large attention projections (q_b/o_b).
     # Off by default — the e2e gain is small for this expert-dominated model.
     dsv4_fp8_lora_kernel: bool | None = None
+    # Fused clamped-SwiGLU LoRA kernel for the DSV4 shared-expert MLPs. Distinct from the generic
+    # `lora_mlp_kernel` (dense-MLP fusion, force-disabled under MoE kernels). A legacy
+    # `lora_mlp_kernel: true` on a DSV4 run is translated into this flag (see disable_mlp_kernel).
+    dsv4_shared_mlp_lora_kernel: bool | None = None
     # Fallback: cast ALL residual fp32 params (incl. keep_in_fp32 mHC/norms) to the compute
     # dtype for the fused kernels, instead of preserving keep_in_fp32 in fp32.
     dsv4_bf16_all: bool | None = None
@@ -55,10 +68,19 @@ class KernelsArgs(BaseModel):
     @classmethod
     def check_dsv4_fp4_grouped_mode(cls, data):
         mode = data.get("dsv4_fp4_grouped_mode")
-        if mode is not None and str(mode).lower() not in ("nvfp4", "fp8"):
+        if mode is None:
+            return data
+        m = str(mode).lower()
+        if m == "fp8":
+            # Documented historically but never implemented in the training path
+            # (grouped_fp4_available/_train_backend only support 'nvfp4'). Reject loudly rather
+            # than silently no-op.
             raise ValueError(
-                f"dsv4_fp4_grouped_mode must be 'nvfp4' or 'fp8', got {mode!r}"
+                "dsv4_fp4_grouped_mode='fp8' is not implemented for training (only 'nvfp4' is "
+                "supported). Use 'nvfp4' or omit dsv4_fp4_grouped_mode."
             )
+        if m != "nvfp4":
+            raise ValueError(f"dsv4_fp4_grouped_mode must be 'nvfp4', got {mode!r}")
         return data
 
     @model_validator(mode="before")
@@ -68,6 +90,44 @@ class KernelsArgs(BaseModel):
         if mode is not None and str(mode).lower() not in ("float8tensor", "bf16"):
             raise ValueError(
                 f"dsv4_fp8_nonexpert_mode must be 'float8tensor' or 'bf16', got {mode!r}"
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_expert_backend(cls, data):
+        """Map the intent ``expert_backend`` onto the legacy use_scattermoe/use_sonicmoe flags so
+        the rest of the stack (which reads those) is unchanged. eager/builtin leave them unset."""
+        eb = data.get("expert_backend")
+        if eb is None:
+            return data
+        eb = str(eb).lower()
+        valid = {"scattermoe", "sonicmoe", "eager", "builtin"}
+        if eb not in valid:
+            raise ValueError(
+                f"expert_backend must be one of {sorted(valid)}, got {eb!r}"
+            )
+        if eb == "scattermoe":
+            data["use_scattermoe"] = True
+        elif eb == "sonicmoe":
+            data["use_sonicmoe"] = True
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_nonexpert_quantization(cls, data):
+        """Validate the non-expert quantization intent and warn on the deprecated per-model flags."""
+        nq = data.get("nonexpert_quantization")
+        if nq is not None:
+            valid = {"none", "bf16", "fp8", "fp8_blockwise", "nf4"}
+            if str(nq).lower() not in valid:
+                raise ValueError(
+                    f"nonexpert_quantization must be one of {sorted(valid)}, got {nq!r}"
+                )
+        if data.get("gemma4_fp8_nonexpert") or data.get("gemma4_nf4_nonexpert"):
+            LOG.warning(
+                "gemma4_fp8_nonexpert / gemma4_nf4_nonexpert are deprecated; prefer "
+                "`nonexpert_quantization: fp8_blockwise` or `nonexpert_quantization: nf4`."
             )
         return data
 
@@ -149,6 +209,19 @@ class KernelsArgs(BaseModel):
     def disable_mlp_kernel(cls, data):
         if data.get("use_scattermoe") is True or data.get("use_sonicmoe") is True:
             if data.get("lora_mlp_kernel") is True:
+                # The generic lora_mlp_kernel (dense-MLP LoRA fusion) is incompatible with the
+                # custom MoE expert kernels. On DSV4 it historically also drove the shared-expert
+                # MLP fused LoRA; preserve that intent via the dedicated flag before disabling, so
+                # the shared-MLP patch still runs (it reads dsv4_shared_mlp_lora_kernel).
+                if (
+                    data.get("use_dsv4_kernels") is True
+                    and data.get("dsv4_shared_mlp_lora_kernel") is None
+                ):
+                    data["dsv4_shared_mlp_lora_kernel"] = True
+                    LOG.warning(
+                        "Translated lora_mlp_kernel -> dsv4_shared_mlp_lora_kernel for the DSV4 MoE "
+                        "run (the generic lora_mlp_kernel is disabled under custom MoE kernels)."
+                    )
                 LOG.warning(
                     "Disabling lora_mlp_kernel when using custom MoE kernels due to compatibility issues."
                 )
