@@ -83,7 +83,8 @@ _KERNEL_MODULE_HINTS: tuple[str, ...] = (
 def _is_autotuner(obj: Any) -> bool:
     """A Triton ``Autotuner`` exposes a ``.cache`` dict and the wrapped ``.base_fn``/``.fn``."""
     return isinstance(getattr(obj, "cache", None), dict) and (
-        getattr(obj, "base_fn", None) is not None or getattr(obj, "fn", None) is not None
+        getattr(obj, "base_fn", None) is not None
+        or getattr(obj, "fn", None) is not None
     )
 
 
@@ -106,7 +107,7 @@ def _label_key(autotuner: Any, key_tuple: tuple) -> dict[str, Any]:
         if i < len(key_tuple):
             result[name] = key_tuple[i]
     if len(key_tuple) > len(names):
-        result["_extra"] = [str(v) for v in key_tuple[len(names):]]
+        result["_extra"] = [str(v) for v in key_tuple[len(names) :]]
     return result
 
 
@@ -138,7 +139,7 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
             obj = getattr(module, attr, None)
             if not _is_autotuner(obj):
                 continue
-            cache = obj.cache
+            cache = obj.cache  # type: ignore[union-attr]
             if not cache:
                 continue
             base = getattr(obj, "base_fn", None) or getattr(obj, "fn", None)
