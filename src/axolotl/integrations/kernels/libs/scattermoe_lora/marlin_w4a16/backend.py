@@ -98,14 +98,16 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             _is_distributed = dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
             if not _is_distributed:
                 E, dev = nv.qdata.size(0), nv.qdata.device
-                # Save a clone of the original scales (clone = independent storage, not a view).
-                # The fused backward dequant reads marlin qw from cache[key][0] + these original scales.
-                # nvfp4_marlin_process_scales applies [:, 1::2] subsampling so marlin scales are lossy.
+                # Reference (don't clone) the original scales: the fused backward dequant reads marlin
+                # qw from cache[key][0] + these original scales (nvfp4_marlin_process_scales applies
+                # [:, 1::2] subsampling so the marlin scales are lossy and unusable for backward).
+                # Single-GPU only (guarded above): we free nv.qdata but nv.scale stays live on the
+                # frozen param for the run, so a clone would just duplicate ~1.3 GiB of scales.
                 # _pt may return .expand() with stride(0); Triton needs stride(1) for correct indexing.
                 pt_bwd = _pt(nv, E, dev)
                 if pt_bwd.stride(0) == 0:
                     pt_bwd = pt_bwd.contiguous()
-                cache[bwd_key] = (nv.scale.clone(), pt_bwd, E, size_n, size_k)
+                cache[bwd_key] = (nv.scale, pt_bwd, E, size_n, size_k)
                 # Free qdata's storage but keep a 3-D [E, N, 0] placeholder (zero elements -> ~0
                 # bytes) rather than a flat empty(0): NVFP4Tensor clone/save (_clone_detach ->
                 # __new__ -> qdata.stride(-2)) needs ndim==3, and numel()==0 still routes the
