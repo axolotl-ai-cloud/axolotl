@@ -26,12 +26,13 @@ Usage:
 
 import asyncio
 import atexit
-import logging
 import os
 from multiprocessing import Process
 from multiprocessing.connection import Connection
 
-logger = logging.getLogger(__name__)
+from axolotl.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def kill_process_tree(pid: int) -> None:

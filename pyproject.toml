@@ -14,10 +14,10 @@ dependencies = [
     # Core ML stack
     "torch>=2.9.1",
     "packaging==26.0",
-    "huggingface_hub>=1.1.7",
+    "huggingface_hub>=1.5.0",
     "peft>=0.19.1,<0.20.0",
     "tokenizers>=0.22.1",
-    "transformers==5.9.0",
+    "transformers==5.10.2",
     "accelerate==1.13.0",
     "datasets>=4.8.4,<4.9.0",
     "trl==1.5.1",
@@ -81,7 +81,7 @@ dependencies = [
     "bitsandbytes==0.49.1 ; sys_platform != 'darwin'",
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
-    "liger-kernel==0.7.0 ; sys_platform != 'darwin'",
+    "liger-kernel==0.8.0 ; sys_platform != 'darwin'",
     "torchao==0.17.0 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
 
     # Architecture-specific
@@ -172,6 +172,9 @@ Repository = "https://github.com/axolotl-ai-cloud/axolotl.git"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+axolotl = ["**/*.yaml", "**/*.jinja"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
