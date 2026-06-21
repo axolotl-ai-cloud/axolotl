@@ -99,6 +99,40 @@ def _patch_module_create_causal_mask(module: Any) -> bool:
     return True
 
 
+def _patch_use_gqa_head_dim_guard() -> bool:
+    """Stop ``enable_gqa`` from forcing the MATH SDPA backend on large-head-dim layers.
+
+    ``sdpa_attention_forward`` enables ``enable_gqa=True`` whenever ``attention_mask is None``
+    (``use_gqa_in_sdpa``), with no head_dim check. But SDPA's flash/efficient GQA path only
+    supports head_dim <= 256; at head_dim > 256 ``enable_gqa`` silently falls back to the MATH
+    kernel, which materializes the full [H, S, S] scores. Repeating KV instead keeps the
+    memory-efficient backend. For Gemma-4's head_dim=512 global layers this is ~2.9 GiB -> ~0.2 GiB
+    per layer with identical math (repeat_kv == GQA).
+    """
+    try:
+        import transformers.integrations.sdpa_attention as sdpa_mod
+    except ImportError:
+        return False
+    original = sdpa_mod.use_gqa_in_sdpa
+    if getattr(original, "_axolotl_head_dim_guarded", False):
+        return True
+
+    def use_gqa_in_sdpa_guarded(attention_mask, key):
+        # head_dim > 256 -> enable_gqa drops to the MATH backend; force repeat_kv (efficient) instead.
+        if key.shape[-1] > 256:
+            return False
+        return original(attention_mask, key)
+
+    use_gqa_in_sdpa_guarded._axolotl_head_dim_guarded = True  # type: ignore[attr-defined]
+    use_gqa_in_sdpa_guarded._axolotl_original = original  # type: ignore[attr-defined]
+    sdpa_mod.use_gqa_in_sdpa = use_gqa_in_sdpa_guarded
+    LOG.info(
+        "gemma4_hybrid_mask: guarded use_gqa_in_sdpa (head_dim>256 -> repeat_kv, not enable_gqa) "
+        "to keep the memory-efficient SDPA backend on head_dim=512 global layers"
+    )
+    return True
+
+
 def patch_gemma4_hybrid_mask() -> bool:
     """Install the Gemma 4 hybrid-attention mask fix across all variants.
 
@@ -110,6 +144,8 @@ def patch_gemma4_hybrid_mask() -> bool:
     global _PATCH_APPLIED
     if _PATCH_APPLIED:
         return True
+
+    _patch_use_gqa_head_dim_guard()
 
     patched_any = False
     for module_path in _TARGET_MODULES:
@@ -135,6 +171,15 @@ def unpatch_gemma4_hybrid_mask() -> None:
     global _PATCH_APPLIED
     if not _PATCH_APPLIED:
         return
+    try:
+        import transformers.integrations.sdpa_attention as sdpa_mod
+
+        guarded = getattr(sdpa_mod, "use_gqa_in_sdpa", None)
+        original = getattr(guarded, "_axolotl_original", None)
+        if original is not None:
+            sdpa_mod.use_gqa_in_sdpa = original
+    except ImportError:
+        pass
     for module_path in _TARGET_MODULES:
         try:
             module = importlib.import_module(module_path)
