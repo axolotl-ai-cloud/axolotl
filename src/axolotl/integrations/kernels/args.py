@@ -44,6 +44,9 @@ class KernelsArgs(BaseModel):
     # lossy acts); "fp8" = fp8 act x mxfp4 weight (accurate). Auto-dispatches the base GEMM:
     # DeepGEMM (sm90/sm100) -> CUTLASS grouped (sm120) -> chunked-dequant fallback.
     dsv4_fp4_grouped_mode: str | None = None
+    # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place after loading (per-channel
+    # e4m3, dequant-in-forward).  Experts remain NVFP4Tensor.  ~2 GB resident savings.
+    gemma4_fp8_nonexpert: bool | None = None
 
     @model_validator(mode="before")
     @classmethod

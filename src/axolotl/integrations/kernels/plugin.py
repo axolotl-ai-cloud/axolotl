@@ -172,22 +172,31 @@ class KernelsPlugin(BasePlugin):
         finegrained_fp8 quantizer has no NVFP4 path, so a MIXED_PRECISION checkpoint's
         NVFP4 experts load with dropped/random scales — rebuild them as NVFP4Tensor from
         the checkpoint so scattermoe dequantizes correctly."""
-        if not (cfg.use_scattermoe and cfg.use_dsv4_kernels):
-            return
+        if cfg.use_scattermoe and cfg.use_dsv4_kernels:
+            has_packed_experts = any(
+                isinstance(getattr(m, "gate_up_proj", None), torch.Tensor)
+                and m.gate_up_proj.dtype == torch.uint8
+                and m.gate_up_proj.ndim == 3
+                for m in model.modules()
+            )
+            if has_packed_experts:
+                from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
+                    attach_nvfp4_expert_scales,
+                )
 
-        has_packed_experts = any(
-            isinstance(getattr(m, "gate_up_proj", None), torch.Tensor)
-            and m.gate_up_proj.dtype == torch.uint8
-            and m.gate_up_proj.ndim == 3
-            for m in model.modules()
-        )
-        if not has_packed_experts:
-            return
-        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
-            attach_nvfp4_expert_scales,
-        )
+                attach_nvfp4_expert_scales(model, cfg.base_model)
 
-        attach_nvfp4_expert_scales(model, cfg.base_model)
+        # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place so the
+        # frozen bf16 attention/MLP weights become fp8 (1 byte vs 2), cutting
+        # ~2 GB resident.  Experts remain NVFP4Tensor (unchanged).  The dequant-
+        # in-forward wrapper added here is transparent to PEFT (LoRA still attaches).
+        if cfg.use_scattermoe and _is_gemma4_nvfp4_modelopt(cfg) and cfg.get("gemma4_fp8_nonexpert"):
+            from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_fp8_nonexpert import (
+                quantize_gemma4_nonexpert_linears,
+            )
+
+            n = quantize_gemma4_nonexpert_linears(model)
+            LOG.info("Gemma4 frankenstein: quantized %d non-expert linears to fp8", n)
 
     def post_model_load(self, cfg, model):
         """After PEFT wraps the projections, swap V4 shared-expert MLPs for the fused
