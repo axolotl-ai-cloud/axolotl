@@ -31,7 +31,8 @@ def _fwd(Q, K, V, sm_scale, Out, L,
     m_i = tl.full([BLOCK_M], -float("inf"), tl.float32); l_i = tl.zeros([BLOCK_M], tl.float32)
     acc = tl.zeros([BLOCK_M, HEAD_DIM], tl.float32)
     n_end = (start_m + 1) * BLOCK_M if CAUSAL else N_CTX
-    for start_n in range(0, n_end, BLOCK_N):
+    n_start = (tl.min(ds_m) // BLOCK_N) * BLOCK_N  # varlen: skip blocks before this q-block's doc (0 otherwise)
+    for start_n in range(n_start, n_end, BLOCK_N):
         cur = start_n + offs_n
         k = tl.load(kb + cur[None, :] * skn + offs_d[:, None] * skd, mask=cur[None, :] < N_CTX, other=0.0)
         qk = tl.dot(q, k) * sm_scale
@@ -63,7 +64,7 @@ def _bwd_pre(O, DO, Delta, sob, soh, som, sod, H, N_CTX, HEAD_DIM: tl.constexpr,
 
 @triton.jit
 def _bwd_dkdv(Q, K, V, sm_scale, DO, DK, DV, L, D,
-              POS, spb, spn, sqb, sqh, sqm, sqd, H, N_CTX, HEAD_DIM: tl.constexpr,
+              POS, DOC_END, spb, spn, sqb, sqh, sqm, sqd, H, N_CTX, HEAD_DIM: tl.constexpr,
               BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, CAUSAL: tl.constexpr, VARLEN: tl.constexpr):
     start_n = tl.program_id(0); off_bh = tl.program_id(1); off_b = off_bh // H; off_h = off_bh % H
     base = off_b * sqb + off_h * sqh
@@ -72,7 +73,10 @@ def _bwd_dkdv(Q, K, V, sm_scale, DO, DK, DV, L, D,
     v = tl.load(V + base + offs_n[:, None] * sqm + offs_d[None, :] * sqd, mask=offs_n[:, None] < N_CTX, other=0.0)
     dk = tl.zeros([BLOCK_N, HEAD_DIM], tl.float32); dv = tl.zeros([BLOCK_N, HEAD_DIM], tl.float32)
     m_start = start_n * BLOCK_N if CAUSAL else 0
-    for start_m in range(m_start, N_CTX, BLOCK_M):
+    # varlen: queries beyond this kv-block's document don't attend -> stop at its doc end
+    last_k = tl.minimum(start_n * BLOCK_N + BLOCK_N - 1, N_CTX - 1)
+    m_end = tl.load(DOC_END + off_b * spb + last_k * spn) if VARLEN else N_CTX
+    for start_m in range(m_start, m_end, BLOCK_M):
         cur_m = start_m + offs_m
         q = tl.load(Q + base + cur_m[:, None] * sqm + offs_d[None, :] * sqd, mask=cur_m[:, None] < N_CTX, other=0.0)
         do = tl.load(DO + base + cur_m[:, None] * sqm + offs_d[None, :] * sqd, mask=cur_m[:, None] < N_CTX, other=0.0)
@@ -108,7 +112,8 @@ def _bwd_dq(Q, K, V, sm_scale, DO, DQ, L, D,
     ds_m = offs_m - tl.load(POS + off_b * spb + offs_m * spn, mask=offs_m < N_CTX, other=0) if VARLEN else offs_m * 0
     dq = tl.zeros([BLOCK_M, HEAD_DIM], tl.float32)
     n_end = (start_m + 1) * BLOCK_M if CAUSAL else N_CTX
-    for start_n in range(0, n_end, BLOCK_N):
+    n_start = (tl.min(ds_m) // BLOCK_N) * BLOCK_N
+    for start_n in range(n_start, n_end, BLOCK_N):
         cur = start_n + offs_n
         k = tl.load(K + base + cur[:, None] * sqm + offs_d[None, :] * sqd, mask=cur[:, None] < N_CTX, other=0.0)
         v = tl.load(V + base + cur[:, None] * sqm + offs_d[None, :] * sqd, mask=cur[:, None] < N_CTX, other=0.0)
@@ -135,24 +140,32 @@ class _FlashD512(torch.autograd.Function):
         else:
             pos = (position_ids if position_ids.dim() > 1 else position_ids[None]).to(torch.int32).contiguous()
         spb, spn = pos.stride()
+        if VARLEN:
+            doc_end = torch.empty_like(pos)
+            for b in range(B):
+                starts = (pos[b] == 0).nonzero().flatten()
+                bounds = torch.cat([starts, torch.tensor([N], device=pos.device, dtype=starts.dtype)])
+                doc_end[b] = bounds[1:].repeat_interleave(bounds[1:] - bounds[:-1]).to(pos.dtype)
+        else:
+            doc_end = pos
         o = torch.empty_like(q); L = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
         scale = D ** -0.5
         BM, BN = 32, 32
         _fwd[(triton.cdiv(N, BM), B * H)](q, k, v, scale, o, L, *q.stride(), *k.stride(), *v.stride(), *o.stride(),
                                           pos, spb, spn, H, N, HEAD_DIM=D, BLOCK_M=BM, BLOCK_N=BN, CAUSAL=causal, VARLEN=VARLEN, num_warps=4, num_stages=1)
-        ctx.save_for_backward(q, k, v, o, L, pos); ctx.causal = causal; ctx.scale = scale; ctx.varlen = VARLEN
+        ctx.save_for_backward(q, k, v, o, L, pos, doc_end); ctx.causal = causal; ctx.scale = scale; ctx.varlen = VARLEN
         return o
 
     @staticmethod
     def backward(ctx, do):
-        q, k, v, o, L, pos = ctx.saved_tensors; B, H, N, D = q.shape; causal = ctx.causal; scale = ctx.scale
+        q, k, v, o, L, pos, doc_end = ctx.saved_tensors; B, H, N, D = q.shape; causal = ctx.causal; scale = ctx.scale
         VARLEN = ctx.varlen; spb, spn = pos.stride()
         do = do.contiguous()
         dq = torch.empty_like(q); dk = torch.empty_like(k); dv = torch.empty_like(v)
         delta = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
         BM, BN = 16, 32
         _bwd_pre[(triton.cdiv(N, BM), B * H)](o, do, delta, *o.stride(), H, N, HEAD_DIM=D, BLOCK_M=BM, num_warps=4)
-        _bwd_dkdv[(triton.cdiv(N, BN), B * H)](q, k, v, scale, do, dk, dv, L, delta, pos, spb, spn, *q.stride(),
+        _bwd_dkdv[(triton.cdiv(N, BN), B * H)](q, k, v, scale, do, dk, dv, L, delta, pos, doc_end, spb, spn, *q.stride(),
                                                H, N, HEAD_DIM=D, BLOCK_M=BM, BLOCK_N=BN, CAUSAL=causal, VARLEN=VARLEN, num_warps=4, num_stages=1)
         _bwd_dq[(triton.cdiv(N, BM), B * H)](q, k, v, scale, do, dq, L, delta, pos, spb, spn, *q.stride(),
                                              H, N, HEAD_DIM=D, BLOCK_M=BM, BLOCK_N=BN, CAUSAL=causal, VARLEN=VARLEN, num_warps=4, num_stages=1)
