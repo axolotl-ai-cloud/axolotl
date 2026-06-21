@@ -15,7 +15,11 @@ from __future__ import annotations
 import torch
 
 from . import load_ext
-from .prep import marlin_make_workspace_new, marlin_moe_gemm, prepare_nvfp4_weight_for_marlin
+from .prep import (
+    marlin_make_workspace_new,
+    marlin_moe_gemm,
+    prepare_nvfp4_weight_for_marlin,
+)
 
 # Pad granularity for the marlin path. Must equal the marlin MoE block (BSM) so each padded tile maps
 # to exactly one expert; 64 halves the thin-M padding vs CUTLASS's 128 and recovers Marlin's speed.
@@ -80,13 +84,21 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
     if cache is not None and key in cache:
         return cache[key]
     assert not getattr(nv, "is_swizzled_scales", False), (
-        "marlin_w4a16 needs raw (non-swizzled) NVFP4 scales; got is_swizzled_scales=True")
+        "marlin_w4a16 needs raw (non-swizzled) NVFP4 scales; got is_swizzled_scales=True"
+    )
     cached = getattr(nv, "_marlin_w4a16", None)
     qdata_fresh = cached is None
     if cached is None:
         E, dev = nv.qdata.size(0), nv.qdata.device
         cached = prepare_nvfp4_weight_for_marlin(
-            nv.qdata, nv.scale, _pt(nv, E, dev), size_n, size_k, torch.bfloat16, ext.gptq_marlin_repack)
+            nv.qdata,
+            nv.scale,
+            _pt(nv, E, dev),
+            size_n,
+            size_k,
+            torch.bfloat16,
+            ext.gptq_marlin_repack,
+        )
         try:
             nv._marlin_w4a16 = cached
         except (AttributeError, RuntimeError):
@@ -95,7 +107,12 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
         cache[key] = cached
         if qdata_fresh and bwd_key not in cache:
             import torch.distributed as dist
-            _is_distributed = dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+
+            _is_distributed = (
+                dist.is_available()
+                and dist.is_initialized()
+                and dist.get_world_size() > 1
+            )
             if not _is_distributed:
                 E, dev = nv.qdata.size(0), nv.qdata.device
                 # Reference (don't clone) the original scales: the fused backward dequant reads marlin
@@ -114,7 +131,9 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
                 # forward/backward through the marlin qdata-free paths.
                 try:
                     _N = nv.qdata.size(1)
-                    nv.qdata.data = torch.empty((E, _N, 0), dtype=nv.qdata.dtype, device=dev)
+                    nv.qdata.data = torch.empty(
+                        (E, _N, 0), dtype=nv.qdata.dtype, device=dev
+                    )
                 except (AttributeError, RuntimeError):
                     pass
     return cached
@@ -151,7 +170,7 @@ def build_marlin_forward_base(gate_up_nv, down_nv, cache=None):
     twoI, H_packed, dev = _qdata_sizes(gate_up_nv, "marlin_gate_up", cache)
     H = H_packed * 2
     _, I_packed, _ = _qdata_sizes(down_nv, "marlin_down", cache)
-    I = I_packed * 2
+    I = I_packed * 2  # noqa: E741
     gu_w = _cached_prep(gate_up_nv, twoI, H, ext, cache, "marlin_gate_up")
     dn_w = _cached_prep(down_nv, H, I, ext, cache, "marlin_down")
     ws = marlin_make_workspace_new(dev, 4)
@@ -175,12 +194,46 @@ def marlin_base_forward(base, which, x, m_indices):
     which=1 down (x[Mt,I] -> [Mt,H]). ``m_indices`` is the per-TILE expert id from the routing.
     Returns bf16."""
     ext = load_ext()
-    _, (gu_w, dn_w), (twoI, H, I), ws = base[0], base[1], base[2], base[3]
+    _, (gu_w, dn_w), (twoI, H, I), ws = base[0], base[1], base[2], base[3]  # noqa: E741
     Mt = x.size(0)
     si, ei, ntpp, tw = marlin_route(m_indices, Mt, x.device)
     if which == 0:
-        return marlin_moe_gemm(ext, x, gu_w[0], gu_w[1], gu_w[2], ws, si, ei, ntpp, tw, _BSM, 1, False, Mt, twoI, H)
-    return marlin_moe_gemm(ext, x, dn_w[0], dn_w[1], dn_w[2], ws, si, ei, ntpp, tw, _BSM, 1, False, Mt, H, I)
+        return marlin_moe_gemm(
+            ext,
+            x,
+            gu_w[0],
+            gu_w[1],
+            gu_w[2],
+            ws,
+            si,
+            ei,
+            ntpp,
+            tw,
+            _BSM,
+            1,
+            False,
+            Mt,
+            twoI,
+            H,
+        )
+    return marlin_moe_gemm(
+        ext,
+        x,
+        dn_w[0],
+        dn_w[1],
+        dn_w[2],
+        ws,
+        si,
+        ei,
+        ntpp,
+        tw,
+        _BSM,
+        1,
+        False,
+        Mt,
+        H,
+        I,
+    )
 
 
 def marlin_bwd_data(base):

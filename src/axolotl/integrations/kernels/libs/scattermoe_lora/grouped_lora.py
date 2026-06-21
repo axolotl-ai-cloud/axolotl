@@ -50,17 +50,17 @@ def _mk_routing(offs: torch.Tensor, E: int) -> tuple[torch.Tensor, torch.Tensor]
     Mt = int(offs[-1].item())
     dev = offs.device
     starts = torch.cat([offs.new_zeros(1), offs[:-1]])  # [E]
-    sizes = offs - starts                                # per-expert padded row count [E]
+    sizes = offs - starts  # per-expert padded row count [E]
     e_ids = torch.arange(E, device=dev, dtype=torch.int32)
-    sorted_expert_idxs = e_ids.repeat_interleave(sizes)           # [Mt]
+    sorted_expert_idxs = e_ids.repeat_interleave(sizes)  # [Mt]
     sorted_scattered_idxs = torch.arange(Mt, device=dev, dtype=torch.int32)
     return sorted_expert_idxs, sorted_scattered_idxs
 
 
 def grouped_lora_fwd(
-    x: torch.Tensor,   # [Mt, in_K], expert-grouped (TILE-padded)
-    A: torch.Tensor,   # [E, r, in_K]
-    B: torch.Tensor,   # [E, out_N, r]
+    x: torch.Tensor,  # [Mt, in_K], expert-grouped (TILE-padded)
+    A: torch.Tensor,  # [E, r, in_K]
+    B: torch.Tensor,  # [E, out_N, r]
     scaling: float,
     offs: torch.Tensor,  # [E] int32 cumulative TILE-padded offsets
     E: int,
@@ -104,11 +104,11 @@ def grouped_lora_fwd(
 
 
 def grouped_lora_bwd(
-    dy: torch.Tensor,   # [Mt, out_N], grad w.r.t. LoRA output, grouped
-    x: torch.Tensor,    # [Mt, in_K], forward input, grouped
-    A: torch.Tensor,    # [E, r, in_K]
-    B: torch.Tensor,    # [E, out_N, r]
-    xa: torch.Tensor,   # [Mt, r], X@A^T from forward (saved)
+    dy: torch.Tensor,  # [Mt, out_N], grad w.r.t. LoRA output, grouped
+    x: torch.Tensor,  # [Mt, in_K], forward input, grouped
+    A: torch.Tensor,  # [E, r, in_K]
+    B: torch.Tensor,  # [E, out_N, r]
+    xa: torch.Tensor,  # [Mt, r], X@A^T from forward (saved)
     scaling: float,
     offs: torch.Tensor,  # [E] int32 cumulative TILE-padded offsets
     E: int,

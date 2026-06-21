@@ -50,7 +50,7 @@ def _ref(q, k, v, scaling, position_ids, sliding=None):
 
 
 def _pos(doclens_per_row):
-    rows = [torch.cat([torch.arange(l) for l in dl]) for dl in doclens_per_row]
+    rows = [torch.cat([torch.arange(ln) for ln in dl]) for dl in doclens_per_row]
     S = max(len(r) for r in rows)
     return torch.stack([F.pad(r, (0, S - len(r))) for r in rows]).to(DEV)
 
@@ -86,13 +86,18 @@ def test_varlen_matches_block_mask_sdpa(patched, doclens, sliding, label):
     mod = _Mod(sliding_window=sliding, num_key_value_groups=Hq // Hkv)
     scaling = D**-0.5
 
-    out, _ = sdpa(mod, q, k, v, None, scaling=scaling, position_ids=pos, sliding_window=sliding)
+    out, _ = sdpa(
+        mod, q, k, v, None, scaling=scaling, position_ids=pos, sliding_window=sliding
+    )
     out.float().pow(2).mean().backward()
     ref = _ref(qr, kr, vr, scaling, pos, sliding)
     ref.float().pow(2).mean().backward()
 
     assert F.cosine_similarity(out.float().flatten(), ref.float().flatten(), 0) > 0.999
-    assert F.cosine_similarity(q.grad.float().flatten(), qr.grad.float().flatten(), 0) > 0.999
+    assert (
+        F.cosine_similarity(q.grad.float().flatten(), qr.grad.float().flatten(), 0)
+        > 0.999
+    )
 
 
 def _assert_defers_to_stock(mod, q, k, v, pos):
@@ -113,9 +118,14 @@ def test_varlen_matches_flash_attention_2_e2e():
 
     def build(impl):
         cfg = LlamaConfig(
-            hidden_size=512, num_hidden_layers=2, num_attention_heads=8,
-            num_key_value_heads=2, intermediate_size=1024, vocab_size=256,
-            head_dim=64, _attn_implementation=impl,
+            hidden_size=512,
+            num_hidden_layers=2,
+            num_attention_heads=8,
+            num_key_value_heads=2,
+            intermediate_size=1024,
+            vocab_size=256,
+            head_dim=64,
+            _attn_implementation=impl,
         )
         torch.manual_seed(1)
         return LlamaModel(cfg).to(DEV).to(torch.bfloat16).eval()
@@ -125,7 +135,9 @@ def test_varlen_matches_flash_attention_2_e2e():
     pos = torch.cat([torch.arange(d) for d in docs]).to(DEV)[None]
     try:
         with torch.no_grad():
-            fa2 = build("flash_attention_2")(input_ids=ids, position_ids=pos).last_hidden_state
+            fa2 = build("flash_attention_2")(
+                input_ids=ids, position_ids=pos
+            ).last_hidden_state
     except Exception:  # pylint: disable=broad-except
         pytest.skip("flash_attention_2 unavailable")
 
@@ -135,7 +147,9 @@ def test_varlen_matches_flash_attention_2_e2e():
             varlen = build("sdpa")(input_ids=ids, position_ids=pos).last_hidden_state
     finally:
         unpatch_sdpa_varlen()
-    assert F.cosine_similarity(varlen.float().flatten(), fa2.float().flatten(), 0) > 0.999
+    assert (
+        F.cosine_similarity(varlen.float().flatten(), fa2.float().flatten(), 0) > 0.999
+    )
 
 
 def test_falls_back_when_not_packed(patched):

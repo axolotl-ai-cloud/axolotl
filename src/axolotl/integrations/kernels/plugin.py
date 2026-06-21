@@ -28,8 +28,13 @@ def _is_gemma4_nvfp4_modelopt(cfg) -> bool:
     if qcfg is None:
         return False
     if isinstance(qcfg, dict):
-        return qcfg.get("quant_method") == "modelopt" and qcfg.get("quant_algo") == "NVFP4"
-    return getattr(qcfg, "quant_method", None) == "modelopt" and getattr(qcfg, "quant_algo", None) == "NVFP4"
+        return (
+            qcfg.get("quant_method") == "modelopt" and qcfg.get("quant_algo") == "NVFP4"
+        )
+    return (
+        getattr(qcfg, "quant_method", None) == "modelopt"
+        and getattr(qcfg, "quant_algo", None) == "NVFP4"
+    )
 
 
 def _check_sonicmoe_gpu_compat():
@@ -111,7 +116,9 @@ class KernelsPlugin(BasePlugin):
             import transformers.trainer as _hf_trainer
 
             _hf_trainer.validate_quantization_for_training = lambda *a, **k: None
-            LOG.info("Relaxed transformers quantized-training guard for scattermoe-lora")
+            LOG.info(
+                "Relaxed transformers quantized-training guard for scattermoe-lora"
+            )
 
             # NVFP4 MoE checkpoints (e.g. DeepSeek-V4-Flash-NVFP4) declare `quant_method: fp8`
             # but transformers' finegrained-FP8 quantizer has no NVFP4 expert path. Swap in an
@@ -135,7 +142,9 @@ class KernelsPlugin(BasePlugin):
                 )
 
                 register_gemma4_nvfp4_converters()
-                LOG.info("Registered gemma4 NVFP4 expert WeightConverters (modelopt NVFP4 checkpoint)")
+                LOG.info(
+                    "Registered gemma4 NVFP4 expert WeightConverters (modelopt NVFP4 checkpoint)"
+                )
 
             # Config-gated grouped fp4 MoE path (off by default -> no regression).
             if cfg.get("dsv4_fp4_grouped_mode"):
@@ -190,7 +199,11 @@ class KernelsPlugin(BasePlugin):
         # frozen bf16 attention/MLP weights become fp8 (1 byte vs 2), cutting
         # ~2 GB resident.  Experts remain NVFP4Tensor (unchanged).  The dequant-
         # in-forward wrapper added here is transparent to PEFT (LoRA still attaches).
-        if cfg.use_scattermoe and _is_gemma4_nvfp4_modelopt(cfg) and cfg.get("gemma4_fp8_nonexpert"):
+        if (
+            cfg.use_scattermoe
+            and _is_gemma4_nvfp4_modelopt(cfg)
+            and cfg.get("gemma4_fp8_nonexpert")
+        ):
             from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_fp8_nonexpert import (
                 quantize_gemma4_nonexpert_linears,
             )
@@ -200,7 +213,11 @@ class KernelsPlugin(BasePlugin):
 
         # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit) — same non-expert compute as
         # unsloth QLoRA, for apples-to-apples experts-only LoRA benchmarking.
-        if cfg.use_scattermoe and _is_gemma4_nvfp4_modelopt(cfg) and cfg.get("gemma4_nf4_nonexpert"):
+        if (
+            cfg.use_scattermoe
+            and _is_gemma4_nvfp4_modelopt(cfg)
+            and cfg.get("gemma4_nf4_nonexpert")
+        ):
             from axolotl.integrations.kernels.libs.scattermoe_lora.gemma4_nf4_nonexpert import (
                 quantize_gemma4_nonexpert_nf4,
             )
@@ -229,7 +246,10 @@ class KernelsPlugin(BasePlugin):
             if not keep_all:
                 seen = set()
                 for m in model.modules():
-                    for attr in ("_keep_in_fp32_modules_strict", "_keep_in_fp32_modules"):
+                    for attr in (
+                        "_keep_in_fp32_modules_strict",
+                        "_keep_in_fp32_modules",
+                    ):
                         for pat in getattr(m, attr, None) or ():
                             if pat not in seen:
                                 seen.add(pat)
@@ -246,16 +266,24 @@ class KernelsPlugin(BasePlugin):
             if n:
                 LOG.info(
                     "Cast %d residual fp32 params to %s for dsv4 fused kernels (kept %d keep_in_fp32 fp32)",
-                    n, dt, kept,
+                    n,
+                    dt,
+                    kept,
                 )
 
-        if cfg.use_dsv4_kernels and cfg.get("lora_mlp_kernel") and cfg.get("adapter") == "lora":
+        if (
+            cfg.use_dsv4_kernels
+            and cfg.get("lora_mlp_kernel")
+            and cfg.get("adapter") == "lora"
+        ):
             from axolotl.integrations.kernels.libs.dsv4.lora_mlp import (
                 patch_dsv4_shared_mlp_lora,
             )
 
             n = patch_dsv4_shared_mlp_lora(model)
-            LOG.info(f"Patched {n} DeepSeek-V4 shared-expert MLPs with fused clamped-SwiGLU LoRA")
+            LOG.info(
+                f"Patched {n} DeepSeek-V4 shared-expert MLPs with fused clamped-SwiGLU LoRA"
+            )
 
         if cfg.use_dsv4_kernels and cfg.get("adapter") == "lora":
             # Native blockwise-fp8 fused LoRA for the large attention projections (q_b/o_b);
@@ -264,7 +292,9 @@ class KernelsPlugin(BasePlugin):
                 patch_dsv4_attn_fp8_lora,
             )
 
-            patch_dsv4_attn_fp8_lora(model, enabled=bool(cfg.get("dsv4_fp8_lora_kernel")))
+            patch_dsv4_attn_fp8_lora(
+                model, enabled=bool(cfg.get("dsv4_fp8_lora_kernel"))
+            )
 
     def add_callbacks_pre_trainer(self, cfg, model):
         callbacks = []

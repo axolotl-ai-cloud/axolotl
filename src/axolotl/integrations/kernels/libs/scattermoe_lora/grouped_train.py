@@ -35,18 +35,21 @@ def grouped_fp4_available(mode: str) -> bool:
         return False
     try:
         from .marlin_w4a16 import marlin_w4a16_available
+
         if marlin_w4a16_available():
             return True
     except Exception:
         pass
     try:
         from .cutlass_fp4 import cutlass_fp4_available
+
         if cutlass_fp4_available():
             return True
     except Exception:
         pass
     try:
         from .dequant_grouped import deepgemm_grouped_available
+
         return deepgemm_grouped_available()
     except Exception:
         return False
@@ -60,18 +63,21 @@ def _train_backend(mode: str) -> str | None:
         return None
     try:
         from .marlin_w4a16 import marlin_w4a16_available
+
         if marlin_w4a16_available():
             return "marlin"
     except Exception:
         pass
     try:
         from .cutlass_fp4 import cutlass_fp4_available
+
         if cutlass_fp4_available():
             return "cutlass"
     except Exception:
         pass
     try:
         from .dequant_grouped import deepgemm_grouped_available
+
         if deepgemm_grouped_available():
             return "deepgemm"
     except Exception:
@@ -85,11 +91,13 @@ def _gmm(a, b, offs):
 
 def _swiglu(gu, limit, act_type="silu"):
     from .cutlass_fp4.swiglu import swiglu_fwd
+
     return swiglu_fwd(gu, limit, act_type)
 
 
 def _swiglu_bwd(dh, gu, limit, act_type="silu"):
     from .cutlass_fp4.swiglu import swiglu_bwd
+
     return swiglu_bwd(gu, dh, limit, act_type)
 
 
@@ -98,14 +106,17 @@ def _base_forward(base, which, x, m_indices, mode):
     ('marlin', (gu_w, dn_w), dims, ws) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', (guq,gus), (dnq,dns))."""
     if base[0] == "marlin":
         from .marlin_w4a16.backend import marlin_base_forward
+
         return marlin_base_forward(base, which, x, m_indices)
     backend, gw, dw = base
     if backend == "cutlass":
         from .cutlass_fp4.grouped import quant_act
+
         eng = gw if which == 0 else dw
         aq, as_ = quant_act(x, mode)
         return eng.forward(aq.unsqueeze(0), as_.unsqueeze(0), m_indices)
     from .dequant_grouped import deepgemm_grouped_fp8_fp4
+
     wq, ws = gw if which == 0 else dw
     # cutlass uses per-tile m_indices; DeepGEMM's grouped_layout is per-row (length Mt)
     return deepgemm_grouped_fp8_fp4(x, wq, ws, m_indices.repeat_interleave(TILE))
@@ -116,6 +127,7 @@ def _engine(Mt, N, K, E, mode):
     eng = _ENGINES.get(key)
     if eng is None:
         from .cutlass_fp4.grouped import GroupedFp4Gemm
+
         _ENGINES[key] = eng = GroupedFp4Gemm(Mt, N, K, E, mode)
     return eng
 
@@ -128,7 +140,9 @@ def _fp8_read_dx_ok():
     return torch.cuda.get_device_capability()[0] == 12
 
 
-def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE, _marlin_raw=None):
+def _base_dx(
+    w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE, _marlin_raw=None
+):
     """Chunked base-weight contraction g @ W (frozen NVFP4 experts). bf16 path: dequant CHUNK_E
     experts to bf16 + cuBLAS grouped_mm. fp8-read path (sm120): dequant to fp8 (half bytes) + a
     Triton grouped GEMM that reads fp8 and upcasts in-register (~1.5x faster, half the transient).
@@ -150,6 +164,7 @@ def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE, _m
         from .marlin_w4a16.backend import _build_base_scatter
         from .marlin_w4a16.fused_dequant import marlin_dequant_bf16, marlin_dequant_fp8
         from .mx_weights import fp4_codebook
+
         qw, orig_scale, pt_e = _marlin_raw
         # pt_e may have stride(0) from .expand() — Triton needs element-stride=1 for correct load.
         if pt_e.stride(0) == 0:
@@ -167,13 +182,29 @@ def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE, _m
                 continue
             C = c1 - c0
             if fp8:
-                Wc = marlin_dequant_fp8(qw[c0:c1].reshape(C, -1), orig_scale[c0:c1], pt_e[c0:c1],
-                                        scatter_lut, cb, N, K, C)
-                mi = (m_indices[t0 // tile:t1 // tile] - c0).to(torch.int32)
+                Wc = marlin_dequant_fp8(
+                    qw[c0:c1].reshape(C, -1),
+                    orig_scale[c0:c1],
+                    pt_e[c0:c1],
+                    scatter_lut,
+                    cb,
+                    N,
+                    K,
+                    C,
+                )
+                mi = (m_indices[t0 // tile : t1 // tile] - c0).to(torch.int32)
                 out[t0:t1] = grouped_dx_fp8(g[t0:t1], Wc, mi, tile)
             else:
-                Wc = marlin_dequant_bf16(qw[c0:c1].reshape(C, -1), orig_scale[c0:c1], pt_e[c0:c1],
-                                         scatter_lut, cb, N, K, C)
+                Wc = marlin_dequant_bf16(
+                    qw[c0:c1].reshape(C, -1),
+                    orig_scale[c0:c1],
+                    pt_e[c0:c1],
+                    scatter_lut,
+                    cb,
+                    N,
+                    K,
+                    C,
+                )
                 loc = (offs[c0:c1] - t0).to(torch.int32)
                 out[t0:t1] = _gmm(g[t0:t1], Wc, loc)
         return out
@@ -189,7 +220,7 @@ def _base_dx(w_nv, pt, g, out_k, offs, m_indices, prefer_fp8=True, tile=TILE, _m
             continue
         if fp8:
             Wc = nvfp4_dequant_fp8(qdata[c0:c1], scale[c0:c1], pt[c0:c1])
-            mi = (m_indices[t0 // tile:t1 // tile] - c0).to(torch.int32)
+            mi = (m_indices[t0 // tile : t1 // tile] - c0).to(torch.int32)
             out[t0:t1] = grouped_dx_fp8(g[t0:t1], Wc, mi, tile)
         else:
             loc = (offs[c0:c1] - t0).to(torch.int32)
@@ -212,8 +243,23 @@ class _GroupedExperts(torch.autograd.Function):
     act_type: 'silu' (DSV4 clamped SwiGLU) or 'gelu_tanh' (Gemma4 GeGLU)."""
 
     @staticmethod
-    def forward(ctx, x, base, weight_recipe, Agu, Bgu, Adn, Bdn, m_indices, offs, scaling, limit,
-                mode, act_type, prefer_fp8_dx=True):
+    def forward(
+        ctx,
+        x,
+        base,
+        weight_recipe,
+        Agu,
+        Bgu,
+        Adn,
+        Bdn,
+        m_indices,
+        offs,
+        scaling,
+        limit,
+        mode,
+        act_type,
+        prefer_fp8_dx=True,
+    ):
         # base: ('marlin', ...) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', ...) — frozen experts
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
@@ -227,13 +273,16 @@ class _GroupedExperts(torch.autograd.Function):
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
         ctx.act_type = act_type
-        ctx.prefer_fp8_dx = prefer_fp8_dx  # base dX: fp8-read (fast, ~2% grad) vs bf16-dequant (~0.5%)
+        ctx.prefer_fp8_dx = (
+            prefer_fp8_dx  # base dX: fp8-read (fast, ~2% grad) vs bf16-dequant (~0.5%)
+        )
         # Marlin memory-free path: if build_marlin_forward_base saved (qdata, scale, pt) in the
         # cache (single-GPU only; nv.qdata was freed), stash them in ctx so the backward can use
         # them directly without weight_recipe() (which would return the emptied NVFP4 tensor).
         ctx.bwd_marlin = None
         if base[0] == "marlin":
             from .marlin_w4a16.backend import marlin_bwd_data
+
             ctx.bwd_marlin = marlin_bwd_data(base)
         return dn
 
@@ -242,7 +291,9 @@ class _GroupedExperts(torch.autograd.Function):
         x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices = ctx.saved_tensors
         s, lim, act_type = ctx.scaling, ctx.limit, ctx.act_type
         pf8 = _fp8_read_dx_ok() and ctx.prefer_fp8_dx
-        tile = x.size(0) // m_indices.numel()  # routing pad granularity (128 cutlass, 64 marlin)
+        tile = (
+            x.size(0) // m_indices.numel()
+        )  # routing pad granularity (128 cutlass, 64 marlin)
         d_dn = d_dn.contiguous().to(x.dtype)
         # fp8-read dX works for both pad-128 (cutlass) and pad-64 (marlin) via the BM=tile kernel;
         # prefer_fp8_dx=False opts into the bf16-dequant dX (more accurate grad, ~0.5% vs ~2%).
@@ -254,8 +305,17 @@ class _GroupedExperts(torch.autograd.Function):
             (gu_qw, gu_bwd), (dn_qw, dn_bwd) = ctx.bwd_marlin
             dn_scale, dn_pt_e, _, _, _ = dn_bwd
             dn_marlin_raw = (dn_qw, dn_scale, dn_pt_e)
-            dh = _base_dx(None, None, d_dn, h.size(1), offs, m_indices, pf8, tile,
-                          _marlin_raw=dn_marlin_raw)
+            dh = _base_dx(
+                None,
+                None,
+                d_dn,
+                h.size(1),
+                offs,
+                m_indices,
+                pf8,
+                tile,
+                _marlin_raw=dn_marlin_raw,
+            )
         else:
             gu_nv, dn_nv = ctx.weight_recipe()
             E, dev = gu_nv.qdata.size(0), x.device
@@ -266,13 +326,23 @@ class _GroupedExperts(torch.autograd.Function):
         E = Agu.size(0)
         dx_dn_lora, dAdn, dBdn = grouped_lora_bwd(d_dn, h, Adn, Bdn, hAd, s, offs, E)
         dh = dh + dx_dn_lora
-        dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype); del dh
+        dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype)
+        del dh
 
         if ctx.bwd_marlin is not None:
             gu_scale, gu_pt_e, _, _, _ = ctx.bwd_marlin[0][1]
             gu_marlin_raw = (gu_qw, gu_scale, gu_pt_e)
-            dx = _base_dx(None, None, dgu, x.size(1), offs, m_indices, pf8, tile,
-                          _marlin_raw=gu_marlin_raw)
+            dx = _base_dx(
+                None,
+                None,
+                dgu,
+                x.size(1),
+                offs,
+                m_indices,
+                pf8,
+                tile,
+                _marlin_raw=gu_marlin_raw,
+            )
         else:
             dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8, tile)
 
@@ -281,7 +351,22 @@ class _GroupedExperts(torch.autograd.Function):
         dx = dx + dx_gu_lora
         # grads align to forward args: x, base, weight_recipe, Agu, Bgu, Adn, Bdn,
         # m_indices, offs, scaling, limit, mode, act_type, prefer_fp8_dx
-        return (dx, None, None, dAgu, dBgu, dAdn, dBdn, None, None, None, None, None, None, None)
+        return (
+            dx,
+            None,
+            None,
+            dAgu,
+            dBgu,
+            dAdn,
+            dBdn,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def _lora_stack(lora, E, K, out):
@@ -293,8 +378,21 @@ def _lora_stack(lora, E, K, out):
     return As, Bs, float(scaling)
 
 
-def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_lora, limit, mode,
-                          act_type="silu", weight_recipe=None, mxfp4_cache=None, prefer_fp8_dx=True):
+def grouped_fp4_moe_train(
+    hidden,
+    idx,
+    wts,
+    gate_up_nv,
+    down_nv,
+    gup_lora,
+    down_lora,
+    limit,
+    mode,
+    act_type="silu",
+    weight_recipe=None,
+    mxfp4_cache=None,
+    prefer_fp8_dx=True,
+):
     """Training-capable grouped NVFP4 MoE forward. hidden[N,H], idx/wts[N,topk]; experts NVFP4Tensor;
     *_lora = (A,B,scaling) scattermoe layout. Returns [N,H]; differentiable to hidden + LoRA A/B.
     act_type: 'silu' (DSV4 clamped SwiGLU, default) or 'gelu_tanh' (Gemma4 GeGLU, no clamp).
@@ -313,18 +411,19 @@ def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_
     if _qd.numel() > 0:
         E = _qd.size(0)
         twoI = _qd.size(1)
-        I = down_nv.qdata.size(2) * 2         # down K dim = I (packed K/2 * 2)
+        I = down_nv.qdata.size(2) * 2  # noqa: E741  (down K dim, packed K/2 * 2)
     else:
         # Marlin qdata-free path: qdata was freed; use the NVFP4Tensor wrapper shape.
-        _gu_shape = gate_up_nv.shape          # [E, 2I, H] full-precision
+        _gu_shape = gate_up_nv.shape  # [E, 2I, H] full-precision
         E, twoI = int(_gu_shape[0]), int(_gu_shape[1])
-        I = int(down_nv.shape[2])
+        I = int(down_nv.shape[2])  # noqa: E741
     dev = hidden.device
     backend = _train_backend(mode)
     # Marlin (sm120 W4A16) pads to 64 — half CUTLASS's 128 at thin-M (each expert weight is read
     # once either way, so the padding is the cost) — and its bf16-act kernel is bit-correct + faster.
     if backend == "marlin":
         from .marlin_w4a16.backend import MARLIN_TILE
+
         tile = MARLIN_TILE
     else:
         tile = TILE
@@ -337,30 +436,58 @@ def grouped_fp4_moe_train(hidden, idx, wts, gate_up_nv, down_nv, gup_lora, down_
     ptiles = (counts + tile - 1) // tile
     roff = torch.cat([ptiles.new_zeros(1), ptiles.cumsum(0)]) * tile
     coff = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
-    padded_row = roff[exp_sorted] + (torch.arange(exp_sorted.numel(), device=dev) - coff[exp_sorted])
-    m_indices = torch.repeat_interleave(torch.arange(E, dtype=torch.int32, device=dev), ptiles)
+    padded_row = roff[exp_sorted] + (
+        torch.arange(exp_sorted.numel(), device=dev) - coff[exp_sorted]
+    )
+    m_indices = torch.repeat_interleave(
+        torch.arange(E, dtype=torch.int32, device=dev), ptiles
+    )
     offs = (ptiles * tile).cumsum(0).to(torch.int32)
     Mt = int(ptiles.sum()) * tile
 
     if backend == "marlin":
         from .marlin_w4a16.backend import build_marlin_forward_base
+
         base = build_marlin_forward_base(gate_up_nv, down_nv, mxfp4_cache)
     elif backend == "deepgemm":
         from .dequant_grouped import _cached_mxfp4
-        base = ("deepgemm",
-                _cached_mxfp4(gate_up_nv, _pt(gate_up_nv, E, dev), mxfp4_cache, "gate_up"),
-                _cached_mxfp4(down_nv, _pt(down_nv, E, dev), mxfp4_cache, "down"))
+
+        base = (
+            "deepgemm",
+            _cached_mxfp4(gate_up_nv, _pt(gate_up_nv, E, dev), mxfp4_cache, "gate_up"),
+            _cached_mxfp4(down_nv, _pt(down_nv, E, dev), mxfp4_cache, "down"),
+        )
     else:
-        gu_eng = _engine(Mt, twoI, H, E, mode); gu_eng.set_weights(gate_up_nv.qdata, gate_up_nv.scale)
-        dn_eng = _engine(Mt, H, I, E, mode); dn_eng.set_weights(down_nv.qdata, down_nv.scale)
+        gu_eng = _engine(Mt, twoI, H, E, mode)
+        gu_eng.set_weights(gate_up_nv.qdata, gate_up_nv.scale)
+        dn_eng = _engine(Mt, H, I, E, mode)
+        dn_eng.set_weights(down_nv.qdata, down_nv.scale)
         base = ("cutlass", gu_eng, dn_eng)
     Agu, Bgu, sgu = _lora_stack(gup_lora, E, H, twoI)
     Adn, Bdn, sdn = _lora_stack(down_lora, E, I, H)
     assert sgu == sdn, "gate_up/down LoRA scaling must match"
 
-    lim = float(limit) if limit is not None else 1e30  # no clamp when the model has no swiglu_limit
+    lim = (
+        float(limit) if limit is not None else 1e30
+    )  # no clamp when the model has no swiglu_limit
     A = hidden.new_zeros(Mt, H).index_copy(0, padded_row, hidden[rep])
-    dn = _GroupedExperts.apply(A, base, weight_recipe, Agu, Bgu, Adn, Bdn,
-                               m_indices, offs, sgu, lim, mode, act_type, prefer_fp8_dx)
+    dn = _GroupedExperts.apply(
+        A,
+        base,
+        weight_recipe,
+        Agu,
+        Bgu,
+        Adn,
+        Bdn,
+        m_indices,
+        offs,
+        sgu,
+        lim,
+        mode,
+        act_type,
+        prefer_fp8_dx,
+    )
     out = hidden.new_zeros(N, H)
-    return out.index_add(0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype))
+    return out.index_add(
+        0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype)
+    )

@@ -75,8 +75,14 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             use_varlen = int((pid == 0).sum()) > pid.shape[0]
         if not use_varlen:
             return original_sdpa(
-                module, query, key, value, attention_mask,
-                dropout=dropout, scaling=scaling, **kwargs,
+                module,
+                query,
+                key,
+                value,
+                attention_mask,
+                dropout=dropout,
+                scaling=scaling,
+                **kwargs,
             )
 
         B, Hq, S, D = query.shape
@@ -92,8 +98,15 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         # window_size: (-1, 0) = causal full; (W-1, 0) = causal sliding window of W.
         window = (sliding_window - 1, 0) if sliding_window else (-1, 0)
         out = varlen_attn(
-            qf, kf, vf, cu_q.to(torch.int32), cu_k.to(torch.int32),
-            int(max_q), int(max_k), scale=scaling, window_size=window,
+            qf,
+            kf,
+            vf,
+            cu_q.to(torch.int32),
+            cu_k.to(torch.int32),
+            int(max_q),
+            int(max_k),
+            scale=scaling,
+            window_size=window,
         )
         if isinstance(out, tuple):
             out = out[0]

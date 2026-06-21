@@ -88,7 +88,9 @@ def quantize_gemma4_nonexpert_nf4(
             compress_statistics=True,
         )
         if has_bias:
-            new.bias = nn.Parameter(mod.bias.data.to(compute_dtype), requires_grad=False)
+            new.bias = nn.Parameter(
+                mod.bias.data.to(compute_dtype), requires_grad=False
+            )
         new = new.to(device)  # triggers NF4 quantization of Params4bit
 
         parent_path, _, attr = name.rpartition(".")

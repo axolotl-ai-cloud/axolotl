@@ -15,7 +15,9 @@ def _cos(a, b):
     return F.cosine_similarity(a.float().flatten(), b.float().flatten(), 0).item()
 
 
-@pytest.mark.parametrize("B,H,N,causal", [(1, 8, 1024, True), (2, 8, 1024, True), (1, 8, 1024, False)])
+@pytest.mark.parametrize(
+    "B,H,N,causal", [(1, 8, 1024, True), (2, 8, 1024, True), (1, 8, 1024, False)]
+)
 def test_dense_fwd_bwd_matches_sdpa(B, H, N, causal):
     from axolotl.monkeypatch.attention.flash_attn_d512 import flash_d512
 
@@ -56,7 +58,10 @@ def test_varlen_matches_per_document(docs):
         with sdpa_kernel([SDPBackend.MATH]):
             outs.append(
                 F.scaled_dot_product_attention(
-                    qr[:, :, off:off + d], kr[:, :, off:off + d], vr[:, :, off:off + d], is_causal=True
+                    qr[:, :, off : off + d],
+                    kr[:, :, off : off + d],
+                    vr[:, :, off : off + d],
+                    is_causal=True,
                 )
             )
         off += d
