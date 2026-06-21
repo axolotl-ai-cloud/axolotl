@@ -1,0 +1,142 @@
+"""Variable-length (cu_seqlens) SDPA path for sample packing.
+
+With sample packing the model concatenates many documents into one row and
+encodes the boundaries in ``position_ids`` (which reset to 0 at each document
+start). The default SDPA path turns this into an explicit 4D block-diagonal
+mask: O(S^2) compute even though cross-document blocks are masked out, plus the
+mask tensor itself.
+
+When PyTorch exposes ``torch.nn.attention.varlen.varlen_attn`` (>= 2.11) and the
+head_dim is within Flash-Attention's limit (<= 256), we can instead run the
+attention as variable-length with ``cu_seqlens`` derived from ``position_ids``,
+which skips the cross-document blocks entirely — faster and lower memory — with
+no dependency on the ``flash_attn`` package. This is opt-in via ``sdpa_varlen:
+true`` and only activates for genuinely multi-document (packed) rows; everything
+else falls back to the stock SDPA implementation.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from axolotl.utils.logging import get_logger
+
+LOG = get_logger(__name__)
+
+_PATCH_APPLIED = False
+# head_dim limit of the Flash-Attention kernel backing varlen_attn.
+_VARLEN_MAX_HEAD_DIM = 256
+
+
+def varlen_available() -> bool:
+    try:
+        from torch.nn.attention.varlen import varlen_attn  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _build_varlen_forward(original_sdpa: Callable) -> Callable:
+    import torch
+    from torch.nn.attention.varlen import varlen_attn
+    from transformers.modeling_flash_attention_utils import (
+        prepare_fa_kwargs_from_position_ids,
+    )
+
+    def sdpa_varlen_forward(
+        module: Any,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        attention_mask: torch.Tensor | None,
+        dropout: float = 0.0,
+        scaling: float | None = None,
+        **kwargs: Any,
+    ):
+        position_ids = kwargs.get("position_ids")
+        sliding_window = kwargs.get("sliding_window", None) or getattr(
+            module, "sliding_window", None
+        )
+        head_dim = query.shape[-1]
+        # Conditions for the varlen fast path; anything else -> stock SDPA (always correct).
+        # - attention_mask must be None: packing carries structure via position_ids; a real mask
+        #   (e.g. left padding) is not expressible to the causal/sliding varlen kernel here.
+        # - dropout unsupported by varlen_attn.
+        # - head_dim within the Flash limit.
+        use_varlen = (
+            attention_mask is None
+            and not dropout
+            and head_dim <= _VARLEN_MAX_HEAD_DIM
+            and position_ids is not None
+        )
+        if use_varlen:
+            pid = position_ids if position_ids.dim() > 1 else position_ids[None]
+            # genuine packing only (more document starts than rows); single-doc -> stock SDPA.
+            use_varlen = int((pid == 0).sum()) > pid.shape[0]
+        if not use_varlen:
+            return original_sdpa(
+                module, query, key, value, attention_mask,
+                dropout=dropout, scaling=scaling, **kwargs,
+            )
+
+        B, Hq, S, D = query.shape
+        Hkv = key.shape[1]
+        if Hq != Hkv:  # GQA -> repeat (varlen_attn has no GQA mode)
+            n = Hq // Hkv
+            key = key.repeat_interleave(n, dim=1)
+            value = value.repeat_interleave(n, dim=1)
+        (cu_q, cu_k), (max_q, max_k) = prepare_fa_kwargs_from_position_ids(pid)
+        qf = query.transpose(1, 2).reshape(B * S, Hq, D)
+        kf = key.transpose(1, 2).reshape(B * S, Hq, D)
+        vf = value.transpose(1, 2).reshape(B * S, Hq, D)
+        # window_size: (-1, 0) = causal full; (W-1, 0) = causal sliding window of W.
+        window = (sliding_window - 1, 0) if sliding_window else (-1, 0)
+        out = varlen_attn(
+            qf, kf, vf, cu_q.to(torch.int32), cu_k.to(torch.int32),
+            int(max_q), int(max_k), scale=scaling, window_size=window,
+        )
+        if isinstance(out, tuple):
+            out = out[0]
+        # match sdpa_attention_forward's return contract: (attn_output [B,S,Hq,D], None)
+        return out.reshape(B, S, Hq, D), None
+
+    return sdpa_varlen_forward
+
+
+def patch_sdpa_varlen() -> bool:
+    """Replace the registered ``sdpa`` attention with a varlen-aware wrapper (idempotent)."""
+    global _PATCH_APPLIED
+    if _PATCH_APPLIED:
+        return True
+    if not varlen_available():
+        LOG.warning(
+            "sdpa_varlen: torch.nn.attention.varlen.varlen_attn unavailable (needs torch >= 2.11); "
+            "leaving stock SDPA in place."
+        )
+        return False
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    original = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    wrapper = _build_varlen_forward(original)
+    wrapper._axolotl_sdpa_original = original  # type: ignore[attr-defined]
+    ALL_ATTENTION_FUNCTIONS.register("sdpa", wrapper)
+    _PATCH_APPLIED = True
+    LOG.info(
+        "sdpa_varlen: patched 'sdpa' to use cu_seqlens varlen_attn for packed rows "
+        "(head_dim <= %d), falling back to stock SDPA otherwise",
+        _VARLEN_MAX_HEAD_DIM,
+    )
+    return True
+
+
+def unpatch_sdpa_varlen() -> None:
+    global _PATCH_APPLIED
+    if not _PATCH_APPLIED:
+        return
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    current = ALL_ATTENTION_FUNCTIONS["sdpa"]
+    original = getattr(current, "_axolotl_sdpa_original", None)
+    if original is not None:
+        ALL_ATTENTION_FUNCTIONS.register("sdpa", original)
+    _PATCH_APPLIED = False

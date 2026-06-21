@@ -113,6 +113,7 @@ class PatchManager:
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
         self._apply_multipack_patches()
+        self._apply_sdpa_varlen_patch()
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
@@ -678,6 +679,14 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
+
+    def _apply_sdpa_varlen_patch(self):
+        """Route packed-row SDPA through cu_seqlens varlen_attn when ``sdpa_varlen`` is set."""
+        if not self.cfg.sdpa_varlen:
+            return
+        from axolotl.monkeypatch.attention.sdpa_varlen import patch_sdpa_varlen
+
+        patch_sdpa_varlen()
 
     def _apply_multipack_patches(self):
         """Apply multipack patches if necessary."""
