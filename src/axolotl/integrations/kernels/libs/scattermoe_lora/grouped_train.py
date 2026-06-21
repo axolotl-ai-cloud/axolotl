@@ -1,23 +1,28 @@
 """Training-capable grouped NVFP4 MoE (fwd+bwd) for DeepSeek-V4 experts — the config-gated
 cutlass-fp4 path. Forward: cutlass fp4 grouped GEMM (fast). Backward: chunked bf16-dequant +
 cuBLAS grouped_mm (accurate, bounded memory) — this beat the existing fused Triton kernel at the
-real E=256 scale on BOTH speed (2.24x) and memory (0.87x). LoRA-on-experts fused as a grouped
-correction. All cute imports lazy (module loads clean off sm120).
+real E=256 scale on BOTH speed (2.24x) and memory (0.87x). LoRA-on-experts fused via
+scatter2scatter single-launch grouped GEMMs. All cute imports lazy (module loads clean off sm120).
 
 Backward design rationale (explored exhaustively): bf16 grad is REQUIRED (fp8 grad = 33% error);
 dequant+cuBLAS beats the fused in-kernel-decode Triton dX 5.7x (Triton GEMM << cuBLAS); chunking
 over expert-groups bounds the bf16-weight transient.
+
+LoRA GEMM design: scatter2scatter kernels (kernels/ops.py) operate directly on the TILE-padded
+expert-sorted layout with x_grouped=y_grouped=True — single launch, ragged-native, no padding
+transient.  grouped_lora_fwd/bwd in grouped_lora.py encapsulate the entire implementation;
+no selection or threshold logic lives here.
 """
 
 from __future__ import annotations
 
 import torch
 
+from .grouped_lora import grouped_lora_bwd, grouped_lora_fwd
+
 TILE = 128
-# backward base-dX dequant chunk: bounds the bf16-weight transient. Since the LoRA grads are now
-# hoisted out of this loop (full-E grouped_mm), the bwd curve is flat past CHUNK_E~8; E=256 knee
-# (B200, BK=1024 dequant): CHUNK_E=16 = 11.2ms bwd / 2.6GB peak vs 10.1ms floor (CHUNK_E=256 =
-# 10GB). 16 = speed/memory sweet spot.
+# backward base-dX dequant chunk: bounds the bf16-weight transient.
+# E=256 knee (B200, BK=1024 dequant): CHUNK_E=16 = 11.2ms bwd / 2.6GB peak vs 10.1ms floor.
 CHUNK_E = 16
 _ENGINES: dict = {}
 
@@ -76,10 +81,6 @@ def _train_backend(mode: str) -> str | None:
 
 def _gmm(a, b, offs):
     return torch._grouped_mm(a, b, offs=offs)
-
-
-def _gmm_w(a, b, offs):  # per-expert a_e^T @ b_e -> [E,A,B] (a.mT view, no copy)
-    return torch._grouped_mm(a.mT, b, offs=offs)
 
 
 def _swiglu(gu, limit, act_type="silu"):
@@ -214,13 +215,14 @@ class _GroupedExperts(torch.autograd.Function):
     def forward(ctx, x, base, weight_recipe, Agu, Bgu, Adn, Bdn, m_indices, offs, scaling, limit,
                 mode, act_type, prefer_fp8_dx=True):
         # base: ('marlin', ...) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', ...) — frozen experts
+        E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
-        xAg = _gmm(x, Agu.transpose(1, 2), offs)
-        gu = gu + scaling * _gmm(xAg, Bgu.transpose(1, 2), offs)
+        gu_lora, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E)
+        gu = gu + gu_lora
         h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _base_forward(base, 1, h, m_indices, mode)
-        hAd = _gmm(h, Adn.transpose(1, 2), offs)
-        dn = dn + scaling * _gmm(hAd, Bdn.transpose(1, 2), offs)
+        dn_lora, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E)
+        dn = dn + dn_lora
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
@@ -260,13 +262,10 @@ class _GroupedExperts(torch.autograd.Function):
             ptg, ptd = _pt(gu_nv, E, dev), _pt(dn_nv, E, dev)
             dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices, pf8, tile)
 
-        # Only the base dX contractions need the dequanted bf16 weight -> chunk those (bounds the
-        # bf16-weight transient). All LoRA grads are dequant-free -> one full-E grouped_mm each
-        # (avoids ~6 tiny grouped_mm per chunk; the small launches dominated the profile).
-        d_hAd = s * _gmm(d_dn, Bdn, offs)
-        dh = dh + _gmm(d_hAd, Adn, offs)
-        dBdn = s * _gmm_w(d_dn, hAd, offs)
-        dAdn = _gmm_w(d_hAd, h, offs)
+        # down LoRA backward: scatter2scatter single-launch, no padding transient.
+        E = Agu.size(0)
+        dx_dn_lora, dAdn, dBdn = grouped_lora_bwd(d_dn, h, Adn, Bdn, hAd, s, offs, E)
+        dh = dh + dx_dn_lora
         dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype); del dh
 
         if ctx.bwd_marlin is not None:
@@ -277,10 +276,9 @@ class _GroupedExperts(torch.autograd.Function):
         else:
             dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8, tile)
 
-        d_xAg = s * _gmm(dgu, Bgu, offs)
-        dx = dx + _gmm(d_xAg, Agu, offs)
-        dBgu = s * _gmm_w(dgu, xAg, offs)
-        dAgu = _gmm_w(d_xAg, x, offs)
+        # gate_up LoRA backward
+        dx_gu_lora, dAgu, dBgu = grouped_lora_bwd(dgu, x, Agu, Bgu, xAg, s, offs, E)
+        dx = dx + dx_gu_lora
         # grads align to forward args: x, base, weight_recipe, Agu, Bgu, Adn, Bdn,
         # m_indices, offs, scaling, limit, mode, act_type, prefer_fp8_dx
         return (dx, None, None, dAgu, dBgu, dAdn, dBdn, None, None, None, None, None, None, None)
