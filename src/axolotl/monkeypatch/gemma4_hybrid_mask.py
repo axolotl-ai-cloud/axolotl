@@ -47,6 +47,60 @@ LOG = get_logger(__name__)
 
 _PATCH_APPLIED = False
 
+# Attention-interface name for Gemma-4 global (full_attention) layers. They have head_dim=512, so FA2
+# can't serve them and the model (FA2 at the top level) hands them no mask, relying on cu_seqlens that
+# only the FA2 sliding layers consume. With sample packing that means the global layers would attend
+# ACROSS document boundaries (pure causal). This impl rebuilds the block-diagonal-causal mask from
+# position_ids so the globals respect doc boundaries, on the memory-efficient SDPA backend.
+GLOBAL_PACKED_SDPA = "sdpa_global_packed"
+
+
+def _packing_block_causal_mask(position_ids, dtype, device):
+    """Block-diagonal causal additive mask [B,1,S,S] from packed position_ids (which reset to 0 at
+    each document start). -inf across document boundaries and for non-causal positions, 0 elsewhere."""
+    import torch
+
+    if position_ids.dim() == 1:
+        position_ids = position_ids[None]
+    Bz, Sz = position_ids.shape
+    doc = (position_ids == 0).cumsum(-1)  # [B,S] document index (1-based)
+    same_doc = doc[:, :, None] == doc[:, None, :]  # [B,S,S]
+    causal = torch.ones(Sz, Sz, dtype=torch.bool, device=device).tril()[None]  # [1,S,S]
+    allow = same_doc & causal
+    mask = torch.zeros(Bz, 1, Sz, Sz, dtype=dtype, device=device)
+    mask.masked_fill_(~allow[:, None], torch.finfo(dtype).min)
+    return mask
+
+
+def _register_global_packed_sdpa() -> None:
+    """Register the packing-aware global-layer attention impl (block-diagonal mask + efficient SDPA)."""
+    import torch
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+
+    if GLOBAL_PACKED_SDPA in ALL_ATTENTION_FUNCTIONS.valid_keys():
+        return
+
+    def sdpa_global_packed_forward(module, query, key, value, attention_mask, **kwargs):
+        # The top-level FA2 path leaves these layers maskless and carries packing only via cu_seqlens
+        # (consumed by FA2, not SDPA). Rebuild the block-diagonal mask from position_ids so the global
+        # layers don't cross document boundaries. Single-document rows stay maskless (is_causal).
+        if attention_mask is None:
+            position_ids = kwargs.get("position_ids")
+            if position_ids is not None:
+                pid = position_ids if position_ids.dim() > 1 else position_ids[None]
+                # >1 doc-start per row => genuine packing; otherwise pure causal is already correct.
+                if int((pid == 0).sum()) > pid.shape[0]:
+                    attention_mask = _packing_block_causal_mask(pid, query.dtype, query.device)
+        return sdpa_attention_forward(module, query, key, value, attention_mask, **kwargs)
+
+    ALL_ATTENTION_FUNCTIONS.register(GLOBAL_PACKED_SDPA, sdpa_global_packed_forward)
+    LOG.info(
+        "gemma4_hybrid_mask: registered '%s' (block-diagonal packing mask for head_dim=512 global "
+        "layers so they respect document boundaries under sample packing)",
+        GLOBAL_PACKED_SDPA,
+    )
+
 # Each Gemma 4 variant fully redefines ``create_causal_mask`` in its own module
 # namespace (gemma4_unified does NOT modular-import from gemma4), so both must be
 # patched independently.
@@ -146,6 +200,7 @@ def patch_gemma4_hybrid_mask() -> bool:
         return True
 
     _patch_use_gqa_head_dim_guard()
+    _register_global_packed_sdpa()
 
     patched_any = False
     for module_path in _TARGET_MODULES:

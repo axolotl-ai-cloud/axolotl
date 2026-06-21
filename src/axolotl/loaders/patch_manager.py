@@ -202,7 +202,10 @@ class PatchManager:
 
         import copy
 
-        from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+        from axolotl.monkeypatch.gemma4_hybrid_mask import (
+            GLOBAL_PACKED_SDPA,
+            patch_gemma4_hybrid_mask,
+        )
 
         patch_gemma4_hybrid_mask()
 
@@ -244,16 +247,19 @@ class PatchManager:
         patched_count = 0
         for layer_idx, layer in enumerate(layers):
             if layer_types[layer_idx] != "sliding_attention":
-                # Global / full_attention layer - use SDPA instead of FA2
+                # Global / full_attention layer (head_dim=512, FA2 can't serve it). Use the
+                # packing-aware SDPA impl: it rebuilds the block-diagonal mask from position_ids so
+                # the layer respects document boundaries under sample packing (plain "sdpa" gets a
+                # None mask here and would attend across packed documents).
                 attn_module = getattr(layer, "self_attn", None)
                 if attn_module is not None and hasattr(attn_module, "config"):
                     sdpa_config = copy.copy(attn_module.config)
-                    sdpa_config._attn_implementation = "sdpa"
+                    sdpa_config._attn_implementation = GLOBAL_PACKED_SDPA
                     attn_module.config = sdpa_config
                     patched_count += 1
 
         LOG.info(
-            "gemma4_hybrid_attn_impl: patched %d global layers to use SDPA "
+            "gemma4_hybrid_attn_impl: patched %d global layers to use packing-aware SDPA "
             "(remaining %d sliding layers use flash_attention_2)",
             patched_count,
             len(layers) - patched_count,
