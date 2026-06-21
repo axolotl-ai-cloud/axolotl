@@ -11,10 +11,37 @@ from transformers import (
 
 from axolotl.loaders import load_processor, load_tokenizer
 from axolotl.loaders.model import ModelLoader
+from axolotl.utils.chat_templates import get_chat_template_from_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def resolve_chat_template_str(
+    cfg: DictDefault,
+    tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast | Any,
+) -> str | None:
+    """
+    Resolves the chat template string for inference from the `axolotl` config,
+    mirroring how it would be resolved at training time: an explicit
+    `chat_template` config takes precedence, then the first dataset's
+    `chat_template` if that dataset is of type `chat_template`.
+
+    Args:
+        cfg: Dictionary mapping `axolotl` config keys to values.
+        tokenizer: Tokenizer to fall back to for tokenizer-default templates.
+
+    Returns:
+        Chat template string, or None if the config does not specify one.
+    """
+    if cfg.chat_template:
+        return get_chat_template_from_config(cfg, ds_cfg=None, tokenizer=tokenizer)
+    if cfg.datasets and cfg.datasets[0].type == "chat_template":
+        return get_chat_template_from_config(
+            cfg=cfg, ds_cfg=cfg.datasets[0], tokenizer=tokenizer
+        )
+    return None
 
 
 def load_model_and_tokenizer(
