@@ -89,6 +89,11 @@ def _fused_dx(
 def fused_dx(A, Wq, Ws, m_indices, pt, K, BN=64, BK=64):
     """A[Mt,N] bf16, Wq[E,N,K/2] u8, Ws[E,N,K/16] e4m3, pt[E] -> dx[Mt,K] bf16."""
     Mt, N = A.shape
+    # Contract: the grouped layout is TILE(128)-padded, so the Mt//128 grid covers every row.
+    # If Mt isn't a multiple of 128 the trailing rows would be left uninitialized — fail loud.
+    assert Mt % 128 == 0, (
+        f"fused_dx expects 128-padded Mt (contiguous-grouped), got Mt={Mt}"
+    )
     out = torch.empty(Mt, K, device=A.device, dtype=torch.bfloat16)
     grid = (Mt // 128, triton.cdiv(K, BK))
     _fused_dx[grid](

@@ -65,11 +65,7 @@ def make_routing(N: int, E: int, top_k: int, skew: str, seed: int = 0):
     elif skew == "all_to_one":
         rows = [hot.clone() for _ in range(N)]
     elif skew == "extreme":
-        for i in range(N):
-            rows.append(
-                hot.clone() if (i % 10) else torch.randperm(E, generator=g)[:top_k]
-            )
-        # flip: 90% hot, 10% random
+        # 90% hot, 10% random
         rows = [
             hot.clone() if (i % 10) else torch.randperm(E, generator=g)[:top_k]
             for i in range(N)

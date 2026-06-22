@@ -226,9 +226,6 @@ def patch_gemma4_hybrid_mask() -> bool:
     if _PATCH_APPLIED:
         return True
 
-    _patch_use_gqa_head_dim_guard()
-    _register_global_packed_sdpa()
-
     patched_any = False
     for module_path in _TARGET_MODULES:
         try:
@@ -243,9 +240,15 @@ def patch_gemma4_hybrid_mask() -> bool:
         if _patch_module_create_causal_mask(module):
             patched_any = True
 
-    if patched_any:
-        _PATCH_APPLIED = True
-    return patched_any
+    if not patched_any:
+        return False
+
+    # Only touch global SDPA state once we know a Gemma4 namespace was actually patched —
+    # otherwise _PATCH_APPLIED stays False and unpatch() would skip cleaning these up.
+    _patch_use_gqa_head_dim_guard()
+    _register_global_packed_sdpa()
+    _PATCH_APPLIED = True
+    return True
 
 
 def unpatch_gemma4_hybrid_mask() -> None:

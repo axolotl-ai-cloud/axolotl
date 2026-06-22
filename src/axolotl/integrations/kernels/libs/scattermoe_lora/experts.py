@@ -454,6 +454,7 @@ def scattermoe_experts_forward(
         and "gate_up_proj" in self.parametrizations
         and "down_proj" in self.parametrizations
     )
+    _bnb_fast = False
     if _bnb_experts:
         from .chunked_bnb import bnb_fast_enabled
 

@@ -22,9 +22,6 @@ class Cfg(dict):
 
 
 def test_dsv4_adapter_matches_only_dsv4():
-    assert get_active_adapters(Cfg(use_dsv4_kernels=True)) == [] or isinstance(
-        get_active_adapters(Cfg(use_dsv4_kernels=True))[0], DSV4Adapter
-    )
     active = get_active_adapters(Cfg(use_dsv4_kernels=True))
     assert [type(a) for a in active] == [DSV4Adapter]
     assert get_active_adapters(Cfg(use_dsv4_kernels=False)) == []

@@ -276,14 +276,13 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
     per_tensor = getattr(nv_param, "per_tensor_scale", None)
     if per_tensor is not None:
         per_tensor = per_tensor.to(torch.float32)
-        # A per-expert per-tensor scale ([E,1,1]) must be sliced to the active set too;
-        # a shared scalar just broadcasts.
-        if (
-            not all_active
-            and per_tensor.dim() >= 1
-            and per_tensor.size(0) == nv_param.qdata.size(0)
-        ):
-            per_tensor = per_tensor[active_experts]
+        # A per-expert per-tensor scale must be sliced to the active set and reshaped to
+        # [a,1,1] so it broadcasts along the EXPERT dim of block_scale [a,N,K/16] (a bare
+        # [a] would broadcast against the last dim). A shared scalar just broadcasts.
+        if per_tensor.dim() >= 1 and per_tensor.size(0) == nv_param.qdata.size(0):
+            if not all_active:
+                per_tensor = per_tensor[active_experts]
+            per_tensor = per_tensor.reshape(-1, 1, 1)
         block_scale = block_scale * per_tensor
     N = sub_qdata.size(1)
     K = sub_qdata.size(2) * 2

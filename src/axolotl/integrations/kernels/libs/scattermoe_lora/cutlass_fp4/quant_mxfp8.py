@@ -30,6 +30,9 @@ def _qk(X, Q, S, sx0, sx1, sq0, sq1, ss0, ss1, BPM: tl.constexpr):
 
 def mxfp8_quant(x, bpm=4):
     M, K = x.shape
+    # Contract: K must be a whole number of 32-wide MX blocks; otherwise nblk would drop the
+    # K % 32 tail and the kernel would read/write out of bounds. Fail loud rather than corrupt.
+    assert K % 32 == 0, f"mxfp8_quant expects K divisible by 32, got K={K}"
     nblk = K // 32
     Q = torch.empty(M, K, device=x.device, dtype=torch.float8_e4m3fn)
     S = torch.empty(

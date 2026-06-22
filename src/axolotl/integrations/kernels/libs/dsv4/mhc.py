@@ -270,9 +270,10 @@ class _SinkhornMix(torch.autograd.Function):
         pre = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         post = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         comb = torch.empty(M, hc * hc, device=mixes.device, dtype=torch.float32)
-        save = ctx.needs_input_grad[
-            0
-        ]  # NOTE: is_grad_enabled() is False inside Function.forward
+        # Allocate the state history if ANY trainable input (mixes/scale/base) needs grad — the
+        # backward reads `states` for the scale/base grads too, not just mixes (input 0).
+        # NOTE: is_grad_enabled() is False inside Function.forward.
+        save = any(ctx.needs_input_grad)
         states = (
             torch.empty(M, nstates, hc * hc, device=mixes.device, dtype=torch.float32)
             if save

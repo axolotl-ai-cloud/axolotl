@@ -287,7 +287,9 @@ def _gather_bwd_kernel(
         )
 
     p_sink = tl.exp(sink - l_i)
-    tl.atomic_add(DSINK + offs_h, tl.where(hmask, -p_sink * delta, 0.0))
+    # mask the atomic itself: tl.where only zeros the value, the address offs_h is still
+    # out-of-bounds for padded heads (H % BH != 0), so the atomic must be masked too.
+    tl.atomic_add(DSINK + offs_h, tl.where(hmask, -p_sink * delta, 0.0), mask=hmask)
     tl.store(
         DQ + b * sqb + offs_h[:, None] * sqh + s * sqm + offs_d[None, :] * sqd,
         dq.to(DQ.dtype.element_ty),

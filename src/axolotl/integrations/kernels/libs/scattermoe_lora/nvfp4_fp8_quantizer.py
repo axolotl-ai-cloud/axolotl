@@ -124,9 +124,8 @@ def _scale_2_path(repo: str):
     from huggingface_hub import hf_hub_download
     from safetensors import safe_open
 
-    wmap = json.load(open(hf_hub_download(repo, "model.safetensors.index.json")))[
-        "weight_map"
-    ]
+    with open(hf_hub_download(repo, "model.safetensors.index.json")) as _f:
+        wmap = json.load(_f)["weight_map"]
     cache: dict[str, object] = {}
 
     def opener(shard):
@@ -160,7 +159,7 @@ def _dequantize_fp8_linears(model: nn.Module, quantizer) -> int:
         ):
             continue
         w_bf16 = deq._dequantize_one(w.data, wsi.data, torch.bfloat16)
-        if w_bf16.shape != tuple(w.shape) and tuple(w_bf16.shape) != tuple(w.shape):
+        if tuple(w_bf16.shape) != tuple(w.shape):
             # FP4-packed (int8, half-K) unpacks to 2x width — that's expected; otherwise log.
             LOG.warning(
                 "dequant %s: weight %s -> %s (dtype %s)",

@@ -41,7 +41,8 @@ def _load_index(repo_id: str):
     from huggingface_hub import hf_hub_download
 
     path = hf_hub_download(repo_id, "model.safetensors.index.json")
-    return json.load(open(path))["weight_map"]
+    with open(path) as f:
+        return json.load(f)["weight_map"]
 
 
 def _shard_open(repo_id: str, shard: str):
