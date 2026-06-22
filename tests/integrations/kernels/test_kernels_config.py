@@ -101,7 +101,12 @@ def test_nonexpert_quantization_valid_values():
 
 def test_nonexpert_quantization_invalid_rejected():
     with pytest.raises(pydantic.ValidationError):
-        KernelsArgs.model_validate({"nonexpert_quantization": "int4"})
+        KernelsArgs.model_validate({"nonexpert_quantization": "int8"})
+
+
+def test_nonexpert_quantization_nvfp4_accepted():
+    a = KernelsArgs.model_validate({"nonexpert_quantization": "nvfp4"})
+    assert a.nonexpert_quantization == "nvfp4"
 
 
 def test_moe_grouped_backend_valid_and_invalid():
@@ -112,3 +117,14 @@ def test_moe_grouped_backend_valid_and_invalid():
         )
     with pytest.raises(pydantic.ValidationError):
         KernelsArgs.model_validate({"moe_grouped_backend": "triton"})
+
+
+def test_large_head_attention_validator():
+    from axolotl.utils.schemas.config import AxolotlInputConfig
+
+    fn = AxolotlInputConfig.__dict__["validate_large_head_attention"].__func__
+    assert fn(AxolotlInputConfig, "AUTO") == "auto"  # case-normalized
+    assert fn(AxolotlInputConfig, "sdpa") == "sdpa"
+    assert fn(AxolotlInputConfig, None) is None
+    with pytest.raises(ValueError, match="large_head_attention must be one of"):
+        fn(AxolotlInputConfig, "trtion_flsah")  # typo rejected, not silently passed

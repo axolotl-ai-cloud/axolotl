@@ -1,4 +1,4 @@
-"""Marlin W4A16 forward base for the grouped NVFP4 MoE (sm120).
+"""Marlin W4A16 forward base for the grouped NVFP4 MoE (Ampere+; sm80/89/90/100/120).
 
 Prep the frozen NVFP4 experts into Marlin layout ONCE (``build_marlin_forward_base``); run the
 bf16-activation forward GEMM (``marlin_base_forward``) on the pre-scattered, pad-to-TILE grouped

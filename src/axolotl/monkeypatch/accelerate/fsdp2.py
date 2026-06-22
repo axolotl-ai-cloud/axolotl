@@ -445,12 +445,21 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
         cast_residual_fp32,
         model_has_nonfloat_params,
+        model_has_quantized_params,
         nonfloat_param_guard,
         shard_fp32_modules,
     )
 
-    _quantized = model_has_nonfloat_params(model)
-    _guard = nonfloat_param_guard(model) if _quantized else contextlib.nullcontext()
+    # Apply the quantized dtype/sharding policy for ANY quantized model — including torchao tensor
+    # subclasses (NVFP4Tensor/Float8Tensor) that report a logical float dtype. The
+    # nn.Parameter.__new__ guard is only needed for PLAIN non-float params (uint8 packed).
+    _quantized = model_has_quantized_params(model)
+    _needs_nonfloat_guard = model_has_nonfloat_params(model)
+    _guard = (
+        nonfloat_param_guard(model)
+        if _needs_nonfloat_guard
+        else contextlib.nullcontext()
+    )
     with _guard:
         if _quantized:
             # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own

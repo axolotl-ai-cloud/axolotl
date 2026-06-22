@@ -691,10 +691,18 @@ class PatchManager:
     def _apply_large_head_attention_patch(self):
         """Generic head_dim>256 capability for plain SDPA models. Gemma-4's hybrid path routes its
         globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
-        from axolotl.monkeypatch.attention.large_head import resolve_large_head_policy
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_policy,
+            unpatch_sdpa_large_head,
+        )
 
         policy = resolve_large_head_policy(self.cfg)
+        # Always (re)set the policy global from this run's config so a long-lived process can't
+        # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
+        set_large_head_policy(policy)
         if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
+            unpatch_sdpa_large_head()
             return
         from axolotl.monkeypatch.attention.large_head import patch_sdpa_large_head
 

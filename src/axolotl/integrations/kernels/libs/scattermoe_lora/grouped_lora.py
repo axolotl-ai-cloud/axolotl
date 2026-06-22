@@ -64,6 +64,8 @@ def grouped_lora_fwd(
     scaling: float,
     offs: torch.Tensor,  # [E] int32 cumulative TILE-padded offsets
     E: int,
+    residual: torch.Tensor
+    | None = None,  # [Mt, out_N] base output to fold into the epilogue
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """LoRA forward on the TILE-padded grouped layout.
 
@@ -71,8 +73,12 @@ def grouped_lora_fwd(
     base output.  Two scatter2scatter launches with x_grouped=y_grouped=True keep
     the result in the padded grouped layout for direct in-place addition to base.
 
+    If ``residual`` is given (the base expert GEMM output), it is added in the LoRA-B GEMM epilogue,
+    so the returned tensor is ``base + scaling*lora`` with NO separate add pass or temp tensor.
+
     Returns:
-        (y_lora [Mt, out_N], xa [Mt, r])  — xa is saved for the backward dB/dA.
+        (y [Mt, out_N], xa [Mt, r])  — y = (residual + scaling*lora) if residual else scaling*lora;
+        xa is saved (unscaled) for the backward dB/dA.
     """
     sei, ssi = _mk_routing(offs, E)
 
@@ -89,17 +95,19 @@ def grouped_lora_fwd(
         y_grouped=True,
     )  # [Mt, r]
 
+    # Apply `scaling` to the tiny [Mt, r] inner activation, not the large [Mt, out_N] output:
+    # mathematically identical (scaling is a scalar) but ~out_N/r fewer elements touched. xa itself
+    # is returned UNSCALED for the backward (dB/dA derive scaling separately).
     y_lora = scatter2scatter(
-        X=xa,
+        X=xa * scaling,
         W=W_B,
         sorted_expert_idxs=sei,
         sorted_scattered_idxs=ssi,
         k=1,
         x_grouped=True,
         y_grouped=True,
-    )  # [Mt, out_N]
-
-    y_lora.mul_(scaling)
+        residual=residual,
+    )  # [Mt, out_N], = (residual + scaling*lora) if residual else scaling*lora
     return y_lora, xa
 
 
@@ -112,6 +120,8 @@ def grouped_lora_bwd(
     scaling: float,
     offs: torch.Tensor,  # [E] int32 cumulative TILE-padded offsets
     E: int,
+    residual: torch.Tensor
+    | None = None,  # [Mt, in_K] base dX to fold into the dX_lora epilogue
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """LoRA backward on the TILE-padded grouped layout.
 
@@ -120,8 +130,11 @@ def grouped_lora_bwd(
         dA                                  [E, r, in_K]
         dB                                  [E, out_N, r]
 
+    If ``residual`` is given (the base dX), it is added in the dX_lora GEMM epilogue, so the returned
+    dx is ``base_dX + scaling*lora_dX`` with no separate add pass.
+
     Returns:
-        (dx_lora, dA, dB)
+        (dx, dA, dB)  — dx = (residual + scaling*lora_dX) if residual else scaling*lora_dX
     """
     sei, ssi = _mk_routing(offs, E)
 
@@ -142,17 +155,18 @@ def grouped_lora_bwd(
     )  # [Mt, r]
 
     # dx_lora = scaling * yb @ A  (X[Mt,r] @ W[E,r,in_K] → [Mt, in_K])
-    # A is [E, r, in_K] = [E, K=r, N=in_K]
+    # A is [E, r, in_K] = [E, K=r, N=in_K]. Fold `scaling` into the tiny [Mt, r] yb rather than the
+    # large [Mt, in_K] output (identical result, far fewer elements touched).
     dx_lora = scatter2scatter(
-        X=yb,
+        X=yb * scaling,
         W=A.contiguous(),
         sorted_expert_idxs=sei,
         sorted_scattered_idxs=ssi,
         k=1,
         x_grouped=True,
         y_grouped=True,
-    )  # [Mt, in_K]
-    dx_lora.mul_(scaling)
+        residual=residual,
+    )  # [Mt, in_K], = (residual + scaling*lora) if residual else scaling*lora
 
     # Weight grads via grouped_lora_weight_grads (grouped-Gram kernel).
     # Expects flat scattermoe layout: lora_A [r*E, in_K], lora_B [out_N, r*E]

@@ -39,10 +39,12 @@ def is_gemma4_nvfp4_modelopt(cfg) -> bool:
 
 
 def resolve_nonexpert_quantization(cfg) -> str | None:
-    """Resolve the non-expert quantization policy to one of {None, 'fp8', 'nf4'}.
+    """Resolve the non-expert quantization policy to one of {None, 'fp8', 'nf4', 'nvfp4'}.
 
-    Prefers the intent field ``nonexpert_quantization`` (none/bf16/fp8_blockwise/nf4); falls back
-    to the legacy gemma4-specific flags. Returns None for no quantization (bf16 non-experts).
+    Prefers the intent field ``nonexpert_quantization`` (none/bf16/fp8_blockwise/nf4/nvfp4); falls
+    back to the legacy gemma4-specific flags. Returns None for no quantization (bf16 non-experts).
+    'nvfp4' routes non-experts through the Marlin W4A16 kernel (same path as the experts); 'nf4'
+    uses bitsandbytes.
     """
     policy = cfg.get("nonexpert_quantization")
     if policy:
@@ -53,6 +55,8 @@ def resolve_nonexpert_quantization(cfg) -> str | None:
             return "fp8"
         if p == "nf4":
             return "nf4"
+        if p == "nvfp4":
+            return "nvfp4"
     if cfg.get("gemma4_fp8_nonexpert"):
         return "fp8"
     if cfg.get("gemma4_nf4_nonexpert"):
@@ -95,4 +99,15 @@ class Gemma4Adapter(ModelAdapter):
             n = quantize_gemma4_nonexpert_nf4(model)
             LOG.info(
                 "gemma4: nf4-quantized %d non-expert linears (experts stay NVFP4)", n
+            )
+        elif policy == "nvfp4":
+            from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_nonexpert import (
+                quantize_gemma4_nonexpert_nvfp4,
+            )
+
+            n = quantize_gemma4_nonexpert_nvfp4(model)
+            LOG.info(
+                "gemma4: nvfp4-quantized %d non-expert linears via Marlin W4A16 "
+                "(experts also NVFP4)",
+                n,
             )

@@ -37,6 +37,17 @@ class KernelsArgs(BaseModel):
     # cutlass | deepgemm | dequant (chunked fallback). An unavailable choice warns + falls back.
     moe_grouped_backend: str | None = None
 
+    # bnb-4bit MoE experts (quantize_moe_experts + load_in_4bit): number of experts dequantized to
+    # bf16 per chunk in the chunked-dequant grouped path. None = fixed default (memory-safe for
+    # smaller GPUs). Raise it on large GPUs to trade VRAM for throughput (bigger grouped GEMMs).
+    moe_dequant_chunk_size: int | None = None
+
+    # bnb-4bit MoE experts: route through the 1-launch parallel_linear (scatter2scatter) path instead
+    # of the chunked torch._grouped_mm path. Faster (fewer kernel launches) at the same low memory --
+    # the dequant'd bf16 is recomputed in backward via a recipe, not saved. None defaults to True; set
+    # False to force the chunked path (bounds the per-pass transient for large-expert MoEs / tiny GPUs).
+    moe_bnb_fast: bool | None = None
+
     # --- legacy / low-level flags (kept for backwards compatibility) -------------------------
     use_scattermoe: bool | None = None
     use_sonicmoe: bool | None = None
@@ -99,8 +110,10 @@ class KernelsArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_expert_backend(cls, data):
-        """Map the intent ``expert_backend`` onto the legacy use_scattermoe/use_sonicmoe flags so
-        the rest of the stack (which reads those) is unchanged. eager/builtin leave them unset."""
+        """Canonicalize the intent ``expert_backend`` onto use_scattermoe/use_sonicmoe (the rest of
+        the stack reads those). ``expert_backend`` is authoritative: it sets exactly one backend True
+        and the other False, and REJECTS an explicit legacy flag that contradicts it (so the result
+        is never ambiguous regardless of validator ordering)."""
         eb = data.get("expert_backend")
         if eb is None:
             return data
@@ -110,22 +123,44 @@ class KernelsArgs(BaseModel):
             raise ValueError(
                 f"expert_backend must be one of {sorted(valid)}, got {eb!r}"
             )
-        if eb == "scattermoe":
+        want_scatter = eb == "scattermoe"
+        want_sonic = eb == "sonicmoe"
+        if data.get("use_scattermoe") is True and not want_scatter:
+            raise ValueError(
+                f"expert_backend={eb!r} conflicts with use_scattermoe=true; set only one."
+            )
+        if data.get("use_sonicmoe") is True and not want_sonic:
+            raise ValueError(
+                f"expert_backend={eb!r} conflicts with use_sonicmoe=true; set only one."
+            )
+        # Only a positive backend choice writes the flags; eager/builtin leave them unset so an
+        # absent backend stays None (the rest of the stack treats None and False identically).
+        if want_scatter:
             data["use_scattermoe"] = True
-        elif eb == "sonicmoe":
+            data["use_sonicmoe"] = False
+        elif want_sonic:
             data["use_sonicmoe"] = True
+            data["use_scattermoe"] = False
         return data
 
     @model_validator(mode="before")
     @classmethod
     def check_moe_grouped_backend(cls, data):
         backend = data.get("moe_grouped_backend")
-        if backend is not None:
-            valid = {"auto", "marlin", "cutlass", "deepgemm", "dequant"}
-            if str(backend).lower() not in valid:
-                raise ValueError(
-                    f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
-                )
+        if backend is None:
+            return data
+        valid = {"auto", "marlin", "cutlass", "deepgemm", "dequant"}
+        if str(backend).lower() not in valid:
+            raise ValueError(
+                f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
+            )
+        # The override only takes effect once the grouped NVFP4 MoE path is enabled.
+        if not data.get("dsv4_fp4_grouped_mode"):
+            LOG.warning(
+                "moe_grouped_backend=%r has no effect unless the grouped NVFP4 MoE path is enabled "
+                "(set dsv4_fp4_grouped_mode: nvfp4).",
+                backend,
+            )
         return data
 
     @model_validator(mode="before")
@@ -134,7 +169,7 @@ class KernelsArgs(BaseModel):
         """Validate the non-expert quantization intent and warn on the deprecated per-model flags."""
         nq = data.get("nonexpert_quantization")
         if nq is not None:
-            valid = {"none", "bf16", "fp8", "fp8_blockwise", "nf4"}
+            valid = {"none", "bf16", "fp8", "fp8_blockwise", "nf4", "nvfp4"}
             if str(nq).lower() not in valid:
                 raise ValueError(
                     f"nonexpert_quantization must be one of {sorted(valid)}, got {nq!r}"

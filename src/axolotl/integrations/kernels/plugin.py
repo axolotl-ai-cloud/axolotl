@@ -98,19 +98,31 @@ class KernelsPlugin(BasePlugin):
             # upstream guard; scope-relax it (skips only PEFT/quantized, delegates the rest).
             relax_quantized_training_guard()
 
-            # Generic grouped NVFP4 MoE expert path (off by default -> no regression).
+            # Always (re)set the grouped-MoE process globals from this run's config so a long-lived
+            # multi-run process can't inherit stale grouped mode/backend from a previous config
+            # (None resets to the default off / auto behavior).
+            from axolotl.integrations.kernels.libs.scattermoe_lora.chunked_bnb import (
+                set_bnb_fast,
+                set_chunk_size_override,
+                set_layer_gc_active,
+            )
+            from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+                set_grouped_backend_override,
+            )
+
+            set_fp4_grouped_mode(cfg.get("dsv4_fp4_grouped_mode"))
+            set_grouped_backend_override(cfg.get("moe_grouped_backend"))
+            # bnb-4bit experts: chunked-dequant grouped MoE knobs (manual chunk size + skip the
+            # per-chunk checkpoint when layer GC already recomputes the MoE forward).
+            set_chunk_size_override(cfg.get("moe_dequant_chunk_size"))
+            set_layer_gc_active(cfg.get("gradient_checkpointing"))
+            set_bnb_fast(cfg.get("moe_bnb_fast"))
             if cfg.get("dsv4_fp4_grouped_mode"):
-                set_fp4_grouped_mode(cfg.get("dsv4_fp4_grouped_mode"))
                 LOG.info(
                     "Enabled grouped fp4 MoE path: dsv4_fp4_grouped_mode=%s",
                     cfg.get("dsv4_fp4_grouped_mode"),
                 )
                 if cfg.get("moe_grouped_backend"):
-                    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-                        set_grouped_backend_override,
-                    )
-
-                    set_grouped_backend_override(cfg.get("moe_grouped_backend"))
                     LOG.info(
                         "Grouped MoE base-GEMM backend override: %s",
                         cfg.get("moe_grouped_backend"),

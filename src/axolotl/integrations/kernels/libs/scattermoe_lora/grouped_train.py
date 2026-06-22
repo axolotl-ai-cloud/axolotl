@@ -55,8 +55,23 @@ def _backend_available(name: str) -> bool:
 
 
 def _auto_backend() -> str | None:
-    # sm120 Marlin W4A16 is ~1.79x CUTLASS and bit-correct (no act quant), so it is preferred.
-    for name in ("marlin", "cutlass", "deepgemm"):
+    """Capability + arch auto-select. Order is arch-aware so each GPU class gets its tuned default
+    while Marlin (the only fused W4A16 path that runs on Ampere/Ada) backs up everything:
+      - sm120 (consumer Blackwell): Marlin (~1.79x CUTLASS, bit-correct) > CUTLASS > DeepGEMM
+      - sm90/sm100 (Hopper / datacenter Blackwell): DeepGEMM (tuned fp8-act x mxfp4) > Marlin
+      - sm80/sm89 (Ampere / Ada): Marlin only (DeepGEMM needs sm90+, CUTLASS-fp4 is sm120)
+    Marlin stays force-selectable everywhere via cfg.moe_grouped_backend."""
+    import torch
+
+    major = torch.cuda.get_device_capability()[0] if torch.cuda.is_available() else 0
+    order: tuple[str, ...]
+    if major >= 11:
+        order = ("marlin", "cutlass", "deepgemm")
+    elif major in (9, 10):
+        order = ("deepgemm", "marlin")
+    else:
+        order = ("marlin",)
+    for name in order:
         if _backend_available(name):
             return name
     return None
@@ -296,12 +311,12 @@ class _GroupedExperts(torch.autograd.Function):
         # base: ('marlin', ...) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', ...) — frozen experts
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
-        gu_lora, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E)
-        gu = gu + gu_lora
+        # LoRA-B GEMM folds the base output in via its epilogue (residual=gu) -> gu = base + lora,
+        # no separate add pass / temp tensor.
+        gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
         h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _base_forward(base, 1, h, m_indices, mode)
-        dn_lora, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E)
-        dn = dn + dn_lora
+        dn, hAd = grouped_lora_fwd(h, Adn, Bdn, scaling, offs, E, residual=dn)
         ctx.save_for_backward(x, Agu, Bgu, Adn, Bdn, offs, gu, h, xAg, hAd, m_indices)
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
@@ -357,8 +372,10 @@ class _GroupedExperts(torch.autograd.Function):
 
         # down LoRA backward: scatter2scatter single-launch, no padding transient.
         E = Agu.size(0)
-        dx_dn_lora, dAdn, dBdn = grouped_lora_bwd(d_dn, h, Adn, Bdn, hAd, s, offs, E)
-        dh = dh + dx_dn_lora
+        # dX_lora GEMM folds base dh in via its epilogue (residual=dh) -> dh = base_dX + lora_dX.
+        dh, dAdn, dBdn = grouped_lora_bwd(
+            d_dn, h, Adn, Bdn, hAd, s, offs, E, residual=dh
+        )
         dgu = _swiglu_bwd(dh, gu, lim, act_type).to(x.dtype)
         del dh
 
@@ -380,8 +397,9 @@ class _GroupedExperts(torch.autograd.Function):
             dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8, tile)
 
         # gate_up LoRA backward
-        dx_gu_lora, dAgu, dBgu = grouped_lora_bwd(dgu, x, Agu, Bgu, xAg, s, offs, E)
-        dx = dx + dx_gu_lora
+        dx, dAgu, dBgu = grouped_lora_bwd(
+            dgu, x, Agu, Bgu, xAg, s, offs, E, residual=dx
+        )
         # grads align to forward args: x, base, weight_recipe, Agu, Bgu, Adn, Bdn,
         # m_indices, offs, scaling, limit, mode, act_type, prefer_fp8_dx
         return (

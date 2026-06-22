@@ -78,3 +78,35 @@ def test_nonfloat_param_guard_freezes_existing_nonfloat():
 def test_register_fp32_shard_classes():
     fq.register_fp32_shard_classes(["FooBarModule"])
     assert "FooBarModule" in fq._FP32_SHARD_CLASS_NAMES
+
+
+def test_quantized_param_detection_float_logical_subclass():
+    # torchao NVFP4Tensor/Float8Tensor report a logical FLOAT dtype, so the nonfloat check misses
+    # them; the quantized check must still catch them by tensor-subclass name.
+    class FakeNVFP4Tensor(torch.Tensor):
+        pass
+
+    t = torch.zeros(4, 4, dtype=torch.bfloat16).as_subclass(FakeNVFP4Tensor)
+    assert torch.is_floating_point(
+        t
+    )  # float-logical -> invisible to the nonfloat check
+
+    fq.register_quantized_tensor_classes(["FakeNVFP4Tensor"])
+    assert fq._is_quantized_param(t)
+
+    class M(nn.Module):
+        def __init__(self):
+            super().__init__()
+            # torchao wraps the subclass directly in the Parameter (preserves the subclass type)
+            self.w = nn.Parameter(
+                torch.zeros(4, 4, dtype=torch.bfloat16).as_subclass(FakeNVFP4Tensor),
+                requires_grad=False,
+            )
+
+    m = M()
+    assert fq.model_has_quantized_params(m)  # detected via the registry
+    assert not fq.model_has_nonfloat_params(m)  # but NOT a plain non-float param
+
+    # built-in torchao names are detected out of the box
+    assert "NVFP4Tensor" in fq._QUANT_TENSOR_CLASS_NAMES
+    assert "Float8Tensor" in fq._QUANT_TENSOR_CLASS_NAMES

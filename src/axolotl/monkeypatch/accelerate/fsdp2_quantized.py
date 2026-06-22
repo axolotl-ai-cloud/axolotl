@@ -19,15 +19,42 @@ LOG = get_logger(__name__)
 # Class names of modules that must be sharded in their own fp32 group (registered by adapters).
 _FP32_SHARD_CLASS_NAMES: set[str] = set()
 
+# Tensor-subclass names that are quantized but report a logical FLOAT dtype (so torch.is_floating_point
+# is True) — e.g. torchao NVFP4Tensor / Float8Tensor / MXTensor. These still need the quantized
+# FSDP2 dtype/sharding policy even though they're "floating point".
+_QUANT_TENSOR_CLASS_NAMES: set[str] = {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
+
 
 def register_fp32_shard_classes(names) -> None:
     """Register module class names that the quantized FSDP2 path keeps in a separate fp32 shard."""
     _FP32_SHARD_CLASS_NAMES.update(names)
 
 
+def register_quantized_tensor_classes(names) -> None:
+    """Register quantized tensor-subclass names (float-logical, e.g. NVFP4Tensor) for detection."""
+    _QUANT_TENSOR_CLASS_NAMES.update(names)
+
+
 def model_has_nonfloat_params(model) -> bool:
-    """Capability check: does the model carry non-float (quantized) Parameters?"""
+    """True iff the model carries PLAIN non-float Parameters (e.g. uint8 packed) — the case that
+    needs the nn.Parameter.__new__ requires_grad guard during sharding."""
     return any(not torch.is_floating_point(p) for p in model.parameters())
+
+
+def _is_quantized_param(p) -> bool:
+    if not torch.is_floating_point(p):
+        return True  # plain packed (uint8) quantized data
+    # torchao tensor subclasses report a logical float dtype; detect by class name (no hard dep).
+    if type(p).__name__ in _QUANT_TENSOR_CLASS_NAMES:
+        return True
+    data = getattr(p, "data", None)
+    return data is not None and type(data).__name__ in _QUANT_TENSOR_CLASS_NAMES
+
+
+def model_has_quantized_params(model) -> bool:
+    """Capability check for the quantized dtype/sharding policy: plain non-float params OR float-
+    logical quantized tensor subclasses (NVFP4Tensor/Float8Tensor/MXTensor)."""
+    return any(_is_quantized_param(p) for p in model.parameters())
 
 
 @contextlib.contextmanager

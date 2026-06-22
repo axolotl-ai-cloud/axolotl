@@ -181,11 +181,11 @@ def _prepare_weights_and_lora(
         # re-gathers the full weight for the layer's backward, so a captured reference
         # would be the half-size shard (wrong dX shape). On single-GPU it's the same param.
         if module is not None:
-            gate_up_weight.recipe = (
-                lambda m=module, a=active, f=select: f(_get_base_param(m.gate_up_proj), a)
+            gate_up_weight.recipe = lambda m=module, a=active, f=select: f(
+                _get_base_param(m.gate_up_proj), a
             )
-            down_weight.recipe = (
-                lambda m=module, a=active, f=select: f(_get_base_param(m.down_proj), a)
+            down_weight.recipe = lambda m=module, a=active, f=select: f(
+                _get_base_param(m.down_proj), a
             )
         else:
             gate_up_weight.recipe = lambda p=gu_param, a=active, f=select: f(p, a)
@@ -223,11 +223,13 @@ def _detect_act_type(module) -> str:
     'silu' for DSV4-style clamped SwiGLU (silu(clamp(gate)) * clamp(up)).
     Falls back to 'silu' for any unrecognized activation.
     """
-    act_fn = getattr(module, 'act_fn', None)
+    act_fn = getattr(module, "act_fn", None)
     if act_fn is None:
         return "silu"
-    fn_name = getattr(act_fn, '__name__', '') or getattr(type(act_fn), '__name__', '') or ''
-    if 'gelu' in fn_name.lower():
+    fn_name = (
+        getattr(act_fn, "__name__", "") or getattr(type(act_fn), "__name__", "") or ""
+    )
+    if "gelu" in fn_name.lower():
         return "gelu_tanh"
     try:
         if isinstance(act_fn, functools.partial) and act_fn.func is F.gelu:
@@ -236,8 +238,8 @@ def _detect_act_type(module) -> str:
         pass
     # Probe numerically: run act_fn on a test tensor, compare to gelu_pytorch_tanh
     try:
-        x = torch.tensor([0.5], dtype=torch.float32, device='cpu')
-        ref = F.gelu(x, approximate='tanh')
+        x = torch.tensor([0.5], dtype=torch.float32, device="cpu")
+        ref = F.gelu(x, approximate="tanh")
         got = act_fn(x.clone())
         if torch.allclose(ref, got, atol=1e-5):
             return "gelu_tanh"
@@ -427,30 +429,109 @@ def scattermoe_experts_forward(
                 # each step, so a per-tensor cache would miss and re-requant every forward)
                 cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
                 return grouped_fp4_moe_train(
-                    hidden_states, top_k_index, routing_weights, gu_base, dn_base,
-                    gup_lora, down_lora, getattr(self, "limit", None), _FP4_GROUPED_MODE,
+                    hidden_states,
+                    top_k_index,
+                    routing_weights,
+                    gu_base,
+                    dn_base,
+                    gup_lora,
+                    down_lora,
+                    getattr(self, "limit", None),
+                    _FP4_GROUPED_MODE,
                     act_type=_detect_act_type(self),
-                    weight_recipe=_recipe, mxfp4_cache=cache, prefer_fp8_dx=_FP4_DX_PREFER_FP8,
+                    weight_recipe=_recipe,
+                    mxfp4_cache=cache,
+                    prefer_fp8_dx=_FP4_DX_PREFER_FP8,
                 )
 
-    (
-        gate_up_weight,
-        down_weight,
-        sorted_expert_idxs,
-        expert_offsets,
-        gup_lora,
-        down_lora,
-    ) = _prepare_weights_and_lora(
-        _get_base_param(self.gate_up_proj),
-        _get_base_param(self.down_proj),
-        sorted_expert_idxs,
-        expert_offsets,
-        self.num_experts,
-        gup_lora,
-        down_lora,
-        hidden_states.dtype,
-        module=self,
+    # BnB-4bit experts (quantize_moe_experts): no 4-bit-read kernel exists (unlike NVFP4/MXFP4),
+    # so the naive path full-dequants all E experts to bf16 every forward (the path the nv/mx
+    # refactor left bnb falling into → ~2.7x VRAM). Route to the chunked-dequant grouped MoE, which
+    # dequants only chunk_size experts at a time under activation checkpointing (bounded transient).
+    # Detect bnb WITHOUT touching self.gate_up_proj (that access would eagerly full-dequant).
+    _bnb_experts = (
+        hasattr(self, "parametrizations")
+        and "gate_up_proj" in self.parametrizations
+        and "down_proj" in self.parametrizations
     )
+    if _bnb_experts:
+        from .chunked_bnb import bnb_fast_enabled
+
+        _bnb_fast = bnb_fast_enabled()
+    if _bnb_experts and not _bnb_fast:
+        from .chunked_bnb import chunked_bnb_moe
+
+        return chunked_bnb_moe(
+            hidden_states,
+            top_k_index,
+            routing_weights,
+            self,
+            gup_lora,
+            down_lora,
+            self.num_experts,
+            act_type=_detect_act_type(self),
+            limit=getattr(self, "limit", None),
+        )
+
+    if _bnb_experts:
+        # A/B path (BNB_PARALLEL=1): selective dequant of active experts -> 1-launch parallel_linear
+        # (scatter2scatter) instead of the chunked torch._grouped_mm storm. Holds bf16 for backward.
+        from .selective_dequant import selective_expert_weights
+
+        active = get_active_experts(sorted_expert_idxs, self.num_experts)
+        sorted_expert_idxs, expert_offsets = remap_expert_indices(
+            sorted_expert_idxs, expert_offsets, active, self.num_experts
+        )
+        gate_up_weight = selective_expert_weights(
+            self, "gate_up_proj", active
+        ).transpose(2, 1)
+        down_weight = selective_expert_weights(self, "down_proj", active).transpose(
+            2, 1
+        )
+        # Recompute-in-backward recipe: the selective dequant materializes a per-layer
+        # bf16 copy of the active experts (~all 128 at 4k → the full expert tensor).
+        # ScatterMoELoRA saves whatever weight it's handed for backward, so without a
+        # recipe these bf16 copies pin ~40 GB across all layers (the 62 GiB blowup).
+        # The frozen 4-bit param is resident, so hand the Function a closure to re-run
+        # the dequant in backward instead — fast 1-launch path at chunked-path memory.
+        gate_up_weight.recipe = lambda m=self, a=active: selective_expert_weights(
+            m, "gate_up_proj", a
+        ).transpose(2, 1)
+        down_weight.recipe = lambda m=self, a=active: selective_expert_weights(
+            m, "down_proj", a
+        ).transpose(2, 1)
+        if gup_lora is not None and down_lora is not None:
+            gup_lora = (
+                *selective_lora_weights(
+                    gup_lora[0], gup_lora[1], active, self.num_experts
+                ),
+                gup_lora[2],
+            )
+            down_lora = (
+                *selective_lora_weights(
+                    down_lora[0], down_lora[1], active, self.num_experts
+                ),
+                down_lora[2],
+            )
+    else:
+        (
+            gate_up_weight,
+            down_weight,
+            sorted_expert_idxs,
+            expert_offsets,
+            gup_lora,
+            down_lora,
+        ) = _prepare_weights_and_lora(
+            _get_base_param(self.gate_up_proj),
+            _get_base_param(self.down_proj),
+            sorted_expert_idxs,
+            expert_offsets,
+            self.num_experts,
+            gup_lora,
+            down_lora,
+            hidden_states.dtype,
+            module=self,
+        )
 
     # Gate-up projection (with optional LoRA)
     gates_h = _parallel_linear_maybe_lora(
@@ -625,7 +706,8 @@ def _ensure_single_lora_ops():
     if aliased:
         log.warning(
             "Aliased %d duplicate lora_ops module instance(s) to %s (single autotune cache)",
-            aliased, canon_name,
+            aliased,
+            canon_name,
         )
 
 
@@ -654,9 +736,11 @@ def register_scattermoe_experts():
 
         from transformers.integrations import use_experts_implementation
 
-        canon = inspect.signature(use_experts_implementation).parameters[
-            "experts_interface"
-        ].default
+        canon = (
+            inspect.signature(use_experts_implementation)
+            .parameters["experts_interface"]
+            .default
+        )
         if canon is not None and "scattermoe" not in canon:
             canon.register("scattermoe", scattermoe_experts_forward)
     except (ImportError, KeyError, AttributeError):

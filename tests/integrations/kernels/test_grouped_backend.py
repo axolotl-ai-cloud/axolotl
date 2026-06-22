@@ -33,3 +33,27 @@ def test_override_setter_normalizes():
     assert gt._BACKEND_OVERRIDE == "marlin"
     gt.set_grouped_backend_override(None)
     assert gt._BACKEND_OVERRIDE is None
+
+
+@pytest.mark.parametrize(
+    "major,expected_order",
+    [
+        (12, ("marlin", "cutlass", "deepgemm")),  # consumer Blackwell sm120
+        (10, ("deepgemm", "marlin")),  # datacenter Blackwell sm100
+        (9, ("deepgemm", "marlin")),  # Hopper sm90
+        (8, ("marlin",)),  # Ampere/Ada sm80/sm89 — Marlin is the only fused W4A16 path
+    ],
+)
+def test_auto_backend_arch_order(monkeypatch, major, expected_order):
+    """The auto-select probe order is arch-aware: each GPU class gets its tuned default first."""
+    probed = []
+
+    def fake_available(name):
+        probed.append(name)
+        return False  # force it to probe the whole order
+
+    monkeypatch.setattr(gt, "_backend_available", fake_available)
+    monkeypatch.setattr(gt.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(gt.torch.cuda, "get_device_capability", lambda: (major, 0))
+    assert gt._auto_backend() is None
+    assert tuple(probed) == expected_order

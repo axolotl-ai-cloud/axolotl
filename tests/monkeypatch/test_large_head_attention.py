@@ -39,6 +39,24 @@ def test_route_declines_for_sdpa_policy():
     )
 
 
+def test_route_declines_for_unknown_policy():
+    # A config typo must NOT silently route through the Triton kernel: only auto/triton_flash do.
+    q = torch.zeros(1, 2, 8, 512)
+    assert (
+        lh.flash_d512_route(
+            _Mod(), q, q, q, None, _packed_pos([4, 4]), policy="trtion_flsah"
+        )
+        is None
+    )
+
+
+def test_set_policy_resets_to_default():
+    lh.set_large_head_policy("auto")
+    assert lh.get_large_head_policy() == "auto"
+    lh.set_large_head_policy(None)  # a later run without the field must reset to sdpa
+    assert lh.get_large_head_policy() == "sdpa"
+
+
 def test_route_declines_for_small_head_dim():
     q = torch.zeros(1, 2, 8, 128)  # head_dim 128 -> not a large-head case
     assert (

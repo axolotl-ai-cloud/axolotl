@@ -57,7 +57,9 @@ def flash_d512_route(module, query, key, value, scaling, position_ids, policy=No
     signal the caller to fall back to SDPA. Inputs are ``[B, H, S, D]``; on success returns
     ``(attn_output [B, S, Hq, D], None)`` matching ``sdpa_attention_forward``'s contract."""
     policy = policy or _POLICY
-    if policy == "sdpa" or query.shape[-1] <= _LARGE_HEAD_MIN_DIM:
+    # Explicit allowlist: only the two Triton policies route to the kernel; anything else (sdpa,
+    # unknown/typo) falls back to SDPA so a config typo can never silently enable the kernel.
+    if policy not in ("auto", "triton_flash") or query.shape[-1] <= _LARGE_HEAD_MIN_DIM:
         return None
     pid = _multidoc_position_ids(position_ids)
     # auto: only take the kernel for packed rows (single-doc large-head is faster on SDPA is_causal)

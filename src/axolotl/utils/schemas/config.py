@@ -1532,6 +1532,19 @@ class AxolotlInputConfig(
 
         return data
 
+    @field_validator("large_head_attention", mode="before")
+    @classmethod
+    def validate_large_head_attention(cls, value):
+        """Only the three known policies are valid (a typo must not silently opt into Triton)."""
+        if value is None:
+            return None
+        valid = {"auto", "sdpa", "triton_flash"}
+        if str(value).lower() not in valid:
+            raise ValueError(
+                f"large_head_attention must be one of {sorted(valid)}, got {value!r}"
+            )
+        return str(value).lower()
+
     @field_validator("attn_implementation", mode="before")
     @classmethod
     def validate_attn_implementation(cls, value):
