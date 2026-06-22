@@ -33,6 +33,10 @@ class MarlinW4A16Linear(nn.Module):
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
         self.out_features, self.in_features = weight.shape
+        # The Marlin repack is a CUDA-only kernel; non-expert weights can still be on CPU at
+        # quantization time (unlike the bnb path, which moves to device implicitly). Move first.
+        if weight.device.type != "cuda":
+            weight = weight.to("cuda")
         dev = weight.device
         ext = load_ext()
 

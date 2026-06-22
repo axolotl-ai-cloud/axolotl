@@ -279,24 +279,24 @@ class KernelsArgs(BaseModel):
     @classmethod
     def disable_mlp_kernel(cls, data):
         if data.get("use_scattermoe") is True or data.get("use_sonicmoe") is True:
-            if data.get("lora_mlp_kernel") is True:
-                # The generic lora_mlp_kernel (dense-MLP LoRA fusion) is incompatible with the
-                # custom MoE expert kernels. On DSV4 it historically also drove the shared-expert
-                # MLP fused LoRA; preserve that intent via the dedicated flag before disabling, so
-                # the shared-MLP patch still runs (it reads dsv4_shared_mlp_lora_kernel).
-                if (
-                    data.get("use_dsv4_kernels") is True
-                    and data.get("dsv4_shared_mlp_lora_kernel") is None
-                ):
+            # DSV4's shared/routed expert MLP needs the dedicated clamped-SwiGLU kernel, not the
+            # generic dense-MLP one; translate the intent and disable the generic path for DSV4.
+            if (
+                data.get("lora_mlp_kernel") is True
+                and data.get("use_dsv4_kernels") is True
+            ):
+                if data.get("dsv4_shared_mlp_lora_kernel") is None:
                     data["dsv4_shared_mlp_lora_kernel"] = True
                     LOG.warning(
                         "Translated lora_mlp_kernel -> dsv4_shared_mlp_lora_kernel for the DSV4 MoE "
-                        "run (the generic lora_mlp_kernel is disabled under custom MoE kernels)."
+                        "run (the generic lora_mlp_kernel is disabled under DSV4 kernels)."
                     )
-                LOG.warning(
-                    "Disabling lora_mlp_kernel when using custom MoE kernels due to compatibility issues."
-                )
                 data["lora_mlp_kernel"] = False
-            data["mlp_kernel"] = False
+            # Otherwise keep lora_mlp_kernel: under the custom MoE expert kernels it only fuses the
+            # DENSE shared MLP (layer.mlp via find_mlp_in_layer), which is a plain gated Linear MLP
+            # separate from the routed experts (those are handled by the MoE kernel and aren't PEFT
+            # nn.Linear, so the can_patch_mlp lora_A guard skips them). The fused kernel dequantizes
+            # bnb-4bit / fp8 bases, so it composes with quantized non-experts.
+            data["mlp_kernel"] = False  # the non-LoRA mlp kernel stays off under MoE
 
         return data
