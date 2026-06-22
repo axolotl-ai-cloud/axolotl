@@ -51,7 +51,6 @@ import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu.warp.mma import MXF8F6F4_SUPPORTED_PAIRS
 
-
 # Number of bits to shift the FP4 byte left by before mma.sync.kind::mxf8f6f4.
 # ldsm.b4x16_p64 places the FP4 nibble in the LOW half of the 8-bit register
 # byte; mma.sync.kind::mxf8f6f4 reads the FP4 from the MIDDLE of the byte. The
@@ -205,9 +204,7 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
     b_dtype = args.b_dtype
     # Generic sf_vec_size sanity check applies to every dtype branch below.
     if args.sf_vec_size not in (16, 32):
-        raise ValueError(
-            f"--sf_vec_size must be 16 or 32, got {args.sf_vec_size}"
-        )
+        raise ValueError(f"--sf_vec_size must be 16 or 32, got {args.sf_vec_size}")
     # Mixed-precision A/B: only the four FP4 x FP8 pairs are allowed.
     if a_dtype != b_dtype:
         if (a_dtype, b_dtype) not in MXF8F6F4_SUPPORTED_PAIRS:

@@ -62,6 +62,7 @@ def configure_nonexpert_mode(mode: str | None) -> None:
     global _FP8_NONEXPERT_MODE
     _FP8_NONEXPERT_MODE = (mode or "float8tensor").lower()
 
+
 # The only per-expert keys left unmatched once weight + weight_scale fuse in place: the 0-D
 # per-tensor `weight_scale_2` (folded after load) and the unused dynamic `input_scale`.
 _IGNORE_UNEXPECTED = (
@@ -104,7 +105,11 @@ def _is_nvfp4_experts(module: nn.Module) -> bool:
     if not isinstance(module, FP8Experts):
         return False
     w = getattr(module, "gate_up_proj", getattr(module, "up_proj", None))
-    return isinstance(w, torch.Tensor) and w.dtype in (torch.int8, torch.uint8) and w.ndim == 3
+    return (
+        isinstance(w, torch.Tensor)
+        and w.dtype in (torch.int8, torch.uint8)
+        and w.ndim == 3
+    )
 
 
 def _is_expert_weight_converter(conv) -> bool:
@@ -119,7 +124,9 @@ def _scale_2_path(repo: str):
     from huggingface_hub import hf_hub_download
     from safetensors import safe_open
 
-    wmap = json.load(open(hf_hub_download(repo, "model.safetensors.index.json")))["weight_map"]
+    wmap = json.load(open(hf_hub_download(repo, "model.safetensors.index.json")))[
+        "weight_map"
+    ]
     cache: dict[str, object] = {}
 
     def opener(shard):
@@ -146,12 +153,22 @@ def _dequantize_fp8_linears(model: nn.Module, quantizer) -> int:
     for name, mod in model.named_modules():
         wsi = getattr(mod, "weight_scale_inv", None)
         w = getattr(mod, "weight", None)
-        if wsi is None or not isinstance(w, torch.Tensor) or w.dtype not in (torch.float8_e4m3fn, torch.int8):
+        if (
+            wsi is None
+            or not isinstance(w, torch.Tensor)
+            or w.dtype not in (torch.float8_e4m3fn, torch.int8)
+        ):
             continue
         w_bf16 = deq._dequantize_one(w.data, wsi.data, torch.bfloat16)
         if w_bf16.shape != tuple(w.shape) and tuple(w_bf16.shape) != tuple(w.shape):
             # FP4-packed (int8, half-K) unpacks to 2x width — that's expected; otherwise log.
-            LOG.warning("dequant %s: weight %s -> %s (dtype %s)", name, tuple(w.shape), tuple(w_bf16.shape), w.dtype)
+            LOG.warning(
+                "dequant %s: weight %s -> %s (dtype %s)",
+                name,
+                tuple(w.shape),
+                tuple(w_bf16.shape),
+                w.dtype,
+            )
         mod.weight = nn.Parameter(w_bf16, requires_grad=False)
         if "weight_scale_inv" in mod._parameters:
             del mod._parameters["weight_scale_inv"]
@@ -172,20 +189,30 @@ def _wrap_fp8_linears_as_float8tensor(model: nn.Module, quantizer) -> int:
     subclass-safe, are dequantized to bf16 in place instead."""
     Float8Tensor = _float8_cls()
     if Float8Tensor is None:
-        LOG.warning("torchao Float8Tensor unavailable; dequantizing FP8 non-experts to bf16")
+        LOG.warning(
+            "torchao Float8Tensor unavailable; dequantizing FP8 non-experts to bf16"
+        )
         return _dequantize_fp8_linears(model, quantizer)
-    from transformers.integrations.finegrained_fp8 import FP8GroupedLinear, Fp8Dequantize
+    from transformers.integrations.finegrained_fp8 import (
+        Fp8Dequantize,
+        FP8GroupedLinear,
+    )
 
     deq = Fp8Dequantize(quantizer)
     wrapped = bf16ed = 0
     for _name, mod in model.named_modules():
         wsi = getattr(mod, "weight_scale_inv", None)
         w = getattr(mod, "weight", None)
-        if wsi is None or not isinstance(w, torch.Tensor) or w.dtype != torch.float8_e4m3fn:
+        if (
+            wsi is None
+            or not isinstance(w, torch.Tensor)
+            or w.dtype != torch.float8_e4m3fn
+        ):
             continue
         if isinstance(mod, FP8GroupedLinear) or (getattr(mod, "n_groups", 1) or 1) > 1:
             mod.weight = nn.Parameter(
-                deq._dequantize_one(w.data, wsi.data, torch.bfloat16), requires_grad=False
+                deq._dequantize_one(w.data, wsi.data, torch.bfloat16),
+                requires_grad=False,
             )
             _drop_param(mod, "weight_scale_inv")
             bf16ed += 1
@@ -193,7 +220,9 @@ def _wrap_fp8_linears_as_float8tensor(model: nn.Module, quantizer) -> int:
         block = list(mod.block_size) if getattr(mod, "block_size", None) else [128, 128]
         scale = wsi.data
         if scale.dtype not in (torch.float32, torch.float16, torch.bfloat16):
-            scale = scale.to(torch.float32)  # ue8m0 scales have no float ops; torchao wants float
+            scale = scale.to(
+                torch.float32
+            )  # ue8m0 scales have no float ops; torchao wants float
         f8 = Float8Tensor(w.data, scale, block_size=block, dtype=torch.bfloat16)
         mod.weight = nn.Parameter(f8, requires_grad=False)
         _drop_param(mod, "weight_scale_inv")
@@ -201,7 +230,8 @@ def _wrap_fp8_linears_as_float8tensor(model: nn.Module, quantizer) -> int:
     if wrapped or bf16ed:
         LOG.info(
             "FP8 non-experts: wrapped %d plain linears as Float8Tensor (1-byte), %d grouped -> bf16",
-            wrapped, bf16ed,
+            wrapped,
+            bf16ed,
         )
     return wrapped + bf16ed
 
@@ -236,7 +266,9 @@ def _enable_torchao_lora_dispatch(quantizer) -> None:
     try:
         cls.get_apply_tensor_subclass = staticmethod(_no_merge)
     except Exception:  # pragma: no cover - some configs are frozen/slotted
-        LOG.warning("Could not attach get_apply_tensor_subclass; non-expert LoRA may fail to inject")
+        LOG.warning(
+            "Could not attach get_apply_tensor_subclass; non-expert LoRA may fail to inject"
+        )
 
 
 def make_nvfp4_fp8_quantizer():
@@ -252,7 +284,10 @@ def make_nvfp4_fp8_quantizer():
         def update_weight_conversions(self, weight_conversions):
             rebuilt = []
             for conv in weight_conversions:
-                if not (isinstance(conv, WeightConverter) and _is_expert_weight_converter(conv)):
+                if not (
+                    isinstance(conv, WeightConverter)
+                    and _is_expert_weight_converter(conv)
+                ):
                     rebuilt.append(conv)
                     continue
                 ops = [type(op)(op.dim) for op in conv.operations]
@@ -270,10 +305,14 @@ def make_nvfp4_fp8_quantizer():
                 # into `*_scale`, loading in place (no re-read).
                 s_conv = WeightConverter(
                     source_patterns=[
-                        p[: -len(".weight")] + ".weight_scale$" if p.endswith(".weight") else p
+                        p[: -len(".weight")] + ".weight_scale$"
+                        if p.endswith(".weight")
+                        else p
                         for p in conv._original_source_patterns
                     ],
-                    target_patterns=[t + "_scale" for t in conv._original_target_patterns],
+                    target_patterns=[
+                        t + "_scale" for t in conv._original_target_patterns
+                    ],
                     operations=[type(op)(op.dim) for op in conv.operations],
                 )
                 for new in (w_conv, s_conv):
@@ -292,20 +331,34 @@ def make_nvfp4_fp8_quantizer():
                 dev = (mod.gate_up_proj if mod.has_gate else mod.up_proj).device
                 # drop the wrong-granularity blockwise-FP8 placeholders; register NVFP4
                 # group-16 E4M3 `*_scale` params so the fused scales land in place.
-                pfx, out_dim = ("gate_up_proj", 2 * I) if mod.has_gate else ("up_proj", I)
+                pfx, out_dim = (
+                    ("gate_up_proj", 2 * I) if mod.has_gate else ("up_proj", I)
+                )
                 for stale in (pfx + "_scale_inv", "down_proj_scale_inv"):
                     mod._parameters.pop(stale, None)
                 mod.register_parameter(
                     pfx + "_scale",
                     nn.Parameter(
-                        torch.empty(E, out_dim, H // _GROUP_SIZE, dtype=torch.float8_e4m3fn, device=dev),
+                        torch.empty(
+                            E,
+                            out_dim,
+                            H // _GROUP_SIZE,
+                            dtype=torch.float8_e4m3fn,
+                            device=dev,
+                        ),
                         requires_grad=False,
                     ),
                 )
                 mod.register_parameter(
                     "down_proj_scale",
                     nn.Parameter(
-                        torch.empty(E, H, I // _GROUP_SIZE, dtype=torch.float8_e4m3fn, device=dev),
+                        torch.empty(
+                            E,
+                            H,
+                            I // _GROUP_SIZE,
+                            dtype=torch.float8_e4m3fn,
+                            device=dev,
+                        ),
                         requires_grad=False,
                     ),
                 )
@@ -314,7 +367,9 @@ def make_nvfp4_fp8_quantizer():
                 ignore = set(model._keys_to_ignore_on_load_unexpected or ())
                 ignore.update(_IGNORE_UNEXPECTED)
                 model._keys_to_ignore_on_load_unexpected = ignore
-                LOG.info("Prepared %d NVFP4 experts modules for clean in-place loading", n)
+                LOG.info(
+                    "Prepared %d NVFP4 experts modules for clean in-place loading", n
+                )
 
         def _process_model_after_weight_loading(self, model, **kwargs):
             super()._process_model_after_weight_loading(model, **kwargs)
@@ -330,8 +385,12 @@ def make_nvfp4_fp8_quantizer():
             if NVFP4Tensor is None:
                 LOG.warning("torchao NVFP4Tensor unavailable; skipping expert wrap")
                 return
-            repo = getattr(model, "name_or_path", None) or getattr(model.config, "_name_or_path", None)
-            mods = [(name, m) for name, m in model.named_modules() if _is_nvfp4_experts(m)]
+            repo = getattr(model, "name_or_path", None) or getattr(
+                model.config, "_name_or_path", None
+            )
+            mods = [
+                (name, m) for name, m in model.named_modules() if _is_nvfp4_experts(m)
+            ]
             if not mods:
                 return
             wmap, opener = _scale_2_path(repo)
@@ -340,30 +399,51 @@ def make_nvfp4_fp8_quantizer():
             for name, mod in mods:
                 layer = int(re.search(r"layers\.(\d+)\.", name).group(1))
                 pfx = "gate_up_proj" if mod.has_gate else "up_proj"
-                projs = {"gate_up_proj": ("w1",), "up_proj": ("w1",), "down_proj": ("w2",)}
+                projs = {
+                    "gate_up_proj": ("w1",),
+                    "up_proj": ("w1",),
+                    "down_proj": ("w2",),
+                }
                 for proj in (pfx, "down_proj"):
                     qdata = getattr(mod, proj).data.view(torch.uint8)
                     scale = getattr(mod, proj + "_scale").data
                     # w1/w3 share weight_scale_2; one scalar per expert → [E,1,1] broadcast.
                     src = projs[proj][0]
-                    s2 = torch.stack(
-                        [
-                            opener(wmap[f"layers.{layer}.ffn.experts.{e}.{src}.weight_scale_2"]).get_tensor(
-                                f"layers.{layer}.ffn.experts.{e}.{src}.weight_scale_2"
-                            )
-                            for e in range(mod.num_experts)
-                        ]
-                    ).to(device=qdata.device, dtype=torch.float32).view(-1, 1, 1)
+                    s2 = (
+                        torch.stack(
+                            [
+                                opener(
+                                    wmap[
+                                        f"layers.{layer}.ffn.experts.{e}.{src}.weight_scale_2"
+                                    ]
+                                ).get_tensor(
+                                    f"layers.{layer}.ffn.experts.{e}.{src}.weight_scale_2"
+                                )
+                                for e in range(mod.num_experts)
+                            ]
+                        )
+                        .to(device=qdata.device, dtype=torch.float32)
+                        .view(-1, 1, 1)
+                    )
                     setattr(
                         mod,
                         proj,
                         nn.Parameter(
-                            NVFP4Tensor(qdata, scale, _GROUP_SIZE, torch.bfloat16, per_tensor_scale=s2),
+                            NVFP4Tensor(
+                                qdata,
+                                scale,
+                                _GROUP_SIZE,
+                                torch.bfloat16,
+                                per_tensor_scale=s2,
+                            ),
                             requires_grad=False,
                         ),
                     )
                     mod._parameters.pop(proj + "_scale", None)
-            LOG.info("Wrapped %d NVFP4 experts modules as NVFP4Tensor (in-place scales)", len(mods))
+            LOG.info(
+                "Wrapped %d NVFP4 experts modules as NVFP4Tensor (in-place scales)",
+                len(mods),
+            )
 
     return NVFP4MoEFP8HfQuantizer
 

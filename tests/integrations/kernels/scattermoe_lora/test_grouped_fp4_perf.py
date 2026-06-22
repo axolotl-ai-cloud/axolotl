@@ -23,11 +23,9 @@ These use the real E=256 / E=128 shapes where VRAM allows; fall back to E=64 wit
 from __future__ import annotations
 
 import gc
-import types
 
 import pytest
 import torch
-import torch.nn.functional as F
 
 # ---------------------------------------------------------------------------
 # Skip gates
@@ -71,6 +69,7 @@ def _free_vram_gb() -> float:
 # which keeps the peak transient to ~2 × batch × N × K × 4 bytes (manageable).
 # ---------------------------------------------------------------------------
 
+
 def quantize_nvfp4(W: torch.Tensor, batch: int = 32):
     """Memory-efficient NVFP4 quantization: W[E,N,K] bf16 -> NVFP4Tensor.
 
@@ -91,7 +90,10 @@ def quantize_nvfp4(W: torch.Tensor, batch: int = 32):
     qdata = torch.cat(qdata_parts, dim=0).to(dev)
     scale = torch.cat(scale_parts, dim=0).to(dev)
     return NVFP4Tensor(
-        qdata, scale, block_size=16, orig_dtype=torch.bfloat16,
+        qdata,
+        scale,
+        block_size=16,
+        orig_dtype=torch.bfloat16,
         per_tensor_scale=torch.ones((), device=dev),
     )
 
@@ -103,6 +105,7 @@ quantize_nvfp4_real = quantize_nvfp4
 # ---------------------------------------------------------------------------
 # Timing helpers
 # ---------------------------------------------------------------------------
+
 
 def _time_ms(fn, n_warmup=5, n_iter=12):
     """Median of n_iter timings (ms) after n_warmup warm-up calls."""
@@ -142,6 +145,7 @@ def _peak_mb(fn, n_warmup=3):
 # Uses a SEPARATE set of NV tensors so the marlin memory-free path doesn't invalidate them.
 # ---------------------------------------------------------------------------
 
+
 def _baseline_fwd_step(hidden, idx, wts, gu_nv_base, dn_nv_base, pt, limit, act_type):
     """Baseline forward: chunked dequant + grouped_mm (no marlin, no LoRA).
 
@@ -152,17 +156,41 @@ def _baseline_fwd_step(hidden, idx, wts, gu_nv_base, dn_nv_base, pt, limit, act_
     from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
         chunked_dequant_grouped_base,
     )
-    return chunked_dequant_grouped_base(hidden, idx, wts, gu_nv_base, dn_nv_base, pt, limit)
+
+    return chunked_dequant_grouped_base(
+        hidden, idx, wts, gu_nv_base, dn_nv_base, pt, limit
+    )
 
 
 # ---------------------------------------------------------------------------
 # Shape configuration (real E, with VRAM-check fallback)
 # ---------------------------------------------------------------------------
 
+
 def _dsv4_cfg(prefer_full=True):
     """DSV4-Flash shape. Returns (cfg, fallback_used)."""
-    full = dict(E=256, H=4096, I=2048, topk=6, N=512, r=16, act_type="silu", limit=7.0, scaling=2.0)
-    small = dict(E=64, H=4096, I=2048, topk=6, N=128, r=16, act_type="silu", limit=7.0, scaling=2.0)
+    full = dict(
+        E=256,
+        H=4096,
+        I=2048,
+        topk=6,
+        N=512,
+        r=16,
+        act_type="silu",
+        limit=7.0,
+        scaling=2.0,
+    )
+    small = dict(
+        E=64,
+        H=4096,
+        I=2048,
+        topk=6,
+        N=128,
+        r=16,
+        act_type="silu",
+        limit=7.0,
+        scaling=2.0,
+    )
     if prefer_full and _free_vram_gb() >= _VRAM_DSV4_GB:
         return full, False
     return small, True
@@ -170,8 +198,28 @@ def _dsv4_cfg(prefer_full=True):
 
 def _gemma4_cfg(prefer_full=True):
     """gemma4-A4B shape. Returns (cfg, fallback_used)."""
-    full = dict(E=128, H=2816, I=704, topk=8, N=256, r=16, act_type="gelu_tanh", limit=1e30, scaling=2.0)
-    small = dict(E=32, H=2816, I=704, topk=8, N=64, r=16, act_type="gelu_tanh", limit=1e30, scaling=2.0)
+    full = dict(
+        E=128,
+        H=2816,
+        I=704,
+        topk=8,
+        N=256,
+        r=16,
+        act_type="gelu_tanh",
+        limit=1e30,
+        scaling=2.0,
+    )
+    small = dict(
+        E=32,
+        H=2816,
+        I=704,
+        topk=8,
+        N=64,
+        r=16,
+        act_type="gelu_tanh",
+        limit=1e30,
+        scaling=2.0,
+    )
     if prefer_full and _free_vram_gb() >= _VRAM_GEMMA4_GB:
         return full, False
     return small, True
@@ -193,7 +241,7 @@ def _build_tensors(cfg):
     torch.manual_seed(0)
     Wgu = torch.randn(E, twoI, H, device=DEV, dtype=torch.bfloat16) * 0.04
     gu_nv = quantize_nvfp4(Wgu)
-    gu_nv_base = quantize_nvfp4(Wgu)   # separate copy for baseline (not freed by marlin)
+    gu_nv_base = quantize_nvfp4(Wgu)  # separate copy for baseline (not freed by marlin)
     del Wgu
     Wdn = torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
     dn_nv = quantize_nvfp4(Wdn)
@@ -203,16 +251,35 @@ def _build_tensors(cfg):
     hidden = torch.randn(N, H, device=DEV, dtype=torch.bfloat16) * 0.5
     idx = torch.stack([torch.randperm(E, device=DEV)[:topk] for _ in range(N)])
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1).to(torch.bfloat16)
-    Agu = (torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Bgu = (torch.randn(twoI, r * E, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Adn = (torch.randn(r * E, I, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Bdn = (torch.randn(H, r * E, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    return gu_nv, dn_nv, gu_nv_base, dn_nv_base, pt, hidden, idx, wts, (Agu, Bgu, Adn, Bdn)
+    Agu = (
+        torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Bgu = (
+        torch.randn(twoI, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Adn = (
+        torch.randn(r * E, I, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Bdn = (
+        torch.randn(H, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    return (
+        gu_nv,
+        dn_nv,
+        gu_nv_base,
+        dn_nv_base,
+        pt,
+        hidden,
+        idx,
+        wts,
+        (Agu, Bgu, Adn, Bdn),
+    )
 
 
 # ===========================================================================
 # Perf 1+2: Speed guards (forward and full step)
 # ===========================================================================
+
 
 def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor):
     """Core speed test: grouped/marlin path vs dequant-per-step baseline.
@@ -224,10 +291,9 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
     invalidate the baseline tensor references.
     """
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
         grouped_fp4_available,
+        grouped_fp4_moe_train,
     )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
 
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
@@ -236,8 +302,17 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
         fwd_ratio_floor *= _VRAM_FALLBACK_RATIO
         step_ratio_floor *= _VRAM_FALLBACK_RATIO
 
-    (gu_nv, dn_nv, gu_nv_base, dn_nv_base, pt,
-     hidden, idx, wts, (Agu, Bgu, Adn, Bdn)) = _build_tensors(cfg)
+    (
+        gu_nv,
+        dn_nv,
+        gu_nv_base,
+        dn_nv_base,
+        pt,
+        hidden,
+        idx,
+        wts,
+        (Agu, Bgu, Adn, Bdn),
+    ) = _build_tensors(cfg)
     s = cfg["scaling"]
     act_type, limit = cfg["act_type"], cfg["limit"]
 
@@ -245,18 +320,34 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
     # and don't try to re-read the freed qdata). This mirrors how real training works.
     cache = {}
     grouped_fp4_moe_train(
-        hidden.detach(), idx, wts, gu_nv, dn_nv,
-        (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
-        limit, "nvfp4", act_type=act_type, mxfp4_cache=cache,
+        hidden.detach(),
+        idx,
+        wts,
+        gu_nv,
+        dn_nv,
+        (Agu.detach(), Bgu.detach(), s),
+        (Adn.detach(), Bdn.detach(), s),
+        limit,
+        "nvfp4",
+        act_type=act_type,
+        mxfp4_cache=cache,
     )
     torch.cuda.synchronize()
 
     # --- Grouped/marlin forward timing (warm up + median) ---
     def grouped_fwd():
         grouped_fp4_moe_train(
-            hidden.detach(), idx, wts, gu_nv, dn_nv,
-            (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
-            limit, "nvfp4", act_type=act_type, mxfp4_cache=cache,
+            hidden.detach(),
+            idx,
+            wts,
+            gu_nv,
+            dn_nv,
+            (Agu.detach(), Bgu.detach(), s),
+            (Adn.detach(), Bdn.detach(), s),
+            limit,
+            "nvfp4",
+            act_type=act_type,
+            mxfp4_cache=cache,
         )
 
     t_grouped_fwd = _time_ms(grouped_fwd)
@@ -266,14 +357,23 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
     # so the marlin memory-free path doesn't invalidate these references.
     def baseline_fwd():
         _baseline_fwd_step(
-            hidden.detach(), idx, wts, gu_nv_base, dn_nv_base, pt, limit, act_type,
+            hidden.detach(),
+            idx,
+            wts,
+            gu_nv_base,
+            dn_nv_base,
+            pt,
+            limit,
+            act_type,
         )
 
     t_base_fwd = _time_ms(baseline_fwd, n_warmup=3, n_iter=8)
 
     fwd_ratio = t_base_fwd / t_grouped_fwd
-    print(f"\n[{shape_name}] fwd: grouped={t_grouped_fwd:.1f}ms base={t_base_fwd:.1f}ms "
-          f"ratio={fwd_ratio:.2f}x (floor={fwd_ratio_floor:.2f}x)")
+    print(
+        f"\n[{shape_name}] fwd: grouped={t_grouped_fwd:.1f}ms base={t_base_fwd:.1f}ms "
+        f"ratio={fwd_ratio:.2f}x (floor={fwd_ratio_floor:.2f}x)"
+    )
     assert fwd_ratio >= fwd_ratio_floor, (
         f"{shape_name}: grouped fwd ratio {fwd_ratio:.2f}x < floor {fwd_ratio_floor:.2f}x. "
         "Speed regression: grouped/marlin forward should be faster than dequant-per-step."
@@ -285,9 +385,17 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
             p.grad = None
         hk = hidden.detach().requires_grad_()
         out = grouped_fp4_moe_train(
-            hk, idx, wts, gu_nv, dn_nv,
-            (Agu, Bgu, s), (Adn, Bdn, s),
-            limit, "nvfp4", act_type=act_type, mxfp4_cache=cache,
+            hk,
+            idx,
+            wts,
+            gu_nv,
+            dn_nv,
+            (Agu, Bgu, s),
+            (Adn, Bdn, s),
+            limit,
+            "nvfp4",
+            act_type=act_type,
+            mxfp4_cache=cache,
         )
         out.float().pow(2).mean().backward()
 
@@ -295,13 +403,19 @@ def _run_speed_test(cfg, fallback, shape_name, fwd_ratio_floor, step_ratio_floor
     print(f"[{shape_name}] full-step (fwd+bwd): {t_grouped_step:.1f}ms")
     for p in (Agu, Bgu, Adn, Bdn):
         if p.grad is not None:
-            assert torch.isfinite(p.grad).all(), f"{shape_name}: LoRA grad has NaN/inf in perf test"
+            assert torch.isfinite(p.grad).all(), (
+                f"{shape_name}: LoRA grad has NaN/inf in perf test"
+            )
 
 
-@pytest.mark.parametrize("shape_fn,shape_name,vram_needed,fwd_floor,step_floor", [
-    (_dsv4_cfg, "dsv4", _VRAM_DSV4_GB, 1.5, 1.3),
-    (_gemma4_cfg, "gemma4", _VRAM_GEMMA4_GB, 1.5, 1.3),
-], ids=["dsv4", "gemma4"])
+@pytest.mark.parametrize(
+    "shape_fn,shape_name,vram_needed,fwd_floor,step_floor",
+    [
+        (_dsv4_cfg, "dsv4", _VRAM_DSV4_GB, 1.5, 1.3),
+        (_gemma4_cfg, "gemma4", _VRAM_GEMMA4_GB, 1.5, 1.3),
+    ],
+    ids=["dsv4", "gemma4"],
+)
 def test_grouped_fp4_speed(shape_fn, shape_name, vram_needed, fwd_floor, step_floor):
     """grouped/marlin fwd is >= fwd_floor faster than chunked_dequant_grouped_base baseline.
 
@@ -324,9 +438,13 @@ def test_grouped_fp4_speed(shape_fn, shape_name, vram_needed, fwd_floor, step_fl
 # Perf 3: Memory guard — marlin double-copy fix
 # ===========================================================================
 
+
 @pytest.mark.skipif(
-    not (_IS_CUDA and torch.cuda.is_available() and
-         torch.cuda.get_device_capability()[0] == 12),
+    not (
+        _IS_CUDA
+        and torch.cuda.is_available()
+        and torch.cuda.get_device_capability()[0] == 12
+    ),
     reason="marlin W4A16 memory test is sm120 only",
 )
 def test_marlin_memory_no_double_copy():
@@ -343,17 +461,19 @@ def test_marlin_memory_no_double_copy():
       OLD (bug): both resident = ~12.8 GB
       NEW (fix): only marlin qweight + scales = ~6.4 + 0.05 GB = ~6.45 GB
     """
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import marlin_w4a16_available
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
+        marlin_w4a16_available,
+    )
+
     if not marlin_w4a16_available():
         pytest.skip("marlin W4A16 ext not available")
 
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
-        build_marlin_forward_base,
-        _build_base_scatter,
-    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
         grouped_fp4_available,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        _build_base_scatter,
+        build_marlin_forward_base,
     )
 
     if not grouped_fp4_available("nvfp4"):
@@ -399,7 +519,7 @@ def test_marlin_memory_no_double_copy():
     mem_after_marlin = torch.cuda.memory_allocated()
 
     # The freed qdata should not be double-counted
-    qdata_freed = (gu_nv_base.qdata.numel() == 0 and dn_nv_base.qdata.numel() == 0)
+    qdata_freed = gu_nv_base.qdata.numel() == 0 and dn_nv_base.qdata.numel() == 0
     assert qdata_freed, (
         "marlin build did not free qdata (nv.qdata still has data); "
         "the +12GB double-copy regression guard cannot verify the fix. "
@@ -410,12 +530,16 @@ def test_marlin_memory_no_double_copy():
     # The delta from (qdata_freed + marlin_qw resident) vs (qdata_only) should be <= 1.3x
     # because marlin int32 packs 8 nibbles/word (same size as 4-bit nibbles * 2 = 8-bit word).
     mem_delta = mem_after_marlin - mem_nvfp4_only + qdata_bytes  # add back freed qdata
-    ratio = mem_delta / qdata_bytes  # ratio of (marlin resident) / (original qdata size)
-    print(f"\n[marlin memory] qdata freed={qdata_freed}, ratio={ratio:.3f}x "
-          f"(mem_delta={mem_delta/1e9:.2f}GB, qdata={qdata_bytes/1e9:.2f}GB)")
+    ratio = (
+        mem_delta / qdata_bytes
+    )  # ratio of (marlin resident) / (original qdata size)
+    print(
+        f"\n[marlin memory] qdata freed={qdata_freed}, ratio={ratio:.3f}x "
+        f"(mem_delta={mem_delta / 1e9:.2f}GB, qdata={qdata_bytes / 1e9:.2f}GB)"
+    )
     assert ratio <= 1.3, (
         f"marlin memory overhead {ratio:.3f}x > 1.3x — the double-copy regression may be back. "
-        f"qdata_bytes={qdata_bytes/1e9:.2f}GB, marlin_resident_delta={mem_delta/1e9:.2f}GB"
+        f"qdata_bytes={qdata_bytes / 1e9:.2f}GB, marlin_resident_delta={mem_delta / 1e9:.2f}GB"
     )
 
 
@@ -423,10 +547,15 @@ def test_marlin_memory_no_double_copy():
 # Perf 4: Transient peak memory guard (grouped fwd+bwd vs bf16 baseline)
 # ===========================================================================
 
-@pytest.mark.parametrize("shape_fn,shape_name,vram_needed", [
-    (_dsv4_cfg, "dsv4", _VRAM_DSV4_GB),
-    (_gemma4_cfg, "gemma4", _VRAM_GEMMA4_GB),
-], ids=["dsv4", "gemma4"])
+
+@pytest.mark.parametrize(
+    "shape_fn,shape_name,vram_needed",
+    [
+        (_dsv4_cfg, "dsv4", _VRAM_DSV4_GB),
+        (_gemma4_cfg, "gemma4", _VRAM_GEMMA4_GB),
+    ],
+    ids=["dsv4", "gemma4"],
+)
 def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
     """Grouped fwd+bwd peak transient memory <= bf16-dequant-on-fwd baseline peak.
 
@@ -439,13 +568,14 @@ def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
 
     Threshold: grouped peak <= 1.05x baseline (allows 5% noise; the chunked path should be <= 1.0x).
     """
-    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
-        grouped_fp4_available,
-    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
         nvfp4_dequant_bf16,
     )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_available,
+        grouped_fp4_moe_train,
+    )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
 
@@ -453,8 +583,17 @@ def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
     if fallback:
         pytest.skip(f"{shape_name}: insufficient VRAM (need {vram_needed:.0f} GB free)")
 
-    (gu_nv, dn_nv, gu_nv_base, dn_nv_base, pt,
-     hidden, idx, wts, (Agu, Bgu, Adn, Bdn)) = _build_tensors(cfg)
+    (
+        gu_nv,
+        dn_nv,
+        gu_nv_base,
+        dn_nv_base,
+        pt,
+        hidden,
+        idx,
+        wts,
+        (Agu, Bgu, Adn, Bdn),
+    ) = _build_tensors(cfg)
     s = cfg["scaling"]
     act_type, limit = cfg["act_type"], cfg["limit"]
 
@@ -466,9 +605,17 @@ def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
             p.grad = None
         hk = hidden.detach().requires_grad_()
         out = grouped_fp4_moe_train(
-            hk, idx, wts, gu_nv, dn_nv,
-            (Agu, Bgu, s), (Adn, Bdn, s),
-            limit, "nvfp4", act_type=act_type, mxfp4_cache=cache,
+            hk,
+            idx,
+            wts,
+            gu_nv,
+            dn_nv,
+            (Agu, Bgu, s),
+            (Adn, Bdn, s),
+            limit,
+            "nvfp4",
+            act_type=act_type,
+            mxfp4_cache=cache,
         )
         out.float().pow(2).mean().backward()
 
@@ -487,14 +634,20 @@ def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
     peak_grouped = _peak_mb(grouped_step)
     peak_baseline = _peak_mb(baseline_step)
 
-    ratio = peak_grouped / (peak_baseline + 1.0)  # +1MB to avoid div-by-zero at tiny shapes
-    print(f"\n[{shape_name}] peak: grouped={peak_grouped:.0f}MB baseline={peak_baseline:.0f}MB ratio={ratio:.3f}x")
+    ratio = peak_grouped / (
+        peak_baseline + 1.0
+    )  # +1MB to avoid div-by-zero at tiny shapes
+    print(
+        f"\n[{shape_name}] peak: grouped={peak_grouped:.0f}MB baseline={peak_baseline:.0f}MB ratio={ratio:.3f}x"
+    )
 
     # The grouped path uses chunked dequant so its peak should be <= baseline (which holds the full
     # bf16 weight resident). Allow 1.05x for measurement noise.
     # If the shape is too small, the baseline peak can be tiny and the ratio meaningless; skip then.
     if peak_baseline < 50.0:
-        pytest.skip(f"{shape_name}: baseline peak {peak_baseline:.0f}MB too small to measure ratio reliably")
+        pytest.skip(
+            f"{shape_name}: baseline peak {peak_baseline:.0f}MB too small to measure ratio reliably"
+        )
 
     assert ratio <= 1.05, (
         f"{shape_name}: grouped peak {peak_grouped:.0f}MB is {ratio:.3f}x baseline {peak_baseline:.0f}MB "
@@ -506,27 +659,68 @@ def test_grouped_fp4_peak_memory(shape_fn, shape_name, vram_needed):
 # Sanity: grouped forward produces finite output (fast smoke, runs at small E)
 # ===========================================================================
 
-@pytest.mark.parametrize("cfg,shape_name", [
-    (dict(E=8, H=4096, I=2048, topk=6, N=32, r=8, act_type="silu", limit=7.0, scaling=2.0), "dsv4_small"),
-    (dict(E=8, H=2816, I=704, topk=8, N=32, r=8, act_type="gelu_tanh", limit=1e30, scaling=2.0), "gemma4_small"),
-], ids=["dsv4_small", "gemma4_small"])
+
+@pytest.mark.parametrize(
+    "cfg,shape_name",
+    [
+        (
+            dict(
+                E=8,
+                H=4096,
+                I=2048,
+                topk=6,
+                N=32,
+                r=8,
+                act_type="silu",
+                limit=7.0,
+                scaling=2.0,
+            ),
+            "dsv4_small",
+        ),
+        (
+            dict(
+                E=8,
+                H=2816,
+                I=704,
+                topk=8,
+                N=32,
+                r=8,
+                act_type="gelu_tanh",
+                limit=1e30,
+                scaling=2.0,
+            ),
+            "gemma4_small",
+        ),
+    ],
+    ids=["dsv4_small", "gemma4_small"],
+)
 def test_grouped_fp4_perf_smoke(cfg, shape_name):
     """Quick smoke: grouped forward produces finite output at small E (always runs on Blackwell)."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
         grouped_fp4_available,
+        grouped_fp4_moe_train,
     )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
 
-    (gu_nv, dn_nv, _, _, _,
-     hidden, idx, wts, (Agu, Bgu, Adn, Bdn)) = _build_tensors(cfg)
+    (gu_nv, dn_nv, _, _, _, hidden, idx, wts, (Agu, Bgu, Adn, Bdn)) = _build_tensors(
+        cfg
+    )
     s = cfg["scaling"]
     cache = {}
     out = grouped_fp4_moe_train(
-        hidden.detach(), idx, wts, gu_nv, dn_nv,
-        (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
-        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache=cache,
+        hidden.detach(),
+        idx,
+        wts,
+        gu_nv,
+        dn_nv,
+        (Agu.detach(), Bgu.detach(), s),
+        (Adn.detach(), Bdn.detach(), s),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache=cache,
     )
     assert torch.isfinite(out).all(), f"{shape_name}: forward output has NaN/inf"
     assert out.shape == (cfg["N"], cfg["H"])

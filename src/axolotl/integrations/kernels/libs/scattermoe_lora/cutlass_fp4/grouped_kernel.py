@@ -27,20 +27,19 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
-from typing import Tuple, Type, Optional
+from typing import Optional, Tuple, Type
 
 import cuda.bindings.driver as cuda
-
 import cutlass
 import cutlass.cute as cute
-from cutlass.cute.nvgpu import cpasync
 import cutlass.cute.testing as testing
-import cutlass.utils as utils
 import cutlass.pipeline as pipeline
-from cutlass.cute.runtime import from_dlpack
-import cutlass.utils.hopper_helpers as sm90_utils
-import cutlass.utils.blockscaled_layout as blockscaled_utils
+import cutlass.utils as utils
 import cutlass.utils.blackwell_helpers as sm120_utils
+import cutlass.utils.blockscaled_layout as blockscaled_utils
+import cutlass.utils.hopper_helpers as sm90_utils
+from cutlass.cute.nvgpu import cpasync
+from cutlass.cute.runtime import from_dlpack
 
 from .blockscaled_gemm_dispatch import (  # noqa: F401
     FP4_SHIFT_BITS,
@@ -130,7 +129,7 @@ def parse_comma_separated_ints(s: str):
     except ValueError:
         raise argparse.ArgumentTypeError(
             "Invalid format. Expected comma-separated integers."
-        )
+        ) from None
 
 
 # /////////////////////////////////////////////////////////////////////////////
@@ -805,7 +804,7 @@ class Sm120BlockScaledGemmKernel:
                     tCrSFB_copy_view_filtered[None, None, 0],
                 )
 
-                for k_tile in range(0, k_tile_cnt - 1, 1, unroll=1):
+                for _k_tile in range(0, k_tile_cnt - 1, 1, unroll=1):
                     # unroll the loop
                     for k_block_idx in cutlass.range_constexpr(num_k_blocks):
                         k_block_next = (
@@ -847,9 +846,7 @@ class Sm120BlockScaledGemmKernel:
                                 tCrA[None, None, k_block_idx], cutlass.Int8
                             )
                             for _i in cutlass.range_constexpr(cute.size(a_view)):
-                                a_view[_i] = cutlass.Int8(
-                                    a_view[_i] << FP4_SHIFT_BITS
-                                )
+                                a_view[_i] = cutlass.Int8(a_view[_i] << FP4_SHIFT_BITS)
                         if cutlass.const_expr(
                             self.mixed_mode and self.b_dtype.width < 8
                         ):
@@ -857,9 +854,7 @@ class Sm120BlockScaledGemmKernel:
                                 tCrB[None, None, k_block_idx], cutlass.Int8
                             )
                             for _i in cutlass.range_constexpr(cute.size(b_view)):
-                                b_view[_i] = cutlass.Int8(
-                                    b_view[_i] << FP4_SHIFT_BITS
-                                )
+                                b_view[_i] = cutlass.Int8(b_view[_i] << FP4_SHIFT_BITS)
                         cute.gemm(
                             tiled_mma,
                             accumulators,
@@ -938,26 +933,18 @@ class Sm120BlockScaledGemmKernel:
                             tCrSFB_copy_view_filtered[None, None, k_block_next],
                         )
                     # Mixed FP4 x FP8 register-side bit shift before mma.sync (hoisted tail).
-                    if cutlass.const_expr(
-                        self.mixed_mode and self.a_dtype.width < 8
-                    ):
+                    if cutlass.const_expr(self.mixed_mode and self.a_dtype.width < 8):
                         a_view_h = cute.recast_tensor(
                             tCrA[None, None, k_block_idx], cutlass.Int8
                         )
                         for _i in cutlass.range_constexpr(cute.size(a_view_h)):
-                            a_view_h[_i] = cutlass.Int8(
-                                a_view_h[_i] << FP4_SHIFT_BITS
-                            )
-                    if cutlass.const_expr(
-                        self.mixed_mode and self.b_dtype.width < 8
-                    ):
+                            a_view_h[_i] = cutlass.Int8(a_view_h[_i] << FP4_SHIFT_BITS)
+                    if cutlass.const_expr(self.mixed_mode and self.b_dtype.width < 8):
                         b_view_h = cute.recast_tensor(
                             tCrB[None, None, k_block_idx], cutlass.Int8
                         )
                         for _i in cutlass.range_constexpr(cute.size(b_view_h)):
-                            b_view_h[_i] = cutlass.Int8(
-                                b_view_h[_i] << FP4_SHIFT_BITS
-                            )
+                            b_view_h[_i] = cutlass.Int8(b_view_h[_i] << FP4_SHIFT_BITS)
                     cute.gemm(
                         tiled_mma,
                         accumulators,
@@ -1063,9 +1050,7 @@ class Sm120BlockScaledGemmKernel:
 
                         # Register to shared memory
                         epi_buffer = epi_buffer + 1
-                        epi_buffer = epi_buffer % cute.size(
-                            tRS_sD, mode=[3]
-                        )
+                        epi_buffer = epi_buffer % cute.size(tRS_sD, mode=[3])
                         self.epilog_sync_barrier.arrive_and_wait()
                         cute.copy(
                             tiled_copy_r2s,
@@ -1112,7 +1097,7 @@ class Sm120BlockScaledGemmKernel:
 
                 mainloop_producer_state.reset_count()
 
-                for k_tile in range(0, k_tile_cnt, 1, unroll=1):
+                for _k_tile in range(0, k_tile_cnt, 1, unroll=1):
                     # /////////////////////////////////////////////////////////////////////////////
                     #  Wait for A/B buffers to be empty before loading into them
                     #  Also sets the transaction barrier for the A/B buffers
@@ -1588,8 +1573,8 @@ def run_bs(
     use_cold_l2: bool = False,
     **kwargs,
 ):
-    import torch
     import cutlass.torch as cutlass_torch
+    import torch
 
     print("Running Blackwell Geforce Blockscaled Dense GEMM with:")
     print(f"mnkl: {mnkl}")

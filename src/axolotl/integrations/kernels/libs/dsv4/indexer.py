@@ -36,14 +36,30 @@ import triton.language as tl
 )
 @triton.jit
 def _indexer_score_kernel(
-    Q, CK, W, OUT,
+    Q,
+    CK,
+    W,
+    OUT,
     softmax_scale,
-    S, T, H,
-    sq_b, sq_s, sq_h, sq_d,
-    sck_b, sck_t, sck_d,
-    sw_b, sw_s, sw_h,
-    so_b, so_s, so_t,
-    DH: tl.constexpr, BS: tl.constexpr, BT: tl.constexpr,
+    S,
+    T,
+    H,
+    sq_b,
+    sq_s,
+    sq_h,
+    sq_d,
+    sck_b,
+    sck_t,
+    sck_d,
+    sw_b,
+    sw_s,
+    sw_h,
+    so_b,
+    so_s,
+    so_t,
+    DH: tl.constexpr,
+    BS: tl.constexpr,
+    BT: tl.constexpr,
 ):
     b = tl.program_id(0)
     s0 = tl.program_id(1) * BS
@@ -60,11 +76,15 @@ def _indexer_score_kernel(
 
     acc = tl.zeros((BS, BT), dtype=tl.float32)
     for h in range(H):
-        q_ptr = Q + b * sq_b + offs_s[:, None] * sq_s + h * sq_h + offs_d[None, :] * sq_d
+        q_ptr = (
+            Q + b * sq_b + offs_s[:, None] * sq_s + h * sq_h + offs_d[None, :] * sq_d
+        )
         q = tl.load(q_ptr, mask=smask[:, None], other=0.0).to(tl.float32)
-        qk = tl.dot(q, ck, input_precision="ieee")          # [BS, BT]
-        qk = tl.maximum(qk, 0.0) * softmax_scale            # relu · scale
-        w = tl.load(W + b * sw_b + offs_s * sw_s + h * sw_h, mask=smask, other=0.0).to(tl.float32)
+        qk = tl.dot(q, ck, input_precision="ieee")  # [BS, BT]
+        qk = tl.maximum(qk, 0.0) * softmax_scale  # relu · scale
+        w = tl.load(W + b * sw_b + offs_s * sw_s + h * sw_h, mask=smask, other=0.0).to(
+            tl.float32
+        )
         acc += qk * w[:, None]
 
     out_ptr = OUT + b * so_b + offs_s[:, None] * so_s + offs_t[None, :] * so_t
@@ -72,7 +92,10 @@ def _indexer_score_kernel(
 
 
 def indexer_scores(
-    q: torch.Tensor, compressed_kv: torch.Tensor, weights: torch.Tensor, softmax_scale: float
+    q: torch.Tensor,
+    compressed_kv: torch.Tensor,
+    weights: torch.Tensor,
+    softmax_scale: float,
 ) -> torch.Tensor:
     """q [B,S,H,Dh], compressed_kv [B,T,Dh], weights [B,S,H] (already ·weights_scaling).
     Returns index_scores [B,S,T] (fp32, no grad). Drop-in for DeepseekV4IndexerScorer."""
@@ -89,11 +112,27 @@ def indexer_scores(
     w = weights.contiguous()
     grid = lambda m: (B, triton.cdiv(S, m["BS"]), triton.cdiv(T, m["BT"]))
     _indexer_score_kernel[grid](
-        q, ck, w, out, float(softmax_scale), S, T, H,
-        q.stride(0), q.stride(1), q.stride(2), q.stride(3),
-        ck.stride(0), ck.stride(1), ck.stride(2),
-        w.stride(0), w.stride(1), w.stride(2),
-        out.stride(0), out.stride(1), out.stride(2),
+        q,
+        ck,
+        w,
+        out,
+        float(softmax_scale),
+        S,
+        T,
+        H,
+        q.stride(0),
+        q.stride(1),
+        q.stride(2),
+        q.stride(3),
+        ck.stride(0),
+        ck.stride(1),
+        ck.stride(2),
+        w.stride(0),
+        w.stride(1),
+        w.stride(2),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
         DH=DH,
     )
     return out

@@ -94,7 +94,9 @@ def patch_paramwrapper_fastpath() -> None:
         # would KeyError. Register into the exact interface THIS module dispatches through.
         if not getattr(base, "_scattermoe_iface_ok", False):
             _fn = type(base).forward
-            _cells = dict(zip(_fn.__code__.co_freevars, _fn.__closure__ or ()))
+            _cells = dict(
+                zip(_fn.__code__.co_freevars, _fn.__closure__ or (), strict=False)
+            )
             _ei = _cells.get("experts_interface")
             if _ei is not None:
                 _ei = _ei.cell_contents

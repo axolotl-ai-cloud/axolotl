@@ -70,7 +70,9 @@ def patch_nvfp4_fsdp():
         x, split_size = args[0], args[1]
         dim = args[2] if len(args) > 2 else kwargs.get("dim", 0)
         if dim != 0:
-            raise NotImplementedError(f"NVFP4Tensor FSDP split only on dim 0, got {dim}")
+            raise NotImplementedError(
+                f"NVFP4Tensor FSDP split only on dim 0, got {dim}"
+            )
         qd = func(x.qdata, split_size, 0)
         sc = func(x.scale, split_size, 0)
         pts = _pts_along_dim0(x, split_size)
@@ -118,7 +120,9 @@ def patch_nvfp4_fsdp():
             # FSDP's flat-buffer view. A 1-D NVFP4 is invalid (block layout needs >=2D),
             # and this buffer is unused for subclass-extension params (the all-gather goes
             # through fsdp_pre/post_all_gather), so return a valid 2-D [1, numel] NVFP4.
-            return _rebuild(x, x.qdata.reshape(1, -1), x.scale.reshape(1, -1), x.per_tensor_scale)
+            return _rebuild(
+                x, x.qdata.reshape(1, -1), x.scale.reshape(1, -1), x.per_tensor_scale
+            )
         K = size[-1]
         qd = func(x.qdata, size[:-1] + [K // 2])
         sc = func(x.scale, size[:-1] + [K // x.block_size])
@@ -168,7 +172,10 @@ def patch_nvfp4_fsdp():
         func(dst.qdata, src.qdata)
         func(dst.scale, src.scale)
         if src.per_tensor_scale is not None:
-            if dst.per_tensor_scale is not None and dst.per_tensor_scale.shape == src.per_tensor_scale.shape:
+            if (
+                dst.per_tensor_scale is not None
+                and dst.per_tensor_scale.shape == src.per_tensor_scale.shape
+            ):
                 func(dst.per_tensor_scale, src.per_tensor_scale)
             else:
                 # dst lost its per_tensor buffer (e.g. a new_zeros without one) — adopt src's.

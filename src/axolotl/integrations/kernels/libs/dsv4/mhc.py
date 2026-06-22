@@ -19,23 +19,54 @@ import triton
 import triton.language as tl
 
 
-@triton.autotune(configs=[triton.Config({"BM": bm}, num_warps=w) for bm in (8, 16, 32, 64) for w in (2, 4)],
-                 key=["M"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BM": bm}, num_warps=w) for bm in (8, 16, 32, 64) for w in (2, 4)
+    ],
+    key=["M"],
+)
 @triton.jit
-def _mhc_fwd_kernel(MIX, SCALE, BASE, PRE, POST, COMB, STATES, M,
-                    HC: tl.constexpr, MIX_N: tl.constexpr, ITERS: tl.constexpr, NSTATES: tl.constexpr,
-                    EPS: tl.constexpr, POSTMULT: tl.constexpr, SAVE: tl.constexpr, BM: tl.constexpr):
+def _mhc_fwd_kernel(
+    MIX,
+    SCALE,
+    BASE,
+    PRE,
+    POST,
+    COMB,
+    STATES,
+    M,
+    HC: tl.constexpr,
+    MIX_N: tl.constexpr,
+    ITERS: tl.constexpr,
+    NSTATES: tl.constexpr,
+    EPS: tl.constexpr,
+    POSTMULT: tl.constexpr,
+    SAVE: tl.constexpr,
+    BM: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid * BM + tl.arange(0, BM)
     mask = offs < M
     j = tl.arange(0, HC)
     jj = tl.arange(0, HC * HC)
-    s0 = tl.load(SCALE + 0); s1 = tl.load(SCALE + 1); s2 = tl.load(SCALE + 2)
+    s0 = tl.load(SCALE + 0)
+    s1 = tl.load(SCALE + 1)
+    s2 = tl.load(SCALE + 2)
 
-    pre_w = tl.load(MIX + offs[:, None] * MIX_N + j[None, :], mask=mask[:, None], other=0.0)
-    post_w = tl.load(MIX + offs[:, None] * MIX_N + (HC + j)[None, :], mask=mask[:, None], other=0.0)
-    comb_w = tl.load(MIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :], mask=mask[:, None], other=0.0)
-    pre_b = tl.load(BASE + j); post_b = tl.load(BASE + HC + j); comb_b = tl.load(BASE + 2 * HC + jj)
+    pre_w = tl.load(
+        MIX + offs[:, None] * MIX_N + j[None, :], mask=mask[:, None], other=0.0
+    )
+    post_w = tl.load(
+        MIX + offs[:, None] * MIX_N + (HC + j)[None, :], mask=mask[:, None], other=0.0
+    )
+    comb_w = tl.load(
+        MIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :],
+        mask=mask[:, None],
+        other=0.0,
+    )
+    pre_b = tl.load(BASE + j)
+    post_b = tl.load(BASE + HC + j)
+    comb_b = tl.load(BASE + 2 * HC + jj)
 
     pre = tl.sigmoid(pre_w * s0 + pre_b[None, :]) + EPS
     post = POSTMULT * tl.sigmoid(post_w * s1 + post_b[None, :])
@@ -48,68 +79,148 @@ def _mhc_fwd_kernel(MIX, SCALE, BASE, PRE, POST, COMB, STATES, M,
     # reverse-mode through the Sinkhorn without an in-kernel list.
     t = 0
     if SAVE:
-        tl.store(STATES + offs[:, None] * (NSTATES * HC * HC) + t * (HC * HC) + jj[None, :],
-                 tl.reshape(comb, (BM, HC * HC)), mask=mask[:, None])
+        tl.store(
+            STATES + offs[:, None] * (NSTATES * HC * HC) + t * (HC * HC) + jj[None, :],
+            tl.reshape(comb, (BM, HC * HC)),
+            mask=mask[:, None],
+        )
     t += 1
     comb = comb / (tl.sum(comb, axis=1, keep_dims=True) + EPS)  # colnorm
     for _ in range(ITERS - 1):
         if SAVE:
-            tl.store(STATES + offs[:, None] * (NSTATES * HC * HC) + t * (HC * HC) + jj[None, :],
-                     tl.reshape(comb, (BM, HC * HC)), mask=mask[:, None])
+            tl.store(
+                STATES
+                + offs[:, None] * (NSTATES * HC * HC)
+                + t * (HC * HC)
+                + jj[None, :],
+                tl.reshape(comb, (BM, HC * HC)),
+                mask=mask[:, None],
+            )
         t += 1
         comb = comb / (tl.sum(comb, axis=2, keep_dims=True) + EPS)  # rownorm
         if SAVE:
-            tl.store(STATES + offs[:, None] * (NSTATES * HC * HC) + t * (HC * HC) + jj[None, :],
-                     tl.reshape(comb, (BM, HC * HC)), mask=mask[:, None])
+            tl.store(
+                STATES
+                + offs[:, None] * (NSTATES * HC * HC)
+                + t * (HC * HC)
+                + jj[None, :],
+                tl.reshape(comb, (BM, HC * HC)),
+                mask=mask[:, None],
+            )
         t += 1
         comb = comb / (tl.sum(comb, axis=1, keep_dims=True) + EPS)  # colnorm
 
     tl.store(PRE + offs[:, None] * HC + j[None, :], pre, mask=mask[:, None])
     tl.store(POST + offs[:, None] * HC + j[None, :], post, mask=mask[:, None])
-    tl.store(COMB + offs[:, None] * (HC * HC) + jj[None, :], tl.reshape(comb, (BM, HC * HC)), mask=mask[:, None])
+    tl.store(
+        COMB + offs[:, None] * (HC * HC) + jj[None, :],
+        tl.reshape(comb, (BM, HC * HC)),
+        mask=mask[:, None],
+    )
 
 
-@triton.autotune(configs=[triton.Config({"BM": bm}, num_warps=w) for bm in (8, 16, 32, 64) for w in (2, 4)],
-                 key=["M"], reset_to_zero=["DSCALE", "DBASE"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BM": bm}, num_warps=w) for bm in (8, 16, 32, 64) for w in (2, 4)
+    ],
+    key=["M"],
+    reset_to_zero=["DSCALE", "DBASE"],
+)
 @triton.jit
-def _mhc_bwd_kernel(MIX, SCALE, BASE, STATES, DPRE, DPOST, DCOMB, DMIX, DSCALE, DBASE, M,
-                    HC: tl.constexpr, MIX_N: tl.constexpr, ITERS: tl.constexpr, NSTATES: tl.constexpr,
-                    EPS: tl.constexpr, POSTMULT: tl.constexpr, BM: tl.constexpr):
+def _mhc_bwd_kernel(
+    MIX,
+    SCALE,
+    BASE,
+    STATES,
+    DPRE,
+    DPOST,
+    DCOMB,
+    DMIX,
+    DSCALE,
+    DBASE,
+    M,
+    HC: tl.constexpr,
+    MIX_N: tl.constexpr,
+    ITERS: tl.constexpr,
+    NSTATES: tl.constexpr,
+    EPS: tl.constexpr,
+    POSTMULT: tl.constexpr,
+    BM: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs = pid * BM + tl.arange(0, BM)
     mask = offs < M
     j = tl.arange(0, HC)
     jj = tl.arange(0, HC * HC)
-    s0 = tl.load(SCALE + 0); s1 = tl.load(SCALE + 1); s2 = tl.load(SCALE + 2)
+    s0 = tl.load(SCALE + 0)
+    s1 = tl.load(SCALE + 1)
+    s2 = tl.load(SCALE + 2)
 
-    pre_w = tl.load(MIX + offs[:, None] * MIX_N + j[None, :], mask=mask[:, None], other=0.0)
-    post_w = tl.load(MIX + offs[:, None] * MIX_N + (HC + j)[None, :], mask=mask[:, None], other=0.0)
-    comb_w = tl.load(MIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :], mask=mask[:, None], other=0.0)
-    pre_b = tl.load(BASE + j); post_b = tl.load(BASE + HC + j); comb_b = tl.load(BASE + 2 * HC + jj)
+    pre_w = tl.load(
+        MIX + offs[:, None] * MIX_N + j[None, :], mask=mask[:, None], other=0.0
+    )
+    post_w = tl.load(
+        MIX + offs[:, None] * MIX_N + (HC + j)[None, :], mask=mask[:, None], other=0.0
+    )
+    comb_w = tl.load(
+        MIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :],
+        mask=mask[:, None],
+        other=0.0,
+    )
+    pre_b = tl.load(BASE + j)
+    post_b = tl.load(BASE + HC + j)
+    _comb_b = tl.load(BASE + 2 * HC + jj)
 
     pre_sig = tl.sigmoid(pre_w * s0 + pre_b[None, :])
     post_sig = tl.sigmoid(post_w * s1 + post_b[None, :])
     # sm = softmax(cl) = STATES[0] - eps (state 0 is the softmax output saved before colnorm)
-    sm = tl.reshape(tl.load(STATES + offs[:, None] * (NSTATES * HC * HC) + 0 * (HC * HC) + jj[None, :],
-                            mask=mask[:, None], other=0.0), (BM, HC, HC)) - EPS
+    sm = (
+        tl.reshape(
+            tl.load(
+                STATES
+                + offs[:, None] * (NSTATES * HC * HC)
+                + 0 * (HC * HC)
+                + jj[None, :],
+                mask=mask[:, None],
+                other=0.0,
+            ),
+            (BM, HC, HC),
+        )
+        - EPS
+    )
 
-    dy = tl.reshape(tl.load(DCOMB + offs[:, None] * (HC * HC) + jj[None, :], mask=mask[:, None], other=0.0),
-                    (BM, HC, HC))
+    dy = tl.reshape(
+        tl.load(
+            DCOMB + offs[:, None] * (HC * HC) + jj[None, :],
+            mask=mask[:, None],
+            other=0.0,
+        ),
+        (BM, HC, HC),
+    )
     # reverse-mode through the Sinkhorn normalizes. Forward order is:
     #   colnorm(idx0), then (iters-1)x [rownorm, colnorm]. Reverse undoes them last-first
     #   with literal axes (colnorm=axis1, rownorm=axis2) and a plain-int state counter.
     base_st = offs[:, None] * (NSTATES * HC * HC) + jj[None, :]
     t = 2 * (ITERS - 1)  # last (col) state index
-    xc = tl.reshape(tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0), (BM, HC, HC))
+    xc = tl.reshape(
+        tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0),
+        (BM, HC, HC),
+    )
     Sc = tl.sum(xc, axis=1, keep_dims=True) + EPS
     dy = (dy - tl.sum(dy * (xc / Sc), axis=1, keep_dims=True)) / Sc
     t -= 1
     for _ in range(ITERS - 1):
-        xr = tl.reshape(tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0), (BM, HC, HC))
+        xr = tl.reshape(
+            tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0),
+            (BM, HC, HC),
+        )
         Sr = tl.sum(xr, axis=2, keep_dims=True) + EPS
         dy = (dy - tl.sum(dy * (xr / Sr), axis=2, keep_dims=True)) / Sr
         t -= 1
-        xc2 = tl.reshape(tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0), (BM, HC, HC))
+        xc2 = tl.reshape(
+            tl.load(STATES + base_st + t * (HC * HC), mask=mask[:, None], other=0.0),
+            (BM, HC, HC),
+        )
         Sc2 = tl.sum(xc2, axis=1, keep_dims=True) + EPS
         dy = (dy - tl.sum(dy * (xc2 / Sc2), axis=1, keep_dims=True)) / Sc2
         t -= 1
@@ -117,8 +228,12 @@ def _mhc_bwd_kernel(MIX, SCALE, BASE, STATES, DPRE, DPOST, DCOMB, DMIX, DSCALE, 
     dcl = sm * (dy - tl.sum(dy * sm, axis=2, keep_dims=True))
     dcl_flat = tl.reshape(dcl, (BM, HC * HC))
 
-    dpre = tl.load(DPRE + offs[:, None] * HC + j[None, :], mask=mask[:, None], other=0.0)
-    dpost = tl.load(DPOST + offs[:, None] * HC + j[None, :], mask=mask[:, None], other=0.0)
+    dpre = tl.load(
+        DPRE + offs[:, None] * HC + j[None, :], mask=mask[:, None], other=0.0
+    )
+    dpost = tl.load(
+        DPOST + offs[:, None] * HC + j[None, :], mask=mask[:, None], other=0.0
+    )
     dpre_z = dpre * pre_sig * (1.0 - pre_sig)
     dpost_z = dpost * POSTMULT * post_sig * (1.0 - post_sig)
 
@@ -126,8 +241,14 @@ def _mhc_bwd_kernel(MIX, SCALE, BASE, STATES, DPRE, DPOST, DCOMB, DMIX, DSCALE, 
     d_post_w = dpost_z * s1
     d_comb_w = dcl_flat * s2
     tl.store(DMIX + offs[:, None] * MIX_N + j[None, :], d_pre_w, mask=mask[:, None])
-    tl.store(DMIX + offs[:, None] * MIX_N + (HC + j)[None, :], d_post_w, mask=mask[:, None])
-    tl.store(DMIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :], d_comb_w, mask=mask[:, None])
+    tl.store(
+        DMIX + offs[:, None] * MIX_N + (HC + j)[None, :], d_post_w, mask=mask[:, None]
+    )
+    tl.store(
+        DMIX + offs[:, None] * MIX_N + (2 * HC + jj)[None, :],
+        d_comb_w,
+        mask=mask[:, None],
+    )
 
     m2 = mask[:, None]
     tl.atomic_add(DSCALE + 0, tl.sum(tl.where(m2, dpre_z * pre_w, 0.0)))
@@ -143,18 +264,38 @@ class _SinkhornMix(torch.autograd.Function):
     def forward(ctx, mixes, scale, base, hc, iters, eps, post_mult):
         M, MIX_N = mixes.shape
         mixes = mixes.contiguous().float()
-        scale = scale.contiguous().float(); base = base.contiguous().float()
+        scale = scale.contiguous().float()
+        base = base.contiguous().float()
         nstates = 1 + 2 * (iters - 1)
         pre = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         post = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         comb = torch.empty(M, hc * hc, device=mixes.device, dtype=torch.float32)
-        save = ctx.needs_input_grad[0]  # NOTE: is_grad_enabled() is False inside Function.forward
-        states = torch.empty(M, nstates, hc * hc, device=mixes.device, dtype=torch.float32) if save \
+        save = ctx.needs_input_grad[
+            0
+        ]  # NOTE: is_grad_enabled() is False inside Function.forward
+        states = (
+            torch.empty(M, nstates, hc * hc, device=mixes.device, dtype=torch.float32)
+            if save
             else torch.empty(1, device=mixes.device, dtype=torch.float32)
+        )
         grid = lambda m: (triton.cdiv(M, m["BM"]),)
-        _mhc_fwd_kernel[grid](mixes, scale, base, pre, post, comb, states, M,
-                              HC=hc, MIX_N=MIX_N, ITERS=iters, NSTATES=nstates,
-                              EPS=eps, POSTMULT=post_mult, SAVE=save)
+        _mhc_fwd_kernel[grid](
+            mixes,
+            scale,
+            base,
+            pre,
+            post,
+            comb,
+            states,
+            M,
+            HC=hc,
+            MIX_N=MIX_N,
+            ITERS=iters,
+            NSTATES=nstates,
+            EPS=eps,
+            POSTMULT=post_mult,
+            SAVE=save,
+        )
         ctx.save_for_backward(mixes, scale, base, states)
         ctx.cfg = (hc, MIX_N, iters, nstates, eps, post_mult)
         return pre, post, comb
@@ -168,9 +309,25 @@ class _SinkhornMix(torch.autograd.Function):
         dscale = torch.zeros_like(scale)
         dbase = torch.zeros_like(base)
         grid = lambda m: (triton.cdiv(M, m["BM"]),)
-        _mhc_bwd_kernel[grid](mixes, scale, base, states, dpre.contiguous().float(), dpost.contiguous().float(),
-                              dcomb.contiguous().float(), dmix, dscale, dbase, M,
-                              HC=hc, MIX_N=MIX_N, ITERS=iters, NSTATES=nstates, EPS=eps, POSTMULT=post_mult)
+        _mhc_bwd_kernel[grid](
+            mixes,
+            scale,
+            base,
+            states,
+            dpre.contiguous().float(),
+            dpost.contiguous().float(),
+            dcomb.contiguous().float(),
+            dmix,
+            dscale,
+            dbase,
+            M,
+            HC=hc,
+            MIX_N=MIX_N,
+            ITERS=iters,
+            NSTATES=nstates,
+            EPS=eps,
+            POSTMULT=post_mult,
+        )
         return dmix, dscale, dbase, None, None, None, None
 
 
@@ -185,56 +342,127 @@ def sinkhorn_mix(mixes, scale, base, hc, iters, eps, post_mult=2.0):
 # is per-row, mixes = r * (streams @ fn^T), so streams@fn^T and sum-of-squares come from a
 # SINGLE pass over the 16384-wide streams (eager does ~3 passes + a 536MB fp32 flat).
 
-_RL_CFGS = [triton.Config({"BK": bk}, num_warps=w, num_stages=s)
-            for bk in (64, 128, 256) for w in (4, 8) for s in (2, 3)]
+_RL_CFGS = [
+    triton.Config({"BK": bk}, num_warps=w, num_stages=s)
+    for bk in (64, 128, 256)
+    for w in (4, 8)
+    for s in (2, 3)
+]
 
 
 @triton.autotune(configs=_RL_CFGS, key=["M", "K", "N"])
 @triton.jit
-def _rmsln_fwd_kernel(STREAMS, FN, MIXES, R, G, M, K, EPS,
-                      N: tl.constexpr, NP: tl.constexpr, BM: tl.constexpr, BK: tl.constexpr):
+def _rmsln_fwd_kernel(
+    STREAMS,
+    FN,
+    MIXES,
+    R,
+    G,
+    M,
+    K,
+    EPS,
+    N: tl.constexpr,
+    NP: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs_m = pid * BM + tl.arange(0, BM)
     mmask = offs_m < M
-    n = tl.arange(0, NP); nmask = n < N
+    n = tl.arange(0, NP)
+    nmask = n < N
     acc = tl.zeros([BM, NP], tl.float32)
     ssq = tl.zeros([BM], tl.float32)
     for k0 in range(0, K, BK):
-        kk = k0 + tl.arange(0, BK); kmask = kk < K
-        x = tl.load(STREAMS + offs_m[:, None] * K + kk[None, :], mask=mmask[:, None] & kmask[None, :], other=0.0).to(tl.float32)
+        kk = k0 + tl.arange(0, BK)
+        kmask = kk < K
+        x = tl.load(
+            STREAMS + offs_m[:, None] * K + kk[None, :],
+            mask=mmask[:, None] & kmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
         ssq += tl.sum(x * x, axis=1)
-        w = tl.load(FN + n[:, None] * K + kk[None, :], mask=nmask[:, None] & kmask[None, :], other=0.0)
+        w = tl.load(
+            FN + n[:, None] * K + kk[None, :],
+            mask=nmask[:, None] & kmask[None, :],
+            other=0.0,
+        )
         acc += tl.dot(x, tl.trans(w), input_precision="ieee")
     r = tl.rsqrt(ssq / K + EPS)
     mixes = acc * r[:, None]
-    tl.store(MIXES + offs_m[:, None] * N + n[None, :], mixes, mask=mmask[:, None] & nmask[None, :])
+    tl.store(
+        MIXES + offs_m[:, None] * N + n[None, :],
+        mixes,
+        mask=mmask[:, None] & nmask[None, :],
+    )
     tl.store(R + offs_m, r, mask=mmask)
-    tl.store(G + offs_m[:, None] * N + n[None, :], acc, mask=mmask[:, None] & nmask[None, :])
+    tl.store(
+        G + offs_m[:, None] * N + n[None, :], acc, mask=mmask[:, None] & nmask[None, :]
+    )
 
 
 @triton.autotune(configs=_RL_CFGS, key=["M", "K", "N"], reset_to_zero=["DFN"])
 @triton.jit
-def _rmsln_bwd_kernel(STREAMS, FN, R, G, DMIX, DSTREAMS, DFN, M, K,
-                      N: tl.constexpr, NP: tl.constexpr, BM: tl.constexpr, BK: tl.constexpr):
+def _rmsln_bwd_kernel(
+    STREAMS,
+    FN,
+    R,
+    G,
+    DMIX,
+    DSTREAMS,
+    DFN,
+    M,
+    K,
+    N: tl.constexpr,
+    NP: tl.constexpr,
+    BM: tl.constexpr,
+    BK: tl.constexpr,
+):
     pid = tl.program_id(0)
     offs_m = pid * BM + tl.arange(0, BM)
     mmask = offs_m < M
-    n = tl.arange(0, NP); nmask = n < N
-    dmix = tl.load(DMIX + offs_m[:, None] * N + n[None, :], mask=mmask[:, None] & nmask[None, :], other=0.0)
-    g = tl.load(G + offs_m[:, None] * N + n[None, :], mask=mmask[:, None] & nmask[None, :], other=0.0)
+    n = tl.arange(0, NP)
+    nmask = n < N
+    dmix = tl.load(
+        DMIX + offs_m[:, None] * N + n[None, :],
+        mask=mmask[:, None] & nmask[None, :],
+        other=0.0,
+    )
+    g = tl.load(
+        G + offs_m[:, None] * N + n[None, :],
+        mask=mmask[:, None] & nmask[None, :],
+        other=0.0,
+    )
     r = tl.load(R + offs_m, mask=mmask, other=0.0)
-    c = tl.sum(dmix * g, axis=1)            # dL/dr per row
-    dG = dmix * r[:, None]                   # [BM, NP]
-    coef = (r * r * r) / K * c               # [BM]
+    c = tl.sum(dmix * g, axis=1)  # dL/dr per row
+    dG = dmix * r[:, None]  # [BM, NP]
+    coef = (r * r * r) / K * c  # [BM]
     for k0 in range(0, K, BK):
-        kk = k0 + tl.arange(0, BK); kmask = kk < K
-        w = tl.load(FN + n[:, None] * K + kk[None, :], mask=nmask[:, None] & kmask[None, :], other=0.0)
-        x = tl.load(STREAMS + offs_m[:, None] * K + kk[None, :], mask=mmask[:, None] & kmask[None, :], other=0.0).to(tl.float32)
+        kk = k0 + tl.arange(0, BK)
+        kmask = kk < K
+        w = tl.load(
+            FN + n[:, None] * K + kk[None, :],
+            mask=nmask[:, None] & kmask[None, :],
+            other=0.0,
+        )
+        x = tl.load(
+            STREAMS + offs_m[:, None] * K + kk[None, :],
+            mask=mmask[:, None] & kmask[None, :],
+            other=0.0,
+        ).to(tl.float32)
         dmf = tl.dot(dmix, w, input_precision="ieee")  # (d_mixes @ fn) [BM, BK]
         dx = r[:, None] * dmf - x * coef[:, None]
-        tl.store(DSTREAMS + offs_m[:, None] * K + kk[None, :], dx, mask=mmask[:, None] & kmask[None, :])
+        tl.store(
+            DSTREAMS + offs_m[:, None] * K + kk[None, :],
+            dx,
+            mask=mmask[:, None] & kmask[None, :],
+        )
         dfn = tl.dot(tl.trans(dG), x, input_precision="ieee")  # [NP, BK]
-        tl.atomic_add(DFN + n[:, None] * K + kk[None, :], dfn, mask=nmask[:, None] & kmask[None, :])
+        tl.atomic_add(
+            DFN + n[:, None] * K + kk[None, :],
+            dfn,
+            mask=nmask[:, None] & kmask[None, :],
+        )
 
 
 class _RMSNormLinear(torch.autograd.Function):
@@ -261,8 +489,20 @@ class _RMSNormLinear(torch.autograd.Function):
         dstreams = torch.empty_like(sf, dtype=torch.float32)
         dfn = torch.zeros_like(fn)
         grid = lambda m: (triton.cdiv(M, m["BM"]),)
-        _rmsln_bwd_kernel[grid](sf, fn, R, G, dmix.contiguous().float(), dstreams, dfn, M, K,
-                                N=N, NP=NP, BM=BM)
+        _rmsln_bwd_kernel[grid](
+            sf,
+            fn,
+            R,
+            G,
+            dmix.contiguous().float(),
+            dstreams,
+            dfn,
+            M,
+            K,
+            N=N,
+            NP=NP,
+            BM=BM,
+        )
         return dstreams.to(sf.dtype), dfn, None, None
 
 
@@ -271,8 +511,14 @@ def _rmsnorm_linear(streams_flat, fn, eps, BM=16):
 
 
 # ---- fused collapse: collapsed[m,d] = sum_h pre[m,h] * streams[m,h,d] ----
-@triton.autotune(configs=[triton.Config({"BD": bd}, num_warps=w) for bd in (256, 512, 1024) for w in (4, 8)],
-                 key=["M", "D"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BD": bd}, num_warps=w)
+        for bd in (256, 512, 1024)
+        for w in (4, 8)
+    ],
+    key=["M", "D"],
+)
 @triton.jit
 def _collapse_fwd_kernel(PRE, STREAMS, OUT, M, D, HC: tl.constexpr, BD: tl.constexpr):
     m = tl.program_id(0)
@@ -281,22 +527,35 @@ def _collapse_fwd_kernel(PRE, STREAMS, OUT, M, D, HC: tl.constexpr, BD: tl.const
     acc = tl.zeros([BD], tl.float32)
     for h in range(HC):
         p = tl.load(PRE + m * HC + h)
-        s = tl.load(STREAMS + m * (HC * D) + h * D + dblk, mask=dmask, other=0.0).to(tl.float32)
+        s = tl.load(STREAMS + m * (HC * D) + h * D + dblk, mask=dmask, other=0.0).to(
+            tl.float32
+        )
         acc += p * s
     tl.store(OUT + m * D + dblk, acc, mask=dmask)
 
 
-@triton.autotune(configs=[triton.Config({"BD": bd}, num_warps=w) for bd in (256, 512, 1024) for w in (4, 8)],
-                 key=["M", "D"], reset_to_zero=["DPRE"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BD": bd}, num_warps=w)
+        for bd in (256, 512, 1024)
+        for w in (4, 8)
+    ],
+    key=["M", "D"],
+    reset_to_zero=["DPRE"],
+)
 @triton.jit
-def _collapse_bwd_kernel(PRE, STREAMS, GOUT, DPRE, DSTREAMS, M, D, HC: tl.constexpr, BD: tl.constexpr):
+def _collapse_bwd_kernel(
+    PRE, STREAMS, GOUT, DPRE, DSTREAMS, M, D, HC: tl.constexpr, BD: tl.constexpr
+):
     m = tl.program_id(0)
     dblk = tl.program_id(1) * BD + tl.arange(0, BD)
     dmask = dblk < D
     g = tl.load(GOUT + m * D + dblk, mask=dmask, other=0.0).to(tl.float32)
     for h in range(HC):
         p = tl.load(PRE + m * HC + h)
-        s = tl.load(STREAMS + m * (HC * D) + h * D + dblk, mask=dmask, other=0.0).to(tl.float32)
+        s = tl.load(STREAMS + m * (HC * D) + h * D + dblk, mask=dmask, other=0.0).to(
+            tl.float32
+        )
         tl.store(DSTREAMS + m * (HC * D) + h * D + dblk, p * g, mask=dmask)
         tl.atomic_add(DPRE + m * HC + h, tl.sum(tl.where(dmask, g * s, 0.0)))
 
@@ -305,7 +564,8 @@ class _Collapse(torch.autograd.Function):
     @staticmethod
     def forward(ctx, pre, streams):
         M, HC, D = streams.shape
-        pre = pre.contiguous(); streams = streams.contiguous()
+        pre = pre.contiguous()
+        streams = streams.contiguous()
         out = torch.empty(M, D, device=streams.device, dtype=torch.float32)
         grid = lambda m: (M, triton.cdiv(D, m["BD"]))
         _collapse_fwd_kernel[grid](pre, streams, out, M, D, HC=HC)
@@ -320,11 +580,15 @@ class _Collapse(torch.autograd.Function):
         dpre = torch.zeros_like(pre)
         dstreams = torch.empty_like(streams, dtype=torch.float32)
         grid = lambda m: (M, triton.cdiv(D, m["BD"]))
-        _collapse_bwd_kernel[grid](pre, streams, gout.contiguous().float(), dpre, dstreams, M, D, HC=HC)
+        _collapse_bwd_kernel[grid](
+            pre, streams, gout.contiguous().float(), dpre, dstreams, M, D, HC=HC
+        )
         return dpre, dstreams.to(streams.dtype)
 
 
-def hyperconnection_forward(hidden_streams, input_norm, fn, base, scale, hc, iters, eps, post_mult=2.0):
+def hyperconnection_forward(
+    hidden_streams, input_norm, fn, base, scale, hc, iters, eps, post_mult=2.0
+):
     """Drop-in for DeepseekV4HyperConnection.forward. Returns (post, comb, collapsed).
     Fully fused Triton: rmsnorm+fn-linear (one pass over streams), Sinkhorn mixer, and the
     weighted collapse — eager does these in ~3 passes over the 16384-wide streams + a 536MB
@@ -339,7 +603,11 @@ def hyperconnection_forward(hidden_streams, input_norm, fn, base, scale, hc, ite
     streams_flat = hidden_streams.reshape(-1, hc * hidden)
     mixes = _rmsnorm_linear(streams_flat, fn, input_norm.eps)
     pre, post, comb = sinkhorn_mix(mixes, scale, base, hc, iters, eps, post_mult)
-    collapsed = _Collapse.apply(pre, hidden_streams.reshape(-1, hc, hidden)).reshape(*lead, hidden).to(dtype)
+    collapsed = (
+        _Collapse.apply(pre, hidden_streams.reshape(-1, hc, hidden))
+        .reshape(*lead, hidden)
+        .to(dtype)
+    )
     post = post.reshape(*lead, hc)
     comb = comb.reshape(*lead, hc, hc)
     return post, comb, collapsed

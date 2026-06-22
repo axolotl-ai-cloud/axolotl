@@ -268,7 +268,9 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
     # the selective gather when routing is sparse. Speeds forward AND the backward
     # recompute (the recipe rebuild becomes copy-free too).
     all_active = active_experts.numel() == nv_param.qdata.size(0)
-    sub_qdata = nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
+    sub_qdata = (
+        nv_param.qdata if all_active else nv_param.qdata[active_experts].contiguous()
+    )
     raw_scale = nv_param.scale if all_active else nv_param.scale[active_experts]
     block_scale = raw_scale.to(torch.float32)  # [a, N, K/16]
     per_tensor = getattr(nv_param, "per_tensor_scale", None)
@@ -276,7 +278,11 @@ def selective_nvfp4_weights_fwd(nv_param, active_experts: torch.Tensor) -> MXWei
         per_tensor = per_tensor.to(torch.float32)
         # A per-expert per-tensor scale ([E,1,1]) must be sliced to the active set too;
         # a shared scalar just broadcasts.
-        if not all_active and per_tensor.dim() >= 1 and per_tensor.size(0) == nv_param.qdata.size(0):
+        if (
+            not all_active
+            and per_tensor.dim() >= 1
+            and per_tensor.size(0) == nv_param.qdata.size(0)
+        ):
             per_tensor = per_tensor[active_experts]
         block_scale = block_scale * per_tensor
     N = sub_qdata.size(1)

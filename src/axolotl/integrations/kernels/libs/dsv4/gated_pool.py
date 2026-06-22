@@ -15,8 +15,14 @@ import triton
 import triton.language as tl
 
 
-@triton.autotune(configs=[triton.Config({"BD": bd}, num_warps=w) for bd in (32, 64, 128) for w in (2, 4, 8)],
-                 key=["M", "D"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BD": bd}, num_warps=w)
+        for bd in (32, 64, 128)
+        for w in (2, 4, 8)
+    ],
+    key=["M", "D"],
+)
 @triton.jit
 def _pool_fwd_kernel(KV, GATE, OUT, M, D, W: tl.constexpr, BD: tl.constexpr):
     m = tl.program_id(0)
@@ -34,10 +40,18 @@ def _pool_fwd_kernel(KV, GATE, OUT, M, D, W: tl.constexpr, BD: tl.constexpr):
     tl.store(OUT + m * D + d, out, mask=dmask)
 
 
-@triton.autotune(configs=[triton.Config({"BD": bd}, num_warps=w) for bd in (32, 64, 128) for w in (2, 4, 8)],
-                 key=["M", "D"])
+@triton.autotune(
+    configs=[
+        triton.Config({"BD": bd}, num_warps=w)
+        for bd in (32, 64, 128)
+        for w in (2, 4, 8)
+    ],
+    key=["M", "D"],
+)
 @triton.jit
-def _pool_bwd_kernel(KV, GATE, DOUT, DKV, DGATE, M, D, W: tl.constexpr, BD: tl.constexpr):
+def _pool_bwd_kernel(
+    KV, GATE, DOUT, DKV, DGATE, M, D, W: tl.constexpr, BD: tl.constexpr
+):
     m = tl.program_id(0)
     d = tl.program_id(1) * BD + tl.arange(0, BD)
     dmask = d < D
@@ -49,7 +63,9 @@ def _pool_bwd_kernel(KV, GATE, DOUT, DKV, DGATE, M, D, W: tl.constexpr, BD: tl.c
     p = tl.exp(g - tl.max(g, axis=0, keep_dims=True))
     p = p / tl.sum(p, axis=0, keep_dims=True)
     out = tl.sum(p * kv, axis=0, keep_dims=True)  # [1, BD]
-    dout = tl.load(DOUT + m * D + d, mask=dmask, other=0.0).to(tl.float32)[None, :]  # [1, BD]
+    dout = tl.load(DOUT + m * D + d, mask=dmask, other=0.0).to(tl.float32)[
+        None, :
+    ]  # [1, BD]
     dkv = p * dout
     dgate = p * dout * (kv - out)
     tl.store(DKV + off, dkv, mask=cmask)
@@ -60,7 +76,8 @@ class _GatedPool(torch.autograd.Function):
     @staticmethod
     def forward(ctx, kv, gate):
         M, W, D = kv.shape
-        kv = kv.contiguous(); gate = gate.contiguous()
+        kv = kv.contiguous()
+        gate = gate.contiguous()
         out = torch.empty(M, D, device=kv.device, dtype=torch.float32)
         grid = lambda m: (M, triton.cdiv(D, m["BD"]))
         _pool_fwd_kernel[grid](kv, gate, out, M, D, W=W)

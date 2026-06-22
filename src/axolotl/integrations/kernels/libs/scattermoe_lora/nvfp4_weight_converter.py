@@ -119,33 +119,33 @@ class Nvfp4ExpertsDeserialize:
             return t
 
         if proj == "gate_up_proj":
-            gate_w   = [_recast_weight(t) for t in _find("gate_proj.weight")]
-            up_w     = [_recast_weight(t) for t in _find("up_proj.weight")]
-            gate_sc  = [_recast_scale(t) for t in _find("gate_proj.weight_scale")]
-            up_sc    = [_recast_scale(t) for t in _find("up_proj.weight_scale")]
+            gate_w = [_recast_weight(t) for t in _find("gate_proj.weight")]
+            up_w = [_recast_weight(t) for t in _find("up_proj.weight")]
+            gate_sc = [_recast_scale(t) for t in _find("gate_proj.weight_scale")]
+            up_sc = [_recast_scale(t) for t in _find("up_proj.weight_scale")]
             pts_list = _find("gate_proj.weight_scale_2")
 
             # Stack experts then cat gate+up along row (dim=1)
-            gate_qd = torch.stack(gate_w, dim=0)   # [E, I, H/2]
-            up_qd   = torch.stack(up_w,   dim=0)   # [E, I, H/2]
-            qdata   = torch.cat([gate_qd, up_qd], dim=1)  # [E, 2I, H/2]
+            gate_qd = torch.stack(gate_w, dim=0)  # [E, I, H/2]
+            up_qd = torch.stack(up_w, dim=0)  # [E, I, H/2]
+            qdata = torch.cat([gate_qd, up_qd], dim=1)  # [E, 2I, H/2]
             del gate_qd, up_qd
 
-            gate_s  = torch.stack(gate_sc, dim=0)  # [E, I, H/16]
-            up_s    = torch.stack(up_sc,   dim=0)  # [E, I, H/16]
-            scale   = torch.cat([gate_s, up_s], dim=1)    # [E, 2I, H/16]
+            gate_s = torch.stack(gate_sc, dim=0)  # [E, I, H/16]
+            up_s = torch.stack(up_sc, dim=0)  # [E, I, H/16]
+            scale = torch.cat([gate_s, up_s], dim=1)  # [E, 2I, H/16]
             del gate_s, up_s
 
             pts = pts_list[0].to(torch.float32)
 
         else:  # down_proj
-            down_w   = [_recast_weight(t) for t in _find("down_proj.weight")]
-            down_sc  = [_recast_scale(t) for t in _find("down_proj.weight_scale")]
+            down_w = [_recast_weight(t) for t in _find("down_proj.weight")]
+            down_sc = [_recast_scale(t) for t in _find("down_proj.weight_scale")]
             pts_list = _find("down_proj.weight_scale_2")
 
-            qdata = torch.stack(down_w,  dim=0)   # [E, H, I/2]
-            scale = torch.stack(down_sc, dim=0)   # [E, H, I/16]
-            pts   = pts_list[0].to(torch.float32)
+            qdata = torch.stack(down_w, dim=0)  # [E, H, I/2]
+            scale = torch.stack(down_sc, dim=0)  # [E, H, I/16]
+            pts = pts_list[0].to(torch.float32)
 
         nvfp4 = NVFP4Tensor(qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts)
 
@@ -157,7 +157,11 @@ class Nvfp4ExpertsDeserialize:
 
         module._is_hf_initialized = True
 
-        LOG.debug("Nvfp4ExpertsDeserialize: set %s as NVFP4Tensor [%s]", full_layer_name, list(qdata.shape))
+        LOG.debug(
+            "Nvfp4ExpertsDeserialize: set %s as NVFP4Tensor [%s]",
+            full_layer_name,
+            list(qdata.shape),
+        )
         return {}
 
     # No meaningful reverse op (packed NVFP4 → checkpoint would need to unfuse).
@@ -227,6 +231,10 @@ def register_gemma4_nvfp4_converters() -> None:
         register_checkpoint_conversion_mapping("gemma4_text", converters)
     except ValueError:
         # Already registered — overwrite to keep converters fresh.
-        register_checkpoint_conversion_mapping("gemma4_text", converters, overwrite=True)
+        register_checkpoint_conversion_mapping(
+            "gemma4_text", converters, overwrite=True
+        )
 
-    LOG.info("Registered gemma4_text NVFP4 expert WeightConverters in transformers conversion_mapping")
+    LOG.info(
+        "Registered gemma4_text NVFP4 expert WeightConverters in transformers conversion_mapping"
+    )

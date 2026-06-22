@@ -17,27 +17,26 @@ from __future__ import annotations
 import triton
 import triton.language as tl
 
-
 # Grid: (C, N // 64, K // 16) — one block per (expert-chunk, n-tile, k-tile)
 # TILE_SIZE = 64 * 16 = 1024; each block handles one 64x16 weight tile.
 
 
 @triton.jit
 def _marlin_dequant_bf16_kernel(
-    QW,                       # [C, K*N//8] int32  (marlin flat)
-    SC,                       # [C, N, K//16] fp8_e4m3
-    PT,                       # [C] float32  per-tensor scale
-    SCATTER,                  # [1024] int32  base scatter LUT
-    CB,                       # [16] float32  fp4 codebook
-    OUT,                      # [C, N, K] bfloat16
+    QW,  # [C, K*N//8] int32  (marlin flat)
+    SC,  # [C, N, K//16] fp8_e4m3
+    PT,  # [C] float32  per-tensor scale
+    SCATTER,  # [1024] int32  base scatter LUT
+    CB,  # [16] float32  fp4 codebook
+    OUT,  # [C, N, K] bfloat16
     qw_stride_c: tl.constexpr,
     sc_stride_c: tl.constexpr,
     sc_stride_n: tl.constexpr,
     out_stride_c: tl.constexpr,
     out_stride_n: tl.constexpr,
     N_TILES: tl.constexpr,
-    N_t: tl.constexpr,        # 64
-    K_t: tl.constexpr,        # 16
+    N_t: tl.constexpr,  # 64
+    K_t: tl.constexpr,  # 16
     TILE_SIZE: tl.constexpr,  # N_t * K_t = 1024
 ):
     c_id = tl.program_id(0)
@@ -57,11 +56,16 @@ def _marlin_dequant_bf16_kernel(
 
     pt = tl.load(PT + c_id)
     global_n = n_tile * N_t + local_n
-    sc = tl.load(SC + c_id * sc_stride_c + global_n * sc_stride_n + k_tile).to(tl.float32)
+    sc = tl.load(SC + c_id * sc_stride_c + global_n * sc_stride_n + k_tile).to(
+        tl.float32
+    )
     cb_val = tl.load(CB + nibs)
 
     out_val = (cb_val * sc * pt).to(tl.bfloat16)
-    tl.store(OUT + c_id * out_stride_c + global_n * out_stride_n + k_tile * K_t + local_k, out_val)
+    tl.store(
+        OUT + c_id * out_stride_c + global_n * out_stride_n + k_tile * K_t + local_k,
+        out_val,
+    )
 
 
 @triton.jit
@@ -99,11 +103,16 @@ def _marlin_dequant_fp8_kernel(
 
     pt = tl.load(PT + c_id)
     global_n = n_tile * N_t + local_n
-    sc = tl.load(SC + c_id * sc_stride_c + global_n * sc_stride_n + k_tile).to(tl.float32)
+    sc = tl.load(SC + c_id * sc_stride_c + global_n * sc_stride_n + k_tile).to(
+        tl.float32
+    )
     cb_val = tl.load(CB + nibs)
 
     out_val = (cb_val * sc * pt).to(tl.float8e4nv)
-    tl.store(OUT + c_id * out_stride_c + global_n * out_stride_n + k_tile * K_t + local_k, out_val)
+    tl.store(
+        OUT + c_id * out_stride_c + global_n * out_stride_n + k_tile * K_t + local_k,
+        out_val,
+    )
 
 
 def marlin_dequant_bf16(qw_flat, orig_scale, pt, scatter_lut, cb, N, K, C):
@@ -116,18 +125,27 @@ def marlin_dequant_bf16(qw_flat, orig_scale, pt, scatter_lut, cb, N, K, C):
     cb: [16] float32  fp4 codebook
     Returns: [C, N, K] bfloat16"""
     import torch
+
     out = torch.empty(C, N, K, device=qw_flat.device, dtype=torch.bfloat16)
     N_t, K_t = 64, 16
     N_TILES = N // N_t
     grid = (C, N_TILES, K // K_t)
     _marlin_dequant_bf16_kernel[grid](
-        qw_flat, orig_scale, pt, scatter_lut, cb, out,
+        qw_flat,
+        orig_scale,
+        pt,
+        scatter_lut,
+        cb,
+        out,
         int(qw_flat.stride(0)),
         int(orig_scale.stride(0)),
         int(orig_scale.stride(1)),
         int(out.stride(0)),
         int(out.stride(1)),
-        N_TILES, N_t, K_t, N_t * K_t,
+        N_TILES,
+        N_t,
+        K_t,
+        N_t * K_t,
     )
     return out
 
@@ -137,17 +155,26 @@ def marlin_dequant_fp8(qw_flat, orig_scale, pt, scatter_lut, cb, N, K, C):
 
     Same signature as marlin_dequant_bf16; output dtype is float8_e4m3fn."""
     import torch
+
     out = torch.empty(C, N, K, device=qw_flat.device, dtype=torch.float8_e4m3fn)
     N_t, K_t = 64, 16
     N_TILES = N // N_t
     grid = (C, N_TILES, K // K_t)
     _marlin_dequant_fp8_kernel[grid](
-        qw_flat, orig_scale, pt, scatter_lut, cb, out,
+        qw_flat,
+        orig_scale,
+        pt,
+        scatter_lut,
+        cb,
+        out,
         int(qw_flat.stride(0)),
         int(orig_scale.stride(0)),
         int(orig_scale.stride(1)),
         int(out.stride(0)),
         int(out.stride(1)),
-        N_TILES, N_t, K_t, N_t * K_t,
+        N_TILES,
+        N_t,
+        K_t,
+        N_t * K_t,
     )
     return out

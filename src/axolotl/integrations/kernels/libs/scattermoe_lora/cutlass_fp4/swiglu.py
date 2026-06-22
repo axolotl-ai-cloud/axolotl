@@ -6,13 +6,14 @@ Two activation variants:
 
 bwd: (gu[Mt,2I], dh[Mt,I]) -> dgu[Mt,2I] in ONE pass (~8 intermediates become register-local).
 """
+
 import torch
 import triton
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
 
-
 # ── SwiGLU (silu + clamp) ─────────────────────────────────────────────────────
+
 
 @triton.jit
 def _fwd(GU, H, I, L, sg0, sg1, sh0, sh1, BLK: tl.constexpr):
@@ -49,6 +50,7 @@ def _bwd(GU, DH, DGU, I, L, sg0, sg1, sd0, sd1, so0, so1, BLK: tl.constexpr):
 # ── GeGLU (gelu_pytorch_tanh, no clamp) ──────────────────────────────────────
 # gelu_tanh(x) = 0.5 * x * (1 + tanh(k * (x + 0.044715 * x^3))), k = sqrt(2/pi)
 # gelu_tanh'(x) = 0.5*(1+t) + 0.5*x*(1-t^2)*k*(1 + 3*0.044715*x^2)
+
 
 @triton.jit
 def _fwd_gelu(GU, H, I, sg0, sg1, sh0, sh1, BLK: tl.constexpr):
@@ -88,6 +90,7 @@ def _bwd_gelu(GU, DH, DGU, I, sg0, sg1, sd0, sd1, so0, so1, BLK: tl.constexpr):
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+
 def swiglu_fwd(gu, limit, act_type="silu", bpm=512):
     """Gated-activation forward: gu[Mt,2I] -> h[Mt,I].
     act_type='silu': clamped SwiGLU (DSV4). act_type='gelu_tanh': GeGLU (Gemma4, limit ignored)."""
@@ -95,11 +98,21 @@ def swiglu_fwd(gu, limit, act_type="silu", bpm=512):
     I = twoI // 2
     h = torch.empty(Mt, I, device=gu.device, dtype=gu.dtype)
     if act_type == "gelu_tanh":
-        _fwd_gelu[(Mt, triton.cdiv(I, bpm))](gu, h, I, gu.stride(0), gu.stride(1),
-                                              h.stride(0), h.stride(1), BLK=bpm)
+        _fwd_gelu[(Mt, triton.cdiv(I, bpm))](
+            gu, h, I, gu.stride(0), gu.stride(1), h.stride(0), h.stride(1), BLK=bpm
+        )
     else:
-        _fwd[(Mt, triton.cdiv(I, bpm))](gu, h, I, float(limit), gu.stride(0), gu.stride(1),
-                                        h.stride(0), h.stride(1), BLK=bpm)
+        _fwd[(Mt, triton.cdiv(I, bpm))](
+            gu,
+            h,
+            I,
+            float(limit),
+            gu.stride(0),
+            gu.stride(1),
+            h.stride(0),
+            h.stride(1),
+            BLK=bpm,
+        )
     return h
 
 
@@ -110,9 +123,32 @@ def swiglu_bwd(gu, dh, limit, act_type="silu", bpm=512):
     I = twoI // 2
     dgu = torch.empty(Mt, twoI, device=gu.device, dtype=gu.dtype)
     if act_type == "gelu_tanh":
-        _bwd_gelu[(Mt, triton.cdiv(I, bpm))](gu, dh, dgu, I, gu.stride(0), gu.stride(1),
-                                              dh.stride(0), dh.stride(1), dgu.stride(0), dgu.stride(1), BLK=bpm)
+        _bwd_gelu[(Mt, triton.cdiv(I, bpm))](
+            gu,
+            dh,
+            dgu,
+            I,
+            gu.stride(0),
+            gu.stride(1),
+            dh.stride(0),
+            dh.stride(1),
+            dgu.stride(0),
+            dgu.stride(1),
+            BLK=bpm,
+        )
     else:
-        _bwd[(Mt, triton.cdiv(I, bpm))](gu, dh, dgu, I, float(limit), gu.stride(0), gu.stride(1),
-                                        dh.stride(0), dh.stride(1), dgu.stride(0), dgu.stride(1), BLK=bpm)
+        _bwd[(Mt, triton.cdiv(I, bpm))](
+            gu,
+            dh,
+            dgu,
+            I,
+            float(limit),
+            gu.stride(0),
+            gu.stride(1),
+            dh.stride(0),
+            dh.stride(1),
+            dgu.stride(0),
+            dgu.stride(1),
+            BLK=bpm,
+        )
     return dgu

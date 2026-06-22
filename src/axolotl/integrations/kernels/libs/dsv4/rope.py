@@ -76,10 +76,18 @@ def _launch(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tens
     out = torch.empty_like(x)
     M = B * H * S
     _rope_kernel[(M,)](
-        x, cos, sin, out,
-        S, H,
-        cos.stride(0), cos.stride(1), cos.stride(2),
-        D=D, ROPE=ROPE, Rh=Rh,
+        x,
+        cos,
+        sin,
+        out,
+        S,
+        H,
+        cos.stride(0),
+        cos.stride(1),
+        cos.stride(2),
+        D=D,
+        ROPE=ROPE,
+        Rh=Rh,
         BLOCK_NOPE=triton.next_power_of_2(D - ROPE),
         num_warps=4,
     )

@@ -155,7 +155,9 @@ class ScatterMoELoRA(torch.autograd.Function):
             # returns — backward rebuilds it. Otherwise keep the reference (the bf16 path
             # passes a param view, which is cheap to hold).
             ctx.weight_recipe = getattr(expert_weights, "recipe", None)
-            ctx.expert_weights = None if ctx.weight_recipe is not None else expert_weights
+            ctx.expert_weights = (
+                None if ctx.weight_recipe is not None else expert_weights
+            )
             ctx.expert_biases = expert_biases
             ctx.grouped_in = grouped_in
             ctx.grouped_out = grouped_out

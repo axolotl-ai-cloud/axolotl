@@ -48,7 +48,6 @@ def _should_skip_by_name(name: str) -> bool:
     return any(sub in name for sub in _SKIP_NAME_SUBSTRINGS)
 
 
-
 def _patch_linear_forward(mod: nn.Linear) -> None:
     """Monkey-patch a single nn.Linear whose weight was already replaced with
     an fp8 tensor + weight_scale_inv bfloat16 parameter [out, 1].
@@ -63,7 +62,7 @@ def _patch_linear_forward(mod: nn.Linear) -> None:
     """
 
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
-        w_fp8: torch.Tensor = self.weight          # float8_e4m3fn [out, in]
+        w_fp8: torch.Tensor = self.weight  # float8_e4m3fn [out, in]
         scale: torch.Tensor = self.weight_scale_inv  # bfloat16 [out, 1]
         w_bf16 = w_fp8.to(torch.bfloat16) * scale  # broadcast [out, in]
         # Cast x to bf16 so F.linear dtype-matches; a no-op in the normal case.
@@ -72,6 +71,7 @@ def _patch_linear_forward(mod: nn.Linear) -> None:
         return out.to(x.dtype) if x.dtype != torch.bfloat16 else out
 
     import types
+
     mod.forward = types.MethodType(_forward, mod)
 
 
@@ -84,6 +84,7 @@ def quantize_gemma4_nonexpert_linears(model: nn.Module) -> int:
     """
     try:
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextExperts
+
         _expert_cls = Gemma4TextExperts
     except ImportError:
         _expert_cls = None
@@ -126,7 +127,11 @@ def quantize_gemma4_nonexpert_linears(model: nn.Module) -> int:
         # Shape [out, 1] so dequantize_fp8 treats it as per-row block scale.
         scale = (scale_1d / _FP8_MAX).to(torch.bfloat16).unsqueeze(1)  # [out, 1]
         # Quantize to [-fp8_max, fp8_max] (use full fp8 dynamic range).
-        w_fp8 = (w_data / scale.to(w_data.dtype)).clamp(-_FP8_MAX, _FP8_MAX).to(torch.float8_e4m3fn)
+        w_fp8 = (
+            (w_data / scale.to(w_data.dtype))
+            .clamp(-_FP8_MAX, _FP8_MAX)
+            .to(torch.float8_e4m3fn)
+        )
 
         mod.weight = nn.Parameter(w_fp8, requires_grad=False)
         mod.register_parameter(
@@ -152,6 +157,7 @@ def verify_gemma4_frankenstein(model: nn.Module) -> dict:
     """Sanity-check the frankenstein state.  Returns a dict of counts."""
     try:
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
         _has_nvfp4 = True
     except ImportError:
         _has_nvfp4 = False
@@ -162,6 +168,7 @@ def verify_gemma4_frankenstein(model: nn.Module) -> dict:
 
     try:
         from transformers.models.gemma4.modeling_gemma4 import Gemma4TextExperts
+
         _expert_cls = Gemma4TextExperts
     except ImportError:
         _expert_cls = None
@@ -186,7 +193,9 @@ def verify_gemma4_frankenstein(model: nn.Module) -> dict:
             continue
         if param.dtype in (torch.bfloat16, torch.float16, torch.float32):
             # Check if it's a non-expert linear weight (non-norm/embed)
-            if name.endswith(".weight") and not _is_under_expert(name.rsplit(".", 1)[0]):
+            if name.endswith(".weight") and not _is_under_expert(
+                name.rsplit(".", 1)[0]
+            ):
                 if not _should_skip_by_name(name):
                     n_bf16_lin += 1
                     bf16_lin_bytes += param.numel() * 2

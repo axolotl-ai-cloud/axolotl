@@ -27,8 +27,18 @@ LOG = get_logger(__name__)
 _MOD = None  # set by patch_deepseek_v4_kernels; used by the patched compressor forwards
 
 
-def _dsv4_attention(module, query, key, value, attention_mask,
-                    scaling=None, dropout=0.0, sliding_window=None, s_aux=None, **kwargs):
+def _dsv4_attention(
+    module,
+    query,
+    key,
+    value,
+    attention_mask,
+    scaling=None,
+    dropout=0.0,
+    sliding_window=None,
+    s_aux=None,
+    **kwargs,
+):
     """Drop-in for ``eager_attention_forward``. ``query`` [B,H,S,D]; ``key``/``value``
     [B,1,KV,D] (shared MQA); ``s_aux`` = per-head sinks; ``attention_mask`` is the
     eager-built [sliding | block_bias] mask. Returns (attn_output [B,S,H,D], None).
@@ -38,7 +48,7 @@ def _dsv4_attention(module, query, key, value, attention_mask,
     B, H, S, D = query.shape
     KV = key.shape[2]
     if scaling is None:
-        scaling = D ** -0.5
+        scaling = D**-0.5
     window = sliding_window if sliding_window is not None else module.sliding_window
 
     if KV == S:  # sliding-attention layer (no compressor entries)
@@ -65,27 +75,48 @@ def _indexer_scorer_forward(self, q, compressed_kv, hidden_states):
     return indexer_scores(q, compressed_kv, weights, self.softmax_scale)
 
 
-def _hca_compressor_forward(self, hidden_states, q_residual, position_ids, past_key_values, layer_idx):
+def _hca_compressor_forward(
+    self, hidden_states, q_residual, position_ids, past_key_values, layer_idx
+):
     mod = _MOD
     batch, _, _ = hidden_states.shape
-    cache_layer = past_key_values.layers[layer_idx] if past_key_values is not None else None
+    cache_layer = (
+        past_key_values.layers[layer_idx] if past_key_values is not None else None
+    )
     kv = self.kv_proj(hidden_states)
     gate = self.gate_proj(hidden_states)
     if cache_layer is None:
         usable = (kv.shape[1] // self.compress_rate) * self.compress_rate
-        chunk_kv, chunk_gate, first_window_position = kv[:, :usable], gate[:, :usable], 0
+        chunk_kv, chunk_gate, first_window_position = (
+            kv[:, :usable],
+            gate[:, :usable],
+            0,
+        )
     else:
-        chunk_kv, chunk_gate, first_window_position = cache_layer.store_compression_weights("compressor", kv, gate)
+        chunk_kv, chunk_gate, first_window_position = (
+            cache_layer.store_compression_weights("compressor", kv, gate)
+        )
 
     if chunk_kv.shape[1] > 0:
         n_windows = chunk_kv.shape[1] // self.compress_rate
         chunk_kv = chunk_kv.view(batch, n_windows, self.compress_rate, -1)
-        chunk_gate = chunk_gate.view(batch, n_windows, self.compress_rate, -1) + self.position_bias
+        chunk_gate = (
+            chunk_gate.view(batch, n_windows, self.compress_rate, -1)
+            + self.position_bias
+        )
         compressed = _gated_pool_norm(chunk_kv, chunk_gate, self.kv_norm)
         positions = torch.arange(n_windows, device=compressed.device)
-        positions = (positions * self.compress_rate + first_window_position).unsqueeze(0).expand(batch, -1)
-        cos, sin = self.rotary_emb(compressed, position_ids=positions, layer_type=self.rope_layer_type)
-        compressed = mod.apply_rotary_pos_emb(compressed.unsqueeze(1), cos, sin).squeeze(1)
+        positions = (
+            (positions * self.compress_rate + first_window_position)
+            .unsqueeze(0)
+            .expand(batch, -1)
+        )
+        cos, sin = self.rotary_emb(
+            compressed, position_ids=positions, layer_type=self.rope_layer_type
+        )
+        compressed = mod.apply_rotary_pos_emb(
+            compressed.unsqueeze(1), cos, sin
+        ).squeeze(1)
     else:
         compressed = chunk_kv.new_zeros((batch, 0, self.head_dim))
 
@@ -108,18 +139,28 @@ def _hca_compressor_forward(self, hidden_states, q_residual, position_ids, past_
     return compressed_kv, block_bias
 
 
-def _indexer_forward(self, hidden_states, q_residual, position_ids, past_key_values, layer_idx):
+def _indexer_forward(
+    self, hidden_states, q_residual, position_ids, past_key_values, layer_idx
+):
     mod = _MOD
     batch, seq_len, _ = hidden_states.shape
-    cache_layer = past_key_values.layers[layer_idx] if past_key_values is not None else None
+    cache_layer = (
+        past_key_values.layers[layer_idx] if past_key_values is not None else None
+    )
     kv = self.kv_proj(hidden_states)
     gate = self.gate_proj(hidden_states)
 
     if cache_layer is None:
         usable = (kv.shape[1] // self.compress_rate) * self.compress_rate
-        chunk_kv, chunk_gate, first_window_position = kv[:, :usable], gate[:, :usable], 0
+        chunk_kv, chunk_gate, first_window_position = (
+            kv[:, :usable],
+            gate[:, :usable],
+            0,
+        )
     else:
-        chunk_kv, chunk_gate, first_window_position = cache_layer.store_compression_weights("indexer", kv, gate)
+        chunk_kv, chunk_gate, first_window_position = (
+            cache_layer.store_compression_weights("indexer", kv, gate)
+        )
 
     if chunk_kv.shape[1] > 0:
         n_windows = chunk_kv.shape[1] // self.compress_rate
@@ -128,14 +169,18 @@ def _indexer_forward(self, hidden_states, q_residual, position_ids, past_key_val
         chunk_gate = chunk_gate.view(batch, n_windows, ratio, -1) + self.position_bias
 
         new_kv = chunk_kv.new_zeros((batch, n_windows, 2 * ratio, self.head_dim))
-        new_gate = chunk_gate.new_full((batch, n_windows, 2 * ratio, self.head_dim), float("-inf"))
+        new_gate = chunk_gate.new_full(
+            (batch, n_windows, 2 * ratio, self.head_dim), float("-inf")
+        )
         new_kv[:, :, ratio:] = chunk_kv[..., self.head_dim :]
         new_gate[:, :, ratio:] = chunk_gate[..., self.head_dim :]
         if n_windows > 1:
             new_kv[:, 1:, :ratio] = chunk_kv[:, :-1, :, : self.head_dim]
             new_gate[:, 1:, :ratio] = chunk_gate[:, :-1, :, : self.head_dim]
         if cache_layer is not None:
-            prior_kv, prior_gate = cache_layer.update_overlap_state("indexer", chunk_kv, chunk_gate, self.head_dim)
+            prior_kv, prior_gate = cache_layer.update_overlap_state(
+                "indexer", chunk_kv, chunk_gate, self.head_dim
+            )
             if prior_kv is not None:
                 new_kv[:, 0, :ratio] = prior_kv.to(new_kv.dtype)
                 new_gate[:, 0, :ratio] = prior_gate.to(new_gate.dtype)
@@ -144,17 +189,29 @@ def _indexer_forward(self, hidden_states, q_residual, position_ids, past_key_val
         positions = torch.arange(n_windows, device=compressed.device)
         positions = positions * self.compress_rate + first_window_position
         positions = positions.unsqueeze(0).expand(batch, -1)
-        cos, sin = self.rotary_emb(compressed, position_ids=positions, layer_type=self.rope_layer_type)
-        compressed = mod.apply_rotary_pos_emb(compressed.unsqueeze(1), cos, sin).squeeze(1)
+        cos, sin = self.rotary_emb(
+            compressed, position_ids=positions, layer_type=self.rope_layer_type
+        )
+        compressed = mod.apply_rotary_pos_emb(
+            compressed.unsqueeze(1), cos, sin
+        ).squeeze(1)
     else:
         compressed = chunk_kv.new_zeros((batch, 0, self.head_dim))
 
     compressed_kv = (
-        compressed if cache_layer is None else cache_layer.update_compressor_states("indexer", compressed)
+        compressed
+        if cache_layer is None
+        else cache_layer.update_compressor_states("indexer", compressed)
     )
 
-    cos_q, sin_q = self.rotary_emb(hidden_states, position_ids=position_ids, layer_type=self.rope_layer_type)
-    q = self.q_b_proj(q_residual).view(batch, seq_len, -1, self.head_dim).transpose(1, 2)
+    cos_q, sin_q = self.rotary_emb(
+        hidden_states, position_ids=position_ids, layer_type=self.rope_layer_type
+    )
+    q = (
+        self.q_b_proj(q_residual)
+        .view(batch, seq_len, -1, self.head_dim)
+        .transpose(1, 2)
+    )
     q = mod.apply_rotary_pos_emb(q, cos_q, sin_q).transpose(1, 2)
 
     index_scores = self.scorer(q, compressed_kv, hidden_states)
@@ -173,18 +230,28 @@ def _indexer_forward(self, hidden_states, q_residual, position_ids, past_key_val
     return index_scores.topk(top_k, dim=-1).indices
 
 
-def _csa_compressor_forward(self, hidden_states, q_residual, position_ids, past_key_values, layer_idx):
+def _csa_compressor_forward(
+    self, hidden_states, q_residual, position_ids, past_key_values, layer_idx
+):
     mod = _MOD
     batch, seq_len, _ = hidden_states.shape
-    cache_layer = past_key_values.layers[layer_idx] if past_key_values is not None else None
+    cache_layer = (
+        past_key_values.layers[layer_idx] if past_key_values is not None else None
+    )
     kv = self.kv_proj(hidden_states)
     gate = self.gate_proj(hidden_states)
 
     if cache_layer is None:
         usable = (kv.shape[1] // self.compress_rate) * self.compress_rate
-        chunk_kv, chunk_gate, first_window_position = kv[:, :usable], gate[:, :usable], 0
+        chunk_kv, chunk_gate, first_window_position = (
+            kv[:, :usable],
+            gate[:, :usable],
+            0,
+        )
     else:
-        chunk_kv, chunk_gate, first_window_position = cache_layer.store_compression_weights("compressor", kv, gate)
+        chunk_kv, chunk_gate, first_window_position = (
+            cache_layer.store_compression_weights("compressor", kv, gate)
+        )
 
     if chunk_kv.shape[1] > 0:
         n_windows = chunk_kv.shape[1] // self.compress_rate
@@ -193,7 +260,9 @@ def _csa_compressor_forward(self, hidden_states, q_residual, position_ids, past_
         chunk_gate = chunk_gate.view(batch, n_windows, ratio, -1) + self.position_bias
 
         new_kv = chunk_kv.new_zeros((batch, n_windows, 2 * ratio, self.head_dim))
-        new_gate = chunk_gate.new_full((batch, n_windows, 2 * ratio, self.head_dim), float("-inf"))
+        new_gate = chunk_gate.new_full(
+            (batch, n_windows, 2 * ratio, self.head_dim), float("-inf")
+        )
         new_kv[:, :, ratio:] = chunk_kv[..., self.head_dim :]
         new_gate[:, :, ratio:] = chunk_gate[..., self.head_dim :]
         if n_windows > 1:
@@ -211,8 +280,12 @@ def _csa_compressor_forward(self, hidden_states, q_residual, position_ids, past_
         positions = torch.arange(n_windows, device=compressed.device)
         positions = positions * self.compress_rate + first_window_position
         positions = positions.unsqueeze(0).expand(batch, -1)
-        cos, sin = self.rotary_emb(compressed, position_ids=positions, layer_type=self.rope_layer_type)
-        compressed = mod.apply_rotary_pos_emb(compressed.unsqueeze(1), cos, sin).squeeze(1)
+        cos, sin = self.rotary_emb(
+            compressed, position_ids=positions, layer_type=self.rope_layer_type
+        )
+        compressed = mod.apply_rotary_pos_emb(
+            compressed.unsqueeze(1), cos, sin
+        ).squeeze(1)
     else:
         compressed = chunk_kv.new_zeros((batch, 0, self.head_dim))
 
@@ -220,19 +293,32 @@ def _csa_compressor_forward(self, hidden_states, q_residual, position_ids, past_
         compressed = cache_layer.update_compressor_states("compressor", compressed)
     compressed_kv = compressed.unsqueeze(1)
 
-    top_k_indices = self.indexer(hidden_states, q_residual, position_ids, past_key_values, layer_idx)
+    top_k_indices = self.indexer(
+        hidden_states, q_residual, position_ids, past_key_values, layer_idx
+    )
     compressed_len = compressed_kv.shape[2]
     valid = top_k_indices >= 0
-    safe_indices = torch.where(valid, top_k_indices, torch.full_like(top_k_indices, compressed_len))
-    block_bias = compressed_kv.new_full((batch, 1, seq_len, compressed_len + 1), float("-inf"))
+    safe_indices = torch.where(
+        valid, top_k_indices, torch.full_like(top_k_indices, compressed_len)
+    )
+    block_bias = compressed_kv.new_full(
+        (batch, 1, seq_len, compressed_len + 1), float("-inf")
+    )
     block_bias.scatter_(-1, safe_indices.unsqueeze(1), 0.0)
     return compressed_kv, block_bias[..., :compressed_len]
 
 
 def _hyperconnection_forward(self, hidden_streams):
     return hyperconnection_forward(
-        hidden_streams, self.input_norm, self.fn, self.base, self.scale,
-        self.hc_mult, self.hc_sinkhorn_iters, self.hc_eps, post_mult=2.0,
+        hidden_streams,
+        self.input_norm,
+        self.fn,
+        self.base,
+        self.scale,
+        self.hc_mult,
+        self.hc_sinkhorn_iters,
+        self.hc_eps,
+        post_mult=2.0,
     )
 
 
@@ -257,4 +343,6 @@ def patch_deepseek_v4_kernels():
     mod.DeepseekV4HCACompressor.forward = _hca_compressor_forward
     mod.DeepseekV4Indexer.forward = _indexer_forward
     mod.DeepseekV4CSACompressor.forward = _csa_compressor_forward
-    LOG.info("Patched DeepSeek-V4 with fused Triton kernels (attention/rope/mHC/compressor/indexer)")
+    LOG.info(
+        "Patched DeepSeek-V4 with fused Triton kernels (attention/rope/mHC/compressor/indexer)"
+    )

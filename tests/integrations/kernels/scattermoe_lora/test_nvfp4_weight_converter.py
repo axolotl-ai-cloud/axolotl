@@ -48,7 +48,7 @@ E, H, I = 4, 128, 64
 BLOCK = 16
 
 
-def _quant(W: torch.Tensor, pts: torch.Tensor) -> NVFP4Tensor:
+def _quant(W: torch.Tensor, pts: torch.Tensor):
     """Per-expert NVFP4 of a 2D weight with a fixed per-tensor scale (as the
     checkpoint stores it)."""
     return NVFP4Tensor.to_nvfp4(W, block_size=BLOCK, per_tensor_scale=pts)
@@ -152,7 +152,9 @@ class _AttrModel:
 def test_gate_up_fusion_bit_exact():
     experts, pts = _make_checkpoint_experts(seed=1)
     op = Nvfp4ExpertsDeserialize()
-    module, missing = _run_convert(op, experts, "gate_up_proj", ("gate_proj", "up_proj"))
+    module, missing = _run_convert(
+        op, experts, "gate_up_proj", ("gate_proj", "up_proj")
+    )
 
     fused = module.gate_up_proj
     assert is_nvfp4_param(fused), "gate_up_proj must be an NVFP4Tensor"
@@ -163,9 +165,9 @@ def test_gate_up_fusion_bit_exact():
     # bit-exact: fusion is concatenation of already-quantized bytes -> maxerr 0.0
     assert torch.equal(fused.qdata, ref_qd), "qdata not bit-exact"
     assert torch.equal(fused.scale, ref_sc), "scale not bit-exact"
-    assert torch.equal(
-        fused.per_tensor_scale.to(torch.float32), pts
-    ), "per_tensor_scale mismatch"
+    assert torch.equal(fused.per_tensor_scale.to(torch.float32), pts), (
+        "per_tensor_scale mismatch"
+    )
     # loader contract: param consumed, requires_grad off
     assert "model.language_model.layers.0.experts.gate_up_proj" not in missing
     assert fused.requires_grad is False
@@ -347,8 +349,9 @@ def test_source_pattern_alternation_disambiguates_scales():
     specific suffixes are ordered first. This pins that ordering for both converters."""
     for conv in nvfp4_experts_weight_converters():
         rx = conv.compiled_sources
+
         # which source pattern does each concrete checkpoint key resolve to?
-        def _resolve(key):
+        def _resolve(key, rx=rx, conv=conv):  # bind loop vars per-iteration
             m = rx.search(key)
             assert m is not None, f"{key} matched no source pattern"
             gname = next(n for n, v in m.groupdict().items() if v is not None)

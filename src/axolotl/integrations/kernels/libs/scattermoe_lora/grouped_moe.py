@@ -66,7 +66,9 @@ def _route(idx, E, dev, tile=TILE):
     coff = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
     local = torch.arange(exp_sorted.numel(), device=dev) - coff[exp_sorted]
     padded_row = roff[exp_sorted] + local
-    m_indices = torch.repeat_interleave(torch.arange(E, dtype=torch.int32, device=dev), ptiles)
+    m_indices = torch.repeat_interleave(
+        torch.arange(E, dtype=torch.int32, device=dev), ptiles
+    )
     Mt = int(ptiles.sum()) * tile
     return rep, padded_row, m_indices, counts, Mt
 
@@ -93,13 +95,17 @@ def _quant_weight(W_nv, mode):
     from torchao.prototype.mx_formats.mx_tensor import MXTensor
 
     deq = W_nv.dequantize(torch.bfloat16)
-    ts = [MXTensor.to_mx(deq[e].contiguous(), torch.float4_e2m1fn_x2, 32) for e in range(E)]
+    ts = [
+        MXTensor.to_mx(deq[e].contiguous(), torch.float4_e2m1fn_x2, 32)
+        for e in range(E)
+    ]
     return torch.stack([t.qdata for t in ts]), torch.stack([t.scale for t in ts])
 
 
 @torch.no_grad()
-def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, backend=None,
-                             act_type="silu"):
+def grouped_fp4_moe_forward(
+    hidden, idx, wts, gate_up_nv, down_nv, limit, mode, backend=None, act_type="silu"
+):
     """Forward-only grouped NVFP4 MoE. hidden[N,H], idx/wts[N,topk], experts NVFP4Tensor.
 
     Returns [N,H]. backend auto-selected if None. TRAINING NOT YET (forward-only engines).
@@ -107,11 +113,12 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
     """
     N, H = hidden.shape
     E = gate_up_nv.qdata.size(0)
-    Idim = down_nv.qdata.size(2) * 2  # down K = I (packed K/2)
+    _Idim = down_nv.qdata.size(2) * 2  # down K = I (packed K/2)
     dev = hidden.device
     backend = backend or grouped_fp4_backend(mode)
     if backend == "marlin":
         from .marlin_w4a16.backend import MARLIN_TILE
+
         tile = MARLIN_TILE
     else:
         tile = TILE
@@ -134,11 +141,15 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
         gu_eng.set_weights(*_quant_weight(gate_up_nv, mode))
         aq, as_ = quant_act(A, mode)
         gu = gu_eng.forward(aq.unsqueeze(0), as_.unsqueeze(0), m_indices).float()
-    elif backend == "deepgemm":  # native fp8(act) x mxfp4(weight) grouped GEMM (SM90/SM100)
+    elif (
+        backend == "deepgemm"
+    ):  # native fp8(act) x mxfp4(weight) grouped GEMM (SM90/SM100)
         from .dequant_grouped import _cached_mxfp4, deepgemm_grouped_fp8_fp4
 
         wq, ws = _cached_mxfp4(gate_up_nv, _per_tensor(gate_up_nv, E))
-        gu = deepgemm_grouped_fp8_fp4(A, wq, ws, m_indices.repeat_interleave(TILE)).float()
+        gu = deepgemm_grouped_fp8_fp4(
+            A, wq, ws, m_indices.repeat_interleave(TILE)
+        ).float()
     else:  # chunked fallback: dequant weight -> grouped bf16 matmul
         from .dequant_grouped import nvfp4_dequant_bf16
 
@@ -149,9 +160,11 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
 
     g, u = gu.chunk(2, dim=-1)
     if act_type == "gelu_tanh":
-        h = (F.gelu(g, approximate='tanh') * u).to(hidden.dtype)
+        h = (F.gelu(g, approximate="tanh") * u).to(hidden.dtype)
     else:
-        h = (F.silu(g.clamp(max=limit)) * u.clamp(min=-limit, max=limit)).to(hidden.dtype)
+        h = (F.silu(g.clamp(max=limit)) * u.clamp(min=-limit, max=limit)).to(
+            hidden.dtype
+        )
 
     if backend == "marlin":
         dn = marlin_base_forward(marlin_base, 1, h.contiguous(), m_indices)
@@ -166,7 +179,9 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
         from .dequant_grouped import _cached_mxfp4, deepgemm_grouped_fp8_fp4
 
         wq, ws = _cached_mxfp4(down_nv, _per_tensor(down_nv, E))
-        dn = deepgemm_grouped_fp8_fp4(h.contiguous(), wq, ws, m_indices.repeat_interleave(TILE))
+        dn = deepgemm_grouped_fp8_fp4(
+            h.contiguous(), wq, ws, m_indices.repeat_interleave(TILE)
+        )
     else:
         from .dequant_grouped import nvfp4_dequant_bf16
 
@@ -176,7 +191,9 @@ def grouped_fp4_moe_forward(hidden, idx, wts, gate_up_nv, down_nv, limit, mode, 
         dn = torch._grouped_mm(h.contiguous(), Wb.transpose(1, 2), offs=offs)
 
     out = hidden.new_zeros(N, H)
-    return out.index_add(0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype))
+    return out.index_add(
+        0, rep, (dn[padded_row] * wflat[:, None].to(dn.dtype)).to(out.dtype)
+    )
 
 
 def _per_tensor(w_nv, E):

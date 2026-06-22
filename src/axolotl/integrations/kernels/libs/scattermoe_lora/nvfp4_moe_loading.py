@@ -36,9 +36,9 @@ def _nvfp4_cls():
 
 
 def _load_index(repo_id: str):
-    from huggingface_hub import hf_hub_download
-
     import json
+
+    from huggingface_hub import hf_hub_download
 
     path = hf_hub_download(repo_id, "model.safetensors.index.json")
     return json.load(open(path))["weight_map"]
@@ -56,10 +56,17 @@ def _shard_open(repo_id: str, shard: str):
 # (gate_up = cat on the N/row axis in this order; down is single).
 _NVFP4_MOE_SCHEMES = {
     # DeepSeek-V4-Flash-NVFP4: w1=gate, w3=up, w2=down under ``layers.N.ffn.experts.M``
-    "dsv4": {"base_fmt": "layers.{layer}.ffn.experts.{e}.{proj}", "gate_up": ("w1", "w3"), "down": ("w2",)},
+    "dsv4": {
+        "base_fmt": "layers.{layer}.ffn.experts.{e}.{proj}",
+        "gate_up": ("w1", "w3"),
+        "down": ("w2",),
+    },
     # Gemma-4-A4B-NVFP4: separate gate/up/down under ``model.language_model.layers.N.experts.M``
-    "gemma4": {"base_fmt": "model.language_model.layers.{layer}.experts.{e}.{proj}",
-               "gate_up": ("gate_proj", "up_proj"), "down": ("down_proj",)},
+    "gemma4": {
+        "base_fmt": "model.language_model.layers.{layer}.experts.{e}.{proj}",
+        "gate_up": ("gate_proj", "up_proj"),
+        "down": ("down_proj",),
+    },
 }
 
 
@@ -83,7 +90,9 @@ def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device
         for pi, proj in enumerate(projs):
             base = base_fmt.format(layer=layer, e=e, proj=proj)
             shard = wmap[f"{base}.weight"]
-            f = opened.get(shard) or opened.setdefault(shard, _shard_open(repo_id, shard))
+            f = opened.get(shard) or opened.setdefault(
+                shard, _shard_open(repo_id, shard)
+            )
             qd_proj[pi].append(f.get_tensor(f"{base}.weight"))
             sc_proj[pi].append(f.get_tensor(f"{base}.weight_scale"))
             if pts is None:  # gate/up share weight_scale_2; capture once
@@ -105,7 +114,10 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
     wmap = _load_index(repo_id)
     scheme_name, scheme = _detect_scheme(wmap)
     if scheme is None:
-        LOG.warning("attach_nvfp4_expert_scales: no known NVFP4 MoE naming scheme in %s", repo_id)
+        LOG.warning(
+            "attach_nvfp4_expert_scales: no known NVFP4 MoE naming scheme in %s",
+            repo_id,
+        )
         return 0
     base_fmt, projs_gu, projs_dn = scheme["base_fmt"], scheme["gate_up"], scheme["down"]
     fixed = 0
@@ -129,8 +141,12 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
         if base_fmt.format(layer=layer, e=0, proj=projs_gu[0]) + ".weight" not in wmap:
             continue
         E = gup.shape[0]
-        gqd, gscale, gpts = _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs_gu, E, gup.device)
-        dqd, dscale, dpts = _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs_dn, E, dn.device)
+        gqd, gscale, gpts = _build_expert_nvfp4(
+            repo_id, wmap, base_fmt, layer, projs_gu, E, gup.device
+        )
+        dqd, dscale, dpts = _build_expert_nvfp4(
+            repo_id, wmap, base_fmt, layer, projs_dn, E, dn.device
+        )
         mod.gate_up_proj = nn.Parameter(
             NVFP4Tensor(gqd, gscale, 16, torch.bfloat16, per_tensor_scale=gpts),
             requires_grad=False,
@@ -144,10 +160,14 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
         # `*_scale`/`input_scale`). They're unused once the experts are NVFP4Tensor routed
         # through scattermoe, and would otherwise be sharded by FSDP / waste memory.
         for stale in (
-            "gate_up_proj_scale_inv", "down_proj_scale_inv",
-            "gate_up_proj_scale", "down_proj_scale",
-            "gate_up_proj_scale_2", "down_proj_scale_2",
-            "gate_up_proj_input_scale", "down_proj_input_scale",
+            "gate_up_proj_scale_inv",
+            "down_proj_scale_inv",
+            "gate_up_proj_scale",
+            "down_proj_scale",
+            "gate_up_proj_scale_2",
+            "down_proj_scale_2",
+            "gate_up_proj_input_scale",
+            "down_proj_input_scale",
         ):
             for store in (mod._parameters, mod._buffers):
                 if stale in store:
@@ -155,7 +175,11 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
         del gup, dn
         fixed += 1
     if fixed:
-        LOG.info("Attached NVFP4 expert scales (rebuilt %d %s experts as NVFP4Tensor)", fixed, scheme_name)
+        LOG.info(
+            "Attached NVFP4 expert scales (rebuilt %d %s experts as NVFP4Tensor)",
+            fixed,
+            scheme_name,
+        )
     return fixed
 
 
@@ -167,8 +191,17 @@ if __name__ == "__main__":  # local self-consistency test on real layer-0 data
     _base_fmt = _scheme["base_fmt"]
     dev = "cuda"
     # fused gate_up qdata+scale from w1+w3 (expert 0 only via n_experts=1 slice below)
-    gqd, gscale, gpts = _build_expert_nvfp4(REPO, wmap, _base_fmt, 0, ("w1", "w3"), 4, dev)
-    print("fused gate_up qdata", gqd.shape, "scale", gscale.shape, "per_tensor", gpts.item())
+    gqd, gscale, gpts = _build_expert_nvfp4(
+        REPO, wmap, _base_fmt, 0, ("w1", "w3"), 4, dev
+    )
+    print(
+        "fused gate_up qdata",
+        gqd.shape,
+        "scale",
+        gscale.shape,
+        "per_tensor",
+        gpts.item(),
+    )
     # self-consistency: NVFP4 of fused must dequant to cat(dequant(w1), dequant(w3))
     f = _shard_open(REPO, wmap["layers.0.ffn.experts.0.w1.weight"])
     qd1 = f.get_tensor("layers.0.ffn.experts.0.w1.weight").to(dev)
@@ -176,8 +209,19 @@ if __name__ == "__main__":  # local self-consistency test on real layer-0 data
     s1 = f.get_tensor("layers.0.ffn.experts.0.w1.weight_scale").to(dev)
     s3 = f.get_tensor("layers.0.ffn.experts.0.w3.weight_scale").to(dev)
     p = f.get_tensor("layers.0.ffn.experts.0.w1.weight_scale_2").to(dev).float()
-    d1 = NVFP4Tensor(qd1, s1, 16, torch.bfloat16, per_tensor_scale=p).dequantize(torch.bfloat16)
-    d3 = NVFP4Tensor(qd3, s3, 16, torch.bfloat16, per_tensor_scale=p).dequantize(torch.bfloat16)
-    fused = NVFP4Tensor(gqd[0], gscale[0], 16, torch.bfloat16, per_tensor_scale=gpts).dequantize(torch.bfloat16)
+    d1 = NVFP4Tensor(qd1, s1, 16, torch.bfloat16, per_tensor_scale=p).dequantize(
+        torch.bfloat16
+    )
+    d3 = NVFP4Tensor(qd3, s3, 16, torch.bfloat16, per_tensor_scale=p).dequantize(
+        torch.bfloat16
+    )
+    fused = NVFP4Tensor(
+        gqd[0], gscale[0], 16, torch.bfloat16, per_tensor_scale=gpts
+    ).dequantize(torch.bfloat16)
     ref = torch.cat([d1, d3], dim=0)
-    print("fusion self-consistent:", torch.equal(fused, ref), "max_err", (fused - ref).abs().max().item())
+    print(
+        "fusion self-consistent:",
+        torch.equal(fused, ref),
+        "max_err",
+        (fused - ref).abs().max().item(),
+    )

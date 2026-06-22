@@ -48,7 +48,12 @@ class _NativeFp8Lora(torch.autograd.Function):
         x2 = x.reshape(-1, shape[-1])
         # frozen base: native blockwise fp8 GEMM (act quantized 1x128 inside fp8_linear)
         out = fp8_linear(
-            x2, qdata, scale_inv, block_size=list(block_size), bias=bias, output_dtype=x.dtype
+            x2,
+            qdata,
+            scale_inv,
+            block_size=list(block_size),
+            bias=bias,
+            output_dtype=x.dtype,
         )
         # fused LoRA update: out += scaling * (x @ Aᵀ) @ Bᵀ  (avoids a [M,out] temp)
         xA = x2 @ A.t()
@@ -68,8 +73,8 @@ class _NativeFp8Lora(torch.autograd.Function):
         w_deq = dequantize_fp8(qdata, scale_inv, g.dtype)
         dxA = g @ B
         dX = (g @ w_deq).addmm_(dxA, A, alpha=s)
-        dA = (dxA.t() * s) @ x2          # [r, in]
-        dB = (g.t() * s) @ xA            # [out, r]
+        dA = (dxA.t() * s) @ x2  # [r, in]
+        dB = (g.t() * s) @ xA  # [out, r]
         return dX.view(*ctx.shape), None, None, None, dA, dB, None, None
 
 
@@ -78,9 +83,15 @@ def _fp8_from_weight(w, base_layer):
     qdata = getattr(w, "qdata", None)
     if qdata is not None:  # torchao Float8Tensor
         return qdata, w.scale, list(getattr(w, "block_size", None) or [128, 128])
-    if isinstance(w, torch.Tensor) and w.dtype == torch.float8_e4m3fn:  # raw transformers FP8
+    if (
+        isinstance(w, torch.Tensor) and w.dtype == torch.float8_e4m3fn
+    ):  # raw transformers FP8
         si = getattr(base_layer, "weight_scale_inv", None)
-        return (w, si, list(getattr(base_layer, "block_size", None) or [128, 128])) if si is not None else None
+        return (
+            (w, si, list(getattr(base_layer, "block_size", None) or [128, 128]))
+            if si is not None
+            else None
+        )
     return None
 
 
@@ -94,13 +105,19 @@ def _make_forward(lora_layer):
         # and returns them grad-tracked — mirrors the other fused LoRA kernels. The base
         # Float8Tensor is all-gathered to full by FSDP before forward, so reading it here is
         # the live (not stale pre-shard) weight.
-        W, bias, _qs, A, B, scaling, _lora_bias, dropout, _mag = get_lora_parameters(self)
+        W, bias, _qs, A, B, scaling, _lora_bias, dropout, _mag = get_lora_parameters(
+            self
+        )
         fp8 = _fp8_from_weight(W, self.base_layer)
-        if fp8 is None or A is None:  # disabled/merged adapter, or base not fp8 — fall back
+        if (
+            fp8 is None or A is None
+        ):  # disabled/merged adapter, or base not fp8 — fall back
             return self._dsv4_orig_forward(x, *args, **kwargs)
         qdata, scale_inv, block_size = fp8
         xin = dropout(x) if dropout is not None else x
-        return _NativeFp8Lora.apply(xin, qdata, scale_inv, block_size, A, B, scaling, bias)
+        return _NativeFp8Lora.apply(
+            xin, qdata, scale_inv, block_size, A, B, scaling, bias
+        )
 
     return forward
 
@@ -125,5 +142,7 @@ def patch_dsv4_attn_fp8_lora(model, enabled: bool = False) -> int:
         mod.forward = types.MethodType(_make_forward(mod), mod)
         n += 1
     if n:
-        LOG.info("Patched %d DeepSeek-V4 attention projections with native-fp8 fused LoRA", n)
+        LOG.info(
+            "Patched %d DeepSeek-V4 attention projections with native-fp8 fused LoRA", n
+        )
     return n

@@ -23,7 +23,6 @@ Gate: skips unless CUDA is available AND device is Blackwell (sm100 / sm120).
 from __future__ import annotations
 
 import functools
-import types
 
 import pytest
 import torch
@@ -51,16 +50,28 @@ DEV = "cuda"
 # DSV4-Flash: clamped-SwiGLU, limit=7.0
 _DSV4 = dict(
     name="dsv4",
-    E=8, H=4096, I=2048, topk=6, N=32, r=8,
-    act_type="silu", limit=7.0,
+    E=8,
+    H=4096,
+    I=2048,
+    topk=6,
+    N=32,
+    r=8,
+    act_type="silu",
+    limit=7.0,
     scaling=2.0,
 )
 
 # gemma4-A4B: gelu_tanh GeGLU, no clamp
 _GEMMA4 = dict(
     name="gemma4",
-    E=8, H=2816, I=704, topk=8, N=32, r=8,
-    act_type="gelu_tanh", limit=1e30,
+    E=8,
+    H=2816,
+    I=704,
+    topk=8,
+    N=32,
+    r=8,
+    act_type="gelu_tanh",
+    limit=1e30,
     scaling=2.0,
 )
 
@@ -73,8 +84,12 @@ SHAPE_IDS = ["dsv4", "gemma4"]
 # which frees qdata.data after repacking). Self-contained, no scratch imports.
 # ---------------------------------------------------------------------------
 
+
 def _fp4_codebook(device):
-    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import fp4_codebook
+    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+        fp4_codebook,
+    )
+
     return fp4_codebook(device).float()
 
 
@@ -89,12 +104,18 @@ def quantize_nvfp4(W: torch.Tensor):
     amax = Wb.abs().amax(-1).clamp_min(1e-6)
     scale_e4m3 = (amax / 6.0).to(torch.float8_e4m3fn)
     scale_f = scale_e4m3.float().clamp_min(1e-9)
-    nib = ((Wb / scale_f.unsqueeze(-1)).unsqueeze(-1) - cb.view(1, 1, 1, 1, 16)).abs().argmin(-1)
+    nib = (
+        ((Wb / scale_f.unsqueeze(-1)).unsqueeze(-1) - cb.view(1, 1, 1, 1, 16))
+        .abs()
+        .argmin(-1)
+    )
     nib = nib.to(torch.uint8).reshape(E, N, K)
     packed = (nib[..., 0::2] & 0xF) | ((nib[..., 1::2] & 0xF) << 4)
     return NVFP4Tensor(
-        packed.contiguous(), scale_e4m3.contiguous(),
-        block_size=16, orig_dtype=torch.bfloat16,
+        packed.contiguous(),
+        scale_e4m3.contiguous(),
+        block_size=16,
+        orig_dtype=torch.bfloat16,
         per_tensor_scale=torch.ones((), device=dev),
     )
 
@@ -103,7 +124,10 @@ def quantize_nvfp4(W: torch.Tensor):
 # bf16 per-expert MoE oracle
 # ---------------------------------------------------------------------------
 
-def _bf16_oracle(hidden, idx, wts, Wgu_b, Wdn_b, Agu, Bgu, Adn, Bdn, act_type, limit, scaling):
+
+def _bf16_oracle(
+    hidden, idx, wts, Wgu_b, Wdn_b, Agu, Bgu, Adn, Bdn, act_type, limit, scaling
+):
     """Per-token per-expert bf16 MoE forward (no grouping), matching the kernel's intent.
 
     hidden [N,H]; idx/wts [N,topk]; Wgu_b/Wdn_b [E,out,in] bf16 dequant; *_lora scattermoe
@@ -115,24 +139,29 @@ def _bf16_oracle(hidden, idx, wts, Wgu_b, Wdn_b, Agu, Bgu, Adn, Bdn, act_type, l
     r = Agu.shape[0] // E
     acc = torch.zeros(N, H, device=hidden.device, dtype=torch.float32)
     for e in range(E):
-        sel = (idx == e)           # [N, topk] bool
-        tok = sel.any(-1)          # [N] bool
+        sel = idx == e  # [N, topk] bool
+        tok = sel.any(-1)  # [N] bool
         if not tok.any():
             continue
         ti = tok.nonzero(as_tuple=True)[0]
         xe = hidden[ti].float()
-        Ag = Agu[e * r:(e + 1) * r]           # [r, H]
-        Bg = Bgu[:, e * r:(e + 1) * r]        # [2I, r]
-        Ad = Adn[e * r:(e + 1) * r]           # [r, I]
-        Bd = Bdn[:, e * r:(e + 1) * r]        # [H, r]
+        Ag = Agu[e * r : (e + 1) * r]  # [r, H]
+        Bg = Bgu[:, e * r : (e + 1) * r]  # [2I, r]
+        Ad = Adn[e * r : (e + 1) * r]  # [r, I]
+        Bd = Bdn[:, e * r : (e + 1) * r]  # [H, r]
         # gate_up: base + LoRA
-        gu = xe.to(hidden.dtype) @ Wgu_b[e].T + scaling * (xe.to(hidden.dtype) @ Ag.T) @ Bg.T
+        gu = (
+            xe.to(hidden.dtype) @ Wgu_b[e].T
+            + scaling * (xe.to(hidden.dtype) @ Ag.T) @ Bg.T
+        )
         # activation
         g, u = gu.chunk(2, -1)
         if act_type == "gelu_tanh":
             h = F.gelu(g.float(), approximate="tanh") * u.float()
         else:
-            h = F.silu(g.float().clamp(max=limit)) * u.float().clamp(min=-limit, max=limit)
+            h = F.silu(g.float().clamp(max=limit)) * u.float().clamp(
+                min=-limit, max=limit
+            )
         h = h.to(hidden.dtype)
         # down: base + LoRA
         dn = h @ Wdn_b[e].T + scaling * (h @ Ad.T) @ Bd.T
@@ -150,6 +179,7 @@ def _cos(a: torch.Tensor, b: torch.Tensor) -> float:
 # Shared fixture: build inputs + weights for a shape family
 # ---------------------------------------------------------------------------
 
+
 def _make_inputs(cfg: dict, seed: int = 0):
     """Return (hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, lora_params) plus fresh NV copies."""
     E, H, I, topk, N, r = cfg["E"], cfg["H"], cfg["I"], cfg["topk"], cfg["N"], cfg["r"]
@@ -160,7 +190,10 @@ def _make_inputs(cfg: dict, seed: int = 0):
     gu_nv = quantize_nvfp4(Wgu)
     dn_nv = quantize_nvfp4(Wdn)
 
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+
     pt = torch.ones(E, device=DEV)
     Wgu_b = nvfp4_dequant_bf16(gu_nv.qdata, gu_nv.scale, pt)
     Wdn_b = nvfp4_dequant_bf16(dn_nv.qdata, dn_nv.scale, pt)
@@ -170,7 +203,9 @@ def _make_inputs(cfg: dict, seed: int = 0):
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1).to(torch.bfloat16)
 
     def mk(*s):
-        return (torch.randn(*s, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
+        return (
+            torch.randn(*s, device=DEV, dtype=torch.bfloat16) * 0.02
+        ).requires_grad_(True)
 
     Agu = mk(r * E, H)
     Bgu = mk(twoI, r * E)
@@ -185,6 +220,7 @@ def _make_inputs(cfg: dict, seed: int = 0):
 # multiple independent calls must build separate NVFP4Tensors from the same W)
 # ---------------------------------------------------------------------------
 
+
 def _fresh_nv(Wgu, Wdn):
     """Build fresh NVFP4Tensor pair from the same weight matrices (for second-call tests)."""
     return quantize_nvfp4(Wgu), quantize_nvfp4(Wdn)
@@ -194,31 +230,55 @@ def _fresh_nv(Wgu, Wdn):
 # Test 1: forward output matches oracle
 # ===========================================================================
 
+
 @pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
 def test_grouped_fp4_fwd_matches_oracle(cfg):
     """Forward output cosine >= 0.97 vs bf16 per-expert oracle, no NaN/inf."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
         grouped_fp4_available,
+        grouped_fp4_moe_train,
     )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
 
     H = cfg["H"]
-    hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
-    r, s = cfg["r"], cfg["scaling"]
+    hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, (Agu, Bgu, Adn, Bdn) = _make_inputs(
+        cfg
+    )
+    _r, s = cfg["r"], cfg["scaling"]
 
     cache = {}
     out = grouped_fp4_moe_train(
-        hidden.clone(), idx, wts, gu_nv, dn_nv,
-        (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
-        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache=cache,
+        hidden.clone(),
+        idx,
+        wts,
+        gu_nv,
+        dn_nv,
+        (Agu.detach(), Bgu.detach(), s),
+        (Adn.detach(), Bdn.detach(), s),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache=cache,
     )
     assert torch.isfinite(out).all(), f"{cfg['name']}: fwd output has NaN/inf"
     assert out.shape == (cfg["N"], H), f"unexpected output shape {out.shape}"
 
-    ref = _bf16_oracle(hidden.clone(), idx, wts, Wgu_b, Wdn_b, Agu, Bgu, Adn, Bdn,
-                       cfg["act_type"], cfg["limit"], s)
+    ref = _bf16_oracle(
+        hidden.clone(),
+        idx,
+        wts,
+        Wgu_b,
+        Wdn_b,
+        Agu,
+        Bgu,
+        Adn,
+        Bdn,
+        cfg["act_type"],
+        cfg["limit"],
+        s,
+    )
     cos = _cos(out, ref)
     assert cos > 0.97, f"{cfg['name']}: fwd cosine {cos:.4f} < 0.97"
 
@@ -227,6 +287,7 @@ def test_grouped_fp4_fwd_matches_oracle(cfg):
 # Test 1b: marlin qdata-free experts survive clone/state_dict (adapter save)
 # ===========================================================================
 
+
 @pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
 def test_grouped_fp4_save_after_qdata_free(cfg):
     """Regression: the marlin memory fix frees nv.qdata after repack. The freed NVFP4Tensor must
@@ -234,8 +295,11 @@ def test_grouped_fp4_save_after_qdata_free(cfg):
     qdata.stride(-2)); a flat empty(0) qdata crashed with IndexError(dim -2). Freeing to a 3-D
     [E, N, 0] placeholder keeps clone/save working."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train, grouped_fp4_available, _train_backend,
+        _train_backend,
+        grouped_fp4_available,
+        grouped_fp4_moe_train,
     )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
     if _train_backend("nvfp4") != "marlin":
@@ -245,20 +309,32 @@ def test_grouped_fp4_save_after_qdata_free(cfg):
     s = cfg["scaling"]
     # one forward triggers the marlin repack + qdata free
     grouped_fp4_moe_train(
-        hidden.clone(), idx, wts, gu_nv, dn_nv,
-        (Agu.detach(), Bgu.detach(), s), (Adn.detach(), Bdn.detach(), s),
-        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache={},
+        hidden.clone(),
+        idx,
+        wts,
+        gu_nv,
+        dn_nv,
+        (Agu.detach(), Bgu.detach(), s),
+        (Adn.detach(), Bdn.detach(), s),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache={},
     )
     # qdata was freed to a 3-D zero-element placeholder (not flat empty(0))
-    assert gu_nv.qdata.numel() == 0 and gu_nv.qdata.ndim == 3, "qdata not freed to 3-D placeholder"
+    assert gu_nv.qdata.numel() == 0 and gu_nv.qdata.ndim == 3, (
+        "qdata not freed to 3-D placeholder"
+    )
     # The freed NVFP4Tensor must CLONE / round-trip through state_dict without raising — this is the
     # save path (PEFT save_pretrained -> state_dict -> NVFP4Tensor clone). A flat empty(0) qdata
     # crashed here with IndexError(dim -2). We don't assert the frozen expert's clone *shape* (it's
     # degenerate by design and filtered out of the LoRA adapter); only that save doesn't crash.
     import torch.nn as nn
+
     for nv in (gu_nv, dn_nv):
         nv.clone()  # would IndexError(dim -2) on a flat empty(0) qdata
-        m = nn.Module(); m.w = nn.Parameter(nv, requires_grad=False)
+        m = nn.Module()
+        m.w = nn.Parameter(nv, requires_grad=False)
         sd = m.state_dict()  # invokes _save_to_state_dict -> clone on the NVFP4Tensor
         assert "w" in sd
 
@@ -267,20 +343,26 @@ def test_grouped_fp4_save_after_qdata_free(cfg):
 # Test 2: backward grads match oracle
 # ===========================================================================
 
+
 @pytest.mark.parametrize("cfg", SHAPES, ids=SHAPE_IDS)
 def test_grouped_fp4_bwd_matches_oracle(cfg):
     """Backward grads (d_hidden, d_LoRA_A_gu, d_LoRA_A_dn) cosine >= 0.95, finite."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
-        grouped_fp4_available,
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
     )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_available,
+        grouped_fp4_moe_train,
+    )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
 
     E, H, I = cfg["E"], cfg["H"], cfg["I"]
-    hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, (Agu, Bgu, Adn, Bdn) = _make_inputs(cfg)
-    r, s = cfg["r"], cfg["scaling"]
+    hidden, idx, wts, gu_nv, dn_nv, Wgu_b, Wdn_b, (Agu, Bgu, Adn, Bdn) = _make_inputs(
+        cfg
+    )
+    _r, s = cfg["r"], cfg["scaling"]
 
     # Kernel path — use fresh NV tensors for backward (marlin frees qdata on first build)
     twoI = 2 * I
@@ -303,9 +385,17 @@ def test_grouped_fp4_bwd_matches_oracle(cfg):
 
     cache = {}
     out = grouped_fp4_moe_train(
-        hk, idx2, wts2, gu_nv_k, dn_nv_k,
-        (Agk, Bgk, s), (Adk, Bdk, s),
-        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache=cache,
+        hk,
+        idx2,
+        wts2,
+        gu_nv_k,
+        dn_nv_k,
+        (Agk, Bgk, s),
+        (Adk, Bdk, s),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache=cache,
     )
     out.float().pow(2).mean().backward()
 
@@ -316,8 +406,20 @@ def test_grouped_fp4_bwd_matches_oracle(cfg):
     Bdr = Bdk.detach().clone().requires_grad_(True)
     hr = hidden2.detach().clone().requires_grad_(True)
 
-    ref = _bf16_oracle(hr, idx2, wts2, Wgu_b_k, Wdn_b_k, Agr, Bgr, Adr, Bdr,
-                       cfg["act_type"], cfg["limit"], s)
+    ref = _bf16_oracle(
+        hr,
+        idx2,
+        wts2,
+        Wgu_b_k,
+        Wdn_b_k,
+        Agr,
+        Bgr,
+        Adr,
+        Bdr,
+        cfg["act_type"],
+        cfg["limit"],
+        s,
+    )
     ref.pow(2).mean().backward()
 
     for name, gk, gr in [
@@ -325,7 +427,9 @@ def test_grouped_fp4_bwd_matches_oracle(cfg):
         ("d_Agu", Agk.grad, Agr.grad),
         ("d_Adn", Adk.grad, Adr.grad),
     ]:
-        assert gk is not None, f"{cfg['name']}: {name} grad is None (backward didn't run)"
+        assert gk is not None, (
+            f"{cfg['name']}: {name} grad is None (backward didn't run)"
+        )
         assert gr is not None, f"{cfg['name']}: oracle {name} grad is None"
         assert torch.isfinite(gk).all(), f"{cfg['name']}: {name} has NaN/inf"
         cos = _cos(gk, gr)
@@ -336,9 +440,12 @@ def test_grouped_fp4_bwd_matches_oracle(cfg):
 # Test 3: activation type dispatch
 # ===========================================================================
 
+
 def test_detect_act_type_dispatch():
     """_detect_act_type must return 'gelu_tanh' for gemma4-style and 'silu' for DSV4."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import _detect_act_type
+    from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+        _detect_act_type,
+    )
 
     class FakeGemma4:
         act_fn = functools.partial(F.gelu, approximate="tanh")
@@ -350,13 +457,19 @@ def test_detect_act_type_dispatch():
     class FakeNamedGeLU:
         class _GeLU:
             __name__ = "gelu_pytorch_tanh"
+
             def __call__(self, x):
                 return F.gelu(x, approximate="tanh")
+
         act_fn = _GeLU()
 
-    assert _detect_act_type(FakeGemma4()) == "gelu_tanh", "gemma4 (partial F.gelu tanh) must be 'gelu_tanh'"
+    assert _detect_act_type(FakeGemma4()) == "gelu_tanh", (
+        "gemma4 (partial F.gelu tanh) must be 'gelu_tanh'"
+    )
     assert _detect_act_type(FakeDSV4()) == "silu", "dsv4 (F.silu) must be 'silu'"
-    assert _detect_act_type(FakeNamedGeLU()) == "gelu_tanh", "named gelu_pytorch_tanh must be 'gelu_tanh'"
+    assert _detect_act_type(FakeNamedGeLU()) == "gelu_tanh", (
+        "named gelu_pytorch_tanh must be 'gelu_tanh'"
+    )
 
 
 def test_wrong_activation_fails_gemma4():
@@ -369,11 +482,13 @@ def test_wrong_activation_fails_gemma4():
     Note: absolute cosine with wrong-act vs correct-oracle stays ~0.99 (gelu_tanh ≈ silu for
     moderate values), so the test checks the *relative gap* rather than an absolute threshold.
     """
-    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
-        grouped_fp4_available,
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
     )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
+    from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
+        grouped_fp4_available,
+        grouped_fp4_moe_train,
+    )
 
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
@@ -400,24 +515,51 @@ def test_wrong_activation_fails_gemma4():
     Wdn_b = nvfp4_dequant_bf16(dn_nv_c.qdata, dn_nv_c.scale, pt)
     cache_c = {}
     out_correct = grouped_fp4_moe_train(
-        hidden, idx, wts, gu_nv_c, dn_nv_c,
-        (Agu, Bgu, cfg["scaling"]), (Adn, Bdn, cfg["scaling"]),
-        cfg["limit"], "nvfp4", act_type="gelu_tanh", mxfp4_cache=cache_c,
+        hidden,
+        idx,
+        wts,
+        gu_nv_c,
+        dn_nv_c,
+        (Agu, Bgu, cfg["scaling"]),
+        (Adn, Bdn, cfg["scaling"]),
+        cfg["limit"],
+        "nvfp4",
+        act_type="gelu_tanh",
+        mxfp4_cache=cache_c,
     )
 
     # Wrong-act run (fresh NV tensors; marlin freed qdata in first call)
     gu_nv_w, dn_nv_w = _fresh_nv(Wgu, Wdn)
     cache_w = {}
     out_wrong = grouped_fp4_moe_train(
-        hidden, idx, wts, gu_nv_w, dn_nv_w,
-        (Agu, Bgu, cfg["scaling"]), (Adn, Bdn, cfg["scaling"]),
-        cfg["limit"], "nvfp4", act_type="silu",  # deliberate wrong activation
+        hidden,
+        idx,
+        wts,
+        gu_nv_w,
+        dn_nv_w,
+        (Agu, Bgu, cfg["scaling"]),
+        (Adn, Bdn, cfg["scaling"]),
+        cfg["limit"],
+        "nvfp4",
+        act_type="silu",  # deliberate wrong activation
         mxfp4_cache=cache_w,
     )
 
     # Correct-activation oracle
-    correct_ref = _bf16_oracle(hidden, idx, wts, Wgu_b, Wdn_b, Agu, Bgu, Adn, Bdn,
-                               "gelu_tanh", cfg["limit"], cfg["scaling"])
+    correct_ref = _bf16_oracle(
+        hidden,
+        idx,
+        wts,
+        Wgu_b,
+        Wdn_b,
+        Agu,
+        Bgu,
+        Adn,
+        Bdn,
+        "gelu_tanh",
+        cfg["limit"],
+        cfg["scaling"],
+    )
 
     cos_correct = _cos(out_correct, correct_ref)
     cos_wrong = _cos(out_wrong, correct_ref)
@@ -439,16 +581,19 @@ def test_wrong_activation_fails_gemma4():
 # Test 4: NaN regression at non-128-aligned K (I=704, fp8-read dX)
 # ===========================================================================
 
+
 def test_grouped_dx_fp8_nan_regression_k704():
     """grouped_dx_fp8 must produce finite output for K=704 (non-BK-aligned), the gemma4 I dim.
 
     Original bug: the K-tile boundary had no mask, so the last tile read OOB fp8 values that
     decoded to NaN in the accumulator. Fixed by adding mk=rk<K on the W load and store.
     """
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import grouped_dx_fp8
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        grouped_dx_fp8,
+    )
 
     E, H, I = 16, 2816, 704  # gemma4 shapes; I=704 = 5.5*128, NOT BK-aligned
-    tile = 64                 # marlin routing tile
+    tile = 64  # marlin routing tile
     Mt = E * tile
 
     torch.manual_seed(0)
@@ -464,7 +609,9 @@ def test_grouped_dx_fp8_nan_regression_k704():
 
 def test_grouped_dx_fp8_k2048_no_regression():
     """grouped_dx_fp8 must also work correctly for K=2048 (DSV4, BK-aligned)."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import grouped_dx_fp8
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        grouped_dx_fp8,
+    )
 
     E, H, I = 16, 4096, 2048
     tile = 64
@@ -487,9 +634,10 @@ def test_grouped_fp4_bwd_nan_k704():
     This exercises the entire backward path including the chunked fp8-read dX at K=704.
     """
     from axolotl.integrations.kernels.libs.scattermoe_lora.grouped_train import (
-        grouped_fp4_moe_train,
         grouped_fp4_available,
+        grouped_fp4_moe_train,
     )
+
     if not grouped_fp4_available("nvfp4"):
         pytest.skip("no grouped fp4 backend available")
 
@@ -497,29 +645,55 @@ def test_grouped_fp4_bwd_nan_k704():
     E, H, I, topk, N, r = cfg["E"], cfg["H"], cfg["I"], cfg["topk"], cfg["N"], cfg["r"]
     twoI = 2 * I
     torch.manual_seed(7)
-    gu_nv = quantize_nvfp4(torch.randn(E, twoI, H, device=DEV, dtype=torch.bfloat16) * 0.04)
-    dn_nv = quantize_nvfp4(torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04)
+    gu_nv = quantize_nvfp4(
+        torch.randn(E, twoI, H, device=DEV, dtype=torch.bfloat16) * 0.04
+    )
+    dn_nv = quantize_nvfp4(
+        torch.randn(E, H, I, device=DEV, dtype=torch.bfloat16) * 0.04
+    )
     hidden = torch.randn(N, H, device=DEV, dtype=torch.bfloat16) * 0.5
     idx = torch.stack([torch.randperm(E, device=DEV)[:topk] for _ in range(N)])
     wts = torch.softmax(torch.randn(N, topk, device=DEV), -1).to(torch.bfloat16)
 
     s = cfg["scaling"]
-    Agu = (torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Bgu = (torch.randn(twoI, r * E, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Adn = (torch.randn(r * E, I, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
-    Bdn = (torch.randn(H, r * E, device=DEV, dtype=torch.bfloat16) * 0.02).requires_grad_(True)
+    Agu = (
+        torch.randn(r * E, H, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Bgu = (
+        torch.randn(twoI, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Adn = (
+        torch.randn(r * E, I, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
+    Bdn = (
+        torch.randn(H, r * E, device=DEV, dtype=torch.bfloat16) * 0.02
+    ).requires_grad_(True)
     hk = hidden.clone().requires_grad_(True)
 
     cache = {}
     out = grouped_fp4_moe_train(
-        hk, idx, wts, gu_nv, dn_nv,
-        (Agu, Bgu, s), (Adn, Bdn, s),
-        cfg["limit"], "nvfp4", act_type=cfg["act_type"], mxfp4_cache=cache,
+        hk,
+        idx,
+        wts,
+        gu_nv,
+        dn_nv,
+        (Agu, Bgu, s),
+        (Adn, Bdn, s),
+        cfg["limit"],
+        "nvfp4",
+        act_type=cfg["act_type"],
+        mxfp4_cache=cache,
     )
     out.float().pow(2).mean().backward()
 
-    for name, t in [("out", out), ("d_hidden", hk.grad), ("d_Agu", Agu.grad),
-                    ("d_Bgu", Bgu.grad), ("d_Adn", Adn.grad), ("d_Bdn", Bdn.grad)]:
+    for name, t in [
+        ("out", out),
+        ("d_hidden", hk.grad),
+        ("d_Agu", Agu.grad),
+        ("d_Bgu", Bgu.grad),
+        ("d_Adn", Adn.grad),
+        ("d_Bdn", Bdn.grad),
+    ]:
         assert t is not None, f"gemma4 K=704 backward: {name} is None"
         assert torch.isfinite(t).all(), f"gemma4 K=704 backward: {name} has NaN/inf"
 
@@ -528,25 +702,40 @@ def test_grouped_fp4_bwd_nan_k704():
 # Test 5: marlin->bf16 fused dequant bit-exactness vs nvfp4_dequant_bf16
 # ===========================================================================
 
+
 @pytest.mark.skipif(
-    not (_IS_CUDA and torch.cuda.is_available() and
-         torch.cuda.get_device_capability()[0] == 12),
+    not (
+        _IS_CUDA
+        and torch.cuda.is_available()
+        and torch.cuda.get_device_capability()[0] == 12
+    ),
     reason="marlin W4A16 backend is sm120 only",
 )
 def test_marlin_fused_dequant_bit_exact_gate_up():
     """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for gate_up (N=64, K=128) shape."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import marlin_w4a16_available
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
+        marlin_w4a16_available,
+    )
+
     if not marlin_w4a16_available():
         pytest.skip("marlin W4A16 ext not available")
 
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import _build_base_scatter
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import marlin_dequant_bf16
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        _build_base_scatter,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import (
+        marlin_dequant_bf16,
+    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
         prepare_nvfp4_weight_for_marlin,
     )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
-    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import fp4_codebook
+    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+        fp4_codebook,
+    )
 
     # N must be divisible by 64 (marlin N_t), K divisible by 16 (NVFP4 block)
     C, N, K = 4, 64, 128
@@ -574,24 +763,38 @@ def test_marlin_fused_dequant_bit_exact_gate_up():
 
 
 @pytest.mark.skipif(
-    not (_IS_CUDA and torch.cuda.is_available() and
-         torch.cuda.get_device_capability()[0] == 12),
+    not (
+        _IS_CUDA
+        and torch.cuda.is_available()
+        and torch.cuda.get_device_capability()[0] == 12
+    ),
     reason="marlin W4A16 backend is sm120 only",
 )
 def test_marlin_fused_dequant_bit_exact_down():
     """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for down (N=128, K=64) shape."""
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import marlin_w4a16_available
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import (
+        marlin_w4a16_available,
+    )
+
     if not marlin_w4a16_available():
         pytest.skip("marlin W4A16 ext not available")
 
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import _build_base_scatter
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import marlin_dequant_bf16
+    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import (
+        nvfp4_dequant_bf16,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.backend import (
+        _build_base_scatter,
+    )
+    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.fused_dequant import (
+        marlin_dequant_bf16,
+    )
     from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16.prep import (
         prepare_nvfp4_weight_for_marlin,
     )
-    from axolotl.integrations.kernels.libs.scattermoe_lora.marlin_w4a16 import load_ext
-    from axolotl.integrations.kernels.libs.scattermoe_lora.dequant_grouped import nvfp4_dequant_bf16
-    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import fp4_codebook
+    from axolotl.integrations.kernels.libs.scattermoe_lora.mx_weights import (
+        fp4_codebook,
+    )
 
     # down: N=H, K=I; marlin requirement: N%64==0, K%16==0
     C, N, K = 4, 128, 64
@@ -621,6 +824,7 @@ def test_marlin_fused_dequant_bit_exact_down():
 # ===========================================================================
 # Test 6: activation kernel unit tests (GeGLU and clamped-SwiGLU vs torch)
 # ===========================================================================
+
 
 def _torch_geglu_fwd(gu):
     g, u = gu.chunk(2, dim=-1)
@@ -654,12 +858,16 @@ def _check_rel_err(name, got, ref, rtol=5e-3):
     assert rel_err < rtol, f"{name}: rel_err={rel_err:.5f} >= {rtol}"
 
 
-@pytest.mark.parametrize("I,seed", [(704, 42), (2048, 42)], ids=["I=704(gemma4)", "I=2048(dsv4)"])
+@pytest.mark.parametrize(
+    "I,seed", [(704, 42), (2048, 42)], ids=["I=704(gemma4)", "I=2048(dsv4)"]
+)
 def test_geglu_kernel_vs_torch(I, seed):
     """GeGLU (gelu_tanh) Triton kernel fwd+bwd matches torch reference."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.cutlass_fp4.swiglu import (
-        swiglu_fwd, swiglu_bwd,
+        swiglu_bwd,
+        swiglu_fwd,
     )
+
     torch.manual_seed(seed)
     Mt = 512
     gu = torch.randn(Mt, 2 * I, dtype=torch.bfloat16, device=DEV) * 0.5
@@ -675,13 +883,18 @@ def test_geglu_kernel_vs_torch(I, seed):
     _check_rel_err("geglu_bwd_du", got_dgu[:, I:].float(), ref_dgu[:, I:].float())
 
 
-@pytest.mark.parametrize("limit,I,seed", [(10.0, 704, 42), (7.0, 2048, 42)],
-                         ids=["swiglu_clamp_I704", "swiglu_clamp_I2048"])
+@pytest.mark.parametrize(
+    "limit,I,seed",
+    [(10.0, 704, 42), (7.0, 2048, 42)],
+    ids=["swiglu_clamp_I704", "swiglu_clamp_I2048"],
+)
 def test_swiglu_clamped_kernel_vs_torch(limit, I, seed):
     """Clamped SwiGLU Triton kernel fwd+bwd matches torch reference."""
     from axolotl.integrations.kernels.libs.scattermoe_lora.cutlass_fp4.swiglu import (
-        swiglu_fwd, swiglu_bwd,
+        swiglu_bwd,
+        swiglu_fwd,
     )
+
     torch.manual_seed(seed)
     Mt = 512
     gu = torch.randn(Mt, 2 * I, dtype=torch.bfloat16, device=DEV) * 5.0

@@ -74,7 +74,9 @@ def patch_float8_fsdp():
         x, split_size = args[0], args[1]
         dim = args[2] if len(args) > 2 else kwargs.get("dim", 0)
         if dim != 0:
-            raise NotImplementedError(f"Float8Tensor FSDP split only on dim 0, got {dim}")
+            raise NotImplementedError(
+                f"Float8Tensor FSDP split only on dim 0, got {dim}"
+            )
         blk0 = x.block_size[0]
         qd = func(x.qdata, split_size, 0)
         sc = func(x.scale, max(1, split_size // blk0), 0)
@@ -110,7 +112,10 @@ def patch_float8_fsdp():
         if size == [-1]:
             # FSDP's flat-buffer view; unused for the subclass-extension all-gather path.
             return _rebuild(
-                x, x.qdata.reshape(1, -1), x.scale.reshape(1, -1), block_size=[1, x.scale.numel()]
+                x,
+                x.qdata.reshape(1, -1),
+                x.scale.reshape(1, -1),
+                block_size=[1, x.scale.numel()],
             )
         sc_size = [size[i] // x.block_size[i] for i in range(len(size))]
         return _rebuild(x, func(x.qdata, size), func(x.scale, sc_size))
@@ -149,4 +154,6 @@ def patch_float8_fsdp():
     Float8Tensor.fsdp_post_all_gather = fsdp_post_all_gather
 
     _PATCHED = True
-    LOG.info("Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor")
+    LOG.info(
+        "Installed FSDP2 support (split + all-gather hooks) on torchao Float8Tensor"
+    )

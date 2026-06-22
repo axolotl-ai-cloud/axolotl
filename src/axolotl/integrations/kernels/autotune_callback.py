@@ -62,7 +62,10 @@ def _get_smem_capacity() -> dict:
     # 3) torch device properties
     try:
         props = torch.cuda.get_device_properties(torch.cuda.current_device())
-        for name in ("shared_memory_per_block_optin", "shared_memory_per_multiprocessor"):
+        for name in (
+            "shared_memory_per_block_optin",
+            "shared_memory_per_multiprocessor",
+        ):
             val = getattr(props, name, None)
             if val:
                 return {"smem_capacity_bytes": int(val), "smem_source": name}
