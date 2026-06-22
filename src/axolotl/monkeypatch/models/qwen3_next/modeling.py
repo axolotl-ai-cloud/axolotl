@@ -5,6 +5,10 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from axolotl.monkeypatch.models.fla_compiled_loop import (
+    call_self_attn_disabled as _call_self_attn_disabled,
+    init_fla_compiled_ops as _init_fla_compiled_ops,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -16,26 +20,6 @@ except ImportError:
 
 # True when the shared FLA GatedDeltaNet opaque ops registered (keeps the decoder loop break-free under compile).
 _FLA_COMPILED_OPS = False
-
-
-def _init_fla_compiled_ops(enabled: bool = True) -> bool:
-    global _FLA_COMPILED_OPS
-    from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
-
-    _FLA_COMPILED_OPS = fla_ops.fla_ops_available() if enabled else False
-    return _FLA_COMPILED_OPS
-
-
-def _call_self_attn(attn_module, **kwargs):
-    return attn_module(**kwargs)
-
-
-try:
-    import torch._dynamo as _dynamo
-
-    _call_self_attn_disabled = _dynamo.disable(_call_self_attn)
-except Exception:  # pragma: no cover
-    _call_self_attn_disabled = _call_self_attn
 
 
 def get_cu_seqlens(position_ids):
@@ -409,11 +393,12 @@ def patch_qwen3_next_imports(*, torch_compile: bool = False):
 
 def patch_qwen3_next_modeling_packing(*, torch_compile: bool = False):
     """Apply all Qwen3Next model patches."""
+    global _FLA_COMPILED_OPS
     patch_qwen3_next_imports(torch_compile=torch_compile)
     patch_qwen3_next_decoder_layer()
     patch_qwen3_next_gateddelta_layer(torch_compile=torch_compile)
-    compiled_ops = _init_fla_compiled_ops(torch_compile)
-    if torch_compile and not compiled_ops:
+    _FLA_COMPILED_OPS = _init_fla_compiled_ops(torch_compile)
+    if torch_compile and not _FLA_COMPILED_OPS:
         from axolotl.monkeypatch.models import gated_delta_net_ops
 
         LOG.warning(
@@ -424,5 +409,5 @@ def patch_qwen3_next_modeling_packing(*, torch_compile: bool = False):
 
     LOG.info(
         f"Applied Qwen3Next patch for packing "
-        f"(torch_compile={torch_compile}, compiled_loop_fla_ops={compiled_ops})"
+        f"(torch_compile={torch_compile}, compiled_loop_fla_ops={_FLA_COMPILED_OPS})"
     )
