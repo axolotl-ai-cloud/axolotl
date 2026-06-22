@@ -121,7 +121,7 @@ optimizers = [
     "lomo-optim==0.1.1",
     "torch-optimi==0.2.1",
     "came_pytorch==0.1.3",
-    "scao",
+    "scao==0.2.2",
     "q-galore-torch==1.0",
 ]
 ray = [
