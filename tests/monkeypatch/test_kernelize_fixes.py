@@ -187,9 +187,11 @@ def _tiny_gemma4():
     )
 
 
-def test_gemma4_kernelize_crashes_without_patch_succeeds_with():
-    """The real gemma4 bare-function case end to end: kernelize() crashes
-    unpatched, succeeds with the generic patch."""
+def test_gemma4_kernelize_succeeds_with_patch():
+    """The real gemma4 bare-function case end to end: with the generic patch,
+    kernelize() succeeds. The unpatched call raises on transformers releases that
+    still carry the bug and succeeds once the upstream fix lands, so that half is
+    tolerated rather than required."""
     pytest.importorskip("transformers.models.gemma4")
     from axolotl.monkeypatch.kernelize_fixes import (
         patch_kernelize_fixes,
@@ -198,9 +200,11 @@ def test_gemma4_kernelize_crashes_without_patch_succeeds_with():
 
     model = _tiny_gemma4()
     model.train()
-    # transformers <= 5.8.x raises TypeError, >= 5.9 ValueError.
-    with pytest.raises((TypeError, ValueError, AttributeError)):
+    try:
+        # transformers <= 5.8.x raises TypeError, >= 5.9 ValueError; fixed on main.
         model.kernelize()
+    except (TypeError, ValueError, AttributeError):
+        pass
 
     patch_kernelize_fixes()
     try:
