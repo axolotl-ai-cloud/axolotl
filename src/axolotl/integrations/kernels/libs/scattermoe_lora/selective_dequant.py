@@ -123,17 +123,25 @@ def _selective_dequant_bnb4(
     from bitsandbytes.functional import QuantState
 
     expert_numel = expert_shape[0] * expert_shape[1]
-    packed_per_expert = expert_numel // 2  # 4-bit = 2 values per byte
-    blocks_per_expert = expert_numel // quant_state.blocksize
     num_active = len(active_experts)
 
-    if blocks_per_expert == 0:
-        # Expert is smaller than one quantization block — blocks span across
-        # expert boundaries, so per-expert slicing isn't possible.
-        # Fallback: full dequantize + index.
+    # Per-expert slicing assumes each expert owns whole packed bytes (2 nf4 values/byte)
+    # and whole quant blocks; otherwise bytes/blocks straddle expert boundaries and a
+    # per-expert slice would be silently wrong. Gemma4/Qwen3.5 satisfy this, but guard
+    # future MoE shapes by falling back to full dequant + index when it doesn't hold.
+    # (blocksize <= 0 / expert_numel < blocksize are caught by the modulo checks too.)
+    if (
+        expert_numel <= 0
+        or quant_state.blocksize <= 0
+        or expert_numel % 2 != 0
+        or expert_numel % quant_state.blocksize != 0
+    ):
         full = F.dequantize_4bit(raw_param, quant_state)
-        E_total = full.numel() // expert_numel
+        E_total = full.numel() // expert_numel if expert_numel else 0
         return full.reshape(E_total, *expert_shape)[active_experts]
+
+    packed_per_expert = expert_numel // 2  # 4-bit = 2 values per byte
+    blocks_per_expert = expert_numel // quant_state.blocksize
 
     # Use fused Triton kernel for NF4 (handles selective gather + dequant in one pass)
     if quant_state.quant_type == "nf4" and raw_param.dtype == torch.uint8:

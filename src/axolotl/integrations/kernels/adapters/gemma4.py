@@ -70,6 +70,9 @@ class Gemma4Adapter(ModelAdapter):
     def matches(self, cfg) -> bool:
         return bool(cfg.use_scattermoe) and is_gemma4_nvfp4_modelopt(cfg)
 
+    def consumes_nonexpert_quantization(self, cfg) -> bool:
+        return True
+
     def pre_model_load(self, cfg) -> None:
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
             register_gemma4_nvfp4_converters,

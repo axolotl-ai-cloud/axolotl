@@ -27,6 +27,14 @@ class ModelAdapter:
     def matches(self, cfg) -> bool:  # pragma: no cover - trivial
         return False
 
+    def consumes_nonexpert_quantization(self, cfg) -> bool:
+        """Whether this adapter acts on the ``nonexpert_quantization`` intent for ``cfg``.
+
+        The plugin warns when a non-expert quantization policy is configured but no active
+        adapter claims it (so a future model can't silently no-op the setting). Default False.
+        """
+        return False
+
     def pre_model_load(self, cfg) -> None:
         """Before the model is constructed (register converters/quantizers, patch modules)."""
 

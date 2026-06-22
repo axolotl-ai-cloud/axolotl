@@ -62,7 +62,10 @@ class MarlinW4A16Linear(nn.Module):
         self.register_buffer(
             "bias", bias.to(torch.bfloat16) if bias is not None else None
         )
-        self.register_buffer("_workspace", marlin_make_workspace_new(dev, 4))
+        # Scratch/device-specific reduction workspace — keep out of state_dict/checkpoints.
+        self.register_buffer(
+            "_workspace", marlin_make_workspace_new(dev, 4), persistent=False
+        )
         self._route_cache: dict[tuple[int, torch.device], tuple] = {}
 
     def _route(self, Mt: int, dev: torch.device):

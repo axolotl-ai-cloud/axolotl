@@ -139,8 +139,31 @@ class KernelsPlugin(BasePlugin):
                 cfg.experts_implementation = "sonicmoe"
             LOG.info("Registered 'sonicmoe' in transformers ExpertsInterface")
 
-        for adapter in self._adapters(cfg):
+        adapters = self._adapters(cfg)
+        self._warn_unclaimed_nonexpert_quantization(cfg, adapters)
+        for adapter in adapters:
             adapter.pre_model_load(cfg)
+
+    @staticmethod
+    def _warn_unclaimed_nonexpert_quantization(cfg, adapters):
+        """Warn if a non-expert quantization policy is set but no active adapter consumes it.
+
+        ``nonexpert_quantization`` is a global intent, but only some model adapters act on it
+        (e.g. Gemma-4). Without this, configuring it on an unsupported model silently no-ops.
+        ``none``/``bf16`` mean "no quantization", so they're never considered unclaimed.
+        """
+        policy = cfg.get("nonexpert_quantization")
+        if not policy or str(policy).lower() in ("none", "bf16"):
+            return
+        if any(a.consumes_nonexpert_quantization(cfg) for a in adapters):
+            return
+        LOG.warning(
+            "nonexpert_quantization=%r is set but no active model adapter consumes it "
+            "(active adapters: %s); it will have no effect. It is currently implemented only "
+            "for Gemma-4 NVFP4 checkpoints.",
+            policy,
+            [a.name for a in adapters] or "none",
+        )
 
     def pre_lora_load(self, cfg, model):
         for adapter in self._adapters(cfg):

@@ -109,6 +109,27 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def check_moe_dequant_chunk_size(cls, data):
+        chunk = data.get("moe_dequant_chunk_size")
+        if chunk is None:
+            return data
+        err = ValueError(
+            f"moe_dequant_chunk_size must be a positive integer, got {chunk!r}"
+        )
+        if isinstance(chunk, bool):
+            raise err
+        try:
+            chunk_int = int(chunk)
+        except (TypeError, ValueError):
+            raise err from None
+        if isinstance(chunk, float) and not chunk.is_integer():
+            raise err
+        if chunk_int <= 0:
+            raise err
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def normalize_expert_backend(cls, data):
         """Canonicalize the intent ``expert_backend`` onto use_scattermoe/use_sonicmoe (the rest of
         the stack reads those). ``expert_backend`` is authoritative: it sets exactly one backend True
