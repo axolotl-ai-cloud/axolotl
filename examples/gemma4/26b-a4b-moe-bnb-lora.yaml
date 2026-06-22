@@ -61,9 +61,13 @@ lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_mod
 lora_target_parameters:
   - experts.gate_up_proj
   - experts.down_proj
-lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
+# Fused LoRA kernels for the NON-expert path: the dense shared MLP (Gemma4TextMLP) and the
+# attention q/k/v/o projections. The routed experts are handled by scattermoe; these fuse the
+# remaining per-layer LoRA. fused_attn_kernel lets qkv/o attach on the gemma4_unified variant too.
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+fused_attn_kernel: true
 
 bnb_config_kwargs:
   bnb_4bit_use_double_quant: true
