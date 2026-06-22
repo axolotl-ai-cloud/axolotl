@@ -27,12 +27,12 @@ LOG = get_logger(__name__)
 # Optional override of the grouped base-GEMM backend (from cfg.moe_grouped_backend): None/"auto" =
 # capability auto-select; "marlin"|"cutlass"|"deepgemm" = force if available (else warn + auto);
 # "dequant" = force the chunked-dequant fallback (the path used when no fused backend is selected).
-_BACKEND_OVERRIDE: str | None = None
+# The override lives in the centralized runtime module; this stays as a compat wrapper.
+from .runtime import RUNTIME  # noqa: E402
 
 
 def set_grouped_backend_override(backend) -> None:
-    global _BACKEND_OVERRIDE
-    _BACKEND_OVERRIDE = str(backend).lower() if backend else None
+    RUNTIME.grouped_backend = str(backend).lower() if backend else None
 
 
 def _backend_available(name: str) -> bool:
@@ -120,7 +120,7 @@ def _train_backend(mode: str) -> str | None:
     'dequant' forces the fallback (None)."""
     if mode != "nvfp4":
         return None
-    override = _BACKEND_OVERRIDE
+    override = RUNTIME.grouped_backend
     if override and override != "auto":
         if override == "dequant":
             return None  # force the chunked-dequant fallback path

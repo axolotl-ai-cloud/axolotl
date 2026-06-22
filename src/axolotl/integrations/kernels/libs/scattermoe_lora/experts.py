@@ -361,22 +361,17 @@ def _scattermoe_gptoss_forward(
     return output
 
 
-# Config-gated grouped fp4 MoE path (cfg.dsv4_fp4_grouped_mode). Set by the plugin pre_model_load;
-# None = off (existing fused/eager paths unchanged -> no regression).
-_FP4_GROUPED_MODE = None
-# Base dX backward precision (sm120): True = fp8-read (fast, ~2% grad error, default) | False =
-# bf16-dequant (slower, ~0.5%, max gradient fidelity). Wire to a cfg flag in the plugin if desired.
-_FP4_DX_PREFER_FP8 = True
+# Grouped fp4 MoE runtime settings live in the centralized runtime module; these stay as thin
+# compatibility wrappers (existing call sites + tests). See runtime.py.
+from .runtime import RUNTIME  # noqa: E402
 
 
 def set_fp4_grouped_mode(mode):
-    global _FP4_GROUPED_MODE
-    _FP4_GROUPED_MODE = mode
+    RUNTIME.fp4_grouped_mode = mode
 
 
 def set_fp4_dx_prefer_fp8(flag):
-    global _FP4_DX_PREFER_FP8
-    _FP4_DX_PREFER_FP8 = bool(flag)
+    RUNTIME.fp4_dx_prefer_fp8 = bool(flag)
 
 
 def scattermoe_experts_forward(
@@ -412,13 +407,14 @@ def scattermoe_experts_forward(
     # Config-gated grouped fp4 path: NVFP4 experts + LoRA + an available fp4 backend (sm120 CUTLASS).
     # Faster + lower-memory fwd+bwd than the fused-Triton path at scale (E=256: 2.24x / 0.87x mem).
     # Falls through to the existing path when off / unavailable -> no regression.
-    if _FP4_GROUPED_MODE is not None and gup_lora is not None and down_lora is not None:
+    _fp4_grouped_mode = RUNTIME.fp4_grouped_mode
+    if _fp4_grouped_mode is not None and gup_lora is not None and down_lora is not None:
         gu_base = _get_base_param(self.gate_up_proj)
         dn_base = _get_base_param(self.down_proj)
         if is_nvfp4_param(gu_base):
             from .grouped_train import grouped_fp4_available, grouped_fp4_moe_train
 
-            if grouped_fp4_available(_FP4_GROUPED_MODE):
+            if grouped_fp4_available(_fp4_grouped_mode):
                 # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
                 _recipe = lambda: (  # noqa: E731
                     _get_base_param(self.gate_up_proj),
@@ -437,11 +433,11 @@ def scattermoe_experts_forward(
                     gup_lora,
                     down_lora,
                     getattr(self, "limit", None),
-                    _FP4_GROUPED_MODE,
+                    _fp4_grouped_mode,
                     act_type=_detect_act_type(self),
                     weight_recipe=_recipe,
                     mxfp4_cache=cache,
-                    prefer_fp8_dx=_FP4_DX_PREFER_FP8,
+                    prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
                 )
 
     # BnB-4bit experts (quantize_moe_experts): no 4-bit-read kernel exists (unlike NVFP4/MXFP4),

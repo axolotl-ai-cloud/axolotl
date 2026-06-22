@@ -30,9 +30,9 @@ def test_non_nvfp4_mode_returns_none():
 
 def test_override_setter_normalizes():
     gt.set_grouped_backend_override("MARLIN")
-    assert gt._BACKEND_OVERRIDE == "marlin"
+    assert gt.RUNTIME.grouped_backend == "marlin"
     gt.set_grouped_backend_override(None)
-    assert gt._BACKEND_OVERRIDE is None
+    assert gt.RUNTIME.grouped_backend is None
 
 
 @pytest.mark.parametrize(

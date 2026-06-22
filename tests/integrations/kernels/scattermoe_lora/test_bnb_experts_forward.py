@@ -93,8 +93,9 @@ def _run(module, lora, idx, w, grad, monkeypatch):
         dtype=torch.bfloat16,
         generator=torch.Generator(DEV).manual_seed(7),
     ).requires_grad_(True)
-    scattermoe_experts_forward(module, x, idx, w).backward(grad)
-    return x.grad.detach(), [t.grad.clone() for t in lora]
+    out = scattermoe_experts_forward(module, x, idx, w)
+    out.backward(grad)
+    return out.detach(), x.grad.detach(), [t.grad.clone() for t in lora]
 
 
 @pytest.mark.parametrize("fast", [True, False])
@@ -130,12 +131,18 @@ def test_bnb_moe_lora_matches_dequant(fast, monkeypatch):
     set_chunk_size_override(None)
     try:
         set_bnb_fast(fast)
-        dx_bnb, gl_bnb = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
+        out_bnb, dx_bnb, gl_bnb = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
     finally:
         set_bnb_fast(None)
 
-    dx_ref, gl_ref = _run(_bf16_module(gu_deq, dn_deq), lora, idx, w, grad, monkeypatch)
+    out_ref, dx_ref, gl_ref = _run(
+        _bf16_module(gu_deq, dn_deq), lora, idx, w, grad, monkeypatch
+    )
 
+    # forward output parity vs the full-dequant reference
+    assert torch.isfinite(out_bnb).all()
+    assert _rel(out_bnb, out_ref) < 6e-2, "forward output"
+    # input grad
     assert torch.isfinite(dx_bnb).all()
     assert _rel(dx_bnb, dx_ref) < 6e-2, "input grad"
     for i, slc in (
@@ -171,13 +178,14 @@ def test_bnb_fast_and_chunked_agree(monkeypatch):
     set_chunk_size_override(None)
     try:
         set_bnb_fast(True)
-        dx_fast, gl_fast = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
+        out_fast, dx_fast, gl_fast = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
         set_bnb_fast(False)
-        dx_chunk, gl_chunk = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
+        out_chunk, dx_chunk, gl_chunk = _run(bnb_mod, lora, idx, w, grad, monkeypatch)
     finally:
         set_bnb_fast(None)
 
-    assert _rel(dx_fast, dx_chunk) < 5e-2
+    assert _rel(out_fast, out_chunk) < 5e-2, "forward output"
+    assert _rel(dx_fast, dx_chunk) < 5e-2, "input grad"
     for i in range(4):
         assert _rel(gl_fast[i], gl_chunk[i]) < 5e-2, f"lora grad {i}"
 

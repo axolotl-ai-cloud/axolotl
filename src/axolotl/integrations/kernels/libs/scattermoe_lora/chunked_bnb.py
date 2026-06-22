@@ -19,51 +19,27 @@ import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
+# The chunk-size / layer-GC / bnb-fast settings live in the centralized runtime module; these stay
+# as thin compatibility wrappers (existing call sites + tests). See runtime.py.
+from .runtime import DEFAULT_CHUNK, RUNTIME  # noqa: E402
 from .selective_dequant import selective_expert_weights
-
-# Experts dequantized per chunk. 32 is a balanced default: on MoEs with many small experts (e.g.
-# gemma4, where the per-step peak is activation-dominated) it recovers most of the throughput at no
-# extra memory, while still bounding the bf16 weight transient to 32 experts for large-expert models.
-# Tune via cfg.moe_dequant_chunk_size (lower for large experts / tiny GPUs; higher for max speed).
-_DEFAULT_CHUNK = 32
-
-# Process-global override (set from cfg.moe_dequant_chunk_size); None = fixed default.
-_CHUNK_OVERRIDE: int | None = None
-# Whether layer-level gradient checkpointing is active (set from cfg.gradient_checkpointing). When
-# True the decoder layer already recomputes the whole MoE forward in backward, so the chunk loop's
-# bf16 transient is freed per-iteration WITHOUT a per-chunk checkpoint — adding one would nest a
-# redundant 3rd recompute of each chunk (real fwd → layer-GC recompute → per-chunk recompute),
-# ~1.5x the expert compute. So per-chunk checkpointing is only used when layer GC is OFF.
-_LAYER_GC: bool = False
 
 
 def set_chunk_size_override(n) -> None:
-    global _CHUNK_OVERRIDE
-    _CHUNK_OVERRIDE = int(n) if n else None
+    RUNTIME.dequant_chunk_size = int(n) if n else None
 
 
 def set_layer_gc_active(flag) -> None:
-    global _LAYER_GC
-    _LAYER_GC = bool(flag)
-
-
-# cfg.moe_bnb_fast: route bnb experts through the 1-launch parallel_linear (scatter2scatter) path.
-# Default (None/True). It's faster than the chunked torch._grouped_mm path (~1940 vs 1778 tok/s on
-# gemma4-26B, fewer kernel launches) AND same low memory (~21 GiB): the dequant'd bf16 is recomputed
-# in backward via a recipe instead of saved, so it isn't pinned per-layer. Set moe_bnb_fast: false to
-# force the chunked path, which bounds the per-pass dequant transient to chunk_size experts — useful
-# for large-expert MoEs / tiny GPUs where even the single-shot active-expert dequant is too big.
-_BNB_FAST: bool = True
+    RUNTIME.layer_gc_active = bool(flag)
 
 
 def set_bnb_fast(flag) -> None:
-    global _BNB_FAST
     # None (config unset) keeps the fast default; only an explicit False forces chunked.
-    _BNB_FAST = True if flag is None else bool(flag)
+    RUNTIME.bnb_fast = True if flag is None else bool(flag)
 
 
 def bnb_fast_enabled() -> bool:
-    return _BNB_FAST
+    return RUNTIME.bnb_fast
 
 
 def _plan_chunking(num_experts):
@@ -71,9 +47,10 @@ def _plan_chunking(num_experts):
     override. Lower it for large-expert MoEs on small GPUs; raise it for max throughput. Per-chunk
     checkpointing is used ONLY when layer GC is off (with layer GC on, the chunk loop already bounds
     the transient and an extra checkpoint would just nest a redundant recompute)."""
-    chunk = _CHUNK_OVERRIDE if _CHUNK_OVERRIDE is not None else _DEFAULT_CHUNK
+    override = RUNTIME.dequant_chunk_size
+    chunk = override if override is not None else DEFAULT_CHUNK
     chunk = max(1, min(num_experts, chunk))
-    use_ckpt = (chunk < num_experts) and not _LAYER_GC
+    use_ckpt = (chunk < num_experts) and not RUNTIME.layer_gc_active
     return chunk, use_ckpt
 
 

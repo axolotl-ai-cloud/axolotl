@@ -84,17 +84,20 @@ def sonicmoe_experts_forward_with_lora(
         scattermoe_supports_layout,
     )
 
+    # Validate the expert layout / device BEFORE the sm120 fallback dispatch: a non-CUDA input or
+    # ungated experts are invalid for both paths, and the fallback (entered on sm120 where the
+    # sonic kernel can't run) would otherwise hit a CPU tensor and raise an opaque AttributeError.
+    if not getattr(self, "has_gate", True):
+        raise ValueError("sonicmoe requires gated experts (has_gate=True)")
+    if hidden_states.device.type != "cuda":
+        raise ValueError("sonicmoe requires CUDA device")
+
     if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(self):
         return scattermoe_experts_forward(
             self, hidden_states, top_k_index, top_k_weights
         )
 
     from transformers.integrations.sonicmoe import _sonicmoe_wrapper
-
-    if not getattr(self, "has_gate", True):
-        raise ValueError("sonicmoe requires gated experts (has_gate=True)")
-    if hidden_states.device.type != "cuda":
-        raise ValueError("sonicmoe requires CUDA device")
 
     device = hidden_states.device
     num_top_k = top_k_index.size(-1)
