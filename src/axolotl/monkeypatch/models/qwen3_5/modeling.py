@@ -6,6 +6,10 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from axolotl.monkeypatch.models.fla_compiled_loop import (
+    call_self_attn_disabled as _call_self_attn_disabled,
+    init_fla_compiled_ops as _init_fla_compiled_ops,
+)
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -22,26 +26,6 @@ except ImportError:
 
 # True when the FLA opaque custom-op wrappers registered; they keep the decoder loop free of graph breaks (one break anywhere in the loop makes dynamo skip the whole frame).
 _FLA_COMPILED_OPS = False
-
-
-def _init_fla_compiled_ops(enabled: bool = True) -> bool:
-    global _FLA_COMPILED_OPS
-    from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
-
-    _FLA_COMPILED_OPS = fla_ops.fla_ops_available() if enabled else False
-    return _FLA_COMPILED_OPS
-
-
-def _call_self_attn(attn_module, **kwargs):
-    return attn_module(**kwargs)
-
-
-try:
-    import torch._dynamo as _dynamo
-
-    _call_self_attn_disabled = _dynamo.disable(_call_self_attn)
-except Exception:  # pragma: no cover
-    _call_self_attn_disabled = _call_self_attn
 
 
 def get_cu_seqlens(position_ids):
@@ -320,6 +304,7 @@ def _apply_packing_patches(
     *,
     torch_compile: bool = False,
 ) -> None:
+    global _FLA_COMPILED_OPS
     module_name = f"transformers.models.{model_type}.modeling_{model_type}"
 
     try:
@@ -330,8 +315,8 @@ def _apply_packing_patches(
 
     # Under torch_compile, route FusedRMSNormGated through its custom-op wrapper too: its eager entry is untraceable (un-meta-able as_strided backward) and would graph-break the loop.
     _inject_fla_kernels(module, compile_boundary=torch_compile)
-    compiled_ops = _init_fla_compiled_ops(torch_compile)
-    if torch_compile and not compiled_ops:
+    _FLA_COMPILED_OPS = _init_fla_compiled_ops(torch_compile)
+    if torch_compile and not _FLA_COMPILED_OPS:
         from axolotl.monkeypatch.models import gated_delta_net_ops as fla_ops
 
         # On FA2 the broken-loop compile regime benches slower than plain eager, so this must be loud.
@@ -350,7 +335,7 @@ def _apply_packing_patches(
         f"Applied {cls_prefix} packing patch "
         f"(fla_causal_conv1d={'available' if fla_causal_conv1d else 'unavailable'}, "
         f"torch_compile={torch_compile}, "
-        f"compiled_loop_fla_ops={compiled_ops})"
+        f"compiled_loop_fla_ops={_FLA_COMPILED_OPS})"
     )
 
 
