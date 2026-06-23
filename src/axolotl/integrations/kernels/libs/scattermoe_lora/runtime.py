@@ -35,6 +35,12 @@ class ScatterMoERuntime:
     dequant_chunk_size: int | None = None
     # whether layer-level gradient checkpointing is active (skips the redundant per-chunk checkpoint).
     layer_gc_active: bool = False
+    # persist the requantized DeepGEMM/Marlin mxfp4 weight in a module-level cache across steps.
+    # Safe (and fast) on a persistent single-device param, but under FSDP2 the gathered param is the
+    # FULL unsharded weight every step — caching it holds a full-model mxfp4 copy on every rank,
+    # defeating sharding and OOMing large MoEs. Disabled under FSDP: recompute per forward (the
+    # result is freed after each layer), bounding resident mxfp4 to one layer.
+    mxfp4_cache_persist: bool = True
 
     def reset(self) -> None:
         for f in fields(self):
@@ -59,3 +65,6 @@ def configure_scattermoe_runtime(cfg) -> None:
     RUNTIME.layer_gc_active = bool(cfg.get("gradient_checkpointing"))
     fast = cfg.get("moe_bnb_fast")
     RUNTIME.bnb_fast = True if fast is None else bool(fast)
+    # Under FSDP the per-step gathered weight is full/unsharded; a persistent mxfp4 cache would hold
+    # a full-model copy per rank (OOM). Keep the cache only for the non-FSDP (persistent param) case.
+    RUNTIME.mxfp4_cache_persist = not bool(cfg.get("fsdp_config"))

@@ -20,6 +20,45 @@ LOG = get_logger(__name__)
 DSV4_FP32_SHARD_CLASSES = ("DeepseekV4HyperConnection", "DeepseekV4HyperHead")
 
 
+def _maybe_truncate_layers(model) -> None:
+    """Debug-only (``DSV4_TRUNCATE_LAYERS=N``): truncate the decoder stack to the first N layers
+    before PEFT so a small slice of the model fits a couple of GPUs for fast local bring-up /
+    memory iteration. The first layers span all attention types (sliding/CSA/HCA). No-op unless the
+    env var is set. Keeps HF's ``len(layer_types) == num_hidden_layers`` validators happy by
+    truncating per-layer config lists (length ``orig`` -> n; ``orig+1`` e.g. compress_ratios -> n+1)."""
+    import os
+
+    trunc = os.environ.get("DSV4_TRUNCATE_LAYERS")
+    if not trunc:
+        return
+    import gc
+
+    import torch.nn as nn
+
+    n = int(trunc)
+    for mod in model.modules():
+        layers = getattr(mod, "layers", None)
+        if (
+            isinstance(layers, nn.ModuleList)
+            and len(layers) > n
+            and "DecoderLayer" in type(layers[0]).__name__
+        ):
+            orig = len(layers)
+            mod.layers = layers[:n]
+            for cfg_obj in (model.config, getattr(mod, "config", None)):
+                if cfg_obj is None:
+                    continue
+                if hasattr(cfg_obj, "num_hidden_layers"):
+                    cfg_obj.num_hidden_layers = n
+                for k, v in list(vars(cfg_obj).items()):
+                    if isinstance(v, list) and len(v) in (orig, orig + 1):
+                        setattr(cfg_obj, k, v[: n + (len(v) - orig)])
+            gc.collect()
+            torch.cuda.empty_cache()
+            LOG.warning("DSV4_TRUNCATE_LAYERS=%d: truncated decoder stack (debug)", n)
+            break
+
+
 class DSV4Adapter(ModelAdapter):
     name = "deepseek_v4"
 
@@ -55,6 +94,7 @@ class DSV4Adapter(ModelAdapter):
         # rebuild them as NVFP4Tensor so scattermoe dequantizes correctly.
         if not cfg.use_scattermoe:
             return
+        _maybe_truncate_layers(model)
         has_packed_experts = any(
             isinstance(getattr(m, "gate_up_proj", None), torch.Tensor)
             and m.gate_up_proj.dtype == torch.uint8

@@ -43,12 +43,16 @@ def _dg():
 
 
 def deepgemm_grouped_available() -> bool:
-    """True iff DeepGEMM's grouped fp8/fp4 MoE kernel can run here (SM90/SM100 + CUDA
-    runtime new enough + the ``kernels`` package resolves the build)."""
+    """True iff DeepGEMM's grouped fp8xfp4 MoE kernel can run here.
+
+    SM100 ONLY (Blackwell datacenter, e.g. B200). The kernel symbol resolves on SM90 (Hopper) too,
+    but ``m_grouped_fp8_fp4_gemm_nt_contiguous`` asserts ``arch_major == 10`` at call time, so SM90
+    must report unavailable and fall back to Marlin (which supports SM80-90,120). Gating on the
+    capability up front avoids a hard CUDA assert mid-forward."""
     if not torch.cuda.is_available():
         return False
-    major, minor = torch.cuda.get_device_capability()
-    if major not in (9, 10):
+    major, _minor = torch.cuda.get_device_capability()
+    if major != 10:  # fp8xfp4 grouped kernel is sm100-only
         return False
     try:
         return getattr(_dg(), "m_grouped_fp8_fp4_gemm_nt_contiguous", None) is not None
@@ -147,16 +151,36 @@ def fp8_e8m0_cast_128(x: torch.Tensor):
 
 
 def nvfp4_to_mxfp4_weight(
-    qdata: torch.Tensor, scale: torch.Tensor, per_tensor: torch.Tensor
+    qdata: torch.Tensor, scale: torch.Tensor, per_tensor: torch.Tensor, chunk: int = 16
 ):
     """One-time per-expert weight requant NVFP4 (E4M3/16) -> MXFP4 (E8M0/128) for DeepGEMM's
     grouped fp8xfp4 kernel (which only accepts E8M0/128). qdata [E,N,K/2], scale [E,N,K/16],
-    per_tensor [E] -> (wq [E,N,K/2] uint8, ws [E,N,K/128] fp32). Experts are frozen → cache it."""
+    per_tensor [E] -> (wq [E,N,K/2] uint8, ws [E,N,K/128] fp32).
+
+    Dequant + cast in expert CHUNKS into preallocated outputs so the bf16 intermediate is bounded to
+    ``chunk`` experts (the full [E,N,K] bf16 was ~E/chunk x larger and OOMed at E=256). The output is
+    full-size by construction (the grouped GEMM needs all experts present)."""
     cast = _dg().utils.per_token_cast_to_fp4
-    Wb = nvfp4_dequant_bf16(qdata, scale, per_tensor)  # [E,N,K] bf16
-    E = Wb.size(0)
-    qs = [cast(Wb[e].contiguous(), True, 128) for e in range(E)]
-    return torch.stack([q for q, _ in qs]), torch.stack([s for _, s in qs])
+    E = int(qdata.size(0))
+    # probe expert 0 for the per-expert output shapes/dtypes, then preallocate the full outputs
+    q0, s0 = cast(
+        nvfp4_dequant_bf16(qdata[:1], scale[:1], per_tensor[:1])[0].contiguous(),
+        True,
+        128,
+    )
+    wq = q0.new_empty((E, *q0.shape))
+    ws = s0.new_empty((E, *s0.shape))
+    for c0 in range(0, E, chunk):
+        c1 = min(c0 + chunk, E)
+        Wb = nvfp4_dequant_bf16(
+            qdata[c0:c1], scale[c0:c1], per_tensor[c0:c1]
+        )  # [c,N,K] bf16
+        for i in range(c1 - c0):
+            q, s = cast(Wb[i].contiguous(), True, 128)
+            wq[c0 + i] = q
+            ws[c0 + i] = s
+        del Wb
+    return wq, ws
 
 
 def deepgemm_grouped_fp8_fp4(
@@ -189,6 +213,14 @@ def _cached_mxfp4(w_nv, per_tensor, cache=None, key=None):
     FSDP2 the gathered param is a fresh tensor each step, so a module-level cache (not a
     per-tensor attribute) is what avoids recomputing the requant every forward. Falls back to a
     per-tensor attribute, then to a one-shot recompute."""
+    from .runtime import RUNTIME
+
+    if not RUNTIME.mxfp4_cache_persist:
+        # FSDP: the gathered weight is full+fresh each step and its NVFP4Tensor object outlives the
+        # reshard, so ANY attached cache (module dict OR a per-tensor ``_dg_mxfp4`` attr) accumulates
+        # a full-model mxfp4 copy across layers -> OOM. Recompute and return uncached; the result is
+        # used by the layer's GEMM and freed, bounding resident mxfp4 to one layer.
+        return nvfp4_to_mxfp4_weight(w_nv.qdata, w_nv.scale, per_tensor)
     if cache is not None and key is not None and key in cache:
         return cache[key]
     cached = getattr(w_nv, "_dg_mxfp4", None)

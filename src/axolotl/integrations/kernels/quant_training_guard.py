@@ -42,7 +42,12 @@ def relax_quantized_training_guard(module=None) -> None:
     def guarded(model):
         # LoRA/PEFT on a frozen quantized base is the supported (QLoRA-style) pattern; the upstream
         # FP8/NVFP4 branch rejects it anyway. Skip only for PEFT models; delegate the rest.
-        if getattr(model, "_hf_peft_config_loaded", False):
+        # _hf_peft_config_loaded is set by HF-native model.add_adapter(); axolotl applies LoRA via
+        # get_peft_model() -> PeftModel, which exposes .peft_config but NOT that flag. Check both, or
+        # FP8 checkpoints (e.g. DeepSeek-V4-Flash-NVFP4) get rejected despite frozen-base + adapters.
+        if getattr(model, "_hf_peft_config_loaded", False) or getattr(
+            model, "peft_config", None
+        ):
             return None
         return original(model)
 

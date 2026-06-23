@@ -24,6 +24,9 @@ from .grouped_lora import grouped_lora_bwd, grouped_lora_fwd
 
 LOG = get_logger(__name__)
 
+# one-time log of the resolved grouped base-GEMM backend (visibility: deepgemm vs marlin vs chunked)
+_BACKEND_LOGGED = False
+
 # Optional override of the grouped base-GEMM backend (from cfg.moe_grouped_backend): None/"auto" =
 # capability auto-select; "marlin"|"cutlass"|"deepgemm" = force if available (else warn + auto);
 # "dequant" = force the chunked-dequant fallback (the path used when no fused backend is selected).
@@ -58,8 +61,9 @@ def _auto_backend() -> str | None:
     """Capability + arch auto-select. Order is arch-aware so each GPU class gets its tuned default
     while Marlin (the only fused W4A16 path that runs on Ampere/Ada) backs up everything:
       - sm120 (consumer Blackwell): Marlin (~1.79x CUTLASS, bit-correct) > CUTLASS > DeepGEMM
-      - sm90/sm100 (Hopper / datacenter Blackwell): DeepGEMM (tuned fp8-act x mxfp4) > Marlin
-      - sm80/sm89 (Ampere / Ada): Marlin only (DeepGEMM needs sm90+, CUTLASS-fp4 is sm120)
+      - sm100 (datacenter Blackwell, e.g. B200): DeepGEMM (tuned fp8-act x mxfp4) > Marlin
+      - sm90 (Hopper) / sm80 / sm89 (Ampere / Ada): Marlin only (the DeepGEMM fp8xfp4 grouped
+        kernel is sm100-only; deepgemm_grouped_available() returns False below sm100 -> Marlin)
     Marlin stays force-selectable everywhere via cfg.moe_grouped_backend."""
     import torch
 
@@ -470,6 +474,12 @@ def grouped_fp4_moe_train(
         I = int(down_nv.shape[2])  # noqa: E741
     dev = hidden.device
     backend = _train_backend(mode)
+    if not _BACKEND_LOGGED:
+        globals()["_BACKEND_LOGGED"] = True
+        LOG.info(
+            "grouped fp4 MoE base-GEMM backend: %s",
+            backend or "dequant (chunked fallback)",
+        )
     # Marlin (sm120 W4A16) pads to 64 — half CUTLASS's 128 at thin-M (each expert weight is read
     # once either way, so the padding is the cost) — and its bf16-act kernel is bit-correct + faster.
     if backend == "marlin":

@@ -17,6 +17,12 @@ class _Model:
         self._hf_peft_config_loaded = peft
 
 
+class _PeftModel:
+    """Mirrors get_peft_model() output: exposes .peft_config, no _hf_peft_config_loaded flag."""
+
+    peft_config = {"default": object()}
+
+
 class _TrackingGuard:
     def __init__(self):
         self.calls = []
@@ -36,6 +42,16 @@ def test_peft_model_skips_guard():
     relax_quantized_training_guard(mod)
     mod.validate_quantization_for_training(_Model(peft=True))
     assert tracker.calls == []  # PEFT/quantized is the supported pattern -> skipped
+
+
+def test_get_peft_model_skips_guard():
+    # axolotl's get_peft_model() path: .peft_config present, _hf_peft_config_loaded absent.
+    mod, tracker = _fresh_module()
+    relax_quantized_training_guard(mod)
+    mod.validate_quantization_for_training(_PeftModel())
+    assert (
+        tracker.calls == []
+    )  # recognized as PEFT -> skipped (FP8 base + adapters is supported)
 
 
 def test_non_peft_delegates_to_original():

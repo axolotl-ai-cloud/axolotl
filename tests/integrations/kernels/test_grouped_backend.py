@@ -2,7 +2,10 @@
 
 import pytest
 
-from axolotl.integrations.kernels.libs.scattermoe_lora import grouped_train as gt
+from axolotl.integrations.kernels.libs.scattermoe_lora import (
+    dequant_grouped as dgq,
+    grouped_train as gt,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -57,3 +60,39 @@ def test_auto_backend_arch_order(monkeypatch, major, expected_order):
     monkeypatch.setattr(gt.torch.cuda, "get_device_capability", lambda: (major, 0))
     assert gt._auto_backend() is None
     assert tuple(probed) == expected_order
+
+
+class _FakeDG:
+    m_grouped_fp8_fp4_gemm_nt_contiguous = object()
+
+
+@pytest.mark.parametrize(
+    "major,expected",
+    [
+        (8, False),  # Ampere/Ada -> Marlin
+        (
+            9,
+            False,
+        ),  # Hopper sm90: fp8xfp4 kernel asserts arch_major==10 -> must fall back to Marlin
+        (
+            10,
+            True,
+        ),  # datacenter Blackwell sm100 (B200): the only arch the fp4 kernel runs on
+        (12, False),  # consumer Blackwell sm120 -> CUTLASS/Marlin, not DeepGEMM
+    ],
+)
+def test_deepgemm_available_is_sm100_only(monkeypatch, major, expected):
+    """Regression: deepgemm_grouped_available() must gate to sm100. The kernel symbol resolves on
+    sm90 too, but calling it asserts arch_major==10 mid-forward; gating up front routes sm90 to
+    Marlin instead of crashing."""
+    monkeypatch.setattr(dgq.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(dgq.torch.cuda, "get_device_capability", lambda: (major, 0))
+    monkeypatch.setattr(
+        dgq, "_dg", lambda: _FakeDG()
+    )  # avoid needing a real kernel/GPU on sm100
+    assert dgq.deepgemm_grouped_available() is expected
+
+
+def test_deepgemm_unavailable_without_cuda(monkeypatch):
+    monkeypatch.setattr(dgq.torch.cuda, "is_available", lambda: False)
+    assert dgq.deepgemm_grouped_available() is False
