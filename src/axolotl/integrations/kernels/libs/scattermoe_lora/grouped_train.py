@@ -289,6 +289,23 @@ def _pt(nv, E, dev):
     return p.expand(E) if p.numel() == 1 else p
 
 
+def _has_nonunit_pt(*nvs) -> bool:
+    """True iff any NVFP4 weight carries a non-unit per_tensor_scale (weight_scale_2). The cutlass
+    forward (set_weights) folds only the E4M3 block scale, dropping weight_scale_2, while the
+    backward applies it, giving a wrong forward + grad mismatch when it != 1 (the real DSV4 ckpt).
+    Folding weight_scale_2 into the cutlass weight + saved swiglu input is unimplemented, so the
+    backend selection skips cutlass in that case."""
+    for nv in nvs:
+        p = getattr(nv, "per_tensor_scale", None)
+        if p is None:
+            continue
+        if not torch.allclose(
+            p.reshape(-1).float(), torch.ones((), device=p.device, dtype=torch.float32)
+        ):
+            return True
+    return False
+
+
 class _GroupedExperts(torch.autograd.Function):
     """x[Mt,H] -> gate_up(cutlass fp4 base + LoRA) -> gated-activation -> down(...) -> [Mt,H].
     Frozen NVFP4 experts; trainable LoRA A/B (stacked [E,r,K]/[E,N,r]).
@@ -474,6 +491,28 @@ def grouped_fp4_moe_train(
         I = int(down_nv.shape[2])  # noqa: E741
     dev = hidden.device
     backend = _train_backend(mode)
+    # cutlass weight_scale_2 (per_tensor_scale) folding is unimplemented: set_weights drops it on the
+    # forward while the backward applies it, giving a wrong forward + grad mismatch when it != 1.
+    # Marlin (prepare_nvfp4_weight_for_marlin) and DeepGEMM (_cached_mxfp4 -> nvfp4_to_mxfp4_weight)
+    # both fold _pt() into the weight, so prefer one of those (else hard-error) for non-unit scales.
+    if backend == "cutlass" and _has_nonunit_pt(gate_up_nv, down_nv):
+        for _alt in ("marlin", "deepgemm"):
+            if _backend_available(_alt):
+                backend = _alt
+                break
+        else:
+            major = (
+                torch.cuda.get_device_capability()[0]
+                if torch.cuda.is_available()
+                else 0
+            )
+            raise RuntimeError(
+                "grouped NVFP4 MoE: cutlass was selected but the weight has a non-unit "
+                "per_tensor_scale (weight_scale_2) that the cutlass forward cannot fold "
+                f"(unimplemented). No weight_scale_2-correct backend resolved on sm{major}x "
+                "(marlin/deepgemm unavailable). Run on a GPU with marlin or deepgemm, or "
+                "requantize the experts with a unit per_tensor_scale."
+            )
     if not _BACKEND_LOGGED:
         globals()["_BACKEND_LOGGED"] = True
         LOG.info(
