@@ -128,13 +128,14 @@ class KernelsArgs(BaseModel):
             raise err
         return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_expert_backend(cls, data):
+    @staticmethod
+    def _canonicalize_expert_backend(data):
         """Canonicalize the intent ``expert_backend`` onto use_scattermoe/use_sonicmoe (the rest of
-        the stack reads those). ``expert_backend`` is authoritative: it sets exactly one backend True
-        and the other False, and REJECTS an explicit legacy flag that contradicts it (so the result
-        is never ambiguous regardless of validator ordering)."""
+        the stack reads those). ``expert_backend`` is authoritative: it sets the chosen backend True
+        and REJECTS an explicit legacy flag that contradicts it (so the result is never ambiguous
+        regardless of validator ordering). Idempotent: every consumer below calls this first because
+        pydantic runs same-mode validators in REVERSE definition order, so the before-validator alone
+        would run AFTER its consumers and they'd never see its writes."""
         eb = data.get("expert_backend")
         if eb is None:
             return data
@@ -154,15 +155,18 @@ class KernelsArgs(BaseModel):
             raise ValueError(
                 f"expert_backend={eb!r} conflicts with use_sonicmoe=true; set only one."
             )
-        # Only a positive backend choice writes the flags; eager/builtin leave them unset so an
-        # absent backend stays None (the rest of the stack treats None and False identically).
+        # Only the chosen backend is written, leaving the other untouched (None), so the end state is
+        # byte-identical to setting the equivalent legacy flag directly. eager/builtin write nothing.
         if want_scatter:
             data["use_scattermoe"] = True
-            data["use_sonicmoe"] = False
         elif want_sonic:
             data["use_sonicmoe"] = True
-            data["use_scattermoe"] = False
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_expert_backend(cls, data):
+        return cls._canonicalize_expert_backend(data)
 
     @model_validator(mode="before")
     @classmethod
@@ -205,6 +209,7 @@ class KernelsArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def check_mutually_exclusive(cls, data):
+        data = cls._canonicalize_expert_backend(data)
         if data.get("use_scattermoe") and data.get("use_sonicmoe"):
             raise ValueError(
                 "Cannot use both ScatterMoE and SonicMoE simultaneously. "
@@ -225,8 +230,39 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def check_dsv4_attention_lora_unsupported(cls, data):
+        """Reject module-level (attention) LoRA on a DSV4 fused-kernel run.
+
+        The fused indexer feeds only gradientless topk indices, so LoRA on the indexer/scorer
+        projections trains against no gradient; and attention-level LoRA reintroduces data-dependent
+        FSDP2 backward collectives that break the experts-only invariant the DSV4 recipe relies on.
+        Experts-only LoRA (lora_target_parameters) is the supported surface. lora_exclude_modules is
+        the explicit opt-out: setting it signals the user has excluded the indexer scorer projections,
+        so we downgrade to a warning."""
+        if not data.get("use_dsv4_kernels"):
+            return data
+        if not data.get("lora_target_modules"):
+            return data
+        if data.get("lora_exclude_modules"):
+            LOG.warning(
+                "lora_target_modules with use_dsv4_kernels: ensure lora_exclude_modules excludes "
+                "the indexer scorer projections (the fused indexer is gradientless); keep LoRA "
+                "experts-only (lora_target_parameters) where possible."
+            )
+            return data
+        raise ValueError(
+            "lora_target_modules (attention/module-level LoRA) is not supported with "
+            "use_dsv4_kernels: the fused indexer is gradientless (topk indices only) and "
+            "attention LoRA reintroduces data-dependent FSDP2 backward collectives that break the "
+            "experts-only invariant. Either (1) keep LoRA experts-only via lora_target_parameters, "
+            "or (2) explicitly exclude the indexer scorer projections via lora_exclude_modules."
+        )
+
+    @model_validator(mode="before")
+    @classmethod
     def check_sonicmoe_ep_unsupported(cls, data):
         """SonicMoE + EP is not yet implemented (EP `_sonicmoe_local` raises)."""
+        data = cls._canonicalize_expert_backend(data)
         if data.get("use_sonicmoe") and (data.get("expert_parallel_size") or 1) > 1:
             raise ValueError(
                 "use_sonicmoe=true is not supported with expert_parallel_size > 1. "
@@ -238,6 +274,7 @@ class KernelsArgs(BaseModel):
     @classmethod
     def check_experts_implementation(cls, data):
         """Auto-select impl from kernel flags; reject mismatched/unknown values."""
+        data = cls._canonicalize_expert_backend(data)
         experts_implementation = data.get("experts_implementation")
         use_scattermoe = bool(data.get("use_scattermoe"))
         use_sonicmoe = bool(data.get("use_sonicmoe"))
@@ -278,6 +315,7 @@ class KernelsArgs(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def disable_mlp_kernel(cls, data):
+        data = cls._canonicalize_expert_backend(data)
         if data.get("use_scattermoe") is True or data.get("use_sonicmoe") is True:
             # DSV4's shared/routed expert MLP needs the dedicated clamped-SwiGLU kernel, not the
             # generic dense-MLP one; translate the intent and disable the generic path for DSV4.
