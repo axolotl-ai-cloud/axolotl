@@ -704,12 +704,10 @@ def test_grouped_fp4_bwd_nan_k704():
 
 
 @pytest.mark.skipif(
-    not (
-        _IS_CUDA
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] == 12
-    ),
-    reason="marlin W4A16 backend is sm120 only",
+    not (_IS_CUDA and torch.cuda.get_device_capability()[0] >= 8),
+    reason="marlin W4A16 backend needs Ampere (sm80)+ (the module's Blackwell pytestmark still "
+    "gates this file to sm100/sm120 on CI; the sm80+ marlin bit-exact variant that executes on "
+    "sm89 lives in test_grouped_fp4_dequant_path.py)",
 )
 def test_marlin_fused_dequant_bit_exact_gate_up():
     """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for gate_up (N=64, K=128) shape."""
@@ -763,12 +761,10 @@ def test_marlin_fused_dequant_bit_exact_gate_up():
 
 
 @pytest.mark.skipif(
-    not (
-        _IS_CUDA
-        and torch.cuda.is_available()
-        and torch.cuda.get_device_capability()[0] == 12
-    ),
-    reason="marlin W4A16 backend is sm120 only",
+    not (_IS_CUDA and torch.cuda.get_device_capability()[0] >= 8),
+    reason="marlin W4A16 backend needs Ampere (sm80)+ (the module's Blackwell pytestmark still "
+    "gates this file to sm100/sm120 on CI; the sm80+ marlin bit-exact variant that executes on "
+    "sm89 lives in test_grouped_fp4_dequant_path.py)",
 )
 def test_marlin_fused_dequant_bit_exact_down():
     """marlin_dequant_bf16 is bit-exact vs nvfp4_dequant_bf16 for down (N=128, K=64) shape."""
