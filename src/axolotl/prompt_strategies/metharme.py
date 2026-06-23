@@ -37,8 +37,7 @@ class MetharmePromptTokenizingStrategy(InstructionPromptTokenizingStrategy):
         )
         if len(result["input_ids"]) == 0:
             LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
-            # Bail out like the base class instead of indexing into an empty result below;
-            # an empty field with a tokenizer that does not prepend BOS yields no tokens.
+            # An empty field (no-BOS tokenizer) yields no tokens; bail out like the base class.
             return BatchEncoding(data={"input_ids": [], "attention_mask": []})
         # If there's already an EOS token there, subtract from the number added
         if result["input_ids"][-1] == self.tokenizer.eos_token_id:
