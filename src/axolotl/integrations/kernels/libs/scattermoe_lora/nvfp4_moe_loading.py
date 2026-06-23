@@ -16,6 +16,7 @@ NVFP4-MoE path lands.
 
 from __future__ import annotations
 
+import os
 import re
 
 import torch
@@ -35,21 +36,30 @@ def _nvfp4_cls():
         return None
 
 
+def _resolve_repo_file(repo_id: str, filename: str) -> str:
+    """Resolve a checkpoint file path from a local snapshot dir or the HF hub.
+
+    A local snapshot dir (offline/air-gapped axolotl usage) would fail ``hf_hub_download``
+    with an ``HFValidationError``, so read straight from disk in that case.
+    """
+    if os.path.isdir(repo_id):
+        return os.path.join(repo_id, filename)
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo_id, filename)
+
+
 def _load_index(repo_id: str):
     import json
 
-    from huggingface_hub import hf_hub_download
-
-    path = hf_hub_download(repo_id, "model.safetensors.index.json")
-    with open(path) as f:
+    with open(_resolve_repo_file(repo_id, "model.safetensors.index.json")) as f:
         return json.load(f)["weight_map"]
 
 
 def _shard_open(repo_id: str, shard: str):
-    from huggingface_hub import hf_hub_download
     from safetensors import safe_open
 
-    return safe_open(hf_hub_download(repo_id, shard), framework="pt")
+    return safe_open(_resolve_repo_file(repo_id, shard), framework="pt")
 
 
 # Per-architecture checkpoint naming for the unfused per-expert NVFP4 tensors.

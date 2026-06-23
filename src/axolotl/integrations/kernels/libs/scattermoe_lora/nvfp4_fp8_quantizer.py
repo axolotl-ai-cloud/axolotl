@@ -34,6 +34,8 @@ re-read. Installed by swapping it into ``AUTO_QUANTIZER_MAPPING["fp8"]`` before
 
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -117,21 +119,35 @@ def _is_expert_weight_converter(conv) -> bool:
     return any("experts" in p and p.endswith(".weight") for p in pats)
 
 
+def _resolve_repo_file(repo: str, filename: str) -> str:
+    """Resolve a checkpoint file path from a local snapshot dir or the HF hub.
+
+    A local snapshot dir (offline/air-gapped axolotl usage) would fail ``hf_hub_download``
+    with an ``HFValidationError``, so read straight from disk in that case.
+    """
+    if os.path.isdir(repo):
+        return os.path.join(repo, filename)
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo, filename)
+
+
 def _scale_2_path(repo: str):
     """Return ``(weight_map, opener)`` for re-reading per-expert scalar ``weight_scale_2``."""
     import json
 
-    from huggingface_hub import hf_hub_download
     from safetensors import safe_open
 
-    with open(hf_hub_download(repo, "model.safetensors.index.json")) as _f:
+    with open(_resolve_repo_file(repo, "model.safetensors.index.json")) as _f:
         wmap = json.load(_f)["weight_map"]
     cache: dict[str, object] = {}
 
     def opener(shard):
         f = cache.get(shard)
         if f is None:
-            f = cache[shard] = safe_open(hf_hub_download(repo, shard), framework="pt")
+            f = cache[shard] = safe_open(
+                _resolve_repo_file(repo, shard), framework="pt"
+            )
         return f
 
     return wmap, opener
