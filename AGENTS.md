@@ -86,6 +86,8 @@ pre-commit install            # one-time, after setup
 pre-commit run --all-files     # ruff, ruff-format, mypy, bandit — same versions as CI
 ```
 
+Shortcuts: `make lint`, `make format`, `make test` wrap these pinned commands.
+
 Pinned versions (source: `.pre-commit-config.yaml`, lint runs on Python **3.11**):
 
 | Tool | Version |

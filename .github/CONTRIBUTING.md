@@ -42,6 +42,8 @@ pre-commit install
 pytest tests/
 ```
 
+Common tasks are wrapped in the [`Makefile`](../Makefile): `make lint` (pinned ruff/mypy/bandit via pre-commit), `make format`, `make test`, `make test-e2e`. Run `make help` to list them.
+
 CI matrix: Python 3.12 / 3.14, PyTorch 2.9.1–2.12.0 ([tests.yml](workflows/tests.yml)). Tests default to `-m 'not slow'`. Mirror CI's CPU suite locally (GPU e2e runs in a separate job — see below):
 ```bash
 pytest -n4 --dist loadfile --ignore=tests/e2e tests/
