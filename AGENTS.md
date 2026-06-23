@@ -77,6 +77,34 @@ deepspeed_configs/               # DeepSpeed JSON configs (zero2, zero3)
 docs/                            # Quarto documentation site
 ```
 
+## Linting & Tests (match CI)
+
+CI pins exact tool versions. **Do not run system `ruff`/`mypy`** — they drift and produce diffs CI rejects. Run pre-commit, which installs and uses the pinned versions automatically:
+
+```bash
+pre-commit install            # one-time, after setup
+pre-commit run --all-files     # ruff, ruff-format, mypy, bandit — same versions as CI
+```
+
+Pinned versions (source: `.pre-commit-config.yaml`, lint runs on Python **3.11**):
+
+| Tool | Version |
+|------|---------|
+| ruff + ruff-format | `0.15.8` |
+| mypy | `1.19.1` |
+| bandit | `1.9.4` |
+
+Need ruff standalone? Pin it: `uvx ruff@0.15.8 check` / `uvx ruff@0.15.8 format`. Ruff config (line-length 88, `select = E,F,W,C90,B,I`) lives in `pyproject.toml`.
+
+Run tests the way CI does (defaults to `-m 'not slow'`):
+
+```bash
+pytest tests/                  # quick local run
+pytest -n4 --dist loadfile tests/   # parallel, as in CI
+```
+
+Full setup, CI test matrix, running e2e (GPU) tests locally, and skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
+
 ## Code Conventions
 
 - Config-driven: features are toggled via YAML, not code changes
