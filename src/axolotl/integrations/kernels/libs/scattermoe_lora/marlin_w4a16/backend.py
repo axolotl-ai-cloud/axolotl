@@ -21,12 +21,11 @@ from .prep import (
     prepare_nvfp4_weight_for_marlin,
 )
 
-# Pad granularity for the marlin path. Must equal the marlin MoE block (BSM) so each padded tile maps
-# to exactly one expert; 64 halves the thin-M padding vs CUTLASS's 128 and recovers Marlin's speed.
+# Must equal the marlin MoE block (BSM) so each padded tile maps to exactly one expert; 64
+# halves the thin-M padding vs CUTLASS's 128.
 MARLIN_TILE = 64
 _BSM = 64
 
-# Marlin base tile (N_t=64, K_t=16) scatter LUT — built once per process (immutable).
 _BASE_SCATTER_LUT: dict[torch.device, torch.Tensor] = {}
 
 
@@ -115,20 +114,16 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             )
             if not _is_distributed:
                 E, dev = nv.qdata.size(0), nv.qdata.device
-                # Reference (don't clone) the original scales: the fused backward dequant reads marlin
-                # qw from cache[key][0] + these original scales (nvfp4_marlin_process_scales applies
-                # [:, 1::2] subsampling so the marlin scales are lossy and unusable for backward).
-                # Single-GPU only (guarded above): we free nv.qdata but nv.scale stays live on the
-                # frozen param for the run, so a clone would just duplicate ~1.3 GiB of scales.
-                # _pt may return .expand() with stride(0); Triton needs stride(1) for correct indexing.
+                # Reference (don't clone) the original scales for the backward dequant: the
+                # marlin scales subsample [:, 1::2] so they're lossy and unusable for backward.
+                # Single-GPU: nv.scale stays live on the frozen param, so a clone just dups ~1.3 GiB.
+                # _pt may return .expand() with stride(0)==0; Triton needs a real stride.
                 pt_bwd = _pt(nv, E, dev)
                 if pt_bwd.stride(0) == 0:
                     pt_bwd = pt_bwd.contiguous()
                 cache[bwd_key] = (nv.scale, pt_bwd, E, size_n, size_k)
-                # Free qdata's storage but keep a 3-D [E, N, 0] placeholder (zero elements -> ~0
-                # bytes) rather than a flat empty(0): NVFP4Tensor clone/save (_clone_detach ->
-                # __new__ -> qdata.stride(-2)) needs ndim==3, and numel()==0 still routes the
-                # forward/backward through the marlin qdata-free paths.
+                # 3-D [E, N, 0] placeholder (not flat empty(0)): NVFP4Tensor clone/save needs
+                # ndim==3, and numel()==0 still routes through the marlin qdata-free paths.
                 try:
                     _N = nv.qdata.size(1)
                     nv.qdata.data = torch.empty(
@@ -148,7 +143,7 @@ def _qdata_sizes(nv, cache_key, cache):
     if cache is not None:
         bwd = cache.get(cache_key + "_bwd")
         if bwd is not None:
-            # bwd = (scale, pt, E, size_n, size_k) — size_k_packed = size_k // 2
+            # bwd = (scale, pt, E, size_n, size_k); size_k_packed = size_k // 2
             size_n, size_k = bwd[3], bwd[4]
             dev = bwd[0].device
             return size_n, size_k // 2, dev
@@ -246,7 +241,6 @@ def marlin_bwd_data(base):
     dn_bwd = cache.get("marlin_down_bwd")
     if gu_bwd is None or dn_bwd is None:
         return None
-    # Also need the marlin qw tensors for the fused dequant
     gu_qw = cache.get("marlin_gate_up")
     dn_qw = cache.get("marlin_down")
     if gu_qw is None or dn_qw is None:

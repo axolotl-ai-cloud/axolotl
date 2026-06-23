@@ -9,15 +9,15 @@ import triton.language as tl
 @triton.jit
 def _qk(X, Q, S, sx0, sx1, sq0, sq1, ss0, ss1, BPM: tl.constexpr):
     m = tl.program_id(0)
-    b0 = tl.program_id(1) * BPM  # first 16-block handled by this program
+    b0 = tl.program_id(1) * BPM
     blk = tl.arange(0, BPM)
-    e = tl.arange(0, 8)  # 8 bytes / block
-    # even (lo) and odd (hi) fp4 positions, shape [BPM, 8]
+    e = tl.arange(0, 8)  # 8 bytes per 16-wide block
+    # even (lo) and odd (hi) fp4 positions interleaved within each byte
     k_lo = (b0 + blk)[:, None] * 16 + 2 * e[None, :]
     k_hi = k_lo + 1
     lo = tl.load(X + m * sx0 + k_lo * sx1).to(tl.float32)
     hi = tl.load(X + m * sx0 + k_hi * sx1).to(tl.float32)
-    amax = tl.maximum(tl.max(tl.abs(lo), axis=1), tl.max(tl.abs(hi), axis=1))  # [BPM]
+    amax = tl.maximum(tl.max(tl.abs(lo), axis=1), tl.max(tl.abs(hi), axis=1))
     sc1d = tl.clamp(amax / 6.0, 1e-30, 1e30).to(tl.float8e4nv).to(tl.float32)
     sc1d = tl.where(sc1d > 0, sc1d, 1.0)
     sc = sc1d[:, None]
@@ -41,7 +41,7 @@ def _qk(X, Q, S, sx0, sx1, sq0, sq1, ss0, ss1, BPM: tl.constexpr):
         + tl.where(ahi > 3.5, 1, 0)
         + tl.where(ahi > 5.0, 1, 0)
     ).to(tl.int32) + tl.where(hi < 0, 8, 0).to(tl.int32)
-    byte = (clo + chi * 16).to(tl.uint8)  # [BPM,8]
+    byte = (clo + chi * 16).to(tl.uint8)
     qpos = (b0 + blk)[:, None] * 8 + e[None, :]
     tl.store(Q + m * sq0 + qpos * sq1, byte)
     tl.store(S + m * ss0 + (b0 + blk) * ss1, sc1d.to(tl.float8e4nv))

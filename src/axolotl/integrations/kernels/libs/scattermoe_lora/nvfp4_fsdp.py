@@ -95,7 +95,7 @@ def patch_nvfp4_fsdp():
         qd = func(x.qdata, [E, *x.qdata.shape[1:]], **kwargs)
         sc = func(x.scale, [E, *x.scale.shape[1:]], **kwargs)
         # Preserve a per-expert per_tensor_scale buffer (vary dim 0) so the subsequent
-        # copy_/all-gather can carry it — dropping it here loses it for the whole param.
+        # copy_/all-gather can carry it; dropping it here loses it for the whole param.
         pts = x.per_tensor_scale
         if pts is not None and pts.dim() >= 1 and pts.shape[0] == x.shape[0]:
             pts = func(pts, [E, *pts.shape[1:]], **kwargs)
@@ -132,7 +132,7 @@ def patch_nvfp4_fsdp():
     def _slice(func, types, args, kwargs):
         x = args[0]
         dim = args[1] if len(args) > 1 else 0
-        if dim == 0:  # expert-axis slice (FSDP shard) — torchao only handles rank 2
+        if dim == 0:  # expert-axis slice (FSDP shard); torchao only handles rank 2
             start = args[2] if len(args) > 2 else None
             end = args[3] if len(args) > 3 else None
             step = args[4] if len(args) > 4 else 1
@@ -178,11 +178,11 @@ def patch_nvfp4_fsdp():
             ):
                 func(dst.per_tensor_scale, src.per_tensor_scale)
             else:
-                # dst lost its per_tensor buffer (e.g. a new_zeros without one) — adopt src's.
+                # dst lost its per_tensor buffer (e.g. a new_zeros without one); adopt src's.
                 dst.per_tensor_scale = src.per_tensor_scale.clone()
         return dst
 
-    # ---- FSDP2 subclass-extension hooks (avoid the flat-buffer view(-1) path) ----
+    # FSDP2 subclass-extension hooks avoid the flat-buffer view(-1) path.
     def fsdp_pre_all_gather(
         self, mesh, outer_size=None, outer_stride=None, module=None, mp_policy=None
     ):

@@ -41,7 +41,7 @@ _SKIP_NAME_SUBSTRINGS = (
     "audio",
 )
 
-_FP8_MAX = torch.finfo(torch.float8_e4m3fn).max  # 448.0
+_FP8_MAX = torch.finfo(torch.float8_e4m3fn).max
 
 
 def _should_skip_by_name(name: str) -> bool:
@@ -64,8 +64,7 @@ def _patch_linear_forward(mod: nn.Linear) -> None:
     def _forward(self, x: torch.Tensor) -> torch.Tensor:
         w_fp8: torch.Tensor = self.weight  # float8_e4m3fn [out, in]
         scale: torch.Tensor = self.weight_scale_inv  # bfloat16 [out, 1]
-        w_bf16 = w_fp8.to(torch.bfloat16) * scale  # broadcast [out, in]
-        # Cast x to bf16 so F.linear dtype-matches; a no-op in the normal case.
+        w_bf16 = w_fp8.to(torch.bfloat16) * scale
         x_compute = x.to(torch.bfloat16) if x.dtype != torch.bfloat16 else x
         out = F.linear(x_compute, w_bf16, self.bias)
         return out.to(x.dtype) if x.dtype != torch.bfloat16 else out
@@ -89,8 +88,6 @@ def quantize_gemma4_nonexpert_linears(model: nn.Module) -> int:
     except ImportError:
         _expert_cls = None
 
-    # Build a set of module paths that are inside Gemma4TextExperts so we can
-    # skip any nn.Linear that lives inside one.
     expert_paths: set[str] = set()
     if _expert_cls is not None:
         for path, mod in model.named_modules():
@@ -116,17 +113,12 @@ def quantize_gemma4_nonexpert_linears(model: nn.Module) -> int:
         if w.dtype == torch.float8_e4m3fn:
             continue  # already quantized
         if w.ndim != 2:
-            continue  # safety guard (embeddings are sometimes Linear subclasses)
+            continue  # embeddings are sometimes Linear subclasses
 
-        # Per-channel (per-row) quantization.
-        # scale = max_abs / fp8_max  →  w_fp8 = w / scale (normalized to [-fp8_max, fp8_max])
-        # dequantize_fp8(w_fp8, scale) = w_fp8.to(bf16) * scale ≈ w  [correct]
         w_data = w.data.to(torch.bfloat16) if w.dtype != torch.bfloat16 else w.data
-        scale_1d = w_data.abs().amax(dim=1).clamp(min=1e-12)  # [out] = max_abs per row
-        # "weight_scale_inv" name matches axolotl LoRA kernel lookup for fp8 quant_state.
-        # Shape [out, 1] so dequantize_fp8 treats it as per-row block scale.
-        scale = (scale_1d / _FP8_MAX).to(torch.bfloat16).unsqueeze(1)  # [out, 1]
-        # Quantize to [-fp8_max, fp8_max] (use full fp8 dynamic range).
+        scale_1d = w_data.abs().amax(dim=1).clamp(min=1e-12)
+        # "weight_scale_inv" name + [out, 1] shape match the axolotl LoRA kernel's fp8 quant_state lookup.
+        scale = (scale_1d / _FP8_MAX).to(torch.bfloat16).unsqueeze(1)
         w_fp8 = (
             (w_data / scale.to(w_data.dtype))
             .clamp(-_FP8_MAX, _FP8_MAX)
@@ -192,7 +184,6 @@ def verify_gemma4_frankenstein(model: nn.Module) -> dict:
             fp8_bytes += param.numel()
             continue
         if param.dtype in (torch.bfloat16, torch.float16, torch.float32):
-            # Check if it's a non-expert linear weight (non-norm/embed)
             if name.endswith(".weight") and not _is_under_expert(
                 name.rsplit(".", 1)[0]
             ):

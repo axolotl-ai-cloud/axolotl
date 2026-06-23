@@ -43,9 +43,7 @@ def patch_paramwrapper_fastpath() -> None:
     _orig_forward = ParamWrapper.forward
 
     def _fusable(wrapper) -> bool:
-        # The fused kernel applies exactly one adapter and a raw (un-merged) base. For
-        # anything else (multiple active adapters — PEFT sums them; or a per-param
-        # merge/disable), defer to PEFT's own forward, which is always correct.
+        # Fused kernel needs exactly one adapter on a raw (un-merged) base; else defer to PEFT.
         if getattr(wrapper, "disable_adapters", False) or getattr(
             wrapper, "merged", False
         ):
@@ -57,7 +55,7 @@ def patch_paramwrapper_fastpath() -> None:
         if kwargs.get("adapter_names") is not None:
             return _orig_forward(self, x, *args, **kwargs)
 
-        # Walk the ParamWrapper chain (one wrapper per targeted parameter) to the base.
+        # one wrapper per targeted parameter
         wrappers = {}
         base = self
         while hasattr(base, "base_layer") and hasattr(base, "lora_A"):
@@ -78,8 +76,7 @@ def patch_paramwrapper_fastpath() -> None:
             if lora_A is None or num_experts is None:
                 continue
             rank = lora_A.shape[0] // num_experts
-            # The fused kernel computes in the activation dtype; PEFT keeps LoRA in fp32
-            # by default. Cast (autograd still routes grads back to the fp32 params).
+            # PEFT keeps LoRA fp32; cast to activation dtype (grads still route to the fp32 params).
             lora_A = lora_A.to(x.dtype)
             lora_B = lora_B.to(x.dtype)
             sm_lora[name] = _convert_smoe_lora(
@@ -87,11 +84,9 @@ def patch_paramwrapper_fastpath() -> None:
             )
 
         base._scattermoe_lora = sm_lora
-        # transformers' lazy-import / trust_remote_code dynamic-module loading can create
-        # MULTIPLE `ExpertsInterface` registries. The experts module's `@use_experts_
-        # implementation` forward binds one as a closure default, which may not be the one
-        # register_scattermoe_experts() populated — so its `get_interface("scattermoe")`
-        # would KeyError. Register into the exact interface THIS module dispatches through.
+        # Loading can create multiple ExpertsInterface registries; the experts forward binds one as
+        # a closure default that may differ from the one register_scattermoe_experts() populated, so
+        # register into the one THIS module dispatches through.
         if not getattr(base, "_scattermoe_iface_ok", False):
             _fn = type(base).forward
             _cells = dict(

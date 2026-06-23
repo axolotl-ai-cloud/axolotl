@@ -120,9 +120,6 @@ Constraints:
 """
 
 
-# /////////////////////////////////////////////////////////////////////////////
-#  Helpers to parse args
-# /////////////////////////////////////////////////////////////////////////////
 def parse_comma_separated_ints(s: str):
     try:
         return tuple([int(x.strip()) for x in s.split(",")])
@@ -130,11 +127,6 @@ def parse_comma_separated_ints(s: str):
         raise argparse.ArgumentTypeError(
             "Invalid format. Expected comma-separated integers."
         ) from None
-
-
-# /////////////////////////////////////////////////////////////////////////////
-#  Host setup and device kernel launch
-# /////////////////////////////////////////////////////////////////////////////
 
 
 class Sm120BlockScaledGemmKernel:
@@ -197,7 +189,7 @@ class Sm120BlockScaledGemmKernel:
         b_fp4_in_mixed = self.mixed_mode and self.b_dtype.width < 8
         self.smem_alloc_a_dtype = cutlass.Int8 if a_fp4_in_mixed else self.a_dtype
         self.smem_alloc_b_dtype = cutlass.Int8 if b_fp4_in_mixed else self.b_dtype
-        # `internal_type` for `_make_tma_atoms_and_tensors` — None when the dtype
+        # `internal_type` for `_make_tma_atoms_and_tensors`: None when the dtype
         # already matches (TMA sees the native dtype), Int8 when we recast for FP4.
         self.tma_internal_a_dtype = cutlass.Int8 if a_fp4_in_mixed else None
         self.tma_internal_b_dtype = cutlass.Int8 if b_fp4_in_mixed else None
@@ -214,7 +206,6 @@ class Sm120BlockScaledGemmKernel:
 
         self.cta_layout_mnk = cute.make_layout(self.cluster_shape_mnk)
 
-        # Compute the smem size of SFA/SFB
         sfa_smem_layout_per_stage = blockscaled_utils.sm120_make_smem_layout_sfa(
             self.tiled_mma,
             self.tile_shape_mnk,
@@ -229,7 +220,6 @@ class Sm120BlockScaledGemmKernel:
             1,
         )
 
-        # Compute stage before compute smem layout
         self.ab_stage, self.epi_stage = self._compute_stages(
             self.tile_shape_mnk,
             self.smem_alloc_a_dtype,
@@ -309,7 +299,6 @@ class Sm120BlockScaledGemmKernel:
 
         self._setup_attributes()
 
-        # Setup sfa/sfb tensor by filling A/B tensor to scale factor atom layout
         # ((Atom_M, Rest_M),(Atom_K, Rest_K),RestL)
         self.sfa_layout = blockscaled_utils.tile_atom_to_shape_SF(
             a.shape, self.sf_vec_size
@@ -431,7 +420,6 @@ class Sm120BlockScaledGemmKernel:
         )
         return
 
-    #  GPU device kernel
     @cute.kernel
     def kernel(
         self,
@@ -482,18 +470,10 @@ class Sm120BlockScaledGemmKernel:
         :type epi_smem_layout_staged: cute.ComposedLayout
         """
 
-        # ///////////////////////////////////////////////////////////////////////////////
-        #  Get cta/warp/thread idx
-        # ///////////////////////////////////////////////////////////////////////////////
         tidx, _, _ = cute.arch.thread_idx()
         warp_idx = cute.arch.warp_idx()
         warp_idx = cute.arch.make_warp_uniform(warp_idx)
-        # bidx, bidy, bidz = cute.arch.block_idx()
-        # bdimx, bdimy, bdimz = cute.arch.grid_dim()
 
-        # /////////////////////////////////////////////////////////////////////////////
-        #  Prefetch Tma desc
-        # /////////////////////////////////////////////////////////////////////////////
         if warp_idx == 0:
             cpasync.prefetch_descriptor(tma_atom_a)
             cpasync.prefetch_descriptor(tma_atom_b)
@@ -517,16 +497,11 @@ class Sm120BlockScaledGemmKernel:
             + cute.size_in_bytes(self.sf_dtype, sfb_smem_layout)
         )
 
-        # /////////////////////////////////////////////////////////////////////////////
-        #  Alloc and init AB full/empty + ACC full mbar (pipeline)
-        # /////////////////////////////////////////////////////////////////////////////
         smem = cutlass.utils.SmemAllocator()
         storage = smem.allocate(self.shared_storage)
 
-        # mbar arrays
         mainloop_pipeline_array_ptr = storage.mainloop_pipeline_array_ptr.data_ptr()
 
-        # Threads/warps participating in this pipeline
         mainloop_pipeline_producer_group = pipeline.CooperativeGroup(
             pipeline.Agent.Thread
         )
@@ -544,13 +519,9 @@ class Sm120BlockScaledGemmKernel:
             cta_layout_vmnk=cta_layout_vmnk,
         )
 
-        #  Cluster arrive after barrier init
         if cute.size(self.cluster_shape_mnk) > 1:
             cute.arch.cluster_arrive_relaxed()
 
-        # ///////////////////////////////////////////////////////////////////////////////
-        #  Generate smem tensor A/B
-        # ///////////////////////////////////////////////////////////////////////////////
         sA = storage.sA.get_tensor(
             a_smem_layout_staged.outer, swizzle=a_smem_layout_staged.inner
         )
@@ -563,9 +534,6 @@ class Sm120BlockScaledGemmKernel:
         sSFA = storage.sSFA.get_tensor(sfa_smem_layout_staged)
         sSFB = storage.sSFB.get_tensor(sfb_smem_layout_staged)
 
-        # ///////////////////////////////////////////////////////////////////////////////
-        #  Local_tile partition global tensors
-        # ///////////////////////////////////////////////////////////////////////////////
         # (bM, bK, loopM, loopK, loopL)
         gA_mkl = cute.local_tile(
             mA_mkl,
@@ -597,15 +565,8 @@ class Sm120BlockScaledGemmKernel:
             (None, None, None),
         )
 
-        # //////////////////////////////////////////////////////////////////////////////
-        #  Partition global tensor for TiledMMA_A/B/C
-        # //////////////////////////////////////////////////////////////////////////////
         thr_mma = tiled_mma.get_slice(tidx)
 
-        # //////////////////////////////////////////////////////////////////////////////
-        #  Partition shared tensor for TMA load A/B
-        # //////////////////////////////////////////////////////////////////////////////
-        #  TMA load A partition_S/D
         a_cta_layout = cute.make_layout(cute.slice_(cta_layout_mnk, (0, None, 0)).shape)
         a_cta_crd = cluster_coord_mnk[1]
         tAsA, tAgA = cpasync.tma_partition(
@@ -616,7 +577,6 @@ class Sm120BlockScaledGemmKernel:
             cute.group_modes(gA_mkl, 0, 2),
         )
 
-        # TMA load B partition_S/D
         b_cta_layout = cute.make_layout(cute.slice_(cta_layout_mnk, (None, 0, 0)).shape)
         b_cta_crd = cluster_coord_mnk[0]
         tBsB, tBgB = cpasync.tma_partition(
@@ -647,7 +607,6 @@ class Sm120BlockScaledGemmKernel:
         tBsSFB = cute.filter_zeros(tBsSFB)
         tBgSFB = cute.filter_zeros(tBgSFB)
 
-        #  Make frangments
         tCsA = thr_mma.partition_A(sA)
         tCsB = thr_mma.partition_B(sB)
 
@@ -663,7 +622,6 @@ class Sm120BlockScaledGemmKernel:
         acc_shape = tCgC.shape[:3]
         accumulators = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
 
-        # cluster wait for barrier init
         if cute.size(self.cluster_shape_mnk) > 1:
             cute.arch.cluster_wait()
         else:
@@ -671,13 +629,11 @@ class Sm120BlockScaledGemmKernel:
 
         k_tile_cnt = cute.size(gA_mkl, mode=[3])
 
-        # Create the tile scheduler
         tile_sched = utils.StaticPersistentTileScheduler.create(
             tile_sched_params, cute.arch.block_idx(), cute.arch.grid_dim()
         )
         work_tile = tile_sched.initial_work_tile_info()
 
-        # Create the pipeline states for producer and consumer
         mainloop_producer_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Producer, self.ab_stage
         )
@@ -691,9 +647,6 @@ class Sm120BlockScaledGemmKernel:
 
             num_k_blocks = cute.size(tCrA, mode=[2])
 
-            # ///////////////////////////////////////////////////////////////////////////////
-            # Copy Atom A/B retiling for TMA load A/B
-            # ///////////////////////////////////////////////////////////////////////////////
             atom_copy_ldmatrix_A = make_ldmatrix_atom(
                 self.a_dtype,
                 transpose=self.a_layout.is_m_major_a(),
@@ -749,12 +702,7 @@ class Sm120BlockScaledGemmKernel:
             while work_tile.is_valid_tile:
                 tile_coord_mnl = work_tile.tile_idx
                 gC_mnl_slice = gC_mnl[(None, None, *tile_coord_mnl)]
-                # Clear the accumulator
                 accumulators.fill(0.0)
-
-                # /////////////////////////////////////////////////////////////////////////////
-                #  Pipelined MAINLOOP
-                # /////////////////////////////////////////////////////////////////////////////
 
                 mainloop_consumer_state.reset_count()
 
@@ -764,7 +712,6 @@ class Sm120BlockScaledGemmKernel:
                         mainloop_consumer_state
                     )
 
-                #  Wait for TMA copies to complete
                 mainloop_pipeline.consumer_wait(
                     mainloop_consumer_state, peek_ab_full_status
                 )
@@ -805,7 +752,6 @@ class Sm120BlockScaledGemmKernel:
                 )
 
                 for _k_tile in range(0, k_tile_cnt - 1, 1, unroll=1):
-                    # unroll the loop
                     for k_block_idx in cutlass.range_constexpr(num_k_blocks):
                         k_block_next = (
                             0 if k_block_idx + 1 == num_k_blocks else k_block_idx + 1
@@ -894,8 +840,6 @@ class Sm120BlockScaledGemmKernel:
                             tCrSFB_copy_view_filtered[None, None, k_block_next],
                         )
 
-                        # end of for loop
-                # end of for loop
                 # Hoist out last k_tile
                 for k_block_idx in cutlass.range_constexpr(num_k_blocks):
                     k_block_next = (
@@ -959,10 +903,6 @@ class Sm120BlockScaledGemmKernel:
                         accumulators,
                     )
 
-                # /////////////////////////////////////////////////////////////////////////////
-                #  EPILOG
-                # /////////////////////////////////////////////////////////////////////////////
-
                 copy_atom_r2s = sm120_utils.sm120_get_smem_store_op(
                     self.c_layout,
                     elem_ty_d=self.c_dtype,
@@ -990,7 +930,6 @@ class Sm120BlockScaledGemmKernel:
                 # (R2S, R2S_M, R2S_N)
                 tRS_rAcc = tiled_copy_r2s.retile(accumulators)
 
-                # Allocate D registers.
                 rD_shape = cute.shape(thr_copy_r2s.partition_S(sC))
                 tRS_rD_layout = cute.make_layout(rD_shape[:3])
                 tRS_rD = cute.make_rmem_tensor(tRS_rD_layout.shape, self.acc_dtype)
@@ -1007,7 +946,6 @@ class Sm120BlockScaledGemmKernel:
                     tcgc_for_tma_partition,
                 )
 
-                # Initialize tma store pipeline
                 tma_store_producer_group = pipeline.CooperativeGroup(
                     pipeline.Agent.Thread,
                     self.num_mma_warps * self.num_threads_per_warp,
@@ -1041,14 +979,12 @@ class Sm120BlockScaledGemmKernel:
                                 ):
                                     tRS_rD_slice[elem_idx] = tRS_rAcc_slice[elem_idx]
 
-                        # Type conversion
                         tRS_rD_out = cute.make_rmem_tensor(
                             tRS_rD_layout.shape, self.c_dtype
                         )
                         acc_vec = tRS_rD.load()
                         tRS_rD_out.store(acc_vec.to(self.c_dtype))
 
-                        # Register to shared memory
                         epi_buffer = epi_buffer + 1
                         epi_buffer = epi_buffer % cute.size(tRS_sD, mode=[3])
                         self.epilog_sync_barrier.arrive_and_wait()
@@ -1061,12 +997,9 @@ class Sm120BlockScaledGemmKernel:
                             "async.shared",
                             space="cta",
                         )
-                        # barrier for sync
                         self.epilog_sync_barrier.arrive_and_wait()
 
-                        # Get the global memory coordinate for the current epi tile.
                         gmem_coord = (epi_m, epi_n)
-                        # Copy from shared memory to global memory
                         if warp_idx == 0:
                             cute.copy(
                                 tma_atom_c,
@@ -1076,13 +1009,9 @@ class Sm120BlockScaledGemmKernel:
                             tma_store_pipeline.producer_commit()
                             tma_store_pipeline.producer_acquire()
 
-                # Advance to the next work tile
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
-                # End of for k_tile loop
-            # End of while loop
-        # End of MMA warp group
-        # Start of DMA warp group
+        # DMA warp group
         elif warp_idx == self.tma_load_warp_id:
             cute.arch.setmaxregister_decrease(self.load_register_requirement)
 
@@ -1098,15 +1027,9 @@ class Sm120BlockScaledGemmKernel:
                 mainloop_producer_state.reset_count()
 
                 for _k_tile in range(0, k_tile_cnt, 1, unroll=1):
-                    # /////////////////////////////////////////////////////////////////////////////
-                    #  Wait for A/B buffers to be empty before loading into them
-                    #  Also sets the transaction barrier for the A/B buffers
-                    # /////////////////////////////////////////////////////////////////////////////
+                    # acquire also sets the transaction barrier for the A/B buffers
                     mainloop_pipeline.producer_acquire(mainloop_producer_state)
 
-                    # /////////////////////////////////////////////////////////////////////////////
-                    #  Slice to global/shared memref to current k_tile
-                    # /////////////////////////////////////////////////////////////////////////////
                     tAgA_k = tAgA_mkl[(None, mainloop_producer_state.count)]
                     tAsA_pipe = tAsA[(None, mainloop_producer_state.index)]
 
@@ -1119,9 +1042,6 @@ class Sm120BlockScaledGemmKernel:
                     tBgSFB_k = tBgSFB_nkl[(None, mainloop_producer_state.count)]
                     tBsSFB_pipe = tBsSFB[(None, mainloop_producer_state.index)]
 
-                    # /////////////////////////////////////////////////////////////////////////////
-                    #  TMA load A/B
-                    # /////////////////////////////////////////////////////////////////////////////
                     cute.copy(
                         tma_atom_a,
                         tAgA_k,
@@ -1160,9 +1080,7 @@ class Sm120BlockScaledGemmKernel:
 
                 tile_sched.advance_to_next_work()
                 work_tile = tile_sched.get_current_work()
-            # end of while loop
 
-            # Wait A/B buffer empty
             mainloop_pipeline.producer_tail(mainloop_producer_state)
         return
 
@@ -1204,19 +1122,16 @@ class Sm120BlockScaledGemmKernel:
         c_bytes_per_stage = cute.size(epi_tile) * c_dtype.width // 8
         epi_bytes = c_bytes_per_stage * epi_stage
 
-        # A/B shared memory size
         a_shape = cute.slice_(tile_shape_mnk, (None, 0, None))
         b_shape = cute.slice_(tile_shape_mnk, (0, None, None))
         ab_bytes_per_stage = (
             cute.size(a_shape) * a_dtype.width // 8
             + cute.size(b_shape) * b_dtype.width // 8
         )
-        # SFA/SFB shared memory size
         sf_bytes_per_stage = (
             cute.size(cute.filter_zeros(sfa_smem_layout).shape) * sf_dtype.width // 8
             + cute.size(cute.filter_zeros(sfb_smem_layout).shape) * sf_dtype.width // 8
         )
-        # Mbar helpers size
         mbar_helpers_bytes = 1024
 
         ab_stage = (
@@ -1602,11 +1517,9 @@ def run_bs(
     c_dtype = getattr(cutlass, c_dtype) if isinstance(c_dtype, str) else c_dtype
     acc_dtype = getattr(cutlass, acc_dtype) if isinstance(acc_dtype, str) else acc_dtype
 
-    # Unpack parameters
     m, n, k, l = mnkl
     cluster_shape_mnk = (1, 1, 1)
 
-    # Prepare pytorch tensors: A, B (random from 0 to 2) and C (all zero)
     if not torch.cuda.is_available():
         raise RuntimeError("GPU is required to run this example!")
 
@@ -1624,7 +1537,6 @@ def run_bs(
         c_ref, c_dtype, is_dynamic_layout=True, assumed_align=16
     )
 
-    # Mark tensor to be byte aligned
     a_tensor.mark_compact_shape_dynamic(
         mode=1 if a_major == "k" else 0,
         stride_order=(2, 0, 1) if a_major == "k" else (2, 1, 0),
@@ -1641,7 +1553,6 @@ def run_bs(
         divisibility=2 if c_dtype == cutlass.Float4E2M1FN else 1,
     )
 
-    # Create scale factor tensor SFA/SFB
     def create_scale_factor_tensor(l, mn, k, sf_vec_size, dtype):
         def ceil_div(a, b):
             return (a + b - 1) // b
@@ -1666,7 +1577,6 @@ def run_bs(
         ref_permute_order = (1, 2, 0)
         mma_permute_order = (3, 4, 1, 5, 2, 0)
 
-        # Create f32 ref torch tensor (cpu)
         ref_f32_torch_tensor_cpu = cutlass_torch.create_and_permute_torch_tensor(
             ref_shape,
             torch.float32,
@@ -1678,7 +1588,6 @@ def run_bs(
             ),
         )
 
-        # Create f32 cute torch tensor (cpu)
         cute_f32_torch_tensor_cpu = cutlass_torch.create_and_permute_torch_tensor(
             mma_shape,
             torch.float32,
@@ -1690,7 +1599,6 @@ def run_bs(
             ),
         )
 
-        # convert ref f32 tensor to cute f32 tensor
         cvt_sf_MKL_to_M32x4xrm_K4xrk_L(
             from_dlpack(ref_f32_torch_tensor_cpu),
             from_dlpack(cute_f32_torch_tensor_cpu),
@@ -1708,7 +1616,6 @@ def run_bs(
         # prune to mkl for reference check.
         ref_f32_torch_tensor_cpu = ref_f32_torch_tensor_cpu[:, :k, :]
 
-        # Create dtype cute torch tensor (cpu)
         cute_tensor, torch_tensor = cutlass_torch.cute_tensor_like(
             cute_f32_torch_tensor_cpu,
             dtype,
@@ -1716,7 +1623,6 @@ def run_bs(
             assumed_align=16,
         )
 
-        # Convert f32 cute tensor to dtype cute tensor
         cute_tensor = cutlass_torch.convert_cute_tensor(
             cute_f32_torch_tensor,
             cute_tensor,
@@ -1734,7 +1640,6 @@ def run_bs(
         l, n, k, sf_vec_size, sf_dtype
     )
 
-    # configure gemm kernel
     gemm = Sm120BlockScaledGemmKernel(
         acc_dtype,
         sf_vec_size,
@@ -1742,16 +1647,13 @@ def run_bs(
         epi_tile,
     )
 
-    # Compute max active clusters on current device
     hardware_info = cutlass.utils.HardwareInfo()
     max_active_clusters = hardware_info.get_max_active_clusters(
         cluster_shape_mnk[0] * cluster_shape_mnk[1]
     )
 
-    # Initialize stream
     stream = cutlass_torch.default_stream()
 
-    # compile gemm kernel
     compiled_gemm = cute.compile(
         gemm,
         a_tensor,
@@ -1765,16 +1667,13 @@ def run_bs(
 
     if not skip_ref_check:
         print("Reference checking ...")
-        # execution
         compiled_gemm(a_tensor, b_tensor, sfa_tensor, sfb_tensor, c_tensor, stream)
         torch.cuda.synchronize()
 
-        # Ref check
         res_a = torch.einsum("mkl,mkl->mkl", a_ref, sfa_ref)
         res_b = torch.einsum("nkl,nkl->nkl", b_ref, sfb_ref)
         ref = torch.einsum("mkl,nkl->mnl", res_a, res_b)
 
-        # Convert c back to f32 for comparison.
         c_ref_device = c_ref.cuda()
         cute.testing.convert(
             c_tensor,
@@ -1831,7 +1730,6 @@ def run_bs(
         c_tensor, _ = cutlass_torch.cute_tensor_like(
             c_ref, c_dtype, is_dynamic_layout=True, assumed_align=16
         )
-        # Mark tensor to be byte aligned
         a_tensor.mark_compact_shape_dynamic(
             mode=1 if a_major == "k" else 0,
             stride_order=(2, 0, 1) if a_major == "k" else (2, 1, 0),

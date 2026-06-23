@@ -102,7 +102,7 @@ class AutotuneReportCallback(TrainerCallback):
         if self._reported:
             return
 
-        # Lazy import — Triton / scattermoe kernels may not be installed.
+        # Lazy import: Triton / scattermoe kernels may not be installed.
         from axolotl.integrations.kernels.autotune_collector import (
             collect_autotune_configs,
         )

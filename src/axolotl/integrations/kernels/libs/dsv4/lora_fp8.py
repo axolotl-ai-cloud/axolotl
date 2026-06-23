@@ -30,7 +30,7 @@ from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
 
-# Only the large-output projections where native fp8 beats the dequant GEMM (benched).
+# Only the large-output projections where native fp8 beats the dequant GEMM.
 _TARGET_SUFFIXES = ("self_attn.q_b_proj", "self_attn.o_b_proj")
 
 
@@ -46,7 +46,7 @@ class _NativeFp8Lora(torch.autograd.Function):
         fp8_linear = _fp8_linear()
         shape = x.shape
         x2 = x.reshape(-1, shape[-1])
-        # frozen base: native blockwise fp8 GEMM (act quantized 1x128 inside fp8_linear)
+        # frozen base: native blockwise fp8 GEMM (activation quantized 1x128 inside)
         out = fp8_linear(
             x2,
             qdata,
@@ -55,7 +55,7 @@ class _NativeFp8Lora(torch.autograd.Function):
             bias=bias,
             output_dtype=x.dtype,
         )
-        # fused LoRA update: out += scaling * (x @ Aᵀ) @ Bᵀ  (avoids a [M,out] temp)
+        # fused LoRA update via addmm_ (avoids a [M,out] temp)
         xA = x2 @ A.t()
         out = out.addmm_(xA, B.t(), alpha=float(scaling))
         ctx.save_for_backward(x2, qdata, scale_inv, A, B, xA)
@@ -69,7 +69,8 @@ class _NativeFp8Lora(torch.autograd.Function):
         x2, qdata, scale_inv, A, B, xA = ctx.saved_tensors
         s = ctx.scaling
         g = grad.reshape(-1, grad.shape[-1])
-        # dX = g @ W + s·(g @ B) @ A   — W dequantized to bf16 (Option A; transient, freed after)
+        # dX through a bf16 dequant of W (Option A: block scale on the contraction axis, so an
+        # fp8 dX would need a transposed fp8 weight copy = 2x weight mem). W transient.
         w_deq = dequantize_fp8(qdata, scale_inv, g.dtype)
         dxA = g @ B
         dX = (g @ w_deq).addmm_(dxA, A, alpha=s)
@@ -101,17 +102,15 @@ def _base_is_fp8(base_layer):
 
 def _make_forward(lora_layer):
     def forward(self, x, *args, **kwargs):
-        # get_lora_parameters reads the base weight + UNSHARDS the LoRA A/B DTensors (FSDP2)
-        # and returns them grad-tracked — mirrors the other fused LoRA kernels. The base
-        # Float8Tensor is all-gathered to full by FSDP before forward, so reading it here is
-        # the live (not stale pre-shard) weight.
+        # get_lora_parameters unshards the LoRA A/B DTensors (FSDP2), grad-tracked. The base
+        # Float8Tensor is all-gathered by FSDP before forward, so this reads the live weight.
         W, bias, _qs, A, B, scaling, _lora_bias, dropout, _mag = get_lora_parameters(
             self
         )
         fp8 = _fp8_from_weight(W, self.base_layer)
         if (
             fp8 is None or A is None
-        ):  # disabled/merged adapter, or base not fp8 — fall back
+        ):  # disabled/merged adapter, or base not fp8: fall back
             return self._dsv4_orig_forward(x, *args, **kwargs)
         qdata, scale_inv, block_size = fp8
         xin = dropout(x) if dropout is not None else x

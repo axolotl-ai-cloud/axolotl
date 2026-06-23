@@ -51,12 +51,8 @@ import cutlass
 import cutlass.cute as cute
 from cutlass.cute.nvgpu.warp.mma import MXF8F6F4_SUPPORTED_PAIRS
 
-# Number of bits to shift the FP4 byte left by before mma.sync.kind::mxf8f6f4.
-# ldsm.b4x16_p64 places the FP4 nibble in the LOW half of the 8-bit register
-# byte; mma.sync.kind::mxf8f6f4 reads the FP4 from the MIDDLE of the byte. The
-# fixed `<< 2` shift moves it into position. See the C++ reference
-# implementation `cute::fp4_shift_A/B` in
-# cutlass/include/cute/atom/mma_traits_sm120.hpp.
+# ldsm.b4x16_p64 puts the FP4 nibble in the low half of the byte; mma.sync.kind::mxf8f6f4
+# reads it from the middle, so shift left by 2 (cute::fp4_shift_A/B in mma_traits_sm120.hpp).
 FP4_SHIFT_BITS = 2
 
 _FP8_DTYPES = (cutlass.Float8E4M3FN, cutlass.Float8E5M2)
@@ -106,7 +102,6 @@ def make_sm120_blockscaled_mma_op(a_dtype, b_dtype, acc_dtype, sf_dtype, sf_vec_
         On any unsupported combination, with a diagnostic that names the
         offending combination and the supported alternatives.
     """
-    # Same-dtype paths use the FP4 / FP8 same-dtype atoms.
     if a_dtype == b_dtype:
         if a_dtype == cutlass.Float4E2M1FN:
             if sf_vec_size == 16:
@@ -151,7 +146,6 @@ def make_sm120_blockscaled_mma_op(a_dtype, b_dtype, acc_dtype, sf_dtype, sf_vec_
             f"Unsupported same-dtype ab_dtype={a_dtype} for SM120 block-scaled GEMM. "
             f"Supported same-dtype: Float4E2M1FN, Float8E4M3FN, Float8E5M2."
         )
-    # Mixed-precision FP4 x FP8 paths.
     is_a_fp4_b_fp8 = a_dtype == cutlass.Float4E2M1FN and b_dtype in _FP8_DTYPES
     is_a_fp8_b_fp4 = a_dtype in _FP8_DTYPES and b_dtype == cutlass.Float4E2M1FN
     if is_a_fp4_b_fp8 or is_a_fp8_b_fp4:
@@ -168,7 +162,6 @@ def make_sm120_blockscaled_mma_op(a_dtype, b_dtype, acc_dtype, sf_dtype, sf_vec_
             cute.nvgpu.warp.MmaMXF8F6F4Op(a_dtype, b_dtype, acc_dtype, sf_dtype),
             True,
         )
-    # Reject same-width mixed-FP8 (E4M3 + E5M2) and FP6 with named diagnostics.
     if a_dtype in _FP8_DTYPES and b_dtype in _FP8_DTYPES:
         raise ValueError(
             f"same-width mixed-FP8 (a_dtype={a_dtype}, b_dtype={b_dtype}) is not supported. "
@@ -202,10 +195,8 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
     tile = tuple(args.tile_shape_mnk)
     a_dtype = args.a_dtype
     b_dtype = args.b_dtype
-    # Generic sf_vec_size sanity check applies to every dtype branch below.
     if args.sf_vec_size not in (16, 32):
         raise ValueError(f"--sf_vec_size must be 16 or 32, got {args.sf_vec_size}")
-    # Mixed-precision A/B: only the four FP4 x FP8 pairs are allowed.
     if a_dtype != b_dtype:
         if (a_dtype, b_dtype) not in MXF8F6F4_SUPPORTED_PAIRS:
             if a_dtype in _FP8_DTYPES and b_dtype in _FP8_DTYPES:
@@ -235,7 +226,6 @@ def validate_blockscaled_args(args, fp4_allowed_tiles, fp8_allowed_tiles):
                 f"Allowed mixed tile shapes: {sorted(fp8_allowed_tiles)}."
             )
         return
-    # Same-dtype paths.
     if a_dtype in _FP8_DTYPES:
         if args.sf_vec_size != 32:
             raise ValueError(

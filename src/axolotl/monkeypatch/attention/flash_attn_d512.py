@@ -78,7 +78,7 @@ def _fwd(
     n_end = (start_m + 1) * BLOCK_M if CAUSAL else N_CTX
     n_start = (
         tl.min(ds_m) // BLOCK_N
-    ) * BLOCK_N  # varlen: skip blocks before this q-block's doc (0 otherwise)
+    ) * BLOCK_N  # varlen: skip kv blocks before this q-block's doc
     for start_n in range(n_start, n_end, BLOCK_N):
         cur = start_n + offs_n
         k = tl.load(

@@ -154,7 +154,7 @@ def grouped_fp4_moe_forward(
         from .dequant_grouped import nvfp4_dequant_bf16
 
         pt = _per_tensor(gate_up_nv, E)
-        Wb = nvfp4_dequant_bf16(gate_up_nv.qdata, gate_up_nv.scale, pt)  # [E,2I,H]
+        Wb = nvfp4_dequant_bf16(gate_up_nv.qdata, gate_up_nv.scale, pt)
         offs = (torch.bincount(m_indices, minlength=E) * TILE).cumsum(0).to(torch.int32)
         gu = torch._grouped_mm(A, Wb.transpose(1, 2), offs=offs).float()
 
@@ -186,7 +186,7 @@ def grouped_fp4_moe_forward(
         from .dequant_grouped import nvfp4_dequant_bf16
 
         pt = _per_tensor(down_nv, E)
-        Wb = nvfp4_dequant_bf16(down_nv.qdata, down_nv.scale, pt)  # [E,H,I]
+        Wb = nvfp4_dequant_bf16(down_nv.qdata, down_nv.scale, pt)
         offs = (torch.bincount(m_indices, minlength=E) * TILE).cumsum(0).to(torch.int32)
         dn = torch._grouped_mm(h.contiguous(), Wb.transpose(1, 2), offs=offs)
 

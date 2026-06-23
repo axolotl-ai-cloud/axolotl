@@ -19,8 +19,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
-# The chunk-size / layer-GC / bnb-fast settings live in the centralized runtime module; these stay
-# as thin compatibility wrappers (existing call sites + tests). See runtime.py.
 from .runtime import DEFAULT_CHUNK, RUNTIME  # noqa: E402
 from .selective_dequant import selective_expert_weights
 
@@ -68,19 +66,18 @@ def _chunk_forward(
 ):
     """One expert-chunk end-to-end: dequant chunk → grouped gate_up (+LoRA) → act → grouped down
     (+LoRA). Run under ``checkpoint`` so the chunk's bf16 weights live only during fwd/recompute."""
-    # dequant ONLY this chunk's experts (frozen base) to bf16: [c, K, N] after transpose
     gub = selective_expert_weights(experts, "gate_up_proj", chunk_idx).transpose(1, 2)
     dnb = selective_expert_weights(experts, "down_proj", chunk_idx).transpose(1, 2)
 
-    gu = torch._grouped_mm(x, gub, offs=coff)  # [Ntok, 2I]
+    gu = torch._grouped_mm(x, gub, offs=coff)
     if gA is not None:
-        xa = torch._grouped_mm(x, gA.transpose(1, 2), offs=coff)  # [Ntok, r]
+        xa = torch._grouped_mm(x, gA.transpose(1, 2), offs=coff)
         gu = gu + gs * torch._grouped_mm(xa, gB.transpose(1, 2), offs=coff)
 
     gate, up = gu.chunk(2, dim=-1)
     h = _gated_act(gate, up, act_type, limit).contiguous()
 
-    dn = torch._grouped_mm(h, dnb, offs=coff)  # [Ntok, H]
+    dn = torch._grouped_mm(h, dnb, offs=coff)
     if dA is not None:
         ha = torch._grouped_mm(h, dA.transpose(1, 2), offs=coff)
         dn = dn + ds * torch._grouped_mm(ha, dB.transpose(1, 2), offs=coff)
@@ -111,24 +108,24 @@ def chunked_bnb_moe(
     if gup_lora is not None and down_lora is not None:
         two_i = gup_lora[1].shape[0]  # gate_up out = 2I (B is [2I, r*E])
         inter = down_lora[0].shape[1]  # down in = I (A is [r*E, I])
-        Agu, Bgu, sgu = _lora_stack(gup_lora, num_experts, H, two_i)  # [E,r,H],[E,2I,r]
-        Adn, Bdn, sdn = _lora_stack(down_lora, num_experts, inter, H)  # [E,r,I],[E,H,r]
+        Agu, Bgu, sgu = _lora_stack(gup_lora, num_experts, H, two_i)
+        Adn, Bdn, sdn = _lora_stack(down_lora, num_experts, inter, H)
 
-    # Sort tokens by expert and group (contiguous per expert), like chunked_dequant_grouped_base.
+    # Sort tokens by expert so each expert's tokens are contiguous for grouped_mm.
     flat_exp = idx.reshape(-1)
     order = flat_exp.argsort()
     rep = torch.arange(N, device=dev).repeat_interleave(idx.size(1))[order]
     wflat = wts.reshape(-1)[order]
     counts = torch.bincount(flat_exp, minlength=num_experts)
     tok_off = torch.cat([counts.new_zeros(1), counts.cumsum(0)]).tolist()
-    flat = hidden[rep]  # [Ntok, H], grouped
+    flat = hidden[rep]
 
     out = hidden.new_zeros(N, H)
     pieces = []
     for c0 in range(0, num_experts, chunk_size):
         c1 = min(c0 + chunk_size, num_experts)
         t0, t1 = int(tok_off[c0]), int(tok_off[c1])
-        if t1 == t0:  # no tokens routed to this expert chunk
+        if t1 == t0:  # no tokens routed here
             continue
         chunk_idx = torch.arange(c0, c1, device=dev)
         coff = counts[c0:c1].cumsum(0).to(torch.int32)
@@ -150,14 +147,12 @@ def chunked_bnb_moe(
             act_type,
             limit,
         )
-        # Per-chunk checkpoint only when layer GC is off; under layer GC the loop already bounds the
-        # transient and an extra checkpoint nests a redundant recompute (see set_layer_gc_active).
         o = (
             checkpoint(_chunk_forward, *args, use_reentrant=False)
             if use_ckpt
             else _chunk_forward(*args)
         )
         pieces.append(o * wflat[t0:t1, None].to(o.dtype))
-    if not pieces:  # empty batch / no routed tokens
+    if not pieces:
         return out
     return out.index_add(0, rep, torch.cat(pieces, 0))

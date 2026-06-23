@@ -75,8 +75,7 @@ def _mhc_fwd_kernel(
     ex = tl.exp(cl - tl.max(cl, axis=2, keep_dims=True))
     comb = ex / tl.sum(ex, axis=2, keep_dims=True) + EPS
 
-    # Store each normalize's INPUT to scratch (Python-int step index) so backward can
-    # reverse-mode through the Sinkhorn without an in-kernel list.
+    # Store each normalize's INPUT to scratch so backward can reverse-mode the Sinkhorn.
     t = 0
     if SAVE:
         tl.store(
@@ -173,7 +172,7 @@ def _mhc_bwd_kernel(
 
     pre_sig = tl.sigmoid(pre_w * s0 + pre_b[None, :])
     post_sig = tl.sigmoid(post_w * s1 + post_b[None, :])
-    # sm = softmax(cl) = STATES[0] - eps (state 0 is the softmax output saved before colnorm)
+    # sm = softmax(cl) = STATES[0] - eps (state 0 saved before colnorm)
     sm = (
         tl.reshape(
             tl.load(
@@ -197,9 +196,8 @@ def _mhc_bwd_kernel(
         ),
         (BM, HC, HC),
     )
-    # reverse-mode through the Sinkhorn normalizes. Forward order is:
-    #   colnorm(idx0), then (iters-1)x [rownorm, colnorm]. Reverse undoes them last-first
-    #   with literal axes (colnorm=axis1, rownorm=axis2) and a plain-int state counter.
+    # reverse the Sinkhorn normalizes. Forward: colnorm(idx0), then (iters-1)x [rownorm,
+    # colnorm]; undo last-first (colnorm=axis1, rownorm=axis2).
     base_st = offs[:, None] * (NSTATES * HC * HC) + jj[None, :]
     t = 2 * (ITERS - 1)  # last (col) state index
     xc = tl.reshape(
@@ -270,9 +268,8 @@ class _SinkhornMix(torch.autograd.Function):
         pre = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         post = torch.empty(M, hc, device=mixes.device, dtype=torch.float32)
         comb = torch.empty(M, hc * hc, device=mixes.device, dtype=torch.float32)
-        # Allocate the state history if ANY trainable input (mixes/scale/base) needs grad — the
-        # backward reads `states` for the scale/base grads too, not just mixes (input 0).
-        # NOTE: is_grad_enabled() is False inside Function.forward.
+        # Allocate state history if ANY trainable input needs grad (backward reads it for the
+        # scale/base grads too, not just mixes). is_grad_enabled() is False in Function.forward.
         save = any(ctx.needs_input_grad)
         states = (
             torch.empty(M, nstates, hc * hc, device=mixes.device, dtype=torch.float32)
@@ -338,10 +335,9 @@ def sinkhorn_mix(mixes, scale, base, hc, iters, eps, post_mult=2.0):
     return _SinkhornMix.apply(mixes, scale, base, hc, iters, eps, post_mult)
 
 
-# ---- fused (unweighted) RMSNorm + fn-linear: streams[M,K] -> mixes[M,N] ----
-# flat = streams * rsqrt(mean(streams^2)+eps); mixes = flat @ fn^T. Since the RMS scale r
-# is per-row, mixes = r * (streams @ fn^T), so streams@fn^T and sum-of-squares come from a
-# SINGLE pass over the 16384-wide streams (eager does ~3 passes + a 536MB fp32 flat).
+# Fused RMSNorm + fn-linear. RMS scale r is per-row, so mixes = r * (streams @ fn^T): one
+# pass over the 16384-wide streams covers both streams@fn^T and sum-of-squares (eager does
+# ~3 passes + a 536MB fp32 flat).
 
 _RL_CFGS = [
     triton.Config({"BK": bk}, num_warps=w, num_stages=s)
@@ -511,7 +507,7 @@ def _rmsnorm_linear(streams_flat, fn, eps, BM=16):
     return _RMSNormLinear.apply(streams_flat, fn, eps, BM)
 
 
-# ---- fused collapse: collapsed[m,d] = sum_h pre[m,h] * streams[m,h,d] ----
+# fused collapse: collapsed[m,d] = sum_h pre[m,h] * streams[m,h,d]
 @triton.autotune(
     configs=[
         triton.Config({"BD": bd}, num_warps=w)
@@ -595,8 +591,7 @@ def hyperconnection_forward(
     weighted collapse — eager does these in ~3 passes over the 16384-wide streams + a 536MB
     fp32 intermediate."""
     dtype = hidden_streams.dtype
-    # dtype-robust: match the fused-linear / Sinkhorn params to the stream compute dtype
-    # (they may be fp32, e.g. when the norm fed into them was kept fp32).
+    # match the fused-linear / Sinkhorn params to the stream compute dtype (they may be fp32).
     fn = fn.to(dtype) if fn.dtype != dtype else fn
     scale = scale.to(dtype) if scale.dtype != dtype else scale
     base = base.to(dtype) if base.dtype != dtype else base

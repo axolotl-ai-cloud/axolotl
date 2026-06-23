@@ -49,10 +49,10 @@ def _mk_routing(offs: torch.Tensor, E: int) -> tuple[torch.Tensor, torch.Tensor]
     """
     Mt = int(offs[-1].item())
     dev = offs.device
-    starts = torch.cat([offs.new_zeros(1), offs[:-1]])  # [E]
-    sizes = offs - starts  # per-expert padded row count [E]
+    starts = torch.cat([offs.new_zeros(1), offs[:-1]])
+    sizes = offs - starts  # per-expert padded row count
     e_ids = torch.arange(E, device=dev, dtype=torch.int32)
-    sorted_expert_idxs = e_ids.repeat_interleave(sizes)  # [Mt]
+    sorted_expert_idxs = e_ids.repeat_interleave(sizes)
     sorted_scattered_idxs = torch.arange(Mt, device=dev, dtype=torch.int32)
     return sorted_expert_idxs, sorted_scattered_idxs
 
@@ -95,9 +95,8 @@ def grouped_lora_fwd(
         y_grouped=True,
     )  # [Mt, r]
 
-    # Apply `scaling` to the tiny [Mt, r] inner activation, not the large [Mt, out_N] output:
-    # mathematically identical (scaling is a scalar) but ~out_N/r fewer elements touched. xa itself
-    # is returned UNSCALED for the backward (dB/dA derive scaling separately).
+    # Scale the tiny [Mt, r] inner activation, not the large [Mt, out_N] output (identical result,
+    # far fewer elements). xa is returned UNSCALED; the backward derives scaling separately.
     y_lora = scatter2scatter(
         X=xa * scaling,
         W=W_B,
@@ -142,8 +141,7 @@ def grouped_lora_bwd(
     in_K = A.size(2)
     out_N = B.size(1)
 
-    # yb = dY @ B  (scatter2scatter: X[Mt,out_N] @ W[E,out_N,r] → [Mt,r])
-    # B is already [E, out_N, r] = [E, K=out_N, N=r]
+    # yb = dY @ B; B is already [E, out_N, r] = [E, K=out_N, N=r]
     yb = scatter2scatter(
         X=dy,
         W=B.contiguous(),
@@ -154,9 +152,8 @@ def grouped_lora_bwd(
         y_grouped=True,
     )  # [Mt, r]
 
-    # dx_lora = scaling * yb @ A  (X[Mt,r] @ W[E,r,in_K] → [Mt, in_K])
-    # A is [E, r, in_K] = [E, K=r, N=in_K]. Fold `scaling` into the tiny [Mt, r] yb rather than the
-    # large [Mt, in_K] output (identical result, far fewer elements touched).
+    # dx_lora = scaling * yb @ A; A is [E, r, in_K] = [E, K=r, N=in_K]. Fold `scaling` into the tiny
+    # [Mt, r] yb, not the large [Mt, in_K] output (identical result, far fewer elements).
     dx_lora = scatter2scatter(
         X=yb * scaling,
         W=A.contiguous(),
@@ -168,8 +165,7 @@ def grouped_lora_bwd(
         residual=residual,
     )  # [Mt, in_K], = (residual + scaling*lora) if residual else scaling*lora
 
-    # Weight grads via grouped_lora_weight_grads (grouped-Gram kernel).
-    # Expects flat scattermoe layout: lora_A [r*E, in_K], lora_B [out_N, r*E]
+    # grouped-Gram kernel expects flat scattermoe layout: lora_A [r*E, in_K], lora_B [out_N, r*E]
     lora_A_flat = A.reshape(E * r, in_K)
     lora_B_flat = B.permute(1, 0, 2).reshape(out_N, E * r)
 
@@ -184,9 +180,7 @@ def grouped_lora_bwd(
         e_total=E,
         scaling=scaling,
     )
-    # dA_flat [E*r, in_K] → [E, r, in_K]
     dA = dA_flat.reshape(E, r, in_K)
-    # dB_flat [out_N, E*r] → [E, out_N, r]
     dB = dB_flat.reshape(out_N, E, r).permute(1, 0, 2).contiguous()
 
     return dx_lora, dA, dB

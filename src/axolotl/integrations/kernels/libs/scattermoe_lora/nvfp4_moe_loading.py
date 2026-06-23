@@ -63,7 +63,7 @@ def _shard_open(repo_id: str, shard: str):
 
 
 # Per-architecture checkpoint naming for the unfused per-expert NVFP4 tensors.
-# ``base_fmt`` formats with (layer, e, proj); ``gate_up``/``down`` are the proj names fused
+# base_fmt formats with (layer, e, proj); gate_up/down are the proj names fused
 # (gate_up = cat on the N/row axis in this order; down is single).
 _NVFP4_MOE_SCHEMES = {
     # DeepSeek-V4-Flash-NVFP4: w1=gate, w3=up, w2=down under ``layers.N.ffn.experts.M``

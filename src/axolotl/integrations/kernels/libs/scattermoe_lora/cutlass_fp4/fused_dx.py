@@ -57,7 +57,7 @@ def _fused_dx(
     BN: tl.constexpr,
     BK: tl.constexpr,
 ):
-    pid_m = tl.program_id(0)  # M-tile (128 rows = one expert in contiguous-grouped)
+    pid_m = tl.program_id(0)  # contiguous-grouped: each 128-row M-tile is one expert
     pid_k = tl.program_id(1)
     e = tl.load(MI + pid_m)
     pt_e = tl.load(PT + e).to(tl.float32)
@@ -67,18 +67,18 @@ def _fused_dx(
     acc = tl.zeros((128, BK), tl.float32)
     for n0 in range(0, N, BN):
         n = n0 + tl.arange(0, BN)
-        a = tl.load(A + m[:, None] * sa0 + n[None, :] * sa1)  # [128,BN] bf16
+        a = tl.load(A + m[:, None] * sa0 + n[None, :] * sa1)
         wq = tl.load(
             Wq + e * sq0 + n[:, None] * sq1 + (k[None, :] // 2) * sq2,
             mask=km[None, :],
             other=0,
-        ).to(tl.int32)  # [BN,BK]
+        ).to(tl.int32)
         nib = tl.where(k[None, :] % 2 == 1, (wq >> 4) & 0xF, wq & 0xF)
         ws = tl.load(
             Ws + e * ss0 + n[:, None] * ss1 + (k[None, :] // 16) * ss2,
             mask=km[None, :],
             other=0.0,
-        ).to(tl.float32)  # [BN,BK]
+        ).to(tl.float32)
         w = tl.load(CB + nib) * ws * pt_e
         acc += tl.dot(a, w.to(tl.bfloat16))
     tl.store(
@@ -89,8 +89,7 @@ def _fused_dx(
 def fused_dx(A, Wq, Ws, m_indices, pt, K, BN=64, BK=64):
     """A[Mt,N] bf16, Wq[E,N,K/2] u8, Ws[E,N,K/16] e4m3, pt[E] -> dx[Mt,K] bf16."""
     Mt, N = A.shape
-    # Contract: the grouped layout is TILE(128)-padded, so the Mt//128 grid covers every row.
-    # If Mt isn't a multiple of 128 the trailing rows would be left uninitialized — fail loud.
+    # Mt//128 grid covers every row only if 128-padded; otherwise trailing rows stay uninitialized.
     assert Mt % 128 == 0, (
         f"fused_dx expects 128-padded Mt (contiguous-grouped), got Mt={Mt}"
     )

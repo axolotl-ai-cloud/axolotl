@@ -29,14 +29,13 @@ def _pool_fwd_kernel(KV, GATE, OUT, M, D, W: tl.constexpr, BD: tl.constexpr):
     d = tl.program_id(1) * BD + tl.arange(0, BD)
     dmask = d < D
     wkv = tl.arange(0, W)
-    # [W, BD] tiles for window w, channel d
     off = m * (W * D) + wkv[:, None] * D + d[None, :]
     cmask = dmask[None, :]
     g = tl.load(GATE + off, mask=cmask, other=float("-inf")).to(tl.float32)
     kv = tl.load(KV + off, mask=cmask, other=0.0).to(tl.float32)
     p = tl.exp(g - tl.max(g, axis=0, keep_dims=True))
     p = p / tl.sum(p, axis=0, keep_dims=True)
-    out = tl.sum(p * kv, axis=0)  # [BD]
+    out = tl.sum(p * kv, axis=0)
     tl.store(OUT + m * D + d, out, mask=dmask)
 
 
@@ -62,10 +61,8 @@ def _pool_bwd_kernel(
     kv = tl.load(KV + off, mask=cmask, other=0.0).to(tl.float32)
     p = tl.exp(g - tl.max(g, axis=0, keep_dims=True))
     p = p / tl.sum(p, axis=0, keep_dims=True)
-    out = tl.sum(p * kv, axis=0, keep_dims=True)  # [1, BD]
-    dout = tl.load(DOUT + m * D + d, mask=dmask, other=0.0).to(tl.float32)[
-        None, :
-    ]  # [1, BD]
+    out = tl.sum(p * kv, axis=0, keep_dims=True)
+    dout = tl.load(DOUT + m * D + d, mask=dmask, other=0.0).to(tl.float32)[None, :]
     dkv = p * dout
     dgate = p * dout * (kv - out)
     tl.store(DKV + off, dkv, mask=cmask)
@@ -100,7 +97,7 @@ def gated_softmax_pool(kv: torch.Tensor, gate: torch.Tensor) -> torch.Tensor:
     """kv, gate: [..., W, D]. Returns [..., D] = sum_w softmax_w(gate) * kv (fp32).
     Drop-in for ``(kv * gate.softmax(dim=-2, dtype=fp32)).sum(dim=-2)``. W must be a power
     of 2 (compress_rate / 2*compress_rate are: HCA 128, CSA-overlap 8)."""
-    if gate.dtype != kv.dtype:  # dtype-robust: keep kv/gate consistent
+    if gate.dtype != kv.dtype:
         gate = gate.to(kv.dtype)
     *lead, W, D = kv.shape
     out = _GatedPool.apply(kv.reshape(-1, W, D), gate.reshape(-1, W, D))

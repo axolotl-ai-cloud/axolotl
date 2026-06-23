@@ -70,7 +70,7 @@ def _indexer_score_kernel(
     smask = offs_s < S
     tmask = offs_t < T
 
-    # ck block [DH, BT] (transposed for the q @ ckᵀ dot), independent of h
+    # ck is independent of h, so load it once outside the head loop
     ck_ptr = CK + b * sck_b + offs_d[:, None] * sck_d + offs_t[None, :] * sck_t
     ck = tl.load(ck_ptr, mask=tmask[None, :], other=0.0).to(tl.float32)
 
@@ -80,8 +80,8 @@ def _indexer_score_kernel(
             Q + b * sq_b + offs_s[:, None] * sq_s + h * sq_h + offs_d[None, :] * sq_d
         )
         q = tl.load(q_ptr, mask=smask[:, None], other=0.0).to(tl.float32)
-        qk = tl.dot(q, ck, input_precision="ieee")  # [BS, BT]
-        qk = tl.maximum(qk, 0.0) * softmax_scale  # relu · scale
+        qk = tl.dot(q, ck, input_precision="ieee")
+        qk = tl.maximum(qk, 0.0) * softmax_scale
         w = tl.load(W + b * sw_b + offs_s * sw_s + h * sw_h, mask=smask, other=0.0).to(
             tl.float32
         )
@@ -104,7 +104,7 @@ def indexer_scores(
     out = torch.empty(B, S, T, device=q.device, dtype=torch.float32)
     if T == 0 or S == 0:
         return out
-    # dtype-robust: compressed_kv may arrive fp32 (keep_in_fp32 compressor) while q is bf16.
+    # compressed_kv may arrive fp32 (keep_in_fp32 compressor) while q is bf16.
     if compressed_kv.dtype != q.dtype:
         compressed_kv = compressed_kv.to(q.dtype)
     q = q.contiguous()

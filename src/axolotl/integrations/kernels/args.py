@@ -5,13 +5,7 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
-# Valid experts_implementation values:
-# - "eager"      : transformers' per-token loop reference implementation
-# - "batched_mm" : transformers' built-in batched matmul path
-# - "grouped_mm" : transformers' built-in grouped matmul path (cache-efficient)
-# - "scattermoe" : axolotl-registered Triton kernels with LoRA support
-# - "sonicmoe"   : axolotl-registered CUTLASS / cute-DSL kernels with LoRA support
-# - "deep_ep[_*]": EP-plugin composites; passed through when expert_parallel_size > 1
+# deep_ep[_*] are EP-plugin composites, passed through when expert_parallel_size > 1.
 _BUILTIN_EXPERTS_IMPLS = {"eager", "batched_mm", "grouped_mm"}
 _KERNEL_EXPERTS_IMPLS = {"scattermoe", "sonicmoe"}
 _EP_EXPERTS_IMPLS = {
@@ -57,7 +51,7 @@ class KernelsArgs(BaseModel):
     # Float8Tensor base) or "bf16" (dequantize to bf16 at load).
     dsv4_fp8_nonexpert_mode: str | None = None
     # Native blockwise-fp8 fused LoRA kernel for the large attention projections (q_b/o_b).
-    # Off by default — the e2e gain is small for this expert-dominated model.
+    # Off by default; the e2e gain is small for this expert-dominated model.
     dsv4_fp8_lora_kernel: bool | None = None
     # Fused clamped-SwiGLU LoRA kernel for the DSV4 shared-expert MLPs. Distinct from the generic
     # `lora_mlp_kernel` (dense-MLP fusion, force-disabled under MoE kernels). A legacy
@@ -74,7 +68,7 @@ class KernelsArgs(BaseModel):
     # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place after loading (per-channel
     # e4m3, dequant-in-forward).  Experts remain NVFP4Tensor.  ~2 GB resident savings.
     gemma4_fp8_nonexpert: bool | None = None
-    # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit, double-quant) after loading — the same
+    # Gemma-4: NF4-quantize non-expert linears (bnb 4-bit, double-quant) after loading, the same
     # non-expert compute path unsloth uses, for apples-to-apples experts-only LoRA comparison.
     gemma4_nf4_nonexpert: bool | None = None
 

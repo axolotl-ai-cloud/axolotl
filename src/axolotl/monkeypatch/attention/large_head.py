@@ -57,15 +57,14 @@ def flash_d512_route(module, query, key, value, scaling, position_ids, policy=No
     signal the caller to fall back to SDPA. Inputs are ``[B, H, S, D]``; on success returns
     ``(attn_output [B, S, Hq, D], None)`` matching ``sdpa_attention_forward``'s contract."""
     policy = policy or _POLICY
-    # Explicit allowlist: only the two Triton policies route to the kernel; anything else (sdpa,
-    # unknown/typo) falls back to SDPA so a config typo can never silently enable the kernel.
+    # Allowlist: only the Triton policies route to the kernel, so a config typo can't enable it.
     if policy not in ("auto", "triton_flash") or query.shape[-1] <= _LARGE_HEAD_MIN_DIM:
         return None
     pid = _multidoc_position_ids(position_ids)
-    # auto: only take the kernel for packed rows (single-doc large-head is faster on SDPA is_causal)
+    # auto: kernel only for packed rows (single-doc large-head is faster on SDPA is_causal)
     if policy == "auto" and pid is None:
         return None
-    # flash_d512 uses 1/sqrt(d); a custom attention scale isn't supported -> fall back.
+    # flash_d512 uses 1/sqrt(d); a custom attention scale isn't supported.
     if scaling is not None and abs(scaling - query.shape[-1] ** -0.5) > 1e-9:
         return None
     try:
@@ -76,7 +75,7 @@ def flash_d512_route(module, query, key, value, scaling, position_ids, policy=No
         v = value.repeat_interleave(ng, dim=1) if ng > 1 else value
         out = flash_d512(query, k, v, True, position_ids=pid)
         return out.transpose(1, 2).contiguous(), None
-    except Exception:  # pragma: no cover - any kernel issue -> safe SDPA fallback
+    except Exception:  # pragma: no cover - any kernel issue falls back to SDPA
         return None
 
 
@@ -92,7 +91,7 @@ def patch_sdpa_large_head(policy: str | None = None) -> bool:
 
     current = ALL_ATTENTION_FUNCTIONS["sdpa"]
     if getattr(current, _SDPA_ORIG_ATTR, None) is not None:
-        return True  # already wrapped
+        return True
     original = current
 
     def sdpa_large_head_forward(module, query, key, value, attention_mask, **kwargs):

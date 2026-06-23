@@ -17,8 +17,7 @@ from __future__ import annotations
 import triton
 import triton.language as tl
 
-# Grid: (C, N // 64, K // 16) — one block per (expert-chunk, n-tile, k-tile)
-# TILE_SIZE = 64 * 16 = 1024; each block handles one 64x16 weight tile.
+# Grid (C, N // 64, K // 16): one block per (expert-chunk, n-tile, k-tile), each a 64x16 tile.
 
 
 @triton.jit

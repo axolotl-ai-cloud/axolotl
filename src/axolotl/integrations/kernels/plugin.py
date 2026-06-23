@@ -36,14 +36,12 @@ def _check_sonicmoe_gpu_compat():
             f"Supported: Hopper (sm_90) and Blackwell (sm_100 - sm_103)."
         )
 
-    # Blackwell (sm_100+): enable QuACK GEMM kernels
     if cc >= (10, 0):
         os.environ.setdefault("USE_QUACK_GEMM", "1")
         LOG.info(
             f"Blackwell GPU (sm_{cc[0]}{cc[1]}) detected, enabling USE_QUACK_GEMM=1"
         )
 
-    # B300 (sm_103): requires Triton 3.6.0
     if cc == (10, 3):
         triton_spec = importlib.util.find_spec("triton")
         if triton_spec is None:

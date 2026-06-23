@@ -29,7 +29,7 @@ def _rope_kernel(
     out_ptr,
     S,
     H,
-    cs_b,  # cos/sin strides (they may be non-contiguous, e.g. the rotary's transpose view)
+    cs_b,  # cos/sin strides: may be non-contiguous (the rotary's transpose view)
     cs_s,
     cs_i,
     D: tl.constexpr,
@@ -46,12 +46,11 @@ def _rope_kernel(
     x_row = x_ptr + row * D
     out_row = out_ptr + row * D
 
-    # passthrough nope channels (non-overlapping with the rope region below)
+    # passthrough leading nope channels
     off = tl.arange(0, BLOCK_NOPE)
     m = off < nope
     tl.store(out_row + off, tl.load(x_row + off, mask=m, other=0.0), mask=m)
 
-    # interleaved rotation on the trailing rope channels
     i = tl.arange(0, Rh)
     even = nope + 2 * i
     odd = even + 1
@@ -114,7 +113,7 @@ def apply_rotary_pos_emb_triton(
     """Drop-in for ``apply_rotary_pos_emb``. ``x``: [B, H, S, D]; ``cos``/``sin``:
     [B, S, rope_dim//2]. ``unsqueeze_dim`` is accepted for signature parity (the
     reference broadcasts cos/sin over the head axis; this kernel indexes it directly)."""
-    # dtype-robust: rotary cos/sin are typically fp32; match them to x's compute dtype.
+    # rotary cos/sin are typically fp32; match them to x's compute dtype.
     if cos.dtype != x.dtype:
         cos = cos.to(x.dtype)
     if sin.dtype != x.dtype:

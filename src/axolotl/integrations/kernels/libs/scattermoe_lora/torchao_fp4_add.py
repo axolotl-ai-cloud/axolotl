@@ -27,8 +27,8 @@ def _make_add_handler():
 
     def _fp4_add(func, types, args, kwargs):
         a, b = args[0], args[1]
-        # Target the dense operand's dtype (the LoRA delta is bf16/fp16) so the result
-        # is a plain tensor; dequantize only the FP4 subclass operand(s).
+        # Use the dense operand's dtype (the LoRA delta is bf16/fp16) so the result is a plain
+        # tensor; dequantize only the FP4 subclass operand(s).
         dense_dtype = next(
             (t.dtype for t in (a, b) if isinstance(t, torch.Tensor) and not _is_fp4(t)),
             torch.bfloat16,
@@ -37,9 +37,8 @@ def _make_add_handler():
             a = a.dequantize(dense_dtype)
         if _is_fp4(b):
             b = b.dequantize(dense_dtype)
-        # Forward kwargs (e.g. keyword-only `alpha`). A true in-place add_ is
-        # impossible once the FP4 operand is dequantized to a fresh tensor, so both
-        # the add and add_ overloads resolve to the out-of-place dequantized add.
+        # A true in-place add_ is impossible once the FP4 operand is dequantized to a fresh tensor,
+        # so both add and add_ resolve to this out-of-place add (kwargs forward keyword-only alpha).
         return torch.ops.aten.add.Tensor(a, b, **kwargs)
 
     return _fp4_add

@@ -58,13 +58,12 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             module, "sliding_window", None
         )
         head_dim = query.shape[-1]
-        # Conditions for the varlen fast path; anything else -> stock SDPA (always correct).
+        # Fast-path conditions; anything else falls back to stock SDPA.
         # - attention_mask must be None: packing carries structure via position_ids; a real mask
-        #   (e.g. left padding) is not expressible to the causal/sliding varlen kernel here.
+        #   (e.g. left padding) isn't expressible to the causal/sliding varlen kernel here.
         # - dropout unsupported by varlen_attn.
         # - head_dim within the Flash limit.
-        # - scaling: varlen_attn only applies the default 1/sqrt(head_dim); a custom scale cannot
-        #   be honored, so fall back rather than silently use the wrong scale.
+        # - scaling: varlen_attn only applies 1/sqrt(head_dim); a custom scale can't be honored.
         standard_scale = scaling is None or abs(scaling - head_dim**-0.5) < 1e-9
         use_varlen = (
             attention_mask is None

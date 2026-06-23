@@ -22,9 +22,8 @@ import triton.language as tl
 
 from .attention import _max_m, _smem_limit
 
-# BH (head tile, MMA M-axis) must be >= 16 (tensor-core min M). fwd holds q + one key tile;
-# bwd also holds do + transposes, so it needs smaller tiles — separate config lists, both
-# SMEM-pruned per GPU so this is portable (sm_120 ~99KB vs H100/B200 ~228KB).
+# BH (head tile, MMA M-axis) must be >= 16 (tensor-core min M). bwd also holds do +
+# transposes, so it needs smaller tiles; SMEM-pruned per GPU (sm_120 ~99KB vs H100/B200 ~228KB).
 _GCFGS = [
     triton.Config({"BH": bh, "BN": bn}, num_warps=w, num_stages=s)
     for bh in (16, 32, 64)
@@ -110,13 +109,13 @@ def _gather_fwd_kernel(
         Q + b * sqb + offs_h[:, None] * sqh + s * sqm + offs_d[None, :] * sqd,
         mask=hmask[:, None],
         other=0.0,
-    )  # [BH, D]
-    sink = tl.load(sinks + offs_h, mask=hmask, other=0.0).to(tl.float32)  # [BH]
+    )
+    sink = tl.load(sinks + offs_h, mask=hmask, other=0.0).to(tl.float32)
     m_i = sink
     l_i = tl.zeros([BH], tl.float32) + 1.0
     acc = tl.zeros([BH, D], tl.float32)
 
-    # sliding-window keys for this single position s (causal: j in (s-window, s])
+    # causal sliding window for position s: j in (s-window, s]
     lo = (tl.maximum(0, s - WINDOW + 1) // BN) * BN
     hi = s + 1
     for start_n in range(lo, hi, BN):
@@ -127,7 +126,7 @@ def _gather_fwd_kernel(
             mask=nmask[:, None],
             other=0.0,
         )
-        qk = tl.dot(q, tl.trans(k), input_precision=PREC) * scale  # [BH, BN]
+        qk = tl.dot(q, tl.trans(k), input_precision=PREC) * scale
         qk = tl.where(nmask[None, :], qk, float("-inf"))
         m_new = tl.maximum(m_i, tl.max(qk, 1))
         alpha = tl.exp(m_i - m_new)
@@ -138,7 +137,6 @@ def _gather_fwd_kernel(
         ).to(tl.float32)
         m_i = m_new
 
-    # gathered top-k compressed keys (BN per chunk, MMA over the gathered tile)
     for start_k in range(0, K, BN):
         kidx = start_k + tl.arange(0, BN)
         idx = tl.load(IDX + b * sib + s * sim + kidx * sik, mask=kidx < K, other=-1)
@@ -149,7 +147,7 @@ def _gather_fwd_kernel(
             mask=gv[:, None],
             other=0.0,
         )
-        qk = tl.dot(q, tl.trans(kc), input_precision=PREC) * scale  # [BH, BN]
+        qk = tl.dot(q, tl.trans(kc), input_precision=PREC) * scale
         qk = tl.where(gv[None, :], qk, float("-inf"))
         m_new = tl.maximum(m_i, tl.max(qk, 1))
         alpha = tl.exp(m_i - m_new)
@@ -287,8 +285,8 @@ def _gather_bwd_kernel(
         )
 
     p_sink = tl.exp(sink - l_i)
-    # mask the atomic itself: tl.where only zeros the value, the address offs_h is still
-    # out-of-bounds for padded heads (H % BH != 0), so the atomic must be masked too.
+    # mask the atomic itself: zeroing the value isn't enough, offs_h is out-of-bounds for
+    # padded heads (H % BH != 0).
     tl.atomic_add(DSINK + offs_h, tl.where(hmask, -p_sink * delta, 0.0), mask=hmask)
     tl.store(
         DQ + b * sqb + offs_h[:, None] * sqh + s * sqm + offs_d[None, :] * sqd,

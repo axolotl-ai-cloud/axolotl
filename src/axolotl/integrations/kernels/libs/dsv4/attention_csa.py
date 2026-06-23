@@ -83,7 +83,6 @@ def _csa_fwd_kernel(
     l_i = tl.zeros([BLOCK_M], tl.float32) + 1.0
     acc = tl.zeros([BLOCK_M, D], tl.float32)
 
-    # --- sliding-window keys (implicit causal window) ---
     lo = (tl.maximum(0, pid_m * BLOCK_M - WINDOW + 1) // BLOCK_N) * BLOCK_N
     hi = tl.minimum(S, pid_m * BLOCK_M + BLOCK_M)
     for start_n in range(lo, hi, BLOCK_N):
@@ -114,7 +113,6 @@ def _csa_fwd_kernel(
         acc += tl.dot(p.to(ACC), v.to(ACC), input_precision=PREC).to(tl.float32)
         m_i = m_new
 
-    # --- compressed keys (dense additive block_bias) ---
     for start_t in range(0, T, BLOCK_N):
         offs_t = start_t + tl.arange(0, BLOCK_N)
         tmask = offs_t < T
@@ -375,7 +373,7 @@ def _csa_bwd_dkv_kernel(
         )
         dk = tl.zeros([BLOCK_N, D], tl.float32)
         dv = tl.zeros([BLOCK_N, D], tl.float32)
-        for start_m in range(0, S, BLOCK_M):  # every query may attend a compressed key
+        for start_m in range(0, S, BLOCK_M):  # any query may attend any compressed key
             offs_m = start_m + tl.arange(0, BLOCK_M)
             mmask = offs_m < S
             q = tl.load(
@@ -549,9 +547,7 @@ def csa_attn(q, kv_slide, kv_comp, block_bias, sinks, scale=None, sliding_window
     B, H, S, D = q.shape
     if scale is None:
         scale = D**-0.5
-    # dtype-robust: the compressed KV can arrive fp32 (keep_in_fp32 compressor projections,
-    # not autocast-cast since the compressor is fused), while q/sliding-KV are the bf16
-    # compute dtype. Match everything to q so the kernel never sees mixed dtypes.
+    # compressed KV can arrive fp32 (keep_in_fp32 compressor); match all to q (no mixed dtypes).
     dt = q.dtype
     kv_slide = kv_slide.to(dt) if kv_slide.dtype != dt else kv_slide
     kv_comp = kv_comp.to(dt) if kv_comp.dtype != dt else kv_comp

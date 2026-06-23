@@ -12,7 +12,7 @@ import torch
 
 TILE = 128
 
-# mode -> (cutlass-a-dtype-name, sf_vec, cutlass-sf-dtype-name)
+# mode -> (a-dtype-name, sf_vec, sf-dtype-name)
 _MODES = {
     "nvfp4": ("Float4E2M1FN", 16, "Float8E4M3FN"),
     "fp8": ("Float8E4M3FN", 32, "Float8E8M0FNU"),
@@ -162,9 +162,7 @@ class GroupedFp4Gemm:
     def _inject_sf(st, gather, shape, scale_flat):
         st.view(torch.uint8).copy_(scale_flat.view(torch.uint8)[gather].reshape(shape))
 
-    def set_weights(
-        self, q, s
-    ):  # q:[E,N,K/2], s:[E,N,sfk] — one-time per weight gather
+    def set_weights(self, q, s):  # q:[E,N,K/2], s:[E,N,sfk]; one-time per weight gather
         self._inject_operand(self.b_st, q)
         self._inject_sf(self.sfb_st, self.sfb_g, self.sfb_shape, s.reshape(-1))
 

@@ -27,26 +27,23 @@ import torch
 import triton
 import triton.language as tl
 
-# Curated tile configs; the autotuner prunes the ones that overflow SMEM for a given
-# dtype/head_dim (D=512 tiles are large), so fp32 lands on small tiles and bf16 on
-# bigger ones automatically. ``EL`` (element size) is in the key so fp32 and bf16 are
-# tuned/cached separately.
+# Autotuner prunes configs that overflow SMEM per dtype/head_dim. ``EL`` (element size) is
+# in the autotune key so fp32 and bf16 are tuned/cached separately.
 _CONFIGS = [
     triton.Config({"BLOCK_M": bm, "BLOCK_N": bn}, num_warps=w, num_stages=s)
     for bm in (16, 32, 64, 128)
     for bn in (16, 32, 64)
     for w in (4, 8)
     for s in (1, 2)
-    # N=16 wgmma at large M illegal-accesses on Hopper/Blackwell (Triton codegen); keep BN=16
-    # only for small BM (the fp32 D=512 path needs the small tile).
+    # N=16 wgmma at large M illegal-accesses on Hopper/Blackwell; keep BN=16 only for small
+    # BM (the fp32 D=512 path needs the small tile).
     if not (bn == 16 and bm >= 64)
 ]
 
 
 @functools.lru_cache(maxsize=None)
 def _smem_limit(dev):
-    # Real per-block SMEM of the GPU we're running on (portable: sm_120 ~99KB,
-    # H100/B200 ~228KB). Queried once per device, not hardcoded.
+    # Real per-block SMEM of this GPU (portable: sm_120 ~99KB, H100/B200 ~228KB).
     try:
         return triton.runtime.driver.active.utils.get_device_properties(dev)[
             "max_shared_mem"
@@ -156,7 +153,7 @@ def _fwd_kernel(
     l_i = tl.zeros([BLOCK_M], tl.float32) + 1.0  # exp(sink - sink) seed
     acc = tl.zeros([BLOCK_M, D], tl.float32)
 
-    # sliding window: keys in (m - window, m]; restrict the key loop to that band.
+    # sliding window: keys in (m - window, m]
     lo = tl.maximum(0, (pid_m * BLOCK_M - WINDOW + 1))
     lo = (lo // BLOCK_N) * BLOCK_N
     hi = tl.minimum(KV, pid_m * BLOCK_M + BLOCK_M)
@@ -171,9 +168,7 @@ def _fwd_kernel(
             mask=nmask[:, None],
             other=0.0,
         )
-        qk = (
-            tl.dot(q, tl.trans(k), input_precision=PREC) * scale
-        )  # [BLOCK_M, BLOCK_N], fp32 accum
+        qk = tl.dot(q, tl.trans(k), input_precision=PREC) * scale
 
         valid = (
             (offs_n[None, :] <= offs_m[:, None])
@@ -209,7 +204,7 @@ def _fwd_kernel(
 
 def _fwd(q, k, v, sinks, scale, window, acc_dtype):
     B, H, S, D = q.shape
-    KV = k.shape[1]  # k is [B, KV, D]
+    KV = k.shape[1]
     out = torch.empty(B, H, S, D, device=q.device, dtype=q.dtype)
     L = torch.empty(B * H, S, device=q.device, dtype=torch.float32)
     ACC = tl.float32 if acc_dtype == torch.float32 else tl.bfloat16
@@ -248,9 +243,8 @@ def _fwd(q, k, v, sinks, scale, window, acc_dtype):
     return out, L
 
 
-# FA2-style two-kernel backward: a dq pass (parallel over query blocks) and a dk/dv
-# pass (parallel over kv blocks). Splitting halves the resident D-wide dot operands per
-# kernel so 16x16 tiles fit the dev GPU's ~99KB SMEM without Modal.
+# Two-kernel backward (dq pass, dk/dv pass): splitting halves the resident D-wide dot
+# operands per kernel so 16x16 tiles fit ~99KB SMEM.
 @triton.autotune(
     configs=_CONFIGS,
     key=["H", "EL"],
@@ -445,7 +439,7 @@ def _bwd_dkdv_kernel(
         )
         l_i = tl.load(L + pid_bh * S + offs_m, mask=mmask, other=0.0)
         delta = tl.load(Delta + pid_bh * S + offs_m, mask=mmask, other=0.0)
-        qk = tl.dot(q, tl.trans(k), input_precision=PREC) * scale  # [BM, BN]
+        qk = tl.dot(q, tl.trans(k), input_precision=PREC) * scale
         valid = (
             (offs_n[None, :] <= offs_m[:, None])
             & (offs_m[:, None] - offs_n[None, :] < WINDOW)
@@ -472,7 +466,7 @@ def _bwd_dkdv_kernel(
 
 def _bwd(q, k, v, sinks, out, do, L, scale, window, acc_dtype):
     B, H, S, D = q.shape
-    KV = k.shape[1]  # k is [B, KV, D]
+    KV = k.shape[1]
     do = do.contiguous()
     delta = (do.to(torch.float32) * out.to(torch.float32)).sum(-1).reshape(B * H, S)
     dq = torch.empty_like(q)
@@ -530,13 +524,12 @@ def sliding_attn(
     B, H, S, D = q.shape
     if scale is None:
         scale = D**-0.5
-    dt = (
-        q.dtype
-    )  # dtype-robust: match k/v/sinks to q so the kernel never sees mixed dtypes
+    # match k/v/sinks to q so the kernel never sees mixed dtypes
+    dt = q.dtype
     k = k.to(dt) if k.dtype != dt else k
     v = v.to(dt) if v.dtype != dt else v
     sinks = sinks.to(dt) if sinks.dtype != dt else sinks
-    k2 = k[:, 0].contiguous()  # [B, KV, D]
+    k2 = k[:, 0].contiguous()
     v2 = v[:, 0].contiguous()
     return _SlidingAttn.apply(
         q.contiguous(), k2, v2, sinks.contiguous(), scale, sliding_window, acc_dtype

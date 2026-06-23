@@ -33,17 +33,15 @@ class MarlinW4A16Linear(nn.Module):
         from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
 
         self.out_features, self.in_features = weight.shape
-        # The Marlin repack is a CUDA-only kernel; non-expert weights can still be on CPU at
-        # quantization time (unlike the bnb path, which moves to device implicitly). Move first.
+        # The Marlin repack is CUDA-only; non-expert weights may still be on CPU at quant time.
         if weight.device.type != "cuda":
             weight = weight.to("cuda")
         dev = weight.device
         ext = load_ext()
 
-        # two-level NVFP4 quant (per-tensor fp32 + per-16 e4m3 block scales), one [1,N,K] expert.
-        # The per-tensor scale is REQUIRED for accuracy: without it the coarse e4m3 block scales
-        # must carry the full magnitude (rel err ~0.25 vs ~0.10 two-level). pts = amax/(6*448),
-        # i.e. amax / (F4_E2M1_MAX * F8E4M3_MAX).
+        # Two-level NVFP4 quant (per-tensor fp32 + per-16 e4m3 block scales), one [1,N,K] expert.
+        # Per-tensor scale needed for accuracy (rel err ~0.10 two-level vs ~0.25 without):
+        # pts = amax / (F4_E2M1_MAX * F8E4M3_MAX) = amax / (6 * 448).
         w_bf16 = weight.to(torch.bfloat16)
         pts = (w_bf16.abs().max() / (6.0 * 448.0)).reshape(1).float()
         nv = NVFP4Tensor.to_nvfp4(
@@ -59,14 +57,14 @@ class MarlinW4A16Linear(nn.Module):
             torch.bfloat16,
             ext.gptq_marlin_repack,
         )
-        # frozen, non-trainable -> buffers (move with .to()/.cuda(); FSDP replicates non-experts)
+        # frozen -> buffers (move with .to()/.cuda(); FSDP replicates non-experts)
         self.register_buffer("qweight", qw)  # [1, ...] int32 marlin layout
         self.register_buffer("scales", sc)  # [1, ...] bf16
         self.register_buffer("gscale", g)  # [1] fp32
         self.register_buffer(
             "bias", bias.to(torch.bfloat16) if bias is not None else None
         )
-        # Scratch/device-specific reduction workspace — keep out of state_dict/checkpoints.
+        # Device-specific scratch; persistent=False keeps it out of state_dict/checkpoints.
         self.register_buffer(
             "_workspace", marlin_make_workspace_new(dev, 4), persistent=False
         )

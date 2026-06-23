@@ -47,7 +47,7 @@ def marlin_w4a16_available() -> bool:
     try:
         if not torch.cuda.is_available():
             return False
-        if torch.cuda.get_device_capability()[0] < 8:  # bf16 mma needs Ampere (sm80)+
+        if torch.cuda.get_device_capability()[0] < 8:  # bf16 mma needs sm80+
             return False
         from torch.utils.cpp_extension import CUDA_HOME
 
@@ -75,7 +75,7 @@ def load_ext():
         from torch.utils.cpp_extension import load
 
         major, minor = torch.cuda.get_device_capability()
-        # Arch in the ext name so two GPUs/arches in one torch-extensions cache don't collide.
+        # Arch in the ext name so two arches in one torch-extensions cache don't collide.
         _EXT = load(
             name=f"axolotl_marlin_w4a16_sm{major}{minor}",
             sources=[
@@ -89,10 +89,9 @@ def load_ext():
                 "-DMARLIN_NAMESPACE_NAME=marlin_moe_wna16",
                 "--expt-relaxed-constexpr",
                 "--expt-extended-lambda",
-                # The __global__ template instantiations live in sm80_kernel_*.cu and are referenced
-                # (as undefined externs) from ops_standalone.cu's kernel selector. Whole-program
-                # compilation would emit them as static stubs; keep external linkage so the link
-                # resolves. (Requires a CUDA >= 12.4 nvcc.)
+                # Keep external linkage on the __global__ template instantiations so
+                # ops_standalone.cu's selector resolves them at link, not static stubs.
+                # Requires CUDA >= 12.4 nvcc.
                 "-static-global-template-stub=false",
                 "-Xcompiler",
                 "-fPIC",

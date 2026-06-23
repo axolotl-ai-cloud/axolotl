@@ -173,8 +173,8 @@ def _scatter2scatter(
         M_out_idx = M_idx
     out_mask = M_boundary_mask[:, None] & N_mask[None, :]
     if R_ptr is not None:
-        # Fused per-row residual add (e.g. base expert GEMM output): acc += residual[M_out, N],
-        # so the LoRA-B GEMM writes (base + lora) directly — no separate add pass / temp tensor.
+        # Fused per-row residual add (e.g. base expert GEMM output) so the LoRA-B GEMM writes
+        # (base + lora) directly, no separate add pass.
         R_blk_ptrs = R_ptr + (
             M_out_idx[:, None] * stride_rm + N_block[None, :] * stride_rn
         )

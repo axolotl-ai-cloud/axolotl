@@ -24,13 +24,11 @@ from .grouped_lora import grouped_lora_bwd, grouped_lora_fwd
 
 LOG = get_logger(__name__)
 
-# one-time log of the resolved grouped base-GEMM backend (visibility: deepgemm vs marlin vs chunked)
-_BACKEND_LOGGED = False
+_BACKEND_LOGGED = False  # one-time log of the resolved base-GEMM backend
 
-# Optional override of the grouped base-GEMM backend (from cfg.moe_grouped_backend): None/"auto" =
-# capability auto-select; "marlin"|"cutlass"|"deepgemm" = force if available (else warn + auto);
-# "dequant" = force the chunked-dequant fallback (the path used when no fused backend is selected).
-# The override lives in the centralized runtime module; this stays as a compat wrapper.
+# thin compat wrapper over the centralized runtime module. grouped_backend (cfg.moe_grouped_backend):
+# None/"auto" = capability auto-select; marlin|cutlass|deepgemm = force if available (else warn +
+# auto); "dequant" = force the chunked-dequant fallback.
 from .runtime import RUNTIME  # noqa: E402
 
 
@@ -82,7 +80,7 @@ def _auto_backend() -> str | None:
 
 
 TILE = 128
-# backward base-dX dequant chunk: bounds the bf16-weight transient.
+# backward base-dX dequant chunk; bounds the bf16-weight transient.
 # E=256 knee (B200, BK=1024 dequant): CHUNK_E=16 = 11.2ms bwd / 2.6GB peak vs 10.1ms floor.
 CHUNK_E = 16
 _ENGINES: dict = {}
@@ -127,7 +125,7 @@ def _train_backend(mode: str) -> str | None:
     override = RUNTIME.grouped_backend
     if override and override != "auto":
         if override == "dequant":
-            return None  # force the chunked-dequant fallback path
+            return None  # chunked-dequant fallback
         if _backend_available(override):
             return override
         LOG.warning(
@@ -218,10 +216,10 @@ def _base_dx(
         from .mx_weights import fp4_codebook
 
         qw, orig_scale, pt_e = _marlin_raw
-        # pt_e may have stride(0) from .expand() — Triton needs element-stride=1 for correct load.
+        # pt_e may have stride(0) from .expand(); Triton needs element-stride=1 for a correct load.
         if pt_e.stride(0) == 0:
             pt_e = pt_e.contiguous()
-        E, N, Kg = orig_scale.shape  # Kg = K // 16
+        E, N, Kg = orig_scale.shape
         K = Kg * 16
         scatter_lut = _build_base_scatter(qw.device)
         cb = fp4_codebook(qw.device).float()
@@ -329,11 +327,9 @@ class _GroupedExperts(torch.autograd.Function):
         act_type,
         prefer_fp8_dx=True,
     ):
-        # base: ('marlin', ...) | ('cutlass', gu_eng, dn_eng) | ('deepgemm', ...) — frozen experts
         E = Agu.size(0)
         gu = _base_forward(base, 0, x, m_indices, mode)
-        # LoRA-B GEMM folds the base output in via its epilogue (residual=gu) -> gu = base + lora,
-        # no separate add pass / temp tensor.
+        # LoRA-B GEMM folds the base output in via residual=gu -> gu = base + lora, no separate add.
         gu, xAg = grouped_lora_fwd(x, Agu, Bgu, scaling, offs, E, residual=gu)
         h = _swiglu(gu, limit, act_type).to(x.dtype)
         dn = _base_forward(base, 1, h, m_indices, mode)
@@ -342,12 +338,11 @@ class _GroupedExperts(torch.autograd.Function):
         # FSDP-safe: don't pin the gathered NVFP4 weight; re-read the (re-gathered) param in backward
         ctx.weight_recipe, ctx.scaling, ctx.limit = weight_recipe, scaling, limit
         ctx.act_type = act_type
-        ctx.prefer_fp8_dx = (
-            prefer_fp8_dx  # base dX: fp8-read (fast, ~2% grad) vs bf16-dequant (~0.5%)
-        )
-        # Marlin memory-free path: if build_marlin_forward_base saved (qdata, scale, pt) in the
-        # cache (single-GPU only; nv.qdata was freed), stash them in ctx so the backward can use
-        # them directly without weight_recipe() (which would return the emptied NVFP4 tensor).
+        # base dX: fp8-read (fast, ~2% grad) vs bf16-dequant (~0.5%)
+        ctx.prefer_fp8_dx = prefer_fp8_dx
+        # Marlin memory-free path: build_marlin_forward_base freed nv.qdata and saved (qdata, scale,
+        # pt) in the cache (single-GPU only); stash them so backward skips weight_recipe() (which
+        # would return the emptied NVFP4 tensor).
         ctx.bwd_marlin = None
         if base[0] == "marlin":
             from .marlin_w4a16.backend import marlin_bwd_data
@@ -364,12 +359,10 @@ class _GroupedExperts(torch.autograd.Function):
             x.size(0) // m_indices.numel()
         )  # routing pad granularity (128 cutlass, 64 marlin)
         d_dn = d_dn.contiguous().to(x.dtype)
-        # fp8-read dX works for both pad-128 (cutlass) and pad-64 (marlin) via the BM=tile kernel;
-        # prefer_fp8_dx=False opts into the bf16-dequant dX (more accurate grad, ~0.5% vs ~2%).
 
         if ctx.bwd_marlin is not None:
-            # Marlin memory-free path: nv.qdata was freed after repack; backward reads from marlin
-            # qweight cache via fused Triton dequant (marlin int32 + original scales -> bf16/fp8).
+            # Marlin memory-free path: nv.qdata was freed after repack; backward reads from the
+            # marlin qweight cache via fused Triton dequant (marlin int32 + original scales).
             # bwd_marlin = ((gu_qw, (gu_scale, gu_pt, E, N, K)), (dn_qw, (dn_scale, ...)))
             (gu_qw, gu_bwd), (dn_qw, dn_bwd) = ctx.bwd_marlin
             dn_scale, dn_pt_e, _, _, _ = dn_bwd
@@ -391,9 +384,8 @@ class _GroupedExperts(torch.autograd.Function):
             ptg, ptd = _pt(gu_nv, E, dev), _pt(dn_nv, E, dev)
             dh = _base_dx(dn_nv, ptd, d_dn, h.size(1), offs, m_indices, pf8, tile)
 
-        # down LoRA backward: scatter2scatter single-launch, no padding transient.
         E = Agu.size(0)
-        # dX_lora GEMM folds base dh in via its epilogue (residual=dh) -> dh = base_dX + lora_dX.
+        # dX_lora GEMM folds base dh in via residual=dh -> dh = base_dX + lora_dX.
         dh, dAdn, dBdn = grouped_lora_bwd(
             d_dn, h, Adn, Bdn, hAd, s, offs, E, residual=dh
         )
@@ -417,7 +409,6 @@ class _GroupedExperts(torch.autograd.Function):
         else:
             dx = _base_dx(gu_nv, ptg, dgu, x.size(1), offs, m_indices, pf8, tile)
 
-        # gate_up LoRA backward
         dx, dAgu, dBgu = grouped_lora_bwd(
             dgu, x, Agu, Bgu, xAg, s, offs, E, residual=dx
         )
@@ -476,9 +467,9 @@ def grouped_fp4_moe_train(
     if weight_recipe is None:
         weight_recipe = lambda: (gate_up_nv, down_nv)  # noqa: E731
     N, H = hidden.shape
-    # NVFP4Tensor.shape reports full-precision dims [E, 2I, H] / [E, H, I] and survives the marlin
-    # qdata-free path (nv.qdata replaced with empty tensor). SimpleNamespace mocks (unit tests) lack
-    # .shape — they fall through to the qdata.size() fallback.
+    # NVFP4Tensor.shape reports full-precision dims and survives the marlin qdata-free path (qdata
+    # replaced with empty tensor). SimpleNamespace mocks (unit tests) lack .shape, so fall through
+    # to the qdata.size() branch.
     _qd = gate_up_nv.qdata
     if _qd.numel() > 0:
         E = _qd.size(0)
@@ -486,15 +477,15 @@ def grouped_fp4_moe_train(
         I = down_nv.qdata.size(2) * 2  # noqa: E741  (down K dim, packed K/2 * 2)
     else:
         # Marlin qdata-free path: qdata was freed; use the NVFP4Tensor wrapper shape.
-        _gu_shape = gate_up_nv.shape  # [E, 2I, H] full-precision
+        _gu_shape = gate_up_nv.shape
         E, twoI = int(_gu_shape[0]), int(_gu_shape[1])
         I = int(down_nv.shape[2])  # noqa: E741
     dev = hidden.device
     backend = _train_backend(mode)
     # cutlass weight_scale_2 (per_tensor_scale) folding is unimplemented: set_weights drops it on the
     # forward while the backward applies it, giving a wrong forward + grad mismatch when it != 1.
-    # Marlin (prepare_nvfp4_weight_for_marlin) and DeepGEMM (_cached_mxfp4 -> nvfp4_to_mxfp4_weight)
-    # both fold _pt() into the weight, so prefer one of those (else hard-error) for non-unit scales.
+    # Marlin and DeepGEMM both fold _pt() into the weight, so prefer one of those (else hard-error)
+    # for non-unit scales.
     if backend == "cutlass" and _has_nonunit_pt(gate_up_nv, down_nv):
         for _alt in ("marlin", "deepgemm"):
             if _backend_available(_alt):
@@ -519,8 +510,8 @@ def grouped_fp4_moe_train(
             "grouped fp4 MoE base-GEMM backend: %s",
             backend or "dequant (chunked fallback)",
         )
-    # Marlin (sm120 W4A16) pads to 64 — half CUTLASS's 128 at thin-M (each expert weight is read
-    # once either way, so the padding is the cost) — and its bf16-act kernel is bit-correct + faster.
+    # Marlin (sm120 W4A16) pads to 64, half CUTLASS's 128 at thin-M (the padding is the cost since
+    # each expert weight is read once either way), and its bf16-act kernel is bit-correct + faster.
     if backend == "marlin":
         from .marlin_w4a16.backend import MARLIN_TILE
 

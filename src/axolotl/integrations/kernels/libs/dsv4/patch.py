@@ -24,7 +24,7 @@ from .rope import apply_rotary_pos_emb_triton
 
 LOG = get_logger(__name__)
 
-_MOD = None  # set by patch_deepseek_v4_kernels; used by the patched compressor forwards
+_MOD = None  # the transformers deepseek_v4 module; set by patch_deepseek_v4_kernels
 
 
 def _dsv4_attention(

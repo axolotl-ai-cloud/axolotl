@@ -103,7 +103,7 @@ def sonicmoe_experts_forward_with_lora(
     num_top_k = top_k_index.size(-1)
     num_tokens = hidden_states.size(0)
 
-    # Flatten — token indices must be int32 and sorted ascending (sonic-moe requirement).
+    # sonic-moe requires int32 token indices sorted ascending.
     token_idx = (
         torch.arange(num_tokens, device=device)
         .unsqueeze(1)
@@ -118,9 +118,8 @@ def sonicmoe_experts_forward_with_lora(
     if not getattr(self, "has_bias", False):
         b1 = b2 = None
 
-    # FSDP2 / EP wraps parameters as DTensors but sonic-moe takes raw CUTLASS pointers,
-    # so unwrap to local shards before the materialize/permute. to_local() is
-    # autograd-aware — backward will rewrap the gradient as a DTensor again.
+    # sonic-moe takes raw CUTLASS pointers, so unwrap FSDP2/EP DTensors to local shards first.
+    # to_local() is autograd-aware: backward rewraps the gradient as a DTensor.
     if isinstance(w1, torch.distributed.tensor.DTensor):
         w1 = w1.to_local()
         w2 = w2.to_local()

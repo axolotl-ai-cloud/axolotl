@@ -64,9 +64,7 @@ def deepgemm_grouped_available() -> bool:
 def _nvfp4_deq_kernel(
     Qp, Sc, Pt, Out, Kd, ROWS_PER_E, CB, sq0, sq1, ss0, ss1, so0, so1, BK: tl.constexpr
 ):
-    rid = tl.program_id(0).to(
-        tl.int64
-    )  # int64 row base: c*nrows*stride overflows int32 at E=256
+    rid = tl.program_id(0).to(tl.int64)  # c*nrows*stride overflows int32 at E=256
     kk = tl.program_id(1) * BK + tl.arange(0, BK)
     km = kk < Kd
     pt = tl.load(Pt + rid // ROWS_PER_E).to(tl.float32)
@@ -93,7 +91,7 @@ def nvfp4_dequant_bf16(
         scale.reshape(c * nrows, kd // 16),
         out.reshape(c * nrows, kd),
     )
-    BK = 1024  # 2.5x over BK=256: fewer/larger blocks lift HBM utilization (was ~13% of peak)
+    BK = 1024  # larger blocks lift HBM utilization (memory-bound kernel)
     _nvfp4_deq_kernel[(c * nrows, triton.cdiv(kd, BK))](
         q2,
         s2,
@@ -162,7 +160,6 @@ def nvfp4_to_mxfp4_weight(
     full-size by construction (the grouped GEMM needs all experts present)."""
     cast = _dg().utils.per_token_cast_to_fp4
     E = int(qdata.size(0))
-    # probe expert 0 for the per-expert output shapes/dtypes, then preallocate the full outputs
     q0, s0 = cast(
         nvfp4_dequant_bf16(qdata[:1], scale[:1], per_tensor[:1])[0].contiguous(),
         True,
@@ -172,9 +169,7 @@ def nvfp4_to_mxfp4_weight(
     ws = s0.new_empty((E, *s0.shape))
     for c0 in range(0, E, chunk):
         c1 = min(c0 + chunk, E)
-        Wb = nvfp4_dequant_bf16(
-            qdata[c0:c1], scale[c0:c1], per_tensor[c0:c1]
-        )  # [c,N,K] bf16
+        Wb = nvfp4_dequant_bf16(qdata[c0:c1], scale[c0:c1], per_tensor[c0:c1])
         for i in range(c1 - c0):
             q, s = cast(Wb[i].contiguous(), True, 128)
             wq[c0 + i] = q
@@ -216,10 +211,8 @@ def _cached_mxfp4(w_nv, per_tensor, cache=None, key=None):
     from .runtime import RUNTIME
 
     if not RUNTIME.mxfp4_cache_persist:
-        # FSDP: the gathered weight is full+fresh each step and its NVFP4Tensor object outlives the
-        # reshard, so ANY attached cache (module dict OR a per-tensor ``_dg_mxfp4`` attr) accumulates
-        # a full-model mxfp4 copy across layers -> OOM. Recompute and return uncached; the result is
-        # used by the layer's GEMM and freed, bounding resident mxfp4 to one layer.
+        # FSDP: any attached cache accumulates a full-model mxfp4 copy across layers -> OOM.
+        # Recompute uncached so resident mxfp4 stays bounded to one layer.
         return nvfp4_to_mxfp4_weight(w_nv.qdata, w_nv.scale, per_tensor)
     if cache is not None and key is not None and key in cache:
         return cache[key]
@@ -288,9 +281,8 @@ def nvfp4_dequant_fp8(
     return out
 
 
-# BM is the per-expert tile (= the routing pad TILE); passed by the caller (128 for the cutlass
-# path, 64 for the marlin path) rather than fixed, so one expert weight maps to each BM-row block.
-# It is a constexpr (and an autotune key) so BN/BK/warps/stages still autotune per (N, K, BM).
+# BM is the routing pad TILE (128 cutlass, 64 marlin); a constexpr autotune key so BN/BK/warps
+# still tune per (N,K,BM).
 @triton.autotune(
     configs=[
         triton.Config({"BN": bn, "BK": bk}, num_warps=w, num_stages=st)
@@ -384,7 +376,7 @@ class _GroupedMM(torch.autograd.Function):
     weight ``bT`` (the dequantized experts) → only the input grad ``dX`` is returned."""
 
     @staticmethod
-    def forward(ctx, a, bT, offs):  # a[M,K], bT[E,K,N] -> [M,N]
+    def forward(ctx, a, bT, offs):
         ctx.save_for_backward(bT, offs)
         return torch._grouped_mm(a, bT, offs=offs)
 
@@ -399,8 +391,8 @@ class _GroupedMM(torch.autograd.Function):
 
 def _chunk_forward(sorted_tok, gqd, gsc, dqd, dsc, pt, coff, limit):
     """One expert-chunk: dequant -> grouped gate_up -> clamped-SwiGLU -> grouped down."""
-    gub = nvfp4_dequant_bf16(gqd, gsc, pt).transpose(1, 2)  # [c,H,2I]
-    dnb = nvfp4_dequant_bf16(dqd, dsc, pt).transpose(1, 2)  # [c,I,H]
+    gub = nvfp4_dequant_bf16(gqd, gsc, pt).transpose(1, 2)
+    dnb = nvfp4_dequant_bf16(dqd, dsc, pt).transpose(1, 2)
     x = _GroupedMM.apply(sorted_tok, gub, coff)
     g, u = x.chunk(2, dim=-1)
     h = (
@@ -428,7 +420,7 @@ def chunked_dequant_grouped_base(
     assert not getattr(down_nv, "is_swizzled_scales", False), (
         "swizzled NVFP4 scales unsupported"
     )
-    # torchao per_tensor_scale is either a global scalar or per-expert; normalize to [E]
+    # per_tensor_scale may be a global scalar or per-expert; normalize to [E]
     per_tensor = per_tensor.reshape(-1).to(torch.float32)
     if per_tensor.numel() == 1:
         per_tensor = per_tensor.expand(E)

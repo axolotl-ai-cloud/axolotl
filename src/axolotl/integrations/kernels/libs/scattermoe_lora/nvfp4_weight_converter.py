@@ -84,14 +84,11 @@ class Nvfp4ExpertsDeserialize:
                 "install torchao with NVFP4 support"
             )
 
-        # Decide which projection from the target name.
         if full_layer_name is None or "gate_up_proj" not in full_layer_name:
             proj = "down_proj"
         else:
             proj = "gate_up_proj"
 
-        # Build lookup: strip scope prefix from source_patterns so we can find them
-        # regardless of how the loader scoped the keys.
         def _find(pat_suffix: str) -> list[torch.Tensor]:
             """Find the tensor list for a source pattern that ends with pat_suffix."""
             for key, tensors in input_dict.items():
@@ -102,12 +99,9 @@ class Nvfp4ExpertsDeserialize:
                 f"input_dict keys: {list(input_dict.keys())}"
             )
 
-        # transformers' spawn_materialize casts all checkpoint tensors to the model's
-        # skeleton dtype (bfloat16) before handing them to the converter. The NVFP4
-        # packed weights are uint8 and the block-scales are float8_e4m3fn on disk;
-        # both roundtrip exactly through bfloat16 (all uint8 values 0-255 are exactly
-        # representable in bfloat16; float8 values are a subset of bfloat16). Recast
-        # so NVFP4Tensor receives the correct raw dtypes.
+        # spawn_materialize casts all checkpoint tensors to the skeleton dtype (bf16) before
+        # the converter sees them. uint8 qdata (0-255) and float8_e4m3fn scales both roundtrip
+        # exactly through bf16, so recast back to the raw dtypes NVFP4Tensor needs.
         def _recast_weight(t: torch.Tensor) -> torch.Tensor:
             if t.dtype != torch.uint8:
                 return t.to(torch.int32).to(torch.uint8)
@@ -125,7 +119,6 @@ class Nvfp4ExpertsDeserialize:
             up_sc = [_recast_scale(t) for t in _find("up_proj.weight_scale")]
             pts_list = _find("gate_proj.weight_scale_2")
 
-            # Stack experts then cat gate+up along row (dim=1)
             gate_qd = torch.stack(gate_w, dim=0)  # [E, I, H/2]
             up_qd = torch.stack(up_w, dim=0)  # [E, I, H/2]
             qdata = torch.cat([gate_qd, up_qd], dim=1)  # [E, 2I, H/2]
@@ -192,7 +185,7 @@ def nvfp4_experts_weight_converters() -> list:
     gate_up_converter = WeightConverter(
         source_patterns=[
             # gate and up each ship their own weight_scale_2 scalar; claim BOTH so neither
-            # lands as an UNEXPECTED key (the op only reads the first — they're identical).
+            # lands as an UNEXPECTED key (the op only reads the first; they're identical).
             "experts.*.gate_proj.weight_scale_2",
             "experts.*.up_proj.weight_scale_2",
             "experts.*.gate_proj.weight_scale",
@@ -230,7 +223,7 @@ def register_gemma4_nvfp4_converters() -> None:
     try:
         register_checkpoint_conversion_mapping("gemma4_text", converters)
     except ValueError:
-        # Already registered — overwrite to keep converters fresh.
+        # Already registered; overwrite to keep converters fresh.
         register_checkpoint_conversion_mapping(
             "gemma4_text", converters, overwrite=True
         )

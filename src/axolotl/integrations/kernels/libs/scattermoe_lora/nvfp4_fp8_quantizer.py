@@ -45,15 +45,13 @@ LOG = get_logger(__name__)
 
 _GROUP_SIZE = 16
 
-# How to store the blockwise-FP8 *non-expert* linears after load (set from the
+# How to store the blockwise-FP8 non-expert linears after load (set from the
 # `dsv4_fp8_nonexpert_mode` config via `configure_nonexpert_mode`):
-#   "float8tensor" (default) — wrap each plain FP8Linear's weight as a torchao Float8Tensor
-#       (1-byte qdata + block scale, ~50% less than bf16). Forward dispatches through the
-#       subclass (its logical dtype is bf16, so transformers' FP8Linear.forward takes the
-#       plain F.linear branch); backward dX + PEFT LoRA work via subclass autograd; the
-#       fused LoRA kernels dequant it through `axolotl.kernels.quantize.dequantize`.
-#   "bf16" — dequantize to bf16 in place (the original safe path; 2 bytes/param). This also
-#       sidesteps transformers' `@triton_op` FP8 matmul (no autograd formula; slow discovery).
+#   "float8tensor" (default): wrap each plain FP8Linear weight as a torchao Float8Tensor
+#       (1-byte qdata + block scale). Forward/backward + PEFT LoRA run via subclass autograd;
+#       the fused LoRA kernels dequant it through axolotl.kernels.quantize.dequantize.
+#   "bf16": dequantize to bf16 in place (safe path; 2 bytes/param). Also sidesteps transformers'
+#       @triton_op FP8 matmul (no autograd formula; slow discovery).
 # Grouped linears (o_a_proj) always go to bf16: their view+bmm forward isn't subclass-safe.
 _FP8_NONEXPERT_MODE = "float8tensor"
 
@@ -176,7 +174,7 @@ def _dequantize_fp8_linears(model: nn.Module, quantizer) -> int:
             continue
         w_bf16 = deq._dequantize_one(w.data, wsi.data, torch.bfloat16)
         if tuple(w_bf16.shape) != tuple(w.shape):
-            # FP4-packed (int8, half-K) unpacks to 2x width — that's expected; otherwise log.
+            # FP4-packed (int8, half-K) unpacks to 2x width (expected); otherwise log.
             LOG.warning(
                 "dequant %s: weight %s -> %s (dtype %s)",
                 name,

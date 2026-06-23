@@ -10,7 +10,7 @@ integration calls it 4x: gate_up + down (forward), and their transposes (backwar
 import torch
 
 
-# ---- copied verbatim from vllm marlin_utils.py ----
+# Copied verbatim from vllm marlin_utils.py (keep bit-identical).
 def _num_compute_units(idx):
     return torch.cuda.get_device_properties(idx).multi_processor_count
 
@@ -42,7 +42,7 @@ def marlin_permute_scales(s, size_k, size_n, group_size, is_a_8bit=False):
     return s
 
 
-# ---- copied verbatim from vllm marlin_utils_fp4.py ----
+# Copied verbatim from vllm marlin_utils_fp4.py (keep bit-identical).
 def _nvfp4_compute_scale_factor(marlin_scales, a_dtype=None):
     if a_dtype is not None and a_dtype == torch.half:
         return 1.0
@@ -83,7 +83,7 @@ def nvfp4_marlin_process_global_scale(global_scale, a_dtype=None):
     return global_scale * (2.0 ** (exponent_bias - 7))
 
 
-# vllm::ScalarType float4_e2m1f.id (stable packed enum id; printed from vllm.scalar_type).
+# vllm::ScalarType float4_e2m1f.id (stable packed enum id).
 FLOAT4_E2M1F_ID = 562949953487106
 
 
@@ -142,7 +142,6 @@ def marlin_moe_gemm(
     )
 
 
-# ---- the vLLM-free prep entry point ----
 GROUP_SIZE = 16
 
 
@@ -155,14 +154,13 @@ def prepare_nvfp4_weight_for_marlin(
     dev = qdata.device
     perm = torch.empty(0, dtype=torch.int, device=dev)
 
-    # WEIGHT repack (standalone CUDA, bit-exact to vLLM)
     qw = []
     for i in range(E):
         qw_i = qdata[i].view(torch.int32).T.contiguous()  # [size_k//8, size_n]
         qw.append(repack_fn(qw_i, perm, size_k, size_n, 4, False))
     qw = torch.stack(qw, 0)
 
-    # SCALES: shared scale_factor across experts, then per-expert permute+process
+    # Shared scale_factor across experts, then per-expert permute+process.
     scales_p = block_scale.to(param_dtype)
     csf = _nvfp4_compute_scale_factor(scales_p, param_dtype)
     sc = []

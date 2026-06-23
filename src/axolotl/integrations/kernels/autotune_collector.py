@@ -126,10 +126,10 @@ def collect_autotune_configs() -> list[dict[str, Any]]:
     caches are the populated runtime ones) and the normally-imported dsv4 kernel modules.
     """
     results: list[dict[str, Any]] = []
-    # Dedup by the FULL module path so two *distinct* module instances of the same kernel
-    # (e.g. a duplicate import) stay visible as separate, tagged entries — that duplication
-    # is exactly what we want telemetry to surface (a single Autotuner.cache is a dict and
-    # can't hold a key twice, so any same-(kernel,key) duplicate means >1 module instance).
+    # Dedup by the FULL module path so two distinct module instances of the same kernel
+    # (e.g. a duplicate import) stay visible as separate entries; that duplication is exactly
+    # what telemetry should surface (a single Autotuner.cache is a dict and can't hold a key
+    # twice, so any same-(kernel,key) duplicate means >1 module instance).
     seen: set[tuple[str, str, tuple]] = set()
 
     for modname, module in list(sys.modules.items()):

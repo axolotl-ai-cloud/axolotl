@@ -12,8 +12,6 @@ import triton
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
 
-# ── SwiGLU (silu + clamp) ─────────────────────────────────────────────────────
-
 
 @triton.jit
 def _fwd(GU, H, I, L, sg0, sg1, sh0, sh1, BLK: tl.constexpr):
@@ -47,7 +45,6 @@ def _bwd(GU, DH, DGU, I, L, sg0, sg1, sd0, sd1, so0, so1, BLK: tl.constexpr):
     tl.store(DGU + r * so0 + (I + c) * so1, du.to(DGU.dtype.element_ty), mask=m)
 
 
-# ── GeGLU (gelu_pytorch_tanh, no clamp) ──────────────────────────────────────
 # gelu_tanh(x) = 0.5 * x * (1 + tanh(k * (x + 0.044715 * x^3))), k = sqrt(2/pi)
 # gelu_tanh'(x) = 0.5*(1+t) + 0.5*x*(1-t^2)*k*(1 + 3*0.044715*x^2)
 
@@ -86,9 +83,6 @@ def _bwd_gelu(GU, DH, DGU, I, sg0, sg1, sd0, sd1, so0, so1, BLK: tl.constexpr):
     du = dh * gelu_g
     tl.store(DGU + r * so0 + c * so1, dg.to(DGU.dtype.element_ty), mask=m)
     tl.store(DGU + r * so0 + (I + c) * so1, du.to(DGU.dtype.element_ty), mask=m)
-
-
-# ── Public API ─────────────────────────────────────────────────────────────────
 
 
 def swiglu_fwd(gu, limit, act_type="silu", bpm=512):

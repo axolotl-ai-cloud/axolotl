@@ -25,7 +25,7 @@ def cutlass_fp4_available() -> bool:
         import cutlass.cute.nvgpu.warp.mma as _wm  # noqa: F401
         import cutlass.utils.blackwell_helpers as _bh
 
-        # the sm120 block-scaled SF helpers (4.6+) — absent in 4.5.x
+        # sm120 block-scaled SF helpers landed in 4.6; absent in 4.5.x
         return hasattr(_bh, "partition_fragment_SFA") and hasattr(_wm, "MmaMXF4NVF4Op")
     except Exception:
         return False
