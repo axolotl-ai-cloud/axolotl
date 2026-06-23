@@ -6,7 +6,7 @@ start). The default SDPA path turns this into an explicit 4D block-diagonal
 mask: O(S^2) compute even though cross-document blocks are masked out, plus the
 mask tensor itself.
 
-When PyTorch exposes ``torch.nn.attention.varlen.varlen_attn`` (>= 2.11) and the
+When PyTorch exposes ``torch.nn.attention.varlen.varlen_attn`` (>= 2.10) and the
 head_dim is within Flash-Attention's limit (<= 256), we can instead run the
 attention as variable-length with ``cu_seqlens`` derived from ``position_ids``,
 which skips the cross-document blocks entirely — faster and lower memory — with
@@ -63,11 +63,15 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         #   (e.g. left padding) is not expressible to the causal/sliding varlen kernel here.
         # - dropout unsupported by varlen_attn.
         # - head_dim within the Flash limit.
+        # - scaling: varlen_attn only applies the default 1/sqrt(head_dim); a custom scale cannot
+        #   be honored, so fall back rather than silently use the wrong scale.
+        standard_scale = scaling is None or abs(scaling - head_dim**-0.5) < 1e-9
         use_varlen = (
             attention_mask is None
             and not dropout
             and head_dim <= _VARLEN_MAX_HEAD_DIM
             and position_ids is not None
+            and standard_scale
         )
         if use_varlen:
             pid = position_ids if position_ids.dim() > 1 else position_ids[None]
@@ -85,6 +89,14 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
                 **kwargs,
             )
 
+        # varlen_attn has no sliding-window parameter; rather than silently run full causal
+        # attention for a sliding-window layer (wrong results), refuse loudly.
+        if sliding_window:
+            raise NotImplementedError(
+                "sdpa_varlen: sliding-window attention is not expressible via varlen_attn "
+                f"(requested window={sliding_window}); disable sdpa_varlen for this model."
+            )
+
         B, Hq, S, D = query.shape
         Hkv = key.shape[1]
         if Hq != Hkv:  # GQA -> repeat (varlen_attn has no GQA mode)
@@ -95,8 +107,6 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         qf = query.transpose(1, 2).reshape(B * S, Hq, D)
         kf = key.transpose(1, 2).reshape(B * S, Hq, D)
         vf = value.transpose(1, 2).reshape(B * S, Hq, D)
-        # window_size: (-1, 0) = causal full; (W-1, 0) = causal sliding window of W.
-        window = (sliding_window - 1, 0) if sliding_window else (-1, 0)
         out = varlen_attn(
             qf,
             kf,
@@ -105,8 +115,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             cu_k.to(torch.int32),
             int(max_q),
             int(max_k),
-            scale=scaling,
-            window_size=window,
+            is_causal=True,
         )
         if isinstance(out, tuple):
             out = out[0]
@@ -123,7 +132,7 @@ def patch_sdpa_varlen() -> bool:
         return True
     if not varlen_available():
         LOG.warning(
-            "sdpa_varlen: torch.nn.attention.varlen.varlen_attn unavailable (needs torch >= 2.11); "
+            "sdpa_varlen: torch.nn.attention.varlen.varlen_attn unavailable (needs torch >= 2.10); "
             "leaving stock SDPA in place."
         )
         return False
