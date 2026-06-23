@@ -1,6 +1,4 @@
-# DeepSeek-V4-Flash MoE LoRA on an NVFP4 (modelopt) checkpoint.
-# Validated on 2xB200 (sm100) with FSDP2: ~130 tok/s total, train_loss ~1.09 at seq 4096.
-# Single-GPU also works (drop the fsdp_* block) but the ~168GB model needs >=180GB VRAM.
+# DeepSeek-V4-Flash MoE LoRA on an NVFP4 (modelopt) checkpoint. FSDP2 multi-GPU only.
 #
 # The pieces that make this run:
 #   1. use_dsv4_kernels: true
@@ -8,18 +6,14 @@
 #        attention/rope/mHC/compressor/indexer for fused Triton kernels. Keep
 #        attn_implementation: eager so the plugin owns the attention path.
 #   2. dsv4_fp4_grouped_mode: nvfp4
-#        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM. Base GEMM
-#        auto-dispatches by arch: DeepGEMM (sm100 / Blackwell datacenter, e.g. B200 — the fp8xfp4
-#        kernel is sm100-only) -> CUTLASS (sm120, e.g. RTX PRO 6000) -> chunked-dequant fallback.
-#        Backward is chunked bf16-dequant + grouped_mm (bf16 grad required for accuracy).
-#        Under FSDP the per-step nvfp4->mxfp4 requant is recomputed and freed per layer (not cached
-#        across layers, which would hold a full-model mxfp4 copy per rank and OOM).
+#        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (base GEMM backend
+#        auto-dispatches by GPU arch). Backward is chunked bf16-dequant + grouped_mm (bf16 grad
+#        required for accuracy). Under FSDP the per-step nvfp4->mxfp4 requant is recomputed and
+#        freed per layer (not cached across layers, which would hold a full-model mxfp4 copy per
+#        rank and OOM).
 #   3. sample_packing: true
 #        REQUIRED for steady throughput. Without it, variable sequence lengths re-trigger the
-#        DeepGEMM/Triton/grouped autotune every step (recompile-bound, throughput collapses).
-#
-# Quick single-GPU bring-up / debug: set env DSV4_TRUNCATE_LAYERS=N to train only the first N
-# decoder layers (the model slice still spans all attention types). Not for real training.
+#        grouped GEMM autotune every step (recompile-bound, throughput collapses).
 base_model: nvidia/DeepSeek-V4-Flash-NVFP4
 attn_implementation: eager
 
@@ -28,12 +22,10 @@ plugins:
   - axolotl.integrations.kernels.KernelsPlugin
 
 use_kernels: true
-use_scattermoe: true          # NVFP4 experts (LoRA-on-experts)
-use_dsv4_kernels: true        # sliding/CSA attn + rope + mHC + gated-pool + indexer
-lora_mlp_kernel: true         # fused clamped-SwiGLU LoRA on the dense shared MLP
-dsv4_fp4_grouped_mode: nvfp4  # fused 4-bit grouped MoE GEMM (DeepGEMM sm90,100 / CUTLASS sm120)
-# large vocab -> never materialize the full [tokens, vocab] logits (~8.5 GiB saved on a comparable run)
-cut_cross_entropy: true
+use_scattermoe: true # NVFP4 experts (LoRA-on-experts)
+use_dsv4_kernels: true # sliding/CSA attn + rope + mHC + gated-pool + indexer
+lora_mlp_kernel: true # fused clamped-SwiGLU LoRA on the dense shared MLP
+dsv4_fp4_grouped_mode: nvfp4 # fused 4-bit grouped MoE GEMM; backward is bf16-dequant
 strict: false
 
 datasets:
@@ -67,8 +59,6 @@ gradient_checkpointing_kwargs:
   use_reentrant: false
 activation_offloading: false
 
-# FSDP2: shard the ~168GB NVFP4 model across GPUs (~84GB weights/rank on 2x B200).
-# Drop this whole block for single-GPU on a >=180GB card.
 fsdp_version: 2
 fsdp_config:
   offload_params: false
