@@ -508,7 +508,7 @@ def grouped_fp4_moe_train(
         globals()["_BACKEND_LOGGED"] = True
         LOG.info(
             "grouped fp4 MoE base-GEMM backend: %s",
-            backend or "dequant (chunked fallback)",
+            backend or "cutlass",
         )
     # Marlin (sm120 W4A16) pads to 64, half CUTLASS's 128 at thin-M (the padding is the cost since
     # each expert weight is read once either way), and its bf16-act kernel is bit-correct + faster.

@@ -403,8 +403,8 @@ def scattermoe_experts_forward(
         if is_nvfp4_param(gu_base):
             from .grouped_train import grouped_fp4_available, grouped_fp4_moe_train
 
-            # No LoRA-capable base GEMM here and the chunked-dequant fallback is base-only;
-            # the legacy fused-MX kernel SIGSEGVs on Blackwell, so hard-error rather than crash.
+            # No LoRA-capable base GEMM here; the legacy fused-MX kernel SIGSEGVs on Blackwell, so
+            # hard-error rather than crash.
             if not grouped_fp4_available(_fp4_grouped_mode):
                 _cap = (
                     "sm%d%d" % torch.cuda.get_device_capability()
@@ -414,10 +414,10 @@ def scattermoe_experts_forward(
                 raise RuntimeError(
                     f"dsv4_fp4_grouped_mode={_fp4_grouped_mode!r} with LoRA selected the grouped "
                     f"NVFP4 MoE path, but no fused grouped backend resolved on this arch ({_cap}): "
-                    "marlin, cutlass, deepgemm, and the dequant fallback are all unavailable. The "
-                    "legacy fused-MX kernel (scatter2scatter_lora_mx) is unsafe on this arch "
-                    "(SIGSEGV on Blackwell), so it is not used as a fallback. Run on a supported "
-                    "GPU (sm80+/sm90/sm100/sm120) or disable dsv4_fp4_grouped_mode."
+                    "marlin, cutlass, and deepgemm are all unavailable. The legacy fused-MX kernel "
+                    "(scatter2scatter_lora_mx) is unsafe on this arch (SIGSEGV on Blackwell), so it "
+                    "is not used as a fallback. Run on a supported GPU (sm80+/sm90/sm100/sm120) or "
+                    "disable dsv4_fp4_grouped_mode."
                 )
             # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
             _recipe = lambda: (  # noqa: E731
@@ -442,6 +442,24 @@ def scattermoe_experts_forward(
                 mxfp4_cache=cache,
                 prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
             )
+
+    # NVFP4 experts + LoRA without dsv4_fp4_grouped_mode set would fall through to
+    # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
+    # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
+    # supported route for NVFP4+LoRA); non-Blackwell archs keep the legacy path.
+    if (
+        _fp4_grouped_mode is None
+        and gup_lora is not None
+        and down_lora is not None
+        and torch.cuda.is_available()
+        and torch.cuda.get_device_capability()[0] >= 10
+        and is_nvfp4_param(_get_base_param(self.gate_up_proj))
+    ):
+        raise RuntimeError(
+            "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
+            "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
+            "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
+        )
 
     # BnB-4bit experts have no 4-bit-read kernel; the naive path full-dequants all E experts every
     # forward (~2.7x VRAM). Route to the chunked-dequant grouped MoE (bounded transient). Detect

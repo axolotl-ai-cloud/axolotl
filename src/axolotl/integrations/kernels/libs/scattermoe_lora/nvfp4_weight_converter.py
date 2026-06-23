@@ -129,7 +129,8 @@ class Nvfp4ExpertsDeserialize:
             scale = torch.cat([gate_s, up_s], dim=1)  # [E, 2I, H/16]
             del gate_s, up_s
 
-            pts = pts_list[0].to(torch.float32)
+            # Per-expert weight_scale_2 stacked to [E,1,1] (gate/up share it), not expert-0's scalar.
+            pts = torch.stack([t.to(torch.float32) for t in pts_list]).view(-1, 1, 1)
 
         else:  # down_proj
             down_w = [_recast_weight(t) for t in _find("down_proj.weight")]
@@ -138,7 +139,7 @@ class Nvfp4ExpertsDeserialize:
 
             qdata = torch.stack(down_w, dim=0)  # [E, H, I/2]
             scale = torch.stack(down_sc, dim=0)  # [E, H, I/16]
-            pts = pts_list[0].to(torch.float32)
+            pts = torch.stack([t.to(torch.float32) for t in pts_list]).view(-1, 1, 1)
 
         nvfp4 = NVFP4Tensor(qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts)
 

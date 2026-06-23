@@ -22,13 +22,15 @@ case and the only one torchao's ``NVFP4Tensor.dequantize`` supports against per-
 A per-expert per_tensor_scale buffer is checked at the tensor-shape level (its split/narrow
 slicing) since torchao cannot dequantize that shape for an equality check.
 
-Skip gate: requires torchao's NVFP4Tensor and the axolotl scattermoe_lora package import (the
-package __init__ imports triton, so this skips on a triton-less host such as a CPU dev box;
-it executes on the CUDA CI where triton is present). No CUDA device is required to RUN once
-imported - the ops are CPU tensor logic.
+Skip gate: requires torchao's NVFP4Tensor. The substrate module is loaded by file path so the
+scattermoe_lora package __init__ (which imports triton) is NOT executed - the ops are pure CPU
+tensor logic, so this runs on the no-CUDA / triton-less CI lane (matching the Float8 sibling).
 """
 
 from __future__ import annotations
+
+import importlib.util
+import os
 
 import pytest
 import torch
@@ -37,13 +39,29 @@ NVFP4Tensor = pytest.importorskip(
     "torchao.prototype.mx_formats.nvfp4_tensor", reason="torchao required"
 ).NVFP4Tensor
 
-# Importing nvfp4_fsdp pulls the scattermoe_lora package __init__, which imports triton; skip
-# cleanly where triton is absent (CPU dev box). The ops themselves are CPU-only tensor logic.
-nvfp4_fsdp = pytest.importorskip(
-    "axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_fsdp",
-    reason="scattermoe_lora kernels package (triton) required to import nvfp4_fsdp",
-)
 
+def _load_nvfp4_fsdp():
+    """Load nvfp4_fsdp by file path so the scattermoe_lora package __init__ (which imports triton) is
+    NOT executed. The module needs only torch + torchao, so it imports triton-free and runs on CPU."""
+    import axolotl
+
+    path = os.path.join(
+        os.path.dirname(axolotl.__file__),
+        "integrations",
+        "kernels",
+        "libs",
+        "scattermoe_lora",
+        "nvfp4_fsdp.py",
+    )
+    spec = importlib.util.spec_from_file_location(
+        "_axolotl_nvfp4_fsdp_under_test", path
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+nvfp4_fsdp = _load_nvfp4_fsdp()
 nvfp4_fsdp.patch_nvfp4_fsdp()
 
 DEV = "cpu"

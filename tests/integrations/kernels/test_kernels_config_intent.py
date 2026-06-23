@@ -144,6 +144,33 @@ def test_dsv4_attention_lora_allowed_with_exclude_isolation(caplog):
     assert any("indexer scorer projections" in r.message for r in caplog.records)
 
 
+def test_dsv4_lora_target_linear_rejected_isolation():
+    # B1: lora_target_linear: true expands (find_all_linear_names) to attention q/k/v/o AFTER
+    # validation, so the guard must reject it too, not only lora_target_modules.
+    with pytest.raises(pydantic.ValidationError, match="lora_target_linear"):
+        KernelsArgs.model_validate(
+            {
+                "use_kernels": True,
+                "use_dsv4_kernels": True,
+                "lora_target_linear": True,
+            }
+        )
+
+
+def test_dsv4_lora_target_linear_allowed_with_exclude_isolation(caplog):
+    with caplog.at_level(logging.WARNING):
+        a = KernelsArgs.model_validate(
+            {
+                "use_kernels": True,
+                "use_dsv4_kernels": True,
+                "lora_target_linear": True,
+                "lora_exclude_modules": [".*indexer.*"],
+            }
+        )
+    assert a.use_dsv4_kernels is True
+    assert any("indexer scorer projections" in r.message for r in caplog.records)
+
+
 def test_dsv4_experts_only_allowed_isolation():
     a = KernelsArgs.model_validate(
         {
@@ -181,3 +208,9 @@ def test_merged_dsv4_attention_lora_allowed_with_exclude():
         )
     )
     assert m.use_dsv4_kernels is True
+
+
+def test_merged_dsv4_lora_target_linear_rejected():
+    Merged = _merged_cls()
+    with pytest.raises(pydantic.ValidationError, match="lora_target_linear"):
+        Merged.model_validate(_minimal(use_dsv4_kernels=True, lora_target_linear=True))

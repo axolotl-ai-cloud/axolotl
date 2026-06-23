@@ -444,16 +444,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # exception in ``fully_shard`` can no longer leave it patched).
     from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
         cast_residual_fp32,
+        model_has_float_logical_quantized_params,
         model_has_nonfloat_params,
-        model_has_quantized_params,
         nonfloat_param_guard,
         shard_fp32_modules,
     )
 
-    # Apply the quantized dtype/sharding policy for ANY quantized model — including torchao tensor
-    # subclasses (NVFP4Tensor/Float8Tensor) that report a logical float dtype. The
-    # nn.Parameter.__new__ guard is only needed for PLAIN non-float params (uint8 packed).
-    _quantized = model_has_quantized_params(model)
+    # Apply the quantized dtype/cast/sharding policy ONLY for float-logical torchao subclasses
+    # (NVFP4Tensor/Float8Tensor/MXTensor) — the pre-quantized checkpoint case this path is for.
+    # Plain bnb Params4bit QLoRA is excluded so cast_residual_fp32 does not downcast its fp32 LoRA.
+    # The nn.Parameter.__new__ guard is separate: it is needed for ANY plain non-float param (uint8
+    # packed, which includes bnb Params4bit) and stays gated on that.
+    _quantized = model_has_float_logical_quantized_params(model)
     _needs_nonfloat_guard = model_has_nonfloat_params(model)
     _guard = (
         nonfloat_param_guard(model)

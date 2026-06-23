@@ -386,6 +386,15 @@ def make_nvfp4_fp8_quantizer():
 
         def _process_model_after_weight_loading(self, model, **kwargs):
             super()._process_model_after_weight_loading(model, **kwargs)
+            # The swap into AUTO_QUANTIZER_MAPPING['fp8'] is process-global, so this runs for EVERY
+            # fp8 checkpoint loaded after install. Gate all NVFP4-specific work on actually finding
+            # NVFP4 experts; a plain fp8 model behaves exactly like the original quantizer (super()
+            # above) and is NOT re-wrapped as Float8Tensor.
+            mods = [
+                (name, m) for name, m in model.named_modules() if _is_nvfp4_experts(m)
+            ]
+            if not mods:
+                return
             if _FP8_NONEXPERT_MODE == "bf16":
                 n = _dequantize_fp8_linears(model, self)
                 if n:
@@ -401,11 +410,6 @@ def make_nvfp4_fp8_quantizer():
             repo = getattr(model, "name_or_path", None) or getattr(
                 model.config, "_name_or_path", None
             )
-            mods = [
-                (name, m) for name, m in model.named_modules() if _is_nvfp4_experts(m)
-            ]
-            if not mods:
-                return
             wmap, opener = _scale_2_path(repo)
             import re
 
@@ -476,3 +480,16 @@ def install_nvfp4_fp8_quantizer() -> None:
     _ORIGINAL_FP8_QUANTIZER = _auto.AUTO_QUANTIZER_MAPPING.get("fp8")
     _auto.AUTO_QUANTIZER_MAPPING["fp8"] = cls
     LOG.info("Installed NVFP4-aware FP8 quantizer into AUTO_QUANTIZER_MAPPING['fp8']")
+
+
+def uninstall_nvfp4_fp8_quantizer() -> None:
+    """Restore the original ``AUTO_QUANTIZER_MAPPING["fp8"]`` entry the swap replaced (so a long-lived
+    process can return to stock fp8 loading). Idempotent; a no-op if install was never called."""
+    global _ORIGINAL_FP8_QUANTIZER
+    if _ORIGINAL_FP8_QUANTIZER is None:
+        return
+    from transformers.quantizers import auto as _auto
+
+    _auto.AUTO_QUANTIZER_MAPPING["fp8"] = _ORIGINAL_FP8_QUANTIZER
+    _ORIGINAL_FP8_QUANTIZER = None
+    LOG.info("Restored original FP8 quantizer in AUTO_QUANTIZER_MAPPING['fp8']")

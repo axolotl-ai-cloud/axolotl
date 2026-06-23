@@ -110,13 +110,20 @@ def test_nonexpert_quantization_nvfp4_accepted():
 
 
 def test_moe_grouped_backend_valid_and_invalid():
-    for b in ("auto", "marlin", "cutlass", "deepgemm", "dequant"):
+    for b in ("auto", "marlin", "cutlass", "deepgemm"):
         assert (
             KernelsArgs.model_validate({"moe_grouped_backend": b}).moe_grouped_backend
             == b
         )
     with pytest.raises(pydantic.ValidationError):
         KernelsArgs.model_validate({"moe_grouped_backend": "triton"})
+
+
+def test_moe_grouped_backend_dequant_rejected_for_training():
+    # M1: 'dequant' has no training/autograd path (the dispatch only wires marlin/deepgemm/cutlass);
+    # accepting it would silently run cutlass, so it is rejected with an explanatory message.
+    with pytest.raises(pydantic.ValidationError, match="not implemented for training"):
+        KernelsArgs.model_validate({"moe_grouped_backend": "dequant"})
 
 
 def test_large_head_attention_validator():

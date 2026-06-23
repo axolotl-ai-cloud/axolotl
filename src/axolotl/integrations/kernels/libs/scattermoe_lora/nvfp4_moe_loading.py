@@ -95,7 +95,7 @@ def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device
     fused projection straight from the raw checkpoint (no dependence on transformers' own
     fusion). Fused on the N (row) axis: qdata [E, sumN, K/2] uint8, scale [E, sumN, K/16]
     E4M3, per_tensor scalar."""
-    qd_proj, sc_proj, pts = [[] for _ in projs], [[] for _ in projs], None
+    qd_proj, sc_proj, pts_list = [[] for _ in projs], [[] for _ in projs], []
     opened: dict[str, object] = {}
     for e in range(n_experts):
         for pi, proj in enumerate(projs):
@@ -106,11 +106,15 @@ def _build_expert_nvfp4(repo_id, wmap, base_fmt, layer, projs, n_experts, device
             )
             qd_proj[pi].append(f.get_tensor(f"{base}.weight"))
             sc_proj[pi].append(f.get_tensor(f"{base}.weight_scale"))
-            if pts is None:  # gate/up share weight_scale_2; capture once
-                pts = f.get_tensor(f"{base}.weight_scale_2").to(torch.float32)
+            if pi == 0:  # gate/up share weight_scale_2; one per expert
+                pts_list.append(
+                    f.get_tensor(f"{base}.weight_scale_2").to(torch.float32)
+                )
     qdata = torch.cat([torch.stack(q, 0) for q in qd_proj], dim=1).to(device)
     scale = torch.cat([torch.stack(s, 0) for s in sc_proj], dim=1).to(device)
-    return qdata, scale, pts.to(device)
+    # Per-expert weight_scale_2 stacked to [E,1,1], not expert-0's scalar broadcast to all experts.
+    pts = torch.stack(pts_list).view(-1, 1, 1).to(device)
+    return qdata, scale, pts
 
 
 def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:

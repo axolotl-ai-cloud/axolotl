@@ -28,7 +28,7 @@ class KernelsArgs(BaseModel):
     # none | bf16 | fp8_blockwise | nf4. Resolved per-model by the adapters.
     nonexpert_quantization: str | None = None
     # Grouped NVFP4 MoE base-GEMM backend selection: auto (capability-select; default) | marlin |
-    # cutlass | deepgemm | dequant (chunked fallback). An unavailable choice warns + falls back.
+    # cutlass | deepgemm. An unavailable choice warns + falls back to auto.
     moe_grouped_backend: str | None = None
 
     # bnb-4bit MoE experts (quantize_moe_experts + load_in_4bit): number of experts dequantized to
@@ -168,8 +168,17 @@ class KernelsArgs(BaseModel):
         backend = data.get("moe_grouped_backend")
         if backend is None:
             return data
-        valid = {"auto", "marlin", "cutlass", "deepgemm", "dequant"}
-        if str(backend).lower() not in valid:
+        b = str(backend).lower()
+        if b == "dequant":
+            # The chunked-dequant fallback has no training/autograd path (the training dispatch only
+            # wires marlin/deepgemm/cutlass); accepting it would silently run cutlass. Reject loudly.
+            raise ValueError(
+                "moe_grouped_backend='dequant' is not implemented for training (the chunked-dequant "
+                "fallback has no autograd path). Use 'auto' (default), 'marlin', 'deepgemm', or "
+                "'cutlass', or omit moe_grouped_backend."
+            )
+        valid = {"auto", "marlin", "cutlass", "deepgemm"}
+        if b not in valid:
             raise ValueError(
                 f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
             )
@@ -230,23 +239,26 @@ class KernelsArgs(BaseModel):
         The fused indexer feeds only gradientless topk indices, so LoRA on the indexer/scorer
         projections trains against no gradient; and attention-level LoRA reintroduces data-dependent
         FSDP2 backward collectives that break the experts-only invariant the DSV4 recipe relies on.
-        Experts-only LoRA (lora_target_parameters) is the supported surface. lora_exclude_modules is
-        the explicit opt-out: setting it signals the user has excluded the indexer scorer projections,
-        so we downgrade to a warning."""
+        Experts-only LoRA (lora_target_parameters) is the supported surface. This also covers
+        lora_target_linear: true, which expands (find_all_linear_names) to every Linear including
+        attention q/k/v/o. lora_exclude_modules is the explicit opt-out: setting it signals the user
+        has excluded the indexer scorer projections, so we downgrade to a warning."""
         if not data.get("use_dsv4_kernels"):
             return data
-        if not data.get("lora_target_modules"):
+        if not (data.get("lora_target_modules") or data.get("lora_target_linear")):
             return data
         if data.get("lora_exclude_modules"):
             LOG.warning(
-                "lora_target_modules with use_dsv4_kernels: ensure lora_exclude_modules excludes "
-                "the indexer scorer projections (the fused indexer is gradientless); keep LoRA "
-                "experts-only (lora_target_parameters) where possible."
+                "attention/module-level LoRA (lora_target_modules / lora_target_linear) with "
+                "use_dsv4_kernels: ensure lora_exclude_modules excludes the indexer scorer "
+                "projections (the fused indexer is gradientless); keep LoRA experts-only "
+                "(lora_target_parameters) where possible."
             )
             return data
         raise ValueError(
-            "lora_target_modules (attention/module-level LoRA) is not supported with "
-            "use_dsv4_kernels: the fused indexer is gradientless (topk indices only) and "
+            "attention/module-level LoRA is not supported with use_dsv4_kernels (this includes "
+            "lora_target_modules and lora_target_linear: true, which expands to all linear layers "
+            "incl. attention q/k/v/o): the fused indexer is gradientless (topk indices only) and "
             "attention LoRA reintroduces data-dependent FSDP2 backward collectives that break the "
             "experts-only invariant. Either (1) keep LoRA experts-only via lora_target_parameters, "
             "or (2) explicitly exclude the indexer scorer projections via lora_exclude_modules."

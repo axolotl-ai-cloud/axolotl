@@ -57,6 +57,24 @@ def model_has_quantized_params(model) -> bool:
     return any(_is_quantized_param(p) for p in model.parameters())
 
 
+def _is_float_logical_quantized_param(p) -> bool:
+    """True only for torchao float-logical quantized subclasses (NVFP4Tensor/Float8Tensor/MXTensor)
+    — the ones the dtype/cast/sharding policy below is designed for. Deliberately excludes plain
+    non-float params (e.g. bnb Params4bit uint8): standard QLoRA+FSDP2 keeps its fp32 LoRA and must
+    not be downcast by cast_residual_fp32."""
+    if type(p).__name__ in _QUANT_TENSOR_CLASS_NAMES:
+        return True
+    data = getattr(p, "data", None)
+    return data is not None and type(data).__name__ in _QUANT_TENSOR_CLASS_NAMES
+
+
+def model_has_float_logical_quantized_params(model) -> bool:
+    """Capability check for the dtype/cast/sharding policy: ONLY float-logical quantized tensor
+    subclasses (the pre-quantized NVFP4/Float8 checkpoint case). Plain bnb Params4bit QLoRA is
+    excluded so its fp32 LoRA adapters are not silently cast to the compute dtype."""
+    return any(_is_float_logical_quantized_param(p) for p in model.parameters())
+
+
 @contextlib.contextmanager
 def nonfloat_param_guard(model):
     """Freeze existing non-float params and make ``nn.Parameter`` construction default to
