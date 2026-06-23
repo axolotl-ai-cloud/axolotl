@@ -1807,19 +1807,10 @@ def _chunk(seq, size):
 
 
 class LoRA_FusedProj(torch.autograd.Function):
-    """Fused LoRA for N projections that share a single input ``X``.
+    """Fused LoRA over N projections sharing one input ``X`` (GatedDeltaNet in-projs).
 
-    For GatedDeltaNet the input projections (``in_proj_qkv/z/b/a``) all consume
-    the same post-norm hidden states. Folding them into one autograd node lets a
-    single dropout mask be shared (and saved once for backward) across the group
-    instead of one per projection, and accumulates the input gradient in a single
-    buffer instead of N separate ``dY @ W`` reductions. Each projection is
-    independent: one may carry a LoRA adapter (and DoRA) while another is
-    base-only (A/B None).
-
-    Tensors are passed flat, ``_FUSED_PROJ_NUM_TENSORS`` per projection as
-    ``(W, b, A, B, lora_bias, magnitude)``; scales/quant-states ride alongside as
-    non-tensor tuples. Supports bias, dropout, and DoRA.
+    One dropout mask is shared across the group (peft draws one per projection), so
+    outputs are not bit-identical to peft when ``lora_dropout > 0``; exact at dropout 0.
     """
 
     @staticmethod
@@ -1963,12 +1954,7 @@ class LoRA_FusedProj(torch.autograd.Function):
 def apply_lora_gdn_in_proj(
     self, X: torch.Tensor, proj_names: tuple[str, ...]
 ) -> dict[str, torch.Tensor]:
-    """Fuse GatedDeltaNet input projections that share ``X`` into one kernel call.
-
-    Returns a ``{proj_name: output}`` dict. Projections without a LoRA adapter
-    are still folded in (base matmul only) so the shared-input fusion covers the
-    whole group; a single dropout mask is shared across the adapted projections.
-    """
+    """Fuse GDN in-projections (shared ``X``) into one call; base-only projs fold in too."""
     scales, quants, flat = [], [], []
     dropout_mod = None
     for name in proj_names:

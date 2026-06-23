@@ -1,5 +1,6 @@
 """Integration tests for LoRA activation and attention kernels."""
 
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -776,6 +777,183 @@ def test_apply_lora_gdn_in_proj_matches_peft_with_dora():
         assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 2e-2
 
 
+@contextlib.contextmanager
+def _fp32_matmul():
+    """Force true fp32 matmuls so fp32 self-consistency checks are order-independent
+    (a prior test in the suite may enable TF32, which degrades fp32 to ~1e-4)."""
+    prev_cuda = torch.backends.cuda.matmul.allow_tf32
+    prev_cudnn = torch.backends.cudnn.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = prev_cuda
+        torch.backends.cudnn.allow_tf32 = prev_cudnn
+
+
+class _FixedDropout(nn.Module):
+    """Deterministic stand-in for nn.Dropout: applies a precomputed (already scaled) mask."""
+
+    def __init__(self, mask):
+        super().__init__()
+        self.mask = mask
+
+    def forward(self, x):
+        return x * self.mask
+
+
+def _wrapped_gdn_block_fp32(targets, in_features=256, use_dora=False):
+    """fp32 GDN in-projection block so fused-vs-reference grads compare to fp noise."""
+
+    class _Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            for name, out_features in _GDN_IN_SIZES.items():
+                setattr(self, name, nn.Linear(in_features, out_features, bias=False))
+
+    config = LoraConfig(
+        r=16,
+        lora_alpha=32,
+        target_modules=list(targets),
+        lora_dropout=0.0,
+        use_dora=use_dora,
+    )
+    block = get_peft_model(_Block().to("cuda"), config).base_model.model
+    block.train()
+    with torch.no_grad():
+        for name, param in block.named_parameters():
+            if "lora_B" in name or "magnitude" in name:
+                param.add_(torch.randn_like(param) * 0.1)
+    return block
+
+
+def _gdn_in_proj_grads(block, names, targets, X, reference, mask=None):
+    """Run forward+backward and return (grad_X, grad_A, grad_B). The reference path
+    rebuilds the fused math with pure torch ops using the SAME shared dropout mask."""
+    X = X.detach().clone().requires_grad_(True)
+    if reference:
+        X_drop = X * mask
+        loss = 0.0
+        for name in names:
+            proj = getattr(block, name)
+            out = X @ proj.base_layer.weight.t()
+            if name in targets:
+                A = proj.lora_A["default"].weight
+                B = proj.lora_B["default"].weight
+                out = out + proj.scaling["default"] * (X_drop @ A.t()) @ B.t()
+            loss = loss + out.float().pow(2).mean()
+    else:
+        outs = apply_lora_gdn_in_proj(block, X, names)
+        loss = sum(o.float().pow(2).mean() for o in outs.values())
+    loss.backward()
+
+    grad_x = X.grad.detach().clone()
+    grad_a = {
+        n: getattr(block, n).lora_A["default"].weight.grad.detach().clone()
+        for n in targets
+    }
+    grad_b = {
+        n: getattr(block, n).lora_B["default"].weight.grad.detach().clone()
+        for n in targets
+    }
+    block.zero_grad(set_to_none=True)
+    return grad_x, grad_a, grad_b
+
+
+def test_apply_lora_gdn_in_proj_backward_under_dropout():
+    """Gradient correctness on the ``lora_dropout > 0`` backward path (saved ``X_drop`` +
+    ``grad_X_drop`` accumulation), which the dropout=0 parity tests never exercise.
+    Compared against a pure-torch reference using the SAME shared dropout mask."""
+    names = tuple(_GDN_IN_SIZES)
+    targets = names  # all four adapted
+    block = _wrapped_gdn_block_fp32(targets)
+
+    torch.manual_seed(0)
+    X = torch.randn(2, 16, 256, device="cuda")
+    mask = (torch.rand_like(X) > 0.5).to(X.dtype) / 0.5  # inverted-dropout scale, p=0.5
+    for name in names:
+        getattr(block, name).lora_dropout["default"] = _FixedDropout(mask)
+
+    with _fp32_matmul():
+        gx_ref, ga_ref, gb_ref = _gdn_in_proj_grads(
+            block, names, targets, X, reference=True, mask=mask
+        )
+        gx_fused, ga_fused, gb_fused = _gdn_in_proj_grads(
+            block, names, targets, X, reference=False
+        )
+
+    assert _gdn_rel_l2(gx_fused, gx_ref) < 1e-4
+    for name in targets:
+        assert _gdn_rel_l2(ga_fused[name], ga_ref[name]) < 1e-4
+        assert _gdn_rel_l2(gb_fused[name], gb_ref[name]) < 1e-4
+
+
+def test_apply_lora_gdn_in_proj_dora_backward_under_dropout():
+    """Self-consistency of the fused GDN DoRA + ``lora_dropout>0`` path: matches the kernel's
+    intended math (base undropped, LoRA dropped, magnitude-scaled), including the ``d_mag``
+    gradient."""
+    targets = ("in_proj_qkv", "in_proj_b")
+    names = tuple(_GDN_IN_SIZES)
+    block = _wrapped_gdn_block_fp32(targets, use_dora=True)
+
+    torch.manual_seed(0)
+    x = torch.randn(2, 16, 256, device="cuda")
+    mask = (torch.rand_like(x) > 0.5).to(x.dtype) / 0.5  # inverted-dropout scale, p=0.5
+    for name in targets:  # only adapted projections carry lora_dropout
+        getattr(block, name).lora_dropout["default"] = _FixedDropout(mask)
+
+    def run(fused):
+        inp = x.detach().clone().requires_grad_(True)
+        if fused:
+            outs = apply_lora_gdn_in_proj(block, inp, names)
+        else:
+            # kernel's intended DoRA math: base on undropped X, LoRA on dropped X,
+            # mag_scale = magnitude / ||W + s*B@A||_col (norm detached, as the kernel does)
+            x_drop = inp * mask
+            outs = {}
+            for n in names:
+                proj = getattr(block, n)
+                if n not in targets:  # base-only projection is a plain nn.Linear
+                    outs[n] = inp @ proj.weight.t()
+                    continue
+                W = proj.base_layer.weight
+                A = proj.lora_A["default"].weight
+                B = proj.lora_B["default"].weight
+                s = proj.scaling["default"]
+                mag = proj.lora_magnitude_vector["default"].weight
+                lora = s * (x_drop @ A.t()) @ B.t()
+                weight_norm = torch.linalg.norm(W + s * (B @ A), dim=1).detach()
+                outs[n] = (mag / weight_norm).unsqueeze(0) * (inp @ W.t() + lora)
+        sum(o.float().pow(2).mean() for o in outs.values()).backward()
+        grads = {"x": inp.grad.detach().float().clone()}
+        for n in targets:
+            proj = getattr(block, n)
+            grads[f"A:{n}"] = (
+                proj.lora_A["default"].weight.grad.detach().float().clone()
+            )
+            grads[f"mag:{n}"] = (
+                proj.lora_magnitude_vector["default"]
+                .weight.grad.detach()
+                .float()
+                .clone()
+            )
+        out = {n: outs[n].detach().float() for n in names}
+        block.zero_grad(set_to_none=True)
+        return out, grads
+
+    with _fp32_matmul():
+        out_ref, g_ref = run(fused=False)
+        out_fused, g_fused = run(fused=True)
+
+    for name in names:
+        assert _gdn_rel_l2(out_fused[name], out_ref[name]) < 1e-4
+    assert _gdn_rel_l2(g_fused["x"], g_ref["x"]) < 1e-4
+    for name in targets:
+        assert _gdn_rel_l2(g_fused[f"A:{name}"], g_ref[f"A:{name}"]) < 1e-4
+        assert _gdn_rel_l2(g_fused[f"mag:{name}"], g_ref[f"mag:{name}"]) < 1e-4
+
+
 # ------------------------------------------------------------
 # End-to-end: apply_lora_kernel_patches wires the methods onto a real GDN layer
 # ------------------------------------------------------------
@@ -864,3 +1042,27 @@ def test_apply_lora_kernel_patches_skips_gdn_without_adapters():
     linear_attn = get_layers(model)[0].linear_attn
     assert not hasattr(linear_attn, "apply_in_proj_fused")
     assert hasattr(linear_attn, "apply_out_proj")  # out_proj still routed
+
+
+@pytest.mark.parametrize(
+    "lora_qkv_kernel, lora_o_kernel, in_proj_patched, out_proj_patched",
+    [
+        (True, False, True, False),  # qkv flag drives in-projections only
+        (False, True, False, True),  # o flag drives out_proj only
+    ],
+)
+def test_apply_lora_kernel_patches_gdn_gates_independently(
+    lora_qkv_kernel, lora_o_kernel, in_proj_patched, out_proj_patched
+):
+    """GDN in_proj follows lora_qkv_kernel and out_proj follows lora_o_kernel,
+    matching how self-attn qkv/o gate independently."""
+    model = _build_qwen3_5_gdn_peft_model(LINEAR_ATTN_PROJS)
+    cfg = DictDefault(
+        {"lora_qkv_kernel": lora_qkv_kernel, "lora_o_kernel": lora_o_kernel}
+    )
+
+    apply_lora_kernel_patches(model, cfg)
+
+    linear_attn = get_layers(model)[0].linear_attn
+    assert hasattr(linear_attn, "apply_in_proj_fused") is in_proj_patched
+    assert hasattr(linear_attn, "apply_out_proj") is out_proj_patched

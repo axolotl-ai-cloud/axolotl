@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from axolotl.monkeypatch.lora_kernels import LINEAR_ATTN_IN_PROJS
 from axolotl.utils.logging import get_logger
 
 LOG = get_logger(__name__)
@@ -110,11 +111,8 @@ def _patched_decoder_forward(
     return hidden_states
 
 
-_GDN_IN_PROJ_NAMES = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
-
-
 def _la_proj_fwd(module, proj_name, x):
-    """Use the fused kernel when patched (avoids peft's bf16->fp32->bf16 round-trip), else plain peft."""
+    """Fused kernel when patched (skips peft's bf16->fp32->bf16 round-trip), else peft."""
     apply_fn = getattr(module, f"apply_{proj_name}", None)
     if apply_fn is not None:
         return apply_fn(x)
@@ -122,11 +120,10 @@ def _la_proj_fwd(module, proj_name, x):
 
 
 def _la_in_proj_fwd(module, x):
-    """Fused shared-input GDN in-projections when patched, else plain per-proj peft."""
     fused = getattr(module, "apply_in_proj_fused", None)
     if fused is not None:
         return fused(x)
-    return {name: getattr(module, name)(x) for name in _GDN_IN_PROJ_NAMES}
+    return {name: getattr(module, name)(x) for name in LINEAR_ATTN_IN_PROJS}
 
 
 def _make_qwen3_5_gated_delta_forward(apply_mask_fn):

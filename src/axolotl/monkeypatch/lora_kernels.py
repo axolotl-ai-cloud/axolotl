@@ -519,7 +519,7 @@ def apply_lora_kernel_patches(
     layers = get_layers(model)
 
     linear_attn_patched_layers = 0
-    linear_attn_patched_projs: list[str] = []
+    linear_attn_patched_projs: set[str] = set()
 
     # Patch each layer
     for layer in layers:
@@ -576,31 +576,32 @@ def apply_lora_kernel_patches(
                     )
         if cfg.lora_qkv_kernel or cfg.lora_o_kernel:
             for linear_attn in find_linear_attn_in_layer(layer):
-                patched_projs = []
-                # Fuse the shared-input in-projections into one autograd node.
-                # Base-only projections are folded in too (no adapter), so only
-                # patch when at least one in-projection carries a LoRA adapter.
-                in_projs = tuple(
-                    name
+                patched = False
+                # in_proj group mirrors self-attn qkv (lora_qkv_kernel); out_proj
+                # mirrors o_proj (lora_o_kernel). Base-only in-projections fold into
+                # the fused node too, so patch only when one carries a LoRA adapter.
+                if cfg.lora_qkv_kernel and any(
+                    hasattr(getattr(linear_attn, name), "lora_A")
                     for name in LINEAR_ATTN_IN_PROJS
-                    if getattr(linear_attn, name, None) is not None
-                )
-                if any(
-                    hasattr(getattr(linear_attn, name), "lora_A") for name in in_projs
                 ):
                     linear_attn.apply_in_proj_fused = types.MethodType(
-                        _make_apply_lora_gdn_in_proj(in_projs), linear_attn
+                        _make_apply_lora_gdn_in_proj(LINEAR_ATTN_IN_PROJS), linear_attn
                     )
-                    patched_projs.extend(in_projs)
+                    linear_attn_patched_projs.update(LINEAR_ATTN_IN_PROJS)
+                    patched = True
                 out_proj = getattr(linear_attn, LINEAR_ATTN_OUT_PROJ, None)
-                if out_proj is not None and hasattr(out_proj, "lora_A"):
+                if (
+                    cfg.lora_o_kernel
+                    and out_proj is not None
+                    and hasattr(out_proj, "lora_A")
+                ):
                     linear_attn.apply_out_proj = types.MethodType(
                         _make_apply_lora_linear(LINEAR_ATTN_OUT_PROJ), linear_attn
                     )
-                    patched_projs.append(LINEAR_ATTN_OUT_PROJ)
-                if patched_projs:
+                    linear_attn_patched_projs.add(LINEAR_ATTN_OUT_PROJ)
+                    patched = True
+                if patched:
                     linear_attn_patched_layers += 1
-                    linear_attn_patched_projs = patched_projs
         for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
             if cfg.lora_mlp_kernel:
                 # Check is inside lora_mlp_kernel guard so models with an
@@ -627,7 +628,7 @@ def apply_lora_kernel_patches(
 
     if linear_attn_patched_layers:
         LOG.info(
-            f"Patched linear-attention LoRA projections {linear_attn_patched_projs} "
+            f"Patched linear-attention LoRA projections {sorted(linear_attn_patched_projs)} "
             f"with fused kernels on {linear_attn_patched_layers} layer(s)"
         )
 
