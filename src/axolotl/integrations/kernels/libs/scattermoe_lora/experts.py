@@ -414,31 +414,49 @@ def scattermoe_experts_forward(
         if is_nvfp4_param(gu_base):
             from .grouped_train import grouped_fp4_available, grouped_fp4_moe_train
 
-            if grouped_fp4_available(_fp4_grouped_mode):
-                # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
-                _recipe = lambda: (  # noqa: E731
-                    _get_base_param(self.gate_up_proj),
-                    _get_base_param(self.down_proj),
+            # The grouped NVFP4+LoRA path has no portable LoRA-capable base GEMM: every backend
+            # (marlin/cutlass/deepgemm) is the base GEMM, and the chunked-dequant fallback is
+            # base-only (no LoRA). When none resolves, falling through to the legacy fused-MX
+            # kernel (scatter2scatter_lora_mx via selective_nvfp4_weights_fwd) SIGSEGVs on
+            # Blackwell, so hard-error here rather than silently corrupt/crash.
+            if not grouped_fp4_available(_fp4_grouped_mode):
+                _cap = (
+                    "sm%d%d" % torch.cuda.get_device_capability()
+                    if torch.cuda.is_available()
+                    else "cpu"
                 )
-                # persistent per-module cache so the DeepGEMM backend requantizes the frozen
-                # weight to mxfp4 once, surviving FSDP re-gathers (the gathered param is fresh
-                # each step, so a per-tensor cache would miss and re-requant every forward)
-                cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
-                return grouped_fp4_moe_train(
-                    hidden_states,
-                    top_k_index,
-                    routing_weights,
-                    gu_base,
-                    dn_base,
-                    gup_lora,
-                    down_lora,
-                    getattr(self, "limit", None),
-                    _fp4_grouped_mode,
-                    act_type=_detect_act_type(self),
-                    weight_recipe=_recipe,
-                    mxfp4_cache=cache,
-                    prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
+                raise RuntimeError(
+                    f"dsv4_fp4_grouped_mode={_fp4_grouped_mode!r} with LoRA selected the grouped "
+                    f"NVFP4 MoE path, but no fused grouped backend resolved on this arch ({_cap}): "
+                    "marlin, cutlass, deepgemm, and the dequant fallback are all unavailable. The "
+                    "legacy fused-MX kernel (scatter2scatter_lora_mx) is unsafe on this arch "
+                    "(SIGSEGV on Blackwell), so it is not used as a fallback. Run on a supported "
+                    "GPU (sm80+/sm90/sm100/sm120) or disable dsv4_fp4_grouped_mode."
                 )
+            # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
+            _recipe = lambda: (  # noqa: E731
+                _get_base_param(self.gate_up_proj),
+                _get_base_param(self.down_proj),
+            )
+            # persistent per-module cache so the DeepGEMM backend requantizes the frozen
+            # weight to mxfp4 once, surviving FSDP re-gathers (the gathered param is fresh
+            # each step, so a per-tensor cache would miss and re-requant every forward)
+            cache = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+            return grouped_fp4_moe_train(
+                hidden_states,
+                top_k_index,
+                routing_weights,
+                gu_base,
+                dn_base,
+                gup_lora,
+                down_lora,
+                getattr(self, "limit", None),
+                _fp4_grouped_mode,
+                act_type=_detect_act_type(self),
+                weight_recipe=_recipe,
+                mxfp4_cache=cache,
+                prefer_fp8_dx=RUNTIME.fp4_dx_prefer_fp8,
+            )
 
     # BnB-4bit experts (quantize_moe_experts): no 4-bit-read kernel exists (unlike NVFP4/MXFP4),
     # so the naive path full-dequants all E experts to bf16 every forward (the path the nv/mx
