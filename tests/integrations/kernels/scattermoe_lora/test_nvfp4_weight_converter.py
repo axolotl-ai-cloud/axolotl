@@ -56,12 +56,18 @@ def _quant(W: torch.Tensor, pts: torch.Tensor):
 
 def _make_checkpoint_experts(seed: int = 0):
     """Build E experts of raw per-expert NVFP4 tensors exactly as the checkpoint
-    stores them (separate gate/up/down, each its own qdata + e4m3 scale, with a
-    single shared per-tensor scalar). Returns the high-precision references too."""
+    stores them (separate gate/up/down, each its own qdata + e4m3 scale and its own
+    per-tensor weight_scale_2 scalar). Per-expert scales are DISTINCT so the tests pin
+    that the converter keeps each expert's scale (not expert-0's for all). Returns the
+    fused per-expert scale tensor [E,1,1] (the converter's output shape)."""
     g = torch.Generator(device=DEV).manual_seed(seed)
-    pts = torch.tensor(0.5, device=DEV, dtype=torch.float32)
     experts = []
-    for _ in range(E):
+    pts_each = []
+    for e in range(E):
+        pts = torch.tensor(
+            0.5 + 0.1 * e, device=DEV, dtype=torch.float32
+        )  # distinct per expert
+        pts_each.append(pts)
         Wg = torch.randn(I, H, generator=g, device=DEV, dtype=torch.bfloat16)
         Wu = torch.randn(I, H, generator=g, device=DEV, dtype=torch.bfloat16)
         Wd = torch.randn(H, I, generator=g, device=DEV, dtype=torch.bfloat16)
@@ -72,7 +78,10 @@ def _make_checkpoint_experts(seed: int = 0):
                 "down_proj": _quant(Wd, pts),
             }
         )
-    return experts, pts
+    pts_per_expert = torch.stack(pts_each).view(
+        E, 1, 1
+    )  # matches converter output shape
+    return experts, pts_per_expert
 
 
 def _input_dict(experts, projs, full_layer_name):
@@ -165,6 +174,7 @@ def test_gate_up_fusion_bit_exact():
     # bit-exact: fusion is concatenation of already-quantized bytes -> maxerr 0.0
     assert torch.equal(fused.qdata, ref_qd), "qdata not bit-exact"
     assert torch.equal(fused.scale, ref_sc), "scale not bit-exact"
+    # per-expert weight_scale_2 preserved as [E,1,1] (each expert keeps its own scale)
     assert torch.equal(fused.per_tensor_scale.to(torch.float32), pts), (
         "per_tensor_scale mismatch"
     )
@@ -199,8 +209,19 @@ def test_gate_up_dequant_self_consistent():
     op = Nvfp4ExpertsDeserialize()
     module, _ = _run_convert(op, experts, "gate_up_proj", ("gate_proj", "up_proj"))
 
+    fused = module.gate_up_proj
+    pe = fused.per_tensor_scale.reshape(-1)  # [E] per-expert weight_scale_2
     for e in range(E):
-        fused_dq = module.gate_up_proj[e].dequantize(torch.bfloat16)
+        # torchao's per-expert index (fused[e]) does not slice the [E,1,1] per_tensor_scale, so
+        # rebuild the expert-e slice with its own scalar scale (what the real per-expert kernel uses).
+        fused_e = NVFP4Tensor(
+            fused.qdata[e],
+            fused.scale[e],
+            BLOCK,
+            torch.bfloat16,
+            per_tensor_scale=pe[e],
+        )
+        fused_dq = fused_e.dequantize(torch.bfloat16)
         gate_dq = experts[e]["gate_proj"].dequantize(torch.bfloat16)
         up_dq = experts[e]["up_proj"].dequantize(torch.bfloat16)
         ref = torch.cat([gate_dq, up_dq], dim=0)
@@ -213,8 +234,18 @@ def test_down_dequant_self_consistent():
     op = Nvfp4ExpertsDeserialize()
     module, _ = _run_convert(op, experts, "down_proj", ("down_proj",))
 
+    fused = module.down_proj
+    pe = fused.per_tensor_scale.reshape(-1)  # [E] per-expert weight_scale_2
     for e in range(E):
-        fused_dq = module.down_proj[e].dequantize(torch.bfloat16)
+        # torchao's per-expert index does not slice the [E,1,1] per_tensor_scale; rebuild the slice.
+        fused_e = NVFP4Tensor(
+            fused.qdata[e],
+            fused.scale[e],
+            BLOCK,
+            torch.bfloat16,
+            per_tensor_scale=pe[e],
+        )
+        fused_dq = fused_e.dequantize(torch.bfloat16)
         ref = experts[e]["down_proj"].dequantize(torch.bfloat16)
         err = (fused_dq - ref).abs().max().item()
         assert err == 0.0, f"expert {e}: dequant maxerr {err} != 0"

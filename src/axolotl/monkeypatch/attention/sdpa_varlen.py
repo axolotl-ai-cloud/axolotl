@@ -37,10 +37,25 @@ def varlen_available() -> bool:
 
 
 def _build_varlen_forward(original_sdpa: Callable) -> Callable:
+    import inspect
+
     import torch
     from torch.nn.attention.varlen import varlen_attn
     from transformers.modeling_flash_attention_utils import (
         prepare_fa_kwargs_from_position_ids,
+    )
+
+    # varlen_attn's causal API differs across the supported torch range (>=2.9.1): torch 2.11 takes
+    # window_size (causal = (-1, 0): unlimited left, no right; sliding = (W-1, 0)), earlier builds
+    # take is_causal (causal only, no sliding). Detect which the installed build accepts. Scale stays
+    # default (1/sqrt(d)) — the use_varlen guard below already restricts to standard scaling.
+    try:
+        _varlen_params = set(inspect.signature(varlen_attn).parameters)
+    except (TypeError, ValueError):
+        _varlen_params = set()
+    # window_size present -> use it; only an is_causal-only build lacks sliding support.
+    _supports_window = (
+        "window_size" in _varlen_params or "is_causal" not in _varlen_params
     )
 
     def sdpa_varlen_forward(
@@ -88,12 +103,12 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
                 **kwargs,
             )
 
-        # varlen_attn has no sliding-window parameter; rather than silently run full causal
-        # attention for a sliding-window layer (wrong results), refuse loudly.
-        if sliding_window:
+        # A sliding window needs varlen_attn's window_size arg; an is_causal-only build can't express
+        # it, so refuse loudly there rather than silently running full causal attention (wrong).
+        if sliding_window and not _supports_window:
             raise NotImplementedError(
-                "sdpa_varlen: sliding-window attention is not expressible via varlen_attn "
-                f"(requested window={sliding_window}); disable sdpa_varlen for this model."
+                "sdpa_varlen: sliding-window attention needs varlen_attn(window_size=...), absent in "
+                f"this torch build (requested window={sliding_window}); disable sdpa_varlen for this model."
             )
 
         B, Hq, S, D = query.shape
@@ -106,6 +121,14 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         qf = query.transpose(1, 2).reshape(B * S, Hq, D)
         kf = key.transpose(1, 2).reshape(B * S, Hq, D)
         vf = value.transpose(1, 2).reshape(B * S, Hq, D)
+        if _supports_window:
+            # (left, right): (-1, 0) = causal full; (W-1, 0) = causal sliding window of W.
+            window = (sliding_window - 1, 0) if sliding_window else (-1, 0)
+            causal_kw: dict = {"window_size": window}
+        else:
+            causal_kw = {
+                "is_causal": True
+            }  # is_causal-only build (sliding already refused above)
         out = varlen_attn(
             qf,
             kf,
@@ -114,7 +137,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
             cu_k.to(torch.int32),
             int(max_q),
             int(max_k),
-            is_causal=True,
+            **causal_kw,
         )
         if isinstance(out, tuple):
             out = out[0]
