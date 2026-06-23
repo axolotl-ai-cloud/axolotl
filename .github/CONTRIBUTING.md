@@ -42,12 +42,12 @@ pre-commit install
 pytest tests/
 ```
 
-CI matrix: Python 3.12 / 3.14, PyTorch 2.9.1–2.12.0 ([tests.yml](workflows/tests.yml)). Tests default to `-m 'not slow'`. Mirror CI locally:
+CI matrix: Python 3.12 / 3.14, PyTorch 2.9.1–2.12.0 ([tests.yml](workflows/tests.yml)). Tests default to `-m 'not slow'`. Mirror CI's CPU suite locally (GPU e2e runs in a separate job — see below):
 ```bash
-pytest -n4 --dist loadfile tests/
+pytest -n4 --dist loadfile --ignore=tests/e2e tests/
 ```
 
-#### Running e2e (GPU) tests locally
+### Running e2e (GPU) tests locally
 
 Recommended for larger changes before opening a PR. Needs an NVIDIA GPU. Run in the public Docker image with your checkout mounted ([docs/docker.qmd](../docs/docker.qmd)); Blackwell GPUs (sm_120, e.g. RTX 50xx) need a cu130 tag:
 
