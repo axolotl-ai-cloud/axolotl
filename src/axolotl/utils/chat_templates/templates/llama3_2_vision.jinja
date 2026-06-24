@@ -18,7 +18,11 @@
 
 {#- This block extracts the system message, so we can slot it into the right place. #}
 {%- if messages[0]['role'] == 'system' %}
-    {%- set system_message = messages[0]['content']|trim %}
+    {%- if messages[0]['content'] is string %}
+        {%- set system_message = messages[0]['content']|trim %}
+    {%- else %}
+        {%- set system_message = messages[0]['content'] | selectattr('text', 'defined') | map(attribute='text') | join('') | trim %}
+    {%- endif %}
     {%- set messages = messages[1:] %}
 {%- else %}
     {%- set system_message = "" %}
@@ -64,7 +68,11 @@
 {%- if tools_in_user_message and not tools is none %}
     {#- Extract the first user message so we can plug it in here #}
     {%- if messages | length != 0 %}
-        {%- set first_user_message = messages[0]['content']|trim %}
+        {%- if messages[0]['content'] is string %}
+            {%- set first_user_message = messages[0]['content']|trim %}
+        {%- else %}
+            {%- set first_user_message = messages[0]['content'] | selectattr('text', 'defined') | map(attribute='text') | join('') | trim %}
+        {%- endif %}
         {%- set messages = messages[1:] %}
     {%- else %}
         {{- raise_exception("Cannot put tools in the first user message when there's no first user message!") }}
