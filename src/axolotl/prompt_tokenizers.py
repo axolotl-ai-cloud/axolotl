@@ -303,6 +303,10 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
         )
 
     def _tokenize(self, prompt, add_eos_token=True, strip_bos_token=False):
+        empty = BatchEncoding(data={"input_ids": [], "attention_mask": []})
+        if not prompt:
+            LOG.warning_once("Empty text requested for tokenization.")
+            return empty
         result = self.tokenizer(
             prompt,
             truncation=True,
@@ -310,6 +314,9 @@ class ReflectionPromptTokenizingStrategy(PromptTokenizingStrategy):
             padding=False,
             return_tensors=None,
         )
+        if len(result["input_ids"]) == 0:
+            LOG.warning("Tokenizer result is empty. You may want to audit your dataset")
+            return empty
         if (
             result["input_ids"][-1] != self.tokenizer.eos_token_id
             and len(result["input_ids"]) < self.sequence_len
