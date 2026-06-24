@@ -19,7 +19,8 @@ class AxolotlGRPOConfig(AxolotlTrainingMixins, GRPOConfig):
         default="grpo",
         metadata={
             "help": "Advantage estimator: 'grpo' (group mean/std), 'rloo' "
-            "(leave-one-out baseline), or 'reinforce_plus_plus' (group mean/std)."
+            "(leave-one-out baseline), or 'reinforce_plus_plus' (group-mean "
+            "baseline, batch-std normalization)."
         },
     )
 
@@ -33,6 +34,7 @@ class AxolotlAsyncGRPOConfig(AxolotlTrainingMixins, FastAsyncGRPOConfig):
         default="grpo",
         metadata={
             "help": "Advantage estimator: 'grpo' (group mean/std), 'rloo' "
-            "(leave-one-out baseline), or 'reinforce_plus_plus' (group mean/std)."
+            "(leave-one-out baseline), or 'reinforce_plus_plus' (group-mean "
+            "baseline, batch-std normalization)."
         },
     )

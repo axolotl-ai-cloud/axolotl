@@ -759,8 +759,9 @@ def compute_advantages_with_estimator(
     (reward_j - mean(rewards_{-j})), with no std scaling. RLOO with a single
     generation has no leave-one-out baseline, so it degrades to mean-centering.
 
-    ``reinforce_plus_plus`` uses global batch-level advantage normalization
-    ((reward - batch_mean) / (batch_std + eps)), following REINFORCE++. Any KL
+    ``reinforce_plus_plus`` is the REINFORCE++ Baseline: it subtracts the
+    per-prompt group mean, then normalizes by the batch-level std of those
+    centered rewards ((reward - group_mean) / (batch_std + eps)). Any KL
     penalty is expected to be folded into the reward upstream, not here.
     """
     grouped = rewards.view(-1, num_generations)
@@ -779,12 +780,14 @@ def compute_advantages_with_estimator(
         baseline = (group_sum - grouped) / (num_generations - 1)
         advantages = (grouped - baseline).reshape(-1)
     elif estimator == "reinforce_plus_plus":
+        group_mean = grouped.mean(dim=1, keepdim=True)
+        centered = (grouped - group_mean).reshape(-1)
         batch_std = (
-            rewards.std()
-            if rewards.numel() > 1
+            centered.std()
+            if centered.numel() > 1
             else torch.zeros((), device=rewards.device)
         )
-        advantages = (rewards - rewards.mean()) / (batch_std + eps)
+        advantages = centered / (batch_std + eps)
     else:
         mean = grouped.mean(dim=1, keepdim=True)
         advantages = (grouped - mean).reshape(-1)

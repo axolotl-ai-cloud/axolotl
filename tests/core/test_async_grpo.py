@@ -113,16 +113,21 @@ class TestAdvantageEstimator(unittest.TestCase):
         self.assertTrue(torch.allclose(adv, expected))
         self.assertFalse(is_std_zero.any())
 
-    def test_reinforce_plus_plus_global_batch_norm(self):
+    def test_reinforce_plus_plus_group_mean_batch_std(self):
         f = self._f()
         rewards = torch.tensor([1.0, 2.0, 3.0, 0.0, 0.0, 6.0])
         adv, _ = f("reinforce_plus_plus", rewards, num_generations=3)
-        # REINFORCE++ normalizes over the whole batch, not per group.
-        expected = (rewards - rewards.mean()) / (rewards.std() + 1e-4)
-        self.assertTrue(torch.allclose(adv, expected))
+        # REINFORCE++ Baseline: subtract per-prompt group mean, then normalize
+        # by the batch-level std of those centered rewards.
         g = rewards.view(-1, 3)
+        centered = (g - g.mean(dim=1, keepdim=True)).reshape(-1)
+        expected = centered / (centered.std() + 1e-4)
+        self.assertTrue(torch.allclose(adv, expected))
+        # Differs from both global-mean batch-norm and per-group std-norm.
+        global_norm = (rewards - rewards.mean()) / (rewards.std() + 1e-4)
+        self.assertFalse(torch.allclose(adv, global_norm))
         group_norm = (
-            (g - g.mean(dim=1, keepdim=True)) / (g.std(dim=1, keepdim=True) + 1e-4)
+            centered.view(-1, 3) / (g.std(dim=1, keepdim=True) + 1e-4)
         ).reshape(-1)
         self.assertFalse(torch.allclose(adv, group_norm))
 
