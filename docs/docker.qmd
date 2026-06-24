@@ -10,16 +10,12 @@ This section describes the different Docker images that are released by AxolotlA
 [Docker Hub](https://hub.docker.com/u/axolotlai).
 
 ::: {.callout-important}
-### Switch to the `-uv` images
+### Images are now uv-based
 
-Each image below ships a **uv variant** that uses [uv](https://docs.astral.sh/uv/) with a relocatable venv
-(`/workspace/axolotl-venv`) instead of Miniconda + pip. Append `-uv` to the image name
-(e.g. `axolotlai/axolotl-uv`, `axolotlai/axolotl-base-uv`, `axolotlai/axolotl-cloud-uv`). Tags follow the
-same format as their non-uv counterparts.
-
-**We recommend switching to the `-uv` images early.** In the near future we will publish the uv-based
-build to the non-uv tags as well. The non-uv names will continue to work, but they will start serving
-the uv image.
+All images now use [uv](https://docs.astral.sh/uv/) with a relocatable venv (`/workspace/axolotl-venv`)
+instead of Miniconda + pip. The plain names (e.g. `axolotlai/axolotl`) and the `-uv` names
+(e.g. `axolotlai/axolotl-uv`) now serve the **same uv image**. The `-uv` names are kept as aliases, so
+existing references to either keep working. Tags follow the same format for both.
 :::
 
 ## Base
@@ -29,10 +25,11 @@ It includes python, torch, git, git-lfs, awscli, pydantic, and more.
 
 #### Image
 
-| Variant | Image | Docker Hub |
-|---------|-------|------------|
-| pip | `axolotlai/axolotl-base` | [Link](https://hub.docker.com/r/axolotlai/axolotl-base) |
-| uv | `axolotlai/axolotl-base-uv` | [Link](https://hub.docker.com/r/axolotlai/axolotl-base-uv) |
+```
+axolotlai/axolotl-base
+```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-base)
 
 #### Tags format
 
@@ -53,10 +50,11 @@ The main image is the image that is used to run Axolotl. It is based on the `axo
 
 #### Image
 
-| Variant | Image | Docker Hub |
-|---------|-------|------------|
-| pip | `axolotlai/axolotl` | [Link](https://hub.docker.com/r/axolotlai/axolotl) |
-| uv | `axolotlai/axolotl-uv` | [Link](https://hub.docker.com/r/axolotlai/axolotl-uv) |
+```
+axolotlai/axolotl
+```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl)
 
 #### Tags format {#sec-main-tags}
 
@@ -64,7 +62,7 @@ The main image is the image that is used to run Axolotl. It is based on the `axo
 # on push to main
 main-py{python_version}-cu{cuda_version}-{pytorch_version}
 
-# latest main (currently torch 2.9.1, python 3.11, cuda 12.8)
+# latest stable build from main
 main-latest
 
 # nightly build
@@ -102,10 +100,11 @@ Jupyter lab is run by default. Set `JUPYTER_DISABLE=1` in the environment variab
 
 #### Image
 
-| Variant | Image | Docker Hub |
-|---------|-------|------------|
-| pip | `axolotlai/axolotl-cloud` | [Link](https://hub.docker.com/r/axolotlai/axolotl-cloud) |
-| uv | `axolotlai/axolotl-cloud-uv` | [Link](https://hub.docker.com/r/axolotlai/axolotl-cloud-uv) |
+```
+axolotlai/axolotl-cloud
+```
+
+Link: [Docker Hub](https://hub.docker.com/r/axolotlai/axolotl-cloud)
 
 #### Tags format
 

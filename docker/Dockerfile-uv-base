@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG CUDA_VERSION="12.6.3"
 ARG CUDNN_VERSION=""
 ARG UBUNTU_VERSION="22.04"
@@ -31,10 +32,12 @@ RUN uv venv --no-project --relocatable axolotl-venv
 
 ENV PATH="/workspace/axolotl-venv/bin:${PATH}"
 
-RUN uv pip install packaging setuptools wheel psutil \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install packaging setuptools wheel psutil \
     && uv pip install torch==${PYTORCH_VERSION} torchvision \
     && uv pip install awscli pydantic
 
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$TARGETARCH" = "amd64" ]; then \
         MAMBA_SKIP_CUDA_BUILD=TRUE CAUSAL_CONV1D_SKIP_CUDA_BUILD=TRUE uv pip install --no-build-isolation mamba_ssm causal_conv1d; \
     fi
