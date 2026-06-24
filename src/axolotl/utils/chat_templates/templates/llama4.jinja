@@ -22,7 +22,7 @@
         {%- set system_message = messages[0]['content']|trim %}
     {%- else %}
         {#- FIXME: The processor requires an array, always. #}
-        {%- set system_message = messages[0]['content'][0]['text']|trim %}
+        {%- set system_message = messages[0]['content'] | selectattr('text', 'defined') | map(attribute='text') | join('') | trim %}
     {%- endif %}
     {%- set messages = messages[1:] %}
     {%- set user_supplied_system_message = true %}
@@ -54,7 +54,11 @@
 {%- if tools_in_user_message and not tools is none %}
     {#- Extract the first user message so we can plug it in here #}
     {%- if messages | length != 0 %}
-        {%- set first_user_message = messages[0]['content']|trim %}
+        {%- if messages[0]['content'] is string %}
+            {%- set first_user_message = messages[0]['content']|trim %}
+        {%- else %}
+            {%- set first_user_message = messages[0]['content'] | selectattr('text', 'defined') | map(attribute='text') | join('') | trim %}
+        {%- endif %}
         {%- set messages = messages[1:] %}
     {%- else %}
         {{- raise_exception("Cannot put tools in the first user message when there's no first user message!") }}

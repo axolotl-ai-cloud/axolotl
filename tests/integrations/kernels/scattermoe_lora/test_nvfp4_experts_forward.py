@@ -83,6 +83,9 @@ def _routing_ep(g):
 )
 def test_nvfp4_fused_matches_dequant(fwd, routing, monkeypatch):
     dt = torch.bfloat16
+    # On Blackwell (sm100/sm120) NVFP4+LoRA must run the grouped fp4 path; the legacy fused-MX kernel
+    # SIGSEGVs there and is now guarded off. Select the supported grouped backend for the test.
+    monkeypatch.setattr(ex.RUNTIME, "fp4_grouped_mode", "nvfp4")
     g = torch.Generator(device=DEV).manual_seed(0)
     gu_nv = NVFP4Tensor.to_nvfp4(
         torch.randn(E, 2 * IM, H, device=DEV, dtype=dt, generator=g) * 0.1,
