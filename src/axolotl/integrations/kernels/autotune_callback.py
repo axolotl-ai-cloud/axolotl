@@ -33,21 +33,45 @@ def _get_gpu_info() -> dict:
 
 
 def _get_smem_capacity() -> dict:
-    """Return shared memory capacity from the runtime lora_ops module."""
+    """Return shared memory capacity (bytes). Prefers the runtime lora_ops helper, falls
+    back to the Triton active-driver device properties, then to torch device properties —
+    so a dsv4-only run (no scattermoe) still reports smem."""
+    # 1) lora_ops helper (matches what the scattermoe autotuner actually saw)
     try:
         from axolotl.integrations.kernels.autotune_collector import (
             _find_lora_ops_module,
         )
 
         lora_ops = _find_lora_ops_module()
-        if lora_ops is None:
-            return {}
-        fn = getattr(lora_ops, "_get_smem_capacity", None)
-        if fn is None:
-            return {}
-        return {"smem_capacity_bytes": fn()}
+        fn = getattr(lora_ops, "_get_smem_capacity", None) if lora_ops else None
+        if fn is not None:
+            return {"smem_capacity_bytes": fn()}
     except Exception:  # pylint: disable=broad-exception-caught
-        return {}
+        pass
+    # 2) Triton active driver
+    try:
+        import triton
+
+        idx = torch.cuda.current_device()
+        props = triton.runtime.driver.active.utils.get_device_properties(idx)
+        smem = props.get("max_shared_mem")
+        if smem:
+            return {"smem_capacity_bytes": int(smem)}
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    # 3) torch device properties
+    try:
+        props = torch.cuda.get_device_properties(torch.cuda.current_device())
+        for name in (
+            "shared_memory_per_block_optin",
+            "shared_memory_per_multiprocessor",
+        ):
+            val = getattr(props, name, None)
+            if val:
+                return {"smem_capacity_bytes": int(val), "smem_source": name}
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    return {}
 
 
 class AutotuneReportCallback(TrainerCallback):
@@ -78,7 +102,7 @@ class AutotuneReportCallback(TrainerCallback):
         if self._reported:
             return
 
-        # Lazy import — Triton / scattermoe kernels may not be installed.
+        # Lazy import: Triton / scattermoe kernels may not be installed.
         from axolotl.integrations.kernels.autotune_collector import (
             collect_autotune_configs,
         )
@@ -110,11 +134,16 @@ class AutotuneReportCallback(TrainerCallback):
         properties.update(_get_smem_capacity())
 
         telemetry_manager.send_event(
-            event_type="scattermoe-autotune",
+            event_type="triton-autotune",
             properties=properties,
         )
 
+        names = sorted({c.get("kernel", "?") for c in configs})
         LOG.info(
-            "Reported %d scattermoe kernel autotune config(s) to telemetry.",
+            "Reported %d Triton autotune config(s) to telemetry on %s (sm %s, smem %s B): %s",
             len(configs),
+            properties.get("gpu_name", "?"),
+            properties.get("gpu_compute_capability", "?"),
+            properties.get("smem_capacity_bytes", "?"),
+            ", ".join(names),
         )

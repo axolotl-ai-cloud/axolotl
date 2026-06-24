@@ -2,6 +2,7 @@
 monkeypatch for accelerate fsdp2 fix when modifying ordereddict during interation, and saving full state dicts
 """
 
+import contextlib
 import copy
 import functools
 import gc
@@ -435,17 +436,50 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             fully_shard_kwargs=fsdp2_kwargs,
         )
 
-    if auto_wrap_policy is not None:
-        for module in get_module_children_bottom_up(model)[:-1]:
-            if is_peft_model and isinstance(module, LoraLayer):
-                module_log_bias_mismatch = _process_lora_module_for_fsdp(
-                    module, fsdp2_kwargs
-                )
-                log_bias_dtype_mismatch |= module_log_bias_mismatch
-            if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
-                fully_shard(module, **fsdp2_kwargs)
+    # Pre-quantized / mixed-dtype models (e.g. an NVFP4 checkpoint loaded for LoRA) carry
+    # non-float Parameters and keep-fp32 modules that the generic FSDP2 path can't shard
+    # uniformly. Engage the quantized capability path ONLY when such params exist; pure-bf16
+    # models take the original generic path unchanged. The nonfloat ``nn.Parameter.__new__``
+    # patch is process-global and is restored via the context manager's ``finally`` (an
+    # exception in ``fully_shard`` can no longer leave it patched).
+    from axolotl.monkeypatch.accelerate.fsdp2_quantized import (
+        cast_residual_fp32,
+        model_has_float_logical_quantized_params,
+        model_has_nonfloat_params,
+        nonfloat_param_guard,
+        shard_fp32_modules,
+    )
 
-    fully_shard(model, **fsdp2_kwargs)
+    # Apply the quantized dtype/cast/sharding policy ONLY for float-logical torchao subclasses
+    # (NVFP4Tensor/Float8Tensor/MXTensor) — the pre-quantized checkpoint case this path is for.
+    # Plain bnb Params4bit QLoRA is excluded so cast_residual_fp32 does not downcast its fp32 LoRA.
+    # The nn.Parameter.__new__ guard is separate: it is needed for ANY plain non-float param (uint8
+    # packed, which includes bnb Params4bit) and stays gated on that.
+    _quantized = model_has_float_logical_quantized_params(model)
+    _needs_nonfloat_guard = model_has_nonfloat_params(model)
+    _guard = (
+        nonfloat_param_guard(model)
+        if _needs_nonfloat_guard
+        else contextlib.nullcontext()
+    )
+    with _guard:
+        if _quantized:
+            # keep-fp32 modules (registered by model adapters, e.g. DSV4 mHC) get their own
+            # fp32 shard group; remaining plain fp32 (PEFT LoRA) is cast to the compute dtype.
+            shard_fp32_modules(model, fsdp2_kwargs)
+            cast_residual_fp32(model)
+
+        if auto_wrap_policy is not None:
+            for module in get_module_children_bottom_up(model)[:-1]:
+                if is_peft_model and isinstance(module, LoraLayer):
+                    module_log_bias_mismatch = _process_lora_module_for_fsdp(
+                        module, fsdp2_kwargs
+                    )
+                    log_bias_dtype_mismatch |= module_log_bias_mismatch
+                if auto_wrap_policy(module) and not isinstance(module, FSDPModule):
+                    fully_shard(module, **fsdp2_kwargs)
+
+        fully_shard(model, **fsdp2_kwargs)
 
     if log_bias_dtype_mismatch:
         LOG.warning(
