@@ -10,6 +10,7 @@ permissions: {}
 jobs:
   auto-update:
     runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'axolotl-ai-cloud' }}
     permissions:
       contents: write
       pull-requests: write

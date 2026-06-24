@@ -129,6 +129,8 @@ fsdp_config:
   reshard_after_forward: true
 ```
 
+When using `auto_wrap_policy: SIZE_BASED_WRAP`, set `min_num_params` to the minimum parameter count a module must have to be wrapped (e.g. `100000000`).
+
 ### FSDP1 (deprecated) {#sec-fsdp-config}
 
 ::: {.callout-note}
