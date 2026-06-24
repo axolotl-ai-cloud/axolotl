@@ -115,7 +115,9 @@ class TestAdvantageEstimator(unittest.TestCase):
 
     def test_reinforce_plus_plus_group_mean_batch_std(self):
         f = self._f()
-        rewards = torch.tensor([1.0, 2.0, 3.0, 0.0, 0.0, 6.0])
+        # Group means (2, 20) must differ from the global mean (11), otherwise
+        # group-mean and global-mean centering are indistinguishable.
+        rewards = torch.tensor([1.0, 2.0, 3.0, 10.0, 20.0, 30.0])
         adv, _ = f("reinforce_plus_plus", rewards, num_generations=3)
         # REINFORCE++ Baseline: subtract per-prompt group mean, then normalize
         # by the batch-level std of those centered rewards.
