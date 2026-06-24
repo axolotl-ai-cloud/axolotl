@@ -91,7 +91,6 @@ def remap_expert_indices(
 
     remapped_idxs = remap[sorted_expert_idxs]
 
-    # Compact the expert_offsets: only keep active experts' cumulative counts
     compact_offsets = expert_offsets[active_experts]
 
     return remapped_idxs, compact_offsets
@@ -123,26 +122,32 @@ def _selective_dequant_bnb4(
     from bitsandbytes.functional import QuantState
 
     expert_numel = expert_shape[0] * expert_shape[1]
-    packed_per_expert = expert_numel // 2  # 4-bit = 2 values per byte
-    blocks_per_expert = expert_numel // quant_state.blocksize
     num_active = len(active_experts)
 
-    if blocks_per_expert == 0:
-        # Expert is smaller than one quantization block — blocks span across
-        # expert boundaries, so per-expert slicing isn't possible.
-        # Fallback: full dequantize + index.
+    # Per-expert slicing assumes each expert owns whole packed bytes (2 nf4 values/byte) and
+    # whole quant blocks; otherwise bytes/blocks straddle expert boundaries and the slice is
+    # silently wrong. Fall back to full dequant + index when that doesn't hold.
+    if (
+        expert_numel <= 0
+        or quant_state.blocksize <= 0
+        or expert_numel % 2 != 0
+        or expert_numel % quant_state.blocksize != 0
+    ):
         full = F.dequantize_4bit(raw_param, quant_state)
-        E_total = full.numel() // expert_numel
+        E_total = full.numel() // expert_numel if expert_numel else 0
         return full.reshape(E_total, *expert_shape)[active_experts]
 
-    # Use fused Triton kernel for NF4 (handles selective gather + dequant in one pass)
+    packed_per_expert = expert_numel // 2  # 4-bit = 2 values per byte
+    blocks_per_expert = expert_numel // quant_state.blocksize
+
+    # Fused Triton kernel for NF4: selective gather + dequant in one pass.
     if quant_state.quant_type == "nf4" and raw_param.dtype == torch.uint8:
         from axolotl.integrations.kernels.libs.scattermoe_lora.selective_dequant_kernel import (
             selective_dequant_nf4_triton,
         )
 
-        # Handle nested (double) quantization: dequantize absmax first
-        # BnB uses dequantize_blockwise (not _4bit) for nested absmax + offset
+        # Nested (double) quant: dequantize absmax first via dequantize_blockwise (not _4bit),
+        # then add the offset.
         if quant_state.nested:
             absmax = F.dequantize_blockwise(quant_state.absmax, quant_state.state2)
             absmax += quant_state.offset
@@ -264,7 +269,6 @@ def selective_expert_weights(
     Returns:
         Compact weight tensor [num_active, dim1, dim2] ready for ScatterMoE
     """
-    # Check if the parameter is BnB-quantized via parametrize
     if (
         hasattr(experts_module, "parametrizations")
         and param_name in experts_module.parametrizations
@@ -284,7 +288,7 @@ def selective_expert_weights(
             if isinstance(orig_shape, torch.Size) and len(orig_shape) == 3:
                 expert_shape = (orig_shape[1], orig_shape[2])
             elif isinstance(orig_shape, torch.Size) and len(orig_shape) == 1:
-                # Flattened — need to infer from module attributes
+                # Flattened; infer the expert shape from module attributes.
                 E_total = getattr(experts_module, "num_experts", None)
                 if E_total is None:
                     E_total = int(active_experts.max().item()) + 1
@@ -303,14 +307,13 @@ def selective_expert_weights(
 
             return _selective_dequant_bnb4(raw_param, qs, active_experts, expert_shape)
 
-    # Pull the parameter out before format dispatch — used by every branch below.
     param = getattr(experts_module, param_name)
 
-    # MXFP4 (torchao MXTensor) — dequantize the subset, return [num_active, d1, d2]
+    # MXFP4 (torchao MXTensor): dequantize the subset, return [num_active, d1, d2]
     if is_mxfp4_param(param):
         return _selective_dequant_mxfp4(param, active_experts)
 
-    # Dense parameter (bf16/fp32) — direct indexing
+    # Dense parameter (bf16/fp32): direct indexing
     if param.dim() == 3:
         return param[active_experts]
 

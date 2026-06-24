@@ -4,14 +4,17 @@ on:
   merge_group:
   pull_request:
       types: [opened, synchronize, reopened, ready_for_review]
+      # code/pyproject/workflow linting is covered by the pre-commit job in tests.yml;
+      # this workflow handles the doc/example paths that tests.yml does not trigger on
       paths:
-       - '**.py'
-       - 'pyproject.toml'
-       - '.github/workflows/*.yml'
        - "*.[q]md"
        - "examples/**/*.y[a]?ml"
        - ".pre-commit-config.yaml"
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read

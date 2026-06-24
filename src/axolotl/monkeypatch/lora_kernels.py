@@ -352,18 +352,27 @@ def find_self_attn_in_layer(
 
 def find_mlp_in_layer(
     layer: nn.Module,
+    skip_routed_experts: bool = False,
 ) -> Generator[Tuple[nn.Module, nn.Module, nn.Module, nn.Module], None, None]:
-    # general case of most models
+    # general case of most models: the dense (shared) MLP. Always eligible — a custom MoE expert
+    # kernel only owns the ROUTED experts, not this dense gate/up/down block (e.g. gemma4's per-layer
+    # Gemma4TextMLP). Sparse-block MoEs whose layer.mlp is the router (no gate_proj) don't match here.
     if hasattr(layer, "mlp"):
         if all(
             hasattr(layer.mlp, proj) for proj in ["gate_proj", "up_proj", "down_proj"]
         ):
             yield layer.mlp.gate_proj, layer.mlp.up_proj, layer.mlp.down_proj, layer.mlp
-    # llama4 linearized experts
+    # llama4 shared expert: also a dense MLP, not routed -> always eligible.
     if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "shared_expert"):
         mlp = layer.feedforward.shared_expert
         yield mlp.gate_proj, mlp.up_proj, mlp.down_proj, mlp
-    if hasattr(layer, "feedforward") and hasattr(layer.feedforward, "experts"):
+    # llama4 linearized ROUTED experts: skip when a custom MoE expert kernel (ScatterMoE/SonicMoE)
+    # owns the experts — patching them here would double-own / conflict with the MoE kernel path.
+    if (
+        not skip_routed_experts
+        and hasattr(layer, "feedforward")
+        and hasattr(layer.feedforward, "experts")
+    ):
         if all(
             hasattr(layer.feedforward.experts, proj)
             for proj in ["gate_projs", "up_projs", "down_projs"]
@@ -533,7 +542,12 @@ def apply_lora_kernel_patches(
                     LOG.warning_once(
                         "Cannot patch some attention output projection - requires LoRA adapters"
                     )
-        for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(layer):
+        # When ScatterMoE/SonicMoE owns the routed experts, lora_mlp_kernel must only fuse the
+        # DENSE shared MLP, never the routed-expert containers (which the MoE kernel handles).
+        _moe_kernels_own_experts = bool(cfg.use_scattermoe) or bool(cfg.use_sonicmoe)
+        for gate_proj, up_proj, down_proj, mlp in find_mlp_in_layer(
+            layer, skip_routed_experts=_moe_kernels_own_experts
+        ):
             if cfg.lora_mlp_kernel:
                 # Check is inside lora_mlp_kernel guard so models with an
                 # unsupported activation (e.g. nemotron_h uses relu2) can set
