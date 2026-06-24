@@ -9,8 +9,24 @@ library's signature check against the hub kernel.
 import inspect
 
 import pytest
+import transformers
+from packaging.version import Version
+from transformers.modeling_utils import PreTrainedModel
 
 pytest.importorskip("kernels", reason="kernelize fixes only matter with kernels")
+
+# #46520 drops PreTrainedModel.kernelize; skip dev builds, fail a stable release.
+if not hasattr(PreTrainedModel, "kernelize"):
+    if Version(transformers.__version__).is_prerelease:
+        pytest.skip(
+            "PreTrainedModel.kernelize removed on transformers main (#46520); patch no-ops",
+            allow_module_level=True,
+        )
+    pytest.fail(
+        "transformers #46520 is in a stable release: PreTrainedModel.kernelize is gone "
+        "and patch_kernelize_fixes() now silently no-ops. Re-target it to set_use_kernels.",
+        pytrace=False,
+    )
 
 
 @pytest.fixture
