@@ -117,6 +117,26 @@ Full setup, CI test matrix, running e2e (GPU) tests locally, and skip-CI keyword
 - Prefer one short line max.
 - Don't add planning/decision/analysis markdown files unless explicitly requested.
 
+## Skills
+
+Repository-specific workflow guides ("skills") live in [`.agents/skills/`](.agents/skills/). Each subdirectory is a self-contained guide; read its `SKILL.md` for an overview and the other files on demand. Bundled scripts under a skill's `scripts/` are plain tools you run from the repo root.
+
+| Skill | What it does |
+|-------|--------------|
+| [`liger-upstream-sync`](.agents/skills/liger-upstream-sync/SKILL.md) | Audits the Liger integration (`src/axolotl/integrations/liger/plugin.py`) against `liger-kernel` to catch silent dispatch drift — hand-patches upstream now shadows with native dispatch, stale `axolotl_override_liger_fn` entries, signature drift. Also previews an un-installed liger version before bumping (`--liger-source`). |
+
+New or edited skills must adhere to [Anthropic's Skill authoring best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices) (concise SKILL.md, third-person `description` covering what + when, one-level-deep progressive disclosure, forward-slash paths) and keep frontmatter within the portable [agentskills.io](https://agentskills.io/specification) core (`name` ≤64 chars matching the directory, `description` ≤1024).
+
+### Vendor-specific shortcuts
+
+Some assistants auto-discover skills from vendor-specific paths. These point at the canonical `.agents/skills/` directory:
+
+- `.claude/skills` → symlink → `.agents/skills` (for Claude Code)
+
+To add another assistant (e.g. Cursor, Gemini CLI), add a symlink pointing at `.agents/skills/`. Do not duplicate the content.
+
+On Windows the `.claude/skills` symlink resolves only with git symlinks enabled (`git config core.symlinks true`, plus Developer Mode or admin); otherwise use the canonical `.agents/skills/` path directly.
+
 ## Key Documentation
 
 - [Getting Started](docs/getting-started.qmd) — quickstart tutorial
