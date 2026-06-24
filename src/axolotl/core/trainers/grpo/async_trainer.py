@@ -2541,6 +2541,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
     def _score_streaming(self, rollout: dict) -> list[dict]:
         """Score a rollout using streaming group scoring.  Returns list of micro-batches."""
+        if self.advantage_estimator == "reinforce_plus_plus":
+            raise ValueError(
+                "advantage_estimator='reinforce_plus_plus' needs batch-level reward "
+                "statistics over the whole rollout, but streaming_partial_batch scores "
+                "groups in chunks. Set streaming_partial_batch=false for this estimator."
+            )
         data = rollout
         num_gen = self.num_generations
         n_groups = len(data["prompt_ids"]) // num_gen
