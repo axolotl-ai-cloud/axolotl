@@ -887,6 +887,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <td><a href="#axolotl.utils.schemas.config.AxolotlInputConfig.validate_attn_implementation">validate_attn_implementation</a></td>
 <td>Accept canonical names and hub-kernel paths; reject short-form aliases.</td>
 </tr>
+<tr class="odd">
+<td><a href="#axolotl.utils.schemas.config.AxolotlInputConfig.validate_large_head_attention">validate_large_head_attention</a></td>
+<td>Only the three known policies are valid (a typo must not silently opt into Triton).</td>
+</tr>
 </tbody>
 </table>
 <section id="axolotl.utils.schemas.config.AxolotlInputConfig.normalize_attn_implementation" class="level5">
@@ -899,11 +903,16 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig.validate_attn_implementation(value)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Accept canonical names and hub-kernel paths; reject short-form aliases.</p>
 </section>
+<section id="axolotl.utils.schemas.config.AxolotlInputConfig.validate_large_head_attention" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.utils.schemas.config.AxolotlInputConfig.validate_large_head_attention">validate_large_head_attention</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.AxolotlInputConfig.validate_large_head_attention(value)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Only the three known policies are valid (a typo must not silently opt into Triton).</p>
+</section>
 </section>
 </section>
 <section id="axolotl.utils.schemas.config.EBFTConfig" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.utils.schemas.config.EBFTConfig">EBFTConfig</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.EBFTConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>utils.schemas.config.EBFTConfig()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Configuration for Energy-Based Fine-Tuning (EBFT)</p>
 
 

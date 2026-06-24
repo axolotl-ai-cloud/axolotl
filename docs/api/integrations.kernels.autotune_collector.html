@@ -828,23 +828,24 @@ do with the data.</p>
 <tbody>
 <tr class="odd">
 <td><a href="#axolotl.integrations.kernels.autotune_collector.collect_autotune_configs">collect_autotune_configs</a></td>
-<td>Read autotune caches from the four scattermoe-lora kernels.</td>
+<td>Read autotune caches from ALL dsv4 + scattermoe <code>@triton.autotune</code> kernels.</td>
 </tr>
 </tbody>
 </table>
 <section id="axolotl.integrations.kernels.autotune_collector.collect_autotune_configs" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.kernels.autotune_collector.collect_autotune_configs">collect_autotune_configs</h3>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.autotune_collector.collect_autotune_configs()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Read autotune caches from the four scattermoe-lora kernels.</p>
+<p>Read autotune caches from ALL dsv4 + scattermoe <code>@triton.autotune</code> kernels.</p>
 <p>Returns a (possibly empty) list of dicts, each containing:</p>
 <ul>
-<li><code>kernel</code> – human-readable kernel name</li>
-<li><code>key</code> – dict with the <code>M</code>/<code>N</code>/<code>K</code> problem dimensions</li>
-<li><code>config</code> – dict with the selected tile sizes, <code>num_warps</code>,
-and <code>num_stages</code></li>
+<li><code>kernel</code> – kernel function name</li>
+<li><code>module</code> – short module name it lives in</li>
+<li><code>key</code> – dict of the autotune-key args (problem shapes), labeled by the kernel’s
+own declared <code>key</code> names</li>
+<li><code>config</code> – selected tile sizes, <code>num_warps</code>, <code>num_stages</code> (and <code>num_ctas</code>)</li>
 </ul>
-<p>Returns <code>[]</code> if the kernel module cannot be found or if no
-autotune cache entries exist yet.</p>
+<p>Scans <code>sys.modules</code> for both the HF-<code>kernels</code> hash-suffixed scattermoe copies (whose
+caches are the populated runtime ones) and the normally-imported dsv4 kernel modules.</p>
 
 
 </section>

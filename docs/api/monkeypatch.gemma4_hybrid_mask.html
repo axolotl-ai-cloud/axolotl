@@ -797,6 +797,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
   <li><a href="#axolotl.monkeypatch.gemma4_hybrid_mask.patch_gemma4_hybrid_mask" id="toc-axolotl.monkeypatch.gemma4_hybrid_mask.patch_gemma4_hybrid_mask" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gemma4_hybrid_mask.patch_gemma4_hybrid_mask">patch_gemma4_hybrid_mask</a></li>
+  <li><a href="#axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512" id="toc-axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512">set_flash_d512</a></li>
   <li><a href="#axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask" id="toc-axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask" class="nav-link" data-scroll-target="#axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask">unpatch_gemma4_hybrid_mask</a></li>
   </ul></li>
   </ul></li>
@@ -855,6 +856,10 @@ forward pass runs.</p>
 <td>Install the Gemma 4 hybrid-attention mask fix across all variants.</td>
 </tr>
 <tr class="even">
+<td><a href="#axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512">set_flash_d512</a></td>
+<td>Backwards-compat shim: the head_dim&gt;256 routing is now the generic large_head_attention</td>
+</tr>
+<tr class="odd">
 <td><a href="#axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask">unpatch_gemma4_hybrid_mask</a></td>
 <td>Restore the original <code>create_causal_mask</code> in every namespace. Tests.</td>
 </tr>
@@ -869,9 +874,15 @@ of the target modules could be imported (e.g.&nbsp;transformers version predates
 Gemma 4) — in which case nothing is done and the caller can continue
 unaffected.</p>
 </section>
+<section id="axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gemma4_hybrid_mask.set_flash_d512">set_flash_d512</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gemma4_hybrid_mask.set_flash_d512(enabled)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Backwards-compat shim: the head_dim&gt;256 routing is now the generic large_head_attention
+capability. True -&gt; ‘auto’ (flash only on packed rows, the proven win).</p>
+</section>
 <section id="axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask">unpatch_gemma4_hybrid_mask</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>monkeypatch.gemma4_hybrid_mask.unpatch_gemma4_hybrid_mask()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Restore the original <code>create_causal_mask</code> in every namespace. Tests.</p>
 
 

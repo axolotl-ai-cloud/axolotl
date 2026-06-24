@@ -23,6 +23,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -757,7 +792,13 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#axolotl.integrations.kernels.plugin" id="toc-axolotl.integrations.kernels.plugin" class="nav-link active" data-scroll-target="#axolotl.integrations.kernels.plugin">integrations.kernels.plugin</a></li>
+  <li><a href="#axolotl.integrations.kernels.plugin" id="toc-axolotl.integrations.kernels.plugin" class="nav-link active" data-scroll-target="#axolotl.integrations.kernels.plugin">integrations.kernels.plugin</a>
+  <ul class="collapse">
+  <li><a href="#classes" id="toc-classes" class="nav-link" data-scroll-target="#classes">Classes</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.kernels.plugin.KernelsPlugin" id="toc-axolotl.integrations.kernels.plugin.KernelsPlugin" class="nav-link" data-scroll-target="#axolotl.integrations.kernels.plugin.KernelsPlugin">KernelsPlugin</a></li>
+  </ul></li>
+  </ul></li>
   </ul>
 </nav>
     </div>
@@ -770,8 +811,56 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <section id="axolotl.integrations.kernels.plugin" class="level1">
 <h1>integrations.kernels.plugin</h1>
 <p><code>integrations.kernels.plugin</code></p>
+<section id="classes" class="level2">
+<h2 class="anchored" data-anchor-id="classes">Classes</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.kernels.plugin.KernelsPlugin">KernelsPlugin</a></td>
+<td>Thin orchestrator: registers the expert-kernel backend and dispatches model-family</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.kernels.plugin.KernelsPlugin" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.kernels.plugin.KernelsPlugin">KernelsPlugin</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.plugin.KernelsPlugin()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Thin orchestrator: registers the expert-kernel backend and dispatches model-family
+specifics to <code>ModelAdapter</code> subclasses (see <code>adapters/</code>).</p>
+<section id="methods" class="level4">
+<h4 class="anchored" data-anchor-id="methods">Methods</h4>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.kernels.plugin.KernelsPlugin.pre_model_load">pre_model_load</a></td>
+<td>Register the expert-kernel backend + generic capabilities, then run adapter hooks.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.kernels.plugin.KernelsPlugin.pre_model_load" class="level5">
+<h5 class="anchored" data-anchor-id="axolotl.integrations.kernels.plugin.KernelsPlugin.pre_model_load">pre_model_load</h5>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.kernels.plugin.KernelsPlugin.pre_model_load(cfg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Register the expert-kernel backend + generic capabilities, then run adapter hooks.</p>
+<p>Architecture-agnostic: routing stays in each model’s SparseMoEBlock; only the experts
+call is dispatched through the registry. When EP is active the ExpertParallelPlugin owns
+<code>experts_implementation</code> (a <code>deep_ep_*</code> composite), so we don’t overwrite it here.</p>
 
 
+</section>
+</section>
+</section>
+</section>
 </section>
 
 </main> <!-- /main -->
