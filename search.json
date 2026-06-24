@@ -823,7 +823,7 @@
     "href": "docs/docker.html#base",
     "title": "Docker",
     "section": "Base",
-    "text": "Base\nThe base image is the most minimal image that can install Axolotl. It is based on the nvidia/cuda image.\nIt includes python, torch, git, git-lfs, awscli, pydantic, and more.\n\nImage\n\n\n\nVariant\nImage\nDocker Hub\n\n\n\n\npip\naxolotlai/axolotl-base\nLink\n\n\nuv\naxolotlai/axolotl-base-uv\nLink\n\n\n\n\n\nTags format\nmain-base-py{python_version}-cu{cuda_version}-{pytorch_version}\nTags examples:\n\nmain-base-py3.11-cu128-2.9.1\nmain-base-py3.12-cu128-2.10.0\nmain-base-py3.12-cu130-2.9.1\nmain-base-py3.12-cu130-2.10.0",
+    "text": "Base\nThe base image is the most minimal image that can install Axolotl. It is based on the nvidia/cuda image.\nIt includes python, torch, git, git-lfs, awscli, pydantic, and more.\n\nImage\naxolotlai/axolotl-base\nLink: Docker Hub\n\n\nTags format\nmain-base-py{python_version}-cu{cuda_version}-{pytorch_version}\nTags examples:\n\nmain-base-py3.11-cu128-2.9.1\nmain-base-py3.12-cu128-2.10.0\nmain-base-py3.12-cu130-2.9.1\nmain-base-py3.12-cu130-2.10.0",
     "crumbs": [
       "Deployments",
       "Docker"
@@ -834,7 +834,7 @@
     "href": "docs/docker.html#main",
     "title": "Docker",
     "section": "Main",
-    "text": "Main\nThe main image is the image that is used to run Axolotl. It is based on the axolotlai/axolotl-base image and includes the Axolotl codebase, dependencies, and more.\n\nImage\n\n\n\nVariant\nImage\nDocker Hub\n\n\n\n\npip\naxolotlai/axolotl\nLink\n\n\nuv\naxolotlai/axolotl-uv\nLink\n\n\n\n\n\nTags format\n# on push to main\nmain-py{python_version}-cu{cuda_version}-{pytorch_version}\n\n# latest main (currently torch 2.9.1, python 3.11, cuda 12.8)\nmain-latest\n\n# nightly build\n{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}\n\n# tagged release\n{version}\n\n\n\n\n\n\nTip\n\n\n\nThere may be some extra tags appended to the image, like -vllm which installs those packages.\n\n\nTags examples:\n\nmain-py3.11-cu128-2.9.1\nmain-py3.12-cu128-2.10.0\nmain-py3.12-cu130-2.9.1\nmain-py3.12-cu130-2.10.0\nmain-latest\nmain-20260315-py3.11-cu128-2.9.1\n0.16.1",
+    "text": "Main\nThe main image is the image that is used to run Axolotl. It is based on the axolotlai/axolotl-base image and includes the Axolotl codebase, dependencies, and more.\n\nImage\naxolotlai/axolotl\nLink: Docker Hub\n\n\nTags format\n# on push to main\nmain-py{python_version}-cu{cuda_version}-{pytorch_version}\n\n# latest stable build from main\nmain-latest\n\n# nightly build\n{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}\n\n# tagged release\n{version}\n\n\n\n\n\n\nTip\n\n\n\nThere may be some extra tags appended to the image, like -vllm which installs those packages.\n\n\nTags examples:\n\nmain-py3.11-cu128-2.9.1\nmain-py3.12-cu128-2.10.0\nmain-py3.12-cu130-2.9.1\nmain-py3.12-cu130-2.10.0\nmain-latest\nmain-20260315-py3.11-cu128-2.9.1\n0.16.1",
     "crumbs": [
       "Deployments",
       "Docker"
@@ -845,7 +845,7 @@
     "href": "docs/docker.html#cloud",
     "title": "Docker",
     "section": "Cloud",
-    "text": "Cloud\nThe cloud image is the image that is used to run Axolotl in the cloud. It is based on the axolotlai/axolotl image and sets ENV variables like HuggingFace cache directories for volume mounts, tmux, and more for different cloud providers.\n\n\n\n\n\n\nTip\n\n\n\nJupyter lab is run by default. Set JUPYTER_DISABLE=1 in the environment variables to disable it.\n\n\n\nImage\n\n\n\nVariant\nImage\nDocker Hub\n\n\n\n\npip\naxolotlai/axolotl-cloud\nLink\n\n\nuv\naxolotlai/axolotl-cloud-uv\nLink\n\n\n\n\n\nTags format\nThis uses the same tags as the main image.\n\n\nEnvironment variables\n\nJUPYTER_DISABLE: Disable Jupyter lab.\nJUPYTER_PASSWORD: Set a password for the Jupyter lab.\nPUBLIC_KEY / SSH_KEY: Add a public key for the SSH service.\n\n\n\nVolume mounts\n\n\n\n\n\n\nTip\n\n\n\nWe recommend mounting volumes to /workspace/data for data persistence. /workspace/axolotl contains the source code and is ephemeral.\n\n\n\n/workspace/data/axolotl-artifacts: Directory to store Axolotl artifacts.\n/workspace/data/huggingface-cache: Directory to store HuggingFace cache.",
+    "text": "Cloud\nThe cloud image is the image that is used to run Axolotl in the cloud. It is based on the axolotlai/axolotl image and sets ENV variables like HuggingFace cache directories for volume mounts, tmux, and more for different cloud providers.\n\n\n\n\n\n\nTip\n\n\n\nJupyter lab is run by default. Set JUPYTER_DISABLE=1 in the environment variables to disable it.\n\n\n\nImage\naxolotlai/axolotl-cloud\nLink: Docker Hub\n\n\nTags format\nThis uses the same tags as the main image.\n\n\nEnvironment variables\n\nJUPYTER_DISABLE: Disable Jupyter lab.\nJUPYTER_PASSWORD: Set a password for the Jupyter lab.\nPUBLIC_KEY / SSH_KEY: Add a public key for the SSH service.\n\n\n\nVolume mounts\n\n\n\n\n\n\nTip\n\n\n\nWe recommend mounting volumes to /workspace/data for data persistence. /workspace/axolotl contains the source code and is ephemeral.\n\n\n\n/workspace/data/axolotl-artifacts: Directory to store Axolotl artifacts.\n/workspace/data/huggingface-cache: Directory to store HuggingFace cache.",
     "crumbs": [
       "Deployments",
       "Docker"
