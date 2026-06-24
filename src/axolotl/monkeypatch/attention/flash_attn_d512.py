@@ -17,6 +17,48 @@ import triton.language as tl
 DEV = "cuda"
 
 
+def _fwd_smem_bytes(BLOCK_N, head_dim, num_stages):
+    """Exact SMEM the forward kernel needs: the q-tile lives in registers; the K and V tiles are
+    (1+num_stages)-buffered for software pipelining (+~2KB scratch for L/reductions). Calibrated
+    against compiled kernels: (BN,D)=(32,512) -> 67584 B @ns1, 100352 B @ns2 (clean +32768/stage)."""
+    return BLOCK_N * head_dim * 2 * (1 + num_stages) + 2048
+
+
+def _device_smem_limit():
+    props = torch.cuda.get_device_properties(torch.cuda.current_device())
+    return (
+        getattr(props, "shared_memory_per_block_optin", 0)
+        or props.shared_memory_per_block
+    )
+
+
+def _prune_fwd_configs(configs, named_args, **kwargs):
+    """Drop configs whose estimated SMEM exceeds the device opt-in cap before they ever compile, so
+    autotuning doesn't pay the compile cost of doomed variants (Triton would also reject them at
+    compile via OutOfResources; this just skips the attempt). Always keep at least one."""
+    # constexpr meta (HEAD_DIM/CAUSAL/VARLEN) arrives via kwargs, runtime args via named_args.
+    head_dim = kwargs.get("HEAD_DIM", named_args.get("HEAD_DIM"))
+    if (
+        head_dim is None
+    ):  # can't estimate -> let Triton's compile-time OOM check prune instead
+        return list(configs)
+    limit = _device_smem_limit()
+    fit = [
+        c
+        for c in configs
+        if _fwd_smem_bytes(c.kwargs["BLOCK_N"], head_dim, c.num_stages) <= limit
+    ]
+    return fit or [min(configs, key=lambda c: c.num_stages)]
+
+
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=s)
+        for s in (1, 2, 3)
+    ],
+    key=["N_CTX", "HEAD_DIM", "CAUSAL", "VARLEN"],
+    prune_configs_by={"early_config_prune": _prune_fwd_configs},
+)
 @triton.jit
 def _fwd(
     Q,
@@ -350,8 +392,8 @@ class _FlashD512(torch.autograd.Function):
         o = torch.empty_like(q)
         L = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
         scale = D**-0.5 if scale is None else float(scale)
-        BM, BN = 32, 32
-        _fwd[(triton.cdiv(N, BM), B * H)](
+        # BLOCK_M/BLOCK_N, num_warps, num_stages come from the autotuner (SMEM-pruned per device).
+        _fwd[lambda meta: (triton.cdiv(N, meta["BLOCK_M"]), B * H)](
             q,
             k,
             v,
@@ -368,12 +410,8 @@ class _FlashD512(torch.autograd.Function):
             H,
             N,
             HEAD_DIM=D,
-            BLOCK_M=BM,
-            BLOCK_N=BN,
             CAUSAL=causal,
             VARLEN=VARLEN,
-            num_warps=4,
-            num_stages=1,
         )
         ctx.save_for_backward(q, k, v, o, L, pos, doc_end)
         ctx.causal = causal

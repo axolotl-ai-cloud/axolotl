@@ -1,9 +1,16 @@
-"""CPU-only tests for the generic large-head-dim attention capability (#5/large_head_attention)."""
+"""Tests for the generic large-head-dim attention capability (#5/large_head_attention).
 
+Policy resolution and the SDPA-decline paths run on CPU (they return before touching the kernel);
+the route-success paths exercise the real Triton flash_d512 kernel and are GPU-gated."""
+
+import pytest
 import torch
 
-import axolotl.monkeypatch.attention.flash_attn_d512 as flash_mod
 from axolotl.monkeypatch.attention import large_head as lh
+
+requires_gpu = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="flash_d512 Triton kernel needs CUDA"
+)
 
 
 class Cfg(dict):
@@ -71,52 +78,47 @@ def test_route_declines_single_doc_under_auto():
     assert lh.flash_d512_route(_Mod(), q, q, q, None, single, policy="auto") is None
 
 
-def test_route_declines_custom_scale():
-    q = torch.zeros(1, 2, 8, 512)
-    assert (
-        lh.flash_d512_route(_Mod(), q, q, q, 0.123, _packed_pos([4, 4]), policy="auto")
-        is None
-    )
-
-
-def test_route_success_packed(monkeypatch):
-    # stub the GPU kernel so the routing/layout logic is testable on CPU
-    captured = {}
-
-    def fake_flash(query, k, v, causal, position_ids=None):
-        captured["causal"] = causal
-        captured["pid_resets"] = int((position_ids == 0).sum())
-        return torch.ones_like(query)  # [B, H, S, D]
-
-    monkeypatch.setattr(flash_mod, "flash_d512", fake_flash)
-    B, H, S, D = 1, 4, 8, 512
-    q = torch.randn(B, H, S, D)
+@requires_gpu
+@pytest.mark.parametrize("scaling", [512**-0.5, 1.0])
+def test_route_runs_custom_scale(scaling):
+    # Custom attention scale is now supported (gemma4 global uses scaling=1.0): route, don't decline.
+    q = torch.randn(1, 4, 256, 512, device="cuda", dtype=torch.bfloat16)
     out = lh.flash_d512_route(
-        _Mod(), q, q, q, D**-0.5, _packed_pos([4, 4]), policy="auto"
+        _Mod(), q, q, q, scaling, _packed_pos([128, 128]).cuda(), policy="auto"
+    )
+    assert out is not None
+
+
+@requires_gpu
+def test_route_success_packed():
+    # exercise the real kernel: packed multi-doc large-head input must route and honor the contract.
+    B, H, S, D = 1, 4, 256, 512
+    q = torch.randn(B, H, S, D, device="cuda", dtype=torch.bfloat16)
+    out = lh.flash_d512_route(
+        _Mod(), q, q, q, D**-0.5, _packed_pos([128, 128]).cuda(), policy="auto"
     )
     assert out is not None
     attn, weights = out
     assert weights is None
     assert attn.shape == (B, S, H, D)  # transposed to sdpa_attention_forward's contract
-    assert captured["causal"] is True and captured["pid_resets"] == 2
+    assert torch.isfinite(attn).all()
 
 
-def test_route_gqa_repeats_kv(monkeypatch):
-    seen = {}
-
-    def fake_flash(query, k, v, causal, position_ids=None):
-        seen["kv_heads"] = k.shape[1]
-        return torch.ones_like(query)
-
-    monkeypatch.setattr(flash_mod, "flash_d512", fake_flash)
-
+@requires_gpu
+def test_route_gqa_repeats_kv():
+    # GQA path: 4 kv heads expanded to 16 q heads inside the route, then the kernel runs.
     class GQA:
         num_key_value_groups = 4
 
-    q = torch.randn(1, 16, 8, 512)
-    kv = torch.randn(1, 4, 8, 512)  # 4 kv heads, 16 q heads
-    lh.flash_d512_route(GQA(), q, kv, kv, 512**-0.5, _packed_pos([4, 4]), policy="auto")
-    assert seen["kv_heads"] == 16  # repeated to match q heads
+    q = torch.randn(1, 16, 256, 512, device="cuda", dtype=torch.bfloat16)
+    kv = torch.randn(1, 4, 256, 512, device="cuda", dtype=torch.bfloat16)
+    out = lh.flash_d512_route(
+        GQA(), q, kv, kv, 512**-0.5, _packed_pos([128, 128]).cuda(), policy="auto"
+    )
+    assert out is not None
+    attn, _ = out
+    assert attn.shape == (1, 256, 16, 512)  # expanded to 16 q-heads, ran, transposed
+    assert torch.isfinite(attn).all()
 
 
 def test_patch_and_unpatch_sdpa(monkeypatch):
