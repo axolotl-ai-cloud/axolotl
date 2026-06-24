@@ -106,15 +106,9 @@ pre-commit install        # one-time
 pre-commit run --all-files
 ```
 
-Pinned versions (source of truth: [`.pre-commit-config.yaml`](../.pre-commit-config.yaml); the lint job runs on Python 3.11):
+The exact ruff/mypy/bandit versions are pinned in [`.pre-commit-config.yaml`](../.pre-commit-config.yaml) — the same file CI's pre-commit job runs from, so local and CI never drift (the lint job runs on Python 3.11). `make lint` wraps the command above.
 
-| Tool | Version |
-|------|---------|
-| ruff + ruff-format | `0.15.8` |
-| mypy | `1.19.1` |
-| bandit | `1.9.4` |
-
-To run ruff outside pre-commit, pin the version so output matches CI: `uvx ruff@0.15.8 check` / `uvx ruff@0.15.8 format`.
+To run ruff outside pre-commit, pin it to the `ruff-pre-commit` rev in that file so output matches CI, e.g. `uvx ruff@<rev> check` / `uvx ruff@<rev> format`.
 
 ### Commit Messages
 

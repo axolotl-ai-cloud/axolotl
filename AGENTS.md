@@ -88,15 +88,9 @@ pre-commit run --all-files     # ruff, ruff-format, mypy, bandit — same versio
 
 Shortcuts: `make lint`, `make format`, `make test` wrap these pinned commands.
 
-Pinned versions (source: `.pre-commit-config.yaml`, lint runs on Python **3.11**):
+The exact ruff/mypy/bandit versions are pinned in `.pre-commit-config.yaml` (the same file CI's pre-commit job runs from, so they can't drift; lint runs on Python **3.11**). Don't copy version numbers elsewhere — read them there.
 
-| Tool | Version |
-|------|---------|
-| ruff + ruff-format | `0.15.8` |
-| mypy | `1.19.1` |
-| bandit | `1.9.4` |
-
-Need ruff standalone? Pin it: `uvx ruff@0.15.8 check` / `uvx ruff@0.15.8 format`. Ruff config (line-length 88, `select = E,F,W,C90,B,I`) lives in `pyproject.toml`.
+Need ruff standalone? Pin it to the `ruff-pre-commit` rev in that file: `uvx ruff@<rev> check` / `uvx ruff@<rev> format`. Ruff config (line-length 88, `select = E,F,W,C90,B,I`) lives in `pyproject.toml`.
 
 Run tests the way CI does (defaults to `-m 'not slow'`):
 
