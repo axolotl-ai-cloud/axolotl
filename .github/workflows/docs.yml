@@ -3,6 +3,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '**/*.md'
+      - '**/*.qmd'
+      - '_quarto.yml'
+      - 'docs/**'
+      - 'src/axolotl/utils/schemas/**.py'
+      - '.github/workflows/docs.yml'
 
 permissions:
     contents: write
