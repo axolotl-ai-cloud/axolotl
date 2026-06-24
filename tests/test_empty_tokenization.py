@@ -12,11 +12,14 @@ from transformers import AutoTokenizer
 from axolotl.prompt_strategies.metharme import MetharmePromptTokenizingStrategy
 from axolotl.prompt_tokenizers import ReflectionPromptTokenizingStrategy
 
+from tests.hf_offline_utils import enable_hf_offline
+
 
 @pytest.fixture(scope="module")
-def gpt2_tokenizer():
-    # gpt2 does not prepend BOS, so tokenizing "" yields an empty input_ids list.
-    return AutoTokenizer.from_pretrained("gpt2")
+@enable_hf_offline
+def no_bos_tokenizer(download_tiny_qwen3_model):
+    # Qwen3 sets add_bos_token=False, so tokenizing "" yields an empty input_ids list.
+    return AutoTokenizer.from_pretrained("axolotl-ai-co/tiny-qwen3-129m")
 
 
 def _build(strategy_cls, tokenizer):
@@ -26,13 +29,13 @@ def _build(strategy_cls, tokenizer):
     return strategy
 
 
-def test_metharme_tokenize_empty_does_not_crash(gpt2_tokenizer):
-    strategy = _build(MetharmePromptTokenizingStrategy, gpt2_tokenizer)
+def test_metharme_tokenize_empty_does_not_crash(no_bos_tokenizer):
+    strategy = _build(MetharmePromptTokenizingStrategy, no_bos_tokenizer)
     result = strategy._tokenize("")  # raised IndexError before the fix
     assert list(result["input_ids"]) == []
 
 
-def test_reflection_tokenize_empty_does_not_crash(gpt2_tokenizer):
-    strategy = _build(ReflectionPromptTokenizingStrategy, gpt2_tokenizer)
+def test_reflection_tokenize_empty_does_not_crash(no_bos_tokenizer):
+    strategy = _build(ReflectionPromptTokenizingStrategy, no_bos_tokenizer)
     result = strategy._tokenize("")  # raised IndexError before the fix
     assert list(result["input_ids"]) == []
