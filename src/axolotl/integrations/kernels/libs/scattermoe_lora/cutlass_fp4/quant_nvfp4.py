@@ -1,5 +1,7 @@
 """Fast Triton nvfp4 quantizer: bf16 [M,K] -> qdata u8 [M,K/2] (2 fp4/byte, low-first) +
-e4m3 block scale [M,K/16]. torchao-compatible. Replaces torchao's slow emulated to_nvfp4."""
+e4m3 block scale [M,K/16]. Same qdata/scale layout as torchao (drop-in for the grouped FP4 GEMM),
+but an approximate fast encode: NOT byte-identical to torchao's to_nvfp4 (arithmetic-encode cascade
++ 1e-30 scale floor here vs torchao's RNE + 2**-6 e4m3 floor)."""
 
 import torch
 import triton
