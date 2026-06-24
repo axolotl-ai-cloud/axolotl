@@ -320,6 +320,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         self.images = "images"
 
+        self._fast_spans_disabled = False
+        self._fast_validated_samples = 0
+
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
         )
@@ -448,8 +451,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.prompter.message_field_training_detail  # type: ignore
         ):
             turns = self.get_conversation_thread(prompt)
-            if not turns:
-                return {}
             images = self._get_images(prompt)
             prompt_ids = self.prompter.build_prompt(  # type: ignore
                 turns[:-1],
@@ -480,8 +481,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return tokenized_prompt
 
         turns = self.get_conversation_thread(prompt)
-        if not turns:
-            return {}
         tools = self._get_tools(prompt)
         result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
         if not isinstance(result, dict):
@@ -490,10 +489,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
         fast_spans = None
-        if not self._fast_spans_disabled:
+        if not self._fast_spans_disabled and self._fast_spans_supported():
             fast_spans = self._fast_content_spans(turns, tools, input_ids)
             if fast_spans is None:
-                self._fast_spans_disabled = True  # unsupported here; stop trying
+                self._fast_spans_disabled = True
         validating = (
             fast_spans is not None
             and self._fast_validated_samples < self._FAST_VALIDATION_SAMPLES
@@ -704,12 +703,15 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 return i
         return -1
 
-    _fast_spans_disabled = False
-    _fast_validated_samples = 0
-
     # Number of initial samples whose fast-path spans are cross-checked against the
     # reference find_turn before the fast path is trusted for the remainder of the run.
     _FAST_VALIDATION_SAMPLES = 8
+
+    def _fast_spans_supported(self) -> bool:
+        """Fast spans need char->token offsets, so a fast HF tokenizer and no processor."""
+        return self.prompter.processor is None and getattr(
+            self.tokenizer, "is_fast", False
+        )
 
     def _fast_content_spans(
         self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
@@ -721,16 +723,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         Here we render + tokenize the conversation once, recover char->token offsets,
         and map each turn's content substring to its token span with a forward cursor.
 
-        Returns ``{turn_idx: (start, end)}`` for the turns it can resolve exactly, or
-        ``None`` when the fast path is unsupported (multimodal / slow tokenizer / the
-        re-tokenization does not reproduce build_prompt's ids). The caller falls back
-        to ``find_turn`` for any turn not present in the returned dict.
+        Returns ``{turn_idx: (start, end)}`` for the turns it can resolve exactly
+        (turns it can't are omitted, so the caller falls back to ``find_turn`` for
+        them), or ``None`` when the re-tokenization does not reproduce build_prompt's
+        ids.
         """
         tokenizer = self.tokenizer
-        if self.prompter.processor is not None or not getattr(
-            tokenizer, "is_fast", False
-        ):
-            return None
 
         # Mirror build_prompt(turns, tools=tools) exactly so the ids line up with input_ids.
         chat_template_kwargs = {
@@ -753,6 +751,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         if list(enc["input_ids"]) != list(input_ids):
             return None
 
+        thinking_key = self.prompter.template_thinking_key
+        is_mistral = "mistral" in self.tokenizer.name_or_path.lower()
         offsets = enc["offset_mapping"]
         n_tok = len(offsets)
         spans: dict[int, tuple[int, int]] = {}
@@ -761,6 +761,12 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         for idx, turn in enumerate(turns):
             content = turn.get("content")
             if not isinstance(content, str) or not content:
+                continue
+            # Skip turns where find_turn applies handling the char-span can't mirror:
+            # reasoning_content (spans content + separator) and mistral's system turn.
+            if thinking_key and turn.get(thinking_key) is not None:
+                continue
+            if idx == 0 and turn.get("role") == "system" and is_mistral:
                 continue
             pos = text.find(content, char_cursor)
             if pos == -1:
@@ -993,9 +999,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns = []
 
         messages = self._get_messages(prompt)
-
-        if not messages:
-            return []
 
         possible_sys_turn = self.transform_message(messages[0])
 
@@ -1254,6 +1257,9 @@ class MistralStrategy(ChatTemplateStrategy):
         self.split_thinking = split_thinking
 
         self.images = "images"
+
+        self._fast_spans_disabled = False
+        self._fast_validated_samples = 0
 
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
