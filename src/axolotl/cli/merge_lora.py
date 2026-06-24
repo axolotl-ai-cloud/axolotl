@@ -68,6 +68,43 @@ def _do_merge_lora_legacy(*, cfg: DictDefault) -> None:
             processor.save_pretrained(str(Path(cfg.output_dir) / "merged"))
 
 
+def _try_merge_nvfp4_moe(*, cfg: DictDefault) -> bool:
+    """Merge into an NVFP4-quantized MoE base by dequant -> add bf16 delta -> requant.
+
+    Returns True (and writes the merged checkpoint) when ``cfg.base_model`` is an NVFP4 MoE
+    checkpoint; returns False otherwise so the caller falls through to the standard efficient
+    path unchanged. The writer is imported lazily, and an unavailable writer (the scattermoe_lora
+    package __init__ imports triton, which axolotl supports being absent) degrades to "not NVFP4
+    MoE" so a plain LoRA merge on a triton-less host keeps using the standard path.
+    """
+    try:
+        from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_lora_merge_writer import (
+            is_nvfp4_moe_checkpoint,
+            write_merged_nvfp4_checkpoint,
+        )
+    except ImportError:
+        return False
+
+    if not is_nvfp4_moe_checkpoint(cfg.base_model):
+        return False
+
+    LOG.warning(
+        "NVFP4 MoE LoRA merge is LOSSY: each expert is dequantized, the bf16 LoRA delta is "
+        "added, then requantized back to E2M1 with the two-tier (per-block + per-tensor) scale. "
+        "This re-rounds every weight, so small updates may be crushed and the merged checkpoint "
+        "is only approximate."
+    )
+
+    output_dir = str(Path(cfg.output_dir) / "merged")
+    write_merged_nvfp4_checkpoint(
+        base_repo=cfg.base_model,
+        adapter_dir=cfg.lora_model_dir,
+        output_dir=output_dir,
+    )
+    LOG.info("Saved merged NVFP4 MoE checkpoint to: %s", output_dir)
+    return True
+
+
 def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     """
     Memory-efficient LoRA merging using shard-by-shard processing.
@@ -77,6 +114,9 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
     will raise NotImplementedError — use legacy method for those.
     """
     LOG.debug("Using memory-efficient LoRA merging method...")
+
+    if _try_merge_nvfp4_moe(cfg=cfg):
+        return
 
     output_path = Path(cfg.output_dir) / "merged"
     safe_tensors = getattr(cfg, "save_safetensors", True)
