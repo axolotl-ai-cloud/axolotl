@@ -841,6 +841,41 @@ class AxolotlInputConfig(
         },
     )
 
+    large_head_attention: str | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Generic capability for attention layers with head_dim > 256 (which flash/cuDNN "
+                "SDPA can't serve): 'sdpa' (stock SDPA, default) | 'auto' (Triton flash kernel on "
+                "packed rows, SDPA otherwise) | 'triton_flash' (prefer the Triton kernel). Applies "
+                "to any SDPA model; Gemma-4's head_dim=512 global layers use it automatically."
+            )
+        },
+    )
+    # Deprecated alias for `large_head_attention` (True -> 'auto'); kept for backwards compatibility.
+    flash_attn_d512: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "Deprecated: use `large_head_attention: auto`. Routes head_dim>256 attention "
+                "through the Triton flash kernel."
+            )
+        },
+    )
+
+    sdpa_varlen: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": (
+                "With sample packing + attn_implementation=sdpa, route packed rows through "
+                "torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D "
+                "block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no "
+                "flash_attn dependency. Requires torch >= 2.11 and head_dim <= 256; non-packed rows "
+                "and larger head_dim fall back to stock SDPA."
+            )
+        },
+    )
+
     fused_attn_kernel: bool | None = Field(
         default=None,
         json_schema_extra={
@@ -1497,6 +1532,19 @@ class AxolotlInputConfig(
 
         return data
 
+    @field_validator("large_head_attention", mode="before")
+    @classmethod
+    def validate_large_head_attention(cls, value):
+        """Only the three known policies are valid (a typo must not silently opt into Triton)."""
+        if value is None:
+            return None
+        valid = {"auto", "sdpa", "triton_flash"}
+        if str(value).lower() not in valid:
+            raise ValueError(
+                f"large_head_attention must be one of {sorted(valid)}, got {value!r}"
+            )
+        return str(value).lower()
+
     @field_validator("attn_implementation", mode="before")
     @classmethod
     def validate_attn_implementation(cls, value):
@@ -1546,6 +1594,22 @@ class AxolotlInputConfig(
                 "fp32_norm_classes is set but fp32_norms is not enabled; "
                 "it will be ignored."
             )
+        return self
+
+    @model_validator(mode="after")
+    def check_sdpa_varlen(self):
+        if self.sdpa_varlen:
+            if not self.sample_packing:
+                LOG.warning(
+                    "`sdpa_varlen` only affects packed rows; enable `sample_packing` or it is a no-op."
+                )
+            try:
+                from torch.nn.attention.varlen import varlen_attn  # noqa: F401
+            except ImportError:
+                LOG.warning(
+                    "`sdpa_varlen` needs torch >= 2.10 (torch.nn.attention.varlen); it will be "
+                    "ignored and stock SDPA used."
+                )
         return self
 
     @model_validator(mode="after")

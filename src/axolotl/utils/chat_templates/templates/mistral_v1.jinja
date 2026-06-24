@@ -1,1 +1,33 @@
-{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ ' [INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ ' ' + message['content'] + eos_token}}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}
+{%- if messages[0]['role'] == 'system' %}
+    {%- if messages[0]['content'] is string %}
+        {%- set system_message = messages[0]['content'] %}
+    {%- else %}
+        {%- set system_message = messages[0]['content'] | selectattr('type', 'equalto', 'text') | map(attribute='text') | join('') %}
+    {%- endif %}
+    {%- set loop_messages = messages[1:] %}
+{%- else %}
+    {%- set loop_messages = messages %}
+{%- endif %}
+
+{{- bos_token }}
+{%- for message in loop_messages %}
+    {%- if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}
+        {{- raise_exception('After the optional system message, conversation roles must alternate user/assistant/user/assistant/...') }}
+    {%- endif %}
+    {%- if message['content'] is string %}
+        {%- set content = message['content'] %}
+    {%- else %}
+        {%- set content = message['content'] | selectattr('type', 'equalto', 'text') | map(attribute='text') | join('') %}
+    {%- endif %}
+    {%- if message['role'] == 'user' %}
+        {%- if loop.first and system_message is defined %}
+            {{- ' [INST] ' + system_message + '\n\n' + content + ' [/INST]' }}
+        {%- else %}
+            {{- ' [INST] ' + content + ' [/INST]' }}
+        {%- endif %}
+    {%- elif message['role'] == 'assistant' %}
+        {{- ' ' + content + eos_token }}
+    {%- else %}
+        {{- raise_exception('Only user and assistant roles are supported, with the exception of an initial optional system message!') }}
+    {%- endif %}
+{%- endfor %}

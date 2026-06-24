@@ -113,6 +113,8 @@ class PatchManager:
         self._apply_gradient_checkpointing_patches()
         self._patch_attention()
         self._apply_multipack_patches()
+        self._apply_sdpa_varlen_patch()
+        self._apply_large_head_attention_patch()
         self._patch_loss_llama()
         self._patch_llama_derived_model()
         self._apply_mistral_cross_entropy_patch()
@@ -202,9 +204,19 @@ class PatchManager:
 
         import copy
 
-        from axolotl.monkeypatch.gemma4_hybrid_mask import patch_gemma4_hybrid_mask
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_policy,
+        )
+        from axolotl.monkeypatch.gemma4_hybrid_mask import (
+            GLOBAL_PACKED_SDPA,
+            patch_gemma4_hybrid_mask,
+        )
 
         patch_gemma4_hybrid_mask()
+        # Gemma-4 global layers reuse the generic large-head router. Default policy 'sdpa' (flash is
+        # opt-in via large_head_attention / the deprecated flash_attn_d512), preserving prior default.
+        set_large_head_policy(resolve_large_head_policy(self.cfg))
 
         # Navigate to the module that has 'layers' - varies by model structure:
         # Gemma4ForConditionalGeneration -> .model (Gemma4Model) -> .language_model (Gemma4TextModel) -> .layers
@@ -244,16 +256,19 @@ class PatchManager:
         patched_count = 0
         for layer_idx, layer in enumerate(layers):
             if layer_types[layer_idx] != "sliding_attention":
-                # Global / full_attention layer - use SDPA instead of FA2
+                # Global / full_attention layer (head_dim=512, FA2 can't serve it). Use the
+                # packing-aware SDPA impl: it rebuilds the block-diagonal mask from position_ids so
+                # the layer respects document boundaries under sample packing (plain "sdpa" gets a
+                # None mask here and would attend across packed documents).
                 attn_module = getattr(layer, "self_attn", None)
                 if attn_module is not None and hasattr(attn_module, "config"):
                     sdpa_config = copy.copy(attn_module.config)
-                    sdpa_config._attn_implementation = "sdpa"
+                    sdpa_config._attn_implementation = GLOBAL_PACKED_SDPA
                     attn_module.config = sdpa_config
                     patched_count += 1
 
         LOG.info(
-            "gemma4_hybrid_attn_impl: patched %d global layers to use SDPA "
+            "gemma4_hybrid_attn_impl: patched %d global layers to use packing-aware SDPA "
             "(remaining %d sliding layers use flash_attention_2)",
             patched_count,
             len(layers) - patched_count,
@@ -311,12 +326,15 @@ class PatchManager:
 
             patch_parallelism_config()
         if self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2":
+            from axolotl.monkeypatch.accelerate.float8_fsdp import patch_float8_fsdp
             from axolotl.monkeypatch.accelerate.fsdp2 import (
                 patch_accelerate_fsdp2,
                 patch_tied_keys_for_meta_device,
             )
 
             patch_accelerate_fsdp2()
+            # FSDP2 sharding for any torchao Float8Tensor weights (no-op without torchao)
+            patch_float8_fsdp()
             if self.cfg.fsdp_config.cpu_ram_efficient_loading:
                 patch_tied_keys_for_meta_device()
             if self.cfg.rl:
@@ -669,6 +687,34 @@ class PatchManager:
             from axolotl.monkeypatch.lora_kernels import patch_self_attn_lora
 
             patch_self_attn_lora(self.cfg)
+
+    def _apply_large_head_attention_patch(self):
+        """Generic head_dim>256 capability for plain SDPA models. Gemma-4's hybrid path routes its
+        globals through its own impl, so skip the generic sdpa wrapper there to avoid double-wiring."""
+        from axolotl.monkeypatch.attention.large_head import (
+            resolve_large_head_policy,
+            set_large_head_policy,
+            unpatch_sdpa_large_head,
+        )
+
+        policy = resolve_large_head_policy(self.cfg)
+        # Always (re)set the policy global from this run's config so a long-lived process can't
+        # inherit a previous run's stale auto/triton_flash policy on an sdpa run.
+        set_large_head_policy(policy)
+        if policy == "sdpa" or self.cfg.gemma4_hybrid_attn_impl:
+            unpatch_sdpa_large_head()
+            return
+        from axolotl.monkeypatch.attention.large_head import patch_sdpa_large_head
+
+        patch_sdpa_large_head(policy)
+
+    def _apply_sdpa_varlen_patch(self):
+        """Route packed-row SDPA through cu_seqlens varlen_attn when ``sdpa_varlen`` is set."""
+        if not self.cfg.sdpa_varlen:
+            return
+        from axolotl.monkeypatch.attention.sdpa_varlen import patch_sdpa_varlen
+
+        patch_sdpa_varlen()
 
     def _apply_multipack_patches(self):
         """Apply multipack patches if necessary."""
