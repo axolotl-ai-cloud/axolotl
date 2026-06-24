@@ -128,11 +128,37 @@ def dequantize_fp8(
     return W_float * scale_inv.to(dtype)
 
 
+_FLOAT8_CLS: type | None = None
+_FLOAT8_CHECKED = False
+
+
+def _is_float8_tensor(W: torch.Tensor) -> bool:
+    """A torchao ``Float8Tensor`` (blockwise-FP8 base weight, e.g. DSV4 non-experts).
+
+    It reports a logical bf16 ``dtype`` and carries its own block scale, so the fused
+    LoRA kernels pass it as ``W`` with ``quant_state=None`` — detect it by class."""
+    global _FLOAT8_CLS, _FLOAT8_CHECKED
+    if not _FLOAT8_CHECKED:
+        _FLOAT8_CHECKED = True
+        try:
+            from torchao.quantization import Float8Tensor as _F8
+
+            _FLOAT8_CLS = _F8
+        except Exception:
+            _FLOAT8_CLS = None
+    return _FLOAT8_CLS is not None and isinstance(W, _FLOAT8_CLS)
+
+
 def dequantize(
     W: torch.Tensor,
     quant_state: QuantState | torch.Tensor | None = None,
 ) -> torch.Tensor:
     """NF4 / FP8 dequantization; under `torch.compile` NF4 dispatches via `torch.ops.axolotl.nf4_dequantize`."""
+    # torchao Float8Tensor carries its own scale (a transposed view is still a Float8Tensor),
+    # so dequant to bf16 here and let the downstream matmul/addmm_ stay a plain bf16 GEMM.
+    if _is_float8_tensor(W):
+        return W.dequantize().to(torch.bfloat16)
+
     if quant_state is None:
         return W
 

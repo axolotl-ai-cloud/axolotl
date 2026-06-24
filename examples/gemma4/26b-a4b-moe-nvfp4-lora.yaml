@@ -1,0 +1,85 @@
+# Gemma-4-26B-A4B MoE LoRA on an NVFP4 (modelopt) checkpoint — the throughput-optimized recipe.
+# sm120 (RTX PRO 6000), 4k seq, experts-only + attn LoRA r=16. ~2350 tok/s / ~24 GiB on one GPU.
+#
+# The two levers that matter most here:
+#   1. attn_implementation: flash_attention_2 + gemma4_hybrid_attn_impl: true
+#        FA2 (via the `kernels` lib — no flash-attn source build) on the sliding-window layers +
+#        SDPA on the global layers. ~2x over plain sdpa, which otherwise computes full attention
+#        over the packed 4k sequence and dominates runtime.
+#   2. dsv4_fp4_grouped_mode: nvfp4
+#        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (Marlin on sm120,
+#        DeepGEMM on sm90/sm100) instead of the slower per-expert path.
+base_model: nvidia/Gemma-4-26B-A4B-NVFP4
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.liger.LigerPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+dsv4_fp4_grouped_mode: nvfp4        # fused 4-bit grouped MoE GEMM (Marlin sm120 / DeepGEMM sm90,100)
+liger_layer_norm: true
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rms_norm_gated: true
+strict: false
+
+ddp_find_unused_parameters: true
+
+chat_template: gemma4
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:10%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0.05
+output_dir: ./outputs/gemma4-26b-a4b-nvfp4-lora
+
+sequence_len: 4096
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# text-backbone attention + MLP projections (skip vision/audio encoders)
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+# MoE expert LoRA (3D Parameter tensors, not nn.Linear)
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+# Fused LoRA kernels for the NON-expert path: the dense shared MLP (Gemma4TextMLP) and the
+# attention q/k/v/o projections. The routed experts are handled by scattermoe; these fuse the
+# remaining per-layer LoRA. fused_attn_kernel lets qkv/o attach on the gemma4_unified variant too.
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+fused_attn_kernel: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit       # GPU 8-bit Adam: ~2.6 GiB less than fp32 Adam at r=16
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+
+# head_dim 256 (sliding) / 512 (global): flex OOMs sm120 shared memory, plain FA2 caps at 256.
+# The hybrid impl runs FA2 on sliding + SDPA on global. Requires attn_implementation=flash_attention_2.
+attn_implementation: flash_attention_2
+gemma4_hybrid_attn_impl: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:

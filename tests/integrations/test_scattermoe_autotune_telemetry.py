@@ -5,6 +5,7 @@ without requiring Triton or CUDA.
 """
 
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -15,35 +16,48 @@ from unittest.mock import MagicMock, patch
 # Simulate the hash-suffixed module name that LocalLayerRepository creates.
 _FAKE_MODULE_NAME = "scattermoe_lora_abc123.kernels.lora_ops"
 
-# Patch target for _find_lora_ops_module inside the collector module.
-_FIND_MODULE_PATH = (
-    "axolotl.integrations.kernels.autotune_collector._find_lora_ops_module"
-)
-
 
 def _make_mock_config(kwargs, num_warps=4, num_stages=3):
     """Create a mock triton.Config-like object."""
     return SimpleNamespace(kwargs=kwargs, num_warps=num_warps, num_stages=num_stages)
 
 
-def _make_mock_kernel(cache=None):
-    """Create a mock autotuned kernel object with a ``.cache`` dict."""
-    kernel = SimpleNamespace()
-    kernel.cache = cache if cache is not None else {}
-    return kernel
+def _make_mock_kernel(cache=None, name="kernel", keys=("M_BUCKET", "N", "K")):
+    """Mock a Triton ``Autotuner``: ``.cache`` dict + ``.base_fn`` (carrying ``__name__``,
+    which the collector uses for the kernel name) + declared autotune ``.keys``."""
+    return SimpleNamespace(
+        cache=cache if cache is not None else {},
+        base_fn=SimpleNamespace(__name__=name),
+        keys=list(keys),
+    )
 
 
 def _make_mock_lora_ops(
     fwd_cache=None, dx_cache=None, bwd_cache=None, fused_cache=None
 ):
-    """Build a mock ``lora_ops`` module with the four kernel attributes."""
-    mod = SimpleNamespace(
-        _scatter2scatter_lora=_make_mock_kernel(fwd_cache),
-        _scatter2scatter_lora_dX=_make_mock_kernel(dx_cache),
-        _group_bwd_lora=_make_mock_kernel(bwd_cache),
-        _group_bwd_lora_fused=_make_mock_kernel(fused_cache),
+    """Build a mock ``lora_ops`` module with the four kernel attributes. The collector names a
+    kernel by its wrapped fn's ``__name__``, so set those to the expected kernel names."""
+    return SimpleNamespace(
+        _scatter2scatter_lora=_make_mock_kernel(
+            fwd_cache, name="scatter2scatter_lora_fwd"
+        ),
+        _scatter2scatter_lora_dX=_make_mock_kernel(
+            dx_cache, name="scatter2scatter_lora_dX"
+        ),
+        _group_bwd_lora=_make_mock_kernel(bwd_cache, name="group_bwd_lora"),
+        _group_bwd_lora_fused=_make_mock_kernel(
+            fused_cache, name="group_bwd_lora_fused"
+        ),
     )
-    return mod
+
+
+@contextmanager
+def _inject_lora_ops(mock_module, name="scattermoe_lora_abc123.kernels.lora_ops"):
+    """Register ``mock_module`` under a ``lora_ops``-hint name in ``sys.modules`` and hide any
+    real lora_ops modules, so the sys.modules-scanning collector sees only the mock."""
+    hide = {n: None for n in _real_lora_ops_module_names()}
+    with patch.dict(sys.modules, {name: mock_module, **hide}):
+        yield
 
 
 def _real_lora_ops_module_names():
@@ -70,16 +84,16 @@ def _real_lora_ops_module_names():
 class TestAutotuneCollector:
     """Test ``collect_autotune_configs`` with mocked kernel objects.
 
-    Collection tests patch ``_find_lora_ops_module`` directly so they are
-    not affected by real ``lora_ops`` modules that other tests in the same
-    pytest-xdist worker may have loaded into ``sys.modules``.
+    The collector scans ``sys.modules`` for kernel-bearing modules, so each test injects a mock
+    ``lora_ops`` module via ``_inject_lora_ops`` (which also hides any real ``lora_ops`` modules
+    other tests in the same pytest-xdist worker may have loaded).
     """
 
     def test_empty_cache_returns_empty_list(self):
         """When no kernel has been autotuned yet, return ``[]``."""
         mock_lora_ops = _make_mock_lora_ops()
 
-        with patch(_FIND_MODULE_PATH, return_value=mock_lora_ops):
+        with _inject_lora_ops(mock_lora_ops):
             from axolotl.integrations.kernels.autotune_collector import (
                 collect_autotune_configs,
             )
@@ -94,7 +108,7 @@ class TestAutotuneCollector:
         )
         mock_lora_ops = _make_mock_lora_ops(fwd_cache={(2048, 4096, 1024): cfg})
 
-        with patch(_FIND_MODULE_PATH, return_value=mock_lora_ops):
+        with _inject_lora_ops(mock_lora_ops):
             from axolotl.integrations.kernels.autotune_collector import (
                 collect_autotune_configs,
             )
@@ -120,7 +134,7 @@ class TestAutotuneCollector:
             dx_cache={(16, 256, 128): cfg_dx},
         )
 
-        with patch(_FIND_MODULE_PATH, return_value=mock_lora_ops):
+        with _inject_lora_ops(mock_lora_ops):
             from axolotl.integrations.kernels.autotune_collector import (
                 collect_autotune_configs,
             )
@@ -139,7 +153,7 @@ class TestAutotuneCollector:
 
         mock_lora_ops = _make_mock_lora_ops(fwd_cache={cache_key: cfg})
 
-        with patch(_FIND_MODULE_PATH, return_value=mock_lora_ops):
+        with _inject_lora_ops(mock_lora_ops):
             from axolotl.integrations.kernels.autotune_collector import (
                 collect_autotune_configs,
             )
@@ -154,12 +168,13 @@ class TestAutotuneCollector:
         assert key["_extra"] == ["float16", "float16"]
 
     def test_no_module_in_sys_modules_returns_empty(self):
-        """If no lora_ops module is loaded, return ``[]``."""
+        """If no populated lora_ops module is loaded, return ``[]``."""
         from axolotl.integrations.kernels.autotune_collector import (
             collect_autotune_configs,
         )
 
-        with patch(_FIND_MODULE_PATH, return_value=None):
+        hide = {n: None for n in _real_lora_ops_module_names()}
+        with patch.dict(sys.modules, hide):
             result = collect_autotune_configs()
         assert result == []
 
@@ -222,7 +237,7 @@ class TestAutotuneReportCallback:
             assert mock_tm.send_event.call_count == 1
 
             call_kwargs = mock_tm.send_event.call_args[1]
-            assert call_kwargs["event_type"] == "scattermoe-autotune"
+            assert call_kwargs["event_type"] == "triton-autotune"
             assert call_kwargs["properties"]["kernel_count"] == 1
 
             # Second call should NOT send again.

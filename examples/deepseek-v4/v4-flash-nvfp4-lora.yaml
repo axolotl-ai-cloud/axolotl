@@ -1,0 +1,74 @@
+# DeepSeek-V4-Flash MoE LoRA on an NVFP4 (modelopt) checkpoint. FSDP2 multi-GPU only.
+#
+# The pieces that make this run:
+#   1. use_dsv4_kernels: true
+#        V4-Flash is eager-only (head_dim 512). The dsv4 kernels plugin swaps the eager
+#        attention/rope/mHC/compressor/indexer for fused Triton kernels. Keep
+#        attn_implementation: eager so the plugin owns the attention path.
+#   2. dsv4_fp4_grouped_mode: nvfp4
+#        Routes the NVFP4 experts through the fused 4-bit-read grouped GEMM (base GEMM backend
+#        auto-dispatches by GPU arch). Backward is chunked bf16-dequant + grouped_mm (bf16 grad
+#        required for accuracy). Under FSDP the per-step nvfp4->mxfp4 requant is recomputed and
+#        freed per layer (not cached across layers, which would hold a full-model mxfp4 copy per
+#        rank and OOM).
+#   3. sample_packing: true
+#        REQUIRED for steady throughput. Without it, variable sequence lengths re-trigger the
+#        grouped GEMM autotune every step (recompile-bound, throughput collapses).
+base_model: nvidia/DeepSeek-V4-Flash-NVFP4
+attn_implementation: eager
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+
+use_kernels: true
+use_scattermoe: true # NVFP4 experts (LoRA-on-experts)
+use_dsv4_kernels: true # sliding/CSA attn + rope + mHC + gated-pool + indexer
+lora_mlp_kernel: true # fused clamped-SwiGLU LoRA on the dense shared MLP
+dsv4_fp4_grouped_mode: nvfp4 # fused 4-bit grouped MoE GEMM; backward is bf16-dequant
+strict: false
+
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+val_set_size: 0.0
+output_dir: ./outputs/dsv4-flash-nvfp4-lora
+sequence_len: 4096
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+# MoE expert LoRA (3D Parameter tensors, not nn.Linear)
+lora_target_parameters:
+  - mlp.experts.gate_up_proj
+  - mlp.experts.down_proj
+
+micro_batch_size: 1
+gradient_accumulation_steps: 1
+num_epochs: 1
+optimizer: adamw_torch
+lr_scheduler: constant
+learning_rate: 0.0001
+bf16: true
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+activation_offloading: false
+
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: DeepseekV4DecoderLayer
+  reshard_after_forward: true
+
+logging_steps: 1
+warmup_ratio: 0.1
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:
