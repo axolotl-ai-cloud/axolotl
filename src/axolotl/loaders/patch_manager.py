@@ -397,11 +397,7 @@ class PatchManager:
 
             patch_kernelize_fixes()
 
-        if (
-            self.cfg.model_config_type in ("minimax", "minimax_m2")
-            and self.cfg.use_kernels
-        ):
-            # Same kernelize() crash as Gemma4 above, in MiniMax attention.
+        if self.cfg.model_config_type == "minimax_m2" and self.cfg.use_kernels:
             from axolotl.monkeypatch.minimax_kernelize import patch_minimax_kernelize
 
             patch_minimax_kernelize()

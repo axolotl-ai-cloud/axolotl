@@ -1,13 +1,5 @@
-"""Fix for transformers' MiniMax M2 ``kernelize()`` crash under ``use_kernels``.
-
-MiniMax M2 attention registers ``apply_rotary_pos_emb`` (a plain function) in
-``_hidden_kernels``, so ``kernelize()`` tries to ``register_module()`` a
-non-``nn.Module`` and raises ``ValueError``. ``forward`` calls the module-level
-``apply_rotary_pos_emb`` directly, so dropping that entry is numerically neutral.
-
-The patch wraps the attention ``__init__`` to strip non-Module ``_hidden_kernels``
-entries; Module entries are left intact. Idempotent; install before model build.
-"""
+"""Strip non-Module ``_hidden_kernels`` entries so MiniMax M2 ``kernelize()`` does
+not raise ``ValueError`` under ``use_kernels``."""
 
 from __future__ import annotations
 
@@ -29,10 +21,9 @@ def _strip_non_module_kernels(orig_init):
     def init(self, *args, **kwargs):
         orig_init(self, *args, **kwargs)
         hidden_kernels = self.__dict__.get("_hidden_kernels") or {}
-        for name in [
-            n for n, fn in hidden_kernels.items() if not isinstance(fn, nn.Module)
-        ]:
-            del hidden_kernels[name]
+        for name, fn in list(hidden_kernels.items()):
+            if not isinstance(fn, nn.Module):
+                del hidden_kernels[name]
 
     init._axolotl_original = orig_init  # type: ignore[attr-defined]
     return init
