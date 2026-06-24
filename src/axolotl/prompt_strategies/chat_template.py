@@ -333,9 +333,6 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             if len(token_ids) == 1:
                 self._eot_token_ids.add(token_ids[0])
 
-        self._fast_spans_disabled = False
-        self._fast_validated_samples = 0
-
     def _validate_eot_and_eos_tokens(self):
         """
         - Validates that EOT tokens (or eos_token) are in the chat_template
@@ -451,6 +448,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             and not self.prompter.message_field_training_detail  # type: ignore
         ):
             turns = self.get_conversation_thread(prompt)
+            if not turns:
+                return {}
             images = self._get_images(prompt)
             prompt_ids = self.prompter.build_prompt(  # type: ignore
                 turns[:-1],
@@ -481,6 +480,8 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             return tokenized_prompt
 
         turns = self.get_conversation_thread(prompt)
+        if not turns:
+            return {}
         tools = self._get_tools(prompt)
         result = self.prompter.build_prompt(turns, tools=tools)  # type: ignore
         if not isinstance(result, dict):
@@ -702,6 +703,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             if input_ids[i] in self._eot_token_ids:
                 return i
         return -1
+
+    _fast_spans_disabled = False
+    _fast_validated_samples = 0
 
     # Number of initial samples whose fast-path spans are cross-checked against the
     # reference find_turn before the fast path is trusted for the remainder of the run.
@@ -989,6 +993,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         turns = []
 
         messages = self._get_messages(prompt)
+
+        if not messages:
+            return []
 
         possible_sys_turn = self.transform_message(messages[0])
 
