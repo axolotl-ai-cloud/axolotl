@@ -352,6 +352,44 @@ def _ep_topology_worker_expects_error(
         q.put((rank, err))
     finally:
         dist.destroy_process_group()
+
+
+def _ep_cp_topology_worker(rank, world_size, ep_size, cp_size, dp_shard_size, port, q):
+    """EP × CP (× dp_shard) topology probe: returns this rank's ep / cp / dp_shard group members."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    dist.init_process_group(
+        backend="gloo", rank=rank, world_size=world_size, timeout=timedelta(seconds=120)
+    )
+    try:
+        from types import SimpleNamespace
+
+        cfg = SimpleNamespace(
+            expert_parallel_size=ep_size,
+            dp_shard_size=dp_shard_size,
+            tensor_parallel_size=1,
+            context_parallel_size=cp_size,
+        )
+        ep_group = ExpertParallelPlugin._resolve_ep_group(cfg)
+        ep_ranks = sorted(dist.get_process_group_ranks(ep_group))
+        cp_group = ExpertParallelPlugin._resolve_cp_group(cfg)
+        cp_ranks = (
+            sorted(dist.get_process_group_ranks(cp_group))
+            if cp_group is not None
+            else None
+        )
+        mesh = ExpertParallelPlugin._device_mesh
+        dp_ranks = (
+            sorted(dist.get_process_group_ranks(mesh["dp_shard"].get_group()))
+            if mesh is not None and "dp_shard" in (mesh.mesh_dim_names or ())
+            else None
+        )
+        q.put((rank, ep_ranks, cp_ranks, dp_ranks))
+    finally:
+        dist.destroy_process_group()
+        ExpertParallelPlugin._device_mesh = None
         ExpertParallelPlugin._device_mesh = None
 
 
@@ -406,8 +444,47 @@ def _spawn_topology_check(world_size, ep_size, dp_shard_size):
     return sorted(results, key=lambda r: r[0])
 
 
+def _spawn_ep_cp_check(world_size, ep_size, cp_size, dp_shard_size=1):
+    ctx = mp.get_context("spawn")
+    q = ctx.Queue()
+    port = _find_free_port()
+    procs = [
+        ctx.Process(
+            target=_ep_cp_topology_worker,
+            args=(r, world_size, ep_size, cp_size, dp_shard_size, port, q),
+        )
+        for r in range(world_size)
+    ]
+    for p in procs:
+        p.start()
+    results = [q.get(timeout=120) for _ in range(world_size)]
+    for p in procs:
+        p.join(timeout=20)
+        assert p.exitcode == 0, f"worker exited with {p.exitcode}"
+    return sorted(results, key=lambda r: r[0])
+
+
 class TestMeshTopology:
     """The 4-rank EP+FSDP composition rank assignments."""
+
+    def test_world4_ep2_cp2_orthogonal(self):
+        """world=4, ep=2 × cp=2: experts shard on `ep`, sequence on `cp`. The two axes must be
+        orthogonal — every rank is in exactly one ep group and one cp group that intersect only at
+        that rank, and the groups tile the 4 ranks. (DeepEP not required — pure group topology.)"""
+        results = _spawn_ep_cp_check(world_size=4, ep_size=2, cp_size=2)
+        ep = {r: tuple(e) for r, e, c, d in results}
+        cp = {r: tuple(c) for r, e, c, d in results}
+        for r in range(4):
+            assert len(ep[r]) == 2 and len(cp[r]) == 2, (ep, cp)
+            assert set(ep[r]) & set(cp[r]) == {r}, (
+                r,
+                ep,
+                cp,
+            )  # orthogonal: meet only at self
+        assert len(set(ep.values())) == 2 and len(set(cp.values())) == 2, (ep, cp)
+        # union of all ep groups (and cp groups) tiles the world
+        assert set().union(*ep.values()) == {0, 1, 2, 3}
+        assert set().union(*cp.values()) == {0, 1, 2, 3}
 
     def test_world4_ep2_dp2_orthogonal(self):
         """At world=4 with ep=2 and dp_shard=2, EP groups must be strided

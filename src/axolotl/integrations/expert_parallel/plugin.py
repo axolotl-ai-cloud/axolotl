@@ -219,24 +219,35 @@ class ExpertParallelPlugin(BasePlugin):
         if ep_size == world_size:
             return dist.group.WORLD
 
-        # EP + FSDP — read the ep group from accelerate's mesh, or build one
-        # ourselves if accelerate hasn't (e.g., topology unit tests that drive
-        # `_resolve_ep_group` directly without an Accelerator).
-        if dp_shard_size > 1:
-            if tp_size > 1 or cp_size > 1:
+        # EP composed with FSDP (`dp_shard`) and/or context parallel (`cp`) on orthogonal mesh
+        # axes — read the ep group from accelerate's mesh, or build one ourselves if accelerate
+        # hasn't (e.g., topology unit tests that drive `_resolve_ep_group` directly). Experts shard
+        # on `ep` (tokens move via all-to-all); the sequence shards on `cp` (DSA attention gathers
+        # the compressed KV on that axis); non-expert weights shard on `dp_shard`. TP is still
+        # unsupported in composition.
+        if dp_shard_size > 1 or cp_size > 1:
+            if tp_size > 1:
                 raise NotImplementedError(
-                    "EP composition with TP/CP not yet supported. Got "
+                    "EP × TP composition not yet supported. Got "
                     f"ep={ep_size}, dp_shard={dp_shard_size}, tp={tp_size}, cp={cp_size}. "
-                    "v1 supports only EP-only or EP × dp_shard."
+                    "Supported: EP, EP × dp_shard, EP × cp, EP × cp × dp_shard."
                 )
             mesh = ExpertParallelPlugin._accelerate_mesh()
-            if mesh is None or "ep" not in mesh.mesh_dim_names:
+            if mesh is None or "ep" not in (mesh.mesh_dim_names or ()):
                 from torch.distributed.device_mesh import init_device_mesh
 
+                # Fallback mesh from the >1 axes (ep outermost). Orthogonality of the ep/cp/dp
+                # groups is what matters; accelerate's mesh is preferred when present so the ep
+                # group matches the one used for the experts' FSDP exclusion.
+                axes = [("ep", ep_size)]
+                if cp_size > 1:
+                    axes.append(("cp", cp_size))
+                if dp_shard_size > 1:
+                    axes.append(("dp_shard", dp_shard_size))
                 mesh = init_device_mesh(
                     "cuda" if torch.cuda.is_available() else "cpu",
-                    (ep_size, dp_shard_size),
-                    mesh_dim_names=("ep", "dp_shard"),
+                    tuple(s for _, s in axes),
+                    mesh_dim_names=tuple(n for n, _ in axes),
                 )
             ExpertParallelPlugin._device_mesh = mesh
             LOG.debug(
@@ -246,13 +257,29 @@ class ExpertParallelPlugin(BasePlugin):
             )
             return mesh["ep"].get_group()
 
-        # ep_size > 1, ep_size < world_size, dp_shard_size == 1 — invalid.
+        # ep_size > 1, ep_size < world_size, no dp_shard/cp to fill the rest — invalid.
         raise ValueError(
             f"expert_parallel_size ({ep_size}) < world_size ({world_size}) "
-            "without dp_shard_size > 1 to fill the remaining axes is not supported. "
-            "Set dp_shard_size such that ep × dp_shard == world_size, or set "
-            "expert_parallel_size = world_size for pure EP."
+            "without dp_shard_size/context_parallel_size > 1 to fill the remaining axes is not "
+            "supported. Set dp_shard_size and/or context_parallel_size such that "
+            "ep × cp × dp_shard == world_size, or set expert_parallel_size = world_size for pure EP."
         )
+
+    @staticmethod
+    def _resolve_cp_group(cfg):
+        """Return the context-parallel ProcessGroup (the `cp` axis of the EP mesh), or None when
+        ``context_parallel_size <= 1``. The DSA attention shards the sequence on this axis (gathering
+        the compressed KV across it); experts shard on the orthogonal ``ep`` axis. Reads the mesh
+        built by ``_resolve_ep_group`` / accelerate."""
+        cp_size = getattr(cfg, "context_parallel_size", None) or 1
+        if cp_size <= 1:
+            return None
+        mesh = (
+            ExpertParallelPlugin._device_mesh or ExpertParallelPlugin._accelerate_mesh()
+        )
+        if mesh is not None and "cp" in (mesh.mesh_dim_names or ()):
+            return mesh["cp"].get_group()
+        return None
 
     @staticmethod
     def fully_shard_experts(model, dp_shard_mesh, fsdp2_kwargs):
