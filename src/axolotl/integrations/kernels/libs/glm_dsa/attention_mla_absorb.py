@@ -69,14 +69,15 @@ def split_kv_b(kv_b_weight: torch.Tensor, n_heads: int):
 
 def absorb_query(q_nope, q_rot, w_kb_k):
     """q_nope [B,H,S,qk_nope], q_rot [B,H,S,qk_rope], w_kb_k [H,qk_nope,kv_lora] ->
-    Q_abs [B,H,S,DQK] = cat(q_nope @ W_kb_kᵀ, q_rot). Differentiable."""
-    q_abs_nope = torch.einsum("bhsn,hnl->bhsl", q_nope, w_kb_k)  # [B,H,S,kv_lora]
+    Q_abs [B,H,S,DQK] = cat(q_nope @ W_kb_kᵀ, q_rot). Differentiable. ``w_kb_k`` is cast to the
+    activation dtype (under LoRA the effective kv_b weight promotes to fp32 via the adapters)."""
+    q_abs_nope = torch.einsum("bhsn,hnl->bhsl", q_nope, w_kb_k.to(q_nope.dtype))
     return torch.cat([q_abs_nope, q_rot], dim=-1)
 
 
 def project_value(out_latent, w_kb_v):
     """out_latent [B,H,S,kv_lora] -> out [B,H,S,v_head] = out_latent @ W_kb_vᵀ. Differentiable."""
-    return torch.einsum("bhsl,hvl->bhsv", out_latent, w_kb_v)
+    return torch.einsum("bhsl,hvl->bhsv", out_latent, w_kb_v.to(out_latent.dtype))
 
 
 @triton.autotune(
