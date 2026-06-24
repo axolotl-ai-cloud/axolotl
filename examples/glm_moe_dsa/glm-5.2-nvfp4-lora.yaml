@@ -22,11 +22,19 @@ use_kernels: true
 use_scattermoe: true
 experts_implementation: scattermoe
 dsv4_fp4_grouped_mode: nvfp4        # fused 4-bit grouped MoE GEMM (Marlin sm120 / DeepGEMM sm90,100)
+# Fused DSA attention: MLA weight absorption + head-batched sparse-gather flash attn (fwd+bwd) +
+# fused Lightning-Indexer, replacing the dense [B,S,T]-mask sdpa path. Router kept fp32. Wins at
+# long context (S >> index_topk); a length-aware dispatcher uses the dense path below the crossover.
+use_glm_dsa_kernels: true
 strict: false
 
-# DSA sparse-MLA: eager/sdpa build a dense [B,S,T] additive mask from the top-k indices.
-# (Phase-1 will replace this with a fused top-k gather attention kernel.)
+# The DSA kernels own attention; sdpa is the fallback the dispatcher uses below the sparse crossover.
 attn_implementation: sdpa
+
+# For multi-GPU at long context, shard the sequence with context parallelism (the DSA attention
+# all-gathers only the 576-wide compressed KV on the cp axis). Composes with expert parallelism for
+# the MoE (experts shard on ep, sequence on cp) — see examples/expert_parallel and the EP plugin.
+# context_parallel_size: 2
 
 chat_template: tokenizer_default
 datasets:
