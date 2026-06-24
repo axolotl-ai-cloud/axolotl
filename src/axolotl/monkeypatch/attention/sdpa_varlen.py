@@ -45,7 +45,7 @@ def _build_varlen_forward(original_sdpa: Callable) -> Callable:
         prepare_fa_kwargs_from_position_ids,
     )
 
-    # varlen_attn's causal API differs across the supported torch range (>=2.9.1): torch 2.11 takes
+    # varlen_attn's causal API differs across the supported torch range (>=2.10): torch 2.11 takes
     # window_size (causal = (-1, 0): unlimited left, no right; sliding = (W-1, 0)), earlier builds
     # take is_causal (causal only, no sliding). Detect which the installed build accepts. Scale stays
     # default (1/sqrt(d)) — the use_varlen guard below already restricts to standard scaling.

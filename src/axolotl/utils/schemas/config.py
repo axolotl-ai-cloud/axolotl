@@ -1607,7 +1607,7 @@ class AxolotlInputConfig(
                 from torch.nn.attention.varlen import varlen_attn  # noqa: F401
             except ImportError:
                 LOG.warning(
-                    "`sdpa_varlen` needs torch >= 2.11 (torch.nn.attention.varlen); it will be "
+                    "`sdpa_varlen` needs torch >= 2.10 (torch.nn.attention.varlen); it will be "
                     "ignored and stock SDPA used."
                 )
         return self
