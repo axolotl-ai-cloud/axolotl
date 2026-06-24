@@ -1066,7 +1066,7 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
                 LOG.error(f"Error parsing messages as JSON. Error: {e}")
                 raise
             assert isinstance(messages, list), (
-                f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(message)}"
+                f"For SFT datasets that are stored in `str` format, the turns must be saved in a list of dictionaries, got {type(messages)}"
             )
 
             # Extra check here to make sure decoded json is a list of dicts.
