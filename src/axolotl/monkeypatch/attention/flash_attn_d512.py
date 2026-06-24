@@ -318,7 +318,12 @@ def _bwd_dq(
 
 class _FlashD512(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, q, k, v, causal, position_ids):
+    def forward(ctx, q, k, v, causal, position_ids, scale=None):
+        # The backward kernels launch with q's strides only and reuse them for k/v/do/dk/dv. In real
+        # attention q is non-contiguous ([B,S,H,D].transpose(1,2)) while k/v are contiguous (e.g. GQA
+        # repeat_interleave); the mismatched strides make the backward read wrong memory and explode
+        # the gradient (forward is unaffected -- it passes each tensor's own strides). Force one layout.
+        q, k, v = q.contiguous(), k.contiguous(), v.contiguous()
         B, H, N, D = q.shape
         VARLEN = position_ids is not None
         if position_ids is None:
@@ -344,7 +349,7 @@ class _FlashD512(torch.autograd.Function):
             doc_end = pos
         o = torch.empty_like(q)
         L = torch.empty((B * H, N), device=q.device, dtype=torch.float32)
-        scale = D**-0.5
+        scale = D**-0.5 if scale is None else float(scale)
         BM, BN = 32, 32
         _fwd[(triton.cdiv(N, BM), B * H)](
             q,
@@ -441,8 +446,8 @@ class _FlashD512(torch.autograd.Function):
             num_warps=4,
             num_stages=1,
         )
-        return dq, dk, dv, None, None
+        return dq, dk, dv, None, None, None
 
 
-def flash_d512(q, k, v, causal=True, position_ids=None):
-    return _FlashD512.apply(q, k, v, causal, position_ids)
+def flash_d512(q, k, v, causal=True, position_ids=None, scale=None):
+    return _FlashD512.apply(q, k, v, causal, position_ids, scale)
