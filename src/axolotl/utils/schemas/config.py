@@ -181,6 +181,83 @@ class EBFTConfig(BaseModel):
     )
 
 
+class MemFTSlidingWindowConfig(BaseModel):
+    """MemFT-SW (sliding-window) hyper-parameters."""
+
+    kappa: float = Field(
+        default=1.0,
+        json_schema_extra={"description": "Soft-threshold sigmoid sharpness"},
+    )
+    tau: float = Field(
+        default=64.0,
+        gt=0.0,
+        json_schema_extra={"description": "Spatial exponential decay length"},
+    )
+    window: int = Field(
+        default=64,
+        ge=1,
+        json_schema_extra={
+            "description": "Sliding window length downstream of the first-error anchor"
+        },
+    )
+    floor: float = Field(
+        default=0.0,
+        ge=0.0,
+        json_schema_extra={
+            "description": "Floor weight for tokens beyond the sliding window (epsilon_floor)"
+        },
+    )
+
+
+class MemFTConfig(BaseModel):
+    """Configuration for MemFT (Memorization-oriented Fine-Tuning).
+
+    Token-weighted cross-entropy that redirects gradient budget toward
+    sub-threshold tokens. See arXiv:2605.30260.
+    """
+
+    variant: Literal["ot", "sw"] = Field(
+        default="ot",
+        json_schema_extra={
+            "description": "Weighting variant: 'ot' (only-threshold) or 'sw' (sliding-window)"
+        },
+    )
+    critical_loss: float | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Critical per-token loss L_crit (p=0.5 phase transition). Defaults to ln(2)~=0.6931"
+        },
+    )
+    epsilon: float = Field(
+        default=1e-8,
+        json_schema_extra={
+            "description": "Stabilizer added to the weight-sum normalizer"
+        },
+    )
+    fused: bool = Field(
+        default=False,
+        json_schema_extra={
+            "description": "Use the fused linear-cross-entropy kernel (variant 'ot' only) to avoid materializing logits"
+        },
+    )
+    fused_chunk_tokens: int | None = Field(
+        default=None,
+        ge=1,
+        json_schema_extra={
+            "description": "Token-chunk size for the fused kernel; None uses an element-budget heuristic (~2048 at the Llama-3 vocab). Larger = faster but higher peak memory."
+        },
+    )
+    sw: MemFTSlidingWindowConfig = Field(
+        default_factory=lambda: MemFTSlidingWindowConfig(),
+    )
+
+    @model_validator(mode="after")
+    def check_fused_variant(self):
+        if self.fused and self.variant != "ot":
+            raise ValueError("memft.fused is only supported with memft.variant: ot")
+        return self
+
+
 class AxolotlInputConfig(
     ModelInputConfig,
     ModelOutputConfig,
@@ -987,6 +1064,18 @@ class AxolotlInputConfig(
             "description": "Number of top logits for entropy approximation (default: 20)"
         },
     )
+    memft: MemFTConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Configuration for MemFT (Memorization-oriented Fine-Tuning) token-weighted loss"
+        },
+    )
+
+    @model_validator(mode="after")
+    def check_memft(self):
+        if self.memft and self.use_eaft:
+            raise ValueError("memft and use_eaft are mutually exclusive")
+        return self
 
     tiled_mlp: bool | None = Field(
         default=None,

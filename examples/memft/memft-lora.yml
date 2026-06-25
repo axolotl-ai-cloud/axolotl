@@ -1,0 +1,75 @@
+# MemFT (Memorization-oriented Fine-Tuning) — arXiv:2605.30260
+#
+# Token-weighted cross-entropy that redirects gradient budget toward
+# "sub-threshold" tokens (target probability still below the p=0.5 recall
+# threshold). Pairs naturally with LoRA used as a parametric memory unit.
+
+base_model: NousResearch/Meta-Llama-3.1-8B-Instruct
+
+load_in_8bit: false
+load_in_4bit: false
+strict: false
+
+chat_template: llama3
+datasets:
+  - path: tatsu-lab/alpaca
+    type: alpaca
+
+dataset_prepared_path:
+val_set_size: 0
+output_dir: ./outputs/memft-lora-llama3
+
+adapter: lora
+lora_r: 32
+lora_alpha: 16
+lora_dropout: 0.0
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# MemFT config object. The loss is computed inside a patched CausalLM forward
+# (llama-like architectures) so it stays packing-aware: under sample_packing the
+# label shift and the MemFT-SW anchor/window never cross sample boundaries.
+memft:
+  variant: ot          # 'ot' (only-threshold, no extra hyper-params) or 'sw' (sliding-window)
+  # critical_loss: 0.6931   # defaults to ln(2); the p=0.5 phase transition
+  # fused: true             # variant 'ot' only — fused linear-CE kernel, avoids materializing logits
+  # fused_chunk_tokens: 2048  # fused token-chunk; larger = faster but higher peak memory
+  # sw:                     # only used when variant: sw
+  #   kappa: 1.0
+  #   tau: 64.0
+  #   window: 64
+  #   floor: 0.0
+
+sequence_len: 2048
+sample_packing: false
+pad_to_sequence_len: true
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 3
+optimizer: adamw_torch_fused
+lr_scheduler: cosine
+learning_rate: 2e-4
+
+train_on_inputs: false
+group_by_length: false
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+
+logging_steps: 1
+flash_attention: true
+
+warmup_ratio: 0.1
+weight_decay: 0.0
+special_tokens:
+  pad_token: <|end_of_text|>
