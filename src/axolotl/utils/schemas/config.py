@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from axolotl.tui.config import TUIConfig
 from axolotl.utils.datasets import get_default_process_count
 from axolotl.utils.logging import get_logger
 from axolotl.utils.schemas.datasets import (
@@ -270,6 +271,12 @@ class AxolotlInputConfig(
         default=None,
         json_schema_extra={
             "description": "Configuration for Energy-Based Fine-Tuning (EBFT)"
+        },
+    )
+    tui: TUIConfig | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "TUI dashboard configuration. Set enabled: true to activate."
         },
     )
     qat: QATConfig | None = None
