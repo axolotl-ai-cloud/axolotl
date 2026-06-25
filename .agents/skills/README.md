@@ -34,6 +34,7 @@ signature drift. Full reference: [`liger-upstream-sync/SKILL.md`](liger-upstream
 **Trigger it** — in an assistant that auto-discovers skills, just describe the task;
 the skill matches on phrasings like:
 
+- "launch liger skill" / "launch the liger skill" / "run the liger sync skill"
 - "update the liger version" / "bump liger-kernel to X.X.X" (or no version) / "upgrade the liger dependency"
 - "help me bump liger — what breaks / what will it shadow?"
 - "audit the liger integration" / "check liger dispatch drift"
@@ -53,7 +54,7 @@ python .agents/skills/liger-upstream-sync/scripts/audit_liger_sync.py
 Exit code is `0` clean / `1` findings / `2` could-not-audit, so it can gate CI.
 
 **Analyze a new liger version when bumping the pin.** The simplest, most complete
-check is to just install the target version and re-run the plain audit so it runs 
+check is to just install the target version and re-run the plain audit so it runs
 the **full** check including `[4]` signature drift:
 
 ```bash
@@ -61,7 +62,7 @@ pip install -U "liger-kernel==0.8.0"   # the version you're bumping the pin to
 python .agents/skills/liger-upstream-sync/scripts/audit_liger_sync.py
 ```
 
-If you don't want to change your environment, preview the version's source 
+If you don't want to change your environment, preview the version's source
 without installing via `--liger-source`. This is keys-only, so signature-
 drift check `[4]` is skipped but `[1]`–`[3]` run normally:
 

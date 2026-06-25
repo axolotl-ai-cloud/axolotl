@@ -1,6 +1,6 @@
 ---
 name: liger-upstream-sync
-description: "Audits axolotl's Liger integration against liger-kernel to catch silent dispatch drift, and previews a liger version before bumping the pin. Use when bumping the liger-kernel version, when a Liger-patched model trains but loss/throughput looks off, when reviewing src/axolotl/integrations/liger/plugin.py, or when adding/removing a model from the hand-patch elif chain or axolotl_override_liger_fn set. Finds hand-patches that upstream now shadows with native dispatch, stale override-set entries, and glu-activation drift in the generic-path parameter probes."
+description: "Audits axolotl's Liger integration against liger-kernel to catch silent dispatch drift, and previews a liger version before bumping the pin. Use when asked to launch the liger skill or run the liger sync, when bumping the liger-kernel version, when a Liger-patched model trains but loss/throughput looks off, when reviewing src/axolotl/integrations/liger/plugin.py, or when adding/removing a model from the hand-patch elif chain or axolotl_override_liger_fn set. Finds hand-patches that upstream now shadows with native dispatch, stale override-set entries, and glu-activation drift in the generic-path parameter probes."
 ---
 
 # Liger upstream-sync
