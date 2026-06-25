@@ -17,6 +17,41 @@ module to get the state dict of a merged lora model
 """
 
 import torch
+
+
+# Thresholds and corresponding ranks: (min_samples, rank)
+# Derived from common practice: larger datasets benefit from higher rank.
+_RANK_THRESHOLDS = [
+    (100_000, 64),
+    (10_000, 32),
+    (1_000, 16),
+    (0, 8),
+]
+
+
+def recommend_lora_r(dataset_size: int) -> int:
+    """Return a recommended LoRA rank based on the number of training samples.
+
+    The heuristic uses log-scaled breakpoints:
+      - <  1 000 samples  → rank  8
+      - <  10 000 samples → rank 16
+      - < 100 000 samples → rank 32
+      - ≥ 100 000 samples → rank 64
+
+    Args:
+        dataset_size: Number of training samples (after any val split).
+
+    Returns:
+        Recommended ``lora_r`` value (always a power of two).
+    """
+    if dataset_size < 0:
+        raise ValueError(f"dataset_size must be non-negative, got {dataset_size}")
+    for min_samples, rank in _RANK_THRESHOLDS:
+        if dataset_size >= min_samples:
+            return rank
+    return 8  # unreachable, but satisfies type checkers
+
+
 from peft.tuners.tuners_utils import onload_layer
 from peft.utils import ModulesToSaveWrapper, _get_submodules
 
