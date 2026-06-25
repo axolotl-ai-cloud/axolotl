@@ -609,8 +609,10 @@ class AxolotlInputConfig(
             default=False,
             json_schema_extra={
                 "description": (
-                    "Whether to offload activations. Options: true/false, 'legacy', "
-                    "'disk' (TRL offloader), or 'hidden_states' (ALST-style: gradient "
+                    "Whether to offload activations. Options: true (TRL offloader, "
+                    "stream-overlapped), false, 'legacy' (TRL offloader, synchronous), "
+                    "'disk' (offload activations to disk via the Disco gradient "
+                    "checkpointer), or 'hidden_states' (ALST-style: gradient "
                     "checkpointing that offloads only the per-layer input to CPU, "
                     "overlapped with compute; best for long-context full finetuning)."
                 )

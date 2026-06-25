@@ -647,8 +647,7 @@ class PatchManager:
 
             transformers.modeling_utils.checkpoint = hf_grad_checkpoint_offload_wrapper
         elif (
-            self.cfg.gradient_checkpointing
-            and self.cfg.activation_offloading == "offload_disk"
+            self.cfg.gradient_checkpointing and self.cfg.activation_offloading == "disk"
         ):
             from axolotl.monkeypatch.gradient_checkpointing import (
                 hf_grad_checkpoint_disk_offload_wrapper,
