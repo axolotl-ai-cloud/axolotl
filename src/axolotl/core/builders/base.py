@@ -422,6 +422,11 @@ class TrainerBuilderBase(abc.ABC):
                 optimizer_cls = FlashLion
                 if "betas" in adam_kwargs:
                     optimizer_kwargs["betas"] = adam_kwargs["betas"]
+            elif self.cfg.optimizer == "gefen":
+                from gefen import Gefen
+
+                optimizer_cls = Gefen
+                optimizer_kwargs.update(adam_kwargs)
             else:
                 raise ValueError(
                     f"Unhandled optimizer: {self.cfg.optimizer}. Please raise an Issue."
