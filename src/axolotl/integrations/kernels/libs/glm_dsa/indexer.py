@@ -144,23 +144,33 @@ def indexer_topk(
     index_topk: int,
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
+    seq_q: torch.Tensor | None = None,
+    seq_k: torch.Tensor | None = None,
+    q_offset: int = 0,
 ) -> torch.Tensor:
     """Fused indexer scoring + causal mask + top-k. Returns int32 indices [B,S,topk].
 
     ``attention_mask`` (additive, broadcastable to [B,S,T]) is added if given; otherwise a causal
     mask from ``position_ids`` (or arange) is applied. Mirrors GlmMoeDsaIndexer's masking + topk.
+
+    Under sample packing, ``seq_q`` [B,S] / ``seq_k`` [B,T] give each query/key its document id;
+    the mask then forbids cross-document keys (a key in an earlier packed document is causally
+    "before" the query by global index but must not be attended). ``q_offset`` shifts local query
+    indices to global positions (context parallel). The selected indices still rank same-document
+    keys first; the attention kernel re-applies the same document mask (``mla_attn`` forces the
+    dense path under packing) so cross-document keys returned when ``topk == T`` are dropped.
     """
     scores = indexer_scores(q, k, weights, softmax_scale)  # [B,S,T]
     B, S, T = scores.shape
-    if attention_mask is not None:
+    packed = seq_q is not None and seq_k is not None
+    if attention_mask is not None and not packed:
         scores = scores + attention_mask.to(scores.dtype)
     else:
         kpos = torch.arange(T, device=scores.device)
-        if position_ids is None:
-            position_ids = (
-                torch.arange(S, device=scores.device).unsqueeze(0).expand(B, S)
-            )
-        causal = kpos[None, None, :] > position_ids[:, :, None]
+        qpos = q_offset + torch.arange(S, device=scores.device)
+        causal = kpos[None, None, :] > qpos[None, :, None]
+        if seq_q is not None and seq_k is not None:
+            causal = causal | (seq_k[:, None, :] != seq_q[:, :, None])
         scores = scores.masked_fill(causal, float("-inf"))
     topk = min(index_topk, T)
     return scores.topk(topk, dim=-1).indices.to(torch.int32)

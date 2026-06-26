@@ -12,6 +12,7 @@
    on sm90 (so autotune never trials the rest) while leaving other archs to normal SMEM pruning.
 """
 
+import os
 from unittest import mock
 
 import torch
@@ -90,3 +91,55 @@ def test_sm90_bwd_prune_collapses_to_single_config():
         assert len(kept_sm120) > 1, (
             "non-sm90 keeps the full SMEM-pruned grid for autotuning"
         )
+
+
+def test_gather_supported_sm90_sm120_and_disable_override():
+    """The sparse gather is enabled on sm90 (Hopper) and sm120; unlisted archs fall back to dense;
+    ``GLM_DSA_DISABLE_GATHER`` forces dense everywhere."""
+    from axolotl.integrations.kernels.libs.glm_dsa import dispatch as D
+
+    dev = torch.device("cuda:0")
+    for cap, expected in [
+        ((9, 0), True),
+        ((12, 0), True),
+        ((8, 0), False),
+        ((10, 0), False),
+    ]:
+        D._GATHER_OK.clear()
+        with mock.patch.object(torch.cuda, "get_device_capability", return_value=cap):
+            assert D._gather_supported(dev) is expected, f"cap {cap}"
+    D._GATHER_OK.clear()
+    with mock.patch.dict(os.environ, {"GLM_DSA_DISABLE_GATHER": "1"}):
+        with mock.patch.object(
+            torch.cuda, "get_device_capability", return_value=(9, 0)
+        ):
+            assert D._gather_supported(dev) is False  # override wins
+
+
+def test_mla_attn_routes_to_gather_under_packing_and_forwards_seq():
+    """Above the crossover the sparse gather is used EVEN under sample packing (it is doc-aware), and
+    ``seq_q``/``seq_k`` are forwarded to it; when the gather is unsupported, dense is used."""
+    from axolotl.integrations.kernels.libs.glm_dsa import dispatch as D
+
+    qa = torch.zeros(1, 4, 8, 576)
+    ks = torch.zeros(1, 8, 576)
+    idx = torch.zeros(1, 8, 4, dtype=torch.int64)
+    seq = torch.zeros(1, 8, dtype=torch.int64)
+
+    with (
+        mock.patch.object(D, "mla_absorb_attn", return_value="GATHER") as mg,
+        mock.patch.object(D, "dense_masked_out_latent", return_value="DENSE"),
+        mock.patch.object(D, "_gather_supported", return_value=True),
+        mock.patch.object(D, "calibrate_crossover", return_value=0),
+    ):
+        out = D.mla_attn(qa, ks, idx, 1.0, seq_q=seq, seq_k=seq)
+        assert out == "GATHER"  # packing no longer forces dense
+        # seq_q / seq_k forwarded as the last two positional args
+        assert mg.call_args.args[-2] is seq and mg.call_args.args[-1] is seq
+
+    with (
+        mock.patch.object(D, "dense_masked_out_latent", return_value="DENSE"),
+        mock.patch.object(D, "_gather_supported", return_value=False),
+        mock.patch.object(D, "calibrate_crossover", return_value=0),
+    ):
+        assert D.mla_attn(qa, ks, idx, 1.0, seq_q=seq, seq_k=seq) == "DENSE"

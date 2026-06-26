@@ -29,6 +29,9 @@ def fused_indexer_topk(
     attention_mask,
     position_ids,
     group=None,
+    seq_q=None,
+    seq_k=None,
+    q_offset=0,
 ):
     """Replicates GlmMoeDsaIndexer.forward with the fused scorer (collapses the [B,S,32,T] reduction
     to [B,S,T], the long-context memory win). Forward-only. Under context parallel (``group`` set),
@@ -78,16 +81,34 @@ def fused_indexer_topk(
 
 
 def _full(t):
-    """All-gather a FSDP2 DTensor param to a plain tensor (kv_b_proj is sharded under dp_shard; the
-    absorption arithmetic must mix plain tensors, not DTensor+Tensor). No-op for plain tensors."""
+    """All-gather a FSDP2 DTensor param to a plain tensor (sharded weights can't mix with plain in
+    the absorption arithmetic). No-op for plain tensors."""
     return t.full_tensor() if type(t).__name__ == "DTensor" else t
+
+
+def _seq_idx_from_position_ids(position_ids):
+    """Per-token document id [B,S] under sample packing, or ``None`` if not packed.
+
+    Multipack resets ``position_ids`` to 0 at each packed document's start, so a non-increasing
+    step marks a boundary; ``cumsum(position_ids == 0)`` numbers the documents. Returns ``None``
+    when ``position_ids`` is absent or strictly increasing (a single unpacked sequence) so the
+    fast sparse path is preserved for ordinary long-context training."""
+    if position_ids is None:
+        return None
+    if position_ids.dim() == 1:
+        position_ids = position_ids.unsqueeze(0)
+    if (
+        position_ids.shape[1] < 2
+        or not (position_ids[:, 1:] <= position_ids[:, :-1]).any()
+    ):
+        return None
+    return (position_ids == 0).to(torch.int32).cumsum(-1)
 
 
 def effective_weight(linear) -> torch.Tensor:
     """The weight the projection actually applies, differentiable wrt trainable params:
-    full-parameter -> ``linear.weight``; PEFT-LoRA -> ``base.weight + Σ scaling·(B @ A)`` so the
-    absorption flows gradients to the adapter. Operands are all-gathered to plain tensors so it
-    works under FSDP2 (sharded DTensor weights). Falls back to ``.weight``."""
+    full-parameter -> ``linear.weight``; PEFT-LoRA -> ``base.weight + scaling·(Bᵀ? )`` delta so the
+    absorption flows gradients to the adapter. Falls back to ``.weight``."""
     if hasattr(linear, "base_layer"):  # PEFT LoRA layer
         w = _full(linear.base_layer.weight)
         active = getattr(linear, "active_adapters", None) or list(
@@ -137,15 +158,23 @@ def _glm_dsa_attention_forward(
         q_rot, k_rot, cos, sin
     )  # [B,H,S,64],[B,1,S,64]
 
+    # Per-document ids under sample packing (None for ordinary sequences). seq_q is the local
+    # queries' doc ids; seq_k is the keys' doc ids (gathered across CP so it aligns with k_shared).
+    seq_q = _seq_idx_from_position_ids(position_ids)
+    seq_k = seq_q
+    if seq_q is not None and cp:
+        seq_k = all_gather_seq(seq_q.unsqueeze(-1), group).squeeze(-1)
+
     # DSA top-k: this layer's own indexer (full) or the previous full layer's selection (shared).
     # Under CP the indexer gathers global keys; topk indices reference GLOBAL key positions.
+    packed = seq_q is not None
     if self.indexer is not None:
         idx_mask = (
             attention_mask[:, 0, :, :]
-            if (attention_mask is not None and not cp)
+            if (attention_mask is not None and not cp and not packed)
             else None
         )
-        if cp or getattr(self, "_use_fused_indexer", False):
+        if cp or packed or getattr(self, "_use_fused_indexer", False):
             topk_indices = fused_indexer_topk(
                 self.indexer,
                 hidden_states,
@@ -154,6 +183,9 @@ def _glm_dsa_attention_forward(
                 idx_mask,
                 position_ids,
                 group=group if cp else None,
+                seq_q=seq_q,
+                seq_k=seq_k,
+                q_offset=(rank * S if cp else 0),
             )
         else:
             topk_indices = self.indexer(
@@ -177,7 +209,13 @@ def _glm_dsa_attention_forward(
         k_shared = all_gather_seq(k_shared, group)  # [B,S_global,576] (differentiable)
         q_offset = rank * S
     out_latent = mla_attn(
-        q_abs, k_shared, topk_indices, self.scaling, q_offset=q_offset
+        q_abs,
+        k_shared,
+        topk_indices,
+        self.scaling,
+        q_offset=q_offset,
+        seq_q=seq_q,
+        seq_k=seq_k,
     )
     attn = project_value(out_latent, w_kb_v)  # [B,H,S,v_head]
     attn = attn.transpose(1, 2).reshape(B, S, -1).contiguous()
