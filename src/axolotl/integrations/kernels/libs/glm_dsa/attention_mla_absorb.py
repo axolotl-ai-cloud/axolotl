@@ -114,10 +114,17 @@ def _absorb_fwd_kernel(
     sl_b,
     sl_h,
     sl_s,
+    SEQQ,
+    SEQK,
+    ssq_b,
+    ssq_s,
+    ssk_b,
+    ssk_s,
     DL: tl.constexpr,  # kv_lora_rank (=value latent dim), power of 2
     DR: tl.constexpr,  # qk_rope_head_dim, power of 2
     BH: tl.constexpr,
     BN: tl.constexpr,
+    HAS_DOC: tl.constexpr,  # sample-packing: forbid cross-document keys
 ):
     # S on axis 0 (X, up to 2^31-1); CUDA caps grid Y/Z at 65535 so S must not be on Y/Z.
     s = tl.program_id(0)
@@ -143,6 +150,7 @@ def _absorb_fwd_kernel(
     s_global = (
         s + q_offset
     )  # CP: query's global position for the causal check (q_offset=0 single-GPU)
+    seqq_s = tl.load(SEQQ + b * ssq_b + s * ssq_s) if HAS_DOC else 0
     for t0 in range(0, TOPK, BN):
         offs_t = t0 + tl.arange(0, BN)
         tmask = offs_t < TOPK
@@ -150,6 +158,9 @@ def _absorb_fwd_kernel(
             IDX + b * si_b + s * si_s + offs_t * si_t, mask=tmask, other=0
         ).to(tl.int64)
         valid = tmask & (idx <= s_global)
+        if HAS_DOC:
+            seqk = tl.load(SEQK + b * ssk_b + idx * ssk_s, mask=tmask, other=-1)
+            valid = valid & (seqk == seqq_s)
 
         # gather the shared KV once: c_kv [BN, DL] (also the value latent) + k_rot [BN, DR]
         base_k = KSH + b * sks_b + idx[:, None] * sks_s
@@ -163,16 +174,45 @@ def _absorb_fwd_kernel(
         scores = tl.where(valid[None, :], scores * scale, -float("inf"))  # [BH, BN]
 
         m_new = tl.maximum(m_i, tl.max(scores, axis=1))
-        p = tl.exp(scores - m_new[:, None])  # [BH, BN]
-        alpha = tl.exp(m_i - m_new)
+        # A query whose leading topk block is entirely causally/doc-masked has m_new == -inf, so
+        # exp(m_i - m_new) = exp(-inf + inf) = NaN. Subtract a finite max (0 there; all scores are
+        # -inf so every p is exp(-inf)=0 regardless) — matches the dense path on masked rows.
+        m_safe = tl.where(m_new == -float("inf"), 0.0, m_new)
+        p = tl.exp(scores - m_safe[:, None])  # [BH, BN]
+        alpha = tl.exp(m_i - m_safe)
         l_i = l_i * alpha + tl.sum(p, axis=1)
         acc = acc * alpha[:, None] + tl.dot(p.to(c_kv.dtype), c_kv)
         m_i = m_new
 
-    acc = acc / l_i[:, None]
+    acc = (
+        acc / tl.where(l_i == 0.0, 1.0, l_i)[:, None]
+    )  # fully-masked query -> 0 output (loss masked)
     o_ptr = OUT + b * so_b + offs_h[:, None] * so_h + s * so_s + offs_l[None, :] * so_d
     tl.store(o_ptr, acc.to(OUT.dtype.element_ty), mask=hmask[:, None])
     tl.store(LSE + b * sl_b + offs_h * sl_h + s * sl_s, m_i + tl.log(l_i), mask=hmask)
+
+
+def _bwd_prune_sm90_safe(configs, named_args, **kwargs):
+    """sm90 (Hopper) trips a nondeterministic invalid-PC (CUDA 718) while autotune trials the full
+    bwd grid (each config is individually clean — it's the trialing that corrupts the context). Force
+    a single sanitizer-clean config there; elsewhere fall back to SMEM pruning."""
+    import torch
+
+    base = smem_prune(_bwd_smem)
+    kept = base(configs, named_args, **kwargs)
+    if torch.cuda.get_device_capability() == (9, 0):
+        safe = [
+            c
+            for c in kept
+            if c.kwargs.get("BH") == 32
+            and c.kwargs.get("BN") == 64
+            and c.num_warps == 8
+            and c.num_stages == 3
+        ]
+        if safe:
+            return safe[:1]
+        return sorted(kept, key=lambda c: (c.kwargs.get("BN", 0), c.num_stages))[:1]
+    return kept
 
 
 @triton.autotune(
@@ -181,7 +221,7 @@ def _absorb_fwd_kernel(
     reset_to_zero=[
         "DKSH"
     ],  # dk_shared is atomic-accumulated across positions + head-tiles
-    prune_configs_by={"early_config_prune": smem_prune(_bwd_smem)},
+    prune_configs_by={"early_config_prune": _bwd_prune_sm90_safe},
 )
 @triton.jit
 def _absorb_bwd_kernel(
@@ -215,10 +255,17 @@ def _absorb_bwd_kernel(
     sl_b,
     sl_h,
     sl_s,
+    SEQQ,
+    SEQK,
+    ssq_b,
+    ssq_s,
+    ssk_b,
+    ssk_s,
     DL: tl.constexpr,
     DR: tl.constexpr,
     BH: tl.constexpr,
     BN: tl.constexpr,
+    HAS_DOC: tl.constexpr,
 ):
     # S on axis 0 (X, up to 2^31-1); CUDA caps grid Y/Z at 65535 so S must not be on Y/Z.
     s = tl.program_id(0)
@@ -247,6 +294,7 @@ def _absorb_bwd_kernel(
     delta = tl.sum(dout_l.to(tl.float32) * out_l, axis=1)  # [BH]
 
     s_global = s + q_offset
+    seqq_s = tl.load(SEQQ + b * ssq_b + s * ssq_s) if HAS_DOC else 0
     dqn = tl.zeros((BH, DL), tl.float32)
     dqr = tl.zeros((BH, DR), tl.float32)
     for t0 in range(0, TOPK, BN):
@@ -256,6 +304,9 @@ def _absorb_bwd_kernel(
             IDX + b * si_b + s * si_s + offs_t * si_t, mask=tmask, other=0
         ).to(tl.int64)
         valid = tmask & (idx <= s_global)
+        if HAS_DOC:
+            seqk = tl.load(SEQK + b * ssk_b + idx * ssk_s, mask=tmask, other=-1)
+            valid = valid & (seqk == seqq_s)
         base_k = KSH + b * sks_b + idx[:, None] * sks_s
         c_kv = tl.load(base_k + offs_l[None, :] * sks_d, mask=valid[:, None], other=0.0)
         k_rot = tl.load(
@@ -264,7 +315,10 @@ def _absorb_bwd_kernel(
 
         score = tl.dot(qn, tl.trans(c_kv)) + tl.dot(qr, tl.trans(k_rot))
         score = tl.where(valid[None, :], score * scale, -float("inf"))
-        p = tl.exp(score - lse[:, None])  # [BH, BN]
+        lse_safe = tl.where(
+            lse == -float("inf"), 0.0, lse
+        )  # fully-masked query: avoid exp(-inf+inf)=NaN
+        p = tl.exp(score - lse_safe[:, None])  # [BH, BN]
         dp = tl.dot(dout_l, tl.trans(c_kv))  # [BH, BN] = dout_latent·c_kv
         ds = (p * (dp - delta[:, None])) * scale  # [BH, BN]  grad wrt scaled score
         ds_b = ds.to(c_kv.dtype)
@@ -307,7 +361,9 @@ def _grid_fn(B, S, H):
 
 class _MlaAbsorbAttn(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, q_abs, k_shared, topk_idx, scale, q_offset):
+    def forward(
+        ctx, q_abs, k_shared, topk_idx, scale, q_offset, seq_q=None, seq_k=None
+    ):
         B, H, S, _ = (
             q_abs.shape
         )  # S = local queries; k_shared may be longer (global, under CP)
@@ -315,6 +371,20 @@ class _MlaAbsorbAttn(torch.autograd.Function):
         TOPK = topk_idx.shape[-1]
         q_abs, k_shared = q_abs.contiguous(), k_shared.contiguous()
         idx = topk_idx.contiguous()
+        has_doc = seq_q is not None and seq_k is not None
+        if has_doc:
+            seq_q = seq_q.contiguous()
+            seq_k = seq_k.contiguous()
+            doc_args = (
+                seq_q,
+                seq_k,
+                seq_q.stride(0),
+                seq_q.stride(1),
+                seq_k.stride(0),
+                seq_k.stride(1),
+            )
+        else:
+            doc_args = (idx, idx, 0, 0, 0, 0)
         out = torch.empty(B, H, S, DV, device=q_abs.device, dtype=q_abs.dtype)
         lse = torch.empty(B, H, S, device=q_abs.device, dtype=torch.float32)
         _absorb_fwd_kernel[_grid_fn(B, S, H)](
@@ -345,17 +415,32 @@ class _MlaAbsorbAttn(torch.autograd.Function):
             lse.stride(0),
             lse.stride(1),
             lse.stride(2),
+            *doc_args,
             DL=KV_LORA_RANK,
             DR=QK_ROPE_HEAD_DIM,
+            HAS_DOC=has_doc,
         )
-        ctx.save_for_backward(q_abs, k_shared, idx, out, lse)
+        ctx.save_for_backward(q_abs, k_shared, idx, out, lse, doc_args[0], doc_args[1])
         ctx.scale = float(scale)
         ctx.q_offset = int(q_offset)
+        ctx.has_doc = has_doc
         return out
 
     @staticmethod
     def backward(ctx, dout):
-        q_abs, k_shared, idx, out, lse = ctx.saved_tensors
+        q_abs, k_shared, idx, out, lse, seq_q, seq_k = ctx.saved_tensors
+        has_doc = ctx.has_doc
+        if has_doc:
+            doc_args = (
+                seq_q,
+                seq_k,
+                seq_q.stride(0),
+                seq_q.stride(1),
+                seq_k.stride(0),
+                seq_k.stride(1),
+            )
+        else:
+            doc_args = (idx, idx, 0, 0, 0, 0)
         B, H, S, DQk = q_abs.shape
         Skv = k_shared.shape[1]  # global key count (>= S under CP)
         TOPK = idx.shape[-1]
@@ -394,18 +479,24 @@ class _MlaAbsorbAttn(torch.autograd.Function):
             lse.stride(0),
             lse.stride(1),
             lse.stride(2),
+            *doc_args,
             DL=KV_LORA_RANK,
             DR=QK_ROPE_HEAD_DIM,
+            HAS_DOC=has_doc,
         )
-        return dq_abs, dk_shared.to(k_shared.dtype), None, None, None
+        return dq_abs, dk_shared.to(k_shared.dtype), None, None, None, None, None
 
 
-def mla_absorb_attn(q_abs, k_shared, topk_idx, scale, q_offset=0):
+def mla_absorb_attn(
+    q_abs, k_shared, topk_idx, scale, q_offset=0, seq_q=None, seq_k=None
+):
     """Differentiable head-batched MLA-absorption sparse attention. q_abs [B,H,S,576] (local
     queries), k_shared [B,Skv,576] (first kv_lora cols = c_kv; Skv>=S under context parallel),
     topk_idx [B,S,T] int32 referencing GLOBAL key positions. ``q_offset`` is the global position of
     local query 0 (for causal masking under CP). Returns out_latent [B,H,S,kv_lora]."""
-    return _MlaAbsorbAttn.apply(q_abs, k_shared, topk_idx, scale, q_offset)
+    return _MlaAbsorbAttn.apply(
+        q_abs, k_shared, topk_idx, scale, q_offset, seq_q, seq_k
+    )
 
 
 def mla_absorb_attn_fwd(q_abs, k_shared, topk_idx, scale, q_offset=0):
