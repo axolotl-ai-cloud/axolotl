@@ -25,6 +25,16 @@ from .buffer import get_buffer
 # padding from the dispatch. ``None`` when there is no padding (packed / no attention_mask).
 _VALID_TOKEN_MASK: torch.Tensor | None = None
 
+# Max tokens routed to any single expert per forward (``expert_parallel_token_capacity``), set by the
+# EP plugin. ``None`` disables the cap. Overloaded experts deadlock DeepEP's intranode combine, so
+# GLM-style routers (concentration grows with depth) need this.
+_TOKEN_CAPACITY: int | None = None
+
+
+def set_token_capacity(cap: int | None) -> None:
+    global _TOKEN_CAPACITY
+    _TOKEN_CAPACITY = cap
+
 
 def _apply_expert_capacity(topk_idx, topk_w, cap):
     """Cap tokens-per-expert to ``cap`` by sentinelling (-1) the lowest-weight excess (token,expert)
@@ -251,6 +261,11 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
 
     topk_idx_i64 = top_k_index.to(torch.int64)
     topk_w_f32 = top_k_weights.to(torch.float32)
+
+    # Cap tokens-per-expert before building the dispatch layout — an overloaded expert deadlocks
+    # DeepEP's intranode combine (the GLM router concentrates with depth).
+    if _TOKEN_CAPACITY is not None:
+        topk_idx_i64 = _apply_expert_capacity(topk_idx_i64, topk_w_f32, _TOKEN_CAPACITY)
 
     # Drop padding tokens from the dispatch. Under non-packed training with
     # `pad_to_sequence_len`, padding rows carry identical embeddings, so the router

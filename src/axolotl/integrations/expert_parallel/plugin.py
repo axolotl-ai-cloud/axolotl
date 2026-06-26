@@ -75,6 +75,9 @@ class ExpertParallelPlugin(BasePlugin):
             num_nvl_bytes=cfg.expert_parallel_num_nvl_bytes,
             num_rdma_bytes=cfg.expert_parallel_num_rdma_bytes,
         )
+        from .experts_fn import set_token_capacity
+
+        set_token_capacity(getattr(cfg, "expert_parallel_token_capacity", None))
         # Pure-EP path: register the grad-scale hook now. FSDP+EP defers
         # registration to `fully_shard_experts` (after experts become DTensors).
         if (cfg.dp_shard_size or 1) <= 1:

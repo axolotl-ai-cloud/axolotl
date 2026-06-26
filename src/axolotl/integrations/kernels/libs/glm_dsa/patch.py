@@ -77,6 +77,9 @@ def fused_indexer_topk(
         indexer.index_topk,
         attention_mask,
         position_ids,
+        seq_q=seq_q,
+        seq_k=seq_k,
+        q_offset=q_offset,
     )
 
 

@@ -83,6 +83,7 @@ weight_decay: 0.0
 fsdp_version: 2
 fsdp_config:
   offload_params: false
+  cpu_ram_efficient_loading: true   # required: rank0-only NVFP4 load + FSDP broadcast fills the rest
   state_dict_type: SHARDED_STATE_DICT
   auto_wrap_policy: TRANSFORMER_BASED_WRAP
   transformer_layer_cls_to_wrap: GlmMoeDsaDecoderLayer

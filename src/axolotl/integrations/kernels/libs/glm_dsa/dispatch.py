@@ -144,10 +144,17 @@ def mla_attn(
     instead of falling back to the dense per-document mask."""
     Skv = k_shared.shape[1]
     topk = topk_idx.shape[-1]
-    if crossover is None:
-        crossover = calibrate_crossover(topk, q_abs.shape[1], q_abs.dtype, q_abs.device)
-    if Skv >= crossover and _gather_supported(q_abs.device):
-        return mla_absorb_attn(q_abs, k_shared, topk_idx, scale, q_offset, seq_q, seq_k)
+    # Check arch support BEFORE calibrating — calibrate_crossover benchmarks the gather, so on an
+    # unsupported GPU calibration would itself compile/run the gather Triton path we're avoiding.
+    if _gather_supported(q_abs.device):
+        if crossover is None:
+            crossover = calibrate_crossover(
+                topk, q_abs.shape[1], q_abs.dtype, q_abs.device
+            )
+        if Skv >= crossover:
+            return mla_absorb_attn(
+                q_abs, k_shared, topk_idx, scale, q_offset, seq_q, seq_k
+            )
     return dense_masked_out_latent(
         q_abs, k_shared, topk_idx, scale, q_offset, seq_q, seq_k
     )

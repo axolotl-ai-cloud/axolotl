@@ -13,8 +13,10 @@
 """
 
 import os
+from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 import torch
 
 from axolotl.integrations.expert_parallel.experts_fn import _apply_expert_capacity
@@ -143,3 +145,58 @@ def test_mla_attn_routes_to_gather_under_packing_and_forwards_seq():
         mock.patch.object(D, "calibrate_crossover", return_value=0),
     ):
         assert D.mla_attn(qa, ks, idx, 1.0, seq_q=seq, seq_k=seq) == "DENSE"
+
+
+def test_deep_ep_forward_applies_token_capacity():
+    """The capacity cap must actually be applied to the routing before the dispatch layout is built
+    (regression: the cap function existed but was never called)."""
+    from axolotl.integrations.expert_parallel import experts_fn as E
+
+    captured = {}
+
+    class _FakeBuf:
+        def get_dispatch_layout(self, topk_idx, e_global):
+            captured["topk"] = topk_idx.clone()
+            raise RuntimeError("stop")  # short-circuit the rest of the forward
+
+    ntok, K, e_global = 64, 2, 8
+    topk = torch.zeros(
+        ntok, K, dtype=torch.int64
+    )  # column 0 -> expert 0 for ALL tokens
+    topk[:, 1] = 1
+    w = torch.rand(ntok, K)
+    self_mod = SimpleNamespace(num_experts=e_global, num_experts_global=e_global)
+
+    E.set_token_capacity(4)
+    try:
+        with (
+            mock.patch.object(E, "get_buffer", return_value=_FakeBuf()),
+            mock.patch.object(E, "_get_valid_token_mask", return_value=None),
+        ):
+            with pytest.raises(RuntimeError, match="stop"):
+                E._deep_ep_forward(
+                    self_mod, torch.zeros(ntok, 16), topk, w, kernel_name="eager"
+                )
+    finally:
+        E.set_token_capacity(None)
+
+    # expert 0 was requested by all 64 tokens; the cap must hold it to <= 4
+    assert int((captured["topk"] == 0).sum()) <= 4
+
+
+def test_mla_attn_skips_calibration_when_gather_unsupported():
+    """On an unsupported GPU mla_attn must NOT call calibrate_crossover (it would compile/run the
+    gather Triton path we are avoiding)."""
+    from axolotl.integrations.kernels.libs.glm_dsa import dispatch as D
+
+    qa = torch.zeros(1, 4, 8, 576)
+    ks = torch.zeros(1, 8, 576)
+    idx = torch.zeros(1, 8, 4, dtype=torch.int64)
+    calib = mock.MagicMock(return_value=0)
+    with (
+        mock.patch.object(D, "dense_masked_out_latent", return_value="DENSE"),
+        mock.patch.object(D, "_gather_supported", return_value=False),
+        mock.patch.object(D, "calibrate_crossover", calib),
+    ):
+        assert D.mla_attn(qa, ks, idx, 1.0) == "DENSE"
+    calib.assert_not_called()

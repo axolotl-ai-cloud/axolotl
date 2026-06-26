@@ -44,6 +44,13 @@ def _nvfp4_cls():
         return None
 
 
+# Set True only by patch_conversion_loader_rank0_only() (installed solely under FSDP
+# cpu_ram_efficient_loading). Gates the converter meta-load so non-rank-0 stays on meta ONLY when the
+# FSDP broadcast will later fill it — otherwise (e.g. DDP, or the example without the flag) every rank
+# loads real weights as normal.
+_RANK0_ONLY_ACTIVE = False
+
+
 def _nonrank0_meta_load() -> bool:
     """True when cpu_ram_efficient broadcast loading wants this rank to stay on meta.
 
@@ -53,7 +60,7 @@ def _nonrank0_meta_load() -> bool:
     META params; FSDP's ``fsdp2_load_full_state_dict`` then broadcasts rank 0's real weights.
     (With the ``_materialize_copy`` patch active the converter already receives meta inputs; this
     stays as a defensive second gate.)"""
-    return _is_nonrank0_process()
+    return _RANK0_ONLY_ACTIVE and _is_nonrank0_process()
 
 
 def _to_meta(t):
@@ -89,6 +96,9 @@ def patch_conversion_loader_rank0_only() -> None:
     (cheap, shared OS page cache) but the copy is dropped to meta, so non-rank-0 never accumulates.
     Install ONLY when cpu_ram_efficient broadcast loading is active, else it would starve DDP ranks
     that each need their own real weights. Idempotent."""
+    global _RANK0_ONLY_ACTIVE
+    _RANK0_ONLY_ACTIVE = True
+
     import os
 
     import torch as _torch
