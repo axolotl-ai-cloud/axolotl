@@ -29,6 +29,8 @@ strict: false
 ddp_find_unused_parameters: true
 
 chat_template: gemma4
+eot_tokens:
+  - "<turn|>"
 datasets:
   - path: mlabonne/FineTome-100k
     type: chat_template
