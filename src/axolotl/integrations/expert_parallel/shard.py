@@ -62,6 +62,11 @@ def _detect_experts_modules(model):
     for v1.
     """
     for name, module in model.named_modules():
+        # A PEFT ParamWrapper delegates `gate_up_proj` to its `base_layer`, so it
+        # would match too and double-count the experts (double grad-scale, redundant
+        # fully_shard). Yield only the real experts module (the wrapped base_layer).
+        if _is_param_wrapper(module):
+            continue
         gp = getattr(module, "gate_up_proj", None)
         dp = getattr(module, "down_proj", None)
         if gp is None or dp is None:
@@ -164,3 +169,312 @@ def shard_expert_weights(model, ep_group) -> int:
             f"Marked {len(ignore_names)} param(s) as DDP-ignored."
         )
     return sharded
+
+
+def _is_param_wrapper(module) -> bool:
+    """True for a PEFT ParamWrapper, including after ``fully_shard`` renames its class
+    (e.g. ``FSDPParamWrapper``) — FSDP2 sets ``__class__`` to a subclass, so ``isinstance``
+    still holds while a ``type(...).__name__ == 'ParamWrapper'`` check would miss it."""
+    try:
+        from peft.tuners.lora.layer import ParamWrapper
+
+        if isinstance(module, ParamWrapper):
+            return True
+    except (ImportError, AttributeError):
+        pass
+    return "ParamWrapper" in type(module).__name__
+
+
+def _real_experts_base(wrapper):
+    """Walk a (possibly chained) PEFT ParamWrapper down to the real experts module."""
+    base = getattr(wrapper, "base_layer", None)
+    while base is not None and _is_param_wrapper(base):
+        base = getattr(base, "base_layer", None)
+    return base
+
+
+def _slice_expert_lora_param(linear, dim: int, e_global: int, start: int, end: int):
+    """Replace ``linear.weight`` with its local-experts slice.
+
+    ``dim`` is the axis carrying the ``E*r`` packing:
+      * lora_A: ``[E*r, in]`` expert-major  -> slice rows ``[start*r:end*r]`` (dim 0).
+      * lora_B: ``[out, r*E]`` rank-major    -> reshape ``[out, r, E]``, take experts, flatten.
+    Returns the rank ``r`` (so the caller can keep ``in_features``/``out_features`` consistent).
+    """
+    w = linear.weight
+    if dim == 0:  # lora_A: expert-major rows
+        r = w.shape[0] // e_global
+        new = w.data[start * r : end * r, :].detach().clone()
+        linear.out_features = new.shape[0]
+    else:  # lora_B: rank-major columns [out, r, E]
+        out_dim = w.shape[0]
+        r = w.shape[1] // e_global
+        new = (
+            w.data.reshape(out_dim, r, e_global)[:, :, start:end]
+            .reshape(out_dim, r * (end - start))
+            .detach()
+            .clone()
+        )
+        linear.in_features = new.shape[1]
+    linear.weight = torch.nn.Parameter(new, requires_grad=w.requires_grad)
+    return r
+
+
+def shard_expert_lora(model, ep_size: int) -> int:
+    """Slice PEFT ``target_parameters`` expert LoRA to each rank's local experts.
+
+    PEFT sizes the LoRA for a 3D ``experts.{gate_up,down}_proj`` from the parameter's
+    own dim-0 (the *global* expert count) at adapter-application time, before EP's
+    weight slice takes effect on the parameter PEFT wrapped. Left alone, the fused
+    EP kernel (``num_experts = E_local``) and the FSDP2 parametrize merge both see a
+    full-expert LoRA against a local-expert weight -> shape mismatch. This realigns
+    the LoRA with the EP-sharded weights (same ``[offset:offset+E_local]`` slice) and
+    registers the ``1/ep_size`` expert grad-scale on the new params. Idempotent.
+
+    Run AFTER PEFT applies the adapter and BEFORE FSDP wraps. Returns the count of
+    LoRA params sliced.
+    """
+    if ep_size <= 1:
+        return 0
+
+    scale = 1.0 / ep_size
+
+    def _scale_hook(p):
+        if p.grad is not None:
+            p.grad.mul_(scale)
+
+    n = 0
+    for _name, wrapper in model.named_modules():
+        if not _is_param_wrapper(wrapper):
+            continue
+        if getattr(wrapper, "_ep_lora_sharded", False):
+            continue
+        base = _real_experts_base(wrapper)
+        e_local = getattr(base, "num_local_experts", None) if base is not None else None
+        e_global = (
+            getattr(base, "num_experts_global", None) if base is not None else None
+        )
+        if e_local is None or e_global is None or e_local >= e_global:
+            continue
+        start = base.local_expert_offset
+        end = start + e_local
+
+        for adapters, dim in (
+            (getattr(wrapper, "lora_A", {}), 0),
+            (getattr(wrapper, "lora_B", {}), 1),
+        ):
+            for ad in list(adapters.keys()):
+                _slice_expert_lora_param(adapters[ad], dim, e_global, start, end)
+                adapters[ad].weight.register_post_accumulate_grad_hook(_scale_hook)
+                n += 1
+        wrapper._ep_lora_sharded = True
+
+    if n:
+        LOG.info(
+            f"Sharded {n} expert-LoRA param(s) to local experts "
+            f"(ep_size={ep_size}, grad-scale=1/{ep_size})."
+        )
+    return n
+
+
+def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
+    """Write a complete LoRA adapter when experts are EP-sharded.
+
+    The attention/router LoRA is replicated across EP, but ``target_parameters`` expert
+    LoRA is EP-sharded (each rank holds ``[offset:offset+E_local]``). A plain save would
+    persist only the local rank's experts. This gathers each adapter param to a full
+    tensor (FSDP all-gather via ``full_tensor`` + EP all-gather for expert LoRA), renames
+    to PEFT adapter keys, and writes ``adapter_model.safetensors`` on rank 0. Returns
+    ``True`` if it handled the save.
+    """
+    from pathlib import Path
+
+    from peft.utils.save_and_load import get_peft_model_state_dict
+    from safetensors.torch import save_file
+
+    # The EP-sharded 3D expert params and the global expert count. Gather straight from the
+    # ParamWrappers by parameter_name (chaining `base_layer` through FSDP-wrapped units to reach
+    # the experts module via `_real_experts_base` is brittle once the outer wrapper is its own
+    # FSDP unit).
+    expert_param_names: set = set()
+    e_global = None
+    for _n, m in model.named_modules():
+        if (
+            getattr(m, "num_local_experts", None) is not None
+            and getattr(m, "num_experts_global", None) is not None
+            and m.num_local_experts < m.num_experts_global
+        ):
+            e_global = m.num_experts_global
+            for pn in ("gate_up_proj", "down_proj"):
+                if hasattr(m, pn):
+                    expert_param_names.add(pn)
+    if e_global is None or not expert_param_names:
+        return False
+
+    expert_wrappers = [
+        (wname, wrapper)
+        for wname, wrapper in model.named_modules()
+        if _is_param_wrapper(wrapper)
+        and getattr(wrapper, "parameter_name", None) in expert_param_names
+    ]
+    if not expert_wrappers:
+        return False
+
+    active = model.active_adapter if hasattr(model, "active_adapter") else "default"
+    if isinstance(active, (list, tuple)):
+        active = active[0]
+
+    # Prefer the ep group captured at FSDP-setup time; re-resolving from cfg at save can
+    # return a stale/degenerate (size-1) mesh.
+    stashed = getattr(model, "_ep_lora_group", None)
+    if stashed is not None:
+        ep_group = stashed
+
+    # Replicated (attention/router) LoRA: full tensors via FSDP all-gather, canonical PEFT keys.
+    sd = {
+        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        for name, p in model.named_parameters()
+        if "lora_" in name
+    }
+    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+
+    # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
+    gathered = 0
+    for wname, wrapper in expert_wrappers:
+        for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
+            for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
+                full_local = (
+                    w.full_tensor() if type(w).__name__ == "DTensor" else w.data
+                )
+                full = gather_expert_lora_full(
+                    full_local.detach().contiguous(), kind, e_global, ep_group
+                )
+                key = f"{wname}.{sub}.weight"
+                target = (
+                    key
+                    if key in adapter_sd
+                    else next(
+                        (
+                            k
+                            for k in adapter_sd
+                            if k.endswith(key.split("base_model.model.")[-1])
+                        ),
+                        None,
+                    )
+                )
+                if target is not None:
+                    adapter_sd[target] = full
+                    gathered += 1
+                else:
+                    LOG.warning(f"EP-LoRA save: no adapter key for {key!r}.")
+
+    if dist.get_rank() == 0:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        save_file(
+            {k: v.cpu().contiguous() for k, v in adapter_sd.items()},
+            str(out / "adapter_model.safetensors"),
+        )
+        model.peft_config[active].save_pretrained(str(out))
+        LOG.info(
+            f"Saved EP-gathered LoRA adapter ({len(adapter_sd)} tensors, "
+            f"{gathered} expert params gathered across EP) to {out}."
+        )
+    dist.barrier()
+    return True
+
+
+def save_fsdp2_lora_adapter(model, output_dir: str) -> bool:
+    """Write a complete LoRA adapter under FSDP2 WITHOUT expert parallelism.
+
+    The DCP ``SHARDED_STATE_DICT`` save fails ("Failed to validate global plan") on the frozen NVFP4
+    base params (torchao tensor-subclass DTensors the planner can't validate). For a LoRA run we only
+    need the (tiny) adapter, so gather each ``lora_`` param to a full tensor via FSDP all-gather
+    (``DTensor.full_tensor``) and write ``adapter_model.safetensors`` on rank 0. ``target_parameters``
+    expert LoRA lives on PEFT ParamWrappers (``lora_A``/``lora_B`` submodules) — gather those too and
+    key by module name (no EP axis to gather here, unlike :func:`save_ep_lora_adapter`).
+
+    Returns ``True`` if it handled the save (model has LoRA params), else ``False``.
+    """
+    from pathlib import Path
+
+    from peft.utils.save_and_load import get_peft_model_state_dict
+    from safetensors.torch import save_file
+
+    if not any("lora_" in n for n, _ in model.named_parameters()):
+        return False
+
+    active = model.active_adapter if hasattr(model, "active_adapter") else "default"
+    if isinstance(active, (list, tuple)):
+        active = active[0]
+
+    # Replicated + dp-sharded LoRA: full tensors via FSDP all-gather (collective — same iteration
+    # order on every rank). Canonical PEFT keys via get_peft_model_state_dict.
+    sd = {
+        name: (p.full_tensor() if type(p).__name__ == "DTensor" else p.data).detach()
+        for name, p in model.named_parameters()
+        if "lora_" in name
+    }
+    adapter_sd = get_peft_model_state_dict(model, state_dict=sd)
+
+    gathered = 0
+    for wname, wrapper in model.named_modules():
+        if not _is_param_wrapper(wrapper):
+            continue
+        for sub in ("lora_A", "lora_B"):
+            for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
+                full = (
+                    w.full_tensor() if type(w).__name__ == "DTensor" else w.data
+                ).detach()
+                key = f"{wname}.{sub}.weight"
+                target = (
+                    key
+                    if key in adapter_sd
+                    else next(
+                        (
+                            k
+                            for k in adapter_sd
+                            if k.endswith(key.split("base_model.model.")[-1])
+                        ),
+                        None,
+                    )
+                )
+                if target is not None:
+                    adapter_sd[target] = full
+                    gathered += 1
+
+    if not dist.is_initialized() or dist.get_rank() == 0:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        save_file(
+            {k: v.cpu().contiguous() for k, v in adapter_sd.items()},
+            str(out / "adapter_model.safetensors"),
+        )
+        model.peft_config[active].save_pretrained(str(out))
+        LOG.info(
+            f"Saved FSDP2-gathered LoRA adapter ({len(adapter_sd)} tensors, "
+            f"{gathered} expert params) to {out}."
+        )
+    if dist.is_initialized():
+        dist.barrier()
+    return True
+
+
+def gather_expert_lora_full(local: torch.Tensor, kind: str, e_global: int, ep_group):
+    """Inverse of the EP LoRA slice: all-gather a local-experts LoRA tensor across the
+    EP group and reassemble the full ``e_global``-expert tensor in the PEFT layout.
+
+      * ``kind="A"`` (expert-major ``[E*r, in]``): concat gathered slices along rows.
+      * ``kind="B"`` (rank-major ``[out, r*E]``): place each rank's experts into the
+        ``E`` axis of ``[out, r, E]`` and flatten.
+    """
+    ep_size = dist.get_world_size(ep_group)
+    gathered = [torch.empty_like(local) for _ in range(ep_size)]
+    dist.all_gather(gathered, local.contiguous(), group=ep_group)
+    if kind == "A":
+        return torch.cat(gathered, dim=0)
+    out_dim = local.shape[0]
+    e_local = e_global // ep_size
+    r = local.shape[1] // e_local
+    parts = [g.reshape(out_dim, r, e_local) for g in gathered]
+    return torch.cat(parts, dim=2).reshape(out_dim, r * e_global)

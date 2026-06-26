@@ -92,6 +92,8 @@ class ExpertParallelPlugin(BasePlugin):
         if not self._is_ep_enabled(cfg):
             return
 
+        self._register_padding_dispatch_hook(model)
+
         # Find the inner module that has the attribute (shard set it on whatever
         # was the top-level model at post_model_build time).
         inner = getattr(model, "base_model", model)
@@ -135,6 +137,55 @@ class ExpertParallelPlugin(BasePlugin):
             f"expert_parallel: propagated {len(resolved)} DDP-ignored param "
             f"name(s) onto outer wrapper {type(model).__name__}."
         )
+
+    @staticmethod
+    def _register_padding_dispatch_hook(model) -> None:
+        """Feed the batch's real-token mask to the DeepEP dispatch so padding tokens are
+        not routed (they'd otherwise pile onto one expert and break intranode dispatch).
+
+        A model-level forward pre-hook reads the 2D ``attention_mask`` (1=real, 0=pad) and
+        stashes a flattened ``[B*S]`` bool mask; ``_deep_ep_forward`` sentinels those rows.
+        Under sample packing there is no 2D mask, but the multipack collator pads partial
+        packs to ``seq_len`` — those identical pad embeddings still pile onto one expert and
+        break DeepEP intranode dispatch — so fall back to ``input_ids != pad_token_id``."""
+        from .experts_fn import set_valid_token_mask
+
+        if getattr(model, "_ep_padding_hook", False):
+            return
+
+        pad_id = getattr(getattr(model, "config", None), "pad_token_id", None)
+
+        def _pre_hook(_module, args, kwargs):
+            am = kwargs.get("attention_mask")
+            if am is None and args:
+                am = next(
+                    (a for a in args if torch.is_tensor(a) and a.dim() == 2), None
+                )
+            if am is not None and am.dim() == 2:
+                set_valid_token_mask((am != 0).reshape(-1))
+                return args, kwargs
+            # Packing (no 2D mask): exclude pad rows so they don't overload one expert.
+            ids = kwargs.get("input_ids")
+            if ids is None and args:
+                ids = next(
+                    (
+                        a
+                        for a in args
+                        if torch.is_tensor(a)
+                        and a.dim() == 2
+                        and a.dtype in (torch.long, torch.int, torch.int32)
+                    ),
+                    None,
+                )
+            set_valid_token_mask(
+                (ids != pad_id).reshape(-1)
+                if (ids is not None and pad_id is not None)
+                else None
+            )
+            return args, kwargs
+
+        model.register_forward_pre_hook(_pre_hook, with_kwargs=True)
+        model._ep_padding_hook = True
 
     @staticmethod
     def _infer_local_kernel(cfg) -> str:
@@ -292,7 +343,11 @@ class ExpertParallelPlugin(BasePlugin):
         """
         from torch.distributed.fsdp import fully_shard
 
-        from .shard import _detect_experts_modules
+        from .shard import (
+            _detect_experts_modules,
+            _is_param_wrapper,
+            _real_experts_base,
+        )
 
         kwargs = dict(fsdp2_kwargs)
         kwargs["mesh"] = dp_shard_mesh
@@ -301,9 +356,29 @@ class ExpertParallelPlugin(BasePlugin):
         for _name, module in _detect_experts_modules(model):
             fully_shard(module, **kwargs)
 
+        # `target_parameters` expert LoRA lives on the ParamWrapper chain wrapping the experts
+        # module (which `_detect_experts_modules` skips). Left to the outer decoder-layer auto-wrap
+        # it shards on the FULL ep×dp mesh — i.e. ACROSS the ep axis — corrupting the per-ep-rank
+        # expert slice (grads averaged over ranks owning different experts; save reconstructs the
+        # wrong shape). Wrap the OUTERMOST expert ParamWrapper as its own FSDP unit on dp_shard:
+        # its forward IS the fused-LoRA fastpath, so FSDP unshards the adapter (incl. the nested
+        # inner wrapper's, which is not a separate unit) to plain tensors right before the kernel
+        # reads them — sharded on the same axis as the weights, but gathered during use.
+        all_pws = [m for _n, m in model.named_modules() if _is_param_wrapper(m)]
+        inner = {getattr(pw, "base_layer", None) for pw in all_pws}
+        outer_expert_pws = [
+            pw
+            for pw in all_pws
+            if pw not in inner
+            and _real_experts_base(pw) is not None
+            and getattr(_real_experts_base(pw), "num_local_experts", None) is not None
+        ]
+        for pw in outer_expert_pws:
+            fully_shard(pw, **kwargs)
+
         LOG.debug(
-            f"expert_parallel: pre-wrapped Experts modules on dp_shard mesh "
-            f"(size={dp_shard_mesh.size()})."
+            f"expert_parallel: pre-wrapped Experts modules + {len(outer_expert_pws)} expert "
+            f"ParamWrapper(s) on dp_shard mesh (size={dp_shard_mesh.size()})."
         )
 
         root = dp_shard_mesh._get_root_mesh()
@@ -332,6 +407,11 @@ class ExpertParallelPlugin(BasePlugin):
         n_hooks = 0
         for _name, module in _detect_experts_modules(model):
             for p in module.parameters(recurse=True):
+                # Only trainable params have a grad to scale — and a hook can only be
+                # registered on a tensor that requires grad. Under LoRA the base expert
+                # weights are frozen (only the adapters train), so skip them.
+                if not p.requires_grad:
+                    continue
                 p.register_post_accumulate_grad_hook(_scale)
                 n_hooks += 1
         LOG.debug(
