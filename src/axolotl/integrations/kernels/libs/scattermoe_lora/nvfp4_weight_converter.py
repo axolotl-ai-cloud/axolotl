@@ -44,6 +44,153 @@ def _nvfp4_cls():
         return None
 
 
+def _nonrank0_meta_load() -> bool:
+    """True when cpu_ram_efficient broadcast loading wants this rank to stay on meta.
+
+    The safetensors are mmap'd, so a converter that calls ``torch.stack`` on the checkpoint
+    tensors copies real data into RAM on EVERY rank — violating the rank0-only contract and
+    blowing CPU RAM up by the world size. On non-local-rank-0 we instead emit correctly-shaped
+    META params; FSDP's ``fsdp2_load_full_state_dict`` then broadcasts rank 0's real weights.
+    (With the ``_materialize_copy`` patch active the converter already receives meta inputs; this
+    stays as a defensive second gate.)"""
+    return _is_nonrank0_process()
+
+
+def _to_meta(t):
+    import torch as _torch
+
+    return _torch.empty(t.shape, dtype=t.dtype, device="meta")
+
+
+def _is_nonrank0_process() -> bool:
+    """True on every process except local-rank-0 of the node.
+
+    torchrun always exports ``LOCAL_RANK``; we key off it directly rather than transformers'
+    ``is_fsdp_enabled()`` because that ALSO requires ``ACCELERATE_USE_FSDP`` /
+    ``FSDP_CPU_RAM_EFFICIENT_LOADING`` in the env, which ``axolotl train`` does NOT set at
+    ``from_pretrained`` time — so transformers' own rank0-gate is dormant during the load. ``-1``
+    (unset) means a single non-distributed process → load normally."""
+    import os
+
+    return int(os.environ.get("LOCAL_RANK", "-1")) > 0
+
+
+def patch_conversion_loader_rank0_only() -> None:
+    """Make transformers' conversion-based loader load rank0-only (for FSDP cpu_ram_efficient).
+
+    transformers' new ``core_model_loading`` loader (engaged whenever a ``conversion_mapping`` is
+    registered — i.e. our NVFP4 converters) materializes every tensor on every rank: it only shards
+    per-rank when a ``tp_plan`` is set, and otherwise has NO rank gating. Under FSDP that loads the
+    full model on all ``world_size`` ranks → an N× CPU-RAM blowup that OOMs large models. (And even
+    the legacy gate it would mirror is dormant here — see :func:`_is_nonrank0_process`.)
+
+    On non-local-rank-0 return a META tensor from ``_materialize_copy`` so only rank 0 holds real
+    weights; ``fsdp2_load_full_state_dict`` then broadcasts them. The mmap'd slice read still happens
+    (cheap, shared OS page cache) but the copy is dropped to meta, so non-rank-0 never accumulates.
+    Install ONLY when cpu_ram_efficient broadcast loading is active, else it would starve DDP ranks
+    that each need their own real weights. Idempotent."""
+    import os
+
+    import torch as _torch
+    import transformers.core_model_loading as cml
+
+    # transformers caps the conversion-loader ThreadPoolExecutor at min(4, cpu_count). Measured NOT
+    # to help GLM-5.2 load time (the bottleneck is the SERIAL main-thread converter/match loop over
+    # ~240k source tensors, not the materialize I/O — disk is fast NVMe). Left as an explicit opt-in
+    # (AXOLOTL_LOAD_WORKERS=<n>) in case it helps on a slow-disk/network box; no default change.
+    try:
+        _w = int(os.environ.get("AXOLOTL_LOAD_WORKERS", "0") or 0)
+        if _w > getattr(cml, "GLOBAL_WORKERS", 4):
+            cml.GLOBAL_WORKERS = _w
+            LOG.info("Raised transformers conversion-loader workers to %d", _w)
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    if getattr(cml._materialize_copy, "_axolotl_rank0_patched", False):
+        return
+
+    _orig = cml._materialize_copy
+
+    # safetensors dtype-string -> torch dtype, for building meta tensors without reading the slice.
+    _ST_DTYPE = {
+        "F64": _torch.float64,
+        "F32": _torch.float32,
+        "F16": _torch.float16,
+        "BF16": _torch.bfloat16,
+        "F8_E4M3": _torch.float8_e4m3fn,
+        "F8_E5M2": _torch.float8_e5m2,
+        "I64": _torch.int64,
+        "I32": _torch.int32,
+        "I16": _torch.int16,
+        "I8": _torch.int8,
+        "U8": _torch.uint8,
+        "BOOL": _torch.bool,
+    }
+
+    def _meta_from_slice(tensor, dtype):
+        """Build a meta tensor matching what ``_orig`` WOULD return, without reading from disk."""
+        if not (hasattr(tensor, "get_shape") and hasattr(tensor, "get_dtype")):
+            return None
+        out_dtype = dtype if dtype is not None else _ST_DTYPE.get(tensor.get_dtype())
+        if out_dtype is None:
+            return None
+        return _torch.empty(tensor.get_shape(), dtype=out_dtype, device="meta")
+
+    _stats = {"meta": 0, "real": 0, "fallback": 0, "logged": False}
+
+    def _dbg(msg):
+        import sys
+
+        print(
+            f"[MATCOPY rank={os.environ.get('LOCAL_RANK', '?')}] {msg}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def _patched_materialize_copy(tensor, device=None, dtype=None):
+        # dtype-aware: load the RAW NVFP4 components (uint8 qdata / fp8 e4m3|e5m2 scales) at their
+        # native dtype instead of the bf16 skeleton dtype. modelopt is an unrecognized quantizer so
+        # transformers' own native-dtype branch (hf_quantizer.pre_quantized) never fires and it casts
+        # everything to bf16 — doubling the bytes of the largest (uint8) expert tensors and adding a
+        # cast the converter's _recast_weight/_recast_scale would just undo. Applied before the
+        # rank0/meta split so both produce the same native dtype. (F32/F16/BF16 sources unaffected.)
+        if dtype is not None and hasattr(tensor, "get_dtype"):
+            _st = tensor.get_dtype()
+            if _st == "U8" or _st.startswith("F8"):
+                dtype = None
+        nonrank0 = _is_nonrank0_process()
+        if not _stats["logged"]:
+            _dbg(f"first call: nonrank0={nonrank0} slice_type={type(tensor).__name__}")
+            _stats["logged"] = True
+        # Non-rank-0: never touch the data — produce a same-shape/dtype META tensor so the slice is
+        # never read into RAM (reading-then-discarding leaves glibc holding the freed pages).
+        if nonrank0:
+            meta = _meta_from_slice(tensor, dtype)
+            if meta is not None:
+                _stats["meta"] += 1
+                if _stats["meta"] % 2000 == 0:
+                    _dbg(f"meta={_stats['meta']} fallback={_stats['fallback']}")
+                return meta
+            # Fallback (unknown slice type): read then drop to meta — correctness over memory.
+            _stats["fallback"] += 1
+            if _stats["fallback"] % 500 == 0:
+                _dbg(
+                    f"FALLBACK count={_stats['fallback']} type={type(tensor).__name__}"
+                )
+            out = _orig(tensor, device=device, dtype=dtype)
+            return _torch.empty(out.shape, dtype=out.dtype, device="meta")
+        _stats["real"] += 1
+        return _orig(tensor, device=device, dtype=dtype)
+
+    _patched_materialize_copy._axolotl_rank0_patched = True
+    cml._materialize_copy = _patched_materialize_copy
+    LOG.info(
+        "Patched transformers core_model_loading._materialize_copy for rank0-only loading "
+        "(LOCAL_RANK=%s)",
+        os.environ.get("LOCAL_RANK", "-1"),
+    )
+
+
 class Nvfp4ExpertsDeserialize:
     """ConversionOps that fuses per-expert NVFP4 tensors into a single NVFP4Tensor.
 
@@ -84,6 +231,18 @@ class Nvfp4ExpertsDeserialize:
         else:
             proj = "gate_up_proj"
 
+        # cpu_ram_efficient_loading: only local-rank-0 materializes; others stay on meta and get
+        # filled by the FSDP broadcast. Drop the mmap'd checkpoint data to meta BEFORE fusing.
+        if _nonrank0_meta_load():
+            input_dict = {
+                k: (
+                    [_to_meta(t) for t in v]
+                    if isinstance(v, (list, tuple))
+                    else _to_meta(v)
+                )
+                for k, v in input_dict.items()
+            }
+
         def _find(pat_suffix: str) -> list[torch.Tensor]:
             """Find the tensor list for a source pattern that ends with pat_suffix."""
             for key, tensors in input_dict.items():
@@ -123,6 +282,7 @@ class Nvfp4ExpertsDeserialize:
         nvfp4 = fuse_nvfp4_experts(projs)
 
         module, _ = get_module_from_name(model, full_layer_name)
+
         setattr(module, proj, nn.Parameter(nvfp4, requires_grad=False))
 
         if missing_keys is not None:
@@ -185,17 +345,27 @@ class Nvfp4LinearDequantize:
                 f"input_dict keys: {list(input_dict.keys())}"
             )
 
-        # spawn_materialize casts checkpoint tensors to the skeleton dtype (bf16); recast the
-        # raw uint8 qdata / e4m3 scale back (both roundtrip exactly through bf16).
         w = _one(".weight")
-        qdata = w if w.dtype == torch.uint8 else w.to(torch.int32).to(torch.uint8)
-        sc = _one(".weight_scale")
-        scale = sc if sc.dtype == torch.float8_e4m3fn else sc.to(torch.float8_e4m3fn)
-        pts = _one(".weight_scale_2").to(torch.float32).view(1, 1)
 
-        weight = NVFP4Tensor(
-            qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
-        ).dequantize(torch.bfloat16)
+        # cpu_ram_efficient_loading: non-local-rank-0 stays on meta (FSDP broadcasts rank 0's
+        # weights). qdata is packed [out, in/2] uint8 -> dequantized weight is [out, in] bf16.
+        if _nonrank0_meta_load():
+            weight = torch.empty(
+                (w.shape[0], w.shape[1] * 2), dtype=torch.bfloat16, device="meta"
+            )
+        else:
+            # spawn_materialize casts checkpoint tensors to the skeleton dtype (bf16); recast the
+            # raw uint8 qdata / e4m3 scale back (both roundtrip exactly through bf16).
+            qdata = w if w.dtype == torch.uint8 else w.to(torch.int32).to(torch.uint8)
+            sc = _one(".weight_scale")
+            scale = (
+                sc if sc.dtype == torch.float8_e4m3fn else sc.to(torch.float8_e4m3fn)
+            )
+            pts = _one(".weight_scale_2").to(torch.float32).view(1, 1)
+
+            weight = NVFP4Tensor(
+                qdata, scale, 16, torch.bfloat16, per_tensor_scale=pts
+            ).dequantize(torch.bfloat16)
 
         module, param_name = get_module_from_name(model, full_layer_name)
         setattr(module, param_name, nn.Parameter(weight, requires_grad=False))

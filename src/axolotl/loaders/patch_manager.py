@@ -317,6 +317,13 @@ class PatchManager:
 
             patch_initialize_missing_keys_for_fsdp()
 
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading:
+                from axolotl.monkeypatch.accelerate.fsdp2 import (
+                    patch_move_missing_keys_meta_for_fsdp,
+                )
+
+                patch_move_missing_keys_meta_for_fsdp()
+
         if self.cfg.context_parallel_size > 1 or (
             self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
         ):

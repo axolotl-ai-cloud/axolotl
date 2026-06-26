@@ -208,12 +208,18 @@ def fuse_nvfp4_experts(projs: list[dict], *, block_size: int = 16, dtype=None):
         raise RuntimeError("torchao NVFP4Tensor not available")
     dtype = dtype or _torch.bfloat16
 
+    # cpu_ram_efficient_loading runs the converter once on META placeholders (shape inference) and
+    # again on the real tensors on rank 0. On meta the scale-reconciliation value ops (`allclose`,
+    # `.item()`) can't run, so skip them — only the OUTPUT SHAPE matters on the meta pass, and the
+    # stack/cat below produce correctly-shaped meta tensors regardless.
+    is_meta = bool(projs[0]["qd"]) and projs[0]["qd"][0].is_meta
+
     pts0 = _torch.stack([t.to(_torch.float32) for t in projs[0]["pts"]]).view(-1, 1, 1)
     qdatas, scales = [], []
     for i, p in enumerate(projs):
         qd = _torch.stack(list(p["qd"]), dim=0)  # [E, N, K/2]
         sc = _torch.stack(list(p["sc"]), dim=0)  # [E, N, K/16]
-        if i > 0:
+        if i > 0 and not is_meta:
             pts_i = _torch.stack([t.to(_torch.float32) for t in p["pts"]]).view(
                 -1, 1, 1
             )
@@ -230,6 +236,43 @@ def fuse_nvfp4_experts(projs: list[dict], *, block_size: int = 16, dtype=None):
     qdata = qdatas[0] if len(qdatas) == 1 else _torch.cat(qdatas, dim=1)
     scale = scales[0] if len(scales) == 1 else _torch.cat(scales, dim=1)
     return NVFP4Tensor(qdata, scale, block_size, dtype, per_tensor_scale=pts0)
+
+
+def patch_nvfp4_tensor_meta_ops() -> None:
+    """Register ``zeros_like`` / ``empty_like`` / ``new_zeros`` on torchao's NVFP4Tensor.
+
+    FSDP2's ``cpu_ram_efficient_loading`` keeps non-rank-0 params on ``meta`` and materializes the
+    receive buffers with ``zeros_like`` / ``empty_like`` before scattering rank 0's shards. torchao
+    doesn't implement those for NVFP4Tensor (only matmul / view / slice / copy), so a 4-bit expert
+    param hits 'unimplemented operator'. Each just applies the op to the packed data + scales and
+    rebuilds the tensor, preserving block_size / dtype / per-tensor scale. Idempotent."""
+    import torch as _torch
+
+    NVFP4Tensor = _nvfp4_cls()
+    if NVFP4Tensor is None or getattr(NVFP4Tensor, "_axolotl_meta_ops", False):
+        return
+    from torchao.utils import return_and_correct_aliasing
+
+    aten = _torch.ops.aten
+
+    @NVFP4Tensor.implements([aten.zeros_like.default, aten.empty_like.default])
+    def _nvfp4_like(func, types, args, kwargs):
+        # FSDP2 passes device / pin_memory / memory_format; forward them to the packed data + scale
+        # tensors. dtype/layout would break the int-packed payload, so drop them.
+        passthru = {
+            k: v
+            for k, v in kwargs.items()
+            if k in ("device", "pin_memory", "memory_format")
+        }
+        out = args[0]._apply_fn_to_data(lambda x: func(x, **passthru))
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+    @NVFP4Tensor.implements([aten.new_zeros.default])
+    def _nvfp4_new_zeros(func, types, args, kwargs):
+        out = args[0]._apply_fn_to_data(lambda x: _torch.zeros_like(x))
+        return return_and_correct_aliasing(func, args, kwargs, out)
+
+    NVFP4Tensor._axolotl_meta_ops = True
 
 
 # Per-architecture checkpoint naming for the unfused per-expert NVFP4 tensors.
@@ -357,6 +400,86 @@ def attach_nvfp4_expert_scales(model: nn.Module, repo_id: str) -> int:
             scheme_name,
         )
     return fixed
+
+
+def direct_load_nvfp4_experts(model, repo_id: str, routed_projs: list[str]) -> int:
+    """FAST routed-expert load that BYPASSES transformers' conversion loader.
+
+    Transformers' loader spends ~7 min on GLM-5.2 iterating/matching ~240k per-expert source tensors
+    through its Python machinery; a DIRECT read+fuse of the same experts is ~25s (profiled). This
+    reads each MoE layer's routed-expert ``weight``(uint8)/``weight_scale``(fp8)/``weight_scale_2``
+    components straight from the safetensors (native dtype) and fuses them into the 3D NVFP4 expert
+    params, mirroring :class:`Nvfp4ExpertsDeserialize` but without the per-tensor loader overhead.
+
+    Only the LOCAL-RANK-0 process materializes (others stay meta for the FSDP broadcast). Requires the
+    routed converters to be SKIPPED at registration (so transformers leaves the fused params unfilled).
+    Returns the number of fused params filled. Safe no-op on non-rank0 / no routed experts.
+    """
+    import os
+    import re
+
+    import torch
+
+    if str(os.environ.get("LOCAL_RANK", "0")) not in ("0", ""):
+        return 0
+    if not routed_projs:
+        return 0
+    NVFP4Tensor = _nvfp4_cls()
+    if NVFP4Tensor is None:
+        return 0
+    wmap = _load_index(repo_id)
+    # per-layer expert count, from the index (no reads): count ...experts.<e>.<proj0>.weight keys.
+    proj0 = routed_projs[0]
+    layer_E: dict[int, int] = {}
+    pat = re.compile(
+        r"\.layers\.(\d+)\.mlp\.experts\.(\d+)\." + re.escape(proj0) + r"\.weight$"
+    )
+    for key in wmap:
+        m = pat.search(key)
+        if m:
+            L, e = int(m.group(1)), int(m.group(2))
+            layer_E[L] = max(layer_E.get(L, 0), e + 1)
+
+    handles: dict[str, object] = {}
+
+    def gt(key):
+        sh = wmap[key]
+        if sh not in handles:
+            handles[sh] = _shard_open(repo_id, sh)
+        return handles[sh].get_tensor(key)  # native dtype (uint8/fp8/fp32)
+
+    fused_map = (
+        ("gate_up_proj", ["gate_proj", "up_proj"]),
+        ("down_proj", ["down_proj"]),
+    )
+    n = 0
+    for mod_name, mod in model.named_modules():
+        if not (hasattr(mod, "gate_up_proj") and hasattr(mod, "down_proj")):
+            continue
+        m = re.search(r"\.layers\.(\d+)\.", "." + mod_name)
+        if m is None:
+            continue
+        L = int(m.group(1))
+        if L not in layer_E:
+            continue
+        E = layer_E[L]
+        base = f"model.layers.{L}.mlp.experts"
+        for fused, parts in fused_map:
+            sel = [p for p in parts if p in routed_projs]
+            if not sel:
+                continue
+            projs = [
+                {
+                    "qd": [gt(f"{base}.{e}.{p}.weight") for e in range(E)],
+                    "sc": [gt(f"{base}.{e}.{p}.weight_scale") for e in range(E)],
+                    "pts": [gt(f"{base}.{e}.{p}.weight_scale_2") for e in range(E)],
+                }
+                for p in sel
+            ]
+            nvfp4 = fuse_nvfp4_experts(projs)
+            setattr(mod, fused, torch.nn.Parameter(nvfp4, requires_grad=False))
+            n += 1
+    return n
 
 
 if __name__ == "__main__":  # local self-consistency test on real layer-0 data

@@ -22,6 +22,23 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def _disable_cudnn_sdp() -> None:
+    """Disable the cuDNN SDPA backend for the stock-sdpa GLM path.
+
+    GLM-5.2 develops "massive activations" (residual-stream outliers ~600+ in the top layers). The
+    cuDNN flash-attention BACKWARD produces NaN on the resulting extreme q/k (the math/mem-efficient
+    backends are robust), which propagates to every gradient → grad_norm=nan. Forward is finite, so
+    it only shows in training. Disabling the cuDNN backend makes SDPA fall back to flash/mem-efficient.
+    No-op cost on the ``use_glm_dsa_kernels`` path (that replaces SDPA with the fused DSA flash kernel).
+    """
+    import torch
+
+    try:
+        torch.backends.cuda.enable_cudnn_sdp(False)
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+
 def is_glm_moe_dsa_nvfp4_modelopt(cfg) -> bool:
     """True iff the base model is a GLM-5.2 (``glm_moe_dsa``) NVFP4-modelopt checkpoint
     (``quant_method=modelopt``, ``quant_algo=NVFP4``). Any failure returns False."""
@@ -92,14 +109,43 @@ class GlmMoeDsaAdapter(ModelAdapter):
         return bool(cfg.get("use_glm_dsa_kernels")) and _is_glm_moe_dsa(cfg)
 
     def pre_model_load(self, cfg) -> None:
+        # The cuDNN SDPA backward NaNs on GLM's massive activations (see _disable_cudnn_sdp).
+        _disable_cudnn_sdp()
         if not (cfg.use_scattermoe and is_glm_moe_dsa_nvfp4_modelopt(cfg)):
             return  # NVFP4 converter registration is only for modelopt-NVFP4 checkpoints
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
             inspect_nvfp4_layout,
+            patch_nvfp4_tensor_meta_ops,
         )
         from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_weight_converter import (
+            patch_conversion_loader_rank0_only,
             register_nvfp4_converters_for_layout,
         )
+
+        # FSDP2 cpu_ram_efficient_loading materializes meta receive-buffers via zeros_like/empty_like.
+        patch_nvfp4_tensor_meta_ops()
+        # transformers' conversion loader ignores cpu_ram_efficient_loading (loads on every rank);
+        # gate it to rank0-only so the full model doesn't blow up CPU RAM by the world size. Only
+        # safe when the FSDP broadcast will later fill the non-rank-0 meta params — i.e. when
+        # cpu_ram_efficient_loading is set — so DDP ranks (which each need real weights) are spared.
+        if (cfg.get("fsdp_config") or {}).get("cpu_ram_efficient_loading"):
+            patch_conversion_loader_rank0_only()
+            # transformers gates the META SKELETON (and its own load path) on is_fsdp_enabled(),
+            # which requires the process group to be initialized. axolotl doesn't init it until
+            # AFTER model load, so without this non-rank-0 builds a full real-storage skeleton
+            # (world-size× CPU blowup) before any weights even load. Init it now.
+            from transformers.integrations.fsdp import is_fsdp_enabled
+
+            from axolotl.utils.distributed import init_distributed_state
+
+            init_distributed_state()
+            LOG.info(
+                "glm_moe_dsa: initialized distributed state for rank0-only loading "
+                "(is_fsdp_enabled=%s)",
+                is_fsdp_enabled(),
+            )
+
+        import os
 
         layout = inspect_nvfp4_layout(cfg.base_model)
         LOG.info(
@@ -109,12 +155,43 @@ class GlmMoeDsaAdapter(ModelAdapter):
             layout["routed_projs"],
             layout["nonrouted_suffixes"],
         )
-        register_nvfp4_converters_for_layout("glm_moe_dsa", layout)
+        # FAST routed-expert load (opt-in): skip the routed converters here and read+fuse the experts
+        # DIRECTLY in post_model_load — bypasses transformers' ~7-min per-tensor conversion loop over
+        # ~240k expert source tensors (direct path ~25s). Non-routed converters still register.
+        self._direct_expert_load = (
+            bool(os.environ.get("AXOLOTL_DIRECT_EXPERT_LOAD"))
+            and layout["routed_present"]
+        )
+        self._routed_projs = layout.get("routed_projs", [])
+        if self._direct_expert_load:
+            reg_layout = dict(layout)
+            reg_layout["routed_present"] = (
+                False  # don't register the slow routed converters
+            )
+            register_nvfp4_converters_for_layout("glm_moe_dsa", reg_layout)
+            LOG.info("glm_moe_dsa: routed experts will be DIRECT-loaded (fast path)")
+        else:
+            register_nvfp4_converters_for_layout("glm_moe_dsa", layout)
 
     def post_model_load(self, cfg, model) -> None:
         """Patch the DSA attention with the fused absorbed-MLA kernels + keep the MoE router fp32.
         Gated on ``use_glm_dsa_kernels``. Wires the context-parallel group so the attention shards
         the sequence on the `cp` axis (composes with EP on the orthogonal `ep` axis)."""
+        if getattr(self, "_direct_expert_load", False):
+            import time
+
+            from axolotl.integrations.kernels.libs.scattermoe_lora.nvfp4_moe_loading import (
+                direct_load_nvfp4_experts,
+            )
+
+            t0 = time.time()
+            n = direct_load_nvfp4_experts(model, cfg.base_model, self._routed_projs)
+            LOG.info(
+                "glm_moe_dsa: direct-loaded %d fused expert params in %.1fs (fast path)",
+                n,
+                time.time() - t0,
+            )
+
         if not cfg.get("use_glm_dsa_kernels"):
             return
         from axolotl.integrations.kernels.libs.glm_dsa import (
