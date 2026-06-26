@@ -12,8 +12,6 @@ reduce to plain grouped Gram products: dA[g] = scaling * YB_g^T @ X_g,
 dB[g] = scaling * DY_g^T @ XA_g (reduction over the group's tokens).
 """
 
-from itertools import product
-
 import torch
 import triton
 import triton.language as tl
@@ -23,18 +21,17 @@ from .lora_ops import _block_r_for_rank, _bucket_m
 
 
 def _grouped_gram_configs():
-    configs = []
-    for block_wide, block_m, warps, stages in product(
-        [32, 64, 128, 256], [32, 64, 128], [4, 8], [3, 4]
-    ):
-        configs.append(
-            triton.Config(
-                {"BLOCK_WIDE": block_wide, "BLOCK_M": block_m},
-                num_warps=warps,
-                num_stages=stages,
-            )
+    # TEMP (GLM DeepEP e2e bring-up): collapsed to a single config so the autotune sweep is
+    # instant — per-rank sweep-time skew otherwise desyncs ranks and trips DeepEP's combine
+    # barrier. Restore the full search (and revisit per-shape tuning) once EP is verified e2e.
+    return [
+        triton.Config(
+            {"BLOCK_WIDE": 128, "BLOCK_M": 128},
+            num_warps=4,
+            num_stages=3,
+            num_ctas=1,
         )
-    return configs
+    ]
 
 
 @triton.autotune(configs=_grouped_gram_configs(), key=["M_BUCKET", "WIDE", "RANK_IS_I"])

@@ -26,6 +26,7 @@ LOG = get_logger(__name__)
 
 _BACKEND_LOGGED = False  # one-time log of the resolved base-GEMM backend
 
+
 # thin compat wrapper over the centralized runtime module. grouped_backend (cfg.moe_grouped_backend):
 # None/"auto" = capability auto-select; marlin|cutlass|deepgemm = force if available (else warn +
 # auto); "dequant" = force the chunked-dequant fallback.
@@ -358,6 +359,7 @@ class _GroupedExperts(torch.autograd.Function):
         tile = (
             x.size(0) // m_indices.numel()
         )  # routing pad granularity (128 cutlass, 64 marlin)
+
         d_dn = d_dn.contiguous().to(x.dtype)
 
         if ctx.bwd_marlin is not None:

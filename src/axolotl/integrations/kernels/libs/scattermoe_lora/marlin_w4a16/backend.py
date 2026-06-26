@@ -69,6 +69,30 @@ def _build_base_scatter(dev: torch.device) -> torch.Tensor:
     return lut
 
 
+def _marlin_cache_under_fsdp(device) -> bool:
+    """Whether to persist marlin-prepped experts in the per-layer module cache under FSDP.
+
+    DEFAULT: NO. The per-layer cache holds each layer's gathered (un-sharded) marlin experts, so it
+    accumulates the whole model across depth (~0.6 GiB/proj × 2 × num_layers — e.g. ~94 GiB for GLM-5.2)
+    on top of the resident sharded model → OOM. Profiled: a layer's marlin re-prep is only a ~17 GiB
+    transient that frees immediately, so re-prepping every forward is far cheaper than caching, and the
+    per-layer MoE fwd+bwd peak is ~17 GiB — fits easily beside the ~60 GiB resident shard.
+
+    OPT-IN for roomy GPUs (e.g. B200, or small models) where the full cache fits: set
+    ``AXOLOTL_MARLIN_CACHE_MIN_FREE_GB=<N>`` to cache while ≥ N GiB VRAM is free (``0`` = always cache).
+    Unset → never cache under FSDP."""
+    import os
+
+    val = os.environ.get("AXOLOTL_MARLIN_CACHE_MIN_FREE_GB")
+    if val is None:
+        return False
+    try:
+        free, _ = torch.cuda.mem_get_info(device)
+    except Exception:  # pylint: disable=broad-except
+        return True
+    return free > float(val) * (1024**3)
+
+
 def _cached_prep(nv, size_n, size_k, ext, cache, key):
     """Prep one NVFP4 weight -> Marlin layout, cached (experts are frozen). Prefer a persistent
     module-level ``cache`` dict keyed by ``key`` — under FSDP2 the gathered param is a fresh tensor
@@ -79,6 +103,11 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
     key+"_bwd" for the fused backward dequant, then frees nv.qdata to drop the duplicate 4-bit copy.
     Under FSDP the gathered param is fresh each step so weight_recipe() re-gathers it anyway; skips
     the free when distributed is active."""
+    import torch.distributed as dist
+
+    _is_distributed = (
+        dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+    )
     bwd_key = key + "_bwd"
     if cache is not None and key in cache:
         return cache[key]
@@ -98,39 +127,46 @@ def _cached_prep(nv, size_n, size_k, ext, cache, key):
             torch.bfloat16,
             ext.gptq_marlin_repack,
         )
-        try:
-            nv._marlin_w4a16 = cached
-        except (AttributeError, RuntimeError):
-            pass
-    if cache is not None:
+        # Stash the full-layer marlin weight on the gathered tensor ONLY single-GPU. Under FSDP2 the
+        # gathered param is a fresh tensor every forward AND every backward recompute, so this attr
+        # never produces a cache hit — it only pins ~9 GiB/proj alive on each layer's gathered tensor,
+        # and during the backward sweep FSDP keeps several layers' gathered tensors live at once →
+        # the marlin weights accumulate across depth and OOM (bypassing the module-cache guard below).
+        if not _is_distributed:
+            try:
+                nv._marlin_w4a16 = cached
+            except (AttributeError, RuntimeError):
+                pass
+    if cache is not None and not _is_distributed:
+        # Single-GPU: persist the marlin weight and drop the duplicate 4-bit qdata.
         cache[key] = cached
         if qdata_fresh and bwd_key not in cache:
-            import torch.distributed as dist
-
-            _is_distributed = (
-                dist.is_available()
-                and dist.is_initialized()
-                and dist.get_world_size() > 1
-            )
-            if not _is_distributed:
-                E, dev = nv.qdata.size(0), nv.qdata.device
-                # Reference (don't clone) the original scales for the backward dequant: the
-                # marlin scales subsample [:, 1::2] so they're lossy and unusable for backward.
-                # Single-GPU: nv.scale stays live on the frozen param, so a clone just dups ~1.3 GiB.
-                # _pt may return .expand() with stride(0)==0; Triton needs a real stride.
-                pt_bwd = _pt(nv, E, dev)
-                if pt_bwd.stride(0) == 0:
-                    pt_bwd = pt_bwd.contiguous()
-                cache[bwd_key] = (nv.scale, pt_bwd, E, size_n, size_k)
-                # 3-D [E, N, 0] placeholder (not flat empty(0)): NVFP4Tensor clone/save needs
-                # ndim==3, and numel()==0 still routes through the marlin qdata-free paths.
-                try:
-                    _N = nv.qdata.size(1)
-                    nv.qdata.data = torch.empty(
-                        (E, _N, 0), dtype=nv.qdata.dtype, device=dev
-                    )
-                except (AttributeError, RuntimeError):
-                    pass
+            E, dev = nv.qdata.size(0), nv.qdata.device
+            # Reference (don't clone) the original scales for the backward dequant: the
+            # marlin scales subsample [:, 1::2] so they're lossy and unusable for backward.
+            # Single-GPU: nv.scale stays live on the frozen param, so a clone just dups ~1.3 GiB.
+            # _pt may return .expand() with stride(0)==0; Triton needs a real stride.
+            pt_bwd = _pt(nv, E, dev)
+            if pt_bwd.stride(0) == 0:
+                pt_bwd = pt_bwd.contiguous()
+            cache[bwd_key] = (nv.scale, pt_bwd, E, size_n, size_k)
+            # 3-D [E, N, 0] placeholder (not flat empty(0)): NVFP4Tensor clone/save needs
+            # ndim==3, and numel()==0 still routes through the marlin qdata-free paths.
+            try:
+                _N = nv.qdata.size(1)
+                nv.qdata.data = torch.empty(
+                    (E, _N, 0), dtype=nv.qdata.dtype, device=dev
+                )
+            except (AttributeError, RuntimeError):
+                pass
+    elif cache is not None and _marlin_cache_under_fsdp(nv.qdata.device):
+        # FSDP2: the gathered weight is a fresh, transient tensor per forward (meant to reshard), so
+        # persisting its marlin copy for EVERY layer re-materializes the whole un-sharded model on
+        # each rank — OOMing large checkpoints. The cache is still a real perf win (no re-repacking
+        # 256 experts/forward) when VRAM is roomy, so cache only while there's headroom; once it
+        # tightens, fall through to per-forward re-prep (the transient ``_marlin_w4a16`` attr handles
+        # in-forward reuse and dies on reshard). Don't free qdata here — backward re-gathers it.
+        cache[key] = cached
     return cached
 
 

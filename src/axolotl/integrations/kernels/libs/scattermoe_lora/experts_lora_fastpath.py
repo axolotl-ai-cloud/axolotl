@@ -20,11 +20,18 @@ the wrapper, fuse the LoRA), bringing the experts-interface path to parity.
 
 from __future__ import annotations
 
+# Implementations whose experts forward consumes ``module._scattermoe_lora`` (the fused
+# per-row LoRA kernel). ``deep_ep_scattermoe`` is the EP composite: its ``_scattermoe_local``
+# stage calls ``scattermoe_experts_forward_ep``, which reads the same attribute — so the
+# fastpath must engage under EP too, else the LoRA falls back to PEFT's parametrize merge
+# (which can't add a full-expert delta onto the EP-sharded weight).
+_SCATTERMOE_IMPLS = frozenset({"scattermoe", "deep_ep_scattermoe"})
+
 
 def _is_scattermoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
-    return impl == "scattermoe" and hasattr(module, "gate_up_proj")
+    return impl in _SCATTERMOE_IMPLS and hasattr(module, "gate_up_proj")
 
 
 def patch_paramwrapper_fastpath() -> None:
