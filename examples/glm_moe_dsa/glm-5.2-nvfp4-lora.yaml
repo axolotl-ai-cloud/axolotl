@@ -45,9 +45,16 @@ attn_implementation: sdpa
 expert_parallel_size: 8                      # = number of GPUs (8 for 8xH100; 2 for 2xB200)
 dp_shard_size: 1
 expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
-# Max tokens routed to any single expert per forward; the lowest-weight excess are dropped. A safety
-# cap that guards the DeepEP intranode combine against a hot expert at long context (the GLM router
-# concentrates with depth); effectively inactive at short/medium sequence lengths.
+# Max tokens routed to any single expert per forward (per rank); the lowest-weight excess are dropped
+# to -1. Guards the DeepEP intranode combine, which HANGS once one expert's token count exceeds the
+# NVLink buffer (the GLM router concentrates with depth). This is a FIXED token threshold tied to
+# expert_parallel_num_nvl_bytes — NOT proportional to sequence length, so don't scale it with seq_len.
+# The 1,000,000 default is an effectively-off ceiling: per rank there are only seq_len*top_k assignments
+# spread over 256 experts (e.g. 64k seq = 512k total < 1M, so it never fires), so it won't over-drop at
+# normal lengths. But it also barely protects — at very long context (64k/128k) a hot expert can cross
+# the combine-hang threshold while still under 1M. If you train at long context, lower this toward the
+# actual hang threshold (measure it: raise seq until combine hangs, set just below) and/or raise
+# expert_parallel_num_nvl_bytes.
 expert_parallel_token_capacity: 1000000
 
 # For multi-GPU at long context, shard the sequence with context parallelism (the DSA attention
