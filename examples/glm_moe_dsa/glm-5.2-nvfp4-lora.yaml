@@ -20,8 +20,10 @@ plugins:
   # them) and dispatch tokens via DeepEP all-to-all. The local expert GEMM runs through the SAME
   # grouped-NVFP4 kernel as the non-EP path, so EP is both faster AND lower-memory than plain FSDP2
   # at scale (verified at 8k seq: ~1.3x faster and ~12% less peak activation, beating FSDP2 on both).
-  # Requires the `deep_ep` package. Drop this plugin (+ the expert_parallel_* keys below) to fall back
-  # to plain FSDP2.
+  # Parity: EP matches the FSDP2 baseline on loss and grad_norm to within ~1% per step (verified at
+  # 2k and 8k) — the routed-expert LoRA is sliced to each rank's local experts so it trains the
+  # correct experts, and FSDP grad-averaging gives the right per-expert scale. Requires the `deep_ep`
+  # package. Drop this plugin (+ the expert_parallel_* keys below) to fall back to plain FSDP2.
   - axolotl.integrations.expert_parallel.ExpertParallelPlugin
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.kernels.KernelsPlugin
