@@ -18,7 +18,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from .buffer import get_buffer
+from .buffer import barrier_ep, get_buffer, get_combine_config, get_dispatch_config
 
 # Per-forward [B*S] bool mask of real (non-padding) tokens, set by the EP plugin's model
 # pre-hook from the batch `attention_mask` and consumed by `_deep_ep_forward` to exclude
@@ -184,6 +184,7 @@ class _DeepEPDispatch(torch.autograd.Function):
             num_tokens_per_expert=num_per_expert,
             topk_idx=topk_idx,
             topk_weights=topk_weights,
+            config=get_dispatch_config(),
         )
         ctx.handle = handle
         return recv_x, recv_topk_idx, recv_topk_weights, _DeepEPHandleHolder(handle)
@@ -198,10 +199,12 @@ class _DeepEPDispatch(torch.autograd.Function):
             if (grad_recv_w is not None and grad_recv_w.numel() > 0)
             else None
         )
+        barrier_ep()
         grad_x, grad_topk_w, _ = buffer.combine(
             grad_recv_x.contiguous(),
             ctx.handle,
             topk_weights=topk_w_grad,
+            config=get_combine_config(),
         )
         return grad_x, None, grad_topk_w, None, None, None
 
@@ -217,7 +220,9 @@ class _DeepEPCombine(torch.autograd.Function):
     def forward(ctx, x, handle_holder):
         buffer = get_buffer()
         ctx.handle = handle_holder.handle
-        combined, _, _ = buffer.combine(x.contiguous(), handle_holder.handle)
+        combined, _, _ = buffer.combine(
+            x.contiguous(), handle_holder.handle, config=get_combine_config()
+        )
         return combined
 
     @staticmethod
@@ -226,7 +231,7 @@ class _DeepEPCombine(torch.autograd.Function):
         # backward-of-combine is dispatch: reuse the cached handle to send
         # gradients to the ranks that produced partial outputs.
         recv_grad, _, _, _, _, _ = buffer.dispatch(
-            grad_combined.contiguous(), handle=ctx.handle
+            grad_combined.contiguous(), handle=ctx.handle, config=get_dispatch_config()
         )
         return recv_grad, None
 
@@ -307,6 +312,7 @@ def _deep_ep_forward(self, hidden_states, top_k_index, top_k_weights, *, kernel_
         self, recv_x, recv_topk_idx, recv_topk_weights
     )
 
+    barrier_ep()  # wait out the local-kernel autotune skew before the combine collective
     combined = _DeepEPCombine.apply(local_out, handle_holder)
 
     if original_dtype is not None:

@@ -122,9 +122,44 @@ def fsdp2_load_full_state_dict(
 
     start_time = time.time()
 
+    # EP-sharded expert params hold RANK-SPECIFIC content (each rank owns experts
+    # [r*E_local, (r+1)*E_local)). The default rank0-authoritative load below would broadcast
+    # rank 0's shard to every rank, replicating experts[0:E_local] everywhere and silently
+    # destroying expert parallelism. shard_expert_weights() already scattered the correct shard
+    # to every rank BEFORE the model was moved to meta, so each rank's own `full_sd` entry is
+    # already correct — load it locally with no cross-rank broadcast. Match via the `.experts.`
+    # infix (excludes `shared_experts`, survives the `_checkpoint_wrapped_module` infix) tied to
+    # the propagated DDP-ignore list.
+    _ep_ignore = getattr(model, "_ddp_params_and_buffers_to_ignore", None) or []
+    _ep_tails = tuple(
+        sorted({"." + n.split(".experts.", 1)[1] for n in _ep_ignore if ".experts." in n})
+    )
+
+    def _is_ep_expert_param(name: str) -> bool:
+        return bool(_ep_tails) and ".experts." in name and name.endswith(_ep_tails)
+
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
     for param_name, sharded_meta_param in meta_sharded_sd.items():
+        # Pure-EP: the EP-sharded experts are excluded from the FSDP wrap (ignored_params), so they
+        # stay PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
+        # correct [E_local] slice before the meta move, so each rank's own `full_sd` entry is right —
+        # load it locally with NO rank-0 broadcast (which would replicate experts[0:E_local]). Only
+        # applies when the param is plain (not a DTensor); EP×dp_shard composition keeps them as
+        # DTensors loaded via the mesh path below.
+        if _is_ep_expert_param(param_name) and not hasattr(
+            sharded_meta_param, "device_mesh"
+        ):
+            own = full_sd[param_name]
+            own = own.to(torch.device("cuda"))
+            if offload_to_cpu:
+                own = own.cpu()
+            sharded_sd[param_name] = nn.Parameter(
+                own, requires_grad=sharded_meta_param.requires_grad
+            )
+            full_sd[param_name] = None
+            continue
+
         nvfp4_cls = _nvfp4_local_tensor_cls(sharded_meta_param)
 
         full_tensor = None
@@ -533,6 +568,29 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         model._ep_lora_group = mesh["ep"].get_group()
         shard_expert_lora(model, mesh["ep"].size())
         ExpertParallelPlugin.fully_shard_experts(model, mesh["dp_shard"], fsdp2_kwargs)
+    elif getattr(model, "_ddp_params_and_buffers_to_ignore", None):
+        # Pure EP (ep_size == world_size): no ep×dp_shard mesh is built, so the experts were
+        # manually EP-sharded (shard_expert_weights scattered each rank's real [E_local] slice) but
+        # there is NO dp_shard axis to FSDP them onto. Left to the outer fully_shard(mesh=None) they
+        # would be re-sharded on the flat world mesh and replicated from rank 0, destroying EP. Exclude
+        # the EP-sharded expert base params from the FSDP wrap entirely so each rank keeps its own
+        # [E_local] slice as a plain param; fsdp2_load_full_state_dict restores them per-rank.
+        ep_ignored = {
+            p
+            for n, p in model.named_parameters()
+            if ".experts." in n
+            and ".shared_experts." not in n
+            and n.rsplit(".", 1)[-1]
+            in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
+        }
+        if ep_ignored:
+            fsdp2_kwargs["ignored_params"] = set(
+                fsdp2_kwargs.get("ignored_params") or set()
+            ) | ep_ignored
+            LOG.info(
+                f"expert_parallel (pure EP): excluded {len(ep_ignored)} EP-sharded expert "
+                "param(s) from the FSDP wrap (kept as plain per-rank slices)."
+            )
 
     auto_wrap_policy = fsdp2_prepare_auto_wrap_policy(fsdp2_plugin, model)
     log_bias_dtype_mismatch = False

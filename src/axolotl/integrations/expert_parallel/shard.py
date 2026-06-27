@@ -53,6 +53,69 @@ def _replace_with_slice(module, attr_name: str, start: int, end: int) -> None:
     # `old` goes out of scope on return.
 
 
+def _scatter_expert_from_rank0(module, attr_name, group, ep_rank, ep_size, e_local):
+    """Populate ``module.{attr_name}`` with THIS rank's real ``[e_local]`` expert slice by scattering
+    rank-0's full param. Under cpu_ram_efficient_loading the rank0-only converter leaves non-rank-0
+    experts ZERO; plain-slicing them (``_replace_with_slice``) + DDP-ignore means ranks 1..N keep zero
+    experts. Rank 0 holds the full real param here (post from_pretrained, before FSDP), so scatter its
+    dim-0 (expert-axis) slices to every rank. Handles torchao NVFP4Tensor (scatter qdata/scale/
+    per_tensor_scale components) and plain tensors. The scatter runs on GPU (NCCL); the rebuilt slice
+    is moved back to the param's original device."""
+    import torch.distributed as dist
+
+    old = getattr(module, attr_name)
+    nv = old.data
+    dev = torch.device("cuda", torch.cuda.current_device())
+    src = dist.get_global_rank(group, 0)
+    dst_device = old.data.device if old.data.device.type != "meta" else torch.device("cpu")
+    requires_grad = old.requires_grad
+
+    def _scatter_dim0(full_comp, like):
+        out = torch.empty((e_local, *like.shape[1:]), dtype=like.dtype, device=dev)
+        chunks = None
+        if ep_rank == 0:
+            chunks = [c.contiguous().to(dev) for c in full_comp.chunk(ep_size, dim=0)]
+        dist.scatter(out, scatter_list=chunks, src=src, group=group)
+        return out
+
+    try:
+        from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+    except ImportError:
+        NVFP4Tensor = None
+
+    if NVFP4Tensor is not None and isinstance(nv, NVFP4Tensor):
+        full_q = nv.qdata if ep_rank == 0 else None
+        local_q = _scatter_dim0(full_q, nv.qdata)
+        # scale (e4m3) isn't a collective dtype on all backends -> scatter the uint8 view.
+        full_s = nv.scale.view(torch.uint8) if ep_rank == 0 else None
+        local_s = _scatter_dim0(full_s, nv.scale.view(torch.uint8)).view(nv.scale.dtype)
+        pts = getattr(nv, "per_tensor_scale", None)
+        local_pts = None
+        if pts is not None:
+            if pts.dim() >= 1 and pts.shape[0] == nv.qdata.shape[0]:
+                local_pts = _scatter_dim0(
+                    pts if ep_rank == 0 else None, pts
+                )
+            else:  # replicated scalar
+                local_pts = pts.to(dev).clone()
+                dist.broadcast(local_pts, src=src, group=group)
+        local_nv = NVFP4Tensor(
+            local_q.to(dst_device),
+            local_s.to(dst_device),
+            nv.block_size,
+            nv.dtype,
+            per_tensor_scale=(local_pts.to(dst_device) if local_pts is not None else None),
+        )
+        new_param = torch.nn.Parameter(local_nv, requires_grad=requires_grad)
+    else:
+        local = _scatter_dim0(nv if ep_rank == 0 else None, nv)
+        new_param = torch.nn.Parameter(local.to(dst_device), requires_grad=requires_grad)
+
+    if attr_name in module._parameters:
+        del module._parameters[attr_name]
+    setattr(module, attr_name, new_param)
+
+
 def _detect_experts_modules(model):
     """Yield (name, module) pairs for every module that looks like an Experts class.
 
@@ -108,6 +171,11 @@ def shard_expert_weights(model, ep_group) -> int:
         return 0
 
     ep_rank = dist.get_rank(ep_group)
+    # `_scatter_expert_from_rank0` sources the full expert tensor from the EP group's rank 0, which
+    # only holds real (non-meta) data under cpu_ram_efficient_loading when it IS global rank 0 — i.e.
+    # pure EP (ep group == WORLD). In EP×dp_shard composition the experts are loaded via the FSDP
+    # mesh (fully_shard_experts + the NVFP4 broadcast), so plain-slice here and let FSDP fill them.
+    pure_ep = ep_size == dist.get_world_size()
     sharded = 0
     ignore_names: list[str] = []
 
@@ -121,19 +189,41 @@ def shard_expert_weights(model, ep_group) -> int:
             )
         E_local = E // ep_size
         start = ep_rank * E_local
-        end = start + E_local
 
+        end = start + E_local
         with torch.no_grad():
-            _replace_with_slice(module, "gate_up_proj", start, end)
-            _replace_with_slice(module, "down_proj", start, end)
-            for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
-                bias = getattr(module, bias_name, None)
-                if (
-                    isinstance(bias, torch.nn.Parameter)
-                    and bias.dim() >= 1
-                    and bias.shape[0] == E
-                ):
-                    _replace_with_slice(module, bias_name, start, end)
+            if pure_ep:
+                # Pure EP: no FSDP mesh fills the experts, and after the slice rank 0 keeps only
+                # experts[0:E_local], so the full tensor is gone. Scatter rank-0's REAL per-rank
+                # slices NOW (rank 0 == EP rank 0 holds the full tensor). See
+                # _scatter_expert_from_rank0; the outer FSDP must then ignore these params.
+                _scatter_expert_from_rank0(
+                    module, "gate_up_proj", ep_group, ep_rank, ep_size, E_local
+                )
+                _scatter_expert_from_rank0(
+                    module, "down_proj", ep_group, ep_rank, ep_size, E_local
+                )
+                for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+                    bias = getattr(module, bias_name, None)
+                    if (
+                        isinstance(bias, torch.nn.Parameter)
+                        and bias.dim() >= 1
+                        and bias.shape[0] == E
+                    ):
+                        _scatter_expert_from_rank0(
+                            module, bias_name, ep_group, ep_rank, ep_size, E_local
+                        )
+            else:
+                _replace_with_slice(module, "gate_up_proj", start, end)
+                _replace_with_slice(module, "down_proj", start, end)
+                for bias_name in ("gate_up_proj_bias", "down_proj_bias"):
+                    bias = getattr(module, bias_name, None)
+                    if (
+                        isinstance(bias, torch.nn.Parameter)
+                        and bias.dim() >= 1
+                        and bias.shape[0] == E
+                    ):
+                        _replace_with_slice(module, bias_name, start, end)
 
         # Stash metadata the registered fn needs.
         module.local_expert_offset = start
