@@ -40,10 +40,15 @@ strict: false
 # The DSA kernels own attention; sdpa is the fallback the dispatcher uses below the sparse crossover.
 attn_implementation: sdpa
 
-# Expert parallelism (pure EP): set expert_parallel_size to the TOTAL number of GPUs so each rank
-# owns 256/world_size routed experts (256 must divide it evenly), with dp_shard_size 1. The non-expert
-# weights still FSDP-shard across all ranks. (ep < world composition — experts on ep, data on a
-# separate dp_shard axis — is a work in progress; use pure EP.)
+# Expert parallelism. Pure EP: set expert_parallel_size to the TOTAL number of GPUs so each rank owns
+# 256/world_size routed experts (256 must divide it evenly), with dp_shard_size 1. The non-expert
+# weights still FSDP-shard across all ranks.
+#   2D composition (ep < world_size) also works, as long as ep * dp_shard * cp == world_size:
+#     - EP × dp_shard (e.g. expert_parallel_size: 4 + dp_shard_size: 2): experts shard on the ep axis
+#       and are FSDP-sharded across the dp_shard ranks of each ep-group; data parallel on dp_shard.
+#     - EP × cp (e.g. expert_parallel_size: 4 + context_parallel_size: 2): the sequence shards on cp
+#       (the DSA attention all-gathers the 576-wide compressed KV on that axis) and the experts are
+#       FSDP-sharded across the cp ranks of each ep-group so they don't sit replicated per rank.
 expert_parallel_size: 8                      # = number of GPUs (8 for 8xH100; 2 for 2xB200)
 dp_shard_size: 1
 expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
@@ -61,7 +66,9 @@ expert_parallel_token_capacity: 1000000
 
 # For multi-GPU at long context, shard the sequence with context parallelism (the DSA attention
 # all-gathers only the 576-wide compressed KV on the cp axis). Composes with expert parallelism for
-# the MoE (experts shard on ep, sequence on cp) — see examples/expert_parallel and the EP plugin.
+# the MoE (experts shard on ep, sequence on cp). To use it, lower expert_parallel_size so that
+# ep * cp == world_size (e.g. expert_parallel_size: 4 with context_parallel_size: 2 on 8 GPUs) and
+# uncomment the line below. Uses the DSA kernels' own CP attention (no ring_flash_attn needed).
 # context_parallel_size: 2
 
 chat_template: tokenizer_default

@@ -55,18 +55,22 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
         group = mesh.get_group()
         world = dist.get_world_size(group)
         p0 = placements[0] if len(placements) == 1 else None
+        # Direct per-shard scatter on the param's mesh group — the full WORLD (pure data-parallel) OR a
+        # dp_shard/cp SUBGROUP (EP composition). Source is the group's rank-0 (== the is_main rank set by
+        # the caller). Avoids distribute_tensor, which deadlocks scattering from src_data_rank=0 on a
+        # sub-mesh. Falls back to distribute_tensor only for non-Shard(0)/uneven placements.
         if (
             p0 is not None
             and getattr(p0, "dim", None) == 0
             and ref_local.shape[0] * world == e_global
-            and world == dist.get_world_size()
         ):
+            src_rank = dist.get_process_group_ranks(group)[0]
             local = torch.empty_like(ref_local, device=device)
             chunks = None
             if is_main:
                 full = getattr(full_nvfp4, name)
                 chunks = [c.contiguous().to(device) for c in full.chunk(world, dim=0)]
-            dist.scatter(local, scatter_list=chunks, src=0, group=group)
+            dist.scatter(local, scatter_list=chunks, src=src_rank, group=group)
             del chunks
             return local
         # Fallback: generic distribute_tensor (uneven / replicate / sub-group).
@@ -103,6 +107,38 @@ def _broadcast_nvfp4_param(sharded_meta_param, full_nvfp4, is_main, device, nvfp
     return DTensor.from_local(local_nvfp4, mesh, placements, run_check=False)
 
 
+def _ep_expert_from_local(sharded_meta_param, full_local, nvfp4_cls):
+    """Build an EP-sharded NVFP4 expert DTensor from THIS rank's already-correct local copy — NO
+    collective. shard_expert_weights scattered each rank its ep-group's full ``[E_local]`` NVFP4
+    (``full_local``); slice this rank's dp-axis shard (``[E_local // dp]`` at its position in the
+    mesh group) and wrap it with ``from_local``. Used instead of a per-subgroup scatter, which
+    deadlocks against the interleaved full-mesh non-expert loads (the receiver ranks race ahead of
+    the source ranks)."""
+    from torch.distributed.tensor import DTensor
+
+    mesh = sharded_meta_param.device_mesh
+    placements = sharded_meta_param.placements
+    local_meta = sharded_meta_param._local_tensor
+    dev = mesh.device_type
+    e_dp = local_meta.qdata.shape[0]  # this rank's dp-local expert count
+    dp_rank = dist.get_group_rank(mesh.get_group(), dist.get_rank())
+    s = slice(dp_rank * e_dp, (dp_rank + 1) * e_dp)
+    qd = full_local.qdata[s].to(dev)
+    sc = full_local.scale[s].to(dev)
+    pts = getattr(full_local, "per_tensor_scale", None)
+    local_pts = None
+    if pts is not None:
+        local_pts = (
+            pts[s].to(dev)
+            if (pts.dim() >= 1 and pts.shape[0] == full_local.qdata.shape[0])
+            else pts.to(dev)
+        )
+    local_nv = nvfp4_cls(
+        qd, sc, local_meta.block_size, local_meta.dtype, per_tensor_scale=local_pts
+    )
+    return DTensor.from_local(local_nv, mesh, placements, run_check=False)
+
+
 def fsdp2_load_full_state_dict(
     _accelerator, model: torch.nn.Module, full_sd: dict, offload_to_cpu: bool = False
 ):
@@ -115,8 +151,6 @@ def fsdp2_load_full_state_dict(
             The model to load the state dict into, expected to be on meta device or a VRAM spike can occur
         full_sd (`dict`): The full state dict to load, can only be on rank 0
     """
-    from torch.distributed.tensor import distribute_tensor
-
     LOG.info("Broadcasting full state dict to all ranks...")
     import time
 
@@ -140,6 +174,7 @@ def fsdp2_load_full_state_dict(
 
     meta_sharded_sd = model.state_dict()
     sharded_sd = {}
+
     for param_name, sharded_meta_param in meta_sharded_sd.items():
         # Pure-EP: the EP-sharded experts are excluded from the FSDP wrap (ignored_params), so they
         # stay PLAIN per-rank meta params here. shard_expert_weights already scattered each rank's
@@ -172,37 +207,103 @@ def fsdp2_load_full_state_dict(
             # NVFP4Tensor params can't go through distribute_tensor (c10d.scatter_ unimplemented on
             # the subclass); scatter their plain qdata/scale/per_tensor_scale components instead.
             device_mesh = sharded_meta_param.device_mesh
-            full_nvfp4 = full_sd[param_name] if _accelerator.is_main_process else None
-            sharded_param = _broadcast_nvfp4_param(
-                sharded_meta_param,
-                full_nvfp4,
-                _accelerator.is_main_process,
-                device_mesh.device_type,
-                nvfp4_cls,
+            # Source each NVFP4 expert from its OWN mesh-group's rank-0, not the global rank 0. Under
+            # EP×dp_shard / EP×cp composition the experts live on a dp_shard SUBGROUP mesh, and
+            # shard_expert_weights scattered each rank its ep-group's real slice — so the subgroup's
+            # rank-0 holds the data (global rank 0 is outside ep-groups 1..N's subgroups). For full-world
+            # params the subgroup rank-0 IS global rank 0, so this reduces to is_main_process.
+            if _is_ep_expert_param(param_name):
+                # EP-sharded NVFP4 experts: shard_expert_weights already scattered THIS rank its
+                # ep-group's full [E_local] NVFP4 into full_sd. Build the DTensor by slicing the dp-axis
+                # shard out of that local copy and wrapping it with from_local — NO collective. The
+                # per-subgroup scatter (any flavor) deadlocks because it interleaves with the full-mesh
+                # non-expert loads, racing the receiver ranks ahead of the source ranks; from_local
+                # sidesteps every collective.
+                sharded_param = _ep_expert_from_local(
+                    sharded_meta_param, full_sd[param_name], nvfp4_cls
+                )
+            else:
+                # Non-EP NVFP4 on the full data-parallel mesh: only rank 0 has data -> scatter from it.
+                full_nvfp4 = (
+                    full_sd[param_name] if _accelerator.is_main_process else None
+                )
+                sharded_param = _broadcast_nvfp4_param(
+                    sharded_meta_param,
+                    full_nvfp4,
+                    _accelerator.is_main_process,
+                    device_mesh.device_type,
+                    nvfp4_cls,
+                )
+        elif (
+            ".experts." in param_name
+            and (".lora_A." in param_name or ".lora_B." in param_name)
+            and hasattr(sharded_meta_param, "device_mesh")
+            and dist.get_world_size(sharded_meta_param.device_mesh.get_group())
+            < dist.get_world_size()
+        ):
+            # EP×dp_shard/cp composition: the routed-expert LoRA adapter lives on a dp_shard SUBGROUP
+            # mesh and holds only THIS ep-group's E_local experts, but full_sd carries the GLOBAL
+            # (all-experts) adapter (4096-row lora_A etc.). The generic broadcast below would mismatch
+            # sizes (rank-0 sends the global tensor, receivers allocate the E_local size) and replicate
+            # rank-0's experts onto ranks owning a different ep-slice. Broadcast rank-0's global adapter
+            # (a consistent shape on every rank), then slice THIS rank's ep-chunk (dim 0 for lora_A's
+            # expert-major rows, dim 1 for lora_B's rank-major columns) and its dp_shard, and from_local.
+            from torch.distributed.tensor import DTensor, Shard
+
+            mesh = sharded_meta_param.device_mesh
+            placements = sharded_meta_param.placements
+            dp_size = mesh.size()
+            ep_size = dist.get_world_size() // dp_size
+            ep_dim = 0 if ".lora_A." in param_name else 1
+            dev = mesh.device_type
+            gshape = list(sharded_meta_param.size())
+            gshape[ep_dim] *= ep_size
+            if _accelerator.is_main_process:
+                g = full_tensor.to(dev)
+            else:
+                g = torch.empty(gshape, device=dev, dtype=sharded_meta_param.dtype)
+            dist.broadcast(g, src=0)
+            ep_coord = min(dist.get_process_group_ranks(mesh.get_group())) // dp_size
+            local = g.chunk(ep_size, dim=ep_dim)[ep_coord]
+            dp_rank = dist.get_group_rank(mesh.get_group(), dist.get_rank())
+            for _p in placements:
+                if isinstance(_p, Shard):
+                    local = local.chunk(dp_size, dim=_p.dim)[dp_rank]
+            sharded_param = DTensor.from_local(
+                local.contiguous(), mesh, placements, run_check=False
             )
         elif hasattr(sharded_meta_param, "device_mesh"):
+            # GLOBAL broadcast of rank-0's full tensor, then slice this rank's local shard and wrap via
+            # from_local. distribute_tensor (src_data_rank=0) and per-mesh scatters DEADLOCK or fail on
+            # EP-composition: experts/non-experts live on dp_shard SUBGROUP meshes that exclude global
+            # rank 0, but under cpu_ram_efficient only rank 0 has data — so neither a sub-mesh scatter
+            # (no source in the subgroup) nor distribute_tensor (receivers race the stalled source) works.
+            # A global broadcast has every rank participate (no desync), and the slice+from_local needs
+            # no further collective. Equivalent result to distribute_tensor for the full DP mesh, so the
+            # non-EP path is unchanged.
+            from torch.distributed.tensor import DTensor, Shard
+
             device_mesh = sharded_meta_param.device_mesh
+            _pl = sharded_meta_param.placements
             if _accelerator.is_main_process:
-                full_tensor = full_tensor.to(device_mesh.device_type)
+                _full = full_tensor.to(device_mesh.device_type)
             else:
-                full_tensor = torch.empty(
+                _full = torch.empty(
                     sharded_meta_param.size(),
                     device=device_mesh.device_type,
                     dtype=sharded_meta_param.dtype,
                 )
-            sharded_param = distribute_tensor(
-                full_tensor,
-                device_mesh,
-                sharded_meta_param.placements,
-                src_data_rank=0,
+            dist.broadcast(_full, src=0)
+            _grp = device_mesh.get_group()
+            _lr = dist.get_group_rank(_grp, dist.get_rank())
+            _w = dist.get_world_size(_grp)
+            _local = _full
+            for _p in _pl:
+                if isinstance(_p, Shard):
+                    _local = _local.chunk(_w, dim=_p.dim)[_lr]
+            sharded_param = DTensor.from_local(
+                _local.contiguous(), device_mesh, _pl, run_check=False
             )
-            # Clone the local shard to allow full_tensor to be freed.
-            if (
-                sharded_param._local_tensor.untyped_storage().size()
-                > sharded_param._local_tensor.nelement()
-                * sharded_param._local_tensor.element_size()
-            ):
-                sharded_param = sharded_param.clone()
         else:
             # Non-sharded parameters
             if _accelerator.is_main_process:
@@ -553,11 +654,18 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
 
     # EP+FSDP: pre-wrap experts on `dp_shard` before the outer auto-wrap so
     # the walker skips them. See `expert_parallel/README.md`.
-    if (
-        mesh is not None
-        and "ep" in getattr(mesh, "mesh_dim_names", ())
-        and "dp_shard" in mesh.mesh_dim_names
-    ):
+    # EP composition shards the experts on the non-ep axis so they don't sit replicated per rank. With
+    # dp_shard that's the data axis; with pure EP×cp (no dp_shard) the cp ranks of an ep-group hold the
+    # SAME experts (cp shards the sequence, not the experts), so FSDP-shard them on cp and let the MoE
+    # forward all-gather — otherwise each rank keeps its full ep-group slice (e.g. 64 experts at ep=4)
+    # and OOMs on the first forward's all-gather.
+    _ep_shard_axis = None
+    if mesh is not None and "ep" in getattr(mesh, "mesh_dim_names", ()):
+        if "dp_shard" in mesh.mesh_dim_names:
+            _ep_shard_axis = "dp_shard"
+        elif "cp" in mesh.mesh_dim_names:
+            _ep_shard_axis = "cp"
+    if _ep_shard_axis is not None:
         from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
         from axolotl.integrations.expert_parallel.shard import shard_expert_lora
 
@@ -567,7 +675,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
         # save time can pick up a stale/size-1 mesh).
         model._ep_lora_group = mesh["ep"].get_group()
         shard_expert_lora(model, mesh["ep"].size())
-        ExpertParallelPlugin.fully_shard_experts(model, mesh["dp_shard"], fsdp2_kwargs)
+        ExpertParallelPlugin.fully_shard_experts(
+            model, mesh[_ep_shard_axis], fsdp2_kwargs
+        )
     elif getattr(model, "_ddp_params_and_buffers_to_ignore", None):
         # Pure EP (ep_size == world_size): no ep×dp_shard mesh is built, so the experts were
         # manually EP-sharded (shard_expert_weights scattered each rank's real [E_local] slice) but
