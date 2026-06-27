@@ -23,6 +23,7 @@ from axolotl.integrations.expert_parallel.experts_fn import (
 )
 from axolotl.integrations.expert_parallel.shard import (
     _detect_experts_modules,
+    _slice_expert_lora_param,
     shard_expert_weights,
 )
 
@@ -544,3 +545,127 @@ class TestMeshTopology:
         for rank, err in results:
             assert err is not None, f"rank {rank} did not raise"
             assert "must equal" in err.lower() or "world_size" in err.lower(), err
+
+
+class TestExpertLoraSlicing:
+    """Routed-expert LoRA must be sliced so each EP rank gets ITS OWN experts' adapter blocks, and the
+    sliced shape must imply the TRUE LoRA rank ``r`` (= sliced_packed_dim // E_local), not ``r*ep_size``.
+
+    The pure-EP bug left the adapter global-sized while the base was E_local, so
+    ``_unwrap_experts_lora`` read ``rank = lora_A.shape[0] // E_local = r*ep_size`` and reshaped the
+    adapter into a scrambled expert/rank layout (harmless only at step 0, where lora_B == 0). These are
+    pure tensor-op checks of the slice math — no dist / FSDP / DeepEP / NVFP4 / model needed.
+    """
+
+    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
+    def test_lora_A_slice_picks_local_experts(self, e_global, ep_size, r):
+        # lora_A peft layout [E*r, in], expert-major: expert e owns rows [e*r:(e+1)*r]; tag rows = e.
+        e_local, in_features = e_global // ep_size, 5
+        full = torch.zeros(e_global * r, in_features)
+        for e in range(e_global):
+            full[e * r : (e + 1) * r] = float(e)
+        for ep_rank in range(ep_size):
+            start, end = ep_rank * e_local, (ep_rank + 1) * e_local
+            lin = torch.nn.Linear(in_features, e_global * r, bias=False)
+            lin.weight = torch.nn.Parameter(full.clone())
+            assert _slice_expert_lora_param(lin, 0, e_global, start, end) == r
+            sl = lin.weight.data
+            # the implied rank from the SLICED shape is the true r (the bug would give r*ep_size)
+            assert sl.shape[0] // e_local == r
+            tags = sl.reshape(e_local, r, in_features)[:, 0, 0].long()
+            assert torch.equal(tags, torch.arange(start, end))
+
+    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
+    def test_lora_B_slice_picks_local_experts(self, e_global, ep_size, r):
+        # lora_B peft layout [out, r*E], rank-major [out, r, E]; tag column (k, e) = e.
+        e_local, out_features = e_global // ep_size, 5
+        full = torch.zeros(out_features, r, e_global)
+        for e in range(e_global):
+            full[:, :, e] = float(e)
+        full = full.reshape(out_features, r * e_global)
+        for ep_rank in range(ep_size):
+            start, end = ep_rank * e_local, (ep_rank + 1) * e_local
+            lin = torch.nn.Linear(e_global * r, out_features, bias=False)
+            lin.weight = torch.nn.Parameter(full.clone())
+            assert _slice_expert_lora_param(lin, 1, e_global, start, end) == r
+            sl = lin.weight.data
+            assert sl.shape[1] // e_local == r
+            tags = sl.reshape(out_features, r, e_local)[0, 0, :].long()
+            assert torch.equal(tags, torch.arange(start, end))
+
+    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
+    def test_forward_slice_picks_local_experts_and_true_rank(self, e_global, ep_size, r):
+        """The FORWARD-time slice (used by the ParamWrapper fastpath and the _unwrap fallback) keeps
+        the adapter global and takes each rank's expert block at use time, reporting rank=r — NOT the
+        r*ep_size that the un-sliced global adapter would imply (the actual pure-EP bug path)."""
+        from types import SimpleNamespace
+
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+            _ep_local_expert_lora,
+        )
+
+        e_local, in_f, out_f = e_global // ep_size, 5, 7
+        A = torch.zeros(e_global * r, in_f)
+        for e in range(e_global):
+            A[e * r : (e + 1) * r] = float(e)
+        B = torch.zeros(out_f, r, e_global)
+        for e in range(e_global):
+            B[:, :, e] = float(e)
+        B = B.reshape(out_f, r * e_global)
+        for ep_rank in range(ep_size):
+            offset = ep_rank * e_local
+            experts = SimpleNamespace(
+                num_experts=e_local,
+                num_experts_global=e_global,
+                local_expert_offset=offset,
+            )
+            a, b, n_local, rank = _ep_local_expert_lora(A, B, experts)
+            assert n_local == e_local and rank == r
+            assert torch.equal(
+                a.reshape(e_local, r, in_f)[:, 0, 0].long(),
+                torch.arange(offset, offset + e_local),
+            )
+            assert torch.equal(
+                b.reshape(out_f, r, e_local)[0, 0, :].long(),
+                torch.arange(offset, offset + e_local),
+            )
+
+    def test_forward_slice_noop_when_not_ep_sharded(self):
+        from types import SimpleNamespace
+
+        from axolotl.integrations.kernels.libs.scattermoe_lora.experts import (
+            _ep_local_expert_lora,
+        )
+
+        a_in, b_in = torch.randn(8 * 2, 5), torch.randn(7, 2 * 8)
+        experts = SimpleNamespace(
+            num_experts=8, num_experts_global=8, local_expert_offset=0
+        )
+        a, b, n_local, rank = _ep_local_expert_lora(a_in, b_in, experts)
+        assert n_local == 8 and rank == 2
+        assert a is a_in and b is b_in  # no slice / copy when E_local == E_global
+
+    def test_ranks_reconstruct_global_adapter(self):
+        # All EP ranks' slices, concatenated on the expert axis, must rebuild the global adapter
+        # (no expert dropped or duplicated).
+        e_global, ep_size, r, in_features, out_features = 8, 2, 2, 5, 7
+        e_local = e_global // ep_size
+        A = torch.randn(e_global * r, in_features)
+        B = torch.randn(out_features, r * e_global)
+        a_pieces, b_pieces = [], []
+        for ep_rank in range(ep_size):
+            start, end = ep_rank * e_local, (ep_rank + 1) * e_local
+            la = torch.nn.Linear(in_features, e_global * r, bias=False)
+            la.weight = torch.nn.Parameter(A.clone())
+            _slice_expert_lora_param(la, 0, e_global, start, end)
+            a_pieces.append(la.weight.data)
+            lb = torch.nn.Linear(e_global * r, out_features, bias=False)
+            lb.weight = torch.nn.Parameter(B.clone())
+            _slice_expert_lora_param(lb, 1, e_global, start, end)
+            # rank-major [out, r, E_local] per rank -> stack on the expert axis
+            b_pieces.append(lb.weight.data.reshape(out_features, r, e_local))
+        assert torch.equal(torch.cat(a_pieces, dim=0), A)
+        assert torch.equal(
+            torch.cat(b_pieces, dim=2).reshape(out_features, r * e_global),
+            B.reshape(out_features, r, e_global).reshape(out_features, r * e_global),
+        )

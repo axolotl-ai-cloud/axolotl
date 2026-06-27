@@ -82,12 +82,19 @@ def patch_paramwrapper_fastpath() -> None:
             lora_A, lora_B, scaling = get_lora_params_from_wrapper(wrapper)
             if lora_A is None or num_experts is None:
                 continue
-            rank = lora_A.shape[0] // num_experts
+            # Under EP the base is sliced to E_local experts but the adapter stays a single global
+            # tensor over E_global experts; take THIS rank's local-expert block and the true LoRA
+            # rank so the fused kernel reads the right experts. No-op when not EP-sharded.
+            from .experts import _ep_local_expert_lora
+
+            lora_A, lora_B, num_experts_local, rank = _ep_local_expert_lora(
+                lora_A, lora_B, base
+            )
             # PEFT keeps LoRA fp32; cast to activation dtype (grads still route to the fp32 params).
             lora_A = lora_A.to(x.dtype)
             lora_B = lora_B.to(x.dtype)
             sm_lora[name] = _convert_smoe_lora(
-                lora_A, lora_B, num_experts, rank, scaling
+                lora_A, lora_B, num_experts_local, rank, scaling
             )
 
         base._scattermoe_lora = sm_lora

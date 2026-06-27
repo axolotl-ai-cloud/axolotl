@@ -54,29 +54,47 @@ def _unwrap_experts_lora(experts):
     gup_lora = None
     down_lora = None
 
-    gup_param = experts.gate_up_proj
-    if isinstance(gup_param, ParamWrapper):
-        lora_A, lora_B, scaling = get_lora_params_from_wrapper(gup_param)
-        if lora_A is not None:
-            num_experts = experts.num_experts
-            rank = lora_A.shape[0] // num_experts
-            from .layers import peft_lora_to_scattermoe
+    for param, which in ((experts.gate_up_proj, "gup"), (experts.down_proj, "down")):
+        if not isinstance(param, ParamWrapper):
+            continue
+        lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
+        if lora_A is None:
+            continue
+        from .layers import peft_lora_to_scattermoe
 
-            sm_A, sm_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
+        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts)
+        sm_A, sm_B = peft_lora_to_scattermoe(a, b, n_local, rank)
+        if which == "gup":
             gup_lora = (sm_A, sm_B, scaling)
-
-    down_param = experts.down_proj
-    if isinstance(down_param, ParamWrapper):
-        lora_A, lora_B, scaling = get_lora_params_from_wrapper(down_param)
-        if lora_A is not None:
-            num_experts = experts.num_experts
-            rank = lora_A.shape[0] // num_experts
-            from .layers import peft_lora_to_scattermoe
-
-            sm_A, sm_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
+        else:
             down_lora = (sm_A, sm_B, scaling)
 
     return base_experts, gup_lora, down_lora
+
+
+def _ep_local_expert_lora(lora_A, lora_B, experts):
+    """Slice the routed-expert LoRA down to THIS EP rank's local experts.
+
+    Under expert parallelism the base weights are EP-sharded to ``num_experts`` (= E_local) but the
+    PEFT adapter param stays a single GLOBAL tensor over all ``num_experts_global`` experts (it is
+    FSDP-managed/gathered to full here — keeping it global avoids a plain-vs-DTensor mismatch in the
+    optimizer/grad-clip). So compute the rank from the GLOBAL expert count and take this rank's
+    ``[offset : offset+E_local]`` expert block at forward time:
+      * lora_A ``[r*E_global, in]`` expert-major  -> rows ``[offset*r : (offset+E_local)*r]``
+      * lora_B ``[out, r*E_global]`` rank-major    -> reshape ``[out, r, E_global]``, take experts.
+    Non-EP modules (E_local == E_global) are a no-op. Returns ``(A, B, E_local, rank)``."""
+    e_local = experts.num_experts
+    e_global = getattr(experts, "num_experts_global", e_local)
+    rank = lora_A.shape[0] // e_global
+    if e_global == e_local:
+        return lora_A, lora_B, e_local, rank
+    offset = getattr(experts, "local_expert_offset", 0)
+    a = lora_A[offset * rank : (offset + e_local) * rank, :]
+    out = lora_B.shape[0]
+    b = lora_B.reshape(out, rank, e_global)[:, :, offset : offset + e_local].reshape(
+        out, rank * e_local
+    )
+    return a, b, e_local, rank
 
 
 def _get_base_param(param):
