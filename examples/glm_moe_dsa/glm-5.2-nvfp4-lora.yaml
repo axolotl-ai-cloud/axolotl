@@ -16,6 +16,13 @@
 base_model: Mapika/GLM-5.2-NVFP4
 
 plugins:
+  # Expert parallelism: shard the 256 routed experts across GPUs (each rank owns 1/world_size of
+  # them) and dispatch tokens via DeepEP all-to-all. The local expert GEMM runs through the SAME
+  # grouped-NVFP4 kernel as the non-EP path, so EP is both faster AND lower-memory than plain FSDP2
+  # at scale (verified at 8k seq: ~1.3x faster and ~12% less peak activation, beating FSDP2 on both).
+  # Requires the `deep_ep` package. Drop this plugin (+ the expert_parallel_* keys below) to fall back
+  # to plain FSDP2.
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
   - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
   - axolotl.integrations.kernels.KernelsPlugin
 use_kernels: true
@@ -30,6 +37,18 @@ strict: false
 
 # The DSA kernels own attention; sdpa is the fallback the dispatcher uses below the sparse crossover.
 attn_implementation: sdpa
+
+# Expert parallelism (pure EP): set expert_parallel_size to the TOTAL number of GPUs so each rank
+# owns 256/world_size routed experts (256 must divide it evenly), with dp_shard_size 1. The non-expert
+# weights still FSDP-shard across all ranks. (ep < world composition — experts on ep, data on a
+# separate dp_shard axis — is a work in progress; use pure EP.)
+expert_parallel_size: 8                      # = number of GPUs (8 for 8xH100; 2 for 2xB200)
+dp_shard_size: 1
+expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
+# Max tokens routed to any single expert per forward; the lowest-weight excess are dropped. A safety
+# cap that guards the DeepEP intranode combine against a hot expert at long context (the GLM router
+# concentrates with depth); effectively inactive at short/medium sequence lengths.
+expert_parallel_token_capacity: 1000000
 
 # For multi-GPU at long context, shard the sequence with context parallelism (the DSA attention
 # all-gathers only the 576-wide compressed KV on the cp axis). Composes with expert parallelism for
@@ -72,7 +91,10 @@ learning_rate: 0.0002
 bf16: auto
 tf32: true
 gradient_checkpointing: true
-activation_offloading: true
+# EP shards the experts across GPUs, leaving activation-memory headroom — keep offloading off (faster).
+# Re-enable (true) for plain FSDP2 / tight-memory runs, or use AXOLOTL_EP_EXPERT_SHARD_TOKENS to tile
+# the grouped expert forward (opt-in activation-memory knob; trades step time for memory).
+activation_offloading: false
 
 warmup_ratio: 0.1
 evals_per_epoch: 4
