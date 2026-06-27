@@ -213,6 +213,9 @@ def shard_expert_weights(model, ep_group) -> int:
         module.local_expert_offset = start
         module.num_local_experts = E_local
         module.num_experts_global = E
+        # Single global expert count for the cpu_ram_efficient load path (all routed-expert modules
+        # share it); used to reshape the global expert-LoRA adapter when slicing per-rank shards.
+        model._ep_num_experts_global = E
         # Override the kernel's view of num_experts for grouped_mm/scattermoe bucketing.
         module.num_experts = E_local
 
@@ -292,6 +295,39 @@ def _slice_expert_lora_param(linear, dim: int, e_global: int, start: int, end: i
         linear.in_features = new.shape[1]
     linear.weight = torch.nn.Parameter(new, requires_grad=w.requires_grad)
     return r
+
+
+def ep_adapter_load_local_shard(
+    global_adapter, ep_dim, e_global, ep_coord, ep_size, placements, dp_size, dp_rank
+):
+    """Slice an EP-composition expert-LoRA adapter from rank-0's GLOBAL (all-experts) tensor down to
+    THIS rank's local FSDP shard — the inverse of ``shard_expert_lora`` + the FSDP dp/cp sharding, used
+    by the cpu_ram_efficient load path. First take this ep-group's experts, then this rank's dp/cp shard
+    along each Shard placement.
+
+    ``ep_dim`` is the adapter's expert axis: 0 for lora_A's expert-major ``[E*r, in]`` rows, 1 for
+    lora_B's ``[out, r*E]`` columns. lora_B's experts are the LAST axis of the ``[out, r, E]`` view (NOT
+    contiguous in the flat ``r*E`` dim), so a plain ``chunk`` on dim 1 would pick a rank-component, not
+    this ep-group's experts — hence the reshape-slice that mirrors :func:`_slice_expert_lora_param`.
+    """
+    from torch.distributed.tensor import Shard
+
+    e_local = e_global // ep_size
+    start, end = ep_coord * e_local, (ep_coord + 1) * e_local
+    if ep_dim == 0:  # lora_A: [E*r, in] expert-major rows
+        r = global_adapter.shape[0] // e_global
+        ep_slice = global_adapter[start * r : end * r, :]
+    else:  # lora_B: [out, r*E] -> [out, r, E], experts on the last axis
+        out_dim = global_adapter.shape[0]
+        r = global_adapter.shape[1] // e_global
+        ep_slice = global_adapter.reshape(out_dim, r, e_global)[:, :, start:end].reshape(
+            out_dim, r * e_local
+        )
+    local = ep_slice
+    for placement in placements:
+        if isinstance(placement, Shard):
+            local = local.chunk(dp_size, dim=placement.dim)[dp_rank]
+    return local.contiguous()
 
 
 def shard_expert_lora(model, ep_size: int) -> int:

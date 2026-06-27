@@ -246,9 +246,14 @@ def fsdp2_load_full_state_dict(
             # (all-experts) adapter (4096-row lora_A etc.). The generic broadcast below would mismatch
             # sizes (rank-0 sends the global tensor, receivers allocate the E_local size) and replicate
             # rank-0's experts onto ranks owning a different ep-slice. Broadcast rank-0's global adapter
-            # (a consistent shape on every rank), then slice THIS rank's ep-chunk (dim 0 for lora_A's
-            # expert-major rows, dim 1 for lora_B's rank-major columns) and its dp_shard, and from_local.
-            from torch.distributed.tensor import DTensor, Shard
+            # (a consistent shape on every rank), then slice THIS rank's ep-experts + dp_shard and
+            # from_local. The ep slice is expert-aware (lora_B's experts are not contiguous in its flat
+            # r*E dim), so it mirrors shard_expert_lora rather than a plain chunk.
+            from torch.distributed.tensor import DTensor
+
+            from axolotl.integrations.expert_parallel.shard import (
+                ep_adapter_load_local_shard,
+            )
 
             mesh = sharded_meta_param.device_mesh
             placements = sharded_meta_param.placements
@@ -264,13 +269,19 @@ def fsdp2_load_full_state_dict(
                 g = torch.empty(gshape, device=dev, dtype=sharded_meta_param.dtype)
             dist.broadcast(g, src=0)
             ep_coord = min(dist.get_process_group_ranks(mesh.get_group())) // dp_size
-            local = g.chunk(ep_size, dim=ep_dim)[ep_coord]
             dp_rank = dist.get_group_rank(mesh.get_group(), dist.get_rank())
-            for _p in placements:
-                if isinstance(_p, Shard):
-                    local = local.chunk(dp_size, dim=_p.dim)[dp_rank]
+            local = ep_adapter_load_local_shard(
+                g,
+                ep_dim,
+                model._ep_num_experts_global,
+                ep_coord,
+                ep_size,
+                placements,
+                dp_size,
+                dp_rank,
+            )
             sharded_param = DTensor.from_local(
-                local.contiguous(), mesh, placements, run_check=False
+                local, mesh, placements, run_check=False
             )
         elif hasattr(sharded_meta_param, "device_mesh"):
             # GLOBAL broadcast of rank-0's full tensor, then slice this rank's local shard and wrap via

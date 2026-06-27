@@ -24,6 +24,7 @@ from axolotl.integrations.expert_parallel.experts_fn import (
 from axolotl.integrations.expert_parallel.shard import (
     _detect_experts_modules,
     _slice_expert_lora_param,
+    ep_adapter_load_local_shard,
     shard_expert_weights,
 )
 
@@ -669,3 +670,90 @@ class TestExpertLoraSlicing:
             torch.cat(b_pieces, dim=2).reshape(out_features, r * e_global),
             B.reshape(out_features, r, e_global).reshape(out_features, r * e_global),
         )
+
+
+class TestExpertAdapterLoadSharding:
+    """The cpu_ram_efficient load reconstructs each rank's local FSDP shard of the routed-expert LoRA
+    adapter from rank-0's broadcast GLOBAL (all-experts) adapter — the inverse of shard_expert_lora +
+    the dp/cp FSDP sharding (``ep_adapter_load_local_shard``). The ep slice must be EXPERT-aware:
+    lora_B's experts are the last axis of its ``[out, r, E]`` view (NOT contiguous in the flat ``r*E``
+    dim), so a plain chunk on dim 1 would load a rank-component instead of this ep-group's experts.
+    The 1-step e2e loss can't catch this (lora_B is zero-initialized — wrong zeros are still zeros); it
+    only bites a non-zero / resumed adapter. Pure tensor-op checks — no dist / FSDP / model needed.
+    """
+
+    @pytest.mark.parametrize(
+        "e_global,ep_size,dp_size,r", [(8, 2, 2, 2), (256, 4, 2, 16), (16, 2, 1, 3)]
+    )
+    def test_lora_A_load_shards_match_forward_slice(self, e_global, ep_size, dp_size, r):
+        from torch.distributed.tensor import Shard
+
+        in_features, e_local = 5, e_global // ep_size
+        # global lora_A [E_global*r, in], expert-major; expert e's row block tagged = e
+        g = torch.zeros(e_global * r, in_features)
+        for e in range(e_global):
+            g[e * r : (e + 1) * r] = float(e)
+        placements = (Shard(0),)  # FSDP shards dim 0
+        for ep_coord in range(ep_size):
+            shards = [
+                ep_adapter_load_local_shard(
+                    g, 0, e_global, ep_coord, ep_size, placements, dp_size, dp
+                )
+                for dp in range(dp_size)
+            ]
+            ep_full = torch.cat(shards, dim=0)  # gather this ep-group's dp shards
+            # == the forward E_local slice shard_expert_lora produces for this ep-group
+            start, end = ep_coord * e_local, (ep_coord + 1) * e_local
+            la = torch.nn.Linear(in_features, e_global * r, bias=False)
+            la.weight = torch.nn.Parameter(g.clone())
+            _slice_expert_lora_param(la, 0, e_global, start, end)
+            assert torch.equal(ep_full, la.weight.data)
+            tags = ep_full.reshape(e_local, r, in_features)[:, 0, 0].long()
+            assert torch.equal(tags, torch.arange(start, end))
+
+    @pytest.mark.parametrize(
+        "e_global,ep_size,dp_size,r", [(8, 2, 2, 2), (256, 4, 2, 16), (16, 2, 1, 3)]
+    )
+    def test_lora_B_load_shards_match_forward_slice(self, e_global, ep_size, dp_size, r):
+        from torch.distributed.tensor import Shard
+
+        out_features, e_local = 6, e_global // ep_size
+        # global lora_B [out, r*E] viewed [out, r, E]; column (k, e) tagged = e
+        g = torch.zeros(out_features, r, e_global)
+        for e in range(e_global):
+            g[:, :, e] = float(e)
+        g = g.reshape(out_features, r * e_global)
+        placements = (Shard(0),)  # FSDP shards dim 0 (out); the ep slice is on the expert axis
+        for ep_coord in range(ep_size):
+            shards = [
+                ep_adapter_load_local_shard(
+                    g, 1, e_global, ep_coord, ep_size, placements, dp_size, dp
+                )
+                for dp in range(dp_size)
+            ]
+            ep_full = torch.cat(shards, dim=0)  # gather the dp (out) shards back
+            start, end = ep_coord * e_local, (ep_coord + 1) * e_local
+            lb = torch.nn.Linear(e_global * r, out_features, bias=False)
+            lb.weight = torch.nn.Parameter(g.clone())
+            _slice_expert_lora_param(lb, 1, e_global, start, end)
+            assert torch.equal(ep_full, lb.weight.data)
+            tags = ep_full.reshape(out_features, r, e_local)[0, 0, :].long()
+            assert torch.equal(tags, torch.arange(start, end))
+
+    def test_lora_B_plain_chunk_would_load_wrong_experts(self):
+        # Documents the bug the expert-aware slice fixes: a naive chunk(ep_size, dim=1) loads a
+        # rank-component (all experts of one r-slice), not this ep-group's experts.
+        from torch.distributed.tensor import Shard
+
+        e_global, ep_size, r, out = 8, 2, 2, 6
+        g = torch.zeros(out, r, e_global)
+        for e in range(e_global):
+            g[:, :, e] = float(e)
+        g = g.reshape(out, r * e_global)
+        correct = ep_adapter_load_local_shard(g, 1, e_global, 1, ep_size, (Shard(0),), 1, 0)
+        naive = g.chunk(ep_size, dim=1)[1]
+        assert not torch.equal(correct, naive)
+        e_local = e_global // ep_size
+        # correct loads ep-group 1's experts {4,5,6,7}; the naive chunk would not
+        got = set(correct.reshape(out, r, e_local)[0, 0, :].long().tolist())
+        assert got == {4, 5, 6, 7}
