@@ -1,0 +1,74 @@
+"""Validation tests for the GLM DSA kernels' context-parallel exemptions.
+
+``context_parallel_size > 1`` normally requires flash attention + ``ring_flash_attn``. The GLM DSA
+kernels own context-parallel attention (compressed-KV all-gather + per-rank ``q_offset``), so when
+``use_glm_dsa_kernels`` is set the validator skips that requirement and leaves ``ring_attn_func`` None
+(the SP context manager still shards the sequence by chunking). These are config-validation checks only
+-- no GPU / dist / model needed. ``ring_flash_attn`` is intentionally NOT mocked here: the DSA path must
+validate without it installed.
+"""
+
+import pytest
+
+from axolotl.utils.config import prepare_plugins, validate_config
+from axolotl.utils.dict import DictDefault
+
+
+@pytest.fixture(autouse=True)
+def _reset_plugin_manager():
+    # prepare_plugins registers into the PluginManager singleton; reset around each test so the kernels
+    # plugin neither leaks out to other tests nor inherits another test's registered plugins.
+    from axolotl.integrations.base import PluginManager
+
+    PluginManager._instance = None
+    yield
+    PluginManager._instance = None
+
+
+def _cfg(**extra):
+    return DictDefault(
+        base_model="HuggingFaceTB/SmolLM2-135M",
+        learning_rate=1e-3,
+        datasets=[{"path": "mhenrichsen/alpaca_2k_test", "type": "alpaca"}],
+        micro_batch_size=1,
+        gradient_accumulation_steps=1,
+        sequence_len=2048,
+        **extra,
+    )
+
+
+class TestGlmDsaContextParallelValidation:
+    """The use_glm_dsa_kernels exemptions in check_context_parallel_size / validate_ring_attn_func."""
+
+    def test_dsa_cp_skips_flash_and_ring_requirement(self, monkeypatch):
+        """use_glm_dsa_kernels + context_parallel_size>1 validates WITHOUT flash attention and WITHOUT
+        ring_flash_attn installed -- the DSA kernels own CP attention."""
+        monkeypatch.setenv("WORLD_SIZE", "4")
+        cfg = _cfg(
+            plugins=["axolotl.integrations.kernels.KernelsPlugin"],
+            use_glm_dsa_kernels=True,
+            context_parallel_size=2,
+        )
+        prepare_plugins(cfg)
+        out = validate_config(cfg)  # must not raise (no flash, no ring_flash_attn)
+        # ring attention is NOT substituted: ring_attn_func stays None so the SP context manager only
+        # shards the sequence (register_ring_attn skips the ring_flash_attn import when it is None).
+        assert out.ring_attn_func is None
+
+    def test_cp_without_dsa_still_requires_flash(self, monkeypatch):
+        """The exemption is scoped to use_glm_dsa_kernels -- plain CP still demands flash attention."""
+        monkeypatch.setenv("WORLD_SIZE", "4")
+        cfg = _cfg(context_parallel_size=2)  # no DSA kernels, no flash_attention
+        with pytest.raises(Exception, match="(?i)flash attention"):
+            validate_config(cfg)
+
+    def test_dsa_without_cp_leaves_ring_attn_func_none(self, monkeypatch):
+        """use_glm_dsa_kernels with context_parallel_size 1 is a no-op for the CP validators."""
+        monkeypatch.setenv("WORLD_SIZE", "1")
+        cfg = _cfg(
+            plugins=["axolotl.integrations.kernels.KernelsPlugin"],
+            use_glm_dsa_kernels=True,
+        )
+        prepare_plugins(cfg)
+        out = validate_config(cfg)
+        assert out.ring_attn_func is None
