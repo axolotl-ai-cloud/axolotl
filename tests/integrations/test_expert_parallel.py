@@ -21,6 +21,7 @@ from axolotl.integrations.expert_parallel.experts_fn import (
     kernel_to_registered_name,
     register_all,
 )
+from axolotl.integrations.expert_parallel.plugin import expert_shard_axis
 from axolotl.integrations.expert_parallel.shard import (
     _detect_experts_modules,
     _slice_expert_lora_param,
@@ -757,3 +758,30 @@ class TestExpertAdapterLoadSharding:
         # correct loads ep-group 1's experts {4,5,6,7}; the naive chunk would not
         got = set(correct.reshape(out, r, e_local)[0, 0, :].long().tolist())
         assert got == {4, 5, 6, 7}
+
+
+class TestExpertShardAxis:
+    """`expert_shard_axis` picks the non-ep mesh axis the routed experts FSDP-shard on under EP
+    composition: dp_shard when present, else cp, else None (pure EP / no ep axis). Pure logic on the
+    mesh dim names — no dist / mesh object needed."""
+
+    @pytest.mark.parametrize(
+        "dim_names,expected",
+        [
+            (("ep", "dp_shard"), "dp_shard"),  # EP × dp_shard
+            (("ep", "cp"), "cp"),  # EP × cp
+            (("ep", "dp_shard", "cp"), "dp_shard"),  # both -> dp_shard preferred
+            (("ep",), None),  # pure EP at world_size: no secondary axis to pre-wrap on
+            (("dp_shard", "cp"), None),  # no ep axis -> not an EP composition
+            (("ep", "tp"), None),  # tp is not an expert-shard axis (EP×TP unsupported)
+            ((), None),
+            (None, None),
+        ],
+    )
+    def test_axis_selection(self, dim_names, expected):
+        assert expert_shard_axis(dim_names) == expected
+
+    def test_dp_shard_preferred_over_cp_regardless_of_order(self):
+        # order in the tuple must not change the dp_shard preference
+        assert expert_shard_axis(("ep", "cp", "dp_shard")) == "dp_shard"
+        assert expert_shard_axis(("ep", "dp_shard", "cp")) == "dp_shard"

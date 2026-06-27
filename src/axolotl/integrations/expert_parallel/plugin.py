@@ -21,6 +21,25 @@ from axolotl.utils.logging import get_logger
 LOG = get_logger(__name__)
 
 
+def expert_shard_axis(mesh_dim_names) -> str | None:
+    """The non-``ep`` mesh axis the routed experts FSDP-shard on under EP composition, or ``None``.
+
+    Prefers ``dp_shard`` (EP×dp_shard: experts shard on the data axis); falls back to ``cp`` (EP×cp,
+    where the cp ranks of an ep-group hold the SAME experts since cp shards the sequence, not the
+    experts, so FSDP-sharding them on cp keeps each rank from holding the full ep-group slice). Returns
+    ``None`` for pure EP (no secondary axis) or when there is no ``ep`` axis to compose with — those
+    paths don't pre-wrap the experts here.
+    """
+    names = tuple(mesh_dim_names or ())
+    if "ep" not in names:
+        return None
+    if "dp_shard" in names:
+        return "dp_shard"
+    if "cp" in names:
+        return "cp"
+    return None
+
+
 class ExpertParallelPlugin(BasePlugin):
     """Plugin that swaps MoE dispatch/combine for DeepEP-fused kernels."""
 

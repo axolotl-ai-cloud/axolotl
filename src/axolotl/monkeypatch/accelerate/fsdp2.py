@@ -670,12 +670,11 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
     # SAME experts (cp shards the sequence, not the experts), so FSDP-shard them on cp and let the MoE
     # forward all-gather — otherwise each rank keeps its full ep-group slice (e.g. 64 experts at ep=4)
     # and OOMs on the first forward's all-gather.
-    _ep_shard_axis = None
-    if mesh is not None and "ep" in getattr(mesh, "mesh_dim_names", ()):
-        if "dp_shard" in mesh.mesh_dim_names:
-            _ep_shard_axis = "dp_shard"
-        elif "cp" in mesh.mesh_dim_names:
-            _ep_shard_axis = "cp"
+    from axolotl.integrations.expert_parallel.plugin import expert_shard_axis
+
+    _ep_shard_axis = expert_shard_axis(
+        getattr(mesh, "mesh_dim_names", None) if mesh is not None else None
+    )
     if _ep_shard_axis is not None:
         from axolotl.integrations.expert_parallel.plugin import ExpertParallelPlugin
         from axolotl.integrations.expert_parallel.shard import shard_expert_lora
