@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 ARG BASE_TAG=main-base
 FROM axolotlai/axolotl-base-uv:$BASE_TAG
 
@@ -15,15 +16,14 @@ RUN apt-get update && \
     rm -rf /var/cache/apt/archives && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workspace
-
-RUN git clone --depth=1 https://github.com/axolotl-ai-cloud/axolotl.git
-
 WORKDIR /workspace/axolotl
+
+COPY . .
 
 # If AXOLOTL_EXTRAS is set, append it in brackets; don't install deepspeed with arm64
 RUN uv pip uninstall causal_conv1d
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    if [ "$TARGETARCH" = "arm64" ]; then \
         BASE_EXTRAS="optimizers,ray"; \
     else \
         BASE_EXTRAS="deepspeed,optimizers,ray"; \
@@ -34,8 +34,7 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
         uv pip install --no-build-isolation -e .[$BASE_EXTRAS] $AXOLOTL_ARGS; \
     fi && \
     python scripts/cutcrossentropy_install.py --uv | sh && \
-    uv pip install pytest && \
-    uv cache clean
+    uv pip install pytest
 
 # fix so that git fetch/pull from remote works with shallow clone
 RUN git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*" && \

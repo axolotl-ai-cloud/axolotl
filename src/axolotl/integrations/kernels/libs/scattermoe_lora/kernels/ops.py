@@ -90,6 +90,9 @@ def _scatter2scatter(
     B_ptr,
     stride_be: tl.constexpr,
     stride_bn: tl.constexpr,
+    R_ptr,
+    stride_rm,
+    stride_rn,
     grouped_idx_ptr,
     expert_idxs_ptr,
     # block_start_idx_ptr,
@@ -168,8 +171,16 @@ def _scatter2scatter(
         M_out_idx = M_block
     else:
         M_out_idx = M_idx
+    out_mask = M_boundary_mask[:, None] & N_mask[None, :]
+    if R_ptr is not None:
+        # Fused per-row residual add (e.g. base expert GEMM output) so the LoRA-B GEMM writes
+        # (base + lora) directly, no separate add pass.
+        R_blk_ptrs = R_ptr + (
+            M_out_idx[:, None] * stride_rm + N_block[None, :] * stride_rn
+        )
+        acc += tl.load(R_blk_ptrs, mask=out_mask).to(ACC_TYPE)
     Y_blk_ptrs = Y_ptr + (M_out_idx[:, None] * stride_ym + N_block[None, :] * stride_yn)
-    tl.store(Y_blk_ptrs, acc, mask=M_boundary_mask[:, None] & N_mask[None, :])
+    tl.store(Y_blk_ptrs, acc, mask=out_mask)
 
 
 def scatter2scatter(
@@ -183,6 +194,7 @@ def scatter2scatter(
     y_grouped=False,
     out=None,
     int64_indices=False,
+    residual=None,
 ):
     assert sorted_scattered_idxs.size(0) == sorted_expert_idxs.size(0)
     assert sorted_scattered_idxs.size(0) == X.size(0) * k
@@ -194,6 +206,8 @@ def scatter2scatter(
     else:
         assert out.size(0) == L_scattered and out.size(1) == y_dim
         output = out
+    if residual is not None:
+        assert residual.size(0) == L_scattered and residual.size(1) == y_dim
 
     scatter2scatter_compileable(
         output,
@@ -206,6 +220,7 @@ def scatter2scatter(
         x_grouped,
         y_grouped,
         int64_indices,
+        residual,
     )
     return output
 
@@ -222,6 +237,7 @@ def scatter2scatter_compileable(
     x_grouped: bool,
     y_grouped: bool,
     int64_indices: bool = False,
+    residual: Optional[torch.Tensor] = None,
 ) -> None:
     def grid(META):
         grid_num = (
@@ -235,6 +251,11 @@ def scatter2scatter_compileable(
         stride_be = stride_bn = 0
     else:
         stride_be, stride_bn = b.stride()
+
+    if residual is None:
+        stride_rm = stride_rn = 0
+    else:
+        stride_rm, stride_rn = residual.stride()
 
     _scatter2scatter[grid](
         # X_ptr, stride_xm, stride_xk,
@@ -254,6 +275,10 @@ def scatter2scatter_compileable(
         b,
         stride_be,
         stride_bn,
+        # R_ptr, stride_rm, stride_rn (per-row residual added in epilogue)
+        residual,
+        stride_rm,
+        stride_rn,
         grouped_idx_ptr=sorted_scattered_idxs,
         expert_idxs_ptr=sorted_expert_idxs,
         # block_start_idx_ptr=padded_block_idxs,

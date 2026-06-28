@@ -1,5 +1,6 @@
+# syntax=docker/dockerfile:1
 ARG BASE_TAG=main
-FROM axolotlai/axolotl:$BASE_TAG
+FROM axolotlai/axolotl-uv:$BASE_TAG
 
 ENV HF_DATASETS_CACHE="/workspace/data/huggingface-cache/datasets"
 ENV HF_HUB_CACHE="/workspace/data/huggingface-cache/hub"
@@ -12,7 +13,8 @@ EXPOSE 22
 COPY scripts/cloud-entrypoint.sh /root/cloud-entrypoint.sh
 COPY scripts/motd /etc/motd
 
-RUN pip install jupyterlab notebook ipywidgets && \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install jupyterlab notebook ipywidgets && \
     jupyter lab clean
 RUN apt update && \
     apt install --yes --no-install-recommends openssh-server tmux iproute2 nvtop ibverbs-providers ibverbs-utils infiniband-diags librdmacm-dev librdmacm1 rdmacm-utils slurm-wlm && \
@@ -21,6 +23,7 @@ RUN apt update && \
     mkdir -p ~/.ssh && \
     chmod 700 ~/.ssh && \
     printf "[ ! -z \"\$TERM\" -a -r /etc/motd ] && cat /etc/motd\n" >> ~/.bashrc && \
+    printf "source /workspace/axolotl-venv/bin/activate\n" >> ~/.bashrc && \
     chmod +x /workspace/axolotl/scripts/cloud-entrypoint.sh && \
     chmod +x /root/cloud-entrypoint.sh
 

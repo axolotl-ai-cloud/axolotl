@@ -196,6 +196,8 @@ ignore = [
     "B019",  # Use of functools.cache on methods
     "E722",  # Bare except
     "F821",  # Undefined name (for dynamic exec)
+    "E731",  # Lambda assignment (idiomatic for the kernel recipe/heuristic closures)
+    "E741",  # Ambiguous variable name (single-letter math/kernel vars: I, O, l)
 ]
 
 [tool.ruff.lint.isort]
@@ -218,6 +220,7 @@ docstring-code-format = false
 addopts = "-m 'not slow'"
 markers = [
     "slow: marks tests as slow",
+    "perf: marks tests as performance/memory regression guards (Blackwell only, large E)",
 ]
 
 # UV specific configuration
