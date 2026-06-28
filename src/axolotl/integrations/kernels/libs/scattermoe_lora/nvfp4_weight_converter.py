@@ -192,7 +192,7 @@ def patch_conversion_loader_rank0_only() -> None:
         _stats["real"] += 1
         return _orig(tensor, device=device, dtype=dtype)
 
-    _patched_materialize_copy._axolotl_rank0_patched = True
+    _patched_materialize_copy._axolotl_rank0_patched = True  # type: ignore[attr-defined]
     cml._materialize_copy = _patched_materialize_copy
     LOG.info(
         "Patched transformers core_model_loading._materialize_copy for rank0-only loading "

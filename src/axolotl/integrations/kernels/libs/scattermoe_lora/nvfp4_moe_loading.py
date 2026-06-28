@@ -144,7 +144,7 @@ def inspect_nvfp4_layout(repo_id: str) -> dict:
     routed_re = re.compile(r"\.experts\.\d+\.([A-Za-z_][A-Za-z0-9_]*)$")
     layer_re = re.compile(r"^.*?layers\.\d+\.")
     routed_projs: list[str] = []
-    routed_sample: dict[str, tuple] = {}
+    routed_sample: dict[str, tuple | None] = {}
     nonrouted: dict[str, dict] = {}
     qdata_names: set[str] = set()
     per_tensor_names: set[str] = set()
