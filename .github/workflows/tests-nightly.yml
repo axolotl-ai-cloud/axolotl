@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12"] # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
-        pytorch_version: ["2.11.0`", "2.12.0"]
+        pytorch_version: ["2.11.0", "2.12.0"]
     timeout-minutes: 20
 
     steps:
