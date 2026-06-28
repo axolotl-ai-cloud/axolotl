@@ -845,6 +845,28 @@ class AxolotlTrainer(
         # ("Failed to validate global plan" — the torchao tensor-subclass DTensors are unvalidatable).
         # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
         if self._save_fsdp2_quantized_lora_adapter(model, output_dir):
+            # The adapter is written above in place of the DCP model state. Still persist the
+            # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
+            # only the trainable adapter carries optimizer state (the quantized base is frozen), so
+            # these saves don't touch the unvalidatable NVFP4 DTensors. Defensive: if any of them
+            # fails under FSDP2, keep the (already-written) adapter rather than aborting the save.
+            try:
+                if not self.args.save_only_model:
+                    self._save_optimizer_and_scheduler(output_dir)
+                    self._save_scaler(output_dir)
+                    self._save_rng_state(output_dir)
+                if self.args.should_save:
+                    # "trainer_state.json" is HF's canonical resume file (global_step, epoch, ...).
+                    self.state.save_to_json(
+                        os.path.join(output_dir, "trainer_state.json")
+                    )
+            except Exception as exc:  # pylint: disable=broad-except
+                LOG.warning(
+                    "Could not persist optimizer/RNG/trainer state for %s (%s); the checkpoint is "
+                    "adapter-only and not resumable.",
+                    output_dir,
+                    exc,
+                )
             gc.collect()
             return None
 
