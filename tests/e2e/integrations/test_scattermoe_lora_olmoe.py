@@ -106,6 +106,32 @@ requires_cuda = pytest.mark.skipif(
 )
 
 
+def _max_shared_memory_optin() -> int:
+    if not torch.cuda.is_available():
+        return 0
+    return torch.cuda.get_device_properties(
+        torch.cuda.current_device()
+    ).shared_memory_per_block_optin
+
+
+# The fused LoRA weight-grad kernel (grouped_gram) runs a single large autotune config
+# (BLOCK_M=128, BLOCK_WIDE=128, num_stages=3) pinned for the GLM DeepEP path — a single config
+# avoids per-rank re-autotune skew tripping DeepEP's combine barrier. It needs ~144 KiB of shared
+# memory/block, which big-SMEM GPUs (sm_80 A100 ~163 KiB, sm_90 H100 ~228 KiB) provide but sm_89
+# (L40S) and consumer Blackwell (sm_120 Max-Q, ~99 KiB) do not — Triton raises OutOfResources.
+# Gate the backward test on the device actually having enough shared memory.
+_GRAM_KERNEL_SHARED_MEM = 147456  # bytes; the kernel's largest (only) config
+
+requires_gram_kernel_shared_memory = pytest.mark.skipif(
+    _max_shared_memory_optin() < _GRAM_KERNEL_SHARED_MEM,
+    reason=(
+        "scattermoe_lora grouped_gram backward kernel needs "
+        f"{_GRAM_KERNEL_SHARED_MEM} bytes shared memory/block "
+        f"(device optin max is {_max_shared_memory_optin()})"
+    ),
+)
+
+
 def make_olmoe_config(use_full=False):
     cfg = dict(FULL_OLMOE_CONFIG if use_full else SMALL_OLMOE_CONFIG)
     cfg["experts_implementation"] = "grouped_mm"
@@ -764,6 +790,7 @@ class TestOLMoEPeftLoRAForward:
 
 
 @requires_cuda
+@requires_gram_kernel_shared_memory
 class TestOLMoEPeftLoRABackward:
     """Backward gradients through scattermoe_lora vs pure-PyTorch reference."""
 

@@ -889,7 +889,12 @@ def patch_move_missing_keys_meta_for_fsdp():
     non-rank-0 rank → ``world_size``× CPU RAM → OOM. axolotl's ``fsdp2_prepare_model`` immediately
     does ``model.to("meta")`` then broadcasts rank 0's weights, so the materialized params are
     pure waste. Keep params on meta (FSDP fills them); only buffers — computed in ``__init__`` and
-    not broadcast — get real CPU storage."""
+    not broadcast — get real CPU storage.
+
+    Caller MUST restrict this to frozen-base (adapter) runs: leaving base params on meta on
+    non-rank-0 deadlocks the FSDP2 optimizer-state all-gather at checkpoint save for a FULL
+    fine-tune (rank-0 real DTensors vs non-rank-0 meta). LoRA/qLoRA carry no base optimizer state,
+    so the gather never touches these params."""
     from transformers import PreTrainedModel
     from transformers.integrations import (
         is_deepspeed_zero3_enabled,
