@@ -45,7 +45,12 @@ def is_glm_moe_dsa_nvfp4_modelopt(cfg) -> bool:
     try:
         from transformers import AutoConfig
 
-        hf_cfg = AutoConfig.from_pretrained(cfg.base_model, trust_remote_code=True)
+        # Honor the user's opt-in rather than forcing remote code: glm_moe_dsa is a native
+        # transformers model, so config loading needs no remote code by default.
+        hf_cfg = AutoConfig.from_pretrained(
+            cfg.base_model,
+            trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
+        )
     except Exception:
         return False
     if str(getattr(hf_cfg, "model_type", "")) != "glm_moe_dsa":
@@ -68,7 +73,12 @@ def _is_glm_moe_dsa(cfg) -> bool:
     try:
         from transformers import AutoConfig
 
-        hf_cfg = AutoConfig.from_pretrained(cfg.base_model, trust_remote_code=True)
+        # Honor the user's opt-in rather than forcing remote code: glm_moe_dsa is a native
+        # transformers model, so config loading needs no remote code by default.
+        hf_cfg = AutoConfig.from_pretrained(
+            cfg.base_model,
+            trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
+        )
     except Exception:
         return False
     return str(getattr(hf_cfg, "model_type", "")) == "glm_moe_dsa"
