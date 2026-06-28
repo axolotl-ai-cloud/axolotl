@@ -33,8 +33,10 @@ Is the model MoE (e.g. Gemma4 26B-A4B, Qwen3.5 35B-A3B)?
 Computes loss from hidden states + lm_head weight without materializing the full logits tensor, saving significant VRAM. Install if not already present:
 
 ```bash
-uv pip install "cut-cross-entropy[transformers] @ git+https://github.com/axolotl-ai-cloud/ml-cross-entropy.git@main"
+python scripts/cutcrossentropy_install.py | sh
 ```
+
+See [Cut Cross Entropy](https://docs.axolotl.ai/docs/optimizations.html#cut-cross-entropy-cce) for the pinned install command and the full list of supported models.
 
 ```yaml
 plugins:
