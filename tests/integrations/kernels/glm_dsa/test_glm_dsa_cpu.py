@@ -200,3 +200,28 @@ def test_mla_attn_skips_calibration_when_gather_unsupported():
     ):
         assert D.mla_attn(qa, ks, idx, 1.0) == "DENSE"
     calib.assert_not_called()
+
+
+def test_cp_doc_ids_must_be_global_not_per_chunk():
+    """F2: under context parallelism the per-document ids must come from the GLOBAL position_ids, not
+    each rank's local chunk. Otherwise a document crossing a CP boundary gets different (and colliding)
+    ids per rank, which masks valid remote keys / allows cross-document attention."""
+    from axolotl.integrations.kernels.libs.glm_dsa.patch import (
+        _seq_idx_from_position_ids,
+    )
+
+    # doc B (positions 0,1,2,3) spans the cp=2 boundary at index 4 (S=4 queries per rank)
+    global_pos = torch.tensor([[0, 1, 0, 1, 2, 3, 0, 1]])
+    S = 4
+    global_ids = _seq_idx_from_position_ids(global_pos)
+    assert global_ids.tolist() == [[1, 1, 2, 2, 2, 2, 3, 3]]
+
+    # NEW (number docs on the global ids, then slice per rank): the boundary doc shares ONE id
+    r0, r1 = global_ids[:, 0:S], global_ids[:, S : 2 * S]
+    assert r0[0, -1].item() == r1[0, 0].item()  # doc B: rank0's last query == rank1's first query
+
+    # OLD (per-local-chunk cumsum): the same doc gets different ids across ranks, and ids collide
+    old_r0 = _seq_idx_from_position_ids(global_pos[:, 0:S])
+    old_r1 = _seq_idx_from_position_ids(global_pos[:, S : 2 * S])
+    assert old_r0[0, -1].item() != old_r1[0, 0].item()  # doc B inconsistent across ranks (the bug)
+    assert old_r1[0, 2].item() == old_r0[0, 0].item()  # doc C (rank1) collides with doc A (rank0)

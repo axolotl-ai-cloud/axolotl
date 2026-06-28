@@ -162,11 +162,22 @@ def _glm_dsa_attention_forward(
     )  # [B,H,S,64],[B,1,S,64]
 
     # Per-document ids under sample packing (None for ordinary sequences). seq_q is the local
-    # queries' doc ids; seq_k is the keys' doc ids (gathered across CP so it aligns with k_shared).
-    seq_q = _seq_idx_from_position_ids(position_ids)
-    seq_k = seq_q
-    if seq_q is not None and cp:
-        seq_k = all_gather_seq(seq_q.unsqueeze(-1), group).squeeze(-1)
+    # queries' doc ids; seq_k is the keys' doc ids (aligned with k_shared).
+    # Under CP the doc ids MUST be derived globally: cumsum(position_ids == 0) on a local chunk
+    # restarts at 0 on every rank, so a document crossing a CP boundary would get different (and
+    # colliding) ids per rank, masking valid remote keys or letting attention cross documents. Gather
+    # the global position_ids, number the documents ONCE, keep the full ids for the keys and take this
+    # rank's slice for the queries — so a boundary-spanning doc shares one id across ranks. (Also
+    # handles a chunk that is entirely mid-document, where the local cumsum would see no reset at all.)
+    if cp and position_ids is not None:
+        global_position_ids = all_gather_seq(
+            position_ids.unsqueeze(-1), group
+        ).squeeze(-1)
+        seq_k = _seq_idx_from_position_ids(global_position_ids)
+        seq_q = None if seq_k is None else seq_k[:, rank * S : (rank + 1) * S]
+    else:
+        seq_q = _seq_idx_from_position_ids(position_ids)
+        seq_k = seq_q
 
     # DSA top-k: this layer's own indexer (full) or the previous full layer's selection (shared).
     # Under CP the indexer gathers global keys; topk indices reference GLOBAL key positions.
