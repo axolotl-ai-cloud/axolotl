@@ -218,10 +218,16 @@ def test_cp_doc_ids_must_be_global_not_per_chunk():
 
     # NEW (number docs on the global ids, then slice per rank): the boundary doc shares ONE id
     r0, r1 = global_ids[:, 0:S], global_ids[:, S : 2 * S]
-    assert r0[0, -1].item() == r1[0, 0].item()  # doc B: rank0's last query == rank1's first query
+    assert (
+        r0[0, -1].item() == r1[0, 0].item()
+    )  # doc B: rank0's last query == rank1's first query
 
     # OLD (per-local-chunk cumsum): the same doc gets different ids across ranks, and ids collide
     old_r0 = _seq_idx_from_position_ids(global_pos[:, 0:S])
     old_r1 = _seq_idx_from_position_ids(global_pos[:, S : 2 * S])
-    assert old_r0[0, -1].item() != old_r1[0, 0].item()  # doc B inconsistent across ranks (the bug)
-    assert old_r1[0, 2].item() == old_r0[0, 0].item()  # doc C (rank1) collides with doc A (rank0)
+    assert (
+        old_r0[0, -1].item() != old_r1[0, 0].item()
+    )  # doc B inconsistent across ranks (the bug)
+    assert (
+        old_r1[0, 2].item() == old_r0[0, 0].item()
+    )  # doc C (rank1) collides with doc A (rank0)

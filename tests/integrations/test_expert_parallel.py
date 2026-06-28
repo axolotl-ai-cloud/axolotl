@@ -559,7 +559,9 @@ class TestExpertLoraSlicing:
     pure tensor-op checks of the slice math — no dist / FSDP / DeepEP / NVFP4 / model needed.
     """
 
-    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
+    @pytest.mark.parametrize(
+        "e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)]
+    )
     def test_lora_A_slice_picks_local_experts(self, e_global, ep_size, r):
         # lora_A peft layout [E*r, in], expert-major: expert e owns rows [e*r:(e+1)*r]; tag rows = e.
         e_local, in_features = e_global // ep_size, 5
@@ -577,7 +579,9 @@ class TestExpertLoraSlicing:
             tags = sl.reshape(e_local, r, in_features)[:, 0, 0].long()
             assert torch.equal(tags, torch.arange(start, end))
 
-    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
+    @pytest.mark.parametrize(
+        "e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)]
+    )
     def test_lora_B_slice_picks_local_experts(self, e_global, ep_size, r):
         # lora_B peft layout [out, r*E], rank-major [out, r, E]; tag column (k, e) = e.
         e_local, out_features = e_global // ep_size, 5
@@ -595,8 +599,12 @@ class TestExpertLoraSlicing:
             tags = sl.reshape(out_features, r, e_local)[0, 0, :].long()
             assert torch.equal(tags, torch.arange(start, end))
 
-    @pytest.mark.parametrize("e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)])
-    def test_forward_slice_picks_local_experts_and_true_rank(self, e_global, ep_size, r):
+    @pytest.mark.parametrize(
+        "e_global,ep_size,r", [(8, 2, 2), (256, 8, 16), (16, 4, 3)]
+    )
+    def test_forward_slice_picks_local_experts_and_true_rank(
+        self, e_global, ep_size, r
+    ):
         """The FORWARD-time slice (used by the ParamWrapper fastpath and the _unwrap fallback) keeps
         the adapter global and takes each rank's expert block at use time, reporting rank=r — NOT the
         r*ep_size that the un-sliced global adapter would imply (the actual pure-EP bug path)."""
@@ -686,7 +694,9 @@ class TestExpertAdapterLoadSharding:
     @pytest.mark.parametrize(
         "e_global,ep_size,dp_size,r", [(8, 2, 2, 2), (256, 4, 2, 16), (16, 2, 1, 3)]
     )
-    def test_lora_A_load_shards_match_forward_slice(self, e_global, ep_size, dp_size, r):
+    def test_lora_A_load_shards_match_forward_slice(
+        self, e_global, ep_size, dp_size, r
+    ):
         from torch.distributed.tensor import Shard
 
         in_features, e_local = 5, e_global // ep_size
@@ -715,7 +725,9 @@ class TestExpertAdapterLoadSharding:
     @pytest.mark.parametrize(
         "e_global,ep_size,dp_size,r", [(8, 2, 2, 2), (256, 4, 2, 16), (16, 2, 1, 3)]
     )
-    def test_lora_B_load_shards_match_forward_slice(self, e_global, ep_size, dp_size, r):
+    def test_lora_B_load_shards_match_forward_slice(
+        self, e_global, ep_size, dp_size, r
+    ):
         from torch.distributed.tensor import Shard
 
         out_features, e_local = 6, e_global // ep_size
@@ -724,7 +736,9 @@ class TestExpertAdapterLoadSharding:
         for e in range(e_global):
             g[:, :, e] = float(e)
         g = g.reshape(out_features, r * e_global)
-        placements = (Shard(0),)  # FSDP shards dim 0 (out); the ep slice is on the expert axis
+        placements = (
+            Shard(0),
+        )  # FSDP shards dim 0 (out); the ep slice is on the expert axis
         for ep_coord in range(ep_size):
             shards = [
                 ep_adapter_load_local_shard(
@@ -751,7 +765,9 @@ class TestExpertAdapterLoadSharding:
         for e in range(e_global):
             g[:, :, e] = float(e)
         g = g.reshape(out, r * e_global)
-        correct = ep_adapter_load_local_shard(g, 1, e_global, 1, ep_size, (Shard(0),), 1, 0)
+        correct = ep_adapter_load_local_shard(
+            g, 1, e_global, 1, ep_size, (Shard(0),), 1, 0
+        )
         naive = g.chunk(ep_size, dim=1)[1]
         assert not torch.equal(correct, naive)
         e_local = e_global // ep_size
@@ -804,7 +820,9 @@ class TestEpLoraSaveGating:
                 self.num_local_experts = e_local
                 self.local_expert_offset = ep_rank * e_local
 
-        class ParamWrapper(torch.nn.Module):  # name matches _is_param_wrapper's fallback check
+        class ParamWrapper(
+            torch.nn.Module
+        ):  # name matches _is_param_wrapper's fallback check
             def __init__(self):
                 super().__init__()
                 self.base_layer = _Experts()
@@ -830,7 +848,9 @@ class TestEpLoraSaveGating:
         m = self._make_wrapper_model(e_global, ep_size, r)
         n = shard_expert_lora(m, ep_size)
         assert n == 2  # lora_A + lora_B sliced
-        assert m.wrapper._ep_lora_sharded is True  # the gather discriminator the save reads
+        assert (
+            m.wrapper._ep_lora_sharded is True
+        )  # the gather discriminator the save reads
         # sliced to E_local: gather (ep_size copies) is what reconstructs E_global
         assert m.wrapper.lora_A["default"].weight.shape[0] == e_local * r
         assert m.wrapper.lora_B["default"].weight.shape[1] == r * e_local

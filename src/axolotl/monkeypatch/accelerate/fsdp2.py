@@ -166,7 +166,9 @@ def fsdp2_load_full_state_dict(
     # the propagated DDP-ignore list.
     _ep_ignore = getattr(model, "_ddp_params_and_buffers_to_ignore", None) or []
     _ep_tails = tuple(
-        sorted({"." + n.split(".experts.", 1)[1] for n in _ep_ignore if ".experts." in n})
+        sorted(
+            {"." + n.split(".experts.", 1)[1] for n in _ep_ignore if ".experts." in n}
+        )
     )
 
     def _is_ep_expert_param(name: str) -> bool:
@@ -280,9 +282,7 @@ def fsdp2_load_full_state_dict(
                 dp_size,
                 dp_rank,
             )
-            sharded_param = DTensor.from_local(
-                local, mesh, placements, run_check=False
-            )
+            sharded_param = DTensor.from_local(local, mesh, placements, run_check=False)
         elif hasattr(sharded_meta_param, "device_mesh"):
             # GLOBAL broadcast of rank-0's full tensor, then slice this rank's local shard and wrap via
             # from_local. distribute_tensor (src_data_rank=0) and per-mesh scatters DEADLOCK or fail on
@@ -704,9 +704,9 @@ def fsdp2_prepare_model(accelerator, model: torch.nn.Module) -> torch.nn.Module:
             in ("gate_up_proj", "down_proj", "gate_up_proj_bias", "down_proj_bias")
         }
         if ep_ignored:
-            fsdp2_kwargs["ignored_params"] = set(
-                fsdp2_kwargs.get("ignored_params") or set()
-            ) | ep_ignored
+            fsdp2_kwargs["ignored_params"] = (
+                set(fsdp2_kwargs.get("ignored_params") or set()) | ep_ignored
+            )
             LOG.info(
                 f"expert_parallel (pure EP): excluded {len(ep_ignored)} EP-sharded expert "
                 "param(s) from the FSDP wrap (kept as plain per-rank slices)."

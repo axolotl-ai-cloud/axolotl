@@ -47,7 +47,9 @@ def test_save_only_model_skips_optimizer_but_writes_trainer_state(tmp_path):
 def test_resume_state_failure_keeps_adapter_and_does_not_raise(tmp_path):
     # If an FSDP2 resume-artifact save raises, keep the (already-written) adapter rather than aborting.
     stub = _stub(tmp_path)
-    stub._save_optimizer_and_scheduler = MagicMock(side_effect=RuntimeError("dcp optim fail"))
+    stub._save_optimizer_and_scheduler = MagicMock(
+        side_effect=RuntimeError("dcp optim fail")
+    )
     out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
     assert out is None  # did not raise
     stub._save_fsdp2_quantized_lora_adapter.assert_called_once()

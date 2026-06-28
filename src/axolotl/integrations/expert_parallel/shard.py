@@ -70,7 +70,9 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
     dev = torch.device("cuda", torch.cuda.current_device())
     world = dist.get_world_size()
     is_src = dist.get_rank() == 0
-    dst_device = old.data.device if old.data.device.type != "meta" else torch.device("cpu")
+    dst_device = (
+        old.data.device if old.data.device.type != "meta" else torch.device("cpu")
+    )
     requires_grad = old.requires_grad
 
     def _scatter_dim0(full_comp, like):
@@ -110,12 +112,16 @@ def _scatter_expert_from_rank0(module, attr_name, e_local, dp_size):
             local_s.to(dst_device),
             nv.block_size,
             nv.dtype,
-            per_tensor_scale=(local_pts.to(dst_device) if local_pts is not None else None),
+            per_tensor_scale=(
+                local_pts.to(dst_device) if local_pts is not None else None
+            ),
         )
         new_param = torch.nn.Parameter(local_nv, requires_grad=requires_grad)
     else:
         local = _scatter_dim0(nv if is_src else None, nv)
-        new_param = torch.nn.Parameter(local.to(dst_device), requires_grad=requires_grad)
+        new_param = torch.nn.Parameter(
+            local.to(dst_device), requires_grad=requires_grad
+        )
 
     if attr_name in module._parameters:
         del module._parameters[attr_name]
@@ -320,9 +326,9 @@ def ep_adapter_load_local_shard(
     else:  # lora_B: [out, r*E] -> [out, r, E], experts on the last axis
         out_dim = global_adapter.shape[0]
         r = global_adapter.shape[1] // e_global
-        ep_slice = global_adapter.reshape(out_dim, r, e_global)[:, :, start:end].reshape(
-            out_dim, r * e_local
-        )
+        ep_slice = global_adapter.reshape(out_dim, r, e_global)[
+            :, :, start:end
+        ].reshape(out_dim, r * e_local)
     local = ep_slice
     for placement in placements:
         if isinstance(placement, Shard):
@@ -459,8 +465,10 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
                 full_local = (
-                    w.full_tensor() if type(w).__name__ == "DTensor" else w.data
-                ).detach().contiguous()
+                    (w.full_tensor() if type(w).__name__ == "DTensor" else w.data)
+                    .detach()
+                    .contiguous()
+                )
                 full = (
                     gather_expert_lora_full(full_local, kind, e_global, ep_group)
                     if ep_sharded

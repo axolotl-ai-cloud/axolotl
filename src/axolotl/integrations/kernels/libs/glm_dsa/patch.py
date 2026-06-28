@@ -170,9 +170,9 @@ def _glm_dsa_attention_forward(
     # rank's slice for the queries — so a boundary-spanning doc shares one id across ranks. (Also
     # handles a chunk that is entirely mid-document, where the local cumsum would see no reset at all.)
     if cp and position_ids is not None:
-        global_position_ids = all_gather_seq(
-            position_ids.unsqueeze(-1), group
-        ).squeeze(-1)
+        global_position_ids = all_gather_seq(position_ids.unsqueeze(-1), group).squeeze(
+            -1
+        )
         seq_k = _seq_idx_from_position_ids(global_position_ids)
         seq_q = None if seq_k is None else seq_k[:, rank * S : (rank + 1) * S]
     else:
