@@ -13,6 +13,10 @@ on:
       - src/axolotl/utils/schemas/**.py
       - .github/workflows/preview-docs.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
   pull-requests: write
