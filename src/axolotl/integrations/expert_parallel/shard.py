@@ -451,13 +451,20 @@ def save_ep_lora_adapter(model, output_dir: str, ep_group) -> bool:
     # Expert LoRA: gather each wrapper's adapter across FSDP (dp_shard) + EP, key by module name.
     gathered = 0
     for wname, wrapper in expert_wrappers:
+        # Only EP×dp_shard/cp composition physically slices the adapter to E_local (shard_expert_lora
+        # sets _ep_lora_sharded), so it must be EP-all-gathered back to E_global. Pure EP keeps the
+        # adapter GLOBAL (E_global, forward-sliced at runtime) — gathering it would replicate every
+        # expert ep_size times into an oversized adapter, so write the FSDP-gathered tensor as-is.
+        ep_sharded = getattr(wrapper, "_ep_lora_sharded", False)
         for sub, kind in (("lora_A", "A"), ("lora_B", "B")):
             for w in (mod.weight for mod in getattr(wrapper, sub, {}).values()):
                 full_local = (
                     w.full_tensor() if type(w).__name__ == "DTensor" else w.data
-                )
-                full = gather_expert_lora_full(
-                    full_local.detach().contiguous(), kind, e_global, ep_group
+                ).detach().contiguous()
+                full = (
+                    gather_expert_lora_full(full_local, kind, e_global, ep_group)
+                    if ep_sharded
+                    else full_local
                 )
                 key = f"{wname}.{sub}.weight"
                 target = (

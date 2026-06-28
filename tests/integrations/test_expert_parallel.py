@@ -785,3 +785,63 @@ class TestExpertShardAxis:
         # order in the tuple must not change the dp_shard preference
         assert expert_shard_axis(("ep", "cp", "dp_shard")) == "dp_shard"
         assert expert_shard_axis(("ep", "dp_shard", "cp")) == "dp_shard"
+
+
+class TestEpLoraSaveGating:
+    """save_ep_lora_adapter must EP-gather the routed-expert adapter ONLY when it was physically
+    sliced to E_local (EP×dp_shard/cp composition, where shard_expert_lora sets _ep_lora_sharded).
+    Pure EP keeps the adapter global, so gathering would duplicate every expert ep_size times. This
+    checks the discriminator the save relies on: shard_expert_lora flags + slices composition adapters,
+    and a non-sharded wrapper carries no flag (so the save leaves it as-is)."""
+
+    def _make_wrapper_model(self, e_global, ep_size, r, ep_rank=0):
+        e_local = e_global // ep_size
+
+        class _Experts(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.num_experts_global = e_global
+                self.num_local_experts = e_local
+                self.local_expert_offset = ep_rank * e_local
+
+        class ParamWrapper(torch.nn.Module):  # name matches _is_param_wrapper's fallback check
+            def __init__(self):
+                super().__init__()
+                self.base_layer = _Experts()
+                self.lora_A = torch.nn.ModuleDict(
+                    {"default": torch.nn.Linear(5, e_global * r, bias=False)}
+                )
+                self.lora_B = torch.nn.ModuleDict(
+                    {"default": torch.nn.Linear(e_global * r, 7, bias=False)}
+                )
+
+        class _Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.wrapper = ParamWrapper()
+
+        return _Model()
+
+    def test_composition_slice_sets_flag(self):
+        from axolotl.integrations.expert_parallel.shard import shard_expert_lora
+
+        e_global, ep_size, r = 8, 2, 2
+        e_local = e_global // ep_size
+        m = self._make_wrapper_model(e_global, ep_size, r)
+        n = shard_expert_lora(m, ep_size)
+        assert n == 2  # lora_A + lora_B sliced
+        assert m.wrapper._ep_lora_sharded is True  # the gather discriminator the save reads
+        # sliced to E_local: gather (ep_size copies) is what reconstructs E_global
+        assert m.wrapper.lora_A["default"].weight.shape[0] == e_local * r
+        assert m.wrapper.lora_B["default"].weight.shape[1] == r * e_local
+
+    def test_pure_ep_wrapper_has_no_flag(self):
+        # Pure EP never runs shard_expert_lora -> no _ep_lora_sharded -> save_ep_lora_adapter must NOT
+        # EP-gather (the adapter is already global E_global).
+        m = self._make_wrapper_model(8, 2, 2)
+        assert getattr(m.wrapper, "_ep_lora_sharded", False) is False
+        # ep_size == 1 is a no-op and never flags either
+        from axolotl.integrations.expert_parallel.shard import shard_expert_lora
+
+        assert shard_expert_lora(m, 1) == 0
+        assert getattr(m.wrapper, "_ep_lora_sharded", False) is False
