@@ -284,37 +284,37 @@ def fsdp2_load_full_state_dict(
             )
             sharded_param = DTensor.from_local(local, mesh, placements, run_check=False)
         elif hasattr(sharded_meta_param, "device_mesh"):
-            # GLOBAL broadcast of rank-0's full tensor, then slice this rank's local shard and wrap via
-            # from_local. distribute_tensor (src_data_rank=0) and per-mesh scatters DEADLOCK or fail on
-            # EP-composition: experts/non-experts live on dp_shard SUBGROUP meshes that exclude global
-            # rank 0, but under cpu_ram_efficient only rank 0 has data — so neither a sub-mesh scatter
-            # (no source in the subgroup) nor distribute_tensor (receivers race the stalled source) works.
-            # A global broadcast has every rank participate (no desync), and the slice+from_local needs
-            # no further collective. Equivalent result to distribute_tensor for the full DP mesh, so the
-            # non-EP path is unchanged.
-            from torch.distributed.tensor import DTensor, Shard
+            # Generic sharded params (the whole non-EP model, and EP composition's NON-expert weights)
+            # live on a FULL mesh that includes global rank 0, so distribute_tensor(src_data_rank=0)
+            # broadcasts rank-0's data and shards it correctly — including FSDP's padding for uneven
+            # sizes, which a manual chunk + from_local gets wrong (it builds a DTensor with the raw
+            # global size and mismatches the model param). EP-composition's rank-0-EXCLUDING subgroup
+            # params (experts, and the routed-expert LoRA adapter) are handled by their own branches
+            # above, so they never reach here.
+            from torch.distributed.tensor import distribute_tensor
 
             device_mesh = sharded_meta_param.device_mesh
-            _pl = sharded_meta_param.placements
             if _accelerator.is_main_process:
-                _full = full_tensor.to(device_mesh.device_type)
+                full_tensor = full_tensor.to(device_mesh.device_type)
             else:
-                _full = torch.empty(
+                full_tensor = torch.empty(
                     sharded_meta_param.size(),
                     device=device_mesh.device_type,
                     dtype=sharded_meta_param.dtype,
                 )
-            dist.broadcast(_full, src=0)
-            _grp = device_mesh.get_group()
-            _lr = dist.get_group_rank(_grp, dist.get_rank())
-            _w = dist.get_world_size(_grp)
-            _local = _full
-            for _p in _pl:
-                if isinstance(_p, Shard):
-                    _local = _local.chunk(_w, dim=_p.dim)[_lr]
-            sharded_param = DTensor.from_local(
-                _local.contiguous(), device_mesh, _pl, run_check=False
+            sharded_param = distribute_tensor(
+                full_tensor,
+                device_mesh,
+                sharded_meta_param.placements,
+                src_data_rank=0,
             )
+            # Clone the local shard to allow full_tensor to be freed.
+            if (
+                sharded_param._local_tensor.untyped_storage().size()
+                > sharded_param._local_tensor.nelement()
+                * sharded_param._local_tensor.element_size()
+            ):
+                sharded_param = sharded_param.clone()
         else:
             # Non-sharded parameters
             if _accelerator.is_main_process:
