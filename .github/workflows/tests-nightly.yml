@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip" # caching pip dependencies
       - uses: pre-commit/action@v3.0.1
         env:
@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         python_version: ["3.12"] # TODO include py3.14 once https://github.com/mistralai/mistral-common/pull/194 is merged
-        pytorch_version: ["2.9.1", "2.10.0"]
+        pytorch_version: ["2.11.0`", "2.12.0"]
     timeout-minutes: 20
 
     steps:
@@ -122,23 +122,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
-            num_gpus: 1
-            axolotl_extras:
-            nightly_build: "true"
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.10.0
-            num_gpus: 1
-            axolotl_extras:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"
-            pytorch: 2.9.1
+            pytorch: 2.11.0
+            num_gpus: 1
+            axolotl_extras:
+            nightly_build: "true"
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
             num_gpus: 1
             axolotl_extras:
             nightly_build: "true"
@@ -179,10 +173,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
             num_gpus: 2
             axolotl_extras:
             nightly_build: "true"
