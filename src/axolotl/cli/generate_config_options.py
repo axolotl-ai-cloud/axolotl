@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -57,17 +58,41 @@ def _option_for_nested(parent_name: str, sub_name: str, sub_field) -> ConfigOpti
 
 
 def _format_string(value: str | None) -> str:
-    return "None" if value is None else ascii(value)
+    if value is None:
+        return "None"
+    if '"' in value and "'" not in value:
+        return ascii(value)
+    return json.dumps(value)
+
+
+def _format_param_decls(param_decls: tuple[str, ...]) -> list[str]:
+    decls = ", ".join(_format_string(decl) for decl in param_decls)
+    if len(param_decls) == 1:
+        decls += ","
+    single_line = f"        ({decls}),"
+    if len(single_line) <= 88:
+        return [single_line]
+    return [
+        "        (",
+        *(f"            {_format_string(decl)}," for decl in param_decls),
+        "        ),",
+    ]
 
 
 def _format_option(option: ConfigOption) -> str:
     param_decls, param_name, click_type_name, description = option
-    decls = ", ".join(ascii(decl) for decl in param_decls)
-    if len(param_decls) == 1:
-        decls += ","
-    return (
-        f"    (({decls}), {_format_string(param_name)}, "
-        f"{_format_string(click_type_name)}, {_format_string(description)}),"
+    param_name_literal = _format_string(param_name)
+    click_type_literal = _format_string(click_type_name)
+    description_literal = _format_string(description)
+    return "\n".join(
+        [
+            "    (",
+            *_format_param_decls(param_decls),
+            f"        {param_name_literal},",
+            f"        {click_type_literal},",
+            f"        {description_literal},",
+            "    ),",
+        ]
     )
 
 

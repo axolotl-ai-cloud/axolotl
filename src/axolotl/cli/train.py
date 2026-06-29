@@ -3,7 +3,7 @@
 import gc
 import os
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import fire
 
@@ -38,9 +38,9 @@ def do_train(cfg: DictDefault, cli_args: TrainerCliArgs):
     if int(os.getenv("LOCAL_RANK", "0")) == 0:
         check_user_token()
 
-    load_datasets_fn = globals().get("load_datasets")
-    load_preference_datasets_fn = globals().get("load_preference_datasets")
-    train_fn = globals().get("train")
+    load_datasets_fn: Any = globals().get("load_datasets")
+    load_preference_datasets_fn: Any = globals().get("load_preference_datasets")
+    train_fn: Any = globals().get("train")
     if load_datasets_fn is None or load_preference_datasets_fn is None:
         from axolotl.common import datasets as datasets_module
 
@@ -85,12 +85,16 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs):
         config: Path to `axolotl` config YAML file.
         kwargs: Additional keyword arguments to override config file values.
     """
-    parser_cls = globals().get("HfArgumentParser")
-    load_cfg_fn = globals().get("load_cfg")
+    parser_cls: Any = globals().get("HfArgumentParser")
+    load_cfg_fn: Any = globals().get("load_cfg")
     if parser_cls is None:
-        from transformers.hf_argparser import HfArgumentParser as parser_cls
+        from transformers.hf_argparser import HfArgumentParser
+
+        parser_cls = HfArgumentParser
     if load_cfg_fn is None:
-        from axolotl.cli.config import load_cfg as load_cfg_fn
+        from axolotl.cli.config import load_cfg
+
+        load_cfg_fn = load_cfg
 
     parsed_cfg = load_cfg_fn(config, **kwargs)
     parser = parser_cls(TrainerCliArgs)

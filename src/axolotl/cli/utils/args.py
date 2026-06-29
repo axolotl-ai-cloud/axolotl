@@ -205,11 +205,12 @@ def add_options_from_config_options(options: tuple[ConfigOption, ...]) -> Callab
                 option_args = (*param_decls, param_name)
             else:
                 option_args = param_decls
+            click_type = click_types[click_type_name] if click_type_name else None
 
             function = click.option(
                 *option_args,
                 default=None,
-                type=click_types.get(click_type_name),
+                type=click_type,
                 help=description,
             )(function)
 
