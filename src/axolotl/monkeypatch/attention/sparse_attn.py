@@ -250,7 +250,11 @@ def patch_sparse_attention(model, cfg, model_config):
             _build_fsa_module(model_config, cfg), returns_tuple, cu_cache
         )
         if ref is not None:
-            adapter = adapter.to(device=ref.device, dtype=ref.dtype)
+            float_ref = next(
+                (p for p in attn.parameters() if p.is_floating_point()), None
+            )
+            dtype = float_ref.dtype if float_ref is not None else cfg.torch_dtype
+            adapter = adapter.to(device=ref.device, dtype=dtype)
         module.self_attn = adapter
         swapped += 1
 

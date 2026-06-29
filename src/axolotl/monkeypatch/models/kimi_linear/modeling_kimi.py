@@ -569,27 +569,33 @@ class KimiDeltaAttention(nn.Module):
             cu_seqlens=cu_seqlens,
         )
         g = self.f_b_proj(self.f_a_proj(hidden_states))
-        g = fused_kda_gate(g, self.A_log, self.head_dim, g_bias=self.dt_bias)
         beta = self.b_proj(hidden_states).float().sigmoid()
 
-        q, k = map(
-            lambda x: rearrange(x, "... (h d) -> ... h d", d=self.head_k_dim), (q, k)
+        # fla-core>=0.4 expects q/k/g all as [..., h, d]; A_log as [num_heads].
+        q, k, g = (
+            rearrange(x, "... (h d) -> ... h d", d=self.head_k_dim) for x in (q, k, g)
         )
         v = rearrange(v, "... (h d) -> ... h d", d=self.head_dim)
+        A_log = self.A_log.view(-1)
 
         if mode == "chunk":
+            # chunk_kda fuses the gate (A_log, dt_bias) in-kernel; do not pre-gate g.
             o, recurrent_state = chunk_kda(
                 q=q,
                 k=k,
                 v=v,
                 g=g,
                 beta=beta,
+                A_log=A_log,
+                dt_bias=self.dt_bias,
                 initial_state=recurrent_state,
                 output_final_state=True,
                 use_qk_l2norm_in_kernel=True,
+                use_gate_in_kernel=True,
                 cu_seqlens=cu_seqlens,
             )
         else:
+            g = fused_kda_gate(g=g, A_log=A_log, dt_bias=self.dt_bias)
             o, recurrent_state = fused_recurrent_kda(
                 q=q,
                 k=k,
@@ -1247,9 +1253,8 @@ class KimiLinearModel(KimiPreTrainedModel):
 
         causal_mask = create_causal_mask(
             config=self.config,
-            input_embeds=inputs_embeds,
+            inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
-            cache_position=cache_position,
             past_key_values=past_key_values,
             position_ids=position_ids,
         )

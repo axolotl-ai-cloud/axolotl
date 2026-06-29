@@ -53,17 +53,16 @@ def find_all_linear_names(model):
     cls = (bnb.nn.Linear4bit, bnb.nn.Linear8bitLt, torch.nn.Linear)
     lora_module_names = set()
     for name, module in model.named_modules():
-        if (
-            isinstance(module, cls)
-            or "Linear" in module.__class__.__name__
-            and module.__class__.__name__ not in ("LlamaLinearScalingRotaryEmbedding",)
-        ):
+        # ``endswith`` not ``in``: a model whose own class name contains "Linear"
+        # (e.g. KimiLinearForCausalLM) would otherwise match the root/container
+        # modules and inject their names including the root's empty name.
+        if isinstance(module, cls) or module.__class__.__name__.endswith("Linear"):
             names = name.split(".")
             leaf = names[0] if len(names) == 1 else names[-1]
             # A purely numeric leaf (e.g. an nn.Sequential index like `gate.0`)
             # collides with layer indices under PEFT's suffix matching and would
             # target whole decoder layers, so skip it.
-            if leaf.isdigit():
+            if not leaf or leaf.isdigit():
                 continue
             lora_module_names.add(leaf)
 
