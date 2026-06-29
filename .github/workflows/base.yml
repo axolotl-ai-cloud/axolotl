@@ -55,15 +55,16 @@ jobs:
             torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
             dockerfile: "Dockerfile-uv-base"
             platforms: "linux/amd64,linux/arm64"
-          - cuda: "132"
-            cuda_version: 13.2.1
-            cudnn_version: ""
-            python_version: "3.12"
-            pytorch: 2.12.1
-            torch_backend: "cu130"
-            torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
-            dockerfile: "Dockerfile-uv-base"
-            platforms: "linux/amd64,linux/arm64"
+          # CUDA 13.2 images are disabled until uv accepts cu132 as a torch backend.
+          # PyTorch publishes cu132 wheels, but uv rejects UV_TORCH_BACKEND=cu132.
+          # - cuda: "132"
+          #   cuda_version: 13.2.1
+          #   cudnn_version: ""
+          #   python_version: "3.12"
+          #   pytorch: 2.12.1
+          #   torch_cuda_arch_list: "9.0 10.0 10.3 12.0+PTX"
+          #   dockerfile: "Dockerfile-uv-base"
+          #   platforms: "linux/amd64,linux/arm64"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
