@@ -11,9 +11,8 @@ from transformers.utils.import_utils import (
     is_torch_npu_available,
 )
 
-from axolotl.integrations.base import PluginManager
 from axolotl.integrations.config import merge_input_args
-from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING
+from axolotl.loaders.constants import MULTIMODAL_AUTO_MODEL_MAPPING
 from axolotl.loaders.utils import load_model_config
 from axolotl.utils.bench import log_gpu_memory_usage
 from axolotl.utils.dict import DictDefault
@@ -386,6 +385,8 @@ def prepare_plugins(cfg):
     """
 
     if cfg.get("plugins"):
+        from axolotl.integrations.base import PluginManager
+
         plugin_manager = PluginManager.get_instance()
         for plugin_name in cfg["plugins"]:
             plugin_manager.register(plugin_name)

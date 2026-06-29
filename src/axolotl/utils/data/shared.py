@@ -469,8 +469,7 @@ def load_preprocessed_dataset(cfg: DictDefault, dataset_hash: str) -> Dataset | 
     prepared_ds_path = get_prepared_dataset_path(cfg, dataset_hash)
 
     if (
-        cfg.dataset_prepared_path
-        and any(prepared_ds_path.glob("*"))
+        any(prepared_ds_path.glob("*"))
         and not cfg.skip_prepare_dataset
         and not cfg.is_preprocess
     ):

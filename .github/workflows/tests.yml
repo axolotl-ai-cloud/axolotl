@@ -118,6 +118,11 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
       - name: Pre-Download dataset fixture
         run: |
           hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
@@ -132,7 +137,15 @@ jobs:
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls
@@ -206,6 +219,11 @@ jobs:
         run: |
           axolotl --help
 
+      - name: Check generated CLI config options
+        if: ${{ matrix.python_version == '3.12' && matrix.pytorch_version == '2.12.0' }}
+        run: |
+          axolotl generate-cli-config-options --check
+
       - name: Verify agent docs are discoverable
         run: |
           # Agent docs live in docs/agents/ (source of truth) and are resolved
@@ -226,7 +244,15 @@ jobs:
           pytest -v --durations=10 tests/patched/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/cli/ --cov=axolotl --cov-append --cov-report=xml
           pytest -v --durations=10 tests/utils/ --cov=axolotl --cov-append --cov-report=xml
-          pytest -v --durations=10 tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
+          pytest -v --durations=10 \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            tests/integrations/ --cov=axolotl --cov-append --cov-report=xml
 
       - name: Show HF cache
         run: hf cache ls

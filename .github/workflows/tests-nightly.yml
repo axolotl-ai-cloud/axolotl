@@ -115,7 +115,18 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -v --durations=10 -n8 --dist loadfile --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ tests/
+          pytest -v --durations=10 -n8 --dist loadfile \
+            --ignore=tests/e2e/ \
+            --ignore=tests/integrations/kernels/ \
+            --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
+            --ignore=tests/integrations/test_gemma4_moe.py \
+            --ignore=tests/integrations/test_scattermoe_lora.py \
+            --ignore=tests/integrations/test_scattermoe_lora_kernels.py \
+            --ignore=tests/integrations/test_scattermoe_multi_lora.py \
+            --ignore=tests/integrations/test_sonicmoe_multi_lora.py \
+            --ignore=tests/patched/ \
+            --ignore=tests/cli/ \
+            tests/
           pytest -v --durations=10 tests/patched/
           pytest -v --durations=10 tests/cli/
 

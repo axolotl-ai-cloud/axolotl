@@ -16,6 +16,7 @@ from axolotl.utils.data.rl import prepare_preference_datasets
 from axolotl.utils.data.sft import (
     _load_tokenized_prepared_datasets,
 )
+from axolotl.utils.data.shared import load_preprocessed_dataset
 from axolotl.utils.dict import DictDefault
 
 from tests.constants import (
@@ -47,6 +48,27 @@ class TestDatasetPreparation:
                 }
             ]
         )
+
+    def test_load_preprocessed_dataset_uses_default_prepared_path(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dataset_hash = "prepared-hash"
+            prepared_path = Path(tmp_dir) / dataset_hash
+            Dataset.from_dict({"value": [1]}).save_to_disk(str(prepared_path))
+            cfg = DictDefault(
+                {
+                    "dataset_prepared_path": None,
+                    "skip_prepare_dataset": False,
+                    "is_preprocess": False,
+                }
+            )
+
+            with patch(
+                "axolotl.utils.data.shared.DEFAULT_DATASET_PREPARED_PATH", tmp_dir
+            ):
+                dataset = load_preprocessed_dataset(cfg, dataset_hash)
+
+            assert dataset is not None
+            assert dataset["value"] == [1]
 
     @pytest.mark.skip(reason="TODO: fix hf hub offline to work with HF rate limits")
     @enable_hf_offline
