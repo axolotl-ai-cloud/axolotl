@@ -64,18 +64,6 @@ pytest -v --durations=10 \
   --cov=axolotl \
   --cov-append
 
-# Run CUDA-heavy integration/kernel tests in one process to avoid xdist GPU OOMs.
-pytest -v --durations=10 \
-  /workspace/axolotl/tests/integrations/kernels/ \
-  /workspace/axolotl/tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
-  /workspace/axolotl/tests/integrations/test_gemma4_moe.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_lora.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_lora_kernels.py \
-  /workspace/axolotl/tests/integrations/test_scattermoe_multi_lora.py \
-  /workspace/axolotl/tests/integrations/test_sonicmoe_multi_lora.py \
-  --cov=axolotl \
-  --cov-append
-
 pytest -v --durations=10 -n8 --dist loadfile \
   --ignore=tests/integrations/kernels/ \
   --ignore=tests/integrations/monkeypatch/test_tiled_mlp_moe.py \
