@@ -551,16 +551,21 @@ def temp_dir() -> Generator[str, None, None]:
     shutil.rmtree(_temp_dir)
 
 
-@pytest.fixture(scope="function", autouse=True)
-def reset_plugin_manager():
+def _clear_plugin_manager():
     from axolotl.integrations.base import PluginManager
 
-    yield
     PluginManager._cfg = None
     # Don't reset _instance to None — module-level PLUGIN_MANAGER references
     # in train.py, model.py, etc. would become stale
     if PluginManager._instance is not None:
         PluginManager._instance.plugins = collections.OrderedDict()
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_plugin_manager():
+    _clear_plugin_manager()
+    yield
+    _clear_plugin_manager()
 
 
 @pytest.fixture(scope="function", autouse=True)

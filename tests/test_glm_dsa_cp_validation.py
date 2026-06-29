@@ -14,17 +14,6 @@ from axolotl.utils.config import prepare_plugins, validate_config
 from axolotl.utils.dict import DictDefault
 
 
-@pytest.fixture(autouse=True)
-def _reset_plugin_manager():
-    # prepare_plugins registers into the PluginManager singleton; reset around each test so the kernels
-    # plugin neither leaks out to other tests nor inherits another test's registered plugins.
-    from axolotl.integrations.base import PluginManager
-
-    PluginManager._instance = None
-    yield
-    PluginManager._instance = None
-
-
 def _cfg(**extra):
     return DictDefault(
         base_model="HuggingFaceTB/SmolLM2-135M",
@@ -54,6 +43,22 @@ def test_config_validation_recovers_inherited_defaults():
     )
 
     assert cfg.strict is False
+
+
+def test_config_validation_recovers_known_none_defaults():
+    from pydantic import BaseModel
+
+    from axolotl.utils.config import _model_with_inherited_default_fallback
+
+    class _Merged(BaseModel):
+        base_model: str
+        xformers_attention: bool | None
+
+    cfg = _model_with_inherited_default_fallback(
+        _Merged, {"base_model": "HuggingFaceTB/SmolLM2-135M"}
+    )
+
+    assert cfg.xformers_attention is None
 
 
 class TestGlmDsaContextParallelValidation:

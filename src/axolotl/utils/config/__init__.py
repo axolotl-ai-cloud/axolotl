@@ -33,6 +33,15 @@ from axolotl.utils.schemas.datasets import (
 
 LOG = get_logger(__name__)
 
+_NONE_DEFAULT_FIELDS = {
+    "xformers_attention",
+    "sdp_attention",
+    "flex_attention",
+    "flash_attention",
+    "sage_attention",
+    "eager_attention",
+}
+
 
 def _field_default_from_mro(model_cls, field_name):
     for cls in model_cls.__mro__:
@@ -43,6 +52,9 @@ def _field_default_from_mro(model_cls, field_name):
         default = fields[field_name].get_default(call_default_factory=True)
         if default is not PydanticUndefined:
             return copy.deepcopy(default)
+
+    if field_name in _NONE_DEFAULT_FIELDS:
+        return None
 
     return PydanticUndefined
 
