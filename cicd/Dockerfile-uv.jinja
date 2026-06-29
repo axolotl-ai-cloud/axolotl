@@ -39,6 +39,7 @@ RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
             "trl @ git+https://github.com/huggingface/trl.git@main" \
             "datasets @ git+https://github.com/huggingface/datasets.git@main"; \
+            "kernels>=0.15.2,<0.16"; \
     fi
 
 RUN python scripts/cutcrossentropy_install.py --uv | sh

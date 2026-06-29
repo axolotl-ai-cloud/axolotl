@@ -22,7 +22,7 @@ dependencies = [
     "datasets>=4.8.4,<4.9.0",
     "trl==1.5.1",
     "hf_xet==1.4.3",
-    "kernels>=0.15.2,<0.16",
+    "kernels==0.13.0",
     "trackio>=0.16.1",
     "typing-extensions>=4.15.0",
     "optimum==1.16.2",
