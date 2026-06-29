@@ -46,13 +46,15 @@ def marlin_permute_scales(s, size_k, size_n, group_size, is_a_8bit=False):
 def _nvfp4_compute_scale_factor(marlin_scales, a_dtype=None):
     if a_dtype is not None and a_dtype == torch.half:
         return 1.0
-    ws_float = marlin_scales.float() * (2**7)
-    nonzero_mask = ws_float > 0
-    if nonzero_mask.any():
-        max_val = ws_float[nonzero_mask].max()
-        if max_val < 448 * (2**7):
-            sf = (448 * (2**7) / max_val).log2().floor().exp2()
-            return sf.item()
+    # Value-identical, memory-cheap form of vllm's `ws_float[ws_float>0].max()`: the max of the
+    # positive entries equals the overall amax whenever any positive exists. Computing amax in the
+    # native (bf16) dtype avoids materializing a full float copy AND a boolean-index copy of the
+    # [E,N,K/16] scales (~9 GiB at GLM-5.2 dims) — that copy OOMed the gradient-checkpoint backward
+    # recompute. bf16 amax selects the exact max element; the *128 scaling is then a scalar float op.
+    max_val = marlin_scales.amax().float() * (2**7)
+    if max_val > 0 and max_val < 448 * (2**7):
+        sf = (448 * (2**7) / max_val).log2().floor().exp2()
+        return sf.item()
     return 1.0
 
 

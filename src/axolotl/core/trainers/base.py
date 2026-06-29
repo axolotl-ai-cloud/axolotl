@@ -799,12 +799,76 @@ class AxolotlTrainer(
             self._stored_metrics[train_eval][key]["values"].append(value)
             self._stored_metrics[train_eval][key]["reduction"] = _reduction
 
+    def _save_fsdp2_quantized_lora_adapter(self, model, output_dir) -> bool:
+        """Save just the LoRA adapter (gathered via DTensor.full_tensor) when the run is FSDP2 + a
+        quantized (NVFP4/Float8) frozen base — the case where the DCP sharded save raises
+        "Failed to validate global plan". Returns True if it handled the save, else False (caller
+        falls back to the normal checkpoint path). No-op for non-PEFT / non-FSDP2 / non-quantized runs.
+        """
+        if not getattr(self, "is_fsdp_enabled", False):
+            return False
+        try:
+            from peft import PeftModel
+
+            unwrapped = self.accelerator.unwrap_model(model)
+            if not isinstance(unwrapped, PeftModel):
+                return False
+            # quantized base? (torchao tensor-subclass DTensors — what breaks DCP). Handle DTensor
+            # by inspecting the local tensor.
+            quant_names = {"NVFP4Tensor", "Float8Tensor", "MXTensor"}
+            has_quant = any(
+                type(getattr(p, "_local_tensor", p)).__name__ in quant_names
+                for p in unwrapped.parameters()
+            )
+            if not has_quant:
+                return False
+            from axolotl.integrations.expert_parallel.shard import (
+                save_fsdp2_lora_adapter,
+            )
+
+            return bool(save_fsdp2_lora_adapter(unwrapped, output_dir))
+        except Exception as exc:  # pylint: disable=broad-except
+            LOG.warning(
+                "FSDP2 quantized-LoRA adapter save failed (%s); falling back to default save.",
+                exc,
+            )
+            return False
+
     def _save_checkpoint(self, model, trial, **kwargs):
         # make sure the checkpoint dir exists, since trainer is flakey
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
         os.makedirs(output_dir, exist_ok=True)
+
+        # FSDP2 + a quantized (NVFP4/Float8) frozen base breaks the DCP sharded save
+        # ("Failed to validate global plan" — the torchao tensor-subclass DTensors are unvalidatable).
+        # For a PEFT (LoRA) run we only need the adapter, so gather it directly and skip the DCP save.
+        if self._save_fsdp2_quantized_lora_adapter(model, output_dir):
+            # The adapter is written above in place of the DCP model state. Still persist the
+            # optimizer/scheduler/scaler/RNG and trainer state so the checkpoint stays RESUMABLE —
+            # only the trainable adapter carries optimizer state (the quantized base is frozen), so
+            # these saves don't touch the unvalidatable NVFP4 DTensors. Defensive: if any of them
+            # fails under FSDP2, keep the (already-written) adapter rather than aborting the save.
+            try:
+                if not self.args.save_only_model:
+                    self._save_optimizer_and_scheduler(output_dir)
+                    self._save_scaler(output_dir)
+                    self._save_rng_state(output_dir)
+                if self.args.should_save:
+                    # "trainer_state.json" is HF's canonical resume file (global_step, epoch, ...).
+                    self.state.save_to_json(
+                        os.path.join(output_dir, "trainer_state.json")
+                    )
+            except Exception as exc:  # pylint: disable=broad-except
+                LOG.warning(
+                    "Could not persist optimizer/RNG/trainer state for %s (%s); the checkpoint is "
+                    "adapter-only and not resumable.",
+                    output_dir,
+                    exc,
+                )
+            gc.collect()
+            return None
 
         # Save total_tokens state if tracking is enabled
         if self.args.include_tkps and hasattr(self.state, "tokens"):

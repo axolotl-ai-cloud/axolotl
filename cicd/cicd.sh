@@ -24,6 +24,7 @@ done
 # Run unit tests with initial coverage report
 pytest -v --durations=10 -n8 \
   --ignore=tests/e2e/ \
+  --ignore=tests/integrations/ \
   --ignore=tests/patched/ \
   --ignore=tests/cli \
   /workspace/axolotl/tests/ \
@@ -60,6 +61,11 @@ pytest -v --durations=10 -s \
 # Run integration tests with coverage append
 pytest -v --durations=10 \
   /workspace/axolotl/tests/e2e/integrations/ \
+  --cov=axolotl \
+  --cov-append
+
+pytest -v --durations=10 \
+  /workspace/axolotl/tests/integrations/ \
   --cov=axolotl \
   --cov-append
 

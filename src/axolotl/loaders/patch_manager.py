@@ -317,6 +317,20 @@ class PatchManager:
 
             patch_initialize_missing_keys_for_fsdp()
 
+            # Only for adapter (frozen-base) runs: this patch leaves non-rank-0 base params on meta
+            # (FSDP broadcasts rank-0's weights into them), which avoids world_size× CPU
+            # materialization of large unrecognized-quantizer (NVFP4-modelopt) checkpoints. Those are
+            # always trained with a frozen base, so no base optimizer state exists. For a FULL
+            # fine-tune the base params DO carry optimizer state, and leaving them on meta deadlocks
+            # the FSDP2 optimizer-state all-gather at checkpoint save (rank-0 real DTensors vs
+            # non-rank-0 meta) — so fall back to the stock materialize-to-cpu path there.
+            if self.cfg.fsdp_config.cpu_ram_efficient_loading and self.cfg.adapter:
+                from axolotl.monkeypatch.accelerate.fsdp2 import (
+                    patch_move_missing_keys_meta_for_fsdp,
+                )
+
+                patch_move_missing_keys_meta_for_fsdp()
+
         if self.cfg.context_parallel_size > 1 or (
             self.cfg.fsdp_config and str(self.cfg.fsdp_version) == "2"
         ):

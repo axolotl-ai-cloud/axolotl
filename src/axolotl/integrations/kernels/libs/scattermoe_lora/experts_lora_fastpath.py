@@ -20,11 +20,18 @@ the wrapper, fuse the LoRA), bringing the experts-interface path to parity.
 
 from __future__ import annotations
 
+# Implementations whose experts forward consumes ``module._scattermoe_lora`` (the fused
+# per-row LoRA kernel). ``deep_ep_scattermoe`` is the EP composite: its ``_scattermoe_local``
+# stage calls ``scattermoe_experts_forward_ep``, which reads the same attribute — so the
+# fastpath must engage under EP too, else the LoRA falls back to PEFT's parametrize merge
+# (which can't add a full-expert delta onto the EP-sharded weight).
+_SCATTERMOE_IMPLS = frozenset({"scattermoe", "deep_ep_scattermoe"})
+
 
 def _is_scattermoe_experts(module) -> bool:
     cfg = getattr(module, "config", None)
     impl = getattr(cfg, "_experts_implementation", None)
-    return impl == "scattermoe" and hasattr(module, "gate_up_proj")
+    return impl in _SCATTERMOE_IMPLS and hasattr(module, "gate_up_proj")
 
 
 def patch_paramwrapper_fastpath() -> None:
@@ -75,12 +82,19 @@ def patch_paramwrapper_fastpath() -> None:
             lora_A, lora_B, scaling = get_lora_params_from_wrapper(wrapper)
             if lora_A is None or num_experts is None:
                 continue
-            rank = lora_A.shape[0] // num_experts
+            # Under EP the base is sliced to E_local experts but the adapter stays a single global
+            # tensor over E_global experts; take THIS rank's local-expert block and the true LoRA
+            # rank so the fused kernel reads the right experts. No-op when not EP-sharded.
+            from .experts import _ep_local_expert_lora
+
+            lora_A, lora_B, num_experts_local, rank = _ep_local_expert_lora(
+                lora_A, lora_B, base
+            )
             # PEFT keeps LoRA fp32; cast to activation dtype (grads still route to the fp32 params).
             lora_A = lora_A.to(x.dtype)
             lora_B = lora_B.to(x.dtype)
             sm_lora[name] = _convert_smoe_lora(
-                lora_A, lora_B, num_experts, rank, scaling
+                lora_A, lora_B, num_experts_local, rank, scaling
             )
 
         base._scattermoe_lora = sm_lora
