@@ -59,14 +59,25 @@ class AxolotlDPOTrainer(
         self,
         processing_class: PreTrainedTokenizerBase | ProcessorMixin,
         input: str | list,
+        is_vlm: bool | None = None,
         **kwargs,
     ) -> dict[str, list]:
         """
         Override TRL's tokenization in DPO trainer to fix double bos_token bug (eg. llama).
         """
-        result = super()._tokenize(
-            processing_class=processing_class, input=input, **kwargs
-        )
+        try:
+            result = super()._tokenize(
+                processing_class=processing_class,
+                input=input,
+                is_vlm=is_vlm,
+                **kwargs,
+            )
+        except TypeError as exc:
+            if "is_vlm" not in str(exc):
+                raise
+            result = super()._tokenize(
+                processing_class=processing_class, input=input, **kwargs
+            )
 
         # Handle multimodal models
         tokenizer = (
