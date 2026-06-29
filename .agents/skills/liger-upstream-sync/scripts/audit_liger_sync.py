@@ -77,18 +77,39 @@ def _references(node: ast.AST, name: str) -> bool:
     return any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(node))
 
 
+def _looks_like_dispatch_head(test: ast.expr) -> bool:
+    # Match the dispatch *shape* (`model_config_type in MODEL_TYPE_TO_APPLY_LIGER_FN`
+    # and `... not in axolotl_override_liger_fn`), not mere symbol presence -- else an
+    # unrelated `if` that only mentions the names could win and empty the elif types.
+    has_upstream_membership = False
+    has_override_exclusion = False
+    for node in ast.walk(test):
+        if not (isinstance(node, ast.Compare) and _is_model_config_type(node.left)):
+            continue
+        for op, comparator in zip(node.ops, node.comparators, strict=False):
+            if (
+                isinstance(op, ast.In)
+                and isinstance(comparator, ast.Name)
+                and comparator.id == "MODEL_TYPE_TO_APPLY_LIGER_FN"
+            ):
+                has_upstream_membership = True
+            elif (
+                isinstance(op, ast.NotIn)
+                and isinstance(comparator, ast.Name)
+                and comparator.id == OVERRIDE_SET_NAME
+            ):
+                has_override_exclusion = True
+    return has_upstream_membership and has_override_exclusion
+
+
 def _find_dispatch_head(tree: ast.AST) -> tuple[ast.If | None, list[str]]:
     # The genuine dispatch head tests *both* the upstream table and the override
     # set (`in MODEL_TYPE_TO_APPLY_LIGER_FN and not in axolotl_override_liger_fn`).
-    # Matching on both names (not just the table) avoids latching onto some other
-    # `if` that merely mentions the table and silently emptying the elif types.
     warnings: list[str] = []
     candidates = [
         n
         for n in ast.walk(tree)
-        if isinstance(n, ast.If)
-        and _references(n.test, "MODEL_TYPE_TO_APPLY_LIGER_FN")
-        and _references(n.test, OVERRIDE_SET_NAME)
+        if isinstance(n, ast.If) and _looks_like_dispatch_head(n.test)
     ]
     candidates.sort(key=lambda n: n.lineno)
     if not candidates:

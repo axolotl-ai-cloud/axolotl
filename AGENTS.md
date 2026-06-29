@@ -92,11 +92,11 @@ The exact ruff/mypy/bandit versions are pinned in `.pre-commit-config.yaml` (the
 
 Need ruff standalone? Pin it to the `ruff-pre-commit` rev in that file: `uvx ruff@<rev> check` / `uvx ruff@<rev> format`. Ruff config (line-length 88, `select = E,F,W,C90,B,I`) lives in `pyproject.toml`.
 
-Run tests the way CI does (defaults to `-m 'not slow'`):
+Run tests (pytest defaults to `-m 'not slow'`). `make test` reproduces CI's gating CPU suite — the same per-directory split CI runs, excluding the GPU e2e jobs:
 
 ```bash
-pytest tests/                  # quick local run
-pytest -n4 --dist loadfile tests/   # parallel, as in CI
+pytest tests/   # quick one-shot local run (not CI's exact split)
+make test       # mirror CI's CPU suite (per-directory split, no GPU e2e)
 ```
 
 Full setup, CI test matrix, running e2e (GPU) tests locally, and skip-CI keywords: [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).

@@ -14,8 +14,13 @@ format:  ## Auto-fix and format with the pinned ruff (same order as pre-commit)
 	uvx ruff@$(RUFF_REV) check --fix
 	uvx ruff@$(RUFF_REV) format
 
-test:  ## Run the CPU suite the way CI does (excludes GPU e2e)
-	pytest -m "not slow" -n4 --dist loadfile --ignore=tests/e2e tests/
+test:  ## Run the CPU suite as CI does (same per-directory split; excludes GPU e2e)
+	pytest -n4 --dist loadfile --ignore=tests/utils/ --ignore=tests/integrations/ --ignore=tests/e2e/ --ignore=tests/patched/ --ignore=tests/cli/ --ignore=tests/monkeypatch/ tests/
+	pytest tests/monkeypatch/
+	pytest tests/patched/
+	pytest tests/cli/
+	pytest tests/utils/
+	pytest tests/integrations/
 
 test-e2e:  ## Run the single-GPU e2e suite (needs an NVIDIA GPU)
 	pytest tests/e2e/ --ignore=tests/e2e/multigpu/
