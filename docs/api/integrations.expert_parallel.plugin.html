@@ -798,6 +798,10 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin" id="toc-axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.ExpertParallelPlugin">ExpertParallelPlugin</a></li>
   </ul></li>
+  <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
+  <ul class="collapse">
+  <li><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis" id="toc-axolotl.integrations.expert_parallel.plugin.expert_shard_axis" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></li>
+  </ul></li>
   </ul></li>
   </ul>
 </nav>
@@ -876,10 +880,37 @@ collective dtypes line up; only <code>mesh</code> is overridden.</p>
 model. After PEFT wraps it (in <code>PeftModel</code>), DDP wraps <code>PeftModel</code>, but
 DDP looks for the attribute on the top-level module — which is now
 <code>PeftModel</code>, not our inner model. Mirror the list up.</p>
-
-
 </section>
 </section>
+</section>
+</section>
+<section id="functions" class="level2">
+<h2 class="anchored" data-anchor-id="functions">Functions</h2>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Name</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</a></td>
+<td>The non-<code>ep</code> mesh axis the routed experts FSDP-shard on under EP composition, or <code>None</code>.</td>
+</tr>
+</tbody>
+</table>
+<section id="axolotl.integrations.expert_parallel.plugin.expert_shard_axis" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.plugin.expert_shard_axis">expert_shard_axis</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.plugin.expert_shard_axis(mesh_dim_names)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>The non-<code>ep</code> mesh axis the routed experts FSDP-shard on under EP composition, or <code>None</code>.</p>
+<p>Prefers <code>dp_shard</code> (EP×dp_shard: experts shard on the data axis); falls back to <code>cp</code> (EP×cp,
+where the cp ranks of an ep-group hold the SAME experts since cp shards the sequence, not the
+experts, so FSDP-sharding them on cp keeps each rank from holding the full ep-group slice). Returns
+<code>None</code> for pure EP (no secondary axis) or when there is no <code>ep</code> axis to compose with — those
+paths don’t pre-wrap the experts here.</p>
+
+
 </section>
 </section>
 </section>

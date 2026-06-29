@@ -1478,7 +1478,10 @@ The quick brown fox jumps over the loud dog</code></pre>
 <ul>
 <li>Models’ modeling code must use <code>@use_experts_implementation</code> (canonical 3D <code>gate_up_proj</code> / <code>down_proj</code>). <code>ModuleList</code> as used in Mixtral is not supported.</li>
 <li><code>num_experts</code> must be divisible by <code>expert_parallel_size</code>.</li>
-<li>3+ axis composition (EP × DP × TP/CP) is not yet supported in v1; raises <code>NotImplementedError</code>.</li>
+<li>Supported mesh axes: EP, EP × dp_shard, <strong>EP × cp</strong>, EP × cp × dp_shard (experts shard on <code>ep</code>,
+the sequence on <code>cp</code>, non-expert weights on <code>dp_shard</code>). EP × <strong>TP</strong> is not yet supported and
+raises <code>NotImplementedError</code>. EP × CP requires the model’s attention to be context-parallel-aware
+on the <code>cp</code> axis (e.g.&nbsp;GLM-5.2 DSA via the kernels plugin); stock attention uses accelerate CP.</li>
 <li>DeepEP limitation: Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don’t benefit from LL.</li>
 <li>FP8 dispatch needs Hopper + DISABLE_SM90_FEATURES=0.</li>
 </ul>

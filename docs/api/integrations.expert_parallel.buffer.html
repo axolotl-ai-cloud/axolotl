@@ -796,8 +796,11 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <ul class="collapse">
   <li><a href="#functions" id="toc-functions" class="nav-link" data-scroll-target="#functions">Functions</a>
   <ul class="collapse">
+  <li><a href="#axolotl.integrations.expert_parallel.buffer.barrier_ep" id="toc-axolotl.integrations.expert_parallel.buffer.barrier_ep" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.barrier_ep">barrier_ep</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.buffer.configure_buffer" id="toc-axolotl.integrations.expert_parallel.buffer.configure_buffer" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.configure_buffer">configure_buffer</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.buffer.get_buffer" id="toc-axolotl.integrations.expert_parallel.buffer.get_buffer" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.get_buffer">get_buffer</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.buffer.get_combine_config" id="toc-axolotl.integrations.expert_parallel.buffer.get_combine_config" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.get_combine_config">get_combine_config</a></li>
+  <li><a href="#axolotl.integrations.expert_parallel.buffer.get_dispatch_config" id="toc-axolotl.integrations.expert_parallel.buffer.get_dispatch_config" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.get_dispatch_config">get_dispatch_config</a></li>
   <li><a href="#axolotl.integrations.expert_parallel.buffer.reset_buffer" id="toc-axolotl.integrations.expert_parallel.buffer.reset_buffer" class="nav-link" data-scroll-target="#axolotl.integrations.expert_parallel.buffer.reset_buffer">reset_buffer</a></li>
   </ul></li>
   </ul></li>
@@ -828,37 +831,69 @@ plugin init. Per-layer Buffer construction would burn memory.</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.buffer.barrier_ep">barrier_ep</a></td>
+<td>Barrier on the EP group. Placed before each DeepEP <code>combine</code> so the fast ranks wait (on</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.buffer.configure_buffer">configure_buffer</a></td>
 <td>Stash params for lazy Buffer construction. Call from <code>post_model_build</code>.</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><a href="#axolotl.integrations.expert_parallel.buffer.get_buffer">get_buffer</a></td>
 <td>Return the (lazily constructed) DeepEP Buffer.</td>
 </tr>
+<tr class="even">
+<td><a href="#axolotl.integrations.expert_parallel.buffer.get_combine_config">get_combine_config</a></td>
+<td>Recommended DeepEP combine Config for the EP group (see get_dispatch_config).</td>
+</tr>
 <tr class="odd">
+<td><a href="#axolotl.integrations.expert_parallel.buffer.get_dispatch_config">get_dispatch_config</a></td>
+<td>Recommended DeepEP dispatch Config for the EP group. DeepEP’s own tests ALWAYS pass an</td>
+</tr>
+<tr class="even">
 <td><a href="#axolotl.integrations.expert_parallel.buffer.reset_buffer">reset_buffer</a></td>
-<td>Drop the cached Buffer. Used in tests.</td>
+<td>Drop the cached Buffer + configs. Used in tests.</td>
 </tr>
 </tbody>
 </table>
+<section id="axolotl.integrations.expert_parallel.buffer.barrier_ep" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.barrier_ep">barrier_ep</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.barrier_ep()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Barrier on the EP group. Placed before each DeepEP <code>combine</code> so the fast ranks wait (on
+NCCL, no short timeout) for any rank still AUTOTUNING the local expert kernel — otherwise the
+combine collective hits DeepEP’s short internal timeout (<code>value=0</code>) and aborts. Negligible cost
+once kernels are cached (all ranks arrive together). Disable with AXOLOTL_EP_NO_BARRIER=1.</p>
+</section>
 <section id="axolotl.integrations.expert_parallel.buffer.configure_buffer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.configure_buffer">configure_buffer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.configure_buffer(</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    num_nvl_bytes<span class="op">=</span><span class="dv">256</span> <span class="op">&lt;&lt;</span> <span class="dv">20</span>,</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    num_rdma_bytes<span class="op">=</span><span class="dv">0</span>,</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.configure_buffer(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    ep_group,</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    num_nvl_bytes<span class="op">=</span><span class="dv">256</span> <span class="op">&lt;&lt;</span> <span class="dv">20</span>,</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    num_rdma_bytes<span class="op">=</span><span class="dv">0</span>,</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Stash params for lazy Buffer construction. Call from <code>post_model_build</code>.</p>
 </section>
 <section id="axolotl.integrations.expert_parallel.buffer.get_buffer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.get_buffer">get_buffer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.get_buffer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.get_buffer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Return the (lazily constructed) DeepEP Buffer.</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.buffer.get_combine_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.get_combine_config">get_combine_config</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.get_combine_config()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Recommended DeepEP combine Config for the EP group (see get_dispatch_config).</p>
+</section>
+<section id="axolotl.integrations.expert_parallel.buffer.get_dispatch_config" class="level3">
+<h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.get_dispatch_config">get_dispatch_config</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.get_dispatch_config()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Recommended DeepEP dispatch Config for the EP group. DeepEP’s own tests ALWAYS pass an
+explicit config to dispatch/combine; the no-config default deadlocks / launch-fails the combine
+on the singleton buffer’s reuse across MoE layers (cudaErrorLaunchFailure).</p>
 </section>
 <section id="axolotl.integrations.expert_parallel.buffer.reset_buffer" class="level3">
 <h3 class="anchored" data-anchor-id="axolotl.integrations.expert_parallel.buffer.reset_buffer">reset_buffer</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.reset_buffer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Drop the cached Buffer. Used in tests.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>integrations.expert_parallel.<span class="bu">buffer</span>.reset_buffer()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Drop the cached Buffer + configs. Used in tests.</p>
 
 
 </section>
