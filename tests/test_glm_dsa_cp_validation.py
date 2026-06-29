@@ -37,6 +37,25 @@ def _cfg(**extra):
     )
 
 
+def test_config_validation_recovers_inherited_defaults():
+    from pydantic import BaseModel
+
+    from axolotl.utils.config import _model_with_inherited_default_fallback
+
+    class _Base(BaseModel):
+        base_model: str
+        strict: bool = False
+
+    class _Merged(_Base):
+        strict: bool
+
+    cfg = _model_with_inherited_default_fallback(
+        _Merged, {"base_model": "HuggingFaceTB/SmolLM2-135M"}
+    )
+
+    assert cfg.strict is False
+
+
 class TestGlmDsaContextParallelValidation:
     """The use_glm_dsa_kernels exemptions in check_context_parallel_size / validate_ring_attn_func."""
 

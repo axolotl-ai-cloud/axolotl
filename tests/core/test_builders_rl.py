@@ -244,9 +244,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
                 patch(
                     "axolotl.utils.data.rl.load_dataset_with_config"
                 ) as mock_load_dataset,
-                patch(
-                    "axolotl.utils.data.rl.load_tokenizer", return_value=tokenizer
-                ),
+                patch("axolotl.utils.data.rl.load_tokenizer", return_value=tokenizer),
             ):
                 mock_load_dataset.return_value = _preference_dataset(cfg_string)
                 train_dataset, eval_dataset = prepare_preference_datasets(

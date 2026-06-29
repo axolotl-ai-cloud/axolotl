@@ -1,10 +1,13 @@
 """Module for working with config dicts"""
 
+import copy
 import json
 import os
 from typing import Optional
 
 import torch
+from pydantic import ValidationError
+from pydantic_core import PydanticUndefined
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
     is_torch_greater_or_equal,
@@ -29,6 +32,43 @@ from axolotl.utils.schemas.datasets import (
 )
 
 LOG = get_logger(__name__)
+
+
+def _field_default_from_mro(model_cls, field_name):
+    for cls in model_cls.__mro__:
+        fields = getattr(cls, "model_fields", None)
+        if not fields or field_name not in fields:
+            continue
+
+        default = fields[field_name].get_default(call_default_factory=True)
+        if default is not PydanticUndefined:
+            return copy.deepcopy(default)
+
+    return PydanticUndefined
+
+
+def _model_with_inherited_default_fallback(model_cls, data):
+    try:
+        return model_cls(**data)
+    except ValidationError as exc:
+        missing_fields = {
+            err["loc"][0]
+            for err in exc.errors()
+            if err.get("type") == "missing" and len(err.get("loc", ())) == 1
+        }
+        if not missing_fields:
+            raise
+
+        data_with_defaults = dict(data)
+        for field_name in missing_fields:
+            if field_name in data_with_defaults:
+                continue
+            default = _field_default_from_mro(model_cls, field_name)
+            if default is PydanticUndefined:
+                raise
+            data_with_defaults[field_name] = default
+
+        return model_cls(**data_with_defaults)
 
 
 def choose_device(cfg):
@@ -366,16 +406,23 @@ def validate_config(
 
         return DictDefault(
             dict(
-                AxolotlConfigWCapabilities(
-                    **cfg.to_dict(),
-                    capabilities=capabilities,
-                    env_capabilities=env_capabilities,
+                _model_with_inherited_default_fallback(
+                    AxolotlConfigWCapabilities,
+                    {
+                        **cfg.to_dict(),
+                        "capabilities": capabilities,
+                        "env_capabilities": env_capabilities,
+                    },
                 ).model_dump(exclude_none=True)
             )
         )
 
     return DictDefault(
-        dict(AxolotlInputConfig(**cfg.to_dict()).model_dump(exclude_none=True))
+        dict(
+            _model_with_inherited_default_fallback(
+                AxolotlInputConfig, cfg.to_dict()
+            ).model_dump(exclude_none=True)
+        )
     )
 
 
