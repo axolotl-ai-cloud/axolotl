@@ -53,26 +53,28 @@ def _make_mock_lora_ops(
 
 @contextmanager
 def _inject_lora_ops(mock_module, name="scattermoe_lora_abc123.kernels.lora_ops"):
-    """Register ``mock_module`` under a ``lora_ops``-hint name in ``sys.modules`` and hide any
-    real lora_ops modules, so the sys.modules-scanning collector sees only the mock."""
-    hide = {n: None for n in _real_lora_ops_module_names()}
+    """Register ``mock_module`` under a ``lora_ops``-hint name in ``sys.modules`` and hide EVERY
+    real kernel module the collector scans, so the sys.modules-scanning collector sees only the
+    mock. Hiding just real ``lora_ops`` modules isn't enough: the collector also scans the
+    dsv4/glm_dsa/scattermoe kernel modules (``_KERNEL_MODULE_HINTS``), and when an earlier test in
+    the same process has autotuned one of those, its real cache otherwise leaks into the result."""
+    hide = {n: None for n in _real_scanned_kernel_module_names() if n != name}
     with patch.dict(sys.modules, {name: mock_module, **hide}):
         yield
 
 
-def _real_lora_ops_module_names():
-    """Return sys.modules keys that match the lora_ops discovery pattern.
+def _real_scanned_kernel_module_names():
+    """``sys.modules`` keys the collector would scan (any name matching its kernel-module hints).
 
-    Other tests in the same xdist worker may have loaded the *real*
-    lora_ops module.  We need to temporarily hide those entries so the
-    discovery test finds only the mock we inject.
+    Other tests in the same process may have imported/autotuned the *real* kernels (lora_ops,
+    dsv4, glm_dsa, ...). Hide every such entry so the discovery tests see only the injected mock.
     """
+    from axolotl.integrations.kernels.autotune_collector import _KERNEL_MODULE_HINTS
+
     return [
         name
         for name, mod in list(sys.modules.items())
-        if mod is not None
-        and "lora_ops" in name
-        and hasattr(mod, "_scatter2scatter_lora")
+        if mod is not None and any(h in name for h in _KERNEL_MODULE_HINTS)
     ]
 
 
@@ -173,7 +175,7 @@ class TestAutotuneCollector:
             collect_autotune_configs,
         )
 
-        hide = {n: None for n in _real_lora_ops_module_names()}
+        hide = {n: None for n in _real_scanned_kernel_module_names()}
         with patch.dict(sys.modules, hide):
             result = collect_autotune_configs()
         assert result == []
@@ -188,7 +190,7 @@ class TestAutotuneCollector:
 
         # Temporarily hide any real lora_ops modules that other tests in
         # the same xdist worker may have loaded, so only our mock is found.
-        real_names = _real_lora_ops_module_names()
+        real_names = _real_scanned_kernel_module_names()
         hide_patch = {name: None for name in real_names}
 
         with patch.dict(sys.modules, {alt_name: mock_lora_ops, **hide_patch}):
