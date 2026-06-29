@@ -7,7 +7,7 @@ from typing import Optional
 
 import torch
 from pydantic import ValidationError
-from pydantic_core import PydanticUndefined
+from pydantic_core import PydanticUndefined, PydanticUndefinedType
 from transformers.utils import is_torch_bf16_gpu_available
 from transformers.utils.import_utils import (
     is_torch_greater_or_equal,
@@ -43,18 +43,22 @@ _NONE_DEFAULT_FIELDS = {
 }
 
 
+def _is_pydantic_undefined(value):
+    return value is PydanticUndefined or isinstance(value, PydanticUndefinedType)
+
+
 def _field_default_from_mro(model_cls, field_name):
+    if field_name in _NONE_DEFAULT_FIELDS:
+        return None
+
     for cls in model_cls.__mro__:
         fields = getattr(cls, "model_fields", None)
         if not fields or field_name not in fields:
             continue
 
         default = fields[field_name].get_default(call_default_factory=True)
-        if default is not PydanticUndefined:
+        if not _is_pydantic_undefined(default):
             return copy.deepcopy(default)
-
-    if field_name in _NONE_DEFAULT_FIELDS:
-        return None
 
     return PydanticUndefined
 
@@ -76,7 +80,7 @@ def _model_with_inherited_default_fallback(model_cls, data):
             if field_name in data_with_defaults:
                 continue
             default = _field_default_from_mro(model_cls, field_name)
-            if default is PydanticUndefined:
+            if _is_pydantic_undefined(default):
                 raise
             data_with_defaults[field_name] = default
 
