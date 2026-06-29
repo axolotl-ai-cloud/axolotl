@@ -7,6 +7,7 @@ datasets and other utilities in the Axolotl project, specifically for testing.
 # Configuration for Alpaca Messages Dataset
 ALPACA_MESSAGES_CONFIG_OG = {
     "path": "fozziethebeat/alpaca_messages_2k_dpo_test",
+    "split": "train[:500]",
     "type": "chat_template.default",
     "chat_template": "llama3",
     "field_messages": "conversation",
