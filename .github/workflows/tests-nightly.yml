@@ -94,7 +94,8 @@ jobs:
             "peft @ git+https://github.com/huggingface/peft.git@main" \
             "accelerate @ git+https://github.com/huggingface/accelerate.git@main" \
             "trl @ git+https://github.com/huggingface/trl.git@main" \
-            "datasets @ git+https://github.com/huggingface/datasets.git@main"
+            "datasets @ git+https://github.com/huggingface/datasets.git@main " \
+            "kernels>=0.15.2,<0.16"
 
       - name: Make sure PyTorch version wasn't clobbered
         run: |
