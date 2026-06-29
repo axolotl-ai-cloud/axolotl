@@ -23,6 +23,7 @@ from tests.constants import (
     ALPACA_MESSAGES_CONFIG_OG,
     ALPACA_MESSAGES_CONFIG_REVISION,
     SPECIAL_TOKENS,
+    alpaca_messages_dpo_rows,
 )
 from tests.hf_offline_utils import enable_hf_offline
 
@@ -382,13 +383,9 @@ class TestDatasetPreparation:
             assert "labels" in dataset.features
 
     @enable_hf_offline
-    def test_load_hub_with_revision_with_dpo(
-        self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-    ):
+    def test_load_hub_with_revision_with_dpo(self):
         """Verify that processing dpo data from the hub works with a specific revision"""
-        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
-            range(64)
-        )
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         cfg = DictDefault(
             {
@@ -397,7 +394,7 @@ class TestDatasetPreparation:
                 "rl": "dpo",
                 "chat_template": "llama3",
                 "datasets": [ALPACA_MESSAGES_CONFIG_REVISION],
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
             }
         )
 

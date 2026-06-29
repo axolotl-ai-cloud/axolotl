@@ -17,7 +17,7 @@ from axolotl.utils.data import prepare_datasets, prepare_preference_datasets
 from axolotl.utils.data.utils import deduplicate_and_log_datasets
 from axolotl.utils.dict import DictDefault
 
-from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION
+from tests.constants import ALPACA_MESSAGES_CONFIG_REVISION, alpaca_messages_dpo_rows
 from tests.hf_offline_utils import enable_hf_offline
 
 
@@ -210,7 +210,7 @@ class TestDeduplicateRLDataset:
                     ALPACA_MESSAGES_CONFIG_REVISION,
                     ALPACA_MESSAGES_CONFIG_REVISION,
                 ],
-                "dataset_num_proc": 1,
+                "dataset_num_proc": None,
             }
         )
         yield fixture
@@ -219,13 +219,10 @@ class TestDeduplicateRLDataset:
     def test_load_with_deduplication(
         self,
         cfg,
-        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
         tokenizer_huggyllama,
     ):
         """Verify that loading with deduplication removes duplicates."""
-        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
-            range(64)
-        )
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         with (
             patch(
@@ -249,12 +246,9 @@ class TestDeduplicateRLDataset:
     def test_load_without_deduplication(
         self,
         cfg,
-        dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
         tokenizer_huggyllama,
     ):
-        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
-            range(64)
-        )
+        dataset = Dataset.from_list(alpaca_messages_dpo_rows())
 
         with (
             patch(

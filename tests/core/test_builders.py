@@ -1,9 +1,31 @@
 """Unit tests for axolotl.core.builders SFT and reward-model trainer builders."""
 
 import pytest
+from datasets import Dataset
 
-from axolotl.common.datasets import load_datasets
 from axolotl.core.builders import HFCausalTrainerBuilder, HFRLTrainerBuilder
+
+
+def _reward_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "chosen_ids": [1, 2, 3],
+                "rejected_ids": [1, 4],
+            }
+        ]
+    )
+
+
+def _prm_dataset():
+    return Dataset.from_list(
+        [
+            {
+                "input_ids": [1, 2, 3],
+                "labels": [-100, -100, 1],
+            }
+        ]
+    )
 
 
 class TestHFCausalTrainerBuilder:
@@ -53,12 +75,10 @@ class TestHFCausalTrainerBuilder:
         builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
         cfg["optimizer"] = "muon"
 
-        # need to load datasets for reward model and process reward model trainer
-        if cfg_string in ["rm_cfg", "prm_cfg"]:
-            dataset_meta = load_datasets(cfg=cfg)
-
-            builder.train_dataset = dataset_meta.train_dataset
-            builder.eval_dataset = dataset_meta.eval_dataset
+        if cfg_string == "rm_cfg":
+            builder.train_dataset = _reward_dataset()
+        elif cfg_string == "prm_cfg":
+            builder.train_dataset = _prm_dataset()
 
         trainer = builder.build(100)
 

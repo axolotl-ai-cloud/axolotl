@@ -2,11 +2,9 @@
 tests for chat_template prompt strategy
 """
 
-import datasets
 import pytest
 from datasets import Dataset
 
-from axolotl.datasets import TokenizedPromptDataset
 from axolotl.prompt_strategies.stepwise_supervised import (
     StepwiseSupervisedPromptTokenizingStrategy,
 )
@@ -41,16 +39,8 @@ class TestStepWiseSupervisedPromptTokenizingStrategy:
             sequence_len=2048,
             step_separator="\n",
         )
-        stepwise_supervised_dataset = stepwise_supervised_dataset.cast_column(
-            "labels", datasets.Sequence(datasets.Value("int64"))
-        )
-        dataset_wrapper = TokenizedPromptDataset(
-            strategy,
-            stepwise_supervised_dataset,
-            process_count=1,
-        )
-        labels = dataset_wrapper[0]["labels"]
         sample = stepwise_supervised_dataset[0]
+        labels = strategy.tokenize_prompt(sample)["labels"]
         prompt_len = len(
             qwen3_tokenizer(sample["prompt"], add_special_tokens=False)["input_ids"]
         )
