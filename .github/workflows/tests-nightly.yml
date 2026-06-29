@@ -63,6 +63,7 @@ jobs:
         run: |
           mkdir -p /home/runner/.cache/huggingface/hub
           curl -L https://axolotl-ci.b-cdn.net/hf-cache.tar.zst | tar -xf - -C /home/runner/.cache/huggingface/hub/  --use-compress-program unzstd
+          ls -ltr /home/runner/.cache/huggingface/hub/
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -104,6 +105,13 @@ jobs:
       - name: Ensure axolotl CLI was installed
         run: |
           axolotl --help
+
+      - name: Pre-Download dataset fixture
+        run: |
+          hf download --repo-type=dataset axolotl-ai-internal/axolotl-oss-dataset-fixtures
+
+      - name: Show HF cache
+        run: hf cache ls
 
       - name: Run tests
         run: |

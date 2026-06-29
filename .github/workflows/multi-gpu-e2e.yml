@@ -30,6 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        include:
           - cuda: 130
             cuda_version: 13.0.0
             python_version: "3.12"

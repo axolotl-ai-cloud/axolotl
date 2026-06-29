@@ -75,9 +75,11 @@ jobs:
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             ${{ (matrix.is_latest) && format('axolotlai/axolotl-uv:{0}-latest', steps.metadata.outputs.version) || '' }}
+            ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-uv:{0}', steps.metadata.outputs.version) || '' }}
             axolotlai/axolotl:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
             axolotlai/axolotl:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}
             ${{ (matrix.is_latest) && format('axolotlai/axolotl:{0}-latest', steps.metadata.outputs.version) || '' }}
+            ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud-uv:
@@ -136,8 +138,10 @@ jobs:
           tags: |
              axolotlai/axolotl-cloud-uv:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-uv:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud-uv:{0}', steps.metadata.outputs.version) || '' }}
              axolotlai/axolotl-cloud:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
 
   build-axolotl-cloud-no-tmux-uv:
@@ -196,4 +200,5 @@ jobs:
           tags: |
              axolotlai/axolotl-cloud-term:${{ steps.metadata.outputs.version }}-py${{ matrix.python_version }}-cu${{ matrix.cuda }}-${{ matrix.pytorch }}${{ matrix.axolotl_extras != '' && '-' || '' }}${{ matrix.axolotl_extras }}
              ${{ (matrix.is_latest) && format('axolotlai/axolotl-cloud-term:{0}-latest', steps.metadata.outputs.version) || '' }}
+             ${{ (github.ref_type == 'tag' && matrix.is_latest) && format('axolotlai/axolotl-cloud-term:{0}', steps.metadata.outputs.version) || '' }}
           labels: ${{ steps.metadata.outputs.labels }}
