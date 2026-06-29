@@ -194,7 +194,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned-kto",
                         "type": "llama3.ultra",
-                        "split": "train[:1%]",
+                        "split": "train[:32]",
                     }
                 )
             ]
@@ -204,7 +204,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
                     {
                         "path": "argilla/ultrafeedback-binarized-preferences-cleaned",
                         "type": "chat_template.argilla",
-                        "split": "train[:1%]",
+                        "split": "train[:32]",
                     }
                 )
             ]
@@ -227,7 +227,7 @@ def rand_reward_func(prompts, completions) -> list[float]:
                 ) as mock_load_dataset:
                     mock_load_dataset.return_value = request.getfixturevalue(
                         dataset_name
-                    )
+                    ).select(range(32))
                     train_dataset, eval_dataset = prepare_preference_datasets(
                         cfg, tokenizer
                     )

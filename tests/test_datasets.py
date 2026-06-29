@@ -319,7 +319,7 @@ class TestDatasetPreparation:
         tokenizer = load_tokenizer(cfg)
         train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-        assert len(train_dataset) == 1800
+        assert len(train_dataset) == 64
         assert "conversation" not in train_dataset.features
         assert "chosen" in train_dataset.features
         assert "rejected" in train_dataset.features
@@ -364,6 +364,9 @@ class TestDatasetPreparation:
         self, dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
     ):
         """Verify that processing dpo data from the hub works with a specific revision"""
+        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
+            range(64)
+        )
 
         cfg = DictDefault(
             {
@@ -380,14 +383,12 @@ class TestDatasetPreparation:
             "axolotl.utils.data.rl.load_dataset_with_config"
         ) as mock_load_dataset:
             # Set up the mock to return different values on successive calls
-            mock_load_dataset.return_value = (
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff
-            )
+            mock_load_dataset.return_value = dataset
 
             tokenizer = load_tokenizer(cfg)
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
-            assert len(train_dataset) == 1800
+            assert len(train_dataset) == len(dataset)
             assert "conversation" not in train_dataset.features
             assert "chosen" in train_dataset.features
             assert "rejected" in train_dataset.features

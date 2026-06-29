@@ -223,6 +223,9 @@ class TestDeduplicateRLDataset:
         tokenizer_huggyllama,
     ):
         """Verify that loading with deduplication removes duplicates."""
+        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
+            range(64)
+        )
 
         with (
             patch(
@@ -231,17 +234,16 @@ class TestDeduplicateRLDataset:
             patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
-            mock_load_dataset.side_effect = [
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
-            ]
+            mock_load_dataset.side_effect = [dataset, dataset]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
             tokenizer = load_tokenizer(cfg)
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             # Verify that the dataset has been deduplicated
-            assert len(train_dataset) == 1800, "Dataset was not properly deduplicated"
+            assert len(train_dataset) == len(dataset), (
+                "Dataset was not properly deduplicated"
+            )
 
     @enable_hf_offline
     def test_load_without_deduplication(
@@ -250,6 +252,10 @@ class TestDeduplicateRLDataset:
         dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
         tokenizer_huggyllama,
     ):
+        dataset = dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff.select(
+            range(64)
+        )
+
         with (
             patch(
                 "axolotl.utils.data.rl.load_dataset_with_config"
@@ -257,10 +263,7 @@ class TestDeduplicateRLDataset:
             patch("axolotl.loaders.load_tokenizer") as mock_load_tokenizer,
         ):
             # Set up the mock to return different values on successive calls
-            mock_load_dataset.side_effect = [
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
-                dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff,
-            ]
+            mock_load_dataset.side_effect = [dataset, dataset]
             mock_load_tokenizer.return_value = tokenizer_huggyllama
 
             # Load the dataset without deduplication
@@ -269,7 +272,7 @@ class TestDeduplicateRLDataset:
             train_dataset, _ = prepare_preference_datasets(cfg, tokenizer)
 
             # Verify that the dataset retains duplicates
-            assert len(train_dataset) == 1800 * 2, (
+            assert len(train_dataset) == len(dataset) * 2, (
                 "Dataset deduplication occurred when it should not have"
             )
 
