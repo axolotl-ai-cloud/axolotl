@@ -47,6 +47,30 @@ def _is_pydantic_undefined(value):
     return value is PydanticUndefined or isinstance(value, PydanticUndefinedType)
 
 
+def _field_name_for_missing_loc(model_cls, field_loc):
+    fields = getattr(model_cls, "model_fields", None) or {}
+    if field_loc in fields:
+        return field_loc
+
+    for field_name, field in fields.items():
+        if field_loc == getattr(field, "alias", None):
+            return field_name
+
+        validation_alias = getattr(field, "validation_alias", None)
+        if field_loc == validation_alias:
+            return field_name
+
+        for alias in getattr(validation_alias, "choices", ()) or ():
+            if field_loc == alias:
+                return field_name
+
+        alias_path = getattr(validation_alias, "path", None)
+        if alias_path and field_loc == alias_path[0]:
+            return field_name
+
+    return field_loc
+
+
 def _field_default_from_mro(model_cls, field_name):
     if field_name in _NONE_DEFAULT_FIELDS:
         return None
@@ -63,12 +87,19 @@ def _field_default_from_mro(model_cls, field_name):
     return PydanticUndefined
 
 
+def _model_validate_with_field_names(model_cls, data):
+    try:
+        return model_cls.model_validate(data, by_alias=True, by_name=True)
+    except TypeError:
+        return model_cls(**data)
+
+
 def _model_with_inherited_default_fallback(model_cls, data):
     try:
         return model_cls(**data)
     except ValidationError as exc:
         missing_fields = {
-            err["loc"][0]
+            _field_name_for_missing_loc(model_cls, err["loc"][0])
             for err in exc.errors()
             if err.get("type") == "missing" and len(err.get("loc", ())) == 1
         }
@@ -84,7 +115,7 @@ def _model_with_inherited_default_fallback(model_cls, data):
                 raise
             data_with_defaults[field_name] = default
 
-        return model_cls(**data_with_defaults)
+        return _model_validate_with_field_names(model_cls, data_with_defaults)
 
 
 def choose_device(cfg):

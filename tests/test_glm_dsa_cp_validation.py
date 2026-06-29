@@ -61,6 +61,24 @@ def test_config_validation_recovers_known_none_defaults():
     assert cfg.xformers_attention is None
 
 
+def test_config_validation_retry_accepts_field_names():
+    from pydantic import BaseModel, ConfigDict, Field
+
+    from axolotl.utils.config import _model_with_inherited_default_fallback
+
+    class _Merged(BaseModel):
+        model_config = ConfigDict(validate_by_name=False, validate_by_alias=True)
+
+        base_model: str
+        xformers_attention: bool | None = Field(alias="xformersAttention")
+
+    cfg = _model_with_inherited_default_fallback(
+        _Merged, {"base_model": "HuggingFaceTB/SmolLM2-135M"}
+    )
+
+    assert cfg.xformers_attention is None
+
+
 class TestGlmDsaContextParallelValidation:
     """The use_glm_dsa_kernels exemptions in check_context_parallel_size / validate_ring_attn_func."""
 
