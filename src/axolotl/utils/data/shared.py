@@ -59,9 +59,7 @@ DATASET_HASH_CONFIG_EXTRA_FIELDS = (
     "sample_packing_group_size",
     "sample_packing_sequentially",
     "special_tokens",
-    "train_on_eos",
     "train_on_inputs",
-    "roles_to_train",
 )
 
 DATASET_HASH_DATASET_EXTRA_FIELDS = (
