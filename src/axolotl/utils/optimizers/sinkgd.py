@@ -12,7 +12,10 @@ in 8-bit and the overall footprint stays close to plain SGD.
 """
 
 import torch
+import torch.distributed as dist
 from torch import Tensor
+from torch.distributed.device_mesh import DeviceMesh
+from torch.distributed.tensor import DTensor
 from torchao.optim.adam import _AdamBase, single_param_adam
 from torchao.optim.quant_utils import _fp32_to_bf16_sr
 from torchao.optim.subclass_8bit import OptimState8bit
@@ -128,6 +131,34 @@ class SinkGD(_AdamBase):
             p.shape, signed, block_size, p.device, dtype=p.dtype
         )
 
+    def _adam_fallback(self, p: Tensor, grad: Tensor, group: dict, lr: Tensor) -> None:
+        # Adam is elementwise, so run on the local shard: no cross-rank comm, and it
+        # sidesteps the OptimState8bit + DTensor + compile dispatch gap under FSDP2.
+        # State is keyed by the original param (to_local returns a fresh object).
+        p_local = p.to_local() if isinstance(p, DTensor) else p
+        grad_local = grad.to_local() if isinstance(grad, DTensor) else grad
+        state = self.state[p]
+        if len(state) == 0:
+            state["step"] = torch.tensor(0.0)
+            state["exp_avg"] = self._new_buffer(p_local, True)
+            state["exp_avg_sq"] = self._new_buffer(p_local, False)
+        state["step"] += 1
+        self._compiled_adam(
+            p_local.detach(),
+            grad_local,
+            state["step"],
+            state["exp_avg"],
+            state["exp_avg_sq"],
+            None,
+            lr,
+            group["betas"][0],
+            group["betas"][1],
+            group["weight_decay"],
+            group["eps"],
+            self.is_adamw,
+            self.bf16_stochastic_round and p_local.dtype is torch.bfloat16,
+        )
+
     @torch.no_grad()
     def step(self, closure=None):
         loss = None
@@ -160,43 +191,51 @@ class SinkGD(_AdamBase):
                             self.sinkgd_eps,
                             self.bf16_stochastic_round and p.dtype is torch.bfloat16,
                         )
-                        continue
-
-                    state = self.state[p]
-                    if len(state) == 0:
-                        state["step"] = torch.tensor(0.0)
-                        state["exp_avg"] = self._new_buffer(p, True)
-                        state["exp_avg_sq"] = self._new_buffer(p, False)
-                    state["step"] += 1
-
-                    self._compiled_adam(
-                        p.detach(),
-                        grad,
-                        state["step"],
-                        state["exp_avg"],
-                        state["exp_avg_sq"],
-                        None,
-                        lr,
-                        group["betas"][0],
-                        group["betas"][1],
-                        group["weight_decay"],
-                        group["eps"],
-                        self.is_adamw,
-                        self.bf16_stochastic_round and p.dtype is torch.bfloat16,
-                    )
+                    else:
+                        self._adam_fallback(p, grad, group, lr)
 
         return loss
 
 
-class SinkGDOptimizerFactory(BaseOptimizerFactory):
-    """Builds a :class:`SinkGD` optimizer, routing weight matrices to SR-Sinkhorn.
+def _sinkgd_param_groups(opt_model, weight_decay):
+    """Split params: 2D/3D weight matrices -> SR-Sinkhorn; everything else -> AdamW.
 
     Routing is by tensor rank, not module type, so fused MoE experts (transformers
     v5 stores them as 3D ``[num_experts, in, out]`` parameters rather than
-    ``nn.Linear`` modules) are picked up and normalized per-expert. Embeddings, the
-    output head, and parameters with fewer than 2 dimensions go to the AdamW
-    fallback group, matching the paper's recipe.
+    ``nn.Linear`` modules) are picked up and normalized per-expert. The AdamW
+    fallback group (embeddings, head, norms, biases) uses no weight decay.
     """
+    sinkgd_params = []
+    adamw_params = []
+    for name, param in opt_model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if (
+            param.ndim < 2
+            or name.endswith("modules_to_save.default.weight")
+            or any(
+                embed in name
+                for embed in ["embed_tokens", "lm_head", "wte", "word_embeddings"]
+            )
+        ):
+            adamw_params.append(param)
+        else:
+            sinkgd_params.append(param)
+
+    param_groups = []
+    if sinkgd_params:
+        param_groups.append(
+            {"params": sinkgd_params, "use_sinkgd": True, "weight_decay": weight_decay}
+        )
+    if adamw_params:
+        param_groups.append(
+            {"params": adamw_params, "use_sinkgd": False, "weight_decay": 0.0}
+        )
+    return param_groups
+
+
+class SinkGDOptimizerFactory(BaseOptimizerFactory):
+    """Builds a :class:`SinkGD` optimizer, routing weight matrices to SR-Sinkhorn."""
 
     def __call__(self, opt_model, training_args=None, **optimizer_kwargs) -> "SinkGD":
         lr = optimizer_kwargs.pop("lr")
@@ -205,50 +244,173 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
         eps = optimizer_kwargs.pop("eps", 1e-8)
         sinkhorn_iters = int(optimizer_kwargs.pop("sinkhorn_iters", 5))
         sinkgd_lr_scale = float(optimizer_kwargs.pop("sinkgd_lr_scale", 0.05))
-
-        sinkgd_params = []
-        adamw_params = []
-        for name, param in opt_model.named_parameters():
-            if not param.requires_grad:
-                continue
-            if (
-                param.ndim < 2
-                or name.endswith("modules_to_save.default.weight")
-                or any(
-                    embed in name
-                    for embed in ["embed_tokens", "lm_head", "wte", "word_embeddings"]
-                )
-            ):
-                adamw_params.append(param)
-            else:
-                sinkgd_params.append(param)
-
-        param_groups = []
-        if sinkgd_params:
-            param_groups.append(
-                {
-                    "params": sinkgd_params,
-                    "use_sinkgd": True,
-                    "weight_decay": weight_decay,
-                }
-            )
-        # fallback group is only embeddings, head, norms and biases -> no weight decay
-        if adamw_params:
-            param_groups.append(
-                {
-                    "params": adamw_params,
-                    "use_sinkgd": False,
-                    "weight_decay": 0.0,
-                }
-            )
+        optimizer_kwargs.pop(
+            "device_mesh", None
+        )  # ignored by the single-device variant
 
         return SinkGD(
-            param_groups,
+            _sinkgd_param_groups(opt_model, weight_decay),
             lr=lr,
             betas=betas,
             eps=eps,
             weight_decay=weight_decay,
             sinkhorn_iters=sinkhorn_iters,
             sinkgd_lr_scale=sinkgd_lr_scale,
+            **optimizer_kwargs,
+        )
+
+
+def _matrix_shard_dim(p: Tensor):
+    """Return the negative matrix dim (-2 or -1) sharded across >1 ranks, else None.
+
+    Leading-dim sharding (e.g. the expert axis of a fused MoE weight) and replicated
+    tensors return None — their row/column norms are then fully shard-local.
+    """
+    if not isinstance(p, DTensor):
+        return None
+    matrix_dims = {p.ndim - 1, p.ndim - 2}
+    for i, placement in enumerate(p.placements):
+        if (
+            placement.is_shard()
+            and placement.dim in matrix_dims
+            and p.device_mesh.size(i) > 1
+        ):
+            return placement.dim - p.ndim
+    return None
+
+
+def dist_single_param_sinkgd(
+    p: Tensor,
+    grad: Tensor,
+    lr: Tensor,
+    weight_decay: float,
+    iters: int,
+    eps: float,
+    stochastic_round: bool,
+    shard_dim,
+    process_group,
+    global_M: int,
+    global_N: int,
+) -> None:
+    """SR-Sinkhorn on a sharded weight: all-reduce only the norm whose reduction
+    axis is sharded; the other norm is shard-local. ``p``/``grad`` are local shards;
+    ``global_M``/``global_N`` are the *full* matrix dims (the √ scaling must use the
+    global sizes, not the local shard's)."""
+    sqrt_n, sqrt_m = global_N**0.5, global_M**0.5
+    x = grad
+    for _ in range(iters):
+        if shard_dim == -1:  # columns sharded -> row norm needs a reduction
+            rsq = (x.float() ** 2).sum(dim=-1, keepdim=True)
+            dist.all_reduce(rsq, group=process_group)
+            rn = rsq.sqrt()
+        else:
+            rn = torch.linalg.vector_norm(x, dim=-1, keepdim=True, dtype=torch.float32)
+        x = x * (sqrt_n / rn.clamp_min(eps)).to(x.dtype)
+        if shard_dim == -2:  # rows sharded -> column norm needs a reduction
+            csq = (x.float() ** 2).sum(dim=-2, keepdim=True)
+            dist.all_reduce(csq, group=process_group)
+            cn = csq.sqrt()
+        else:
+            cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
+        x = x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
+
+    p_f32 = p.float()
+    if weight_decay != 0.0:
+        p_f32 = p_f32 * (1 - lr * weight_decay)
+    p_f32 = p_f32 - lr * x.float()
+    if stochastic_round:
+        p.copy_(_fp32_to_bf16_sr(p_f32))
+    else:
+        p.copy_(p_f32)
+
+
+class DistSinkGD(SinkGD):
+    """Distributed SinkGD for FSDP2/TP-sharded weights.
+
+    The SR-Sinkhorn matrices are updated on their local shards, all-reducing only the
+    ``[N]`` (or ``[M]``) norm vector over the shard process group — never the matrix
+    itself, so optimizer communication is orders of magnitude lighter than gathering
+    the full parameter. The 8-bit AdamW fallback (operating on DTensors) is inherited
+    unchanged.
+    """
+
+    def __init__(self, params, *, process_group=None, **kwargs) -> None:
+        super().__init__(params, **kwargs)
+        self._process_group = process_group
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        for group in self.param_groups:
+            use_sinkgd = group.get("use_sinkgd", False)
+            lr = group["lr"]
+            if not isinstance(lr, Tensor):
+                lr = torch.tensor(lr, dtype=torch.float32)
+
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                grad = p.grad
+                if grad.is_sparse:
+                    raise RuntimeError("Sparse gradient is not supported")
+
+                if use_sinkgd and p.ndim >= 2:
+                    shard_dim = _matrix_shard_dim(p)
+                    global_M, global_N = p.shape[-2], p.shape[-1]  # DTensor -> global
+                    p_local = p.to_local() if isinstance(p, DTensor) else p
+                    g_local = grad.to_local() if isinstance(grad, DTensor) else grad
+                    dist_single_param_sinkgd(
+                        p_local,
+                        g_local,
+                        lr * self.sinkgd_lr_scale,
+                        group["weight_decay"],
+                        self.sinkhorn_iters,
+                        self.sinkgd_eps,
+                        self.bf16_stochastic_round and p.dtype is torch.bfloat16,
+                        shard_dim,
+                        self._process_group,
+                        global_M,
+                        global_N,
+                    )
+                else:
+                    self._adam_fallback(p, grad, group, lr)
+
+        return loss
+
+
+class DistSinkGDOptimizerFactory(BaseOptimizerFactory):
+    """Builds a :class:`DistSinkGD` for sharded training; pulls the dp_shard group."""
+
+    def __call__(
+        self, opt_model, training_args=None, **optimizer_kwargs
+    ) -> "DistSinkGD":
+        lr = optimizer_kwargs.pop("lr")
+        weight_decay = optimizer_kwargs.pop("weight_decay", 0.0)
+        betas = optimizer_kwargs.pop("betas", (0.9, 0.999))
+        eps = optimizer_kwargs.pop("eps", 1e-8)
+        sinkhorn_iters = int(optimizer_kwargs.pop("sinkhorn_iters", 5))
+        sinkgd_lr_scale = float(optimizer_kwargs.pop("sinkgd_lr_scale", 0.05))
+
+        device_mesh = optimizer_kwargs.pop("device_mesh", None)
+        process_group = None
+        if isinstance(device_mesh, DeviceMesh):
+            if "dp_shard" in (device_mesh.mesh_dim_names or ()):
+                process_group = device_mesh["dp_shard"].get_group()
+            elif device_mesh.ndim == 1:
+                process_group = device_mesh.get_group()
+
+        return DistSinkGD(
+            _sinkgd_param_groups(opt_model, weight_decay),
+            lr=lr,
+            betas=betas,
+            eps=eps,
+            weight_decay=weight_decay,
+            sinkhorn_iters=sinkhorn_iters,
+            sinkgd_lr_scale=sinkgd_lr_scale,
+            process_group=process_group,
             **optimizer_kwargs,
         )

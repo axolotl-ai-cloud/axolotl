@@ -342,9 +342,19 @@ class TrainerBuilderBase(abc.ABC):
                 if device_mesh is not None:
                     optimizer_kwargs["device_mesh"] = device_mesh
             elif self.cfg.optimizer == "sinkgd":
-                from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
+                _, device_mesh = build_parallelism_config(self.cfg)
 
-                optimizer_cls = SinkGDOptimizerFactory
+                if device_mesh is not None:
+                    from axolotl.utils.optimizers.sinkgd import (
+                        DistSinkGDOptimizerFactory,
+                    )
+
+                    optimizer_cls = DistSinkGDOptimizerFactory
+                    optimizer_kwargs["device_mesh"] = device_mesh
+                else:
+                    from axolotl.utils.optimizers.sinkgd import SinkGDOptimizerFactory
+
+                    optimizer_cls = SinkGDOptimizerFactory
                 optimizer_kwargs.update(adam_kwargs)
             elif self.cfg.optimizer == "optimi_adamw":
                 from optimi import AdamW
