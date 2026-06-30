@@ -185,6 +185,7 @@ class TestCustomOptimizers(unittest.TestCase):
                     {
                         "path": "mhenrichsen/alpaca_2k_test",
                         "type": "alpaca",
+                        "split": "train[:200]",
                     },
                 ],
                 "num_epochs": 1,
