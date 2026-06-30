@@ -266,6 +266,8 @@ class DPODataset(BaseModel):
     data_files: list[str] | None = None
     revision: str | None = None
     field_messages: str | None = None
+    field_chosen: str | None = None
+    field_rejected: str | None = None
 
 
 class StepwiseSupervisedDataset(BaseModel):
