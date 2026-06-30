@@ -17,6 +17,7 @@ from axolotl.utils.schemas.enums import (
     RingAttnFunc,
     RLType,
 )
+from axolotl.utils.schemas.model import implies_bnb_4bit
 
 LOG = get_logger(__name__)
 
@@ -626,8 +627,12 @@ class LoRAValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def warn_qlora_zero3_w_use_reentrant(cls, data):
+        # Match both the legacy alias and the post-normalization shape.
+        is_qlora_shape = data.get("adapter") in ("lora", "qlora") and implies_bnb_4bit(
+            data
+        )
         if (
-            data.get("adapter") == "qlora"
+            is_qlora_shape
             and data.get("gradient_checkpointing_kwargs", {})
             and data.get("gradient_checkpointing_kwargs", {}).get("use_reentrant")
             is False
@@ -720,13 +725,17 @@ class RLValidationMixin:
         # Distributed RL with QLoRA + gradient checkpointing
         # and use_reentrant = True is broken upstream in TRL
 
+        # Match both the legacy qlora alias and the post-normalization shape
+        # (adapter: lora + bnb 4-bit base).
+        is_qlora_shape = data.get("adapter") in ("lora", "qlora") and implies_bnb_4bit(
+            data
+        )
         if (
             data.get("rl")
             and data.get("gradient_checkpointing")
             and data.get("gradient_checkpointing_kwargs")
             and data.get("gradient_checkpointing_kwargs").get("use_reentrant")
-            and data.get("load_in_4bit")
-            and data.get("adapter") == "qlora"
+            and is_qlora_shape
             and data.get("capabilities")
             and data.get("capabilities").get("n_gpu", 1) > 1
         ):
@@ -1232,12 +1241,47 @@ class SystemValidationMixin:
 
     @model_validator(mode="before")
     @classmethod
-    def check_model_quantization_config_vs_bnb(cls, data):
-        if data.get("model_quantization_config"):
-            if data.get("load_in_8bit") or data.get("load_in_4bit"):
-                raise ValueError(
-                    "model_quantization_config and load_in_8bit or load_in_4bit cannot be used together."
-                )
+    def check_torchao_backend_exclusivity(cls, data):
+        """``model_quantization_config.torchao`` is a uniform base-quant
+        shorthand. It cannot compose with the other axolotl quant mechanisms.
+
+        Mixed-quant flows (experts MXFP4 + attention bf16) are expressed via
+        ``quantize_moe_experts`` directly, or by letting the checkpoint's own
+        ``quantization_config`` (gpt-oss, AMD Quark, AWQ, GPTQ, BNB) flow
+        through unchanged. Surface the conflict instead of silently picking
+        a winner.
+        """
+        mqc = data.get("model_quantization_config")
+        if not isinstance(mqc, dict) or mqc.get("backend") != "torchao":
+            return data
+
+        conflicting = []
+        if data.get("quantize_moe_experts"):
+            conflicting.append("quantize_moe_experts: true")
+        if data.get("gptq"):
+            conflicting.append("gptq: true")
+        if data.get("qat"):
+            conflicting.append("qat")
+        if data.get("ptq"):
+            conflicting.append("ptq")
+        if data.get("fp8"):
+            conflicting.append("fp8")
+        # relora merges adapters into the base weights in-place, which torchao
+        # tensor subclasses don't support (no aten.add_).
+        if data.get("relora"):
+            conflicting.append("relora")
+
+        if conflicting:
+            raise ValueError(
+                "model_quantization_config.torchao applies a single "
+                "TorchAoConfig to every linear layer; it cannot be combined "
+                "with another quantization mechanism ("
+                + ", ".join(conflicting)
+                + "). For mixed-quant models (e.g. MoE experts in MXFP4 + "
+                "attention in bf16), drop model_quantization_config.torchao "
+                "and use that mechanism directly. See "
+                "docs/qlora_torchao.qmd."
+            )
         return data
 
     @model_validator(mode="before")
@@ -1509,7 +1553,11 @@ class ModelCompatibilityValidationMixin:
     @model_validator(mode="before")
     @classmethod
     def check_gpt_oss_fsdp_loading(cls, data):
-        if data.get("model_quantization_config", "") == "Mxfp4Config":
+        mqc = data.get("model_quantization_config", "")
+        is_mxfp4 = mqc == "Mxfp4Config" or (
+            isinstance(mqc, dict) and mqc.get("backend") == "mxfp4"
+        )
+        if is_mxfp4:
             fsdp_config = data.get("fsdp_config") or {}
             if fsdp_config.get("cpu_ram_efficient_loading", False) is True:
                 raise ValueError(

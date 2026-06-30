@@ -319,11 +319,16 @@ def load_lora(
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
 
+    from axolotl.loaders.model import _torchao_subconfig
+
+    mqc_torchao = _torchao_subconfig(getattr(cfg, "model_quantization_config", None))
+    is_torchao = mqc_torchao is not None
     if (
         cfg.fsdp_config
         and cfg.adapter
         and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
+        and not is_torchao
     ):
         setup_quantized_meta_for_peft(model)
 
@@ -331,19 +336,37 @@ def load_lora(
     if cfg.peft_autocast_adapter_dtype is not None:
         model_kwargs["autocast_adapter_dtype"] = cfg.peft_autocast_adapter_dtype
 
-    if cfg.lora_model_dir:
-        LOG.debug("Loading pretrained PEFT adapter")
-        if cfg.lora_on_cpu:
-            model_kwargs["max_memory"] = {"cpu": "256GiB"}
-            model_kwargs["device_map"] = {"": "cpu"}
-        model = PeftModel.from_pretrained(
-            model,
-            cfg.lora_model_dir,
-            is_trainable=(not inference),
-            **model_kwargs,
-        )
-    else:
-        model = get_peft_model(model, lora_config, **model_kwargs)
+    # Patch PEFT's torchao dispatch before any model creation/loading.
+    # Must happen before both get_peft_model and PeftModel.from_pretrained,
+    # as both trigger LoRA layer dispatch that would fail for INT4/NF4 weights.
+    # INT8 is natively supported by PEFT's TorchaoLoraLinear, so skip the patch.
+    needs_torchao_dispatch_patch = bool(
+        is_torchao and mqc_torchao["weight_dtype"] != "int8"  # type: ignore[index]
+    )
+    if needs_torchao_dispatch_patch:
+        from axolotl.monkeypatch.peft.utils import patch_peft_torchao_dispatch
+
+        patch_peft_torchao_dispatch()
+
+    try:
+        if cfg.lora_model_dir:
+            LOG.debug("Loading pretrained PEFT adapter")
+            if cfg.lora_on_cpu:
+                model_kwargs["max_memory"] = {"cpu": "256GiB"}
+                model_kwargs["device_map"] = {"": "cpu"}
+            model = PeftModel.from_pretrained(
+                model,
+                cfg.lora_model_dir,
+                is_trainable=(not inference),
+                **model_kwargs,
+            )
+        else:
+            model = get_peft_model(model, lora_config, **model_kwargs)
+    finally:
+        if needs_torchao_dispatch_patch:
+            from axolotl.monkeypatch.peft.utils import unpatch_peft_torchao_dispatch
+
+            unpatch_peft_torchao_dispatch()
 
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
     # requires a compute dtype (bf16/fp16). Cast trainable LoRA params.
@@ -369,6 +392,7 @@ def load_lora(
         and cfg.adapter
         and cfg.fsdp_config.cpu_ram_efficient_loading
         and rank != 0
+        and not is_torchao
     ):
         setup_quantized_peft_meta_for_training(model)
 

@@ -78,3 +78,56 @@ def patch_peft_prep_code():
     axolotl.loaders.model.prepare_model_for_kbit_training = (
         fixed_prepare_model_for_kbit_training
     )
+
+
+def patch_peft_torchao_dispatch():
+    """Skip PEFT's TorchaoLoraLinear for torchao-quantized weights.
+
+    PEFT's dispatch_torchao() wraps torchao tensor subclasses in
+    TorchaoLoraLinear (and _check_dtype_supported() rejects some formats
+    outright, e.g. plain-layout int4). Our LoRA kernels handle dequantization
+    explicitly, so we bypass PEFT's torchao dispatch entirely and let it fall
+    back to standard Linear LoRA layers.
+
+    peft.tuners.lora.model imports dispatch_torchao into its own namespace at
+    module load (`from .torchao import dispatch_torchao`) and _create_new_module
+    reads that module-global, so the consuming namespace must be patched too —
+    patching only the defining module has no effect.
+    """
+    try:
+        from peft.tuners.lora import model as peft_lora_model, torchao as peft_torchao
+    except ImportError:
+        LOG.warning("Could not import peft.tuners.lora.torchao for patching")
+        return
+
+    if getattr(peft_torchao, "_axolotl_patched", False):
+        return
+
+    def patched_dispatch(target, adapter_name, lora_config, **kwargs):
+        # Return None so PEFT falls back to standard Linear LoRA layers.
+        # Our LoRA kernels handle torchao dequantization explicitly.
+        return None
+
+    peft_torchao._axolotl_orig_dispatch_torchao = peft_torchao.dispatch_torchao
+    peft_torchao._axolotl_orig_model_dispatch_torchao = peft_lora_model.dispatch_torchao
+    peft_torchao.dispatch_torchao = patched_dispatch
+    peft_lora_model.dispatch_torchao = patched_dispatch
+    peft_torchao._axolotl_patched = True
+    LOG.info("Patched PEFT dispatch_torchao to skip TorchaoLoraLinear")
+
+
+def unpatch_peft_torchao_dispatch():
+    """Restore PEFT's original dispatch_torchao after adapter creation, so a
+    later torchao-INT8 adapter load in the same process keeps PEFT's native
+    TorchaoLoraLinear dispatch."""
+    try:
+        from peft.tuners.lora import model as peft_lora_model, torchao as peft_torchao
+    except ImportError:
+        return
+
+    if not getattr(peft_torchao, "_axolotl_patched", False):
+        return
+
+    peft_torchao.dispatch_torchao = peft_torchao._axolotl_orig_dispatch_torchao
+    peft_lora_model.dispatch_torchao = peft_torchao._axolotl_orig_model_dispatch_torchao
+    peft_torchao._axolotl_patched = False

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from axolotl.utils.schemas.model import LEGACY_MQC_STRING_TO_BACKEND
+
 
 class LoftQConfig(BaseModel):
     """LoftQ configuration subset"""
@@ -11,11 +13,10 @@ class LoftQConfig(BaseModel):
     loftq_bits: int = Field(
         default=4, json_schema_extra={"description": "typically 4 bits"}
     )
-    # loftq_iter: int = Field(default=1, json_schema_extra={"description": "Alternating iterations for LoftQ"})
 
 
 class PeftConfig(BaseModel):
-    """peftq configuration subset"""
+    """PEFT configuration subset"""
 
     loftq_config: LoftQConfig | None = Field(
         default=None,
@@ -31,17 +32,35 @@ class LoraConfig(BaseModel):
     load_in_8bit: bool | None = Field(
         default=False,
         json_schema_extra={
-            "description": "This will attempt to quantize the model down to 8 bits and use adam 8 bit optimizer"
+            "description": (
+                "DEPRECATED: prefer `model_quantization_config: {bnb: "
+                "{weight_dtype: int8}}`. Legacy bnb 8-bit shorthand; kept "
+                "for backward compatibility, translated to the structured "
+                "form at validation time with a deprecation warning."
+            )
         },
     )
     load_in_4bit: bool | None = Field(
-        default=False, json_schema_extra={"description": "Use bitsandbytes 4 bit"}
+        default=False,
+        json_schema_extra={
+            "description": (
+                "DEPRECATED: prefer `model_quantization_config: {bnb: "
+                "{weight_dtype: nf4}}`. Legacy bnb 4-bit shorthand; kept "
+                "for backward compatibility, translated to the structured "
+                "form at validation time with a deprecation warning."
+            )
+        },
     )
 
-    adapter: str | None = Field(
+    adapter: Literal["lora", "qlora", "llama-adapter"] | str | None = Field(
         default=None,
         json_schema_extra={
-            "description": "If you want to use a built-in or plugin adapter, or leave blank to train all parameters in original model"
+            "description": (
+                "Built-in adapters: `lora`, `llama-adapter`, or `qlora` "
+                "(deprecated alias for lora + a bnb nf4 base quant). Plugins "
+                "may register additional adapter names. Leave blank to train "
+                "all parameters of the original model."
+            )
         },
     )
     lora_model_dir: str | None = Field(
@@ -164,6 +183,184 @@ class LoraConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def normalize_base_quant_inputs(cls, data):
+        """Funnel every legacy base-quant spelling into the canonical
+        ``model_quantization_config`` structured form, emit deprecation
+        warnings, and then mirror back into ``load_in_4bit`` /
+        ``load_in_8bit`` for the downstream loader.
+
+        ``model_quantization_config`` is the source of truth; the legacy
+        flags are kept in lockstep for loader code that still keys off them.
+        An explicit legacy flag that contradicts the structured form is an
+        error, never a silent winner.
+
+        Translations (legacy → canonical, all with deprecation warnings):
+        - ``adapter: qlora``               → ``adapter: lora`` + bnb nf4
+        - ``load_in_4bit: true`` (alone)   → bnb nf4
+        - ``load_in_8bit: true`` (alone)   → bnb int8
+        - ``Mxfp4Config`` / ``FineGrainedFP8Config`` strings → structured form
+        """
+        from axolotl.utils.logging import get_logger
+
+        log = get_logger(__name__)
+
+        mqc = data.get("model_quantization_config")
+        if isinstance(mqc, BaseModel):
+            mqc = mqc.model_dump(exclude_none=True)
+            data["model_quantization_config"] = mqc
+        elif isinstance(mqc, str) and mqc in LEGACY_MQC_STRING_TO_BACKEND:
+            converted: dict[str, Any] = {"backend": LEGACY_MQC_STRING_TO_BACKEND[mqc]}
+            if data.get("model_quantization_config_kwargs"):
+                converted["config_kwargs"] = data["model_quantization_config_kwargs"]
+                data["model_quantization_config_kwargs"] = None
+            log.warning(
+                "DEPRECATED: `model_quantization_config: %s` (string form) is "
+                "being translated to the structured form `{backend: %s}`. The "
+                "string form will be removed in a future release.",
+                mqc,
+                converted["backend"],
+            )
+            mqc = converted
+            data["model_quantization_config"] = mqc
+
+        backend = mqc.get("backend") if isinstance(mqc, dict) else None
+        weight_dtype = mqc.get("weight_dtype") if isinstance(mqc, dict) else None
+        had_qlora_adapter = data.get("adapter") == "qlora"
+        had_load_in_4bit = bool(data.get("load_in_4bit"))
+        had_load_in_8bit = bool(data.get("load_in_8bit"))
+        explicit_load_in_4bit_false = (
+            "load_in_4bit" in data and data.get("load_in_4bit") is False
+        )
+        explicit_load_in_8bit_false = (
+            "load_in_8bit" in data and data.get("load_in_8bit") is False
+        )
+        merge_mode = bool(data.get("merge_lora"))
+
+        if had_qlora_adapter:
+            if data.get("gptq"):
+                raise ValueError(
+                    "adapter: qlora with gptq is not supported. QLoRA is a "
+                    "bitsandbytes 4-bit base quant; gptq is a separate "
+                    "quantization backend. Pick one."
+                )
+            if backend and not (backend == "bnb" and weight_dtype == "nf4"):
+                raise ValueError(
+                    "adapter: qlora implies a bnb nf4 base quant, which "
+                    "contradicts model_quantization_config backend "
+                    f"'{backend}' (weight_dtype: {weight_dtype}). Use "
+                    "adapter: lora with the structured form."
+                )
+            if had_load_in_8bit and not had_load_in_4bit:
+                raise ValueError(
+                    "adapter: qlora with load_in_8bit is ambiguous (QLoRA is "
+                    "a 4-bit base quant). Use adapter: lora with "
+                    "model_quantization_config: {backend: bnb, weight_dtype: "
+                    "int8} for 8-bit LoRA."
+                )
+            if explicit_load_in_4bit_false and not merge_mode:
+                raise ValueError(
+                    "adapter: qlora with load_in_4bit: false is "
+                    "contradictory. QLoRA requires a 4-bit base; either drop "
+                    "load_in_4bit or switch to adapter: lora."
+                )
+            data["adapter"] = "lora"
+            log.warning(
+                "DEPRECATED: `adapter: qlora` is being normalized to "
+                "`adapter: lora`. QLoRA is just LoRA with a 4-bit base "
+                "quant — express it via `model_quantization_config: "
+                "{backend: bnb, weight_dtype: nf4}`. The qlora alias will "
+                "be removed in a future release."
+            )
+
+        if merge_mode:
+            # Only the merge CLI's explicit load_in_*bit: false makes skipping
+            # the synthesis/mirror safe; a leftover merge_lora: true must
+            # hard-error, never silently drop the quant.
+            wants_bnb_quant = (
+                had_qlora_adapter
+                or had_load_in_4bit
+                or had_load_in_8bit
+                or backend == "bnb"
+            )
+            if wants_bnb_quant and not (
+                explicit_load_in_4bit_false and explicit_load_in_8bit_false
+            ):
+                raise ValueError(
+                    "Can't merge a LoRA adapter on top of a quantized base. "
+                    "`axolotl merge-lora` disables quantization "
+                    "automatically; remove `merge_lora: true` from the "
+                    "config file."
+                )
+            return data
+
+        # Step 1: if user only spelled out a legacy flag (no structured
+        # form), synthesise the structured form so it becomes the single
+        # source of truth.
+        if mqc is None:
+            if had_load_in_4bit or had_qlora_adapter:
+                data["model_quantization_config"] = {
+                    "backend": "bnb",
+                    "weight_dtype": "nf4",
+                }
+                if had_load_in_4bit:
+                    log.warning(
+                        "DEPRECATED: `load_in_4bit: true` is being translated "
+                        "to `model_quantization_config: "
+                        "{backend: bnb, weight_dtype: nf4}`. Drop "
+                        "`load_in_4bit` from your config; it will be removed "
+                        "as a user-facing knob in a future release."
+                    )
+            elif had_load_in_8bit:
+                data["model_quantization_config"] = {
+                    "backend": "bnb",
+                    "weight_dtype": "int8",
+                }
+                log.warning(
+                    "DEPRECATED: `load_in_8bit: true` is being translated "
+                    "to `model_quantization_config: "
+                    "{backend: bnb, weight_dtype: int8}`. Drop `load_in_8bit` "
+                    "from your config; it will be removed as a user-facing "
+                    "knob in a future release."
+                )
+        # Step 2: mirror the structured bnb form back into load_in_4bit /
+        # load_in_8bit for downstream loader compat; reject explicit
+        # conflicting legacy flags instead of letting them win.
+        mqc = data.get("model_quantization_config")
+        if isinstance(mqc, dict):
+            backend = mqc.get("backend")
+            weight_dtype = mqc.get("weight_dtype")
+            if backend == "bnb":
+                if weight_dtype == "nf4":
+                    if explicit_load_in_4bit_false or had_load_in_8bit:
+                        raise ValueError(
+                            "model_quantization_config {backend: bnb, "
+                            "weight_dtype: nf4} conflicts with the legacy "
+                            "load_in_4bit: false / load_in_8bit: true flags. "
+                            "Drop the deprecated load_in_* flags."
+                        )
+                    data["load_in_4bit"] = True
+                    data["load_in_8bit"] = False
+                elif weight_dtype == "int8":
+                    if explicit_load_in_8bit_false or had_load_in_4bit:
+                        raise ValueError(
+                            "model_quantization_config {backend: bnb, "
+                            "weight_dtype: int8} conflicts with the legacy "
+                            "load_in_8bit: false / load_in_4bit: true flags. "
+                            "Drop the deprecated load_in_* flags."
+                        )
+                    data["load_in_8bit"] = True
+                    data["load_in_4bit"] = False
+            elif backend and (had_load_in_4bit or had_load_in_8bit):
+                raise ValueError(
+                    "load_in_4bit/load_in_8bit are bitsandbytes flags and "
+                    "cannot be combined with model_quantization_config "
+                    f"backend '{backend}'."
+                )
+
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
     def validate_adapter(cls, data):
         if (
             not data.get("adapter")
@@ -175,6 +372,8 @@ class LoraConfig(BaseModel):
                 "If you want to full finetune, please turn off load_in_8bit and load_in_4bit."
             )
         adapter = data.get("adapter")
+        # qlora stays in the allowed set as a deprecated alias
+        # (normalize_base_quant_inputs demotes it to lora).
         if adapter and adapter not in ("lora", "qlora", "llama-adapter"):
             from axolotl.integrations.base import PluginManager
 
@@ -188,27 +387,80 @@ class LoraConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_qlora(self):
-        if self.adapter == "qlora":
-            if self.merge_lora:
-                # can't merge qlora if loaded in 8bit or 4bit
-                if self.load_in_8bit:
-                    raise ValueError("Can't merge qlora if loaded in 8bit")
+        mqc = getattr(self, "model_quantization_config", None)
+        backend = getattr(mqc, "backend", None)
+        is_torchao = backend == "torchao"
 
-                if self.gptq:
-                    raise ValueError("Can't merge qlora if gptq")
+        # torchao int4 tensors implement linear as a bare quantized matmul
+        # with no autograd support (unlike nf4/nvfp4/fp8, which dequantize or
+        # ship a backward), so input gradients can only flow through axolotl's
+        # LoRA kernels, which dequantize explicitly in their own fwd/bwd.
+        if (
+            is_torchao
+            and mqc.weight_dtype == "int4"
+            and not getattr(self, "inference", None)
+            and not self.merge_lora
+            and not (
+                getattr(self, "lora_mlp_kernel", None)
+                and getattr(self, "lora_qkv_kernel", None)
+                and getattr(self, "lora_o_kernel", None)
+            )
+        ):
+            raise ValueError(
+                "model_quantization_config {backend: torchao, weight_dtype: "
+                "int4} requires the LoRA kernels for training (torchao int4 "
+                "has no autograd support; backward would fail). Set "
+                "lora_mlp_kernel: true, lora_qkv_kernel: true, and "
+                "lora_o_kernel: true — or use weight_dtype: nf4."
+            )
 
-                if self.load_in_4bit:
-                    raise ValueError("Can't merge qlora if loaded in 4bit")
+        # bnb/torchao base quants exist to serve a LoRA adapter; without one
+        # they would silently train full-precision (the loader gates on
+        # adapter), so reject instead.
+        if (
+            backend in ("bnb", "torchao")
+            and not self.adapter
+            and not getattr(self, "inference", None)
+            and not self.merge_lora
+        ):
+            raise ValueError(
+                f"model_quantization_config backend '{backend}' is a "
+                "LoRA base-weight quant and requires `adapter: lora`. "
+                "For full fine-tuning, remove model_quantization_config "
+                "(or use the qat/ptq config blocks)."
+            )
 
-            else:
-                if self.load_in_8bit:
-                    raise ValueError("Can't load qlora in 8bit")
+        # PEFT's dora_init dequantizes via module.weight.dequantize(), but
+        # torchao's NF4Tensor.dequantize is a 2-arg staticmethod — it raises
+        # TypeError at adapter creation. The other torchao dtypes work.
+        if is_torchao and mqc.weight_dtype == "nf4" and self.peft_use_dora:
+            raise ValueError(
+                "peft_use_dora is not supported with model_quantization_config "
+                "{backend: torchao, weight_dtype: nf4}. Use a different "
+                "torchao weight_dtype or the bnb backend."
+            )
 
-                if self.gptq:
-                    raise ValueError("Can't load qlora if gptq")
+        # torchao + merge: the memory-efficient merger simulates bnb NF4
+        # quantization. Force the legacy path until the efficient one learns
+        # torchao tensor subclasses.
+        if is_torchao and self.merge_lora and self.merge_method != "legacy":
+            raise ValueError(
+                "Merging a torchao-quantized LoRA adapter requires "
+                "merge_method: legacy. The memory-efficient merger only "
+                "supports bnb NF4 quantization today."
+            )
 
-                if not self.load_in_4bit:
-                    raise ValueError("Require cfg.load_in_4bit to be True for qlora")
+        if self.merge_lora and self.adapter == "lora":
+            # PEFT's merge_and_unload can't merge into a quantized base
+            # (bnb Params4bit / Linear8bitLt / GPTQ tensors don't accept the
+            # in-place A@B add). Reject the combo regardless of how the
+            # quant was spelled.
+            if self.load_in_8bit:
+                raise ValueError("Can't merge a LoRA adapter on top of an 8bit base.")
+            if self.load_in_4bit:
+                raise ValueError("Can't merge a LoRA adapter on top of a 4bit base.")
+            if self.gptq:
+                raise ValueError("Can't merge a LoRA adapter on top of a gptq base.")
         return self
 
     @field_validator("loraplus_lr_embedding")

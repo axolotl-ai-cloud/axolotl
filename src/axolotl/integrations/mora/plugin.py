@@ -56,10 +56,10 @@ class MoraPlugin(BasePlugin):
             raise ValueError("adapter: mora requires a nested mora configuration block")
         if not getattr(mora_cfg, "use_mora", False):
             raise ValueError("mora.use_mora must be true when adapter: mora is set")
-        if cfg.load_in_4bit or cfg.load_in_8bit:
+        if cfg.load_in_4bit or cfg.load_in_8bit or cfg.model_quantization_config:
             raise ValueError(
                 "adapter: mora currently requires a full-precision base model. "
-                "Use adapter: lora or qlora for quantized training."
+                "Use adapter: lora for quantized training."
             )
         if cfg.gptq:
             raise ValueError(

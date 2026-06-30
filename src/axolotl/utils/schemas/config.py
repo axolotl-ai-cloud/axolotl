@@ -56,6 +56,8 @@ from axolotl.utils.schemas.model import (
     ModelInputConfig,
     ModelOutputConfig,
     SpecialTokensConfig,
+    implies_bnb_4bit,
+    implies_bnb_8bit,
 )
 from axolotl.utils.schemas.multimodal import MultiModalConfig
 from axolotl.utils.schemas.peft import LoraConfig, ReLoRAConfig
@@ -209,6 +211,12 @@ class AxolotlInputConfig(
     strict: bool | None = Field(
         default=False,
         json_schema_extra={"description": "Allow overwrite yml config using from cli"},
+    )
+    inference: bool | None = Field(
+        default=None,
+        json_schema_extra={
+            "description": "Set by the inference CLI; relaxes training-only validations"
+        },
     )
     resume_from_checkpoint: str | None = Field(
         default=None,
@@ -1800,9 +1808,11 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
                 )
             if data.get("adapter") not in ("lora", "qlora"):
                 raise ValueError("quantize_moe_experts requires adapter: lora or qlora")
-            if not (data.get("load_in_4bit") or data.get("load_in_8bit")):
+            if not (implies_bnb_4bit(data) or implies_bnb_8bit(data)):
                 raise ValueError(
-                    "quantize_moe_experts requires load_in_4bit or load_in_8bit"
+                    "quantize_moe_experts requires a bnb base quant "
+                    "(model_quantization_config: {backend: bnb} or "
+                    "load_in_4bit/load_in_8bit)"
                 )
             if (
                 data.get("capabilities")
@@ -1832,7 +1842,7 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
             if (
                 any(data.get(k) is not None for k in kernel_fields)
                 or data.get("adapter") == "lora"
-                and data.get("load_in_8bit")
+                and implies_bnb_8bit(data)
             ):
                 return data
 
@@ -1988,11 +1998,19 @@ class AxolotlConfigWCapabilities(AxolotlInputConfig):
         if data.get("peft"):
             raise ValueError("QAT and PEFT cannot be used together.")
 
-        if data.get("load_in_8bit"):
-            raise ValueError("QAT and load_in_8bit cannot be used together.")
+        if implies_bnb_8bit(data):
+            raise ValueError(
+                "QAT and an 8-bit bnb base quant (load_in_8bit or "
+                "model_quantization_config: {backend: bnb, weight_dtype: int8}) "
+                "cannot be used together."
+            )
 
-        if data.get("load_in_4bit"):
-            raise ValueError("QAT and load_in_4bit cannot be used together.")
+        if implies_bnb_4bit(data):
+            raise ValueError(
+                "QAT and a 4-bit bnb base quant (load_in_4bit, adapter: qlora, "
+                "or model_quantization_config: {backend: bnb, weight_dtype: nf4}) "
+                "cannot be used together."
+            )
 
         env_capabilities = data.get("env_capabilities", {})
         torch_version = env_capabilities.get("torch_version")

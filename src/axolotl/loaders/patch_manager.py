@@ -770,10 +770,14 @@ class PatchManager:
 
     def _apply_fsdp2_bnb_patches(self):
         """Apply FSDP2 BNB patches."""
+        from axolotl.loaders.model import _torchao_subconfig
+
+        is_torchao = _torchao_subconfig(self.cfg.model_quantization_config) is not None
         if (
             self.cfg.fsdp_config
             and str(self.cfg.fsdp_version) == "2"
             and (self.cfg.load_in_4bit or self.cfg.load_in_8bit)
+            and not is_torchao
         ):
             from axolotl.monkeypatch.fsdp2_qlora import (
                 apply_init_dtype_attrs_patch,

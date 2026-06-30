@@ -1,4 +1,6 @@
-"""Tests for quantization utility functions."""
+"""CUDA tests for quantization utility functions. CPU-only dequantize_weight
+tests live in tests/kernels/test_quantize_dequantize_weight.py so they run in
+the fast CI lane."""
 
 import bitsandbytes as bnb
 import torch

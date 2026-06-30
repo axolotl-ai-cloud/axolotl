@@ -185,7 +185,9 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
         training_arguments_kwargs, trainer_kwargs = self._set_base_training_args(
             total_num_steps
         )
-        if self.cfg.adapter == "qlora":
+        # AxolotlTrainingArguments.qlora is the dead "is this QLoRA?" flag;
+        # qlora is just LoRA + bnb 4-bit, so key it off the actual flag.
+        if self.cfg.load_in_4bit:
             training_arguments_kwargs["qlora"] = True
 
         # deepspeed
@@ -441,15 +443,18 @@ class HFCausalTrainerBuilder(TrainerBuilderBase):
             and getattr(self.model.config, "num_labels", None) != 1
         ):
             self.model.config.num_labels = 1
-        trainer = trainer_cls(
-            model=self.model,
-            train_dataset=self.train_dataset,
-            eval_dataset=self.eval_dataset,
-            args=training_args,
-            data_collator=self.build_collator(training_args, **data_collator_kwargs),
-            callbacks=self.get_callbacks(),
-            **trainer_kwargs,
-        )
+        with self.allow_quantized_base_training():
+            trainer = trainer_cls(
+                model=self.model,
+                train_dataset=self.train_dataset,
+                eval_dataset=self.eval_dataset,
+                args=training_args,
+                data_collator=self.build_collator(
+                    training_args, **data_collator_kwargs
+                ),
+                callbacks=self.get_callbacks(),
+                **trainer_kwargs,
+            )
         trainer = self.hook_post_create_trainer(trainer)
         # if the trainer has the `axolotl_cfg` property, set it
         if hasattr(trainer, "axolotl_cfg"):
