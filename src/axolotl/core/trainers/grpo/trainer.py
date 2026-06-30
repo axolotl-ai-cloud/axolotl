@@ -40,6 +40,9 @@ from trl.trainer.grpo_config import GRPOConfig
 from trl.trainer.grpo_trainer import RewardFunc, nanstd
 from trl.trainer.utils import pad
 
+from axolotl.core.trainers.grpo.async_trainer import (
+    compute_advantages_with_estimator,
+)
 from axolotl.core.trainers.grpo.fast_async_trainer import FastAsyncGRPOTrainer
 from axolotl.core.trainers.grpo.sampler import SequenceParallelRepeatRandomSampler
 from axolotl.core.trainers.mixins import (
@@ -65,6 +68,66 @@ class AxolotlGRPOTrainer(
     """Extend the base GRPOTrainer for axolotl helpers"""
 
     _tag_names = ["trl", "grpo", "axolotl"]
+
+    def _calculate_rewards(self, inputs, prompts, completions, completion_ids_list):
+        # Cache the gathered per-function rewards so we can re-derive advantages
+        # for non-default estimators; TRL exposes no advantage-computation seam.
+        rewards_per_func = super()._calculate_rewards(
+            inputs, prompts, completions, completion_ids_list
+        )
+        self._axolotl_rewards_per_func = rewards_per_func
+        return rewards_per_func
+
+    def _aggregate_rewards(
+        self, rewards_per_func: torch.Tensor, num_generations: int
+    ) -> torch.Tensor:
+        """Collapse per-function rewards to per-sample rewards, mirroring TRL."""
+        weights = self.reward_weights.to(rewards_per_func.device).unsqueeze(0)
+        if self.multi_objective_aggregation == "sum_then_normalize":
+            return (rewards_per_func * weights).nansum(dim=1)
+        if self.multi_objective_aggregation == "normalize_then_sum":
+            grouped = rewards_per_func.view(-1, num_generations, len(self.reward_funcs))
+            mean_k = torch.nanmean(grouped, dim=1, keepdim=True)
+            std_k = (
+                nanstd(grouped, dim=1, keepdim=True)
+                if num_generations > 1
+                else torch.zeros_like(mean_k)
+            )
+            reward_k = ((grouped - mean_k) / (std_k + 1e-4)).view(
+                -1, len(self.reward_funcs)
+            )
+            return (reward_k * weights).nansum(dim=1)
+        raise ValueError(
+            f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
+        )
+
+    def _generate_and_score_completions(
+        self, inputs: list[dict[str, torch.Tensor | Any]]
+    ) -> dict[str, torch.Tensor | Any]:
+        output = super()._generate_and_score_completions(inputs)
+
+        estimator = getattr(self.args, "advantage_estimator", "grpo")
+        if estimator not in ("rloo", "reinforce_plus_plus"):
+            return output
+
+        # Recompute on the full gathered rewards (groups can span ranks), then
+        # re-slice. ``mode`` matches TRL's so grouping/slicing stay aligned.
+        mode = "train" if self.model.training else "eval"
+        num_generations = (
+            self.num_generations if mode == "train" else self.num_generations_eval
+        )
+        rewards = self._aggregate_rewards(
+            self._axolotl_rewards_per_func, num_generations
+        )
+        advantages, _ = compute_advantages_with_estimator(
+            estimator, rewards, num_generations
+        )
+        process_slice = slice(
+            self.accelerator.process_index * len(inputs),
+            (self.accelerator.process_index + 1) * len(inputs),
+        )
+        output["advantages"] = advantages[process_slice].to(output["advantages"])
+        return output
 
 
 class AxolotlAsyncGRPOTrainer(
@@ -607,6 +670,12 @@ class AxolotlGRPOSequenceParallelTrainer(AxolotlGRPOTrainer):
         advantages = rewards - mean_grouped_rewards
         if self.args.scale_rewards:
             advantages = advantages / (std_grouped_rewards + 1e-4)
+
+        advantage_estimator = getattr(self.args, "advantage_estimator", "grpo")
+        if advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, _ = compute_advantages_with_estimator(
+                advantage_estimator, rewards, self.num_generations
+            )
 
         # Slice to keep only the local part of the data
         if self.args.context_parallel_size > 1:

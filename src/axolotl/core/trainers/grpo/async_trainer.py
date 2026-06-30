@@ -741,6 +741,59 @@ class GRPODataProducer(BaseDataProducer):
         return RolloutDataset(output)
 
 
+def compute_advantages_with_estimator(
+    estimator: str,
+    rewards: torch.Tensor,
+    num_generations: int,
+    eps: float = 1e-4,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pluggable advantage baseline over the gathered per-sample rewards.
+
+    Operates on the global, already reward-weighted/aggregated ``rewards`` and
+    overrides the default group-normalized advantage. Returns
+    ``(advantages, is_std_zero)``, both flattened to match ``rewards``. ``rewards``
+    must be the full generation batch (gathered across processes), not a local
+    slice — ``reinforce_plus_plus`` normalizes over the whole batch.
+
+    ``rloo`` uses a per-group leave-one-out baseline
+    (reward_j - mean(rewards_{-j})), with no std scaling. RLOO with a single
+    generation has no leave-one-out baseline, so it degrades to mean-centering.
+
+    ``reinforce_plus_plus`` is the REINFORCE++ Baseline: it subtracts the
+    per-prompt group mean, then normalizes by the batch-level std of those
+    centered rewards ((reward - group_mean) / (batch_std + eps)). Any KL
+    penalty is expected to be folded into the reward upstream, not here.
+    """
+    grouped = rewards.view(-1, num_generations)
+    std = (
+        grouped.std(dim=1, keepdim=True)
+        if num_generations > 1
+        else torch.zeros_like(grouped)
+    )
+    is_std_zero = torch.isclose(
+        std.expand(-1, num_generations).reshape(-1),
+        torch.zeros_like(rewards),
+    )
+
+    if estimator == "rloo" and num_generations > 1:
+        group_sum = grouped.sum(dim=1, keepdim=True)
+        baseline = (group_sum - grouped) / (num_generations - 1)
+        advantages = (grouped - baseline).reshape(-1)
+    elif estimator == "reinforce_plus_plus":
+        group_mean = grouped.mean(dim=1, keepdim=True)
+        centered = (grouped - group_mean).reshape(-1)
+        batch_std = (
+            centered.std()
+            if centered.numel() > 1
+            else torch.zeros((), device=rewards.device)
+        )
+        advantages = centered / (batch_std + eps)
+    else:
+        mean = grouped.mean(dim=1, keepdim=True)
+        advantages = (grouped - mean).reshape(-1)
+    return advantages, is_std_zero
+
+
 # ---------------------------------------------------------------------------
 # Trainer
 # ---------------------------------------------------------------------------
@@ -823,6 +876,7 @@ class AsyncGRPOTrainer(GRPOTrainer):
             ),
             ("vllm_importance_sampling_cap", "vllm_importance_sampling_cap", 3.0),
             ("off_policy_mask_threshold", "off_policy_mask_threshold", None),
+            ("advantage_estimator", "advantage_estimator", "grpo"),
         ]:
             if not hasattr(self, attr):
                 setattr(self, attr, getattr(self.args, cfg_key, default))
@@ -1948,6 +2002,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
             )
 
+        if self.advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, is_std_zero = compute_advantages_with_estimator(
+                self.advantage_estimator, rewards, num_generations
+            )
+
         # Slice for local process
         # In rank0_only mode, all ranks already have identical data from broadcast,
         # so no slicing needed. Otherwise, each rank takes its portion.
@@ -2343,6 +2402,11 @@ class AsyncGRPOTrainer(GRPOTrainer):
                 f"Invalid multi_objective_aggregation: {self.multi_objective_aggregation}"
             )
 
+        if self.advantage_estimator in ("rloo", "reinforce_plus_plus"):
+            advantages, is_std_zero = compute_advantages_with_estimator(
+                self.advantage_estimator, rewards, num_generations
+            )
+
         if rank0_only:
             process_slice = slice(0, len(prompts))
         else:
@@ -2477,6 +2541,12 @@ class AsyncGRPOTrainer(GRPOTrainer):
 
     def _score_streaming(self, rollout: dict) -> list[dict]:
         """Score a rollout using streaming group scoring.  Returns list of micro-batches."""
+        if self.advantage_estimator == "reinforce_plus_plus":
+            raise ValueError(
+                "advantage_estimator='reinforce_plus_plus' needs batch-level reward "
+                "statistics over the whole rollout, but streaming_partial_batch scores "
+                "groups in chunks. Set streaming_partial_batch=false for this estimator."
+            )
         data = rollout
         num_gen = self.num_generations
         n_groups = len(data["prompt_ids"]) // num_gen
