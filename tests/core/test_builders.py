@@ -78,6 +78,31 @@ class TestHFCausalTrainerBuilder:
         optim = trainer.create_optimizer()
         assert isinstance(optim, Muon)
 
+    def test_sinkgd_optimizer(self, sft_cfg, model, tokenizer):
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkhorn_iters": 5, "sinkgd_lr_scale": 0.05}
+
+        builder = HFCausalTrainerBuilder(cfg, model, tokenizer)
+        trainer = builder.build(100)
+
+        assert trainer.optimizer_cls_and_kwargs is not None
+
+        from axolotl.utils.optimizers.sinkgd import SinkGD, SinkGDOptimizerFactory
+
+        optimizer_cls, optimizer_kwargs = trainer.optimizer_cls_and_kwargs
+        assert optimizer_cls is SinkGDOptimizerFactory
+        assert optimizer_kwargs["lr"] == 0.00005
+        assert optimizer_kwargs["weight_decay"] == 0.01
+        assert optimizer_kwargs["sinkhorn_iters"] == 5
+        assert optimizer_kwargs["sinkgd_lr_scale"] == 0.05
+
+        # OptimizerMixin must resolve the factory into a concrete SinkGD instance
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGD)
+        # linear weight matrices must be in the stateless SR-Sinkhorn group
+        assert any(group.get("use_sinkgd") for group in optim.param_groups)
+
 
 class TestTrainerClsPlugin:
     """
