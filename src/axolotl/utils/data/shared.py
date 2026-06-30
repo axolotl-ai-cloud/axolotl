@@ -69,9 +69,11 @@ DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "drop_system_message",
     "ds_type",
     "field",
+    "field_chosen",
     "field_human",
     "field_messages",
     "field_model",
+    "field_rejected",
     "field_thinking",
     "field_tools",
     "input_format",
@@ -659,14 +661,13 @@ def generate_dataset_hash_from_config(
     if cfg_extra:
         extra_payload["cfg"] = cfg_extra
 
-    dataset_extra = [
-        extra_fields
-        for extra_fields in (
-            _selected_hash_fields(d, DATASET_HASH_DATASET_EXTRA_FIELDS)
-            for d in cfg_datasets
-        )
-        if extra_fields
-    ]
+    dataset_extra = []
+    for dataset in cfg_datasets:
+        extra_fields = _selected_hash_fields(dataset, DATASET_HASH_DATASET_EXTRA_FIELDS)
+        if extra_fields:
+            dataset_extra.append(
+                {"id": _base_dataset_hash_string(dataset), "extra": extra_fields}
+            )
     if dataset_extra:
         extra_payload["datasets"] = sorted(dataset_extra, key=_stable_json)
 
