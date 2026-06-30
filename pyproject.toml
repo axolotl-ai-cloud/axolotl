@@ -79,6 +79,11 @@ dependencies = [
 
     # Platform-specific (Linux only)
     "bitsandbytes==0.49.1 ; sys_platform != 'darwin'",
+    # >=3.7: 3.7 fixes the FP4 tl.dot_scaled square-operand (tile==head_dim) scale
+    # mis-binding on sm_120 — required for correct+fast NVFP4 attention at head_dim
+    # 128 (Qwen3-VL). Older Triton still works but falls back to a slower D=128 tile,
+    # so core only floors at 3.4 (installable on the whole supported-torch matrix);
+    # the NVFP4 extra raises this to >=3.7 where the fast path actually matters.
     "triton>=3.4.0 ; sys_platform != 'darwin'",
     "xformers>=0.0.33.post2 ; sys_platform != 'darwin' and platform_machine != 'aarch64'",
     "liger-kernel==0.8.0 ; sys_platform != 'darwin'",
@@ -91,6 +96,14 @@ dependencies = [
 
 [project.optional-dependencies]
 flash-attn = ["flash-attn==2.8.3"]
+# NVFP4 base-GEMM training kernels. mslk's real build (1.0.0+cu130) lives only on
+# the cu130 wheel index (PyPI ships an empty 0.0.0 stub), so it is pinned to that
+# index via [tool.uv.sources] below. The `>=1.0.0` floor is also a guard for plain
+# pip, which ignores [tool.uv.sources]: pip can only see the 0.0.0 PyPI stub, so it
+# fails fast instead of silently installing it. Needs a cu130 torch + Triton >= 3.7
+# already present; scripts/install_nvfp4.sh provisions those (and the cu130 torchao
+# build). For uv users who already have cu130 torch: `uv pip install -e ".[nvfp4,flash-attn]"`.
+nvfp4 = ["mslk>=1.0.0", "triton>=3.7.0 ; sys_platform != 'darwin'"]
 ring-flash-attn = [
     "flash-attn==2.8.3",
     "ring-flash-attn>=0.1.7",
@@ -259,3 +272,14 @@ causal-conv1d = [{ requirement = "torch", match-runtime = true }]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 deepspeed = [{ requirement = "torch", match-runtime = true }]
 auto-gptq = [{ requirement = "torch", match-runtime = true }]
+
+# The PyTorch cu130 wheel index, used only by packages that explicitly point at it
+# (explicit = true ⇒ it never participates in general resolution, so it can't shadow
+# PyPI for other packages). mslk's real FP4-kernel build is published only here.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+mslk = { index = "pytorch-cu130" }
