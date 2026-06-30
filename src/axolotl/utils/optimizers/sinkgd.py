@@ -279,41 +279,31 @@ def _matrix_shard_dim(p: Tensor):
     return None
 
 
-def dist_single_param_sinkgd(
-    p: Tensor,
-    grad: Tensor,
-    lr: Tensor,
-    weight_decay: float,
-    iters: int,
-    eps: float,
-    stochastic_round: bool,
-    shard_dim,
-    process_group,
-    global_M: int,
-    global_N: int,
-) -> None:
-    """SR-Sinkhorn on a sharded weight: all-reduce only the norm whose reduction
-    axis is sharded; the other norm is shard-local. ``p``/``grad`` are local shards;
-    ``global_M``/``global_N`` are the *full* matrix dims (the √ scaling must use the
-    global sizes, not the local shard's)."""
-    sqrt_n, sqrt_m = global_N**0.5, global_M**0.5
-    x = grad
-    for _ in range(iters):
-        if shard_dim == -1:  # columns sharded -> row norm needs a reduction
-            rsq = (x.float() ** 2).sum(dim=-1, keepdim=True)
-            dist.all_reduce(rsq, group=process_group)
-            rn = rsq.sqrt()
-        else:
-            rn = torch.linalg.vector_norm(x, dim=-1, keepdim=True, dtype=torch.float32)
-        x = x * (sqrt_n / rn.clamp_min(eps)).to(x.dtype)
-        if shard_dim == -2:  # rows sharded -> column norm needs a reduction
-            csq = (x.float() ** 2).sum(dim=-2, keepdim=True)
-            dist.all_reduce(csq, group=process_group)
-            cn = csq.sqrt()
-        else:
-            cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
-        x = x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
+# Compiled local pieces of one SR-Sinkhorn iteration; the only thing kept eager and
+# uncompiled between them is the tiny norm-vector all-reduce (a collective would graph
+# break fullgraph anyway). This recovers the fusion the single-device path enjoys.
+def _row_scale_col_partial(x, sqrt_n, eps):
+    rn = torch.linalg.vector_norm(x, dim=-1, keepdim=True, dtype=torch.float32)
+    x = x * (sqrt_n / rn.clamp_min(eps)).to(x.dtype)
+    return x, (x.float() ** 2).sum(dim=-2, keepdim=True)
 
+
+def _apply_col_scale(x, csq, sqrt_m, eps):
+    return x * (sqrt_m / csq.sqrt().clamp_min(eps)).to(x.dtype)
+
+
+def _row_partial(x):
+    return (x.float() ** 2).sum(dim=-1, keepdim=True)
+
+
+def _row_scale_then_col_scale(x, rsq, sqrt_n, sqrt_m, eps):
+    # row norm is the reduced rsq (cols sharded); column norm is then shard-local.
+    x = x * (sqrt_n / rsq.sqrt().clamp_min(eps)).to(x.dtype)
+    cn = torch.linalg.vector_norm(x, dim=-2, keepdim=True, dtype=torch.float32)
+    return x * (sqrt_m / cn.clamp_min(eps)).to(x.dtype)
+
+
+def _sinkgd_apply_update(p, x, lr, weight_decay, stochastic_round):
     p_f32 = p.float()
     if weight_decay != 0.0:
         p_f32 = p_f32 * (1 - lr * weight_decay)
@@ -330,13 +320,54 @@ class DistSinkGD(SinkGD):
     The SR-Sinkhorn matrices are updated on their local shards, all-reducing only the
     ``[N]`` (or ``[M]``) norm vector over the shard process group — never the matrix
     itself, so optimizer communication is orders of magnitude lighter than gathering
-    the full parameter. The 8-bit AdamW fallback (operating on DTensors) is inherited
-    unchanged.
+    the full parameter. Local work is torch.compiled (the all-reduce is the only eager
+    break); the 8-bit AdamW fallback is inherited unchanged.
     """
 
     def __init__(self, params, *, process_group=None, **kwargs) -> None:
         super().__init__(params, **kwargs)
         self._process_group = process_group
+        c = lambda f: torch.compile(f, fullgraph=True, dynamic=False)  # noqa: E731
+        self._c_row_scale_col_partial = c(_row_scale_col_partial)
+        self._c_apply_col_scale = c(_apply_col_scale)
+        self._c_row_partial = c(_row_partial)
+        self._c_row_scale_then_col_scale = c(_row_scale_then_col_scale)
+        self._c_apply_update = c(_sinkgd_apply_update)
+
+    def _dist_sinkgd_step(self, p, grad, group, lr):
+        shard_dim = _matrix_shard_dim(p)
+        sr = self.bf16_stochastic_round and p.dtype is torch.bfloat16
+        global_M, global_N = p.shape[-2], p.shape[-1]  # DTensor -> global dims
+        p_local = p.to_local() if isinstance(p, DTensor) else p
+        x = grad.to_local() if isinstance(grad, DTensor) else grad
+        lr = lr * self.sinkgd_lr_scale
+
+        if shard_dim is None:
+            # matrix dims fully local (replicated / expert-sharded) -> reuse the
+            # fully-compiled single-device path, no communication.
+            self._compiled_sinkgd(
+                p_local,
+                x,
+                lr,
+                group["weight_decay"],
+                self.sinkhorn_iters,
+                self.sinkgd_eps,
+                sr,
+            )
+            return
+
+        sqrt_n, sqrt_m = global_N**0.5, global_M**0.5
+        eps = self.sinkgd_eps
+        for _ in range(self.sinkhorn_iters):
+            if shard_dim == -2:  # rows sharded -> column norm needs a reduction
+                x, csq = self._c_row_scale_col_partial(x, sqrt_n, eps)
+                dist.all_reduce(csq, group=self._process_group)
+                x = self._c_apply_col_scale(x, csq, sqrt_m, eps)
+            else:  # columns sharded (-1) -> row norm needs a reduction (row first)
+                rsq = self._c_row_partial(x)
+                dist.all_reduce(rsq, group=self._process_group)
+                x = self._c_row_scale_then_col_scale(x, rsq, sqrt_n, sqrt_m, eps)
+        self._c_apply_update(p_local, x, lr, group["weight_decay"], sr)
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -345,39 +376,22 @@ class DistSinkGD(SinkGD):
             with torch.enable_grad():
                 loss = closure()
 
-        for group in self.param_groups:
-            use_sinkgd = group.get("use_sinkgd", False)
-            lr = group["lr"]
-            if not isinstance(lr, Tensor):
-                lr = torch.tensor(lr, dtype=torch.float32)
+        with torch._dynamo.utils.disable_cache_limit():
+            for group in self.param_groups:
+                use_sinkgd = group.get("use_sinkgd", False)
+                lr = group["lr"]
+                if not isinstance(lr, Tensor):
+                    lr = torch.tensor(lr, dtype=torch.float32)
 
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-                grad = p.grad
-                if grad.is_sparse:
-                    raise RuntimeError("Sparse gradient is not supported")
-
-                if use_sinkgd and p.ndim >= 2:
-                    shard_dim = _matrix_shard_dim(p)
-                    global_M, global_N = p.shape[-2], p.shape[-1]  # DTensor -> global
-                    p_local = p.to_local() if isinstance(p, DTensor) else p
-                    g_local = grad.to_local() if isinstance(grad, DTensor) else grad
-                    dist_single_param_sinkgd(
-                        p_local,
-                        g_local,
-                        lr * self.sinkgd_lr_scale,
-                        group["weight_decay"],
-                        self.sinkhorn_iters,
-                        self.sinkgd_eps,
-                        self.bf16_stochastic_round and p.dtype is torch.bfloat16,
-                        shard_dim,
-                        self._process_group,
-                        global_M,
-                        global_N,
-                    )
-                else:
-                    self._adam_fallback(p, grad, group, lr)
+                for p in group["params"]:
+                    if p.grad is None:
+                        continue
+                    if p.grad.is_sparse:
+                        raise RuntimeError("Sparse gradient is not supported")
+                    if use_sinkgd and p.ndim >= 2:
+                        self._dist_sinkgd_step(p, p.grad, group, lr)
+                    else:
+                        self._adam_fallback(p, p.grad, group, lr)
 
         return loss
 
