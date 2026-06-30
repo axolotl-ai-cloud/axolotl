@@ -429,6 +429,11 @@ class PatchManager:
 
             patch_kernelize_fixes()
 
+        if self.cfg.model_config_type == "minimax_m2" and self.cfg.use_kernels:
+            from axolotl.monkeypatch.minimax_kernelize import patch_minimax_kernelize
+
+            patch_minimax_kernelize()
+
         if (
             self.cfg.model_config_type == "llama4"
             and self.cfg.llama4_linearized_experts
