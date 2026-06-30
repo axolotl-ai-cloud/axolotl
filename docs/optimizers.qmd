@@ -167,3 +167,17 @@ qgalore_cos_threshold: 0.4         # skip SVD if P_t is this similar to P_{t-1}
 qgalore_gamma_proj: 2              # grow update_proj_gap by this factor when stable
 qgalore_queue_size: 5
 ```
+
+### gefen
+
+Memory-efficient drop-in replacement for AdamW that cuts optimizer-state memory
+by roughly 8x.
+
+GitHub: [https://github.com/ndvbd/Gefen](https://github.com/ndvbd/Gefen)
+Paper: [https://arxiv.org/abs/2606.13894](https://arxiv.org/abs/2606.13894)
+
+Install: `pip install gefen`
+
+```yaml
+optimizer: gefen
+```
