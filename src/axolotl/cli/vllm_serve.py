@@ -65,15 +65,26 @@ def do_vllm_serve(
     )
     dtype = cli_args.get("dtype") or cfg.vllm.dtype
     max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len
+    # Booleans use explicit None checks (like enforce_eager below) so an explicit
+    # CLI False can disable an option the config enabled. Using `cli or cfg` would
+    # let the config value win whenever the CLI value is falsy.
+    cli_enable_prefix_caching = cli_args.get("enable_prefix_caching")
     enable_prefix_caching = (
-        cli_args.get("enable_prefix_caching") or cfg.vllm.enable_prefix_caching
+        cfg.vllm.enable_prefix_caching
+        if cli_enable_prefix_caching is None
+        else cli_enable_prefix_caching
     )
     reasoning_parser = (
         cli_args.get("reasoning_parser") or cfg.vllm.reasoning_parser or ""
     )
+    cli_enable_reasoning = cli_args.get("enable_reasoning")
     enable_reasoning = (
-        cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
+        cfg.vllm.enable_reasoning
+        if cli_enable_reasoning is None
+        else cli_enable_reasoning
     )
+    if enable_reasoning is None:
+        enable_reasoning = False
 
     cli_enforce_eager = cli_args.get("enforce_eager")
     cfg_enforce_eager = getattr(cfg.vllm, "enforce_eager", None)
