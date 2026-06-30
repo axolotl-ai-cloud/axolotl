@@ -61,7 +61,6 @@ DATASET_HASH_CONFIG_EXTRA_FIELDS = (
     "special_tokens",
     "train_on_eos",
     "train_on_inputs",
-    "train_on_eot",
     "roles_to_train",
 )
 
@@ -96,6 +95,7 @@ DATASET_HASH_DATASET_EXTRA_FIELDS = (
     "template_thinking_key",
     "text_column",
     "train_on_eos",
+    "train_on_eot",
     "train_on_last_step_only",
 )
 
