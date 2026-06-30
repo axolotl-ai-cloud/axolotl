@@ -804,6 +804,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#came_pytorch" id="toc-came_pytorch" class="nav-link" data-scroll-target="#came_pytorch">came_pytorch</a></li>
   <li><a href="#muon" id="toc-muon" class="nav-link" data-scroll-target="#muon">muon</a></li>
   <li><a href="#dion" id="toc-dion" class="nav-link" data-scroll-target="#dion">dion</a></li>
+  <li><a href="#sinkgd" id="toc-sinkgd" class="nav-link" data-scroll-target="#sinkgd">sinkgd</a></li>
   <li><a href="#q_galore_adamw8bit" id="toc-q_galore_adamw8bit" class="nav-link" data-scroll-target="#q_galore_adamw8bit">q_galore_adamw8bit</a></li>
   </ul></li>
   </ul>
@@ -941,6 +942,23 @@ Note: Implementation written for PyTorch 2.7+ for DTensor</p>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="fu">dion_momentum</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.95</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">lr</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.00001</span><span class="co">  # learning rate for embeddings and parameters that fallback to AdamW</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
+<section id="sinkgd" class="level3">
+<h3 class="anchored" data-anchor-id="sinkgd">sinkgd</h3>
+<p>SinkGD (Gradient Multi-Normalization) is a <strong>stateless</strong> optimizer: 2D linear weight
+matrices are updated via the SR-Sinkhorn procedure (alternating row/column L2
+normalization of the raw gradient, no momentum or variance state), while embeddings,
+the LM head, and 1D params (norms/biases) fall back to AdamW. The AdamW fallback uses
+torchao’s 8-bit optimizer base, so optimizer-state memory is very small (~87% less than
+8-bit AdamW on an 8B full finetune, since the ~87% of params that are 2D linear carry
+zero optimizer state).</p>
+<p>Requires PyTorch &gt;= 2.5.1 (relies on torchao’s low-bit optimizer base and <code>torch.compile</code>).</p>
+<p>Paper: <a href="https://arxiv.org/abs/2502.06742">https://arxiv.org/abs/2502.06742</a></p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> sinkgd</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">learning_rate</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.001</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_args</span><span class="kw">:</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkhorn_iters</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span><span class="co">      # number of SR-Sinkhorn row/column normalization iterations</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">sinkgd_lr_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.05</span><span class="co">  # α scale applied to linear-layer updates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
 <section id="q_galore_adamw8bit" class="level3">
 <h3 class="anchored" data-anchor-id="q_galore_adamw8bit">q_galore_adamw8bit</h3>
 <p>Q-GaLore extends <a href="https://arxiv.org/abs/2403.03507">GaLore</a> with two extra ideas:
@@ -954,26 +972,26 @@ Paper: <a href="https://arxiv.org/abs/2407.08296">https://arxiv.org/abs/2407.082
 <p>This optimizer is for <strong>full fine-tuning</strong>. It is incompatible with <code>adapter</code>
 (LoRA/QLoRA), <code>load_in_8bit</code>, and <code>load_in_4bit</code>. DeepSpeed is currently gated
 off; FSDP requires <code>fsdp_version: 2</code> with <code>use_orig_params: true</code>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> q_galore_adamw8bit</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># which parameter substrings get the low-rank projection</span></span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (defaults to ["attn", "mlp"] if unset — matches the reference impl)</span></span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span></span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> attn</span></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp</span></span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore hyperparameters (defaults shown)</span></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_rank</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_update_proj_gap</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span><span class="co">       # max steps between SVD refreshes</span></span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.25</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_type</span><span class="kw">:</span><span class="at"> std</span></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_quant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # INT-quantize the projection matrix P</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_bits</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">               # bitwidth for P</span></span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_group_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span><span class="co">       # must divide P's last dim evenly</span></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_cos_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.4</span><span class="co">         # skip SVD if P_t is this similar to P_{t-1}</span></span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_gamma_proj</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">              # grow update_proj_gap by this factor when stable</span></span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_queue_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode yaml code-with-copy"><code class="sourceCode yaml"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">optimizer</span><span class="kw">:</span><span class="at"> q_galore_adamw8bit</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">bf16</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"># which parameter substrings get the low-rank projection</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># (defaults to ["attn", "mlp"] if unset — matches the reference impl)</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="fu">optim_target_modules</span><span class="kw">:</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> attn</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> mlp</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Q-GaLore hyperparameters (defaults shown)</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_rank</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_update_proj_gap</span><span class="kw">:</span><span class="at"> </span><span class="dv">200</span><span class="co">       # max steps between SVD refreshes</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_scale</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.25</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_type</span><span class="kw">:</span><span class="at"> std</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_quant</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co">           # INT-quantize the projection matrix P</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_bits</span><span class="kw">:</span><span class="at"> </span><span class="dv">4</span><span class="co">               # bitwidth for P</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_proj_group_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">256</span><span class="co">       # must divide P's last dim evenly</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_cos_threshold</span><span class="kw">:</span><span class="at"> </span><span class="fl">0.4</span><span class="co">         # skip SVD if P_t is this similar to P_{t-1}</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_gamma_proj</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">              # grow update_proj_gap by this factor when stable</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="fu">qgalore_queue_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 
 
 </section>
