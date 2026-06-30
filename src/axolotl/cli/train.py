@@ -2,11 +2,12 @@
 
 import gc
 import os
+from datetime import timedelta
 from pathlib import Path
 from typing import Union
 
 import fire
-from accelerate import Accelerator
+from accelerate import Accelerator, InitProcessGroupKwargs
 from transformers.hf_argparser import HfArgumentParser
 
 from axolotl.cli.args import TrainerCliArgs
@@ -138,8 +139,16 @@ def ray_train_func(kwargs: dict):
     if cfg.deepspeed and hasattr(cfg.deepspeed, "to_dict"):
         cfg.deepspeed = cfg.deepspeed.to_dict()
 
-    # initialize accelerator before model instantiation
-    Accelerator(gradient_accumulation_steps=cfg.gradient_accumulation_steps)
+    # this call creates the process group, so ddp_timeout must be applied here
+    kwargs_handlers = []
+    if cfg.ddp_timeout:
+        kwargs_handlers.append(
+            InitProcessGroupKwargs(timeout=timedelta(seconds=cfg.ddp_timeout))
+        )
+    Accelerator(
+        gradient_accumulation_steps=cfg.gradient_accumulation_steps,
+        kwargs_handlers=kwargs_handlers,
+    )
 
     # Bind the post-validation cfg to the plugin manager.
     if cfg.get("plugins"):

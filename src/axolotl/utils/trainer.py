@@ -665,6 +665,7 @@ def setup_parallelism_envs(cfg):
 
 
 def prepare_optim_env(cfg):
+
     if not check_cuda_p2p_ib_support():
         if os.getenv("NCCL_P2P_DISABLE") is None:
             LOG.warning("P2P support not detected, setting `NCCL_P2P_DISABLE=1`")
