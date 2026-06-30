@@ -1630,6 +1630,16 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
+        elif self.context_parallel_size > 1 and getattr(
+            self, "use_glm_dsa_kernels", False
+        ):
+            # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
+            # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
+            # ring_flash_attn stack the generic CP path below requires does not apply.
+            LOG.warning(
+                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
+                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
+            )
         elif self.context_parallel_size > 1:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
@@ -1718,6 +1728,11 @@ class ComplexValidationMixin:
 
         if self.ring_attn_func is not None:
             self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
+        elif getattr(self, "use_glm_dsa_kernels", False):
+            # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
+            # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
+            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
+            pass
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)
