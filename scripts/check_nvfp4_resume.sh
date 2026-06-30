@@ -41,6 +41,10 @@ grep -q "save_strategy:" "$WORK/run1.yaml" && sed -i "s/save_strategy: .*/save_s
   || echo "save_strategy: steps" >> "$WORK/run1.yaml"
 grep -q "save_steps:" "$WORK/run1.yaml" && sed -i "s/save_steps: .*/save_steps: 4/" "$WORK/run1.yaml" \
   || echo "save_steps: 4" >> "$WORK/run1.yaml"
+# canonical configs ship save_only_model: true, which skips optimizer state — but
+# this check exists to prove the optimizer reloads, so the checkpoint must keep it.
+grep -q "save_only_model:" "$WORK/run1.yaml" && sed -i "s/save_only_model: .*/save_only_model: false/" "$WORK/run1.yaml" \
+  || echo "save_only_model: false" >> "$WORK/run1.yaml"
 cp "$WORK/run1.yaml" "$WORK/run2.yaml"
 echo "resume_from_checkpoint: $OUT/checkpoint-4" >> "$WORK/run2.yaml"
 

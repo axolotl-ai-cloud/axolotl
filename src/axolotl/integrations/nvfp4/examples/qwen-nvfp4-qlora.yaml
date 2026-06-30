@@ -80,5 +80,3 @@ weight_decay: 0.0
 evals_per_epoch: 1
 saves_per_epoch: 1
 save_only_model: true
-
-special_tokens:

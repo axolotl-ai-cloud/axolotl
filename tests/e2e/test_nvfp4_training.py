@@ -1360,6 +1360,8 @@ class TestNVFP4Sm120Gate:
         return nvmod
 
     def test_probe_returns_bool_and_is_cached(self):
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         nvmod = self._reset_probe_cache()
 
         dev = torch.device("cuda")

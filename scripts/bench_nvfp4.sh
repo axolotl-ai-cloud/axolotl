@@ -37,6 +37,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ ${#CFGS[@]} -gt 0 ]] || { echo "usage: $0 [--gpu N] [--steps N2] cfg.yaml ..."; exit 2; }
+# marginal = (w2-w1)/(N2-N1): N2<=N1 div-by-zero or flips the sign.
+[[ "$N2" -gt "$N1" ]] || { echo "[ABORT] --steps ($N2) must be greater than --short ($N1)."; exit 2; }
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src"
 PY="$VENV/bin/python"

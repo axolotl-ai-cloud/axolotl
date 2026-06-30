@@ -104,5 +104,4 @@ def test_nvfp4_fsdp2_full_state_dict_save():
         assert set(reloaded) == set(sd)
     finally:
         if dist.is_initialized():
-            dist.barrier()
             dist.destroy_process_group()

@@ -1759,8 +1759,10 @@ class NVFP4FastFrozenBaseFunction(torch.autograd.Function):
         orig_shape = x.shape
         x2d = x.reshape(-1, orig_shape[-1])
         x2d, m = _pad_to_block(x2d, 0)
-        xq, xsc, x_inv = _mslk_quantize(x2d)
-        out = _mslk_scaled_mm(xq, xsc, x_inv, wq, wsc, w_inv, x.dtype)[:m]
+        # single-level acts to match nvfp4_base_fprop (the fused LoRA path) — same
+        # base output whether run standalone or adapter-fused.
+        xq, xsc = _mslk_quantize_sl(x2d)
+        out = _mslk_fprop_mm(xq, xsc, wq, wsc, w_inv, x.dtype)[:m]
         ctx.wstore = (wq, wsc, w_inv)
         ctx.recipe = recipe
         ctx.x_shape = orig_shape

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import os
 
 import torch
 import torch.nn.functional as F
@@ -115,29 +114,21 @@ def main() -> None:
             (x @ dense_weight.t()).float(), labels, ignore_index=-100
         )
 
-    def old_loss(x):
-        return fused_fp4_cross_entropy(x, head, labels, shift=False, fp4_matmul=False)
-
-    def new_loss(x):
-        return fused_fp4_cross_entropy(x, head, labels, shift=False, fp4_matmul=True)
+    def fused_loss(x):
+        return fused_fp4_cross_entropy(x, head, labels, shift=False)
 
     with torch.no_grad():
         ref = materialized_loss(hidden)
-        old = old_loss(hidden)
-        new = new_loss(hidden)
+        fused = fused_loss(hidden)
         print(
             "loss materialized=",
             _finite_float(ref),
-            "existing_fp4_ce=",
-            _finite_float(old),
-            "fp4_scaled_mm_ce=",
-            _finite_float(new),
+            "fused_fp4_ce=",
+            _finite_float(fused),
         )
         print(
-            "abs_delta existing=",
-            "n/a" if old is None else f"{float((old - ref).abs()):.6f}",
-            "fp4_scaled_mm=",
-            f"{float((new - ref).abs()):.6f}",
+            "abs_delta fused=",
+            "n/a" if fused is None else f"{float((fused - ref).abs()):.6f}",
         )
 
     def wrap_loss(loss_fn):
@@ -176,20 +167,13 @@ def main() -> None:
                 _time_cuda(wrap_loss(liger_loss), args.warmup, args.iters),
             )
         )
-    old_probe = old_loss(hidden)
-    if old_probe is not None:
+    if fused_loss(hidden) is not None:
         timings.append(
             (
-                "existing_nvfp4_fused_ce",
-                _time_cuda(wrap_loss(old_loss), args.warmup, args.iters),
+                "nvfp4_fused_ce",
+                _time_cuda(wrap_loss(fused_loss), args.warmup, args.iters),
             )
         )
-    timings.append(
-        (
-            "fp4_scaled_mm_ce",
-            _time_cuda(wrap_loss(new_loss), args.warmup, args.iters),
-        )
-    )
 
     for name, ms in timings:
         tok_s = args.tokens / (ms / 1000.0)
@@ -201,5 +185,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("AXOLOTL_NVFP4_FUSED_CE_FP4_MM", "1")
     main()
