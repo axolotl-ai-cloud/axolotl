@@ -122,8 +122,7 @@ class OptimizerMixin(Trainer):
             and is_optimizer_factory(self.optimizer_cls_and_kwargs[0])
         ):
             optimizer_factory_cls, optimizer_kwargs = self.optimizer_cls_and_kwargs
-            # transformers calls factories as factory(opt_model, **kwargs); our
-            # factories also accept training_args, so pass it for back-compat.
+            # forward training_args for back-compat with our factory signatures
             self.optimizer = optimizer_factory_cls()(
                 opt_model, self.args, **optimizer_kwargs
             )

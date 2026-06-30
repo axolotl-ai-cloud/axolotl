@@ -138,6 +138,8 @@ torchao's 8-bit optimizer base, so optimizer-state memory is very small (~87% le
 8-bit AdamW on an 8B full finetune, since the ~87% of params that are 2D linear carry
 zero optimizer state).
 
+Requires PyTorch >= 2.5.1 (relies on torchao's low-bit optimizer base and `torch.compile`).
+
 Paper: [https://arxiv.org/abs/2502.06742](https://arxiv.org/abs/2502.06742)
 
 ```yaml

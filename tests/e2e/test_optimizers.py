@@ -210,7 +210,9 @@ class TestCustomOptimizers(unittest.TestCase):
         check_model_output_exists(temp_dir, cfg)
         assert "SinkGD" in trainer.optimizer.optimizer.__class__.__name__
 
-    @pytest.mark.skip(reason="Dion's internal torch.compile hits a dynamo cache-limit error")
+    @pytest.mark.skip(
+        reason="Dion's internal torch.compile hits a dynamo cache-limit error"
+    )
     @with_temp_dir
     @require_torch_2_7_0
     def test_dion(self, temp_dir):

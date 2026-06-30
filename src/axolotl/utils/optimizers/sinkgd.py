@@ -138,8 +138,7 @@ class SinkGD(_AdamBase):
         with torch._dynamo.utils.disable_cache_limit():
             for group in self.param_groups:
                 use_sinkgd = group.get("use_sinkgd", False)
-                # scheduler may overwrite lr with a python float; keep a CPU scalar
-                # tensor so the compiled steps don't recompile when it changes.
+                # CPU scalar lr avoids recompiling the compiled steps on lr changes
                 lr = group["lr"]
                 if not isinstance(lr, Tensor):
                     lr = torch.tensor(lr, dtype=torch.float32)
@@ -215,7 +214,10 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
             if (
                 param.ndim < 2
                 or name.endswith("modules_to_save.default.weight")
-                or any(embed in name for embed in ["embed_tokens", "lm_head"])
+                or any(
+                    embed in name
+                    for embed in ["embed_tokens", "lm_head", "wte", "word_embeddings"]
+                )
             ):
                 adamw_params.append(param)
             else:
@@ -230,12 +232,13 @@ class SinkGDOptimizerFactory(BaseOptimizerFactory):
                     "weight_decay": weight_decay,
                 }
             )
+        # fallback group is only embeddings, head, norms and biases -> no weight decay
         if adamw_params:
             param_groups.append(
                 {
                     "params": adamw_params,
                     "use_sinkgd": False,
-                    "weight_decay": weight_decay,
+                    "weight_decay": 0.0,
                 }
             )
 
