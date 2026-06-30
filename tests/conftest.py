@@ -589,6 +589,9 @@ _TRANSFORMERS_PATCH_TARGETS = (
     ("transformers.trainer", ("Trainer", "_inner_training_loop")),
     ("transformers.trainer", ("Trainer", "training_step")),
     ("transformers", ("Trainer",)),
+    # explicit targets so patches are reverted even when loss_utils was already imported
+    ("transformers.loss.loss_utils", ("fixed_cross_entropy",)),
+    ("transformers.loss.loss_utils", ("ForCausalLMLoss",)),
 )
 
 
