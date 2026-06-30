@@ -66,13 +66,17 @@ def do_vllm_serve(
     dtype = cli_args.get("dtype") or cfg.vllm.dtype
     max_model_len = cli_args.get("max_model_len") or cfg.vllm.max_model_len
     enable_prefix_caching = (
-        cli_args.get("enable_prefix_caching") or cfg.vllm.enable_prefix_caching
+        cli_args["enable_prefix_caching"]
+        if cli_args.get("enable_prefix_caching") is not None
+        else cfg.vllm.enable_prefix_caching
     )
     reasoning_parser = (
         cli_args.get("reasoning_parser") or cfg.vllm.reasoning_parser or ""
     )
     enable_reasoning = (
-        cli_args.get("enable_reasoning") or cfg.vllm.enable_reasoning or False
+        cli_args["enable_reasoning"]
+        if cli_args.get("enable_reasoning") is not None
+        else cfg.vllm.enable_reasoning or False
     )
 
     cli_enforce_eager = cli_args.get("enforce_eager")
