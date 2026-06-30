@@ -1,0 +1,101 @@
+# Gemma-4-26B-A4B MoE QLoRA on a bf16 checkpoint quantized to bnb-4bit at load — the throughput-
+# optimized recipe for the no-NVFP4-checkpoint case. sm120 (RTX PRO 6000), 4k seq, experts-only +
+# attn LoRA r=16. ~1940 tok/s / ~21 GiB on one GPU (vs nvfp4-marlin's ~2350 / ~24 GiB).
+#
+# The three levers that matter most here:
+#   1. attn_implementation: flash_attention_2 + gemma4_hybrid_attn_impl: true
+#        FA2 (via the `kernels` lib — no flash-attn source build) on the sliding-window layers +
+#        SDPA on the global layers. ~2x over plain sdpa, which otherwise computes full attention
+#        over the packed 4k sequence and dominates runtime.
+#   2. quantize_moe_experts: true (+ load_in_4bit)
+#        Stores the MoE experts as bnb-4bit at load. scattermoe dequants only the active experts
+#        per step and recomputes that bf16 in backward (recipe) instead of saving it — so the
+#        expert weights stay 4-bit-resident and never pin per-layer (no ~60 GiB blowup).
+#   3. moe_bnb_fast (default on)
+#        Routes bnb experts through the 1-launch parallel_linear (scatter2scatter) path. Faster
+#        than the chunked torch._grouped_mm path at the same low memory. Set false to fall back to
+#        chunked for large-expert MoEs / tiny GPUs where the single-shot active-expert dequant is
+#        too big.
+base_model: google/gemma-4-26B-A4B
+
+plugins:
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+  - axolotl.integrations.liger.LigerPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+liger_layer_norm: true
+liger_rope: true
+liger_rms_norm: true
+liger_glu_activation: true
+liger_rms_norm_gated: true
+strict: false
+
+ddp_find_unused_parameters: true
+
+chat_template: gemma4
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:10%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0.05
+output_dir: ./outputs/gemma4-26b-a4b-bnb-lora
+
+sequence_len: 4096
+sample_packing: true
+
+load_in_4bit: true
+quantize_moe_experts: true
+adapter: qlora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# text-backbone attention + MLP projections (skip vision/audio encoders)
+lora_target_modules: 'model.language_model.layers.[\d]+.(_checkpoint_wrapped_module.)?(mlp|self_attn).(up|down|gate|q|k|v|o)_proj'
+# MoE expert LoRA (3D Parameter tensors, not nn.Linear)
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+# Fused LoRA kernels for the NON-expert path: the dense shared MLP (Gemma4TextMLP) and the
+# attention q/k/v/o projections. The routed experts are handled by scattermoe; these fuse the
+# remaining per-layer LoRA. fused_attn_kernel lets qkv/o attach on the gemma4_unified variant too.
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+fused_attn_kernel: true
+
+bnb_config_kwargs:
+  bnb_4bit_use_double_quant: true
+
+# moe_bnb_fast: true is the default (1-launch parallel_linear, recompute-in-backward). Set false
+# to fall back to the chunked path for large-expert MoEs / tiny GPUs (bound via moe_dequant_chunk_size).
+# moe_bnb_fast: false
+# moe_dequant_chunk_size: 32
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit       # GPU 8-bit Adam: ~2.6 GiB less than fp32 Adam at r=16
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+
+gradient_checkpointing: true
+
+# gemma4 head_dim is 256. flex_attention OOMs sm120 shared memory here; the hybrid impl runs FA2 on
+# the sliding-window layers + SDPA on the global layers. Requires attn_implementation=flash_attention_2.
+attn_implementation: flash_attention_2
+gemma4_hybrid_attn_impl: true
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+special_tokens:

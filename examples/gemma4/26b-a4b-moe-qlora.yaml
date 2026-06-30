@@ -52,9 +52,13 @@ lora_target_parameters:
   - experts.gate_up_proj
   - experts.down_proj
 
-lora_mlp_kernel: false
-lora_qkv_kernel: false
-lora_o_kernel: false
+# Fused LoRA kernels for the NON-expert path: the dense shared MLP (Gemma4TextMLP) and the
+# attention q/k/v/o projections. The routed experts are handled by scattermoe; these fuse the
+# remaining per-layer LoRA. fused_attn_kernel lets qkv/o attach on the gemma4_unified variant too.
+lora_mlp_kernel: true
+lora_qkv_kernel: true
+lora_o_kernel: true
+fused_attn_kernel: true
 
 bnb_config_kwargs:
   bnb_4bit_use_double_quant: true
@@ -79,8 +83,18 @@ gradient_checkpointing: true
 activation_offloading: true
 logging_steps: 1
 
-# FA2 not supported (head_dim=512); flex is varlen-capable, required for sample_packing
-attn_implementation: flex_attention
+# Hybrid attention is the biggest throughput lever (~2x vs plain sdpa, which computes full attention
+# over the packed 4k sequence): FA2 (via the `kernels` lib, no source build) on the sliding-window
+# layers + SDPA on the global layers. flex_attention OOMs sm120 shared memory here.
+attn_implementation: flash_attention_2
+gemma4_hybrid_attn_impl: true
+
+# bnb-4bit MoE experts have no fused 4-bit-read kernel, so they're dequantized to bf16 by the
+# default 1-launch parallel_linear path (the dequant'd bf16 is recomputed in backward, not saved,
+# so it stays low-memory). For large-expert MoEs / tiny GPUs, set moe_bnb_fast: false to fall back
+# to the chunked path and bound the per-pass dequant transient with moe_dequant_chunk_size (32).
+# moe_bnb_fast: false
+# moe_dequant_chunk_size: 32
 
 warmup_ratio: 0.1
 evals_per_epoch: 4

@@ -183,7 +183,10 @@ EP composes with FSDP on orthogonal mesh axes: experts are sharded across the `e
 
 - Models' modeling code must use `@use_experts_implementation` (canonical 3D `gate_up_proj` / `down_proj`). `ModuleList` as used in Mixtral is not supported.
 - `num_experts` must be divisible by `expert_parallel_size`.
-- 3+ axis composition (EP × DP × TP/CP) is not yet supported in v1; raises `NotImplementedError`.
+- Supported mesh axes: EP, EP × dp_shard, **EP × cp**, EP × cp × dp_shard (experts shard on `ep`,
+  the sequence on `cp`, non-expert weights on `dp_shard`). EP × **TP** is not yet supported and
+  raises `NotImplementedError`. EP × CP requires the model's attention to be context-parallel-aware
+  on the `cp` axis (e.g. GLM-5.2 DSA via the kernels plugin); stock attention uses accelerate CP.
 - DeepEP limitation: Low-latency (LL) kernels are inter-node only by design (pure RDMA via IBGDA). Single-node + intranode setups always use the standard kernels and don't benefit from LL.
 - FP8 dispatch needs Hopper + DISABLE_SM90_FEATURES=0.
 

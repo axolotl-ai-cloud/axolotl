@@ -1,0 +1,128 @@
+# GLM-5.2 (glm_moe_dsa) MoE LoRA on an NVFP4 (modelopt) checkpoint.
+#
+# GLM-5.2 is the DeepSeek-V3.2 sparse-MLA (DSA / Lightning-Indexer) lineage: 78 layers, 256 routed
+# experts top-8 + 1 shared, MLA attention (qk_head_dim 256, v_head_dim 256), and a per-query top-k
+# token selector (index_topk 2048) with cross-layer top-k sharing. ~500B params, so the NVFP4
+# experts (~250 GB 4-bit) require multi-GPU FSDP2 (2xB200 / 8xH100).
+#
+# Loading: the checkpoint is quant_method=modelopt / quant_algo=NVFP4 (unrecognized by transformers
+# -> bf16 skeleton). The kernels plugin's GlmMoeDsaAdapter registers WeightConverters that fuse the
+# per-expert NVFP4 tensors into 3D NVFP4Tensors (routed experts) and dequantize the shared experts +
+# leading dense MLPs to bf16. Attention projections + lm_head are bf16 in the checkpoint.
+#
+# LoRA: routed experts via scattermoe (3D Parameter LoRA + fused 4-bit grouped GEMM); the MLA
+# attention projections + shared/dense MLP linears via PEFT-default LoRA (the Llama-style fused
+# qkv/o/mlp kernels don't fit MLA q_a/q_b/kv_a/kv_b/o or the shared-expert MLP — Phase-1 work).
+base_model: Mapika/GLM-5.2-NVFP4
+
+plugins:
+  # Expert parallelism: shard the 256 routed experts across GPUs (each rank owns 1/world_size of
+  # them) and dispatch tokens via DeepEP all-to-all. The local expert GEMM runs through the SAME
+  # grouped-NVFP4 kernel as the non-EP path, so EP is both faster AND lower-memory than plain FSDP2
+  # at scale (verified at 8k seq: ~1.3x faster and ~12% less peak activation, beating FSDP2 on both).
+  # Parity: EP matches the FSDP2 baseline on loss and grad_norm to within ~1% per step (verified at
+  # 2k and 8k) — the routed-expert LoRA is sliced to each rank's local experts so it trains the
+  # correct experts, and FSDP grad-averaging gives the right per-expert scale. Requires the `deep_ep`
+  # package. Drop this plugin (+ the expert_parallel_* keys below) to fall back to plain FSDP2.
+  - axolotl.integrations.expert_parallel.ExpertParallelPlugin
+  - axolotl.integrations.cut_cross_entropy.CutCrossEntropyPlugin
+  - axolotl.integrations.kernels.KernelsPlugin
+use_kernels: true
+use_scattermoe: true
+experts_implementation: scattermoe
+dsv4_fp4_grouped_mode: nvfp4        # fused 4-bit grouped MoE GEMM (Marlin sm120 / DeepGEMM sm90,100)
+# Fused DSA attention: MLA weight absorption + head-batched sparse-gather flash attn (fwd+bwd) +
+# fused Lightning-Indexer, replacing the dense [B,S,T]-mask sdpa path. Router kept fp32. Wins at
+# long context (S >> index_topk); a length-aware dispatcher uses the dense path below the crossover.
+use_glm_dsa_kernels: true
+strict: false
+
+# The DSA kernels own attention; sdpa is the fallback the dispatcher uses below the sparse crossover.
+attn_implementation: sdpa
+
+# Expert parallelism. Pure EP: set expert_parallel_size to the TOTAL number of GPUs so each rank owns
+# 256/world_size routed experts (256 must divide it evenly), with dp_shard_size 1. The non-expert
+# weights still FSDP-shard across all ranks.
+#   2D composition (ep < world_size) also works, as long as ep * dp_shard * cp == world_size:
+#     - EP × dp_shard (e.g. expert_parallel_size: 4 + dp_shard_size: 2): experts shard on the ep axis
+#       and are FSDP-sharded across the dp_shard ranks of each ep-group; data parallel on dp_shard.
+#     - EP × cp (e.g. expert_parallel_size: 4 + context_parallel_size: 2): the sequence shards on cp
+#       (the DSA attention all-gathers the 576-wide compressed KV on that axis) and the experts are
+#       FSDP-sharded across the cp ranks of each ep-group so they don't sit replicated per rank.
+expert_parallel_size: 8                      # = number of GPUs (8 for 8xH100; 2 for 2xB200)
+dp_shard_size: 1
+expert_parallel_num_nvl_bytes: 4294967296    # 4 GiB DeepEP intranode (NVLink) dispatch/combine buffer
+# Max tokens routed to any single expert per forward (per rank); the lowest-weight excess are dropped
+# to -1. Guards the DeepEP intranode combine, which HANGS once one expert's token count exceeds the
+# NVLink buffer (the GLM router concentrates with depth). This is a FIXED token threshold tied to
+# expert_parallel_num_nvl_bytes — NOT proportional to sequence length, so don't scale it with seq_len.
+# The 1,000,000 default is an effectively-off ceiling: per rank there are only seq_len*top_k assignments
+# spread over 256 experts (e.g. 64k seq = 512k total < 1M, so it never fires), so it won't over-drop at
+# normal lengths. But it also barely protects — at very long context (64k/128k) a hot expert can cross
+# the combine-hang threshold while still under 1M. If you train at long context, lower this toward the
+# actual hang threshold (measure it: raise seq until combine hangs, set just below) and/or raise
+# expert_parallel_num_nvl_bytes.
+expert_parallel_token_capacity: 1000000
+
+# For multi-GPU at long context, shard the sequence with context parallelism (the DSA attention
+# all-gathers only the 576-wide compressed KV on the cp axis). Composes with expert parallelism for
+# the MoE (experts shard on ep, sequence on cp). To use it, lower expert_parallel_size so that
+# ep * cp == world_size (e.g. expert_parallel_size: 4 with context_parallel_size: 2 on 8 GPUs) and
+# uncomment the line below. Uses the DSA kernels' own CP attention (no ring_flash_attn needed).
+# context_parallel_size: 2
+
+chat_template: tokenizer_default
+datasets:
+  - path: mlabonne/FineTome-100k
+    type: chat_template
+    split: train[:5%]
+    field_messages: conversations
+    message_property_mappings:
+      role: from
+      content: value
+val_set_size: 0.02
+output_dir: ./outputs/glm-5.2-nvfp4-lora
+
+sequence_len: 4096
+sample_packing: true
+
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0
+# MLA attention projections + shared/dense MLP linears (NOT the no-grad indexer wq_b/wk/weights_proj).
+lora_target_modules: 'model.layers.[\d]+.(self_attn.(q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)|mlp.(shared_experts.)?(gate_proj|up_proj|down_proj))'
+# MoE routed-expert LoRA (3D Parameter tensors, not nn.Linear).
+lora_target_parameters:
+  - experts.gate_up_proj
+  - experts.down_proj
+
+gradient_accumulation_steps: 4
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch_8bit
+lr_scheduler: cosine
+learning_rate: 0.0002
+
+bf16: auto
+tf32: true
+gradient_checkpointing: true
+# EP shards the experts across GPUs, leaving activation-memory headroom — keep offloading off (faster).
+# Re-enable (true) for plain FSDP2 / tight-memory runs, or use AXOLOTL_EP_EXPERT_SHARD_TOKENS to tile
+# the grouped expert forward (opt-in activation-memory knob; trades step time for memory).
+activation_offloading: false
+
+warmup_ratio: 0.1
+evals_per_epoch: 4
+saves_per_epoch: 1
+weight_decay: 0.0
+
+# ~500B model: shard across GPUs with FSDP2 (run via `accelerate launch` / axolotl multi-GPU).
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: true   # required: rank0-only NVFP4 load + FSDP broadcast fills the rest
+  state_dict_type: SHARDED_STATE_DICT
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: GlmMoeDsaDecoderLayer
+  reshard_after_forward: true

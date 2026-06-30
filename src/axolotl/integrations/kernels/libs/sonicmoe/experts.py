@@ -84,6 +84,14 @@ def sonicmoe_experts_forward_with_lora(
         scattermoe_supports_layout,
     )
 
+    # Validate the expert layout / device BEFORE the sm120 fallback dispatch: a non-CUDA input or
+    # ungated experts are invalid for both paths, and the fallback (entered on sm120 where the
+    # sonic kernel can't run) would otherwise hit a CPU tensor and raise an opaque AttributeError.
+    if not getattr(self, "has_gate", True):
+        raise ValueError("sonicmoe requires gated experts (has_gate=True)")
+    if hidden_states.device.type != "cuda":
+        raise ValueError("sonicmoe requires CUDA device")
+
     if not _sonicmoe_kernel_supported() and scattermoe_supports_layout(self):
         return scattermoe_experts_forward(
             self, hidden_states, top_k_index, top_k_weights
@@ -91,16 +99,11 @@ def sonicmoe_experts_forward_with_lora(
 
     from transformers.integrations.sonicmoe import _sonicmoe_wrapper
 
-    if not getattr(self, "has_gate", True):
-        raise ValueError("sonicmoe requires gated experts (has_gate=True)")
-    if hidden_states.device.type != "cuda":
-        raise ValueError("sonicmoe requires CUDA device")
-
     device = hidden_states.device
     num_top_k = top_k_index.size(-1)
     num_tokens = hidden_states.size(0)
 
-    # Flatten — token indices must be int32 and sorted ascending (sonic-moe requirement).
+    # sonic-moe requires int32 token indices sorted ascending.
     token_idx = (
         torch.arange(num_tokens, device=device)
         .unsqueeze(1)
@@ -115,9 +118,8 @@ def sonicmoe_experts_forward_with_lora(
     if not getattr(self, "has_bias", False):
         b1 = b2 = None
 
-    # FSDP2 / EP wraps parameters as DTensors but sonic-moe takes raw CUTLASS pointers,
-    # so unwrap to local shards before the materialize/permute. to_local() is
-    # autograd-aware — backward will rewrap the gradient as a DTensor again.
+    # sonic-moe takes raw CUTLASS pointers, so unwrap FSDP2/EP DTensors to local shards first.
+    # to_local() is autograd-aware: backward rewraps the gradient as a DTensor.
     if isinstance(w1, torch.distributed.tensor.DTensor):
         w1 = w1.to_local()
         w2 = w2.to_local()
