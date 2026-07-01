@@ -853,7 +853,7 @@ class TestQuantizedBaseMerge:
         q, si = self._make_block_fp8(w, block)
         shard = {key: q, key + "_scale_inv": si, "m.norm.weight": torch.ones(4)}
 
-        out, _ = _dequantize_quantized_shard(shard, "cpu")
+        out, _, _ = _dequantize_quantized_shard(shard, "cpu")
 
         assert key + "_scale_inv" not in out  # scale dropped
         assert out[key].dtype == torch.bfloat16
@@ -866,7 +866,7 @@ class TestQuantizedBaseMerge:
         from axolotl.cli.utils.lora_merge import _dequantize_quantized_shard
 
         q = torch.randn(8, 8).to(torch.float8_e4m3fn)
-        out, _ = _dequantize_quantized_shard({"x.weight": q}, "cpu")
+        out, _, _ = _dequantize_quantized_shard({"x.weight": q}, "cpu")
         assert out["x.weight"].dtype == torch.float8_e4m3fn
 
     def test_merge_block_fp8_linear_folds_into_dequantized(self):
@@ -889,7 +889,7 @@ class TestQuantizedBaseMerge:
             f"base_model.model.{key[: -len('.weight')]}.lora_B.weight": lora_b,
         }
 
-        deq_shard, _ = _dequantize_quantized_shard(
+        deq_shard, _, _ = _dequantize_quantized_shard(
             {key: q, key + "_scale_inv": si}, "cpu"
         )
         merged, was_merged = _merge_tensor_with_lora(
@@ -1041,7 +1041,9 @@ class TestQuantizedBaseMerge:
         w = torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2
         q, s = self._make_mxfp8(w, 32)
         key = "model.layers.0.self_attn.q_proj.weight"
-        deq_shard, did = _dequantize_quantized_shard({key: q, key + "_scale": s}, "cpu")
+        deq_shard, did, _ = _dequantize_quantized_shard(
+            {key: q, key + "_scale": s}, "cpu"
+        )
         assert did
         assert (
             key + "_scale" not in deq_shard and deq_shard[key].dtype == torch.bfloat16
@@ -1093,7 +1095,7 @@ class TestQuantizedBaseMerge:
             key + "_scale": nv.scale,
             key + "_scale_2": nv.per_tensor_scale.reshape(()),
         }
-        out, did = _dequantize_quantized_shard(shard, "cpu")
+        out, did, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did
         assert key + "_scale" not in out and key + "_scale_2" not in out
         assert out[key].dtype == torch.bfloat16
@@ -1168,7 +1170,7 @@ class TestQuantizedBaseMerge:
         )  # low=even, high=odd
         ebyte = (exp + 127.0).to(torch.uint8)
         key = "model.layers.0.mlp.experts.gate_up_proj"  # 2D here for simplicity
-        out, did = _dequantize_quantized_shard(
+        out, did, _ = _dequantize_quantized_shard(
             {key: packed, key + "_scale": ebyte}, "cpu"
         )
         assert did and out[key].dtype == torch.bfloat16 and key + "_scale" not in out
@@ -1193,24 +1195,31 @@ class TestQuantizedBaseMerge:
         except Exception as ex:  # pragma: no cover
             pytest.skip(f"to_nvfp4 unavailable: {ex}")
         key = "model.layers.0.self_attn.q_proj.weight"
-        out, did = _dequantize_quantized_shard(
+        out, did, _ = _dequantize_quantized_shard(
             {key: nv.qdata, key + "_scale": nv.scale}, "cpu"
         )
         assert did and out[key].dtype == torch.bfloat16
         assert (out[key].float() - w.float()).norm() / w.float().norm() < 0.2
 
     def test_mxfp8_ragged_blocks(self):
-        """mxfp8 dequant handles K not an exact multiple of the block count (ragged tail)."""
+        """mxfp8 dequant: each e8m0 scale covers a fixed 32-wide MX block; the final ragged block
+        (K=40 -> blocks of 32 + 8) is trimmed, NOT floor-spread evenly across K."""
         from axolotl.cli.utils.lora_merge import _dequant_mxfp8
 
         torch.manual_seed(7)
-        N, K = 4, 40  # 40 not divisible by nb=3
+        N, K = (
+            4,
+            40,
+        )  # nb = ceil(40/32) = 2: first 32 elems use scale[0], last 8 use scale[1]
         w = (torch.randn(N, K) * 0.1).to(torch.float8_e4m3fn)
-        s = torch.randint(
-            120, 130, (N, 3), dtype=torch.uint8
-        )  # 3 ragged blocks over K=40
+        s = torch.randint(120, 130, (N, 2), dtype=torch.uint8)
         out = _dequant_mxfp8(w, s, "cpu")
-        assert out.shape == (N, K) and torch.isfinite(out).all()
+        assert out.shape == (N, K)
+        scale = torch.exp2(s.float() - 127.0)  # [N, 2]
+        exp = w.float().clone()
+        exp[:, :32] *= scale[:, :1]
+        exp[:, 32:] *= scale[:, 1:2]
+        assert torch.allclose(out.float(), exp, atol=1e-2)
 
     def test_dora_on_block_fp8_base(self):
         """DoRA merge on a block-fp8 base: dequant -> DoRA magnitude-normalized fold -> bf16 (the
@@ -1225,7 +1234,7 @@ class TestQuantizedBaseMerge:
         w = torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2
         q, si = self._make_block_fp8(w, 16)
         key = "model.layers.0.self_attn.q_proj.weight"
-        deq, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
+        deq, _, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
         lora_state = {
             f"base_model.model.{key[: -len('.weight')]}.lora_A.weight": torch.randn(
                 r, hidden
@@ -1304,6 +1313,7 @@ class TestQuantizedBaseMerge:
         assert merged["model.embed_tokens.weight"].shape[0] == new_vocab
         assert merged["lm_head.weight"].shape[0] == new_vocab
         assert torch.allclose(merged["model.embed_tokens.weight"].float(), new_embed)
+        assert torch.allclose(merged["lm_head.weight"].float(), new_head)
         assert (
             json.loads((out_dir / "config.json").read_text())["vocab_size"] == new_vocab
         )
@@ -1430,7 +1440,7 @@ class TestQuantizedBaseMerge:
         w = torch.randn(E, OUT, IN, dtype=torch.bfloat16) * 0.1
         q, si = self._make_block_fp8(w, 64)
         key = "model.layers.0.mlp.experts.gate_up_proj"
-        deq, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
+        deq, _, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
         base_deq = self._dequant(q, si)
 
         A = torch.randn(r * E, IN) * 0.05
@@ -1477,7 +1487,7 @@ class TestQuantizedBaseMerge:
                 "this torchao build did not pad the swizzled scale; detection N/A"
             )
         key = "model.layers.0.self_attn.q_proj.weight"
-        out, did = _dequantize_quantized_shard(
+        out, did, _ = _dequantize_quantized_shard(
             {key: nv.qdata, key + "_scale": nv.scale, key + "_scale_2": p.reshape(())},
             "cpu",
         )
@@ -1497,12 +1507,40 @@ class TestQuantizedBaseMerge:
         assert got is not None and torch.equal(got, w)
 
     def test_dequantize_mxfp4_ragged(self):
-        """mxfp4 dequant with K not an exact multiple of the block count (ragged tail)."""
-        from axolotl.cli.utils.lora_merge import _dequant_mxfp4
+        """mxfp4 dequant: fixed 32-wide MX blocks with a trimmed ragged tail (K=40 -> 32 + 8), not a
+        floor-spread."""
+        from axolotl.cli.utils.lora_merge import _dequant_mxfp4, _unpack_fp4
 
         torch.manual_seed(10)
-        N, Khalf = 4, 20  # K=40 nibbles, 3 ragged e8m0 blocks
+        N, Khalf = 4, 20  # K = 40 nibbles, nb = ceil(40/32) = 2
         packed = torch.randint(0, 255, (N, Khalf), dtype=torch.uint8)
-        s = torch.randint(120, 130, (N, 3), dtype=torch.uint8)
+        s = torch.randint(120, 130, (N, 2), dtype=torch.uint8)
         out = _dequant_mxfp4(packed, s, "cpu")
-        assert out.shape == (N, 40) and torch.isfinite(out).all()
+        assert out.shape == (N, 40)
+        vals = _unpack_fp4(packed, "cpu")  # [N, 40]
+        scale = torch.exp2(s.float() - 127.0)
+        exp = vals.clone()
+        exp[:, :32] *= scale[:, :1]
+        exp[:, 32:] *= scale[:, 1:2]
+        assert torch.allclose(out.float(), exp, atol=1e-3)
+
+    def test_partial_dequant_reports_left_quantized(self):
+        """A shard with a dequantizable tensor AND an unsupported quantized tensor (per-tensor fp8,
+        scalar scale) must report left_quantized=True so the caller keeps quantization_config."""
+        from axolotl.cli.utils.lora_merge import _dequantize_quantized_shard
+
+        blk = torch.randn(16, 16).to(torch.float8_e4m3fn)  # block-fp8 (handled)
+        pt = torch.randn(8, 8).to(
+            torch.float8_e4m3fn
+        )  # per-tensor fp8 (unsupported here)
+        shard = {
+            "a.weight": blk,
+            "a.weight_scale_inv": torch.ones(1, 1),
+            "b.weight": pt,
+            "b.weight_scale": torch.tensor(2.0),  # scalar fp32 -> not e8m0, not block
+        }
+        out, did, left = _dequantize_quantized_shard(shard, "cpu")
+        assert did and left
+        assert out["a.weight"].dtype == torch.bfloat16  # dequantized
+        assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is
+        assert "b.weight_scale" in out  # its scale not dropped

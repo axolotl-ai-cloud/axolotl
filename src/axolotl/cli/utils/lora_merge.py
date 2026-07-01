@@ -552,12 +552,17 @@ def _dequant_block_fp8(w: torch.Tensor, si: torch.Tensor, dev: str) -> torch.Ten
     s = si.to(dev).float()
     *lead, N, K = w.shape
     sr, sc = s.shape[-2], s.shape[-1]
-    if N % sr == 0 and K % sc == 0:
-        bn, bk = N // sr, K // sc
-        return (
-            wf.reshape(*lead, sr, bn, sc, bk) * s.reshape(*lead, sr, 1, sc, 1)
-        ).reshape(*lead, N, K)
-    return wf * s.repeat_interleave(N // sr, -2).repeat_interleave(K // sc, -1)
+    # FineGrainedFP8 dims are always block-aligned; a ragged grid would need a fixed 128-block
+    # pad/slice (not a floor-spread), so refuse rather than silently mis-scale.
+    if N % sr or K % sc:
+        raise ValueError(
+            f"block-fp8 weight {tuple(w.shape)} is not aligned to its scale grid "
+            f"({sr}x{sc}); FineGrainedFP8 requires block-aligned dims"
+        )
+    bn, bk = N // sr, K // sc
+    return (wf.reshape(*lead, sr, bn, sc, bk) * s.reshape(*lead, sr, 1, sc, 1)).reshape(
+        *lead, N, K
+    )
 
 
 # Standard OCP-MX / NVFP4 FP4 E2M1 codebook, indexed by raw 4-bit nibble (sign|2-exp|1-mantissa).
@@ -581,14 +586,16 @@ _FP4_E2M1_LUT = (
 )
 
 
+_MX_BLOCK = 32  # OCP-MX block width (one e8m0 scale per 32 elements)
+
+
 def _mx_block_scale(sb_bytes: torch.Tensor, N: int, K: int, dev: str) -> torch.Tensor:
-    """e8m0 biased-exponent bytes [.., N, nb] -> per-element multiplier [.., N, K] (32-wide MX blocks).
-    Handles ragged K (K not a whole multiple of the block via repeat_interleave)."""
+    """e8m0 biased-exponent bytes [.., N, nb] -> per-element multiplier [.., N, K]. Each scale covers
+    a fixed 32-wide MX block; a ragged final block (K not a multiple of 32) is trimmed."""
     s = torch.exp2(sb_bytes.to(dev).float() - 127.0)
-    nb = s.shape[-1]
-    if K % nb == 0:
-        return s[..., None].expand(*s.shape, K // nb).reshape(*s.shape[:-1], K)
-    return s.repeat_interleave((K + nb - 1) // nb, dim=-1)[..., :K]
+    if s.shape[-1] * _MX_BLOCK == K:  # perfectly aligned -> memory-efficient expand
+        return s[..., None].expand(*s.shape, _MX_BLOCK).reshape(*s.shape[:-1], K)
+    return s.repeat_interleave(_MX_BLOCK, dim=-1)[..., :K]
 
 
 def _dequant_mxfp8(w: torch.Tensor, s: torch.Tensor, dev: str) -> torch.Tensor:
@@ -632,8 +639,7 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
     st = scale.to(dev)
     p = scale2.to(dev).float().reshape(()) if scale2 is not None else None
     *lead, N, K = wt.shape
-    # plain (non-swizzled) block-16 scale has exactly N*(K*2/16) elements per leading index; a padded
-    # 32x4x4-swizzled scale is larger -> tell torchao to unswizzle it.
+    # a padded swizzled scale has more elements than the plain block-16 grid; torchao must unswizzle it
     expect = 1
     for d in (*lead, N, (K * 2) // 16):
         expect *= d
@@ -646,9 +652,11 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
 
 def _dequantize_quantized_shard(
     shard_tensors: Dict[str, torch.Tensor], device: str
-) -> tuple[Dict[str, torch.Tensor], bool]:
+) -> tuple[Dict[str, torch.Tensor], bool, bool]:
     """Dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 in place, dropping their
-    scale sibling tensors. Returns ``(new_shard, any_dequantized)``.
+    scale sibling tensors. Returns ``(new_shard, any_dequantized, any_left_quantized)`` — the last flag
+    is True if a quantized tensor was detected but NOT dequantized (unsupported format, or torchao
+    missing for nvfp4), so the caller must NOT strip the quantization_config.
 
     The LoRA merge folds ``scaling*(B@A)`` into the weight and must do so on the *dequantized* value,
     then keep bf16 (re-rounding the sum back to the quant format would drop the low-magnitude delta).
@@ -668,6 +676,7 @@ def _dequantize_quantized_shard(
     out: Dict[str, torch.Tensor] = dict(shard_tensors)
     drop: set = set()
     did = False
+    left = False
     for key, w in shard_tensors.items():
         if key in drop or key.endswith(("_scale", "_scale_inv", "_scale_2")):
             continue
@@ -678,6 +687,10 @@ def _dequantize_quantized_shard(
         sc2 = shard_tensors.get(key + "_scale_2")
         is_e8m0 = sc is not None and (
             sc.dtype == torch.uint8 or (e8m0 is not None and sc.dtype == e8m0)
+        )
+        # a quantized weight = a low-bit dtype WITH a scale sibling (else it's a normal tensor)
+        is_quant = w.dtype in (torch.float8_e4m3fn, torch.uint8) and (
+            si is not None or sc is not None
         )
         deq = None
         if w.dtype == torch.float8_e4m3fn and si is not None:
@@ -695,6 +708,7 @@ def _dequantize_quantized_shard(
                 deq = _dequant_nvfp4(w, sc, sc2, dev)
             except Exception as ex:  # torchao missing / shape mismatch -> leave as-is
                 LOG.warning("nvfp4 dequant skipped for %s: %s", key, ex)
+                left = True  # tensor stays quantized -> config must be kept
                 continue
             drop.add(key + "_scale")
             if sc2 is not None:
@@ -705,9 +719,13 @@ def _dequantize_quantized_shard(
         if deq is not None:
             out[key] = deq.to(torch.bfloat16).cpu()
             did = True
+        elif is_quant:
+            left = (
+                True  # a quantized weight in an unsupported layout -> keep the config
+            )
     for sk in drop:
         out.pop(sk, None)
-    return out, did
+    return out, did, left
 
 
 _FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)?lora_[AB]\.weight$")
@@ -1412,6 +1430,7 @@ def merge_lora_sharded_efficient(
     merged_count = 0
     total_tensors = 0
     block_fp8_dequantized = False
+    left_quantized = False
     resized_vocab = None
     # Track weight_map for index regeneration: {tensor_key: shard_filename}
     weight_map: Dict[str, str] = {}
@@ -1436,8 +1455,11 @@ def merge_lora_sharded_efficient(
         # Step 0: dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 so the LoRA
         # delta folds into the TRUE weight — a raw read misses the block scale and re-rounds the sum
         # back to the quant format, dropping the delta (an otherwise silently-wrong merge).
-        shard_tensors, _shard_deq = _dequantize_quantized_shard(shard_tensors, device)
+        shard_tensors, _shard_deq, _shard_left = _dequantize_quantized_shard(
+            shard_tensors, device
+        )
         block_fp8_dequantized = block_fp8_dequantized or _shard_deq
+        left_quantized = left_quantized or _shard_left
 
         # Step 1: Handle fused weight conversions (MoE experts) if applicable
         fused_keys: set = set()
@@ -1471,8 +1493,10 @@ def merge_lora_sharded_efficient(
             if override is not None:
                 merged_tensors[key] = override.to(tensor.dtype).detach().cpu()
                 merged_count += 1
+                # a resized vocab shows up as a row-count change on embed_tokens AND/OR lm_head
+                # (they may be untied); catch either so the merged config.json stays consistent.
                 if (
-                    key.endswith("embed_tokens.weight")
+                    key.endswith(("embed_tokens.weight", "lm_head.weight"))
                     and override.shape[0] != tensor.shape[0]
                 ):
                     resized_vocab = int(override.shape[0])
@@ -1538,8 +1562,13 @@ def merge_lora_sharded_efficient(
             _json.dump(index, f, indent=2)
         LOG.debug(f"Wrote weight-map index: {index_name}")
 
-    if block_fp8_dequantized:
+    if block_fp8_dequantized and not left_quantized:
         _strip_quantization_config(output_path)
+    elif block_fp8_dequantized and left_quantized:
+        LOG.warning(
+            "Merged some quantized weights to bf16 but others were left quantized (unsupported "
+            "format); keeping quantization_config so the checkpoint still loads its quantized tensors."
+        )
     if resized_vocab is not None:
         _update_config_vocab_size(output_path, resized_vocab)
 
