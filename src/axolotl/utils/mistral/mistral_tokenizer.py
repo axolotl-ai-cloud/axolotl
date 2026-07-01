@@ -4,8 +4,10 @@ import os
 from typing import Optional
 
 import numpy as np
+from mistral_common.protocol.instruct.request import ModelSettings
 from mistral_common.protocol.instruct.validator import ValidationMode
 from mistral_common.tokens.tokenizers.utils import download_tokenizer_from_hf_hub
+from pydantic import ValidationError
 from torch import Tensor
 from transformers.tokenization_mistral_common import MistralCommonBackend
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
@@ -32,6 +34,7 @@ class HFMistralTokenizer(MistralCommonBackend):
 
         # set mode as is not set upstream
         self._set_mode(mode)
+        self._patch_instruct_request_normalizer()
 
     @property
     def name_or_path(self) -> str:
@@ -79,6 +82,60 @@ class HFMistralTokenizer(MistralCommonBackend):
 
         self.tokenizer._chat_completion_request_validator._mode = mode
 
+    @staticmethod
+    def _missing_instruct_request_defaults(exc: ValidationError) -> bool:
+        missing_fields = {
+            err["loc"][0]
+            for err in exc.errors()
+            if err.get("type") == "missing" and len(err.get("loc", ())) == 1
+        }
+        return {
+            "truncate_at_max_tokens",
+            "continue_final_message",
+        }.issubset(missing_fields)
+
+    def _patch_instruct_request_normalizer(self) -> None:
+        normalizer = getattr(self.tokenizer, "_instruct_request_normalizer", None)
+        if normalizer is None or getattr(
+            normalizer, "_axolotl_instruct_defaults_patched", False
+        ):
+            return
+
+        original = normalizer.from_chat_completion_request
+
+        def from_chat_completion_request(request):
+            try:
+                return original(request)
+            except ValidationError as exc:
+                if not self._missing_instruct_request_defaults(exc):
+                    raise
+
+                messages = normalizer._aggregate_messages(request.messages)
+                settings = normalizer.build_settings(request)
+                if settings != ModelSettings.none():
+                    raise
+
+                try:
+                    system_prompt = normalizer._aggregate_system_prompts(
+                        request.messages
+                    )
+                except (AttributeError, NotImplementedError):
+                    system_prompt = None
+
+                return normalizer._instruct_request_class(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    available_tools=request.tools,
+                    truncate_at_max_tokens=None,
+                    continue_final_message=getattr(
+                        request, "continue_final_message", False
+                    ),
+                    settings=settings,
+                )
+
+        normalizer.from_chat_completion_request = from_chat_completion_request
+        normalizer._axolotl_instruct_defaults_patched = True
+
     def apply_chat_template(  # type: ignore
         self,
         conversation: list[dict] | list[list[dict]],
@@ -96,6 +153,7 @@ class HFMistralTokenizer(MistralCommonBackend):
             if add_generation_prompt:
                 self._set_mode(ValidationMode.test)
 
+            self._patch_instruct_request_normalizer()
             out = super().apply_chat_template(conversation, **kwargs)
 
             return out  # type: ignore
