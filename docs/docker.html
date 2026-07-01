@@ -792,7 +792,8 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
     <h2 id="toc-title">On this page</h2>
    
   <ul>
-  <li><a href="#base" id="toc-base" class="nav-link active" data-scroll-target="#base">Base</a>
+  <li><a href="#supported-variants" id="toc-supported-variants" class="nav-link active" data-scroll-target="#supported-variants">Supported variants</a></li>
+  <li><a href="#base" id="toc-base" class="nav-link" data-scroll-target="#base">Base</a>
   <ul>
   <li><a href="#image" id="toc-image" class="nav-link" data-scroll-target="#image">Image</a></li>
   <li><a href="#tags-format" id="toc-tags-format" class="nav-link" data-scroll-target="#tags-format">Tags format</a></li>
@@ -805,14 +806,14 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
   <li><a href="#cloud" id="toc-cloud" class="nav-link" data-scroll-target="#cloud">Cloud</a>
   <ul>
   <li><a href="#image-2" id="toc-image-2" class="nav-link" data-scroll-target="#image-2">Image</a></li>
-  <li><a href="#tags-format-1" id="toc-tags-format-1" class="nav-link" data-scroll-target="#tags-format-1">Tags format</a></li>
+  <li><a href="#sec-cloud-tags" id="toc-sec-cloud-tags" class="nav-link" data-scroll-target="#sec-cloud-tags">Tags format</a></li>
   <li><a href="#environment-variables" id="toc-environment-variables" class="nav-link" data-scroll-target="#environment-variables">Environment variables</a></li>
   <li><a href="#volume-mounts" id="toc-volume-mounts" class="nav-link" data-scroll-target="#volume-mounts">Volume mounts</a></li>
   </ul></li>
   <li><a href="#cloud-no-tmux" id="toc-cloud-no-tmux" class="nav-link" data-scroll-target="#cloud-no-tmux">Cloud-no-tmux</a>
   <ul>
   <li><a href="#image-3" id="toc-image-3" class="nav-link" data-scroll-target="#image-3">Image</a></li>
-  <li><a href="#tags-format-2" id="toc-tags-format-2" class="nav-link" data-scroll-target="#tags-format-2">Tags format</a></li>
+  <li><a href="#tags-format-1" id="toc-tags-format-1" class="nav-link" data-scroll-target="#tags-format-1">Tags format</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -847,34 +848,58 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <i class="callout-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Important</span>Images are now uv-based
+<span class="screen-reader-only">Important</span>uv is now the default
 </div>
 </div>
 <div class="callout-body-container callout-body">
 <p>All images now use <a href="https://docs.astral.sh/uv/">uv</a> with a relocatable venv (<code>/workspace/axolotl-venv</code>)
-instead of Miniconda + pip. The plain names (e.g.&nbsp;<code>axolotlai/axolotl</code>) and the <code>-uv</code> names
-(e.g.&nbsp;<code>axolotlai/axolotl-uv</code>) now serve the <strong>same uv image</strong>. The <code>-uv</code> names are kept as aliases, so
-existing references to either keep working. Tags follow the same format for both.</p>
+instead of Miniconda + pip. The plain image names are the defaults, and the <code>-uv</code> names are kept as
+aliases where they exist. Tags follow the same format for both names.</p>
 </div>
 </div>
+<section id="supported-variants" class="level2">
+<h2 class="anchored" data-anchor-id="supported-variants">Supported variants</h2>
+<p>Current Axolotl runtime images target Python 3.12 on CUDA 13.0 with PyTorch
+2.11.0 and 2.12.0. The floating <code>main-latest</code> tags point at the Python 3.12 /
+CUDA 13.0 / PyTorch 2.12.0 build. Bare release tags, such as <code>0.16.1</code>, point
+at the same latest matrix entry for that release.</p>
+<p>Base images may include additional uv-based tags for build compatibility, and
+older tags may remain available on Docker Hub for reproducibility. New runtime
+builds are centered on the CUDA 13.0 matrix.</p>
+</section>
 <section id="base" class="level2">
 <h2 class="anchored" data-anchor-id="base">Base</h2>
 <p>The base image is the most minimal image that can install Axolotl. It is based on the <code>nvidia/cuda</code> image.
 It includes python, torch, git, git-lfs, awscli, pydantic, and more.</p>
 <section id="image" class="level4">
 <h4 class="anchored" data-anchor-id="image">Image</h4>
-<pre><code>axolotlai/axolotl-base</code></pre>
-<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-base">Docker Hub</a></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Image</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>axolotlai/axolotl-base</code></td>
+<td>Default</td>
+</tr>
+<tr class="even">
+<td><code>axolotlai/axolotl-base-uv</code></td>
+<td>Alias</td>
+</tr>
+</tbody>
+</table>
+<p>Links: <a href="https://hub.docker.com/r/axolotlai/axolotl-base">base</a>, <a href="https://hub.docker.com/r/axolotlai/axolotl-base-uv">base-uv</a></p>
 </section>
 <section id="tags-format" class="level4">
 <h4 class="anchored" data-anchor-id="tags-format">Tags format</h4>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ex">main-base-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">main-base-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Tags examples:</p>
 <ul>
-<li><code>main-base-py3.11-cu128-2.9.1</code></li>
-<li><code>main-base-py3.12-cu128-2.10.0</code></li>
-<li><code>main-base-py3.12-cu130-2.9.1</code></li>
-<li><code>main-base-py3.12-cu130-2.10.0</code></li>
+<li><code>main-base-py3.12-cu130-2.11.0</code></li>
+<li><code>main-base-py3.12-cu130-2.12.0</code></li>
 </ul>
 </section>
 </section>
@@ -883,22 +908,41 @@ It includes python, torch, git, git-lfs, awscli, pydantic, and more.</p>
 <p>The main image is the image that is used to run Axolotl. It is based on the <code>axolotlai/axolotl-base</code> image and includes the Axolotl codebase, dependencies, and more.</p>
 <section id="image-1" class="level4">
 <h4 class="anchored" data-anchor-id="image-1">Image</h4>
-<pre><code>axolotlai/axolotl</code></pre>
-<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl">Docker Hub</a></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Image</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>axolotlai/axolotl</code></td>
+<td>Default</td>
+</tr>
+<tr class="even">
+<td><code>axolotlai/axolotl-uv</code></td>
+<td>Alias</td>
+</tr>
+</tbody>
+</table>
+<p>Links: <a href="https://hub.docker.com/r/axolotlai/axolotl">axolotl</a>, <a href="https://hub.docker.com/r/axolotlai/axolotl-uv">axolotl-uv</a></p>
 </section>
 <section id="sec-main-tags" class="level4">
 <h4 class="anchored" data-anchor-id="sec-main-tags">Tags format</h4>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># on push to main</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">main-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># latest stable build from main</span></span>
-<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">main-latest</span></span>
-<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co"># nightly build</span></span>
-<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="ex">{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co"># tagged release</span></span>
-<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="ex">{version}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># on push to main</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">main-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># latest stable build from main</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">main-latest</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># nightly build</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">{branch}-{date_in_YYYYMMDD}-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># tagged release</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">{version}</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="ex">{version}-py{python_version}-cu{cuda_version}-{pytorch_version}</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="ex">{version}-latest</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="callout callout-style-default callout-tip callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -914,13 +958,13 @@ Tip
 </div>
 <p>Tags examples:</p>
 <ul>
-<li><code>main-py3.11-cu128-2.9.1</code></li>
-<li><code>main-py3.12-cu128-2.10.0</code></li>
-<li><code>main-py3.12-cu130-2.9.1</code></li>
-<li><code>main-py3.12-cu130-2.10.0</code></li>
+<li><code>main-py3.12-cu130-2.11.0</code></li>
+<li><code>main-py3.12-cu130-2.12.0</code></li>
 <li><code>main-latest</code></li>
-<li><code>main-20260315-py3.11-cu128-2.9.1</code></li>
+<li><code>main-20260315-py3.12-cu130-2.12.0</code></li>
 <li><code>0.16.1</code></li>
+<li><code>0.16.1-py3.12-cu130-2.12.0</code></li>
+<li><code>0.16.1-latest</code></li>
 </ul>
 </section>
 </section>
@@ -942,11 +986,28 @@ Tip
 </div>
 <section id="image-2" class="level4">
 <h4 class="anchored" data-anchor-id="image-2">Image</h4>
-<pre><code>axolotlai/axolotl-cloud</code></pre>
-<p>Link: <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud">Docker Hub</a></p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Image</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>axolotlai/axolotl-cloud</code></td>
+<td>Default</td>
+</tr>
+<tr class="even">
+<td><code>axolotlai/axolotl-cloud-uv</code></td>
+<td>Alias</td>
+</tr>
+</tbody>
+</table>
+<p>Links: <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud">cloud</a>, <a href="https://hub.docker.com/r/axolotlai/axolotl-cloud-uv">cloud-uv</a></p>
 </section>
-<section id="tags-format-1" class="level4">
-<h4 class="anchored" data-anchor-id="tags-format-1">Tags format</h4>
+<section id="sec-cloud-tags" class="level4">
+<h4 class="anchored" data-anchor-id="sec-cloud-tags">Tags format</h4>
 <p>This uses the same tags as the <a href="#sec-main-tags"><code>main</code> image</a>.</p>
 </section>
 <section id="environment-variables" class="level4">
@@ -969,7 +1030,10 @@ Tip
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>We recommend mounting volumes to <code>/workspace/data</code> for data persistence. <code>/workspace/axolotl</code> contains the source code and is ephemeral.</p>
+<p>We recommend mounting volumes to <code>/workspace/data</code> for data persistence. The
+cloud images set <code>HF_HOME</code> to <code>/workspace/data/huggingface-cache</code> so HuggingFace
+Hub and dataset caches are kept under the same persistent mount. <code>/workspace/axolotl</code>
+contains the source code and is ephemeral.</p>
 </div>
 </div>
 <ul>
@@ -995,12 +1059,13 @@ Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>The naming may be a bit confusing as it has <code>-term</code> appended to the end.</p>
+<p>The naming may be a bit confusing as it has <code>-term</code> appended to the end. This
+image is uv-based and does not have a separate <code>-uv</code> alias.</p>
 </div>
 </div>
 </section>
-<section id="tags-format-2" class="level4">
-<h4 class="anchored" data-anchor-id="tags-format-2">Tags format</h4>
+<section id="tags-format-1" class="level4">
+<h4 class="anchored" data-anchor-id="tags-format-1">Tags format</h4>
 <p>This uses the same tags as the <a href="#sec-cloud-tags"><code>cloud</code> image</a>.</p>
 
 

@@ -843,7 +843,7 @@ gtag('config', 'G-9KYCVJBNMQ', { 'anonymize_ip': true});
 <ul>
 <li>NVIDIA GPU (Ampere architecture or newer for <code>bf16</code> and Flash Attention) or AMD GPU</li>
 <li>Python ≥3.11</li>
-<li>PyTorch ≥2.9.1</li>
+<li>PyTorch ≥2.11.0</li>
 </ul>
 </section>
 <section id="sec-installation" class="level2" data-number="2">
@@ -858,7 +858,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For Blackwell GPUs, please use Pytorch 2.9.1 and CUDA 13.0. CUDA 12.8 cannot
+<p>For Blackwell GPUs, please use PyTorch ≥2.11.0 and CUDA 13.0. CUDA 12.8 cannot
 compile for <code>sm_103a</code> (B300), and using CUDA 13.0 also avoids first-launch JIT
 overhead on B100 / B200 / RTX 50-series.</p>
 </div>
@@ -870,7 +870,7 @@ overhead on B100 / B200 / RTX 50-series.</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-LsSf</span> https://astral.sh/uv/install.sh <span class="kw">|</span> <span class="fu">sh</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="va">$HOME</span>/.local/bin/env</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Choose your CUDA version (e.g.&nbsp;<code>cu128</code>, <code>cu130</code>), create a venv, and install:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu130  <span class="co"># or cu128</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> axolotl<span class="pp">[</span><span class="ss">deepspeed</span><span class="pp">]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -880,7 +880,7 @@ overhead on B100 / B200 / RTX 50-series.</p>
 <p>For the latest features between releases:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone https://github.com/axolotl-ai-cloud/axolotl.git</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> axolotl</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu130  <span class="co"># or cu128</span></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install <span class="at">--no-build-isolation</span> <span class="at">-e</span> <span class="st">'.[deepspeed]'</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -918,7 +918,7 @@ Important
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>For Blackwell GPUs, please use <code>axolotlai/axolotl-uv:main-py3.11-cu130-2.9.1</code> or the cloud variant <code>axolotlai/axolotl-cloud-uv:main-py3.11-cu130-2.9.1</code>.</p>
+<p>For Blackwell GPUs, please use <code>axolotlai/axolotl-uv:main-py3.12-cu130-2.12.0</code> or the cloud variant <code>axolotlai/axolotl-cloud-uv:main-py3.12-cu130-2.12.0</code>.</p>
 </div>
 </div>
 <p>Please refer to the <a href="../docs/docker.html">Docker documentation</a> for more information on the different Docker images that are available.</p>
@@ -980,7 +980,7 @@ Important
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> <span class="va">$HOME</span>/.local/bin/env</span>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a fresh venv (recommended for a clean start)</span></span>
-<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu128  <span class="co"># or cu130</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">UV_TORCH_BACKEND</span><span class="op">=</span>cu130  <span class="co"># or cu128</span></span>
 <span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> venv</span>
 <span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="bu">source</span> .venv/bin/activate</span>
 <span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a></span>
