@@ -24,7 +24,7 @@ class ScatterMoERuntime:
     """All mutable knobs that affect ScatterMoE runtime behavior."""
 
     # grouped fp4 MoE experts (experts.py): None = off (fused/eager paths unchanged) | "nvfp4".
-    fp4_grouped_mode: str | None = None
+    grouped_mode: str | None = None
     # base dX backward precision on sm120: True = fp8-read (fast, ~2% grad) | False = bf16-dequant.
     fp4_dx_prefer_fp8: bool = True
     # grouped base-GEMM backend (grouped_train.py): None/"auto" | marlin | cutlass | deepgemm | dequant.
@@ -59,7 +59,9 @@ def configure_scattermoe_runtime(cfg) -> None:
     relevant config fields. ``cfg`` is the resolved config (DictDefault).
     """
     RUNTIME.reset()
-    RUNTIME.fp4_grouped_mode = cfg.get("dsv4_fp4_grouped_mode")
+    RUNTIME.grouped_mode = cfg.get("moe_grouped_mode") or cfg.get(
+        "dsv4_fp4_grouped_mode"
+    )
     backend = cfg.get("moe_grouped_backend")
     RUNTIME.grouped_backend = str(backend).lower() if backend else None
     chunk = cfg.get("moe_dequant_chunk_size")

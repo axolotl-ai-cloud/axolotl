@@ -218,6 +218,47 @@ forward); `scripts/benchmark_sonicmoe_lora_split.py` measures both paths.
 It applies to bf16 gated experts with a frozen base, no expert bias and a SwiGLU/GeGLU
 activation, on the EP and non-EP dense paths (with or without `sonicmoe_ep_compact_routing`).
 Anything else logs a warning once and materializes as before.
+## Expert Quantization
+
+The routed experts are the bulk of an MoE model's weights, so keeping them quantized while training LoRA/QLoRA adapters is what lets large MoE fine-tuning fit in memory. The precision the frozen experts run in through the ScatterMoE grouped GEMM is set by `moe_grouped_mode`:
+
+```yaml
+use_scattermoe: true
+moe_grouped_mode: fp8_block   # nvfp4 | fp8_block | mxfp8   (omit -> bf16 experts)
+```
+
+| `moe_grouped_mode` | Experts run as | Base GEMM | Notes |
+|---|---|---|---|
+| *(unset)* | **bf16** | fused Triton `scatter2scatter_lora` | default; experts dequantized to bf16 (heavy VRAM for large MoE) |
+| `nvfp4` | **4-bit NVFP4** | Marlin (sm80–120) / CUTLASS / DeepGEMM (sm90/100) | a block-fp8 checkpoint is **requantized** fp8→nvfp4 at load; a native NVFP4-modelopt checkpoint loads as-is |
+| `fp8_block` | **native 128×128 block-fp8** | `blockfp8_triton` (any CUDA incl. sm120) / DeepGEMM fp8×fp8 (sm90/100) | keeps the checkpoint's fp8 weights — no requant, higher fidelity |
+| `mxfp8` | **OCP-MX fp8** (e4m3 + e8m0 per-32-block scale) | sm100: hardware-MX `_scaled_grouped_mm` (W8A8); sm120/sm90: `mxfp8_triton` W8A16 | requantized bf16/fp8→mxfp8 at load; same 1 byte/elem as `fp8_block` but hardware-MX-native + finer 32-wide scale |
+
+Backend override for the nvfp4 grouped GEMM (unavailable choice warns + falls back to `auto`):
+
+```yaml
+moe_grouped_backend: auto   # auto (default) | marlin | cutlass | deepgemm
+```
+
+**bitsandbytes 4-/8-bit experts.** Independent of the grouped-mode path, experts can be quantized to bnb NF4/int8 on load with `quantize_moe_experts: true` (QLoRA/LoRA) — see the *MoE Expert Quantization* doc. ScatterMoE routes bnb-NF4 experts through a chunked-dequant grouped path, tunable with `moe_bnb_fast` and `moe_dequant_chunk_size`.
+
+**Non-expert quantization.** `nonexpert_quantization: none|bf16|fp8_blockwise|nf4` quantizes the *non-expert* linears (attention/MLP) — separate from the expert precision above; resolved per-model by the adapter.
+
+**Model-agnostic requant + rank0-only load.** The `nvfp4` / `mxfp8` requant runs at the plugin level (`requant_grouped_experts`) for *every* scattermoe model, not one adapter — so any MoE with fused-3D experts gets it. Under FSDP2 `cpu_ram_efficient_loading`, `moe_rank0_requant` (default: auto = on when cpu-ram-efficient, forced off under Expert Parallelism) requantizes only on rank 0 and lets FSDP2 broadcast the rest, avoiding a full-expert copy per rank.
+
+**Model-specific loading.** Because a genuine block-fp8 checkpoint (e.g. `mistralai/Mistral-Large-4.0-small`) ships its experts as 128×128 block-fp8, the mode decides what happens at load: `fp8_block` keeps them native (recommended — ~17× lower error than requant), `nvfp4` requantizes to 4-bit, `mxfp8` requantizes to OCP-MX fp8 (block-fp8 or bf16 → e4m3 + e8m0). The matched model adapter performs the requant for `nvfp4` / `mxfp8`.
+
+**`mxfp8` vs `fp8_block`.** Both are 8-bit (1 byte/elem), so `mxfp8` does *not* save VRAM over `fp8_block` — its win is that the e4m3 + e8m0/32 layout is the native Blackwell MX tensor-core format (hardware block-scaling) with a finer scale (per-32 vs 128×128). Prefer `fp8_block` for memory savings alone; prefer `mxfp8` for a native mxfp8 checkpoint or a Blackwell MX-GEMM.
+
+**Arch-split base GEMM (auto-selected by `_mx_backend`).** The forward runs the native hardware-MX path where it pays off and the portable path elsewhere; the backward is always the portable W8A16 kernel:
+
+| Arch | Forward | Why |
+|---|---|---|
+| **sm100** (B200/B300, datacenter Blackwell) | `torch._scaled_grouped_mm` (W8A8, e8m0 hardware scaling, single launch) | native grouped MX GEMM → genuine speed win. Self-checked once vs the per-tile loop at first use; a layout mismatch falls back safely. |
+| **sm120** (RTX PRO / consumer Blackwell) | `mxfp8_triton` (W8A16, fp8 weight × bf16 act) | no grouped MX primitive; a per-tile `_scaled_mm` loop is ~7× slower (launch overhead) and lower precision (W8A8), so Triton wins. |
+| **sm90 / older** | `mxfp8_triton` (W8A16) | no e8m0 MX tensor cores. |
+
+The **backward dX** uses the Triton W8A16 kernel on every arch: contract-N needs weight scales blocked along N, which the K-blocked mxfp8 weight doesn't carry, and the W8A16 read is grad-consistent with the forward. `set_mxfp8_backend('mma'|'triton')` forces a choice (tests can exercise the hardware path on sm120).
 
 ## Model Support
 

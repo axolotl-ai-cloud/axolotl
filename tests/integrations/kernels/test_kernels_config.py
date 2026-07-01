@@ -8,20 +8,42 @@ from axolotl.integrations.kernels.args import KernelsArgs
 
 def test_grouped_mode_nvfp4_accepted():
     a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "nvfp4"}
+    )
+    assert a.moe_grouped_mode == "nvfp4"
+
+
+def test_grouped_mode_fp8_block_accepted():
+    a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "fp8_block"}
+    )
+    assert a.moe_grouped_mode == "fp8_block"
+
+
+def test_grouped_mode_mxfp8_accepted():
+    a = KernelsArgs.model_validate(
+        {"use_scattermoe": True, "moe_grouped_mode": "mxfp8"}
+    )
+    assert a.moe_grouped_mode == "mxfp8"
+
+
+def test_grouped_mode_legacy_alias_canonicalized():
+    # dsv4_fp4_grouped_mode is a deprecated alias -> canonicalized onto moe_grouped_mode.
+    a = KernelsArgs.model_validate(
         {"use_scattermoe": True, "dsv4_fp4_grouped_mode": "nvfp4"}
     )
-    assert a.dsv4_fp4_grouped_mode == "nvfp4"
+    assert a.moe_grouped_mode == "nvfp4"
 
 
 def test_grouped_mode_fp8_rejected():
     # 'fp8' is documented historically but unimplemented for training -> reject, don't no-op.
     with pytest.raises(pydantic.ValidationError, match="not implemented"):
-        KernelsArgs.model_validate({"dsv4_fp4_grouped_mode": "fp8"})
+        KernelsArgs.model_validate({"moe_grouped_mode": "fp8"})
 
 
 def test_grouped_mode_unknown_rejected():
     with pytest.raises(pydantic.ValidationError):
-        KernelsArgs.model_validate({"dsv4_fp4_grouped_mode": "int4"})
+        KernelsArgs.model_validate({"moe_grouped_mode": "int4"})
 
 
 def test_lora_mlp_kernel_translated_for_dsv4():

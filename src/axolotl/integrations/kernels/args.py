@@ -135,10 +135,25 @@ class KernelsArgs(BaseModel):
     # dtype for the fused kernels, instead of preserving keep_in_fp32 in fp32.
     dsv4_bf16_all: bool | None = None
     # Grouped fp4 MoE experts path (variable-M contiguous-grouped, base-fp4 GEMM + LoRA): off by
-    # default (existing fused/chunked paths unchanged). "nvfp4" = fp4 act x fp4 weight (fastest,
-    # lossy acts); "fp8" = fp8 act x mxfp4 weight (accurate). Auto-dispatches the base GEMM:
-    # DeepGEMM (sm90/sm100) -> CUTLASS grouped (sm120) -> chunked-dequant fallback.
+    # default (existing fused/chunked paths unchanged). "nvfp4" = fp4 act x fp4 weight. Auto-
+    # Grouped MoE-expert precision/format for the fused grouped GEMM path (format-neutral name):
+    #   "nvfp4"     — 4-bit NVFP4 experts (requant fp8->nvfp4 for a block-fp8 ckpt, or a native
+    #                 NVFP4-modelopt ckpt). Base GEMM: Marlin (sm120) / CUTLASS / DeepGEMM (sm90/100).
+    #   "fp8_block" — keep the checkpoint's native 128x128 block-fp8 experts (NO requant, ~17x better
+    #                 fidelity). Base GEMM: blockfp8_triton (any CUDA incl sm120) / DeepGEMM fp8xfp8.
+    #   "mxfp8"     — OCP-MX fp8 experts (e4m3 + e8m0 per-32-block scale; requant bf16/fp8->mxfp8 at
+    #                 load). Same 1 byte/elem as fp8_block but hardware-MX-native, finer scale. Base
+    #                 GEMM: mxfp8_triton (W8A16, any CUDA incl sm120).
+    # Model-agnostic (DSV4, GLM, Gemma4, Mistral-Large-4, ...).
+    moe_grouped_mode: str | None = None
+    # Deprecated alias for moe_grouped_mode (pre-dates the rename; canonicalized in
+    # check_moe_grouped_mode). The 'fp4' name is a misnomer now that 'fp8_block' is a valid mode.
     dsv4_fp4_grouped_mode: str | None = None
+    # Grouped-expert requant (mxfp8 / nvfp4): rank0-only for FSDP2 cpu_ram_efficient_loading. None
+    # (auto) = engage iff fsdp_config.cpu_ram_efficient_loading (non-rank-0 experts on meta -> emit
+    # meta placeholders, FSDP2 broadcasts rank-0's). Forced off under Expert Parallelism (each rank
+    # owns a different expert slice). True/False force it.
+    moe_rank0_requant: bool | None = None
     # Gemma-4 frankenstein: fp8-quantize non-expert linears in-place after loading (per-channel
     # e4m3, dequant-in-forward).  Experts remain NVFP4Tensor.  ~2 GB resident savings.
     gemma4_fp8_nonexpert: bool | None = None
@@ -271,21 +286,30 @@ class KernelsArgs(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def check_dsv4_fp4_grouped_mode(cls, data):
-        mode = data.get("dsv4_fp4_grouped_mode")
+    def check_moe_grouped_mode(cls, data):
+        # Canonicalize the deprecated dsv4_fp4_grouped_mode -> moe_grouped_mode ('fp4' is a misnomer
+        # now that 'fp8_block' is a valid mode).
+        legacy = data.get("dsv4_fp4_grouped_mode")
+        if legacy is not None and data.get("moe_grouped_mode") is None:
+            data["moe_grouped_mode"] = legacy
+            LOG.warning(
+                "dsv4_fp4_grouped_mode is deprecated; use moe_grouped_mode (nvfp4 | fp8_block | mxfp8)."
+            )
+        mode = data.get("moe_grouped_mode")
         if mode is None:
             return data
         m = str(mode).lower()
         if m == "fp8":
-            # Documented historically but never implemented in the training path
-            # (grouped_fp4_available/_train_backend only support 'nvfp4'). Reject loudly rather
-            # than silently no-op.
+            # 'fp8' (per-token fp8-act x mxfp4-weight) was documented historically but never
+            # implemented; use 'fp8_block' for native block-fp8 (weight kept fp8, no requant).
             raise ValueError(
-                "dsv4_fp4_grouped_mode='fp8' is not implemented for training (only 'nvfp4' is "
-                "supported). Use 'nvfp4' or omit dsv4_fp4_grouped_mode."
+                "moe_grouped_mode='fp8' is not implemented. Use 'nvfp4' (requant fp8->nvfp4), "
+                "'fp8_block' (native 128x128 block-fp8, no requant), or 'mxfp8' (OCP-MX fp8)."
             )
-        if m != "nvfp4":
-            raise ValueError(f"dsv4_fp4_grouped_mode must be 'nvfp4', got {mode!r}")
+        if m not in ("nvfp4", "fp8_block", "mxfp8"):
+            raise ValueError(
+                f"moe_grouped_mode must be 'nvfp4', 'fp8_block', or 'mxfp8', got {mode!r}"
+            )
         return data
 
     @model_validator(mode="before")
@@ -402,10 +426,10 @@ class KernelsArgs(BaseModel):
                 f"moe_grouped_backend must be one of {sorted(valid)}, got {backend!r}"
             )
         # The override only takes effect once the grouped NVFP4 MoE path is enabled.
-        if not data.get("dsv4_fp4_grouped_mode"):
+        if not (data.get("moe_grouped_mode") or data.get("dsv4_fp4_grouped_mode")):
             LOG.warning(
                 "moe_grouped_backend=%r has no effect unless the grouped NVFP4 MoE path is enabled "
-                "(set dsv4_fp4_grouped_mode: nvfp4).",
+                "(set moe_grouped_mode: nvfp4).",
                 backend,
             )
         return data

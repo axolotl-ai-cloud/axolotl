@@ -62,6 +62,61 @@ def deepgemm_grouped_available() -> bool:
         return False
 
 
+def deepgemm_fp8fp8_available() -> bool:
+    """True iff DeepGEMM's blockwise fp8xfp8 grouped MoE kernel can run here.
+
+    Unlike the fp8xfp4 kernel (sm100-only), the standard fp8xfp8 blockwise grouped GEMM (the
+    DeepSeek-V3 MoE recipe) runs on BOTH sm90 (Hopper / H100,H200) and sm100 (Blackwell /
+    B200,B300) — the intended datacenter targets for the 1050B model. It reads the checkpoint's
+    128x128 block-fp8 weights DIRECTLY (no requant to fp4, no dequant), so it preserves fp8
+    fidelity."""
+    if not torch.cuda.is_available():
+        return False
+    major, _minor = torch.cuda.get_device_capability()
+    if major not in (9, 10):  # Hopper / Blackwell datacenter
+        return False
+    try:
+        dg = _dg()
+        return any(
+            getattr(dg, n, None) is not None
+            for n in (
+                "m_grouped_gemm_fp8_fp8_bf16_nt_contiguous",
+                "m_grouped_fp8_fp8_bf16_nt_contiguous",
+            )
+        )
+    except Exception:
+        return False
+
+
+def _dg_fp8fp8_fn(dg):
+    for n in (
+        "m_grouped_gemm_fp8_fp8_bf16_nt_contiguous",
+        "m_grouped_fp8_fp8_bf16_nt_contiguous",
+    ):
+        fn = getattr(dg, n, None)
+        if fn is not None:
+            return fn
+    raise RuntimeError("DeepGEMM fp8xfp8 grouped kernel not found")
+
+
+def deepgemm_grouped_fp8_fp8(
+    a_bf16: torch.Tensor, wq: torch.Tensor, ws: torch.Tensor, m_indices: torch.Tensor
+) -> torch.Tensor:
+    """Contiguous-grouped fp8(act) x block-fp8(weight) base GEMM via DeepGEMM (sm90/sm100).
+
+    Reads the native 128x128 block-fp8 weight with NO requant/dequant (the whole point vs the
+    fp8xfp4 path). ``a_bf16`` [Mt,K] bf16, ``wq`` [E,N,K] float8_e4m3fn, ``ws`` [E,N/128,K/128]
+    fp32 (the checkpoint's ``weight_scale_inv``), ``m_indices`` [Mt] int32 -> [Mt,N] bf16. The
+    activation is quantized per-token 1x128 to fp8 here."""
+    dg = _dg()
+    a, a_s = dg.utils.per_token_cast_to_fp8(a_bf16)
+    d = torch.empty(
+        a_bf16.size(0), wq.size(1), device=a_bf16.device, dtype=torch.bfloat16
+    )
+    _dg_fp8fp8_fn(dg)((a, a_s), (wq, ws), d, m_indices)
+    return d
+
+
 @triton.jit
 def _nvfp4_deq_kernel(
     Qp, Sc, Pt, Out, Kd, ROWS_PER_E, CB, sq0, sq1, ss0, ss1, so0, so1, BK: tl.constexpr

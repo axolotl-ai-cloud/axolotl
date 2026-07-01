@@ -56,7 +56,7 @@ def test_c1_cutlass_nonunit_weight_scale_2_without_alt_backend_raises(monkeypatc
 
 
 def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
-    # A4: NVFP4 experts + LoRA select the grouped path (dsv4_fp4_grouped_mode set), but no fused
+    # A4: NVFP4 experts + LoRA select the grouped path (moe_grouped_mode set), but no fused
     # grouped backend resolves -> must hard-error instead of falling through to the SIGSEGV MX kernel.
     from axolotl.integrations.kernels.libs.scattermoe_lora import (
         experts as ex,
@@ -78,7 +78,7 @@ def test_a4_nvfp4_lora_grouped_unavailable_raises(monkeypatch):
 
 
 def test_b2_nvfp4_lora_without_grouped_mode_raises_on_blackwell(monkeypatch):
-    # B2: NVFP4 experts + LoRA WITHOUT dsv4_fp4_grouped_mode would fall through to the legacy MX
+    # B2: NVFP4 experts + LoRA WITHOUT moe_grouped_mode would fall through to the legacy MX
     # kernel, which SIGSEGVs on Blackwell. On sm100/sm120 it must hard-error with guidance instead.
     from axolotl.integrations.kernels.libs.scattermoe_lora import experts as ex
 

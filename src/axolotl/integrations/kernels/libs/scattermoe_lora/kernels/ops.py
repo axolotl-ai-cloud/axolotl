@@ -62,6 +62,18 @@ def _compute_expert_block(
 
 
 def _scatter2scatter_configs():
+    # SINGLE config on purpose: runtime @triton.autotune benchmarks each new (M, N, K) on its first
+    # hit; in distributed training, layers/ranks see different seq-lens and routed-expert counts, so
+    # they'd benchmark at *different* steps -> per-rank timing skew -> the next collective
+    # (NCCL/DeepEP) desyncs/times out, and a resync barrier per layer is too slow. One config = no
+    # benchmarking = deterministic.
+    #
+    # TODO(perf, shape-adaptive tiles): reintroduce shape-adaptivity WITHOUT runtime benchmarking.
+    # Offline-measured, BLOCK_K=64 is ~1.5x faster than 32 on BOTH small square (K=3072) and large
+    # thin (gate_up K=7168 / down K=2048) experts. Do it deterministically — a (N, K, SMEM-cap) rule
+    # that passes explicit BLOCK_N/BLOCK_K/num_warps/num_stages to the launch (no @triton.autotune),
+    # or adopt kernels-community#973's on-disk-cached Bayesian autotuner with a pre-warm so all ranks
+    # read the same cached config. Kept single-config for now to preserve the no-desync guarantee.
     return [
         triton.Config({"BLOCK_N": 128, "BLOCK_K": 32}, num_stages=4, num_warps=4),
     ]
@@ -259,43 +271,47 @@ def scatter2scatter_compileable(
     else:
         stride_rm, stride_rn = residual.stride()
 
-    _scatter2scatter[grid](
-        # X_ptr, stride_xm, stride_xk,
-        X,
-        X.stride(0),
-        X.stride(1),
-        # W_ptr, stride_we, stride_wk, stride_wn,
-        W,
-        W.stride(0),
-        W.stride(1),
-        W.stride(2),
-        # Y_ptr, stride_ym, stride_yn,
-        output,
-        output.stride(0),
-        output.stride(1),
-        # B_ptr, stride_be, stride_bn
-        b,
-        stride_be,
-        stride_bn,
-        # R_ptr, stride_rm, stride_rn (per-row residual added in epilogue)
-        residual,
-        stride_rm,
-        stride_rn,
-        grouped_idx_ptr=sorted_scattered_idxs,
-        expert_idxs_ptr=sorted_expert_idxs,
-        # block_start_idx_ptr=padded_block_idxs,
-        FAN_OUT=k,
-        M=X.size(0),
-        K=X.size(1),
-        N=output.size(1),
-        E=W.size(0),
-        BLOCK_M=BLOCK_M,
-        ACC_TYPE=tl.float32,
-        allow_tf32=ALLOW_TF32,
-        x_grouped=x_grouped,
-        y_grouped=y_grouped,
-        INT64_INDICES=int64_indices,
-    )
+    # Run under the input's device context so Triton's autotuner benchmarks (do_bench allocates a
+    # cache-flush buffer) land on the right device under single-process multi-GPU (device_map naive
+    # MP), where a layer may live on a non-default device. FSDP2 (one process per GPU) is unaffected.
+    with torch.cuda.device(X.device):
+        _scatter2scatter[grid](
+            # X_ptr, stride_xm, stride_xk,
+            X,
+            X.stride(0),
+            X.stride(1),
+            # W_ptr, stride_we, stride_wk, stride_wn,
+            W,
+            W.stride(0),
+            W.stride(1),
+            W.stride(2),
+            # Y_ptr, stride_ym, stride_yn,
+            output,
+            output.stride(0),
+            output.stride(1),
+            # B_ptr, stride_be, stride_bn
+            b,
+            stride_be,
+            stride_bn,
+            # R_ptr, stride_rm, stride_rn (per-row residual added in epilogue)
+            residual,
+            stride_rm,
+            stride_rn,
+            grouped_idx_ptr=sorted_scattered_idxs,
+            expert_idxs_ptr=sorted_expert_idxs,
+            # block_start_idx_ptr=padded_block_idxs,
+            FAN_OUT=k,
+            M=X.size(0),
+            K=X.size(1),
+            N=output.size(1),
+            E=W.size(0),
+            BLOCK_M=BLOCK_M,
+            ACC_TYPE=tl.float32,
+            allow_tf32=ALLOW_TF32,
+            x_grouped=x_grouped,
+            y_grouped=y_grouped,
+            INT64_INDICES=int64_indices,
+        )
 
 
 def _config_XtY():

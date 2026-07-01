@@ -43,6 +43,38 @@ lora_target_parameters:
 `lora_dropout` must be `0` when using `lora_target_parameters`.
 :::
 
+## ScatterMoE grouped-mode quantization (nvfp4 / fp8_block / mxfp8)
+
+`quantize_moe_experts` (above) uses bitsandbytes NF4/int8. When you run the **Kernels plugin** with
+`use_scattermoe: true`, the experts additionally have a fused grouped-GEMM path whose precision is
+selected by `moe_grouped_mode`:
+
+```yaml
+plugins: [axolotl.integrations.kernels.KernelsPlugin]
+use_kernels: true
+use_scattermoe: true
+moe_grouped_mode: fp8_block    # nvfp4 | fp8_block | mxfp8   (omit -> bf16 experts)
+lora_target_parameters: [experts.gate_up_proj, experts.down_proj]
+```
+
+- **`nvfp4`** — 4-bit NVFP4 experts (a block-fp8 checkpoint is requantized fp8→nvfp4 at load; a
+  native NVFP4-modelopt checkpoint loads as-is). Backend: Marlin / CUTLASS / DeepGEMM, overridable
+  via `moe_grouped_backend: auto|marlin|cutlass|deepgemm`.
+- **`fp8_block`** — keeps the checkpoint's native 128×128 block-fp8 experts (no requant, higher
+  fidelity). Runs everywhere (Triton `blockfp8_triton`) and uses DeepGEMM fp8×fp8 on sm90/sm100.
+- **`mxfp8`** — OCP-MX fp8 experts (e4m3 data + e8m0 scale every 32 elements; bf16/block-fp8 is
+  requantized to mxfp8 at load). Same 1 byte/elem as `fp8_block` — *no VRAM win over it* — but the
+  layout is the native Blackwell MX tensor-core format with a finer 32-wide scale. The forward base
+  GEMM is arch-split: **sm100** (datacenter Blackwell) uses the hardware-MX `torch._scaled_grouped_mm`
+  (W8A8, e8m0 scaling in hardware); **sm120 / sm90** use the portable W8A16 Triton kernel
+  (`mxfp8_triton`, fp8 weight × bf16 act) — on sm120 the per-tile hardware path is ~7× slower
+  (launch overhead), so Triton is the default there. The backward is always the Triton W8A16 kernel.
+  Choose `fp8_block` for memory savings alone; choose `mxfp8` for a native mxfp8 checkpoint or the
+  Blackwell hardware MX-GEMM.
+
+See [Kernels Integration](custom_integrations.qmd#kernels-integration) for the full expert-kernel
+config surface (including `nonexpert_quantization` for the attention/MLP linears).
+
 ## Requirements
 
 - Requires (`adapter: lora` and `load_in_8bit: true`) or (`adapter: qlora` and `load_in_4bit: true`)

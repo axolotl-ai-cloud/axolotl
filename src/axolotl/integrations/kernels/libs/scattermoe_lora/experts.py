@@ -662,13 +662,33 @@ from .runtime import RUNTIME  # noqa: E402
 
 
 def set_fp4_grouped_mode(mode):
-    RUNTIME.fp4_grouped_mode = mode
+    RUNTIME.grouped_mode = mode
 
 
 def set_fp4_dx_prefer_fp8(flag):
     RUNTIME.fp4_dx_prefer_fp8 = bool(flag)
 
 
+def _on_input_device(fn):
+    """Run the experts forward under the input's CUDA device context.
+
+    Under single-process multi-GPU (device_map naive model-parallel) a MoE layer may live on a
+    non-default device; the autotuned Triton kernels' ``do_bench`` benchmarking (and any implicit
+    default-device allocation) would then land on the wrong device -> illegal memory access. FSDP2
+    (one process per GPU, each on cuda:0) never hits this, so the guard is a no-op there."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(self, hidden_states, *args, **kwargs):
+        if hidden_states.is_cuda:
+            with torch.cuda.device(hidden_states.device):
+                return fn(self, hidden_states, *args, **kwargs)
+        return fn(self, hidden_states, *args, **kwargs)
+
+    return wrapper
+
+
+@_on_input_device
 def scattermoe_experts_forward(
     self,
     hidden_states: torch.Tensor,
@@ -704,9 +724,84 @@ def scattermoe_experts_forward(
     elif _has_peft_wrapper(self):
         _, gup_lora, down_lora = _unwrap_experts_lora(self)
 
+    _fp4_grouped_mode = RUNTIME.grouped_mode
+
+    # Native mxfp8 grouped path (moe_grouped_mode='mxfp8'): experts are OCP-MX fp8 (e4m3 param +
+    # e8m0 *_mx_scale buffer, from the load-time requant). Base GEMM reads fp8 in-register and
+    # applies the 32-wide e8m0 scale (W8A16); hardware-MX-native, portable Triton incl. sm120.
+    if _fp4_grouped_mode == "mxfp8" and gup_lora is not None and down_lora is not None:
+        gu_base = _get_base_param(self.gate_up_proj)
+        gu_scale = getattr(self, "gate_up_proj_mx_scale", None)
+        dn_scale = getattr(self, "down_proj_mx_scale", None)
+        if (
+            isinstance(gu_base, torch.Tensor)
+            and gu_base.dtype == torch.float8_e4m3fn
+            and gu_base.ndim == 3
+            and gu_scale is not None
+            and dn_scale is not None
+        ):
+            from .mxfp8_grouped import grouped_mxfp8_moe_train
+
+            _recipe = lambda: (  # noqa: E731
+                (_get_base_param(self.gate_up_proj), self.gate_up_proj_mx_scale),
+                (_get_base_param(self.down_proj), self.down_proj_mx_scale),
+            )
+            return grouped_mxfp8_moe_train(
+                hidden_states,
+                top_k_index,
+                routing_weights,
+                gu_base,
+                gu_scale,
+                _get_base_param(self.down_proj),
+                dn_scale,
+                gup_lora,
+                down_lora,
+                getattr(self, "limit", None),
+                act_type=_detect_act_type(self),
+                weight_recipe=_recipe,
+            )
+
+    # Native block-fp8 grouped path (moe_grouped_mode='fp8_block'): keep the checkpoint's 128x128
+    # block-fp8 experts (NO requant to nvfp4 -> ~17x better fidelity), base GEMM via DeepGEMM fp8xfp8
+    # (sm90 H200 / sm100 B200,B300) or a bf16-dequant fallback. Requires block-fp8 experts + LoRA.
+    if (
+        _fp4_grouped_mode == "fp8_block"
+        and gup_lora is not None
+        and down_lora is not None
+    ):
+        gu_base = _get_base_param(self.gate_up_proj)
+        gu_scale = getattr(self, "gate_up_proj_scale_inv", None)
+        dn_scale = getattr(self, "down_proj_scale_inv", None)
+        if (
+            isinstance(gu_base, torch.Tensor)
+            and gu_base.dtype == torch.float8_e4m3fn
+            and gu_base.ndim == 3
+            and gu_scale is not None
+            and dn_scale is not None
+        ):
+            from .fp8_grouped import grouped_fp8_moe_train
+
+            _recipe = lambda: (  # noqa: E731
+                (_get_base_param(self.gate_up_proj), self.gate_up_proj_scale_inv),
+                (_get_base_param(self.down_proj), self.down_proj_scale_inv),
+            )
+            return grouped_fp8_moe_train(
+                hidden_states,
+                top_k_index,
+                routing_weights,
+                gu_base,
+                gu_scale,
+                _get_base_param(self.down_proj),
+                dn_scale,
+                gup_lora,
+                down_lora,
+                getattr(self, "limit", None),
+                act_type=_detect_act_type(self),
+                weight_recipe=_recipe,
+            )
+
     # Config-gated grouped fp4 path (NVFP4 experts + LoRA + available fp4 backend); faster +
     # lower-memory than the fused-Triton path at scale.
-    _fp4_grouped_mode = RUNTIME.fp4_grouped_mode
     if _fp4_grouped_mode is not None and gup_lora is not None and down_lora is not None:
         gu_base = _get_base_param(getattr(self, w1_attr))
         dn_base = _get_base_param(self.down_proj)
@@ -722,12 +817,12 @@ def scattermoe_experts_forward(
                     else "cpu"
                 )
                 raise RuntimeError(
-                    f"dsv4_fp4_grouped_mode={_fp4_grouped_mode!r} with LoRA selected the grouped "
+                    f"moe_grouped_mode={_fp4_grouped_mode!r} with LoRA selected the grouped "
                     f"NVFP4 MoE path, but no fused grouped backend resolved on this arch ({_cap}): "
                     "marlin, cutlass, and deepgemm are all unavailable. The legacy fused-MX kernel "
                     "(scatter2scatter_lora_mx) is unsafe on this arch (SIGSEGV on Blackwell), so it "
                     "is not used as a fallback. Run on a supported GPU (sm80+/sm90/sm100/sm120) or "
-                    "disable dsv4_fp4_grouped_mode."
+                    "disable moe_grouped_mode."
                 )
             # FSDP-safe: backward re-reads the (re-gathered) params via this recipe
             _recipe = lambda p=w1_attr: (  # noqa: E731
@@ -755,7 +850,7 @@ def scattermoe_experts_forward(
 
     _refuse_block_quantized_experts(self)
 
-    # NVFP4 experts + LoRA without dsv4_fp4_grouped_mode set would fall through to
+    # NVFP4 experts + LoRA without moe_grouped_mode set would fall through to
     # _prepare_weights_and_lora -> selective_nvfp4_weights_fwd -> scatter2scatter_lora_mx, which
     # SIGSEGVs on Blackwell. Turn that silent crash into an actionable error (the grouped path is the
     # supported route for NVFP4+LoRA); non-Blackwell archs keep the legacy path.
@@ -766,7 +861,7 @@ def scattermoe_experts_forward(
             raise RuntimeError(
                 "NVFP4 experts with LoRA require the grouped fp4 MoE path on Blackwell (sm100/sm120): "
                 "the legacy fused-MX kernel (scatter2scatter_lora_mx) SIGSEGVs on this arch. Set "
-                "dsv4_fp4_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
+                "moe_grouped_mode: nvfp4 in your config to enable the supported grouped GEMM path."
             )
         _warn_legacy_mx_kernel(self)
 
@@ -1040,7 +1135,7 @@ def scattermoe_experts_forward_ep(
             limit=getattr(self, "limit", None),
         )
 
-    _fp4_grouped_mode_g = RUNTIME.fp4_grouped_mode
+    _fp4_grouped_mode_g = RUNTIME.grouped_mode
     if (
         _fp4_grouped_mode_g is not None
         and _gup_lora_g is not None
@@ -1048,6 +1143,62 @@ def scattermoe_experts_forward_ep(
     ):
         _gu_base_g = _get_base_param(getattr(self, _w1_attr))
         _dn_base_g = _get_base_param(self.down_proj)
+        _is_fp8_3d_g = (
+            isinstance(_gu_base_g, torch.Tensor)
+            and _gu_base_g.dtype == torch.float8_e4m3fn
+            and _gu_base_g.ndim == 3
+        )
+        # mxfp8 experts (e4m3 param + e8m0 *_mx_scale buffer): same grouped path as the non-EP
+        # forward. Single-config kernels (no Triton autotune) -> no per-rank timing skew for DeepEP.
+        if _fp4_grouped_mode_g == "mxfp8" and _is_fp8_3d_g:
+            _gs = getattr(self, "gate_up_proj_mx_scale", None)
+            _ds = getattr(self, "down_proj_mx_scale", None)
+            if _gs is not None and _ds is not None:
+                from .mxfp8_grouped import grouped_mxfp8_moe_train
+
+                _recipe_g = lambda: (  # noqa: E731
+                    (_get_base_param(self.gate_up_proj), self.gate_up_proj_mx_scale),
+                    (_get_base_param(self.down_proj), self.down_proj_mx_scale),
+                )
+                return grouped_mxfp8_moe_train(
+                    hidden_states,
+                    top_k_index,
+                    top_k_weights.to(hidden_states.dtype),
+                    _gu_base_g,
+                    _gs,
+                    _get_base_param(self.down_proj),
+                    _ds,
+                    _gup_lora_g,
+                    _down_lora_g,
+                    getattr(self, "limit", None),
+                    act_type=_detect_act_type(self),
+                    weight_recipe=_recipe_g,
+                )
+        # Native block-fp8 experts (e4m3 param + *_scale_inv fp32 128x128 block scale).
+        if _fp4_grouped_mode_g == "fp8_block" and _is_fp8_3d_g:
+            _gs = getattr(self, "gate_up_proj_scale_inv", None)
+            _ds = getattr(self, "down_proj_scale_inv", None)
+            if _gs is not None and _ds is not None:
+                from .fp8_grouped import grouped_fp8_moe_train
+
+                _recipe_g = lambda: (  # noqa: E731
+                    (_get_base_param(self.gate_up_proj), self.gate_up_proj_scale_inv),
+                    (_get_base_param(self.down_proj), self.down_proj_scale_inv),
+                )
+                return grouped_fp8_moe_train(
+                    hidden_states,
+                    top_k_index,
+                    top_k_weights.to(hidden_states.dtype),
+                    _gu_base_g,
+                    _gs,
+                    _get_base_param(self.down_proj),
+                    _ds,
+                    _gup_lora_g,
+                    _down_lora_g,
+                    getattr(self, "limit", None),
+                    act_type=_detect_act_type(self),
+                    weight_recipe=_recipe_g,
+                )
         if is_nvfp4_param(_gu_base_g):
             from .grouped_train import grouped_fp4_available
 
@@ -1205,8 +1356,9 @@ def _refuse_block_quantized_experts(module) -> None:
             f"use_scattermoe has no kernel for {type(module).__name__} with block-quantized "
             f"{dtype} expert weights: they carry *_scale_inv block scales the scattermoe "
             "kernels don't apply. Without expert LoRA they run on transformers' FP8 experts "
-            "forward; drop the expert LoRA (lora_target_parameters), use an NVFP4-expert or "
-            "unquantized checkpoint, or drop use_scattermoe."
+            "forward; drop the expert LoRA (lora_target_parameters), set moe_grouped_mode: "
+            "fp8_block for block-FP8 experts, use an NVFP4-expert or unquantized checkpoint, or "
+            "drop use_scattermoe."
         )
 
 

@@ -317,10 +317,10 @@ class KernelsPlugin(BasePlugin):
             # Apply ALL ScatterMoE runtime settings from this run's config through one entry point
             # (it resets first, so a long-lived multi-run process can't inherit stale state).
             configure_scattermoe_runtime(cfg)
-            if cfg.get("dsv4_fp4_grouped_mode"):
+            if cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"):
                 LOG.info(
-                    "Enabled grouped fp4 MoE path: dsv4_fp4_grouped_mode=%s",
-                    cfg.get("dsv4_fp4_grouped_mode"),
+                    "Enabled grouped fp4 MoE path: moe_grouped_mode=%s",
+                    cfg.get("moe_grouped_mode") or cfg.get("dsv4_fp4_grouped_mode"),
                 )
                 if cfg.get("moe_grouped_backend"):
                     LOG.info(
@@ -391,6 +391,11 @@ class KernelsPlugin(BasePlugin):
         )
 
     def pre_lora_load(self, cfg, model):
+        # Model-agnostic grouped-expert requant (mxfp8 / nvfp4) BEFORE per-adapter hooks — so it
+        # applies to every model, and any adapter's non-expert fp8 patch sees only non-expert linears.
+        from axolotl.integrations.kernels.adapters import requant_grouped_experts
+
+        requant_grouped_experts(cfg, model)
         for adapter in self._adapters(cfg):
             adapter.pre_lora_load(cfg, model)
 
