@@ -19,10 +19,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.11.0
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:
@@ -67,10 +72,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - cuda: 128
-            cuda_version: 12.8.1
-            python_version: "3.11"
-            pytorch: 2.9.1
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.11.0
+            axolotl_extras:
+          - cuda: 130
+            cuda_version: 13.0.0
+            python_version: "3.12"
+            pytorch: 2.12.0
             axolotl_extras:
     runs-on: axolotl-gpu-runner
     steps:

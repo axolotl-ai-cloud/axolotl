@@ -1129,13 +1129,11 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
-            )
+            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
         return self
 
     @model_validator(mode="after")
@@ -1144,13 +1142,13 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
                 raise ValueError(
-                    f"FSDP2 not compatible with {self.optimizer.value}, use `adamw_torch_8bit` instead"
+                    f"FSDP2 not compatible with {self.optimizer}, use `adamw_torch_8bit` instead"
                 )
 
         return self
