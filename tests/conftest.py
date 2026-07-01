@@ -12,16 +12,8 @@ import time
 from pathlib import Path
 from typing import Generator
 
-import datasets
 import pytest
 import requests
-import torch
-import transformers.utils as _transformers_utils
-import transformers.utils.import_utils as _import_utils
-from huggingface_hub import snapshot_download
-from huggingface_hub.errors import LocalEntryNotFoundError
-from tokenizers import AddedToken
-from transformers import AutoTokenizer
 
 from axolotl.utils.dict import DictDefault
 
@@ -32,25 +24,36 @@ from tests.hf_offline_utils import (
 
 logging.getLogger("filelock").setLevel(logging.CRITICAL)
 
-# Shim for deepseek v3
-if not hasattr(_import_utils, "is_torch_fx_available"):
 
-    def _is_torch_fx_available():
-        try:
-            import torch.fx  # noqa: F401  # pylint: disable=unused-import
+def _apply_transformers_test_shims():
+    import transformers.utils as _transformers_utils
+    import transformers.utils.import_utils as _import_utils
 
-            return True
-        except ImportError:
-            return False
+    # Shim for deepseek v3
+    if not hasattr(_import_utils, "is_torch_fx_available"):
 
-    _import_utils.is_torch_fx_available = _is_torch_fx_available
+        def _is_torch_fx_available():
+            try:
+                import torch.fx  # noqa: F401  # pylint: disable=unused-import
 
-if not hasattr(_transformers_utils, "is_flash_attn_greater_or_equal_2_10"):
-    from transformers.utils import is_flash_attn_greater_or_equal as _is_flash_attn_gte
+                return True
+            except ImportError:
+                return False
 
-    _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: (
-        _is_flash_attn_gte("2.10")
-    )
+        _import_utils.is_torch_fx_available = _is_torch_fx_available
+
+    if not hasattr(_transformers_utils, "is_flash_attn_greater_or_equal_2_10"):
+        from transformers.utils import (
+            is_flash_attn_greater_or_equal as _is_flash_attn_gte,
+        )
+
+        _transformers_utils.is_flash_attn_greater_or_equal_2_10 = lambda: (
+            _is_flash_attn_gte("2.10")
+        )
+
+
+def pytest_configure(config):  # pylint: disable=unused-argument
+    _apply_transformers_test_shims()
 
 
 # A device-side assert / illegal access poisons the process-wide CUDA context, so
@@ -112,6 +115,9 @@ def snapshot_download_w_retry(*args, **kwargs):
     cache first using hf_hub_offline to avoid hitting HF Hub API rate limits. If it doesn't exist in the cache,
     disable hf_hub_offline and actually fetch from the hub
     """
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
     with hf_offline_context(True):
         try:
             return snapshot_download(*args, local_files_only=True, **kwargs)
@@ -471,6 +477,8 @@ def download_llama32_1b_model_fixture():
 def tokenizer_huggyllama(
     download_huggyllama_model_fixture,
 ):
+    from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained("huggyllama/llama-7b")
     tokenizer.pad_token = "</s>"
 
@@ -498,6 +506,8 @@ def tokenizer_huggyllama_w_special_tokens(
 def tokenizer_llama2_7b(
     download_llama2_model_fixture,
 ):
+    from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
 
     return tokenizer
@@ -508,11 +518,15 @@ def tokenizer_llama2_7b(
 def tokenizer_mistral_7b_instruct(
     download_mlx_mistral_7b_model_fixture,
 ):
+    from transformers import AutoTokenizer
+
     return AutoTokenizer.from_pretrained("casperhansen/mistral-7b-instruct-v0.1-awq")
 
 
 @pytest.fixture
 def tokenizer_mistral_7b_instruct_chatml(tokenizer_mistral_7b_instruct):
+    from tokenizers import AddedToken
+
     tokenizer_mistral_7b_instruct.add_special_tokens(
         {
             "eos_token": AddedToken(
@@ -537,11 +551,9 @@ def temp_dir() -> Generator[str, None, None]:
     shutil.rmtree(_temp_dir)
 
 
-@pytest.fixture(scope="function", autouse=True)
-def reset_plugin_manager():
+def _clear_plugin_manager():
     from axolotl.integrations.base import PluginManager
 
-    yield
     PluginManager._cfg = None
     # Don't reset _instance to None — module-level PLUGIN_MANAGER references
     # in train.py, model.py, etc. would become stale
@@ -550,114 +562,160 @@ def reset_plugin_manager():
 
 
 @pytest.fixture(scope="function", autouse=True)
+def reset_plugin_manager():
+    _clear_plugin_manager()
+    yield
+    _clear_plugin_manager()
+
+
+@pytest.fixture(scope="function", autouse=True)
 def torch_manual_seed():
+    import torch
+
     torch.manual_seed(42)
+
+
+_TRANSFORMERS_MODULES_TO_RESET = (
+    "transformers.models.llama",
+    "transformers.models.llama.modeling_llama",
+    "transformers.trainer",
+    "transformers",
+    "transformers.loss.loss_utils",
+)
+
+_TRANSFORMERS_PATCH_TARGETS = (
+    ("transformers.models.llama.modeling_llama", ("LlamaAttention", "forward")),
+    ("transformers.models.llama.modeling_llama", ("LlamaForCausalLM", "forward")),
+    ("transformers.trainer", ("Trainer", "_inner_training_loop")),
+    ("transformers.trainer", ("Trainer", "training_step")),
+    ("transformers", ("Trainer",)),
+    # explicit targets so patches are reverted even when loss_utils was already imported
+    ("transformers.loss.loss_utils", ("fixed_cross_entropy",)),
+    ("transformers.loss.loss_utils", ("ForCausalLMLoss",)),
+)
+
+
+def _get_nested_attr(obj, attr_path):
+    for attr in attr_path:
+        obj = getattr(obj, attr, None)
+        if obj is None:
+            return None
+    return obj
+
+
+def _set_nested_attr(obj, attr_path, value):
+    for attr in attr_path[:-1]:
+        obj = getattr(obj, attr)
+    setattr(obj, attr_path[-1], value)
 
 
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_monkeypatches():
-    from transformers import Trainer
-    from transformers.models.llama.modeling_llama import (  # LlamaFlashAttention2,
-        LlamaAttention,
-        LlamaForCausalLM,
+    seen_modules = {
+        module_name
+        for module_name in _TRANSFORMERS_MODULES_TO_RESET
+        if module_name in sys.modules
+    }
+    snapshots = {}
+    for module_name, attr_path in _TRANSFORMERS_PATCH_TARGETS:
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        value = _get_nested_attr(module, attr_path)
+        if value is not None:
+            snapshots[(module_name, attr_path)] = value
+
+    yield
+
+    modules_to_reload = set()
+    for (module_name, attr_path), original_value in snapshots.items():
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        current_value = _get_nested_attr(module, attr_path)
+        if current_value is not original_value:
+            _set_nested_attr(module, attr_path, original_value)
+            modules_to_reload.add(module_name)
+
+    modules_to_reload.update(
+        module_name
+        for module_name in _TRANSFORMERS_MODULES_TO_RESET
+        if module_name not in seen_modules and module_name in sys.modules
     )
 
-    # original_fa2_forward = LlamaFlashAttention2.forward
-    original_llama_attn_forward = LlamaAttention.forward
-    original_llama_forward = LlamaForCausalLM.forward
-    original_trainer_inner_training_loop = Trainer._inner_training_loop
-    original_trainer_training_step = Trainer.training_step
-    # monkey patches can happen inside the tests
-    yield
-    # Reset LlamaFlashAttention2 forward
-    # LlamaFlashAttention2.forward = original_fa2_forward
-    LlamaAttention.forward = original_llama_attn_forward
-    LlamaForCausalLM.forward = original_llama_forward
-    Trainer._inner_training_loop = original_trainer_inner_training_loop
-    Trainer.training_step = original_trainer_training_step
-
-    # Reset other known monkeypatches
-    modules_to_reset: list[tuple[str, list[str]]] = [
-        ("transformers.models.llama",),
-        (
-            "transformers.models.llama.modeling_llama",
-            [
-                # "LlamaFlashAttention2",
-                "LlamaAttention",
-            ],
-        ),
-        ("transformers.trainer",),
-        ("transformers", ["Trainer"]),
-        ("transformers.loss.loss_utils",),
-    ]
-    for module_name_tuple in modules_to_reset:
-        module_name = module_name_tuple[0]
-
-        spec = importlib.util.spec_from_file_location(
-            module_name, sys.modules[module_name].__file__
-        )
-        sys.modules[module_name] = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(sys.modules[module_name])
-
-        sys.modules[module_name] = importlib.reload(sys.modules[module_name])
-        if len(module_name_tuple) > 1:
-            module_globals = module_name_tuple[1]
-            for module_global in module_globals:
-                globals().pop(module_global, None)
+    for module_name in _TRANSFORMERS_MODULES_TO_RESET:
+        if module_name not in modules_to_reload:
+            continue
+        module = sys.modules.get(module_name)
+        if module is None or not getattr(module, "__file__", None):
+            continue
+        sys.modules[module_name] = importlib.reload(module)
 
 
 @pytest.fixture
 def dataset_winglian_tiny_shakespeare(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = download_ds_fixture_bundle / "winglian__tiny-shakespeare"
-    return datasets.load_from_disk(ds_path)
+    return load_from_disk(ds_path)
 
 
 @pytest.fixture
 def dataset_tatsu_lab_alpaca(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = download_ds_fixture_bundle / "tatsu-lab__alpaca"
-    return datasets.load_from_disk(ds_path)["train"]
+    return load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
 def dataset_mhenrichsen_alpaca_2k_test(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = download_ds_fixture_bundle / "mhenrichsen__alpaca_2k_test"
-    return datasets.load_from_disk(ds_path)["train"]
+    return load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
 def dataset_argilla_ultrafeedback_binarized_preferences_cleaned(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = (
         download_ds_fixture_bundle
         / "argilla__ultrafeedback-binarized-preferences-cleaned"
     )
-    return datasets.load_from_disk(ds_path)["train"]
+    return load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
 def dataset_fozziethebeat_alpaca_messages_2k_dpo_test(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = download_ds_fixture_bundle / "fozziethebeat__alpaca_messages_2k_dpo_test"
-    return datasets.load_from_disk(ds_path)["train"]
+    return load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture
 def dataset_fozziethebeat_alpaca_messages_2k_dpo_test_rev_ea82cff(
     download_ds_fixture_bundle: Path,
 ):
+    from datasets import load_from_disk
+
     ds_path = (
         download_ds_fixture_bundle
         / "fozziethebeat__alpaca_messages_2k_dpo_test__rev_ea82cff"
     )
-    return datasets.load_from_disk(ds_path)["train"]
+    return load_from_disk(ds_path)["train"]
 
 
 @pytest.fixture(name="min_base_cfg")

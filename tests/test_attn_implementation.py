@@ -3,7 +3,10 @@ capability flags, backend registration, and downstream validators.
 """
 
 import logging
+import subprocess
+import sys
 from contextlib import contextmanager
+from functools import lru_cache
 
 import pytest
 
@@ -37,12 +40,26 @@ def _capture_axolotl_warnings(caplog):
         ax_logger.propagate = old_propagate
 
 
+@lru_cache(maxsize=1)
 def _xformers_available():
     try:
-        import xformers.ops  # noqa: F401
-
-        return True
-    except (ImportError, OSError):
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import warnings; "
+                    "warnings.filterwarnings('ignore', category=DeprecationWarning); "
+                    "import xformers.ops"
+                ),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:  # pylint: disable=broad-except
         return False
 
 

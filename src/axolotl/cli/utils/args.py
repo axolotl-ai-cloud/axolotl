@@ -8,6 +8,8 @@ from typing import Any, Callable, Type, Union, get_args, get_origin
 import click
 from pydantic import BaseModel
 
+ConfigOption = tuple[tuple[str, ...], str | None, str | None, str | None]
+
 
 def _strip_optional_type(field_type: type | str | None):
     """
@@ -180,6 +182,37 @@ def add_options_from_config(config_class: Type[BaseModel]) -> Callable:
                 function = click.option(
                     option_name, default=None, help=field.description
                 )(function)
+
+        return function
+
+    return decorator
+
+
+def add_options_from_config_options(options: tuple[ConfigOption, ...]) -> Callable:
+    """
+    Create Click options from precomputed config option metadata.
+
+    This mirrors :func:`add_options_from_config` without importing the full Pydantic
+    config schema at CLI startup.
+    """
+
+    click_types = {"str": str, "int": int, "float": float}
+
+    def decorator(function: Callable) -> Callable:
+        for param_decls, param_name, click_type_name, description in reversed(options):
+            option_args: tuple[str, ...]
+            if param_name:
+                option_args = (*param_decls, param_name)
+            else:
+                option_args = param_decls
+            click_type = click_types[click_type_name] if click_type_name else None
+
+            function = click.option(
+                *option_args,
+                default=None,
+                type=click_type,
+                help=description,
+            )(function)
 
         return function
 

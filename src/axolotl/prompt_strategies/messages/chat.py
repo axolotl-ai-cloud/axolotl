@@ -81,7 +81,7 @@ def load(tokenizer, cfg, ds_cfg: Optional[Dict[str, Any]] = None):
     if chat_template.startswith("llama3"):
         from axolotl.core.chat.format.llama3x import format_message  # noqa F811
     message_transform: Callable = chat_message_transform_builder(
-        train_on_inputs=ds_cfg.get("train_on_inputs", False),
+        train_on_inputs=cfg.get("train_on_inputs", False),
         **builder_kwargs,
     )
     strategy = ChatMessageDatasetWrappingStrategy(

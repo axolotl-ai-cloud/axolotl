@@ -58,10 +58,16 @@ def _next_power_of_2(n: int) -> int:
 # real M (loop bounds + masks); only the @triton.autotune key is bucketed so
 # that varying seqlens/routing don't keep invalidating the cache.
 _M_BUCKET_GRANULARITY = 1024
+# Large-M / expert-parallel regime: bucket coarsely so per-rank token-count variation (DeepEP
+# dispatch is imbalanced) collapses to ONE autotune key. Otherwise ranks land on different
+# M_BUCKETs, re-autotune at scattered layers, and the resulting per-rank timing skew trips DeepEP's
+# combine barrier. The kernel still runs on the real M; only the @triton.autotune key is bucketed.
+_M_BUCKET_COARSE = 131072
+_M_BUCKET_COARSE_THRESHOLD = 16384
 
 
 def _bucket_m(m: int) -> int:
-    g = _M_BUCKET_GRANULARITY
+    g = _M_BUCKET_COARSE if m >= _M_BUCKET_COARSE_THRESHOLD else _M_BUCKET_GRANULARITY
     return ((m + g - 1) // g) * g
 
 
@@ -2505,14 +2511,21 @@ def _compute_expert_block_lora_mxfp4(
 
 
 def _scatter2scatter_lora_mx_configs():
-    """Forward MX kernel configs. BLOCK_K must be a multiple of MX_BLOCK_SIZE."""
+    """Forward MX kernel configs. BLOCK_K must be a multiple of MX_BLOCK_SIZE.
+
+    ``num_stages=2`` is included: a single-GPU microbench found it optimal for the GLM expert
+    shapes on sm90, and it was absent from the original [3,4,5] search. For recognized
+    (arch, shape) profiles, :func:`_prune_fwd_mx_configs` narrows this full matrix to a small
+    pre-tuned subset (see ``_FWD_MX_PROFILES``); all other hardware/shapes keep the full
+    SMEM/register-pruned search.
+    """
     configs = []
     for block_m, block_n, block_k, warps, stages in product(
         [32, 64, 128],
         [32, 64],
         [32, 64, 128],  # all multiples of MX_BLOCK_SIZE=32
         [4, 8],
-        [3, 4, 5],
+        [2, 3, 4, 5],
     ):
         configs.append(
             triton.Config(
@@ -2522,6 +2535,64 @@ def _scatter2scatter_lora_mx_configs():
             )
         )
     return configs
+
+
+# Pre-tuned forward-MX config subsets for known (GPU arch, expert-GEMM shape) profiles. Emitting a
+# small *measured* subset instead of running the full autotune avoids per-rank sweep-time skew under
+# expert parallelism (DeepEP) — where each rank's recv-token count lands on a different M_BUCKET, so
+# a large per-rank sweep desyncs ranks and trips DeepEP's combine barrier. Any arch/shape not in the
+# table keeps the full SMEM/register-pruned search. spec = (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages).
+_GLM_MX_SUBSET = [
+    (
+        128,
+        64,
+        32,
+        4,
+        2,
+    ),  # H200/sm90 microbench winner (invariant over M_BUCKET 32k-237k)
+    (128, 32, 64, 4, 2),  # near-tie alternate
+    (128, 32, 64, 8, 3),  # robust fallback within the stock search space
+    (128, 64, 64, 4, 2),  # neighbor
+]
+_FWD_MX_PROFILES = {
+    # sm90 (H200), GLM-5.2 expert GEMMs: gate_up (N=4096, K=6144), down (N=6144, K=2048).
+    (9, 0): {(4096, 6144): _GLM_MX_SUBSET, (6144, 2048): _GLM_MX_SUBSET},
+}
+
+
+def _profile_fwd_mx_configs(configs, meta):
+    """If the running GPU + this kernel's (N, K) match a known profile and M is in the tuned
+    (large) regime, return the pre-measured config subset (filtered from ``configs``). Else None.
+
+    ``meta`` is the kernel's compile-time kwargs (N, K, M_BUCKET, ...) that Triton passes to the
+    ``early_config_prune`` hook — the constexpr values are NOT in ``named_args`` (pointers/strides)."""
+    try:
+        cap = torch.cuda.get_device_capability()
+    except Exception:  # pragma: no cover
+        return None
+    table = _FWD_MX_PROFILES.get(cap)
+    if not table:
+        return None
+    specs = table.get((meta.get("N"), meta.get("K")))
+    mb = meta.get("M_BUCKET")
+    if (
+        not specs or mb is None or mb < 16384
+    ):  # only the large-M EP regime this was tuned for
+        return None
+    want = set(specs)
+    sel = [
+        c
+        for c in configs
+        if (
+            c.kwargs["BLOCK_M"],
+            c.kwargs["BLOCK_N"],
+            c.kwargs["BLOCK_K"],
+            c.num_warps,
+            c.num_stages,
+        )
+        in want
+    ]
+    return sel or None
 
 
 def _prune_fwd_mx_configs(configs, named_args, **kwargs):
@@ -2536,6 +2607,12 @@ def _prune_fwd_mx_configs(configs, named_args, **kwargs):
     the conservative full-tile accounting in ``_prune_dX_mx_configs``.
     Also require BLOCK_K % MX_BLOCK_SIZE == 0.
     """
+    # Known (arch, shape) profile -> emit the small pre-tuned subset, skipping the full sweep.
+    # N/K/M_BUCKET are constexpr -> they're in **kwargs, not named_args (pointers/strides).
+    profiled = _profile_fwd_mx_configs(configs, kwargs)
+    if profiled is not None:
+        return profiled
+
     smem_cap = _get_smem_capacity()
     block_r = named_args.get("BLOCK_R", 64)
 
@@ -2997,14 +3074,33 @@ def _compute_expert_block_lora_dX_mxfp4(
 
 def _scatter2scatter_lora_dX_mx_configs():
     """dX MX kernel configs. BLOCK_K must be a multiple of MX_BLOCK_SIZE
-    because scales broadcast within MX_BLOCK_SIZE-element K-blocks."""
+    because scales broadcast within MX_BLOCK_SIZE-element K-blocks.
+
+    The grid is deliberately conservative: the largest configs (BLOCK_M=128 /
+    BLOCK_K=128 / BLOCK_N=64 / num_stages=5) only fit on big-SMEM GPUs (sm90's
+    228 KB) and at least one of them issues an out-of-bounds access in the
+    grouped (expert-parallel) backward there — while the SMEM *estimate* used to
+    prune is too loose to exclude it reliably. Restricting the search space to
+    the validated low-resource configs keeps the kernel correct on every arch;
+    the dX (backward) path is far less autotune-sensitive than the forward.
+    ``AXOLOTL_MX_DX_SAFE_CONFIG`` pins a single config as an escape hatch."""
+    import os
+
+    if os.environ.get("AXOLOTL_MX_DX_SAFE_CONFIG"):
+        return [
+            triton.Config(
+                {"BLOCK_M": 64, "BLOCK_K": 32, "BLOCK_N": 32},
+                num_stages=3,
+                num_warps=4,
+            )
+        ]
     configs = []
     for block_m, block_k, block_n, warps, stages in product(
-        [32, 64, 128],
-        [32, 64, 128],  # all multiples of MX_BLOCK_SIZE=32
         [32, 64],
+        [32, 64],  # all multiples of MX_BLOCK_SIZE=32
+        [32],
         [4, 8],
-        [3, 4, 5],
+        [2, 3],
     ):
         configs.append(
             triton.Config(
@@ -3016,9 +3112,63 @@ def _scatter2scatter_lora_dX_mx_configs():
     return configs
 
 
+# dX MX configs needing more shared memory than this are excluded from autotune even on
+# GPUs that physically have more (e.g. sm90's 228 KB). The larger configs are only reachable
+# on those GPUs, were never exercised on the 100 KB-class GPUs this kernel was validated on,
+# and at least one of them issues an out-of-bounds access on sm90 in the grouped (EP) layout.
+# Capping to the validated budget keeps autotune among known-good configs across all arches.
+_DX_MX_VALIDATED_SMEM = 101_376  # 99 KB — sm120 / Ada / sm89 opt-in budget
+
+
+# Pre-tuned dX-MX subsets for known (arch, shape) profiles — see _FWD_MX_PROFILES for the rationale.
+# spec = (BLOCK_M, BLOCK_K, BLOCK_N, warps, stages).
+_GLM_DX_MX_SUBSET = [
+    (32, 64, 32, 4, 2),  # H200/sm90 microbench winner
+    (64, 64, 32, 4, 2),  # larger BLOCK_M
+    (32, 32, 32, 4, 2),  # smaller BLOCK_K
+    (64, 32, 32, 8, 3),  # fallback
+]
+_DX_MX_PROFILES = {
+    (9, 0): {(4096, 6144): _GLM_DX_MX_SUBSET, (6144, 2048): _GLM_DX_MX_SUBSET},
+}
+
+
+def _profile_dX_mx_configs(configs, meta):
+    """Known GPU arch + (N, K) + large M -> pre-measured dX subset (filtered from ``configs``)."""
+    try:
+        cap = torch.cuda.get_device_capability()
+    except Exception:  # pragma: no cover
+        return None
+    table = _DX_MX_PROFILES.get(cap)
+    if not table:
+        return None
+    specs = table.get((meta.get("N"), meta.get("K")))
+    mb = meta.get("M_BUCKET")
+    if not specs or mb is None or mb < 16384:
+        return None
+    want = set(specs)
+    sel = [
+        c
+        for c in configs
+        if (
+            c.kwargs["BLOCK_M"],
+            c.kwargs["BLOCK_K"],
+            c.kwargs["BLOCK_N"],
+            c.num_warps,
+            c.num_stages,
+        )
+        in want
+    ]
+    return sel or None
+
+
 def _prune_dX_mx_configs(configs, named_args, **kwargs):
     """Prune dX MX configs by SMEM and register pressure (MX-aware)."""
-    smem_cap = _get_smem_capacity()
+    profiled = _profile_dX_mx_configs(configs, kwargs)
+    if profiled is not None:
+        return profiled
+
+    smem_cap = min(_get_smem_capacity(), _DX_MX_VALIDATED_SMEM)
     block_r = named_args.get("BLOCK_R", 64)
 
     scored = []
