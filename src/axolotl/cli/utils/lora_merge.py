@@ -1,6 +1,7 @@
 import gc
 import math
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -544,6 +545,298 @@ def _find_dora_magnitude(
     return None
 
 
+def _dequant_block_fp8(w: torch.Tensor, si: torch.Tensor, dev: str) -> torch.Tensor:
+    """FineGrainedFP8 (block-fp8): ``W`` e4m3 * ``scale_inv`` fp32 (128x128 blocks). 2D or fused-3D
+    (block axes = last two dims)."""
+    wf = w.to(dev).float()
+    s = si.to(dev).float()
+    *lead, N, K = w.shape
+    sr, sc = s.shape[-2], s.shape[-1]
+    if N % sr == 0 and K % sc == 0:
+        bn, bk = N // sr, K // sc
+        return (
+            wf.reshape(*lead, sr, bn, sc, bk) * s.reshape(*lead, sr, 1, sc, 1)
+        ).reshape(*lead, N, K)
+    return wf * s.repeat_interleave(N // sr, -2).repeat_interleave(K // sc, -1)
+
+
+# Standard OCP-MX / NVFP4 FP4 E2M1 codebook, indexed by raw 4-bit nibble (sign|2-exp|1-mantissa).
+_FP4_E2M1_LUT = (
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    4.0,
+    6.0,
+    -0.0,
+    -0.5,
+    -1.0,
+    -1.5,
+    -2.0,
+    -3.0,
+    -4.0,
+    -6.0,
+)
+
+
+def _mx_block_scale(sb_bytes: torch.Tensor, N: int, K: int, dev: str) -> torch.Tensor:
+    """e8m0 biased-exponent bytes [.., N, nb] -> per-element multiplier [.., N, K] (32-wide MX blocks).
+    Handles ragged K (K not a whole multiple of the block via repeat_interleave)."""
+    s = torch.exp2(sb_bytes.to(dev).float() - 127.0)
+    nb = s.shape[-1]
+    if K % nb == 0:
+        return s[..., None].expand(*s.shape, K // nb).reshape(*s.shape[:-1], K)
+    return s.repeat_interleave((K + nb - 1) // nb, dim=-1)[..., :K]
+
+
+def _dequant_mxfp8(w: torch.Tensor, s: torch.Tensor, dev: str) -> torch.Tensor:
+    """OCP-MX fp8: ``W`` e4m3 * ``2^(e8m0_byte-127)`` (32-wide blocks along the last dim). ``s`` is the
+    e8m0 scale (``float8_e8m0fnu`` or raw ``uint8``). Ragged-K safe."""
+    wf = w.to(dev).float()
+    *lead, N, K = w.shape
+    scale = _mx_block_scale(s.view(torch.uint8), N, K, dev).reshape(*lead, N, K)
+    return wf * scale
+
+
+def _unpack_fp4(packed: torch.Tensor, dev: str) -> torch.Tensor:
+    """Unpack a packed-e2m1 uint8 tensor [.., K/2] -> fp32 values [.., K] via the OCP LUT. Low nibble =
+    element 2i, high nibble = element 2i+1 (torchao / OCP convention)."""
+    lut = torch.tensor(_FP4_E2M1_LUT, dtype=torch.float32, device=dev)
+    b = packed.to(dev)
+    lo = (b & 0xF).long()
+    hi = ((b >> 4) & 0xF).long()
+    nib = torch.stack([lo, hi], dim=-1).reshape(*b.shape[:-1], b.shape[-1] * 2)
+    return lut[nib]
+
+
+def _dequant_mxfp4(w: torch.Tensor, s: torch.Tensor, dev: str) -> torch.Tensor:
+    """OCP-MX fp4: packed e2m1 ``W`` [.., K/2] uint8 * ``2^(e8m0-127)`` (32-wide blocks). Ragged-K safe.
+    Matches the codebook + low/high nibble order the ScatterMoE MX forward uses, so the merged weight
+    equals what the model computes."""
+    vals = _unpack_fp4(w, dev)
+    *lead, N, K = vals.shape
+    scale = _mx_block_scale(s.view(torch.uint8), N, K, dev).reshape(*lead, N, K)
+    return vals * scale
+
+
+def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
+    """NVFP4: packed e2m1 ``W`` [..,K/2] uint8 + e4m3 block-16 ``scale`` [..,K/16] + optional per-tensor
+    ``scale_2`` (two-level; single-level when absent -> per_tensor_scale=1). Uses torchao's own
+    dequantize (matches the loader). Auto-detects swizzled scales by shape and passes the flag. Raises
+    if torchao is unavailable (caller degrades)."""
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    wt = w.to(dev)
+    st = scale.to(dev)
+    p = scale2.to(dev).float().reshape(()) if scale2 is not None else None
+    *lead, N, K = wt.shape
+    # plain (non-swizzled) block-16 scale has exactly N*(K*2/16) elements per leading index; a padded
+    # 32x4x4-swizzled scale is larger -> tell torchao to unswizzle it.
+    expect = 1
+    for d in (*lead, N, (K * 2) // 16):
+        expect *= d
+    swizzled = st.numel() != expect
+    nv = NVFP4Tensor(
+        wt, st, 16, torch.bfloat16, per_tensor_scale=p, is_swizzled_scales=swizzled
+    )
+    return nv.dequantize(torch.bfloat16)
+
+
+def _dequantize_quantized_shard(
+    shard_tensors: Dict[str, torch.Tensor], device: str
+) -> tuple[Dict[str, torch.Tensor], bool]:
+    """Dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 in place, dropping their
+    scale sibling tensors. Returns ``(new_shard, any_dequantized)``.
+
+    The LoRA merge folds ``scaling*(B@A)`` into the weight and must do so on the *dequantized* value,
+    then keep bf16 (re-rounding the sum back to the quant format would drop the low-magnitude delta).
+    A weight ``K`` is detected by its scale sibling(s):
+
+      * ``K_scale_inv`` (fp32) + ``K`` e4m3          -> block-fp8 (128x128)
+      * ``K_scale`` (e8m0/uint8) + ``K`` e4m3        -> mxfp8 (32-wide)
+      * ``K_scale`` (e4m3) + ``K_scale_2`` + ``K`` uint8 -> nvfp4 (block-16 two-level)
+
+    Covers 2D linears (``q_proj.weight`` + ``q_proj.weight_scale*``) AND fused-3D experts
+    (``experts.gate_up_proj`` + ``experts.gate_up_proj_scale*``, no ``.weight`` suffix — match on
+    ``key + "_scale*"``). NOTE: native nvfp4/mxfp4 checkpoints that store experts *per-expert*
+    (``experts.0.gate_proj.weight`` ...) unfused are NOT handled here — that needs a fuse->merge->
+    unfuse writer (see the nvfp4 expert-merge writer)."""
+    dev = device if (device != "cpu" and torch.cuda.is_available()) else "cpu"
+    e8m0 = getattr(torch, "float8_e8m0fnu", None)
+    out: Dict[str, torch.Tensor] = dict(shard_tensors)
+    drop: set = set()
+    did = False
+    for key, w in shard_tensors.items():
+        if key in drop or key.endswith(("_scale", "_scale_inv", "_scale_2")):
+            continue
+        if w.ndim not in (2, 3):
+            continue
+        si = shard_tensors.get(key + "_scale_inv")
+        sc = shard_tensors.get(key + "_scale")
+        sc2 = shard_tensors.get(key + "_scale_2")
+        is_e8m0 = sc is not None and (
+            sc.dtype == torch.uint8 or (e8m0 is not None and sc.dtype == e8m0)
+        )
+        deq = None
+        if w.dtype == torch.float8_e4m3fn and si is not None:
+            deq = _dequant_block_fp8(w, si, dev)  # block-fp8 (128x128)
+            drop.add(key + "_scale_inv")
+        elif w.dtype == torch.float8_e4m3fn and is_e8m0:
+            deq = _dequant_mxfp8(w, sc, dev)  # mxfp8 (e4m3 + e8m0/32)
+            drop.add(key + "_scale")
+        elif (
+            w.dtype == torch.uint8
+            and sc is not None
+            and sc.dtype == torch.float8_e4m3fn
+        ):
+            try:  # nvfp4: e4m3 block-16 scale, two-level if scale_2 present else single-level
+                deq = _dequant_nvfp4(w, sc, sc2, dev)
+            except Exception as ex:  # torchao missing / shape mismatch -> leave as-is
+                LOG.warning("nvfp4 dequant skipped for %s: %s", key, ex)
+                continue
+            drop.add(key + "_scale")
+            if sc2 is not None:
+                drop.add(key + "_scale_2")
+        elif w.dtype == torch.uint8 and is_e8m0:
+            deq = _dequant_mxfp4(w, sc, dev)  # mxfp4 (packed e2m1 + e8m0/32)
+            drop.add(key + "_scale")
+        if deq is not None:
+            out[key] = deq.to(torch.bfloat16).cpu()
+            did = True
+    for sk in drop:
+        out.pop(sk, None)
+    return out, did
+
+
+_FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)?lora_[AB]\.weight$")
+_PER_EXPERT_WEIGHT_RE = re.compile(
+    r"\.experts\.\d+\.(?:gate_proj|up_proj|down_proj|w1|w2|w3|gate_up_proj)\.weight$"
+)
+
+
+def _detect_per_expert_unfused_mismatch(model_shards, lora_state) -> bool:
+    """True if the adapter carries a FUSED expert LoRA (``experts.lora_A``, targeting a fused
+    ``experts.gate_up_proj`` param) but the base stores experts PER-EXPERT and unfused
+    (``experts.0.gate_proj.weight`` ...). In that case the fused adapter keys match no base tensor,
+    so the expert LoRA would be *silently dropped* by the shard-by-shard merge. Peeks shard keys
+    only (no tensor loads)."""
+    if not any(_FUSED_EXPERT_LORA_RE.search(k) for k in lora_state):
+        return False
+    for shard in model_shards:
+        try:
+            if str(shard).endswith(".safetensors"):
+                with safetensors.safe_open(shard, framework="pt") as f:
+                    keys = list(f.keys())
+            else:
+                keys = list(
+                    torch.load(shard, map_location="meta", weights_only=True).keys()  # nosec B614
+                )
+        except Exception:  # noqa: BLE001  # nosec B112 - unreadable shard: skip the peek, not fatal
+            continue
+        if any(_PER_EXPERT_WEIGHT_RE.search(k) for k in keys):
+            return True
+    return False
+
+
+def _update_config_vocab_size(output_path: Path, vocab_size: int) -> None:
+    """After carrying a resized ``embed_tokens`` into the merge, set ``vocab_size`` in the merged
+    ``config.json`` (and any nested text config) so the checkpoint loads with the enlarged vocab."""
+    import json as _json
+
+    cfg_path = output_path / "config.json"
+    if not cfg_path.exists():
+        return
+    cfg = _json.loads(cfg_path.read_text())
+    changed = cfg.get("vocab_size") != vocab_size
+    cfg["vocab_size"] = vocab_size
+    for sub in ("text_config", "llm_config"):
+        if isinstance(cfg.get(sub), dict):
+            cfg[sub]["vocab_size"] = vocab_size
+            changed = True
+    if changed:
+        cfg_path.write_text(_json.dumps(cfg, indent=2))
+        LOG.info(
+            "Set merged config.json vocab_size=%d (resized embeddings carried)",
+            vocab_size,
+        )
+
+
+def _find_full_override(
+    lora_state: Dict[str, torch.Tensor], key: str
+) -> Optional[torch.Tensor]:
+    """Return the adapter's FULL-weight override for a base ``key`` if present, else None.
+
+    PEFT saves trainable non-LoRA modules — ``modules_to_save`` and resized ``embed_tokens`` /
+    ``lm_head`` — as plain ``base_model.model.<key>`` tensors (no ``lora_A``/``lora_B``). These must
+    REPLACE the base weight at merge, not be ignored (otherwise a resized vocab / trained head is
+    silently dropped). Matches ``.weight`` overrides only; ignores any ``.lora_`` tensor."""
+    if not key.endswith(".weight") or ".lora_" in key:
+        return None
+    for cand in (
+        "base_model.model." + key,
+        "base_model.model.model." + key,
+        "base_model.model." + key.replace("modules_to_save.", ""),
+    ):
+        t = lora_state.get(cand)
+        if t is not None and ".lora_" not in cand:
+            return t
+    # PEFT modules_to_save layout: ...<module>.modules_to_save.default.weight
+    ms = (
+        "base_model.model." + key[: -len(".weight")] + ".modules_to_save.default.weight"
+    )
+    return lora_state.get(ms)
+
+
+def _strip_quantization_config(output_path: Path) -> None:
+    """After a block-fp8 -> bf16 merge, remove ``quantization_config`` from the merged ``config.json``
+    so the merged checkpoint loads as bf16 (not FineGrainedFP8) and set ``torch_dtype`` to bfloat16."""
+    import json as _json
+
+    cfg_path = output_path / "config.json"
+    if not cfg_path.exists():
+        return
+    cfg = _json.loads(cfg_path.read_text())
+    changed = cfg.pop("quantization_config", None) is not None
+    if cfg.get("torch_dtype") not in (None, "bfloat16"):
+        cfg["torch_dtype"] = "bfloat16"
+        changed = True
+    if changed:
+        cfg_path.write_text(_json.dumps(cfg, indent=2))
+        LOG.info(
+            "Stripped quantization_config from merged config.json (block-fp8 -> bf16 merge)"
+        )
+
+
+_QUANT_DTYPES = {
+    torch.float8_e4m3fn,
+    getattr(torch, "float8_e5m2", torch.float8_e4m3fn),
+    torch.uint8,
+    torch.int8,
+}
+_WARNED_UNDEQUANT: set = set()
+
+
+def _warn_if_quant_undequantized(key: str, tensor: torch.Tensor, do_nf4: bool) -> None:
+    """Loudly warn (once/key) if a LoRA delta is about to be folded into a still-quantized weight
+    that the shard dequant did NOT convert to a real dtype (an unhandled format — e.g. mxfp4, a
+    per-tensor-fp8 with a scalar scale, or a per-expert-unfused nvfp4/mxfp4 layout). Folding into raw
+    packed bytes silently corrupts the weight; NF4 is handled by the simulate_nf4 roundtrip and is
+    exempt."""
+    if do_nf4 or tensor.dtype not in _QUANT_DTYPES or key in _WARNED_UNDEQUANT:
+        return
+    _WARNED_UNDEQUANT.add(key)
+    LOG.warning(
+        "LoRA merge: '%s' is still %s (a quantized format the merge did not dequantize) yet a LoRA "
+        "delta targets it — folding into raw quantized data is WRONG. This format is unsupported by "
+        "the efficient merge (handled: bf16, nf4-sim, block-fp8, mxfp8, fused-nvfp4). For per-expert "
+        "nvfp4/mxfp4 experts use the nvfp4 expert-merge writer; otherwise use merge_method: legacy.",
+        key,
+        tensor.dtype,
+    )
+
+
 def _should_nf4_roundtrip(
     key: str,
     tensor: torch.Tensor,
@@ -601,6 +894,7 @@ def _merge_tensor_with_lora(
 
     if lora_a is not None and lora_b is not None:
         LOG.debug(f"Merging LoRA for {key}: {lora_a.shape}, {lora_b.shape}")
+        _warn_if_quant_undequantized(key, tensor, do_nf4)
 
         original_dtype = tensor.dtype
 
@@ -662,6 +956,7 @@ def _merge_tensor_with_lora(
                     f"Merging ParamWrapper LoRA for {key} "
                     f"(param={param_name}): {pw_a.shape}, {pw_b.shape}"
                 )
+                _warn_if_quant_undequantized(key, tensor, do_nf4)
                 if do_nf4:
                     tensor = _simulate_nf4_roundtrip(
                         tensor,
@@ -1104,8 +1399,20 @@ def merge_lora_sharded_efficient(
     LOG.debug(f"Found {len(model_shards)} model shards in {base_model_path}")
     copy_non_model_files(base_model_path, output_path, model_shards)
 
+    if _detect_per_expert_unfused_mismatch(model_shards, lora_state):
+        LOG.warning(
+            "MERGE INCOMPLETE: the adapter has a FUSED expert LoRA (experts.gate_up_proj/down_proj) "
+            "but this base stores experts PER-EXPERT and unfused (experts.<i>.gate_proj.weight ...). "
+            "The shard-by-shard merge cannot fold a fused delta into per-expert tensors, so the "
+            "EXPERT LoRA is being DROPPED (non-expert LoRA still merges). Use the nvfp4 expert-merge "
+            "writer (fuse->merge->unfuse), or merge_method: legacy (loads the full model so PEFT "
+            "fuses the experts itself)."
+        )
+
     merged_count = 0
     total_tensors = 0
+    block_fp8_dequantized = False
+    resized_vocab = None
     # Track weight_map for index regeneration: {tensor_key: shard_filename}
     weight_map: Dict[str, str] = {}
 
@@ -1125,6 +1432,12 @@ def merge_lora_sharded_efficient(
             )
 
         total_tensors += len(shard_tensors)
+
+        # Step 0: dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 so the LoRA
+        # delta folds into the TRUE weight — a raw read misses the block scale and re-rounds the sum
+        # back to the quant format, dropping the delta (an otherwise silently-wrong merge).
+        shard_tensors, _shard_deq = _dequantize_quantized_shard(shard_tensors, device)
+        block_fp8_dequantized = block_fp8_dequantized or _shard_deq
 
         # Step 1: Handle fused weight conversions (MoE experts) if applicable
         fused_keys: set = set()
@@ -1151,6 +1464,18 @@ def merge_lora_sharded_efficient(
         for key, tensor in shard_tensors.items():
             if key in fused_keys:
                 merged_tensors[key] = tensor.detach().cpu()
+                continue
+            # Full-weight override (modules_to_save / resized embed_tokens+lm_head): replace, don't
+            # fold LoRA. Track a vocab resize so the merged config.json stays consistent.
+            override = _find_full_override(lora_state, key)
+            if override is not None:
+                merged_tensors[key] = override.to(tensor.dtype).detach().cpu()
+                merged_count += 1
+                if (
+                    key.endswith("embed_tokens.weight")
+                    and override.shape[0] != tensor.shape[0]
+                ):
+                    resized_vocab = int(override.shape[0])
                 continue
             merged_tensor, was_merged = _merge_tensor_with_lora(
                 tensor,
@@ -1212,6 +1537,11 @@ def merge_lora_sharded_efficient(
         with open(output_path / index_name, "w") as f:
             _json.dump(index, f, indent=2)
         LOG.debug(f"Wrote weight-map index: {index_name}")
+
+    if block_fp8_dequantized:
+        _strip_quantization_config(output_path)
+    if resized_vocab is not None:
+        _update_config_vocab_size(output_path, resized_vocab)
 
     if merged_count == 0:
         LOG.warning(
