@@ -1129,13 +1129,11 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
-            )
+            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
         return self
 
     @model_validator(mode="after")
@@ -1144,13 +1142,13 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
                 raise ValueError(
-                    f"FSDP2 not compatible with {self.optimizer.value}, use `adamw_torch_8bit` instead"
+                    f"FSDP2 not compatible with {self.optimizer}, use `adamw_torch_8bit` instead"
                 )
 
         return self
@@ -1716,6 +1714,16 @@ class ComplexValidationMixin:
             self.context_parallel_size = self.sequence_parallel_degree
         if not self.context_parallel_size:
             self.context_parallel_size = 1
+        elif self.context_parallel_size > 1 and getattr(
+            self, "use_glm_dsa_kernels", False
+        ):
+            # The GLM DSA kernels provide their own context-parallel attention (the sequence is sharded
+            # on the cp axis with a compressed-KV all-gather + per-rank q_offset), so the flash /
+            # ring_flash_attn stack the generic CP path below requires does not apply.
+            LOG.warning(
+                "context_parallel_size > 1 with use_glm_dsa_kernels: the DSA kernels handle context "
+                "parallelism (compressed-KV all-gather); skipping the flash/ring-attention requirement."
+            )
         elif self.context_parallel_size > 1:
             if not self.attn_uses_flash_lib:
                 raise ValueError(
@@ -1804,6 +1812,11 @@ class ComplexValidationMixin:
 
         if self.ring_attn_func is not None:
             self.ring_attn_func = RingAttnFunc(self.ring_attn_func)
+        elif getattr(self, "use_glm_dsa_kernels", False):
+            # The GLM DSA kernels own attention (including the context-parallel compressed-KV gather),
+            # so leave ring_attn_func None: the SP context manager still shards the sequence by chunking,
+            # but skips the ring_flash_attn substitution (which GLM doesn't use and isn't installed).
+            pass
         else:
             # Default ring attention function selection
             sample_packing = getattr(self, "sample_packing", False)

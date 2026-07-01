@@ -872,8 +872,9 @@ class AxolotlInputConfig(
                 "With sample packing + attn_implementation=sdpa, route packed rows through "
                 "torch.nn.attention.varlen.varlen_attn (cu_seqlens) instead of an explicit 4D "
                 "block-diagonal mask. Skips cross-document blocks (faster + lower memory) with no "
-                "flash_attn dependency. Requires torch >= 2.11 and head_dim <= 256; non-packed rows "
-                "and larger head_dim fall back to stock SDPA."
+                "flash_attn dependency. Requires torch >= 2.10 and head_dim <= 256; non-packed rows "
+                "and larger head_dim fall back to stock SDPA. Sliding-window attention additionally "
+                "needs torch >= 2.11 (varlen_attn window_size)."
             )
         },
     )

@@ -33,6 +33,7 @@ RUN if [ "$AXOLOTL_EXTRAS" != "" ] ; then \
 
 # Override with nightly HF packages for nightly builds
 RUN if [ "$NIGHTLY_BUILD" = "true" ] ; then \
+        uv pip install "kernels>=0.15.2,<0.16"; \
         uv pip install --no-deps \
             "transformers @ git+https://github.com/huggingface/transformers.git@main" \
             "peft @ git+https://github.com/huggingface/peft.git@main" \

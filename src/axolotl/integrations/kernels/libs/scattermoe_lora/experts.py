@@ -54,29 +54,47 @@ def _unwrap_experts_lora(experts):
     gup_lora = None
     down_lora = None
 
-    gup_param = experts.gate_up_proj
-    if isinstance(gup_param, ParamWrapper):
-        lora_A, lora_B, scaling = get_lora_params_from_wrapper(gup_param)
-        if lora_A is not None:
-            num_experts = experts.num_experts
-            rank = lora_A.shape[0] // num_experts
-            from .layers import peft_lora_to_scattermoe
+    for param, which in ((experts.gate_up_proj, "gup"), (experts.down_proj, "down")):
+        if not isinstance(param, ParamWrapper):
+            continue
+        lora_A, lora_B, scaling = get_lora_params_from_wrapper(param)
+        if lora_A is None:
+            continue
+        from .layers import peft_lora_to_scattermoe
 
-            sm_A, sm_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
+        a, b, n_local, rank = _ep_local_expert_lora(lora_A, lora_B, experts)
+        sm_A, sm_B = peft_lora_to_scattermoe(a, b, n_local, rank)
+        if which == "gup":
             gup_lora = (sm_A, sm_B, scaling)
-
-    down_param = experts.down_proj
-    if isinstance(down_param, ParamWrapper):
-        lora_A, lora_B, scaling = get_lora_params_from_wrapper(down_param)
-        if lora_A is not None:
-            num_experts = experts.num_experts
-            rank = lora_A.shape[0] // num_experts
-            from .layers import peft_lora_to_scattermoe
-
-            sm_A, sm_B = peft_lora_to_scattermoe(lora_A, lora_B, num_experts, rank)
+        else:
             down_lora = (sm_A, sm_B, scaling)
 
     return base_experts, gup_lora, down_lora
+
+
+def _ep_local_expert_lora(lora_A, lora_B, experts):
+    """Slice the routed-expert LoRA down to THIS EP rank's local experts.
+
+    Under expert parallelism the base weights are EP-sharded to ``num_experts`` (= E_local) but the
+    PEFT adapter param stays a single GLOBAL tensor over all ``num_experts_global`` experts (it is
+    FSDP-managed/gathered to full here — keeping it global avoids a plain-vs-DTensor mismatch in the
+    optimizer/grad-clip). So compute the rank from the GLOBAL expert count and take this rank's
+    ``[offset : offset+E_local]`` expert block at forward time:
+      * lora_A ``[r*E_global, in]`` expert-major  -> rows ``[offset*r : (offset+E_local)*r]``
+      * lora_B ``[out, r*E_global]`` rank-major    -> reshape ``[out, r, E_global]``, take experts.
+    Non-EP modules (E_local == E_global) are a no-op. Returns ``(A, B, E_local, rank)``."""
+    e_local = experts.num_experts
+    e_global = getattr(experts, "num_experts_global", e_local)
+    rank = lora_A.shape[0] // e_global
+    if e_global == e_local:
+        return lora_A, lora_B, e_local, rank
+    offset = getattr(experts, "local_expert_offset", 0)
+    a = lora_A[offset * rank : (offset + e_local) * rank, :]
+    out = lora_B.shape[0]
+    b = lora_B.reshape(out, rank, e_global)[:, :, offset : offset + e_local].reshape(
+        out, rank * e_local
+    )
+    return a, b, e_local, rank
 
 
 def _get_base_param(param):
@@ -582,6 +600,71 @@ def scattermoe_experts_forward(
     return output
 
 
+def _grouped_fp4_ep_maybe_tiled(
+    hidden,
+    idx,
+    wts,
+    gu_base,
+    dn_base,
+    gup_lora,
+    down_lora,
+    limit,
+    mode,
+    act_type,
+    recipe,
+    cache,
+    prefer_fp8_dx,
+):
+    """Run the grouped-fp4 expert GEMM, optionally TILED over the dispatched-token (sequence) dim.
+
+    The grouped path stores ``gu[Mt,2I]`` + ``h[Mt,I]`` for backward (the activation-memory cost).
+    With ``AXOLOTL_EP_EXPERT_SHARD_TOKENS=T`` set, slice the dispatched tokens into T-row chunks and
+    checkpoint each chunk (recompute its forward in backward) so peak saved activation is one chunk's
+    intermediates, not all of Mt — trading ~1 extra forward/chunk for memory. The frozen-weight mxfp4
+    requant ``cache`` is shared across chunks (and across the recompute), so weights are quantized once.
+    T<=0 or T>=N keeps the single un-tiled call. Chunks own disjoint token rows so the per-chunk [N_c,H]
+    outputs concatenate back in order."""
+    import os as _os_t
+
+    from .grouped_train import grouped_fp4_moe_train
+
+    def _call(h_c, i_c, w_c):
+        return grouped_fp4_moe_train(
+            h_c,
+            i_c,
+            w_c,
+            gu_base,
+            dn_base,
+            gup_lora,
+            down_lora,
+            limit,
+            mode,
+            act_type=act_type,
+            weight_recipe=recipe,
+            mxfp4_cache=cache,
+            prefer_fp8_dx=prefer_fp8_dx,
+        )
+
+    shard = int(_os_t.environ.get("AXOLOTL_EP_EXPERT_SHARD_TOKENS", "0") or 0)
+    n = hidden.size(0)
+    if shard <= 0 or n <= shard:
+        return _call(hidden, idx, wts)
+
+    import torch.utils.checkpoint as _ckpt
+
+    outs = [
+        _ckpt.checkpoint(
+            _call,
+            hidden[s : s + shard],
+            idx[s : s + shard],
+            wts[s : s + shard],
+            use_reentrant=False,
+        )
+        for s in range(0, n, shard)
+    ]
+    return torch.cat(outs, dim=0)
+
+
 def scattermoe_experts_forward_ep(
     self,
     hidden_states: torch.Tensor,
@@ -602,6 +685,53 @@ def scattermoe_experts_forward_ep(
     weighted token-combine done via ``index_add_``.
     """
     _check_supported_layout(self)
+
+    # Prefer the grouped NVFP4 GEMM (the same backend the non-EP forward uses) over the triton
+    # scatter2scatter LoRA kernel: it's faster AND has no Triton autotune, so there's no per-rank
+    # autotune-timing skew to trip DeepEP's combine timeout (which is why the scatter2scatter path
+    # needed AXOLOTL_EP_SINGLE_CONFIG). grouped_fp4_moe_train tolerates the DeepEP -1 sentinels
+    # (remote-routed slots are dropped). Falls through to scatter2scatter for non-NVFP4 / mode-off /
+    # no-LoRA layouts.
+    _gup_lora_g, _down_lora_g = None, None
+    _sm_lora_g = getattr(self, "_scattermoe_lora", None)
+    if _sm_lora_g:
+        _gup_lora_g = _sm_lora_g.get("gate_up_proj")
+        _down_lora_g = _sm_lora_g.get("down_proj")
+    elif _has_peft_wrapper(self):
+        _, _gup_lora_g, _down_lora_g = _unwrap_experts_lora(self)
+
+    _fp4_grouped_mode_g = RUNTIME.fp4_grouped_mode
+    if (
+        _fp4_grouped_mode_g is not None
+        and _gup_lora_g is not None
+        and _down_lora_g is not None
+    ):
+        _gu_base_g = _get_base_param(self.gate_up_proj)
+        _dn_base_g = _get_base_param(self.down_proj)
+        if is_nvfp4_param(_gu_base_g):
+            from .grouped_train import grouped_fp4_available
+
+            if grouped_fp4_available(_fp4_grouped_mode_g):
+                _recipe_g = lambda: (  # noqa: E731
+                    _get_base_param(self.gate_up_proj),
+                    _get_base_param(self.down_proj),
+                )
+                _cache_g = self.__dict__.setdefault("_dg_mxfp4_cache", {})
+                return _grouped_fp4_ep_maybe_tiled(
+                    hidden_states,
+                    top_k_index,
+                    top_k_weights.to(hidden_states.dtype),
+                    _gu_base_g,
+                    _dn_base_g,
+                    _gup_lora_g,
+                    _down_lora_g,
+                    getattr(self, "limit", None),
+                    _fp4_grouped_mode_g,
+                    _detect_act_type(self),
+                    _recipe_g,
+                    _cache_g,
+                    RUNTIME.fp4_dx_prefer_fp8,
+                )
 
     N = hidden_states.size(0)
     K = top_k_index.shape[1]

@@ -1,0 +1,55 @@
+"""F4: FSDP2 + quantized-base LoRA checkpoints must stay resumable.
+
+The DCP sharded model save fails on the NVFP4/Float8 frozen base, so the trainer saves just the
+adapter — but it must STILL persist optimizer/scheduler/scaler/RNG and trainer_state so periodic
+checkpoints can resume. These bind ``AxolotlTrainer._save_checkpoint`` to a stub (no Trainer/GPU)
+and assert the resume artifacts are written after the adapter save.
+"""
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from axolotl.core.trainers.base import AxolotlTrainer
+
+
+def _stub(tmp_path, *, save_only_model=False, should_save=True, adapter_handled=True):
+    return SimpleNamespace(
+        state=SimpleNamespace(global_step=5, save_to_json=MagicMock()),
+        args=SimpleNamespace(save_only_model=save_only_model, should_save=should_save),
+        _get_output_dir=lambda trial=None: str(tmp_path),
+        _save_fsdp2_quantized_lora_adapter=MagicMock(return_value=adapter_handled),
+        _save_optimizer_and_scheduler=MagicMock(),
+        _save_scaler=MagicMock(),
+        _save_rng_state=MagicMock(),
+    )
+
+
+def test_quantized_lora_checkpoint_persists_resume_state(tmp_path):
+    stub = _stub(tmp_path)
+    out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
+    assert out is None
+    stub._save_fsdp2_quantized_lora_adapter.assert_called_once()
+    # the F4 fix: optimizer/scheduler/scaler/RNG + trainer_state all written (resumable)
+    stub._save_optimizer_and_scheduler.assert_called_once()
+    stub._save_scaler.assert_called_once()
+    stub._save_rng_state.assert_called_once()
+    stub.state.save_to_json.assert_called_once()
+
+
+def test_save_only_model_skips_optimizer_but_writes_trainer_state(tmp_path):
+    stub = _stub(tmp_path, save_only_model=True)
+    AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
+    stub._save_optimizer_and_scheduler.assert_not_called()
+    stub._save_rng_state.assert_not_called()
+    stub.state.save_to_json.assert_called_once()  # trainer_state still written for resume bookkeeping
+
+
+def test_resume_state_failure_keeps_adapter_and_does_not_raise(tmp_path):
+    # If an FSDP2 resume-artifact save raises, keep the (already-written) adapter rather than aborting.
+    stub = _stub(tmp_path)
+    stub._save_optimizer_and_scheduler = MagicMock(
+        side_effect=RuntimeError("dcp optim fail")
+    )
+    out = AxolotlTrainer._save_checkpoint(stub, model=object(), trial=None)
+    assert out is None  # did not raise
+    stub._save_fsdp2_quantized_lora_adapter.assert_called_once()
