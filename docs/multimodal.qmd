@@ -26,6 +26,7 @@ format:
 - [SmolVLM2](#sec-smolvlm2)
 - [LFM2-VL](#sec-lfm2-vl)
 - [Intern-VL](#sec-intern-vl)
+- [PaddleOCR-VL](#sec-paddleocr-vl)
 
 ## Usage
 
@@ -234,6 +235,23 @@ base_model: Qwen/Qwen3.5-9B
 
 chat_template: qwen3_5
 ```
+
+### PaddleOCR-VL {#sec-paddleocr-vl}
+
+PaddleOCR-VL-1.6 is supported through Transformers' `paddleocr_vl` image-text model and its bundled processor chat template. It is intended for document OCR and parsing tasks such as text, table, formula, chart, seal, and spotting recognition.
+
+```yaml
+base_model: PaddlePaddle/PaddleOCR-VL-1.6
+processor_type: AutoProcessor
+```
+
+Do not set `trust_remote_code` for the Axolotl example configs; Axolotl's pinned Transformers version includes the PaddleOCR-VL model and processor implementation.
+
+Keep `sample_packing: false`, and do not enable Liger or Cut Cross Entropy for PaddleOCR-VL.
+
+The example configs cover QLoRA with language, vision, and projector LoRA adapters, plus full fine-tuning. Both use `attn_implementation: flash_attention_2`; switch to `sdpa` only if Flash Attention 2 kernels are unavailable in your environment.
+
+For document-task datasets, put the task prompt in the user message text, for example `OCR:`, `Table Recognition:`, `Formula Recognition:`, `Chart Recognition:`, `Seal Recognition:`, or `Spotting:`.
 
 ### GLM-4.6V {#sec-glm-4-6v}
 

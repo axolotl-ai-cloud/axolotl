@@ -3,13 +3,21 @@
 from unittest.mock import MagicMock
 
 import pytest
-from transformers import BitsAndBytesConfig, PreTrainedTokenizerBase
+from transformers import (
+    AutoModelForImageTextToText,
+    BitsAndBytesConfig,
+    PreTrainedTokenizerBase,
+)
 from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils.import_utils import is_torch_mps_available
 
-from axolotl.loaders import ModelLoader
+from axolotl.loaders import MULTIMODAL_AUTO_MODEL_MAPPING, ModelLoader
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.distributed import _get_parallel_config_kwargs
+
+
+def test_paddleocr_vl_is_multimodal_image_text_model():
+    assert MULTIMODAL_AUTO_MODEL_MAPPING["paddleocr_vl"] is AutoModelForImageTextToText
 
 
 class TestModelsUtils:

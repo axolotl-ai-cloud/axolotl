@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from axolotl.utils.config import validate_config
+from axolotl.utils.config import _check_model_config_constraints, validate_config
 from axolotl.utils.dict import DictDefault
 from axolotl.utils.schemas.config import AxolotlInputConfig
 from axolotl.utils.schemas.enums import (
@@ -378,6 +378,57 @@ class TestSamplePackingValidation:
             "does not handle cross-sample decontamination" in r.getMessage()
             for r in caplog.records
         )
+
+    def test_paddleocr_vl_sample_packing_rejected(self):
+        cfg = DictDefault(model_config_type="paddleocr_vl", sample_packing=True)
+        with pytest.raises(ValueError, match="PaddleOCR-VL.*sample_packing"):
+            _check_model_config_constraints(cfg)
+
+    def test_paddleocr_vl_cut_cross_entropy_rejected(self):
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            sample_packing=False,
+            cut_cross_entropy=True,
+        )
+        with pytest.raises(ValueError, match="PaddleOCR-VL.*cut_cross_entropy"):
+            _check_model_config_constraints(cfg)
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {"liger_cross_entropy": True},
+            {"liger_fused_linear_cross_entropy": True},
+            {"liger_glu_activation": True},
+            {"trl": {"use_liger_loss": True}},
+        ],
+    )
+    def test_paddleocr_vl_liger_rejected(self, flags):
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            sample_packing=False,
+            cut_cross_entropy=False,
+        )
+        cfg.update(flags)
+        with pytest.raises(ValueError, match="Liger is not supported"):
+            _check_model_config_constraints(cfg)
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {"full_finetune": True},
+            {"gradient_checkpointing": True},
+            {"rl": "dpo"},
+            {"rl": "grpo"},
+        ],
+    )
+    def test_paddleocr_vl_non_packing_axes_allowed_by_model_guard(self, flags):
+        cfg = DictDefault(
+            model_config_type="paddleocr_vl",
+            sample_packing=False,
+            cut_cross_entropy=False,
+        )
+        cfg.update(flags)
+        _check_model_config_constraints(cfg)
 
 
 class TestScalingSoftmaxValidation:

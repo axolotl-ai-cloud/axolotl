@@ -19,6 +19,7 @@ from axolotl.processing_strategies import (
     Llama4ProcessingStrategy,
     Mistral3ProcessingStrategy,
     MistralV7TekkenProcessingStrategy,
+    PaddleOCRVLProcessingStrategy,
     PixtralProcessingStrategy,
     ProcessingStrategy,
     Qwen2VLProcessingStrategy,
@@ -666,6 +667,60 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
     # system content masked, [/SYSTEM_PROMPT]=41 kept (include_end=True + all);
     # user + [/INST]=51 masked (include_end=False); assistant 8 + eos 99 kept.
     assert out == [-100, -100, 41, -100, -100, -100, 8, 99]
+
+
+# --------------------------------------------------------------------------- #
+# PaddleOCR-VL
+# --------------------------------------------------------------------------- #
+
+
+def _paddleocr_vl_tokenizer():
+    vocab = {
+        "User: ": [2969, 93963, 93919],
+        "Assistant:\n": [92267, 93963, 23],
+        "<|IMAGE_PLACEHOLDER|>": [100295],
+    }
+    return _Tokenizer(vocab, pad_id=0, eos_id=2)
+
+
+def test_paddleocr_vl_masks_user_prompt_and_image_tokens():
+    tok = _paddleocr_vl_tokenizer()
+    proc = _Processor(tok)
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    strategy = PaddleOCRVLProcessingStrategy(proc)
+    seq = [
+        1,
+        *tok.vocab["User: "],
+        100295,
+        77,
+        *tok.vocab["Assistant:\n"],
+        88,
+        89,
+        2,
+    ]
+    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
+    assert out == [-100] * (1 + 3 + 1 + 1 + 3) + [88, 89, 2]
+
+
+def test_dispatch_paddleocr_vl():
+    pytest.importorskip("transformers.models.paddleocr_vl.processing_paddleocr_vl")
+    from transformers.models.paddleocr_vl.processing_paddleocr_vl import (
+        PaddleOCRVLProcessor,
+    )
+
+    tok = _paddleocr_vl_tokenizer()
+    proc = MagicMock(spec=PaddleOCRVLProcessor)
+    proc.tokenizer = tok
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    s = _dispatch(proc, None)
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
+
+
+def test_dispatch_paddleocr_vl_chat_template_key():
+    proc = _Processor(_paddleocr_vl_tokenizer())
+    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+    s = _dispatch(proc, "paddleocr_vl")
+    assert isinstance(s, PaddleOCRVLProcessingStrategy)
 
 
 # --------------------------------------------------------------------------- #
