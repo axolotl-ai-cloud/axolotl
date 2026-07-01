@@ -345,6 +345,32 @@ def load_lora(
     else:
         model = get_peft_model(model, lora_config, **model_kwargs)
 
+    # FIM-guided automatic rank allocation — runs a short calibration pass to
+    # redistribute ranks based on per-layer Fisher Information Matrix scores.
+    # Enabled via fim_auto_rank: true in config. Requires a train_dataloader
+    # to be injected by the caller; if absent, the step is silently skipped.
+    if getattr(cfg, "fim_auto_rank", None) and not cfg.lora_model_dir:
+        _train_dataloader = getattr(cfg, "_fim_train_dataloader", None)
+        if _train_dataloader is not None:
+            from axolotl.utils.fim_rank import apply_fim_ranks
+
+            apply_fim_ranks(
+                model=model,
+                dataloader=_train_dataloader,
+                base_r=cfg.lora_r,
+                n_batches=getattr(cfg, "fim_calibration_batches", 8),
+                r_min=getattr(cfg, "fim_rank_min", 1),
+                r_max=getattr(cfg, "fim_rank_max", None),
+            )
+        else:
+            LOG.warning(
+                "fim_auto_rank=true but no calibration dataloader available "
+                "(cfg._fim_train_dataloader not set). Ranks will remain fixed at r=%d. "
+                "Pass the train dataloader via cfg._fim_train_dataloader before "
+                "calling load_lora().",
+                cfg.lora_r,
+            )
+
     # FP8 models: LoRA A/B inherit FP8 dtype from base weights, but training
     # requires a compute dtype (bf16/fp16). Cast trainable LoRA params.
     if cfg.torch_dtype:
