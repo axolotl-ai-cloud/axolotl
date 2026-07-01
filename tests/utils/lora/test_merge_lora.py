@@ -853,7 +853,7 @@ class TestQuantizedBaseMerge:
         q, si = self._make_block_fp8(w, block)
         shard = {key: q, key + "_scale_inv": si, "m.norm.weight": torch.ones(4)}
 
-        out, _, _ = _dequantize_quantized_shard(shard, "cpu")
+        out, _, _, _ = _dequantize_quantized_shard(shard, "cpu")
 
         assert key + "_scale_inv" not in out  # scale dropped
         assert out[key].dtype == torch.bfloat16
@@ -866,7 +866,7 @@ class TestQuantizedBaseMerge:
         from axolotl.cli.utils.lora_merge import _dequantize_quantized_shard
 
         q = torch.randn(8, 8).to(torch.float8_e4m3fn)
-        out, _, _ = _dequantize_quantized_shard({"x.weight": q}, "cpu")
+        out, _, _, _ = _dequantize_quantized_shard({"x.weight": q}, "cpu")
         assert out["x.weight"].dtype == torch.float8_e4m3fn
 
     def test_merge_block_fp8_linear_folds_into_dequantized(self):
@@ -889,7 +889,7 @@ class TestQuantizedBaseMerge:
             f"base_model.model.{key[: -len('.weight')]}.lora_B.weight": lora_b,
         }
 
-        deq_shard, _, _ = _dequantize_quantized_shard(
+        deq_shard, _, _, _ = _dequantize_quantized_shard(
             {key: q, key + "_scale_inv": si}, "cpu"
         )
         merged, was_merged = _merge_tensor_with_lora(
@@ -993,9 +993,10 @@ class TestQuantizedBaseMerge:
             lora_adapter_path=adapter_dir,
             output_path=out_dir,
             device="cpu",
+            dequant=True,  # explicit --dequant: bf16 output
         )
 
-        # merged config is de-quantized
+        # --dequant: merged config is de-quantized
         merged_cfg = json.loads((out_dir / "config.json").read_text())
         assert "quantization_config" not in merged_cfg
 
@@ -1014,6 +1015,96 @@ class TestQuantizedBaseMerge:
         y_merged = x @ merged[key].float().T
         rel = (y_unmerged - y_merged).norm() / y_unmerged.norm()
         assert rel < 5e-3, f"forward mismatch after block-fp8 merge: rel {rel:.2e}"
+
+    def test_block_fp8_merge_preserves_format_default(self, tmp_path):
+        """DEFAULT merge is FORMAT-PRESERVING: a block-fp8 base stays block-fp8 (fp8 weight +
+        weight_scale_inv), quantization_config is kept, and the forward still matches within fp8 tol.
+        Non-LoRA quantized weights pass through byte-identical."""
+        torch.manual_seed(4)
+        hidden, r, alpha, block = 32, 8, 16, 16
+        scale = alpha / r
+        w = torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2
+        q, si = self._make_block_fp8(w, block)
+        deq_base = self._dequant(q, si)
+        # a second block-fp8 weight WITHOUT LoRA -> must pass through untouched
+        q2, si2 = self._make_block_fp8(
+            torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2, block
+        )
+
+        model_dir = tmp_path / "base"
+        model_dir.mkdir()
+        key = "model.layers.0.self_attn.q_proj.weight"
+        okey = "model.layers.0.self_attn.o_proj.weight"
+        safetensors.torch.save_file(
+            {
+                key: q,
+                key + "_scale_inv": si,
+                okey: q2,
+                okey + "_scale_inv": si2,
+            },
+            model_dir / "model.safetensors",
+        )
+        (model_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "torch_dtype": "float8_e4m3fn",
+                    "quantization_config": {"quant_method": "fp8"},
+                }
+            )
+        )
+        adapter_dir = tmp_path / "adapter"
+        adapter_dir.mkdir()
+        lora_a = torch.randn(r, hidden) * 0.1
+        lora_b = torch.randn(hidden, r) * 0.1
+        safetensors.torch.save_file(
+            {
+                f"base_model.model.{key[: -len('.weight')]}.lora_A.weight": lora_a,
+                f"base_model.model.{key[: -len('.weight')]}.lora_B.weight": lora_b,
+            },
+            adapter_dir / "adapter_model.safetensors",
+        )
+        (adapter_dir / "adapter_config.json").write_text(
+            json.dumps({"r": r, "lora_alpha": alpha, "peft_type": "LORA"})
+        )
+
+        out_dir = tmp_path / "merged"
+        merge_lora_sharded_efficient(  # default: NO dequant flag -> format-preserving
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=out_dir,
+            device="cpu",
+        )
+        merged = {}
+        with safetensors.torch.safe_open(
+            out_dir / "model.safetensors", framework="pt"
+        ) as f:
+            for k in f.keys():
+                merged[k] = f.get_tensor(k)
+
+        # format preserved: fp8 weight + fp32 scale kept, config NOT stripped
+        assert merged[key].dtype == torch.float8_e4m3fn
+        assert merged[key + "_scale_inv"].dtype == torch.float32
+        assert "quantization_config" in json.loads(
+            (out_dir / "config.json").read_text()
+        )
+        # no-LoRA weight passes through byte-identical
+        assert torch.equal(merged[okey], q2) and torch.equal(
+            merged[okey + "_scale_inv"], si2
+        )
+
+        # forward matches within fp8 tolerance (the delta survives re-quantization with fresh scales)
+        def deq(qq, s):
+            O, K = qq.shape
+            sr, sc = s.shape
+            return (
+                qq.float().reshape(sr, O // sr, sc, K // sc) * s.reshape(sr, 1, sc, 1)
+            ).reshape(O, K)
+
+        x = torch.randn(4, hidden)
+        y_unmerged = x @ deq_base.float().T + scale * (x @ lora_a.T) @ lora_b.T
+        y_merged = x @ deq(merged[key], merged[key + "_scale_inv"]).T
+        rel = (y_unmerged - y_merged).norm() / y_unmerged.norm()
+        assert rel < 6e-2, f"format-preserving merge forward rel {rel:.2e}"
 
     @staticmethod
     def _make_mxfp8(w: torch.Tensor, block: int = 32):
@@ -1041,7 +1132,7 @@ class TestQuantizedBaseMerge:
         w = torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2
         q, s = self._make_mxfp8(w, 32)
         key = "model.layers.0.self_attn.q_proj.weight"
-        deq_shard, did, _ = _dequantize_quantized_shard(
+        deq_shard, did, _, _ = _dequantize_quantized_shard(
             {key: q, key + "_scale": s}, "cpu"
         )
         assert did
@@ -1095,7 +1186,7 @@ class TestQuantizedBaseMerge:
             key + "_scale": nv.scale,
             key + "_scale_2": nv.per_tensor_scale.reshape(()),
         }
-        out, did, _ = _dequantize_quantized_shard(shard, "cpu")
+        out, did, _, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did
         assert key + "_scale" not in out and key + "_scale_2" not in out
         assert out[key].dtype == torch.bfloat16
@@ -1170,7 +1261,7 @@ class TestQuantizedBaseMerge:
         )  # low=even, high=odd
         ebyte = (exp + 127.0).to(torch.uint8)
         key = "model.layers.0.mlp.experts.gate_up_proj"  # 2D here for simplicity
-        out, did, _ = _dequantize_quantized_shard(
+        out, did, _, _ = _dequantize_quantized_shard(
             {key: packed, key + "_scale": ebyte}, "cpu"
         )
         assert did and out[key].dtype == torch.bfloat16 and key + "_scale" not in out
@@ -1195,7 +1286,7 @@ class TestQuantizedBaseMerge:
         except Exception as ex:  # pragma: no cover
             pytest.skip(f"to_nvfp4 unavailable: {ex}")
         key = "model.layers.0.self_attn.q_proj.weight"
-        out, did, _ = _dequantize_quantized_shard(
+        out, did, _, _ = _dequantize_quantized_shard(
             {key: nv.qdata, key + "_scale": nv.scale}, "cpu"
         )
         assert did and out[key].dtype == torch.bfloat16
@@ -1234,7 +1325,9 @@ class TestQuantizedBaseMerge:
         w = torch.randn(hidden, hidden, dtype=torch.bfloat16) * 0.2
         q, si = self._make_block_fp8(w, 16)
         key = "model.layers.0.self_attn.q_proj.weight"
-        deq, _, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
+        deq, _, _, _ = _dequantize_quantized_shard(
+            {key: q, key + "_scale_inv": si}, "cpu"
+        )
         lora_state = {
             f"base_model.model.{key[: -len('.weight')]}.lora_A.weight": torch.randn(
                 r, hidden
@@ -1440,7 +1533,9 @@ class TestQuantizedBaseMerge:
         w = torch.randn(E, OUT, IN, dtype=torch.bfloat16) * 0.1
         q, si = self._make_block_fp8(w, 64)
         key = "model.layers.0.mlp.experts.gate_up_proj"
-        deq, _, _ = _dequantize_quantized_shard({key: q, key + "_scale_inv": si}, "cpu")
+        deq, _, _, _ = _dequantize_quantized_shard(
+            {key: q, key + "_scale_inv": si}, "cpu"
+        )
         base_deq = self._dequant(q, si)
 
         A = torch.randn(r * E, IN) * 0.05
@@ -1487,7 +1582,7 @@ class TestQuantizedBaseMerge:
                 "this torchao build did not pad the swizzled scale; detection N/A"
             )
         key = "model.layers.0.self_attn.q_proj.weight"
-        out, did, _ = _dequantize_quantized_shard(
+        out, did, _, _ = _dequantize_quantized_shard(
             {key: nv.qdata, key + "_scale": nv.scale, key + "_scale_2": p.reshape(())},
             "cpu",
         )
@@ -1539,7 +1634,7 @@ class TestQuantizedBaseMerge:
             "b.weight": pt,
             "b.weight_scale": torch.tensor(2.0),  # scalar fp32 -> not e8m0, not block
         }
-        out, did, left = _dequantize_quantized_shard(shard, "cpu")
+        out, did, left, _ = _dequantize_quantized_shard(shard, "cpu")
         assert did and left
         assert out["a.weight"].dtype == torch.bfloat16  # dequantized
         assert out["b.weight"].dtype == torch.float8_e4m3fn  # left as-is

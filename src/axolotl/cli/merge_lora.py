@@ -116,12 +116,15 @@ def _do_merge_lora_efficient(*, cfg: DictDefault) -> None:
         nf4_blocksize=nf4_blocksize,
         nf4_double_quant=nf4_double_quant,
         trust_remote_code=bool(getattr(cfg, "trust_remote_code", False)),
+        dequant=bool(getattr(cfg, "merge_dequant", False)),
     )
 
     LOG.debug("Memory-efficient LoRA merge completed successfully!")
 
 
-def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
+def do_cli(
+    config: Union[Path, str] = Path("examples/"), dequant: bool = False, **kwargs
+) -> None:
     """
     Parses `axolotl` config, CLI args, and calls `do_merge_lora`. Note that various
     config values will be overwritten to allow the LoRA merge logic to work as expected
@@ -129,6 +132,8 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
 
     Args:
         config: Path to `axolotl` config YAML file.
+        dequant: If set (``--dequant``), dequantize a quantized base to bf16 in the merged
+            checkpoint. Default keeps the base's quantized dtypes (fp8/nvfp4) intact.
         kwargs: Additional keyword arguments to override config file values.
 
     Raises:
@@ -159,6 +164,7 @@ def do_cli(config: Union[Path, str] = Path("examples/"), **kwargs) -> None:
     parsed_cfg._original_load_in_4bit = original_load_in_4bit
     parsed_cfg._original_adapter = original_adapter
     parsed_cfg._original_quantize_moe_experts = original_quantize_moe_experts
+    parsed_cfg.merge_dequant = bool(dequant)
 
     if not parsed_cfg.lora_model_dir and parsed_cfg.output_dir:
         parsed_cfg.lora_model_dir = parsed_cfg.output_dir

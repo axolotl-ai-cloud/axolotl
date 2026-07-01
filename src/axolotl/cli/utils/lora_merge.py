@@ -650,82 +650,180 @@ def _dequant_nvfp4(w, scale, scale2, dev: str) -> torch.Tensor:
     return nv.dequantize(torch.bfloat16)
 
 
+def _detect_quant_format(key, w, shard_tensors, e8m0):
+    """Return (fmt, {suffix: scale_tensor}) for a quantized weight ``key``, else (None, {}).
+    fmt in {block_fp8, mxfp8, nvfp4, mxfp4}."""
+    si = shard_tensors.get(key + "_scale_inv")
+    sc = shard_tensors.get(key + "_scale")
+    sc2 = shard_tensors.get(key + "_scale_2")
+    is_e8m0 = sc is not None and (
+        sc.dtype == torch.uint8 or (e8m0 is not None and sc.dtype == e8m0)
+    )
+    if w.dtype == torch.float8_e4m3fn and si is not None:
+        return "block_fp8", {"_scale_inv": si}
+    if w.dtype == torch.float8_e4m3fn and is_e8m0:
+        return "mxfp8", {"_scale": sc}
+    if w.dtype == torch.uint8 and sc is not None and sc.dtype == torch.float8_e4m3fn:
+        scales = {"_scale": sc}
+        if sc2 is not None:
+            scales["_scale_2"] = sc2
+        return "nvfp4", scales
+    if w.dtype == torch.uint8 and is_e8m0:
+        return "mxfp4", {"_scale": sc}
+    return None, {}
+
+
+def _dequant_by_format(fmt, w, scales, dev):
+    if fmt == "block_fp8":
+        return _dequant_block_fp8(w, scales["_scale_inv"], dev)
+    if fmt == "mxfp8":
+        return _dequant_mxfp8(w, scales["_scale"], dev)
+    if fmt == "nvfp4":
+        return _dequant_nvfp4(w, scales["_scale"], scales.get("_scale_2"), dev)
+    return _dequant_mxfp4(w, scales["_scale"], dev)  # mxfp4
+
+
+def _requant_by_format(fmt, w_bf16, scales, dev):
+    """Re-quantize a merged bf16 weight back to its original format (fresh block scales). Returns
+    ``{"": qweight, "_scale*": scale_tensors}`` matching the original scale dtypes/shapes so the
+    merged checkpoint loads exactly like the base did."""
+    w = w_bf16.to(dev).float()
+    if fmt == "block_fp8":
+        si = scales["_scale_inv"]
+        *lead, N, K = w.shape
+        sr, sc = si.shape[-2], si.shape[-1]
+        bn, bk = N // sr, K // sc
+        wb = w.reshape(*lead, sr, bn, sc, bk)
+        amax = wb.abs().amax(dim=(-3, -1), keepdim=True).clamp_min(1e-12)
+        scale_inv = amax / 448.0
+        q = (wb / scale_inv).clamp_(-448, 448).to(torch.float8_e4m3fn)
+        return {
+            "": q.reshape(*lead, N, K).cpu(),
+            "_scale_inv": scale_inv.reshape(*lead, sr, sc).to(si.dtype).cpu(),
+        }
+    if fmt == "mxfp8":
+        q, ebyte = _quant_mx(w, 32)
+        s = scales["_scale"]
+        return {"": q.cpu(), "_scale": ebyte.view(s.dtype).cpu()}
+    if fmt == "mxfp4":
+        packed, ebyte = _quant_mxfp4(w)
+        s = scales["_scale"]
+        return {"": packed.cpu(), "_scale": ebyte.view(s.dtype).cpu()}
+    # nvfp4 via torchao (matches the loader)
+    from torchao.prototype.mx_formats.nvfp4_tensor import NVFP4Tensor
+
+    two_level = "_scale_2" in scales
+    p = (
+        (w.abs().max() / (6.0 * 448.0)).reshape(1).clamp_min(1e-12)
+        if two_level
+        else None
+    )
+    nv = NVFP4Tensor.to_nvfp4(w, per_tensor_scale=p, is_swizzled_scales=False)
+    out = {"": nv.qdata.cpu(), "_scale": nv.scale.to(scales["_scale"].dtype).cpu()}
+    if two_level:
+        out["_scale_2"] = nv.per_tensor_scale.reshape(scales["_scale_2"].shape).cpu()
+    return out
+
+
+def _quant_mx(w_f32, block):
+    """bf16/f32 -> (e4m3 qdata, uint8 e8m0 exponent byte), FLOOR e8m0, 32-wide blocks along last dim."""
+    *lead, N, K = w_f32.shape
+    nb = K // block
+    wb = w_f32.reshape(*lead, N, nb, block)
+    amax = wb.abs().amax(-1).clamp_min(1e-12)
+    exp = torch.floor(torch.log2(amax)) - 8.0
+    q = (wb / torch.exp2(exp)[..., None]).clamp_(-448, 448).to(torch.float8_e4m3fn)
+    ebyte = (exp + 127.0).clamp_(0, 254).to(torch.uint8)
+    return q.reshape(*lead, N, K), ebyte
+
+
+def _quant_mxfp4(w_f32):
+    """f32 -> (packed e2m1 uint8 [.., K/2], uint8 e8m0 [.., K/32]); nearest-codebook, low/high nibble."""
+    lut = torch.tensor(_FP4_E2M1_LUT, dtype=torch.float32, device=w_f32.device)
+    *lead, N, K = w_f32.shape
+    nb = K // _MX_BLOCK
+    wb = w_f32.reshape(*lead, N, nb, _MX_BLOCK)
+    amax = wb.abs().amax(-1).clamp_min(1e-6)
+    exp = torch.floor(torch.log2(amax / 6.0))
+    wn = (wb / torch.exp2(exp)[..., None]).reshape(*lead, N, K)
+    idx = (wn.unsqueeze(-1) - lut).abs().argmin(-1).to(torch.uint8)  # [.., N, K]
+    packed = idx[..., 0::2] | (idx[..., 1::2] << 4)
+    ebyte = (exp + 127.0).clamp_(0, 254).to(torch.uint8)
+    return packed, ebyte
+
+
+def _key_has_lora(key, shape, lora_state, weight_renamings):
+    a, b = find_lora_weights(lora_state, key, weight_renamings)
+    if a is not None and b is not None:
+        return True
+    if len(shape) >= 3:
+        pa, pb, _ = _find_param_wrapper_lora(lora_state, key, tuple(shape))
+        return pa is not None and pb is not None
+    return False
+
+
 def _dequantize_quantized_shard(
-    shard_tensors: Dict[str, torch.Tensor], device: str
-) -> tuple[Dict[str, torch.Tensor], bool, bool]:
-    """Dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 in place, dropping their
-    scale sibling tensors. Returns ``(new_shard, any_dequantized, any_left_quantized)`` — the last flag
-    is True if a quantized tensor was detected but NOT dequantized (unsupported format, or torchao
-    missing for nvfp4), so the caller must NOT strip the quantization_config.
+    shard_tensors: Dict[str, torch.Tensor],
+    device: str,
+    lora_state: Optional[Dict[str, torch.Tensor]] = None,
+    weight_renamings: Optional[Dict[str, str]] = None,
+    dequant_all: bool = True,
+) -> tuple[Dict[str, torch.Tensor], bool, bool, Dict]:
+    """Dequantize quantized weights to bf16 so the LoRA delta folds into the true value.
 
-    The LoRA merge folds ``scaling*(B@A)`` into the weight and must do so on the *dequantized* value,
-    then keep bf16 (re-rounding the sum back to the quant format would drop the low-magnitude delta).
-    A weight ``K`` is detected by its scale sibling(s):
+    Returns ``(new_shard, any_dequantized, any_left_quantized, requant_plan)``.
 
-      * ``K_scale_inv`` (fp32) + ``K`` e4m3          -> block-fp8 (128x128)
-      * ``K_scale`` (e8m0/uint8) + ``K`` e4m3        -> mxfp8 (32-wide)
-      * ``K_scale`` (e4m3) + ``K_scale_2`` + ``K`` uint8 -> nvfp4 (block-16 two-level)
+    ``dequant_all=True`` dequantizes EVERY quantized weight to bf16 (the ``--dequant`` merge: output is
+    bf16). Default (``dequant_all=False``) is FORMAT-PRESERVING: only LoRA-targeted quantized weights
+    are dequantized (so the delta can fold correctly); ``requant_plan[key] = (fmt, scales)`` records how
+    to re-quantize each back to its original format after the merge, and quantized weights with no LoRA
+    are left untouched (same dtype + scales). ``any_left_quantized`` = a quantized weight was detected
+    but could not be dequantized (unsupported format / torchao missing) -> keep the config.
 
-    Covers 2D linears (``q_proj.weight`` + ``q_proj.weight_scale*``) AND fused-3D experts
-    (``experts.gate_up_proj`` + ``experts.gate_up_proj_scale*``, no ``.weight`` suffix — match on
-    ``key + "_scale*"``). NOTE: native nvfp4/mxfp4 checkpoints that store experts *per-expert*
-    (``experts.0.gate_proj.weight`` ...) unfused are NOT handled here — that needs a fuse->merge->
-    unfuse writer (see the nvfp4 expert-merge writer)."""
+    Formats (detected by scale sibling): block-fp8 (``_scale_inv`` fp32, 128x128), mxfp8 (``_scale``
+    e8m0/32), nvfp4 (``_scale`` e4m3/16 [+ ``_scale_2``]), mxfp4 (``_scale`` e8m0/32). Covers 2D linears
+    and fused-3D experts; native per-expert-unfused nvfp4/mxfp4 is not handled here."""
     dev = device if (device != "cpu" and torch.cuda.is_available()) else "cpu"
     e8m0 = getattr(torch, "float8_e8m0fnu", None)
     out: Dict[str, torch.Tensor] = dict(shard_tensors)
     drop: set = set()
+    plan: Dict = {}
     did = False
     left = False
+    lora_state = lora_state or {}
     for key, w in shard_tensors.items():
         if key in drop or key.endswith(("_scale", "_scale_inv", "_scale_2")):
             continue
         if w.ndim not in (2, 3):
             continue
-        si = shard_tensors.get(key + "_scale_inv")
-        sc = shard_tensors.get(key + "_scale")
-        sc2 = shard_tensors.get(key + "_scale_2")
-        is_e8m0 = sc is not None and (
-            sc.dtype == torch.uint8 or (e8m0 is not None and sc.dtype == e8m0)
-        )
-        # a quantized weight = a low-bit dtype WITH a scale sibling (else it's a normal tensor)
-        is_quant = w.dtype in (torch.float8_e4m3fn, torch.uint8) and (
-            si is not None or sc is not None
-        )
-        deq = None
-        if w.dtype == torch.float8_e4m3fn and si is not None:
-            deq = _dequant_block_fp8(w, si, dev)  # block-fp8 (128x128)
-            drop.add(key + "_scale_inv")
-        elif w.dtype == torch.float8_e4m3fn and is_e8m0:
-            deq = _dequant_mxfp8(w, sc, dev)  # mxfp8 (e4m3 + e8m0/32)
-            drop.add(key + "_scale")
-        elif (
-            w.dtype == torch.uint8
-            and sc is not None
-            and sc.dtype == torch.float8_e4m3fn
+        fmt, scales = _detect_quant_format(key, w, shard_tensors, e8m0)
+        if fmt is None:
+            # a low-bit weight with a scale sibling but an unrecognized format -> keep the config
+            if w.dtype in (torch.float8_e4m3fn, torch.uint8) and (
+                shard_tensors.get(key + "_scale_inv") is not None
+                or shard_tensors.get(key + "_scale") is not None
+            ):
+                left = True
+            continue
+        # format-preserving: only touch quantized weights a LoRA actually targets
+        if not dequant_all and not _key_has_lora(
+            key, w.shape, lora_state, weight_renamings
         ):
-            try:  # nvfp4: e4m3 block-16 scale, two-level if scale_2 present else single-level
-                deq = _dequant_nvfp4(w, sc, sc2, dev)
-            except Exception as ex:  # torchao missing / shape mismatch -> leave as-is
-                LOG.warning("nvfp4 dequant skipped for %s: %s", key, ex)
-                left = True  # tensor stays quantized -> config must be kept
-                continue
-            drop.add(key + "_scale")
-            if sc2 is not None:
-                drop.add(key + "_scale_2")
-        elif w.dtype == torch.uint8 and is_e8m0:
-            deq = _dequant_mxfp4(w, sc, dev)  # mxfp4 (packed e2m1 + e8m0/32)
-            drop.add(key + "_scale")
-        if deq is not None:
-            out[key] = deq.to(torch.bfloat16).cpu()
-            did = True
-        elif is_quant:
-            left = (
-                True  # a quantized weight in an unsupported layout -> keep the config
-            )
+            continue
+        try:
+            deq = _dequant_by_format(fmt, w, scales, dev)
+        except Exception as ex:  # torchao missing / shape mismatch -> leave quantized
+            LOG.warning("%s dequant skipped for %s: %s", fmt, key, ex)
+            left = True
+            continue
+        out[key] = deq.to(torch.bfloat16).cpu()
+        did = True
+        drop.update(key + suf for suf in scales)
+        if not dequant_all:
+            plan[key] = (fmt, scales)  # re-quantize after the LoRA fold
     for sk in drop:
         out.pop(sk, None)
-    return out, did, left
+    return out, did, left, plan
 
 
 _FUSED_EXPERT_LORA_RE = re.compile(r"\.experts\.(?:base_layer\.)?lora_[AB]\.weight$")
@@ -1285,10 +1383,16 @@ def merge_lora_sharded_efficient(
     nf4_blocksize: Optional[int] = None,
     nf4_double_quant: bool = True,
     trust_remote_code: bool = False,
+    dequant: bool = False,
 ) -> None:
     """
     Memory-efficient LoRA merging that processes shards individually
     without loading the full model into memory.
+
+    dequant: if True, dequantize every quantized weight and write a bf16 checkpoint (strips
+        quantization_config). Default False = FORMAT-PRESERVING: LoRA-targeted quantized weights are
+        dequantized, the delta folded, then re-quantized back to the SAME format (fp8 stays fp8,
+        nvfp4 stays nvfp4), so a large quantized base does not double in size.
 
     Args:
         simulate_nf4: Apply NF4 roundtrip to ALL weight tensors (for QLoRA)
@@ -1452,11 +1556,17 @@ def merge_lora_sharded_efficient(
 
         total_tensors += len(shard_tensors)
 
-        # Step 0: dequantize FUSED quantized weights (block-fp8 / mxfp8 / nvfp4) to bf16 so the LoRA
-        # delta folds into the TRUE weight — a raw read misses the block scale and re-rounds the sum
-        # back to the quant format, dropping the delta (an otherwise silently-wrong merge).
-        shard_tensors, _shard_deq, _shard_left = _dequantize_quantized_shard(
-            shard_tensors, device
+        # Step 0: dequantize quantized weights so the LoRA delta folds into the TRUE weight (a raw read
+        # misses the block scale). Default (dequant=False) touches only LoRA-targeted weights and plans
+        # to re-quantize them back to their original format after the fold; dequant=True dequants all.
+        shard_tensors, _shard_deq, _shard_left, requant_plan = (
+            _dequantize_quantized_shard(
+                shard_tensors,
+                device,
+                lora_state=lora_state,
+                weight_renamings=weight_renamings,
+                dequant_all=dequant,
+            )
         )
         block_fp8_dequantized = block_fp8_dequantized or _shard_deq
         left_quantized = left_quantized or _shard_left
@@ -1520,6 +1630,23 @@ def merge_lora_sharded_efficient(
             if was_merged:
                 merged_count += 1
 
+        # Step 3 (format-preserving): re-quantize each merged weight back to its original format
+        # (fresh block scales) so the output dtype matches the input (fp8 -> fp8, nvfp4 -> nvfp4).
+        for key, (fmt, scales) in requant_plan.items():
+            if key not in merged_tensors:
+                continue
+            try:
+                requant = _requant_by_format(fmt, merged_tensors[key], scales, device)
+            except (
+                Exception
+            ) as ex:  # torchao missing etc. -> keep the bf16 merge for this weight
+                LOG.warning("%s re-quant skipped for %s: %s", fmt, key, ex)
+                left_quantized = True
+                continue
+            merged_tensors[key] = requant.pop("")
+            for suf, t in requant.items():
+                merged_tensors[key + suf] = t
+
         output_shard_path = output_path / shard_path.name
         merged_tensors = {k: v.detach().cpu() for k, v in merged_tensors.items()}
 
@@ -1562,7 +1689,9 @@ def merge_lora_sharded_efficient(
             _json.dump(index, f, indent=2)
         LOG.debug(f"Wrote weight-map index: {index_name}")
 
-    if block_fp8_dequantized and not left_quantized:
+    # Only the --dequant merge emits a bf16 checkpoint; the format-preserving default keeps the
+    # quantized dtypes (and their quantization_config) intact.
+    if dequant and block_fp8_dequantized and not left_quantized:
         _strip_quantization_config(output_path)
     elif block_fp8_dequantized and left_quantized:
         LOG.warning(
