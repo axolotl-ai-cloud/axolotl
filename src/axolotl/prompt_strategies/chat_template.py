@@ -320,6 +320,9 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         self.images = "images"
 
+        self._fast_spans_disabled = False
+        self._fast_validated_samples = 0
+
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
         )
@@ -485,6 +488,17 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
         input_ids = result["input_ids"]
         labels = [IGNORE_TOKEN_ID] * len(input_ids)
 
+        fast_spans = None
+        if not self._fast_spans_disabled and self._fast_spans_supported():
+            fast_spans = self._fast_content_spans(turns, tools, input_ids)
+            if fast_spans is None:
+                self._fast_spans_disabled = True
+        validating = (
+            fast_spans is not None
+            and self._fast_validated_samples < self._FAST_VALIDATION_SAMPLES
+        )
+        used_fast = False
+
         last_eos_idx = -1
         last_eot_idx = -1
         for index, turn in enumerate(turns):
@@ -531,12 +545,38 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             # (excluding reasoning_content + template separator tokens).
             use_content_only = bool(has_any_detail and has_reasoning)
 
-            turn_start_idx, turn_end_idx = self.find_turn(
-                turns=turns,
-                turn_idx=index,
-                tools=tools,
-                content_only=use_content_only,
+            fast_span = (
+                fast_spans.get(index)
+                if (
+                    fast_spans is not None
+                    and not use_content_only
+                    and train_detail is None
+                    and reasoning_train_detail is None
+                )
+                else None
             )
+            if fast_span is not None and not validating:
+                turn_start_idx, turn_end_idx = fast_span
+                used_fast = True
+            else:
+                turn_start_idx, turn_end_idx = self.find_turn(
+                    turns=turns,
+                    turn_idx=index,
+                    tools=tools,
+                    content_only=use_content_only,
+                )
+                if fast_span is not None:
+                    used_fast = True
+                    if fast_span != (turn_start_idx, turn_end_idx):
+                        # Fast path disagrees with the reference: disable it for the
+                        # whole run and keep the reference result for this turn.
+                        LOG.warning(
+                            "chat_template fast turn-boundary path disagreed with the "
+                            "reference; disabling it for this run and using find_turn."
+                        )
+                        self._fast_spans_disabled = True
+                        fast_spans = None
+                        validating = False
 
             LOG.debug(f"Turn indices: start={turn_start_idx}, end={turn_end_idx}")
 
@@ -638,6 +678,10 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
 
         LOG.debug(f"Final labels: {labels}")
 
+        # Bank a clean sample: once enough have agreed with find_turn, trust the fast path.
+        if used_fast and validating and not self._fast_spans_disabled:
+            self._fast_validated_samples += 1
+
         # ``result`` already carries any processor outputs (pixel_values, image
         # grid info, etc.); just set the fields we computed locally.
         result["labels"] = labels
@@ -658,6 +702,89 @@ class ChatTemplateStrategy(PromptTokenizingStrategy):
             if input_ids[i] in self._eot_token_ids:
                 return i
         return -1
+
+    # Number of initial samples whose fast-path spans are cross-checked against the
+    # reference find_turn before the fast path is trusted for the remainder of the run.
+    _FAST_VALIDATION_SAMPLES = 8
+
+    def _fast_spans_supported(self) -> bool:
+        """Fast spans need char->token offsets, so a fast HF tokenizer and no processor."""
+        return self.prompter.processor is None and getattr(
+            self.tokenizer, "is_fast", False
+        )
+
+    def _fast_content_spans(
+        self, turns: list[dict], tools: list[dict] | None, input_ids: list[int]
+    ) -> dict[int, tuple[int, int]] | None:
+        """Locate every plain-string turn's content token span in a single pass.
+
+        ``find_turn`` re-renders and re-tokenizes the whole conversation prefix once
+        per turn — O(turns^2) work that makes long multi-turn datasets crawl (#2396).
+        Here we render + tokenize the conversation once, recover char->token offsets,
+        and map each turn's content substring to its token span with a forward cursor.
+
+        Returns ``{turn_idx: (start, end)}`` for the turns it can resolve exactly
+        (turns it can't are omitted, so the caller falls back to ``find_turn`` for
+        them), or ``None`` when the re-tokenization does not reproduce build_prompt's
+        ids.
+        """
+        tokenizer = self.tokenizer
+
+        # Mirror build_prompt(turns, tools=tools) exactly so the ids line up with input_ids.
+        chat_template_kwargs = {
+            "chat_template": self.prompter.chat_template,
+            "add_generation_prompt": False,
+            **self.prompter.chat_template_kwargs,
+        }
+        if tools:
+            chat_template_kwargs["tools"] = tools
+        try:
+            text = tokenizer.apply_chat_template(
+                turns, tokenize=False, **chat_template_kwargs
+            )
+            enc = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+        except Exception:  # pragma: no cover - degrade to find_turn
+            return None
+
+        # Spans index into input_ids (from build_prompt); only safe if our render
+        # reproduces it byte-for-byte. If specials are handled differently, bail.
+        if list(enc["input_ids"]) != list(input_ids):
+            return None
+
+        thinking_key = self.prompter.template_thinking_key
+        is_mistral = "mistral" in self.tokenizer.name_or_path.lower()
+        offsets = enc["offset_mapping"]
+        n_tok = len(offsets)
+        spans: dict[int, tuple[int, int]] = {}
+        char_cursor = 0
+        tok = 0
+        for idx, turn in enumerate(turns):
+            content = turn.get("content")
+            if not isinstance(content, str) or not content:
+                continue
+            # Skip turns where find_turn applies handling the char-span can't mirror:
+            # reasoning_content (spans content + separator) and mistral's system turn.
+            if thinking_key and turn.get(thinking_key) is not None:
+                continue
+            if idx == 0 and turn.get("role") == "system" and is_mistral:
+                continue
+            pos = text.find(content, char_cursor)
+            if pos == -1:
+                continue
+            c0, c1 = pos, pos + len(content)
+            char_cursor = c1
+            # First token starting exactly at the content start (forward-only cursor).
+            while tok < n_tok and offsets[tok][0] < c0:
+                tok += 1
+            if tok >= n_tok or offsets[tok][0] != c0:
+                continue  # content not token-aligned (template glued it on) -> find_turn
+            start = tok
+            while tok < n_tok and offsets[tok][1] <= c1:
+                tok += 1
+            if tok == start or offsets[tok - 1][1] != c1:
+                continue  # content end not token-aligned -> find_turn
+            spans[idx] = (start, tok)
+        return spans
 
     def find_turn(
         self,
@@ -1130,6 +1257,9 @@ class MistralStrategy(ChatTemplateStrategy):
         self.split_thinking = split_thinking
 
         self.images = "images"
+
+        self._fast_spans_disabled = False
+        self._fast_validated_samples = 0
 
         LOG.debug(
             f"The chat template uses the following properites on the message: {self.prompter.chat_template_msg_variables}"
