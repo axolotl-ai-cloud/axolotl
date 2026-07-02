@@ -263,6 +263,7 @@ class SinkGD(_AdamBase):
         sinkgd_base_width=None,
         sinkgd_lr_width_exponent=1.0,
         sinkgd_fused_kernel=False,
+        sinkgd_fused_min_numel=1 << 25,
         block_size=256,
         bf16_stochastic_round=False,
     ) -> None:
@@ -286,6 +287,7 @@ class SinkGD(_AdamBase):
         self.sinkgd_base_width = sinkgd_base_width
         self.sinkgd_lr_width_exponent = sinkgd_lr_width_exponent
         self.sinkgd_fused_kernel = sinkgd_fused_kernel
+        self.sinkgd_fused_min_numel = sinkgd_fused_min_numel
         self._compiled_sinkgd = torch.compile(
             single_param_sinkgd, fullgraph=True, dynamic=False
         )
@@ -329,8 +331,13 @@ class SinkGD(_AdamBase):
             self.sinkgd_base_width / d_in
         ) ** self.sinkgd_lr_width_exponent
 
-    def _fused_ok(self, p: Tensor) -> bool:
-        # stochastic rounding is not implemented in the fused kernels -> compiled fallback
+    def _fused_ok(self, p: Tensor, epilogue: bool = False) -> bool:
+        # Stochastic rounding is not implemented in the fused kernels -> compiled fallback.
+        # The spec/md epilogue adds ~20 small eager ops per param; without a process group
+        # to amortize against, small matrices lose to the compiled path (H100: 0.6-0.7x at
+        # d=2048) -> gate single-device epilogue modes on tensor size.
+        if epilogue and p.numel() < self.sinkgd_fused_min_numel:
+            return False
         return (
             self.sinkgd_fused_kernel
             and fused_available()
@@ -340,7 +347,7 @@ class SinkGD(_AdamBase):
 
     def _sinkgd_update(self, p: Tensor, grad: Tensor, group: dict, lr: Tensor) -> None:
         alpha = self._alpha_eff(p)
-        if self._fused_ok(p):
+        if self._fused_ok(p, epilogue=self.sinkgd_spectral_norm):
             if self.sinkgd_spectral_norm:
                 u = self._specnorm_u(p, p.shape[-1], p.shape[:-2])
                 fused_sinkgd_step(
@@ -473,7 +480,7 @@ class SinkGDMD(SinkGD):
         state = self.state[p]
         tn = self._md_target_norm(p, state)
         u = self._specnorm_u(p, p.shape[-1], p.shape[:-2])
-        if self._fused_ok(p):
+        if self._fused_ok(p, epilogue=True):
             fused_sinkgd_step(
                 p.detach(), grad, float(lr) * alpha, 0.0, self.sinkhorn_iters,
                 self.sinkgd_eps, mode="md", u=u, target_norm=tn,
@@ -553,6 +560,8 @@ def _pop_sinkgd_extra_kwargs(optimizer_kwargs: dict) -> dict:
         out["sinkgd_lr_width_exponent"] = float(out["sinkgd_lr_width_exponent"])
     if "sinkgd_fused_kernel" in out:
         out["sinkgd_fused_kernel"] = _as_bool(out["sinkgd_fused_kernel"])
+    if "sinkgd_fused_min_numel" in out:
+        out["sinkgd_fused_min_numel"] = int(out["sinkgd_fused_min_numel"])
     # Mutual exclusion: 1/d_in (base_width) and the Muon spectral target are two width
     # corrections; stacking them double-counts (Phase 2). Let the sphere/spectral own width.
     if (
@@ -788,7 +797,9 @@ class DistSinkGD(SinkGD):
         # fused Triton path: replicated/expert-sharded runs locally; rows-sharded (the
         # FSDP2 dim-0 layout) all-reduces the same vectors as the compiled path. A
         # cols-sharded matrix dim falls through to the compiled pipeline below.
-        if self._fused_ok(p_local) and shard_dim in (None, -2):
+        if self._fused_ok(
+            p_local, epilogue=self.sinkgd_spectral_norm and shard_dim is None
+        ) and shard_dim in (None, -2):
             lr_f = float(lr) * self._alpha_eff(p)
             grp = self._process_group if shard_dim == -2 else None
             m_glob = global_M if shard_dim == -2 else None
@@ -918,7 +929,7 @@ class DistSinkGDMD(DistSinkGD):
         x = grad.to_local() if isinstance(grad, DTensor) else grad
         tn = self._dist_md_target(p, p_local, shard_dim)
 
-        if self._fused_ok(p_local) and shard_dim in (None, -2):
+        if self._fused_ok(p_local, epilogue=shard_dim is None) and shard_dim in (None, -2):
             if shard_dim == -2:
                 u = self._dist_specnorm_vec(p, p_local.device, p_local.shape[:-2], global_N)
             else:
