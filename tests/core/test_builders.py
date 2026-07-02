@@ -209,6 +209,24 @@ class TestHFCausalTrainerBuilder:
         with pytest.raises(ValueError):
             trainer.create_optimizer()
 
+    def test_sinkgd_md_sphere_selects_subclass(self, sft_cfg, model, tokenizer):
+        """sinkgd_md_sphere=true builds the SinkGDMD (A+B) subclass; default builds SinkGD."""
+        from axolotl.utils.optimizers.sinkgd import SinkGD, SinkGDMD
+
+        cfg = sft_cfg.copy()
+        cfg["optimizer"] = "sinkgd"
+        cfg["optim_args"] = {"sinkgd_md_sphere": True}
+        trainer = HFCausalTrainerBuilder(cfg, model, tokenizer).build(100)
+        optim = trainer.create_optimizer()
+        assert isinstance(optim, SinkGDMD)
+
+        cfg2 = sft_cfg.copy()
+        cfg2["optimizer"] = "sinkgd"
+        cfg2["optim_args"] = {"sinkgd_lr_scale": 0.05}
+        trainer2 = HFCausalTrainerBuilder(cfg2, model, tokenizer).build(100)
+        optim2 = trainer2.create_optimizer()
+        assert isinstance(optim2, SinkGD) and not isinstance(optim2, SinkGDMD)
+
 
 class TestTrainerClsPlugin:
     """

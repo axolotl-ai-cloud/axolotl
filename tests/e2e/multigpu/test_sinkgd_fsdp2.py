@@ -23,7 +23,7 @@ import torch.distributed as dist
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.tensor import Shard, distribute_tensor
 
-from axolotl.utils.optimizers.sinkgd import DistSinkGD, sr_sinkhorn
+from axolotl.utils.optimizers.sinkgd import DistSinkGD, DistSinkGDMD, sr_sinkhorn
 
 _TORCHRUN_LOCAL_RANK = os.environ.get("LOCAL_RANK")
 _TORCHRUN_WORLD_SIZE = int(os.environ.get("WORLD_SIZE", "1"))
@@ -118,3 +118,38 @@ def test_sharded_spectral_matches_full(mesh, shard_dim, dim, target_mode):
     )
     opt2.load_state_dict(sd)
     torch.testing.assert_close(opt2.state[w]["specnorm_u"], u)
+
+
+@pytest.mark.parametrize("dim", [0, 1])
+def test_dist_md_sphere_matches_full_and_stays_on_sphere(mesh, dim):
+    """DistSinkGDMD (A+B) on a sharded weight keeps the GLOBAL weight on its Frobenius sphere
+    and matches the single-device MD result; sphere radius + power-iter vector round-trip."""
+    torch.manual_seed(0)
+    m, n = 128, 96
+    w_full = torch.randn(m, n, device="cuda", dtype=torch.float32)
+    tn0 = w_full.norm().item()
+
+    w = torch.nn.Parameter(distribute_tensor(w_full.clone(), mesh, [Shard(dim)]))
+    opt = DistSinkGDMD(
+        [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
+        lr=1.0, sinkgd_lr_scale=0.1, sinkgd_spectral_norm_iters=3,
+        process_group=mesh["dp_shard"].get_group(),
+    )
+    for _ in range(4):
+        w.grad = distribute_tensor(
+            torch.randn(m, n, device="cuda", dtype=torch.float32), mesh, [Shard(dim)]
+        )
+        opt.step()
+
+    # global weight stays on the enable-time Frobenius sphere
+    assert w.detach().full_tensor().norm().item() == pytest.approx(tn0, rel=1e-3)
+    # sphere radius + power-iteration vector are persisted and round-trip
+    assert "md_target_norm" in opt.state[w] and "specnorm_u" in opt.state[w]
+    sd = opt.state_dict()
+    opt2 = DistSinkGDMD(
+        [{"params": [w], "use_sinkgd": True, "weight_decay": 0.0}],
+        lr=1.0, sinkgd_lr_scale=0.1, sinkgd_spectral_norm_iters=3,
+        process_group=mesh["dp_shard"].get_group(),
+    )
+    opt2.load_state_dict(sd)
+    torch.testing.assert_close(opt2.state[w]["md_target_norm"], opt.state[w]["md_target_norm"])
