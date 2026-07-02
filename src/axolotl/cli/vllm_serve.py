@@ -120,4 +120,3 @@ def do_vllm_serve(
         )
 
     vllm_serve_main(vllm_script_args)
-
