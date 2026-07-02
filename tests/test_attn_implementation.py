@@ -2,6 +2,10 @@
 capability flags, backend registration, and downstream validators.
 """
 
+import subprocess
+import sys
+from functools import lru_cache
+
 import pytest
 
 from axolotl.utils.config import validate_config
@@ -17,12 +21,26 @@ from axolotl.utils.schemas.enums import (
 from tests.conftest import capture_axolotl_warnings as _capture_axolotl_warnings
 
 
+@lru_cache(maxsize=1)
 def _xformers_available():
     try:
-        import xformers.ops  # noqa: F401
-
-        return True
-    except (ImportError, OSError):
+        result = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import warnings; "
+                    "warnings.filterwarnings('ignore', category=DeprecationWarning); "
+                    "import xformers.ops"
+                ),
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except Exception:  # pylint: disable=broad-except
         return False
 
 

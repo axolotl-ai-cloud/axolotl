@@ -70,6 +70,105 @@ class TestGenerateDatasetHashFromConfig:
         h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
         assert h1 != h2
 
+    def test_different_special_tokens_different_hash(self):
+        cfg_a = _base_cfg(special_tokens={"pad_token": "<|endoftext|>"})
+        cfg_b = _base_cfg(
+            special_tokens={
+                "pad_token": "<|endoftext|>",
+                "bos_token": "<|custom_im_start|>",
+                "eos_token": "<|custom_im_end|>",
+            }
+        )
+
+        h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
+        h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
+
+        assert h1 != h2
+
+    def test_different_chat_template_different_hash(self):
+        cfg_a = _base_cfg(chat_template="chatml")
+        cfg_b = _base_cfg(chat_template="jinja", chat_template_jinja="{{ messages }}")
+
+        h1 = generate_dataset_hash_from_config(cfg_a, _datasets(), "tok")
+        h2 = generate_dataset_hash_from_config(cfg_b, _datasets(), "tok")
+
+        assert h1 != h2
+
+    def test_dataset_chat_template_fields_affect_hash(self):
+        datasets_a = _datasets()
+        datasets_b = _datasets()
+        datasets_b[0].chat_template = "jinja"
+        datasets_b[0].chat_template_jinja = "{{ messages }}"
+        datasets_b[0].field_messages = "conversations"
+        datasets_b[0].message_property_mappings = {
+            "role": "from",
+            "content": "value",
+        }
+
+        cfg = _base_cfg()
+        h1 = generate_dataset_hash_from_config(cfg, datasets_a, "tok")
+        h2 = generate_dataset_hash_from_config(cfg, datasets_b, "tok")
+
+        assert h1 != h2
+
+    def test_llama_fix_token_configs_do_not_share_cache_hash(self):
+        datasets_custom_tokens = [
+            DictDefault(
+                {
+                    "path": "mlabonne/FineTome-100k",
+                    "type": "chat_template",
+                    "split": "train[:10%]",
+                    "chat_template": "jinja",
+                    "chat_template_jinja": "{{ messages }}",
+                    "field_messages": "conversations",
+                    "message_property_mappings": {
+                        "role": "from",
+                        "content": "value",
+                    },
+                }
+            )
+        ]
+        datasets_chatml = [
+            DictDefault(
+                {
+                    "path": "mlabonne/FineTome-100k",
+                    "type": "chat_template",
+                    "split": "train[:10%]",
+                    "field_messages": "conversations",
+                    "message_property_mappings": {
+                        "role": "from",
+                        "content": "value",
+                    },
+                }
+            )
+        ]
+        cfg_custom_tokens = _base_cfg(
+            sequence_len=512,
+            sample_packing=True,
+            eval_sample_packing=True,
+            special_tokens={
+                "pad_token": "<|endoftext|>",
+                "bos_token": "<|custom_im_start|>",
+                "eos_token": "<|custom_im_end|>",
+            },
+        )
+        cfg_chatml = _base_cfg(
+            sequence_len=512,
+            sample_packing=True,
+            eval_sample_packing=True,
+            special_tokens={"pad_token": "<|endoftext|>"},
+            chat_template="chatml",
+        )
+
+        h1 = generate_dataset_hash_from_config(
+            cfg_custom_tokens, datasets_custom_tokens, "HuggingFaceTB/SmolLM2-135M"
+        )
+        h2 = generate_dataset_hash_from_config(
+            cfg_chatml, datasets_chatml, "HuggingFaceTB/SmolLM2-135M"
+        )
+
+        assert h1 != h2
+
     # --- Regression: added_tokens_overrides + output_dir ---
 
     def test_added_tokens_overrides_hash_stable_across_output_dir(self):

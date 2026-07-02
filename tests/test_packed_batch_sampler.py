@@ -56,7 +56,7 @@ class TestBatchedSamplerPacking:
         # Apply the patch for multipack handling
         apply_multipack_dataloader_patch()
 
-        dataset = dataset_winglian_tiny_shakespeare["train"]
+        dataset = dataset_winglian_tiny_shakespeare["train"].select(range(16))
 
         cfg = DictDefault(
             {

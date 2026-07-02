@@ -1129,13 +1129,11 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and self.fsdp_config.offload_params
             and str(self.fsdp_version) != "2"
         ):
-            raise ValueError(
-                f"FSDP Offload not compatible with {str(self.optimizer.value)}"
-            )
+            raise ValueError(f"FSDP Offload not compatible with {str(self.optimizer)}")
         return self
 
     @model_validator(mode="after")
@@ -1144,13 +1142,13 @@ class OptimizationValidationMixin:
             hasattr(self, "fsdp_config")
             and self.fsdp_config
             and self.optimizer
-            and "8bit" in self.optimizer.value
+            and "8bit" in str(self.optimizer)
             and str(self.fsdp_version) == "2"
         ):
             if self.optimizer in ["adamw_8bit", "adamw_bnb_8bit"]:
                 # CUDA ops errors with bnb 8bit optimizer + FSDP2
                 raise ValueError(
-                    f"FSDP2 not compatible with {self.optimizer.value}, use `adamw_torch_8bit` instead"
+                    f"FSDP2 not compatible with {self.optimizer}, use `adamw_torch_8bit` instead"
                 )
 
         return self
@@ -1452,30 +1450,19 @@ class ModelCompatibilityValidationMixin:
     def check_hidden_states_offloading(self):
         if self.activation_offloading != "hidden_states":
             return self
-        # Forcing reentrant (below) on a partially frozen model is the broken combo
-        # check_use_reentrant_mismatch guards — but that before-validator ran before
-        # we forced it, so catch it here. https://github.com/huggingface/transformers/issues/21381
-        if self.unfrozen_parameters:
-            raise ValueError(
-                "activation_offloading: hidden_states forces reentrant checkpointing, "
-                "which is incompatible with `unfrozen_parameters` (partially frozen "
-                "model)."
-            )
-        # ALST-style offloading replaces torch's reentrant CheckpointFunction, so it
-        # needs use_reentrant=True. Force it on (warn if the user asked otherwise).
         gc_kwargs = dict(self.gradient_checkpointing_kwargs or {})
-        if gc_kwargs.get("use_reentrant") is False:
-            LOG.warning(
-                "activation_offloading: hidden_states requires reentrant checkpointing; "
-                "overriding gradient_checkpointing_kwargs.use_reentrant to true."
-            )
-        gc_kwargs["use_reentrant"] = True
+        use_reentrant = gc_kwargs.setdefault("use_reentrant", False)
         self.gradient_checkpointing_kwargs = gc_kwargs
+        if use_reentrant and self.unfrozen_parameters:
+            raise ValueError(
+                "activation_offloading: hidden_states with reentrant checkpointing "
+                "is incompatible with `unfrozen_parameters` (partially frozen model)."
+            )
         if self.adapter:
             LOG.warning(
-                "activation_offloading: hidden_states is designed for full-parameter "
-                "training; with LoRA/QLoRA the frozen base may break reentrant "
-                "checkpointing. Prefer activation_offloading: true for adapters."
+                "activation_offloading: hidden_states uses gradient checkpointing; "
+                "with LoRA/QLoRA, activation_offloading: true can be faster because "
+                "it avoids recompute while offloading smaller adapter activations."
             )
         return self
 
