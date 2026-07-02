@@ -674,84 +674,57 @@ def test_mistral_v7_tekken_train_on_eos_all_respects_user_include_end_false():
 # --------------------------------------------------------------------------- #
 
 
-def _paddleocr_vl_tokenizer():
-    # Real PaddlePaddle/PaddleOCR-VL-1.6 tokenizer ids for each marker.
-    vocab = {
-        "User: ": [2969, 93963, 93919],
-        "Assistant:\n": [92267, 93963, 23],
-        "<|IMAGE_PLACEHOLDER|>": [100295],
-    }
-    return _Tokenizer(vocab, pad_id=0, eos_id=2)
+@pytest.fixture(scope="module", name="paddleocr_vl_processor")
+def fixture_paddleocr_vl_processor():
+    from transformers import AutoProcessor
+
+    return AutoProcessor.from_pretrained("PaddlePaddle/PaddleOCR-VL-1.6")
 
 
-def test_paddleocr_vl_masks_user_prompt_and_image_tokens():
-    tok = _paddleocr_vl_tokenizer()
-    proc = _Processor(tok)
-    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
-    strategy = PaddleOCRVLProcessingStrategy(proc)
-    seq = [
-        1,
-        *tok.vocab["User: "],
-        100295,
-        77,
-        *tok.vocab["Assistant:\n"],
-        88,
-        89,
-        2,
+def _paddleocr_vl_messages(task_text, answer_text):
+    return [
+        {
+            "role": "user",
+            "content": [{"type": "image"}, {"type": "text", "text": task_text}],
+        },
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": answer_text}],
+        },
     ]
-    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
-    assert out == [-100] * (1 + 3 + 1 + 1 + 3) + [88, 89, 2]
 
 
-def test_paddleocr_vl_masks_real_template_sequence():
-    """Token ids from the real processor: apply_chat_template on
-    [user: <image> "OCR:", assistant: "hello world"] renders
-    '<|begin_of_sentence|>User: <|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>OCR:\\nAssistant:\\nhello world</s>'.
-    """
-    proc = _Processor(_paddleocr_vl_tokenizer())
-    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
+def test_paddleocr_vl_masks_user_prompt_and_image_tokens(paddleocr_vl_processor):
+    proc = paddleocr_vl_processor
+    tok = proc.tokenizer
     strategy = PaddleOCRVLProcessingStrategy(proc)
-    seq = [
-        100273,  # <|begin_of_sentence|>
-        2969,
-        93963,
-        93919,  # "User: "
-        101305,
-        100295,
-        101306,  # <|IMAGE_START|><|IMAGE_PLACEHOLDER|><|IMAGE_END|>
-        93972,
-        2497,
-        93963,
-        23,  # "OCR:\n"
-        92267,
-        93963,
-        23,  # "Assistant:\n"
-        18830,
-        3135,  # "hello world"
-        2,  # </s>
-    ]
-    out = strategy.process_labels(torch.tensor([seq])).tolist()[0]
-    assert out == [-100] * 14 + [18830, 3135, 2]
 
-
-def test_dispatch_paddleocr_vl():
-    pytest.importorskip("transformers.models.paddleocr_vl.processing_paddleocr_vl")
-    from transformers.models.paddleocr_vl.processing_paddleocr_vl import (
-        PaddleOCRVLProcessor,
+    ids = proc.apply_chat_template(
+        _paddleocr_vl_messages("OCR:", "hello world"), tokenize=True
     )
+    seq = ids[0]
+    labels = strategy.process_labels(torch.tensor(ids)).tolist()[0]
 
-    tok = _paddleocr_vl_tokenizer()
-    proc = MagicMock(spec=PaddleOCRVLProcessor)
-    proc.tokenizer = tok
-    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
-    s = _dispatch(proc, None)
+    first_unmasked = next(i for i, l in enumerate(labels) if l != -100)
+    # Everything through the assistant marker (bos, user turn, image tokens) is masked.
+    assert all(l == -100 for l in labels[:first_unmasked])
+    assert tok.decode(seq[:first_unmasked]).endswith("Assistant:\n")
+    # The assistant response plus eos trains unmasked to end of sequence.
+    assert labels[first_unmasked:] == seq[first_unmasked:]
+    assert tok.decode(seq[first_unmasked:]) == f"hello world{tok.eos_token}"
+    # Image placeholder positions are masked.
+    image_id = tok.convert_tokens_to_ids(proc.image_token)
+    assert image_id in seq
+    assert all(l == -100 for t, l in zip(seq, labels, strict=True) if t == image_id)
+
+
+def test_dispatch_paddleocr_vl(paddleocr_vl_processor):
+    s = _dispatch(paddleocr_vl_processor, None)
     assert isinstance(s, PaddleOCRVLProcessingStrategy)
 
 
-def test_dispatch_paddleocr_vl_chat_template_key():
-    proc = _Processor(_paddleocr_vl_tokenizer())
-    proc.image_token = "<|IMAGE_PLACEHOLDER|>"
-    s = _dispatch(proc, "paddleocr_vl")
+def test_dispatch_paddleocr_vl_chat_template_key(paddleocr_vl_processor):
+    s = _dispatch(paddleocr_vl_processor, "paddleocr_vl")
     assert isinstance(s, PaddleOCRVLProcessingStrategy)
 
 
