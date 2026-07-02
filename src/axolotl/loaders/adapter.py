@@ -1,7 +1,9 @@
 """Adapter loading functionality, including LoRA / QLoRA and associated utils"""
 
+import json
 import os
 import types
+from pathlib import Path
 from typing import Any
 
 import bitsandbytes as bnb
@@ -295,6 +297,37 @@ def _patch_peft_param_wrapper_dropout():
     ParamWrapper._axolotl_dropout_patched = True
 
 
+def _warn_if_patterns_differ_from_saved_adapter(cfg: DictDefault) -> None:
+    """Warn when cfg rank/alpha patterns differ from the saved adapter's, which governs under lora_model_dir."""
+    try:
+        saved = json.loads(
+            (Path(cfg.lora_model_dir) / "adapter_config.json").read_text()
+        )
+    except (OSError, ValueError):
+        # Adapter config not readable locally (e.g. hub id): can't compare, so warn generically.
+        LOG.warning(
+            "lora_rank_pattern/lora_alpha_pattern are ignored when loading an "
+            "existing adapter via lora_model_dir; the saved adapter_config.json "
+            "governs per-module rank/alpha."
+        )
+        return
+    mismatches = [
+        f"{cfg_key}: config={dict(cfg_val or {})} saved={saved.get(saved_key) or {}}"
+        for cfg_key, saved_key, cfg_val in (
+            ("lora_rank_pattern", "rank_pattern", cfg.lora_rank_pattern),
+            ("lora_alpha_pattern", "alpha_pattern", cfg.lora_alpha_pattern),
+        )
+        if dict(cfg_val or {}) != (saved.get(saved_key) or {})
+    ]
+    if mismatches:
+        LOG.warning(
+            "lora_rank_pattern/lora_alpha_pattern in the config differ from the "
+            "adapter loaded via lora_model_dir and are ignored; the saved "
+            "adapter_config.json governs per-module rank/alpha (%s).",
+            "; ".join(mismatches),
+        )
+
+
 def load_lora(
     model: PreTrainedModel,
     cfg: DictDefault,
@@ -338,12 +371,7 @@ def load_lora(
     if cfg.lora_model_dir:
         LOG.debug("Loading pretrained PEFT adapter")
         if cfg.lora_rank_pattern or cfg.lora_alpha_pattern:
-            # PeftModel.from_pretrained uses the adapter's saved config, so cfg-side patterns would be silently dropped.
-            LOG.warning(
-                "lora_rank_pattern/lora_alpha_pattern are ignored when loading an "
-                "existing adapter via lora_model_dir; the saved adapter_config.json "
-                "governs per-module rank/alpha."
-            )
+            _warn_if_patterns_differ_from_saved_adapter(cfg)
         if cfg.lora_on_cpu:
             model_kwargs["max_memory"] = {"cpu": "256GiB"}
             model_kwargs["device_map"] = {"": "cpu"}

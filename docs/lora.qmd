@@ -44,6 +44,11 @@ lora_alpha_pattern:
   ".*\\.(q_proj|v_proj)$": 64
 ```
 
+### Resuming and continuing training
+
+- `resume_from_checkpoint` rebuilds the model from your YAML, so keep the patterns identical to the original run; a changed `lora_rank_pattern` fails at load with a shape mismatch.
+- `lora_model_dir` (continue-training from a saved adapter) takes per-module rank/alpha from the adapter's saved `adapter_config.json`; YAML patterns cannot override it, and axolotl warns if they differ.
+
 ### Merging adapters trained with patterns
 
 `axolotl merge-lora` (default `merge_method: memory_efficient`) honors both

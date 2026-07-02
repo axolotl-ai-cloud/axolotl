@@ -451,6 +451,94 @@ class TestEfficientMerge:
         assert torch.allclose(merged[q_key], expected_q, atol=1e-5)
         assert torch.allclose(merged[v_key], expected_v, atol=1e-5)
 
+    def test_merge_applies_rank_pattern_per_module(self, tmp_path):
+        """End-to-end: q_proj uses rank_pattern=16, v_proj uses global r=8."""
+        hidden = 32
+        global_r = 8
+        q_r = 16
+        alpha = 16
+
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, config = self._make_adapter(tmp_path, r=global_r, alpha=alpha)
+        config["rank_pattern"] = {"layers.0.self_attn.q_proj": q_r}
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+        q_a = torch.randn(q_r, hidden)
+        q_b = torch.randn(hidden, q_r)
+        v_a = torch.randn(global_r, hidden)
+        v_b = torch.randn(hidden, global_r)
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": q_a,
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": q_b,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": v_a,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": v_b,
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        v_key = "model.layers.0.self_attn.v_proj.weight"
+        expected_q = base_weights[q_key] + (alpha / q_r) * (q_b @ q_a)
+        expected_v = base_weights[v_key] + (alpha / global_r) * (v_b @ v_a)
+        assert torch.allclose(merged[q_key], expected_q, atol=1e-5)
+        assert torch.allclose(merged[v_key], expected_v, atol=1e-5)
+
+    def test_merge_applies_rank_and_alpha_pattern_combined(self, tmp_path):
+        """End-to-end: q_proj overrides both rank (16) and alpha (64), v_proj uses globals."""
+        hidden = 32
+        global_r = 8
+        global_alpha = 16
+        q_r = 16
+        q_alpha = 64
+
+        model_dir, base_weights = self._make_base_model(tmp_path, hidden=hidden)
+        adapter_dir, config = self._make_adapter(
+            tmp_path, r=global_r, alpha=global_alpha
+        )
+        config["rank_pattern"] = {"layers.0.self_attn.q_proj": q_r}
+        config["alpha_pattern"] = {"layers.0.self_attn.q_proj": q_alpha}
+        (adapter_dir / "adapter_config.json").write_text(json.dumps(config))
+
+        q_a = torch.randn(q_r, hidden)
+        q_b = torch.randn(hidden, q_r)
+        v_a = torch.randn(global_r, hidden)
+        v_b = torch.randn(hidden, global_r)
+        lora_state = {
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight": q_a,
+            "base_model.model.model.layers.0.self_attn.q_proj.lora_B.weight": q_b,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_A.weight": v_a,
+            "base_model.model.model.layers.0.self_attn.v_proj.lora_B.weight": v_b,
+        }
+        safetensors.torch.save_file(
+            lora_state, adapter_dir / "adapter_model.safetensors"
+        )
+
+        output_dir = tmp_path / "output"
+        merge_lora_sharded_efficient(
+            base_model_path=model_dir,
+            lora_adapter_path=adapter_dir,
+            output_path=output_dir,
+            device="cpu",
+        )
+        merged = safetensors.torch.load_file(output_dir / "model.safetensors")
+
+        q_key = "model.layers.0.self_attn.q_proj.weight"
+        v_key = "model.layers.0.self_attn.v_proj.weight"
+        expected_q = base_weights[q_key] + (q_alpha / q_r) * (q_b @ q_a)
+        expected_v = base_weights[v_key] + (global_alpha / global_r) * (v_b @ v_a)
+        assert torch.allclose(merged[q_key], expected_q, atol=1e-5)
+        assert torch.allclose(merged[v_key], expected_v, atol=1e-5)
+
     def test_dora_merge(self):
         """DoRA merge applies magnitude normalization via PEFT."""
         hidden = 32
