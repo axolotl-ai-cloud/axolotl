@@ -61,27 +61,138 @@ def _compute_expert_block(
     return acc
 
 
+# ---------------------------------------------------------------------------
+# Deterministic shape-adaptive tile selection (no runtime benchmarking).
+#
+# Runtime @triton.autotune benchmarks each new (M, N, K) on its first hit; in distributed
+# training, ranks hit new shapes at different steps -> per-rank timing skew -> the next
+# collective (NCCL/DeepEP) desyncs. Instead, ``_s2s_prune`` reduces the grid to EXACTLY ONE
+# config via a pure function of (shape, device) — one surviving config means autotune skips
+# timing entirely, so every rank deterministically picks the same tile.
+#
+# _S2S_TILE_TABLE is the tuning knowledge base: first matching entry wins; adding/refreshing an
+# arch or shape family is a one-line PR. Entries come from opt-in autotune telemetry
+# (moe_kernel_autotune / AXOLOTL_S2S_TUNE=1 -> full-grid benchmark, winners reported by
+# AutotuneReportCallback) or the manual sweep script. Unmatched (arch, shape) keeps the legacy
+# config — archs we never swept regress by exactly zero.
+# ---------------------------------------------------------------------------
+
+_LEGACY = {"BLOCK_N": 128, "BLOCK_K": 32, "num_stages": 4, "num_warps": 4}
+
+# Match fields (all optional): sm = exact (major, minor) or major-only (major,); smem_min bytes;
+# k_mod (K % k_mod == 0); k_min/k_max, n_min/n_max; dtype ("bf16"/"fp16"/...).
+# Ships EMPTY on purpose: swept sm120 (RTX PRO 6000) 2026-07 — BLOCK_K=64 wins were only 3-4%
+# at wide-N thin-expert shapes and REGRESSED small-square (K=N=3072), below the bar for a
+# default flip. Add entries when opt-in-autotune telemetry shows a reproducible >=10% win for a
+# (sm, shape-family, dtype) bucket. Example entry:
+#   {"sm": (12,), "k_mod": 64, "n_min": 4096, "dtypes": ("bfloat16", "float16"),
+#    "smem_min": 101376, "cfg": {"BLOCK_N": 128, "BLOCK_K": 64, "num_stages": 4, "num_warps": 4}}
+_S2S_TILE_TABLE: list[dict] = []
+
+
 def _scatter2scatter_configs():
-    # SINGLE config on purpose: runtime @triton.autotune benchmarks each new (M, N, K) on its first
-    # hit; in distributed training, layers/ranks see different seq-lens and routed-expert counts, so
-    # they'd benchmark at *different* steps -> per-rank timing skew -> the next collective
-    # (NCCL/DeepEP) desyncs/times out, and a resync barrier per layer is too slow. One config = no
-    # benchmarking = deterministic.
-    #
-    # TODO(perf, shape-adaptive tiles): reintroduce shape-adaptivity WITHOUT runtime benchmarking.
-    # Offline-measured, BLOCK_K=64 is ~1.5x faster than 32 on BOTH small square (K=3072) and large
-    # thin (gate_up K=7168 / down K=2048) experts. Do it deterministically — a (N, K, SMEM-cap) rule
-    # that passes explicit BLOCK_N/BLOCK_K/num_warps/num_stages to the launch (no @triton.autotune),
-    # or adopt kernels-community#973's on-disk-cached Bayesian autotuner with a pre-warm so all ranks
-    # read the same cached config. Kept single-config for now to preserve the no-desync guarantee.
+    seen, out = set(), []
+    for cfg in (
+        [_LEGACY]
+        + [e["cfg"] for e in _S2S_TILE_TABLE]
+        + [
+            {"BLOCK_N": 128, "BLOCK_K": 64, "num_stages": 3, "num_warps": 4},
+            {"BLOCK_N": 64, "BLOCK_K": 64, "num_stages": 4, "num_warps": 4},
+            {"BLOCK_N": 64, "BLOCK_K": 32, "num_stages": 4, "num_warps": 4},
+            {"BLOCK_N": 128, "BLOCK_K": 64, "num_stages": 4, "num_warps": 8},
+        ]
+    ):
+        key = tuple(sorted(cfg.items()))
+        if key not in seen:
+            seen.add(key)
+            out.append(
+                triton.Config(
+                    {"BLOCK_N": cfg["BLOCK_N"], "BLOCK_K": cfg["BLOCK_K"]},
+                    num_stages=cfg["num_stages"],
+                    num_warps=cfg["num_warps"],
+                )
+            )
+    return out
+
+
+def _s2s_tune_enabled() -> bool:
+    import os
+
+    env = os.environ.get("AXOLOTL_S2S_TUNE")
+    if env is not None:
+        return env != "0"
+    from ..runtime import RUNTIME
+
+    return bool(getattr(RUNTIME, "kernel_autotune", False))
+
+
+def _s2s_pick_cfg(N, K, dtype_str):
+    """Pure-function table lookup -> config dict (falls back to the legacy config)."""
+    import torch
+
+    try:
+        props = torch.cuda.get_device_properties(torch.cuda.current_device())
+        sm = (props.major, props.minor)
+        smem = getattr(props, "shared_memory_per_block_optin", 101376)
+    except Exception:  # pragma: no cover - CPU/init edge
+        sm, smem = (0, 0), 101376
+    for e in _S2S_TILE_TABLE:
+        esm = e.get("sm")
+        if esm is not None and tuple(esm) != sm[: len(esm)]:
+            continue
+        if e.get("smem_min") is not None and smem < e["smem_min"]:
+            continue
+        if e.get("k_mod") is not None and K % e["k_mod"]:
+            continue
+        if not (e.get("k_min", 0) <= K <= e.get("k_max", 1 << 31)):
+            continue
+        if not (e.get("n_min", 0) <= N <= e.get("n_max", 1 << 31)):
+            continue
+        if e.get("dtypes") is not None and dtype_str not in e["dtypes"]:
+            continue
+        cfg = e["cfg"]
+        break
+    else:
+        cfg = _LEGACY
+    # smem clamp so an entry can never produce an unlaunchable config on smaller-smem parts
+    # (element-size aware; if even the floor overflows, take the proven-safe legacy config)
+    elem = 4 if "32" in dtype_str else 2
+    footprint = lambda st: st * (BLOCK_M + cfg["BLOCK_N"]) * cfg["BLOCK_K"] * elem  # noqa: E731
+    stages = cfg["num_stages"]
+    while stages > 2 and footprint(stages) > smem:
+        stages -= 1
+    if footprint(stages) > smem:
+        return dict(_LEGACY)
+    return {**cfg, "num_stages": stages}
+
+
+def _s2s_prune(configs, named_args, **kwargs):
+    if _s2s_tune_enabled():
+        import torch.distributed as dist
+
+        # full-grid benchmarking is only safe with no collectives waiting on a rank
+        if not (
+            dist.is_available() and dist.is_initialized() and dist.get_world_size() > 1
+        ):
+            return configs
+    # constexpr args (K, N) arrive via kwargs, runtime args via named_args
+    args = {**kwargs, **named_args}
+    dt = args["X_ptr"].dtype
+    want = _s2s_pick_cfg(args["N"], args["K"], str(dt).split(".")[-1])
+    # build the config directly: the smem clamp may produce stage counts not in the grid
     return [
-        triton.Config({"BLOCK_N": 128, "BLOCK_K": 32}, num_stages=4, num_warps=4),
+        triton.Config(
+            {"BLOCK_N": want["BLOCK_N"], "BLOCK_K": want["BLOCK_K"]},
+            num_stages=want["num_stages"],
+            num_warps=want["num_warps"],
+        )
     ]
 
 
 @triton.autotune(
     configs=_scatter2scatter_configs(),
     key=["M", "N", "K"],
+    prune_configs_by={"early_config_prune": _s2s_prune},
 )
 @triton.heuristics(
     {
