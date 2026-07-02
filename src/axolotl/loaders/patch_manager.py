@@ -92,8 +92,36 @@ class PatchManager:
         """Check if flash attention is installed."""
         return importlib.util.find_spec("flash_attn") is not None
 
+    def _maybe_disable_qwen3_5_compile_lora_kernels(self):
+        if (
+            self.cfg.model_config_type in ("qwen3_5", "qwen3_5_moe", "qwen3_next")
+            and self.cfg.sample_packing
+            and self.cfg.torch_compile
+            and self.cfg.adapter
+            and self.cfg.gradient_checkpointing
+            and any(
+                self.cfg.get(k)
+                for k in ("lora_qkv_kernel", "lora_o_kernel", "lora_mlp_kernel")
+            )
+        ):
+            from axolotl.utils import get_pytorch_version
+
+            # This 5-way combination NaNs gradients on torch<=2.10 (deterministic on 2.10, intermittent on 2.9.1); clean on 2.11 and with the kernels off.
+            if get_pytorch_version() < (2, 11, 0):
+                LOG.warning(
+                    "Disabling LoRA triton kernels (lora_qkv/o/mlp_kernel): with "
+                    "qwen3_5 sample packing + torch_compile + gradient_checkpointing "
+                    f"they produce NaN gradients on torch < 2.11 (found "
+                    f"{torch.__version__}). Upgrade torch to re-enable them."
+                )
+                self.cfg.lora_qkv_kernel = False
+                self.cfg.lora_o_kernel = False
+                self.cfg.lora_mlp_kernel = False
+
     def apply_pre_model_load_patches(self):
         """Apply pre-model load patches based on config."""
+        # Must precede _apply_self_attention_lora_patch, which bakes apply_qkv/apply_o calls into the attention forward based on these flags.
+        self._maybe_disable_qwen3_5_compile_lora_kernels()
         self._deactivate_hf_async_load()
         self._apply_torchao_patches()
         self._apply_transformers_patches()
@@ -487,21 +515,27 @@ class PatchManager:
                     patch_qwen3_next_modeling_packing,
                 )
 
-                patch_qwen3_next_modeling_packing()
+                patch_qwen3_next_modeling_packing(
+                    torch_compile=bool(self.cfg.torch_compile),
+                )
 
             if self.cfg.model_config_type == "qwen3_5" and self.cfg.sample_packing:
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_modeling_packing,
                 )
 
-                patch_qwen3_5_modeling_packing()
+                patch_qwen3_5_modeling_packing(
+                    torch_compile=bool(self.cfg.torch_compile),
+                )
 
             if self.cfg.model_config_type == "qwen3_5_moe" and self.cfg.sample_packing:
                 from axolotl.monkeypatch.models.qwen3_5.modeling import (
                     patch_qwen3_5_moe_modeling_packing,
                 )
 
-                patch_qwen3_5_moe_modeling_packing()
+                patch_qwen3_5_moe_modeling_packing(
+                    torch_compile=bool(self.cfg.torch_compile),
+                )
 
             if (
                 self.cfg.model_config_type in ["qwen3_5", "qwen3_5_moe"]
